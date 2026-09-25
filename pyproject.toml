@@ -9,7 +9,7 @@ readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.11"
-authors = [{ name = "emptysekai" }]
+authors = [{ name = "MetaMiku" }, { name = "emptysekai" }]
 dependencies = [
     "UnityPy>=1.25",
     "numpy>=2.0",
