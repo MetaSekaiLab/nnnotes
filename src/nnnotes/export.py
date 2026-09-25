@@ -30,15 +30,56 @@ import zlib
 from pathlib import Path
 
 import numpy as np
-import UnityPy
 from PIL import Image
 from UnityPy.helpers import MeshHelper
 
+from . import cache
 from .catalog import Catalog
-from .unity import (DEFAULT_RESOURCES, SceneGraph, deref, external_path, is_pptr,
+from .unity import (DEFAULT_RESOURCES, SceneGraph, deref, external_path, is_pptr, load_closure,
                     mesh_arrays, script_class)
 
 HEADER = ("m_GameObject", "m_Script")
+_SCALARS = (int, float, str, bool, type(None))
+_LIBS = ("UnityPy", "Pillow", "texture2ddecoder", "astc-encoder-py", "etcpak", "numpy")
+# decoded textures and their PNG encodings by content (export.py's source and the libraries salt the disk layer)
+PNG = cache.bucket("png", salt=cache.source_salt(__file__, *_LIBS), disk=True)
+PIXELS = cache.bucket("pixels", salt=cache.source_salt(__file__, *_LIBS))
+
+
+def _decode_inputs(tex) -> tuple:
+    """What UnityPy's Texture2D.image depends on (Texture2DConverter.get_image_from_texture2d): image data, size,
+    format, version, platform, platform blob."""
+    r = tex.object_reader
+    blob = getattr(tex, "m_PlatformBlob", None)
+    return (bytes(tex.get_image_data()), tex.m_Width, tex.m_Height, int(tex.m_TextureFormat),
+            tuple(getattr(r, "version", (0, 0, 0, 0))), int(getattr(r, "platform", 0) or 0),
+            None if blob is None else bytes(blob))
+
+
+def texture_png(tex) -> bytes:
+    """PNG bytes of a Texture2D's decoded image as Pillow writes it by default (`tex.image.save(PNG)`), cached by
+    the decoder's inputs."""
+    k = PNG.key("texture", _decode_inputs(tex))
+    data = PNG.get(k)
+    if data is None:
+        buf = io.BytesIO()
+        tex.image.save(buf, format="PNG")
+        data = buf.getvalue()
+        PNG.put(k, data)
+    return data
+
+
+def packed_png(rgba: np.ndarray) -> bytes:
+    """PNG bytes (Pillow, optimize=True) of an RGBA array (bottom row first), cached by the array's content."""
+    rgba = np.ascontiguousarray(rgba, np.uint8)
+    k = PNG.key("packed", rgba.shape, rgba.data)
+    data = PNG.get(k)
+    if data is None:
+        buf = io.BytesIO()
+        Image.fromarray(rgba[::-1].copy(), "RGBA").save(buf, format="PNG", optimize=True)
+        data = buf.getvalue()
+        PNG.put(k, data)
+    return data
 
 
 def _safe(s: str) -> str:
@@ -163,24 +204,32 @@ class TexelPacker:
         self.groups: dict[str, list] = {}
 
     def pixels(self, tex_obj) -> np.ndarray:
+        """The texture's texels as RGBA, bottom row first (read-only; decoded once per content, see PIXELS)."""
         k = _key(tex_obj)
         if k not in self._pixels:
             tt = tex_obj.read_typetree()
-            img = tex_obj.read().image
-            if tt["m_TextureFormat"] == 1:               # Alpha8: value in the alpha channel
-                if img.mode == "L":
-                    a = np.asarray(img, np.uint8)
-                elif img.mode == "RGBA":
-                    a = np.asarray(img, np.uint8)[:, :, 3]
+            tex = tex_obj.read()
+            ck = PIXELS.key(_decode_inputs(tex), tt["m_TextureFormat"] == 1, tt["m_Width"], tt["m_Height"])
+            arr = PIXELS.get(ck)
+            if arr is None:
+                img = tex.image
+                if tt["m_TextureFormat"] == 1:               # Alpha8: value in the alpha channel
+                    if img.mode == "L":
+                        a = np.asarray(img, np.uint8)
+                    elif img.mode == "RGBA":
+                        a = np.asarray(img, np.uint8)[:, :, 3]
+                    else:
+                        raise NotImplementedError(f"Alpha8 decoded as {img.mode}")
+                    arr = np.zeros(a.shape + (4,), np.uint8)
+                    arr[:, :, 3] = a                          # rgb 0 (GL alpha texture); TMP reads .a only
                 else:
-                    raise NotImplementedError(f"Alpha8 decoded as {img.mode}")
-                arr = np.zeros(a.shape + (4,), np.uint8)
-                arr[:, :, 3] = a                          # rgb 0 (GL alpha texture); TMP reads .a only
-            else:
-                arr = np.asarray(img.convert("RGBA"), np.uint8)
-            if arr.shape[:2] != (tt["m_Height"], tt["m_Width"]):
-                raise RuntimeError(f"{tt['m_Name']}: decoded size {arr.shape}")
-            self._pixels[k] = arr[::-1].copy()            # bottom row first (Unity v = 0)
+                    arr = np.asarray(img.convert("RGBA"), np.uint8)
+                if arr.shape[:2] != (tt["m_Height"], tt["m_Width"]):
+                    raise RuntimeError(f"{tt['m_Name']}: decoded size {arr.shape}")
+                arr = arr[::-1].copy()                        # bottom row first (Unity v = 0)
+                arr.setflags(write=False)
+                PIXELS.put(ck, arr, arr.nbytes)
+            self._pixels[k] = arr
         return self._pixels[k]
 
     @staticmethod
@@ -250,9 +299,7 @@ class TexelPacker:
                 h["texture"] = group
             fn = f"textures/{_safe(group)}.png"
             (self.out / "textures").mkdir(parents=True, exist_ok=True)
-            buf = io.BytesIO()
-            Image.fromarray(out[::-1].copy(), "RGBA").save(buf, format="PNG", optimize=True)
-            (self.out / fn).write_bytes(buf.getvalue())
+            (self.out / fn).write_bytes(packed_png(out))
             s = next(iter(handles))["settings"]
             textures[group] = {"texture": fn, "name": group, "width": width, "height": height,
                                "mipCount": 1, "settings": s,
@@ -279,11 +326,13 @@ class Exporter:
     crc32 keys, candidates and curve counts; "livenotes": clips and controllers in the
     `clips` / `controllers` registries, referenced by id).
     `follow`: referenced kinds exported instead of named ("AnimatorController",
-    "SpriteAtlas")."""
+    "SpriteAtlas").
+    `defer_writes` (textures "write"): texture records are made as usual but their PNG files are written only by
+    `write_textures`, which can leave out the files a caller would delete."""
 
     def __init__(self, cat: Catalog, out_dir: Path, player=None, inline_meshes: bool = True,
                  stub_assets: tuple[str, ...] = (), textures: str = "write", clip_format: str = "generic",
-                 follow: tuple[str, ...] = ()):
+                 follow: tuple[str, ...] = (), defer_writes: bool = False):
         if textures not in ("write", "deferred"):
             raise ValueError(f"textures={textures!r}")
         if clip_format not in CLIP_FORMATS:
@@ -296,6 +345,8 @@ class Exporter:
         self.deferred = textures == "deferred"
         self.clip_format = clip_format
         self.follow = tuple(follow)
+        self.defer_writes = defer_writes
+        self._unwritten: dict[str, object] = {}    # defer_writes: file -> Texture2D
         self.textures: dict[tuple, dict] = {}
         self.shaders: dict[str, object] = {}
         self.tex_objs: dict[str, object] = {}      # deferred: "file:pathID" -> Texture2D
@@ -324,7 +375,7 @@ class Exporter:
         """(env, graph) of a key's bundle closure, loaded once."""
         if key in self._loaded:
             return self._loaded[key]
-        env = UnityPy.load(*[str(p) for p in self.cat.fetch_key(key)])
+        env = load_closure(self.cat.fetch_key(key))
         graph = SceneGraph(env)
         go_file = self._go_file
         for o in env.objects:
@@ -362,6 +413,8 @@ class Exporter:
         if isinstance(v, dict):
             return {k: self.value(owner, x) for k, x in v.items()}
         if isinstance(v, list):
+            if all(type(x) in _SCALARS for x in v):          # numbers / strings: nothing to resolve
+                return list(v)
             return [self.value(owner, x) for x in v]
         if isinstance(v, (bytes, bytearray)):
             return v.hex()
@@ -428,9 +481,10 @@ class Exporter:
             h = hashlib.sha1(f"{k[0]}:{k[1]}".encode()).hexdigest()[:8]
             fn = f"textures/{_safe(tt['m_Name'])}-{h}.png"
             (self.out / "textures").mkdir(parents=True, exist_ok=True)
-            buf = io.BytesIO()
-            tex.image.save(buf, format="PNG")
-            (self.out / fn).write_bytes(buf.getvalue())
+            if self.defer_writes:
+                self._unwritten[fn] = tex
+            else:
+                (self.out / fn).write_bytes(texture_png(tex))
             self.textures[k] = {
                 "texture": fn, "name": tt["m_Name"],
                 "width": tt["m_Width"], "height": tt["m_Height"],
@@ -439,6 +493,17 @@ class Exporter:
                 "settings": tt.get("m_TextureSettings"),
             }
         return self.textures[k]
+
+    def write_textures(self, skip=()) -> list[str]:
+        """defer_writes: write the PNG file of every texture recorded since the last call, except the files in
+        `skip` (paths relative to the output directory, "textures/<name>.png"). Returns the files written."""
+        skip, written = set(skip), []
+        for fn, tex in sorted(self._unwritten.items()):
+            if fn not in skip:
+                (self.out / fn).write_bytes(texture_png(tex))
+                written.append(fn)
+        self._unwritten.clear()
+        return written
 
     def sprite_render_data(self, o, tt: dict | None = None):
         """(render data, texture owner, atlas typetree) of a Sprite: its own m_RD when it is bound to a
@@ -653,7 +718,7 @@ class Exporter:
         paths relative to any transform inside the subtrees rooted at transforms named in `roots` (the whole
         hierarchy when empty). Used after the loaded hierarchies; resolved bindings record the key. Returns
         the number of subtrees."""
-        env = UnityPy.load(*[str(p) for p in self.cat.fetch_key(key)])
+        env = load_closure(self.cat.fetch_key(key))
         g = SceneGraph(env)
         paths = [g.path(pid) for pid in g.tf]
         bases = [p for p in paths if not roots or p.rsplit("/", 1)[-1] in roots]
@@ -683,7 +748,7 @@ class Exporter:
         for g in r["graphs"]:
             if r["root"] is not None:
                 full = r["root"] if r["path"] == "" else f"{r['root']}/{r['path']}"
-                yield from ((g, go) for go, tf in g.tf_of_go.items() if g.path(tf) == full)
+                yield from ((g, go) for go in g.gos_at_path(full))
             else:
                 yield from ((g, go) for go in self._gos_at(g, r["path"]))
 
@@ -1387,7 +1452,7 @@ class Exporter:
         return index, shader_mod.write_index(index, out_dir)
 
     def closure_shaders(self, key: str):
-        env = UnityPy.load(*[str(p) for p in self.cat.fetch_key(key)])
+        env = load_closure(self.cat.fetch_key(key))
         for o in env.objects:
             if o.type.name == "Shader":
                 self._shader(o)

@@ -17,9 +17,13 @@ program bytes. GLES programs are GLSL ES text holding both stages under
 container and are written as-is (`.vkprog`).
 
 No shader is filtered by name; a viewer decides what it reimplements.
+
+A Shader object's dump depends on its serialized bytes only: it is made once per process (cache bucket
+"shaders", keyed by the object's bytes, type and Unity version) and written again from there.
 """
 from __future__ import annotations
 
+import json
 import re
 import struct
 from pathlib import Path
@@ -28,7 +32,10 @@ import UnityPy
 from UnityPy.enums import ShaderGpuProgramType
 from UnityPy.export.ShaderConverter import CompressionHelper
 
-from .jsonio import write_json
+from . import cache
+from .jsonio import dumps, write_json
+
+DUMPS = cache.bucket("shaders", salt=cache.source_salt(__file__, "UnityPy"), disk=True)
 
 # UnityEngine.Rendering ShaderCompilerPlatform value -> tag
 PLATFORM = {
@@ -133,6 +140,28 @@ def _parsed_summary(tt: dict) -> dict:
     }
 
 
+def _render(o, tt: dict, name: str) -> tuple[str, list[dict], list[bytes]]:
+    """(parsed summary JSON text, variant records, variant program bytes) of one Shader object."""
+    safe = _safe(name)
+    text = dumps(_parsed_summary(tt), indent=1, ensure_ascii=False, default=str)
+    recs, codes = [], []
+    for plat, si, pi, stage, n, t, kws, code in variants(tt, platform_blobs(o.read())):
+        tag = PLATFORM.get(plat, str(plat))
+        ext = "glsl" if t in TEXT_TYPES and not t.startswith("Metal") else "metal" if t.startswith("Metal") else "vkprog"
+        fn = f"s{si}p{pi}_{stage}_{n}.{ext}"
+        recs.append({"file": f"{safe}/{tag}/{fn}", "platform": tag, "subShader": si, "pass": pi, "stage": stage,
+                     "type": t, "keywords": kws})
+        codes.append(bytes(code))
+    return text, recs, codes
+
+
+def _dump_key(o) -> str:
+    st = o.serialized_type
+    type_hash = bytes(st.old_type_hash) if st is not None and st.old_type_hash else b""
+    return DUMPS.key(o.get_raw_data(), type_hash, int(o.class_id), o.assets_file.unity_version,
+                     int(getattr(o, "platform", 0) or 0))
+
+
 def dump_objects(shaders, out_dir: Path, source: str, index: list | None = None) -> list:
     """Write parsed summaries + every compiled variant of Shader objects.
 
@@ -144,24 +173,31 @@ def dump_objects(shaders, out_dir: Path, source: str, index: list | None = None)
     index = [] if index is None else index
     done = {r["name"] for r in index}
     for o in shaders:
-        tt = o.read_typetree()
-        name = tt.get("m_ParsedForm", {}).get("m_Name") or f"shader_{o.path_id}"
+        k = _dump_key(o)
+        hit = DUMPS.get(k)
+        if hit is not None:
+            meta, codes = cache.unpack(hit)
+            name, text, recs = json.loads(meta)
+        else:
+            tt = o.read_typetree()
+            named = tt.get("m_ParsedForm", {}).get("m_Name")
+            name = named or f"shader_{o.path_id}"
+            if name in done:
+                continue
+            text, recs, codes = _render(o, tt, name)
+            if named:                                  # a name from the path id is not a function of the bytes
+                DUMPS.put(k, cache.pack(json.dumps([name, text, recs], ensure_ascii=False).encode("utf-8"), codes))
         if name in done:
             continue
         done.add(name)
         safe = _safe(name)
-        write_json(out_dir / f"{safe}.json", _parsed_summary(tt), default=str)
+        (out_dir / f"{safe}.json").write_text(text, encoding="utf-8", newline="\n")      # as write_json writes it
         rec = {"name": name, "source": source, "parsed": f"{safe}.json", "variants": []}
-        for plat, si, pi, stage, n, t, kws, code in variants(tt, platform_blobs(o.read())):
-            tag = PLATFORM.get(plat, str(plat))
-            pdir = out_dir / safe / tag
+        for v, code in zip(recs, codes):
+            pdir = out_dir / v["file"].rsplit("/", 1)[0]
             pdir.mkdir(parents=True, exist_ok=True)
-            ext = "glsl" if t in TEXT_TYPES and not t.startswith("Metal") else                   "metal" if t.startswith("Metal") else "vkprog"
-            fn = f"s{si}p{pi}_{stage}_{n}.{ext}"
-            (pdir / fn).write_bytes(code)   # the program text or binary exactly as the game stores it
-            rec["variants"].append({"file": f"{safe}/{tag}/{fn}", "platform": tag,
-                                    "subShader": si, "pass": pi, "stage": stage,
-                                    "type": t, "keywords": kws})
+            (out_dir / v["file"]).write_bytes(code)   # the program text or binary exactly as the game stores it
+            rec["variants"].append(v)
         index.append(rec)
     return index
 

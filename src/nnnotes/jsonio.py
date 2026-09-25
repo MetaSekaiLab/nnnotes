@@ -5,6 +5,9 @@ elsewhere): UTF-8, LF line endings, and non-finite floats as the out-of-range li
 `1e999` / `-1e999`, which are valid JSON and read back as +/-Infinity by JSON.parse and
 Python's json.loads (the bare `Infinity` token Python writes by default is not JSON).
 NaN has no such literal and raises, naming where it occurs.
+
+Most documents have no non-finite float: they are encoded by json.dumps directly, and only a document that
+json.dumps refuses (or whose text holds a placeholder) takes the walk that finds and replaces them.
 """
 from __future__ import annotations
 
@@ -14,6 +17,7 @@ from pathlib import Path
 
 _POS, _NEG = "\x00nnnotes:+inf", "\x00nnnotes:-inf"        # placeholders, replaced after encoding
 _TOKENS = ((json.dumps(_POS), "1e999"), (json.dumps(_NEG), "-1e999"))
+_MARK = json.dumps(_POS)[1:-len("+inf") - 1]                 # the placeholders' common prefix as JSON text
 
 
 class _NaN(ValueError):
@@ -68,6 +72,13 @@ def _finite(v, found: list):
 def dumps(obj, **kw) -> str:
     """json.dumps with non-finite floats as 1e999 / -1e999; raises ValueError on NaN (with its path).
     Keyword arguments are json.dumps' (indent, ensure_ascii, separators, default, ...)."""
+    try:
+        s = json.dumps(obj, allow_nan=False, **kw)
+    except ValueError:
+        pass                                   # a non-finite float (or NaN): the walk below
+    else:
+        if _MARK not in s:
+            return s                           # (a placeholder string in the data: the walk rejects it)
     found: list = []
     try:
         clean = _finite(obj, found)

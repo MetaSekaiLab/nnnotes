@@ -4,12 +4,17 @@ from __future__ import annotations
 
 import io
 import json
+import threading
+from collections import OrderedDict
 from pathlib import Path
 
 import numpy as np
 import UnityPy
 from UnityPy.classes import PPtr
 from UnityPy.helpers import MeshHelper
+from UnityPy.helpers.TypeTreeNode import TypeTreeNode
+
+from . import cache
 
 
 def load(path: str | Path) -> "UnityPy.environment.Environment":
@@ -18,6 +23,42 @@ def load(path: str | Path) -> "UnityPy.environment.Environment":
 
 def load_bytes(data: bytes) -> "UnityPy.environment.Environment":
     return UnityPy.load(io.BytesIO(data))
+
+
+_closures = threading.local()
+
+
+def load_closure(paths) -> "UnityPy.environment.Environment":
+    """UnityPy environment of the bundle files `paths` (a key's closure, in this order), shared by the loads of the
+    same files in this thread: the last few closures stay loaded (cache.configure `closures` / `closure_mb`), keyed
+    by each file's path, size and modification time. Reading an object gives fresh values every time, so a shared
+    environment reads as a new one; per thread because UnityPy's readers are not thread-safe."""
+    paths = [str(p) for p in paths]
+    limit, budget = cache.settings()["closures"], cache.settings()["closure_bytes"]
+    if not cache.enabled() or limit <= 0:
+        return UnityPy.load(*paths)
+    ids = tuple(cache.file_id(p) for p in paths)
+    lru = getattr(_closures, "lru", None)
+    if lru is None:
+        lru = _closures.lru = OrderedDict()
+    hit = lru.get(ids)
+    if hit is not None:
+        lru.move_to_end(ids)
+        return hit[0]
+    env = UnityPy.load(*paths)
+    size = sum(i[1] for i in ids)
+    if size <= budget:
+        lru[ids] = (env, size)
+        while len(lru) > limit or sum(v[1] for v in lru.values()) > budget:
+            lru.popitem(last=False)
+    return env
+
+
+def clear_closures() -> None:
+    """Drop this thread's loaded closures."""
+    lru = getattr(_closures, "lru", None)
+    if lru is not None:
+        lru.clear()
 
 
 def mono_typetrees(env) -> list[dict]:
@@ -112,6 +153,8 @@ class SceneGraph:
             table[o.path_id] = o.read_typetree()
         self.tf_of_go = {t["m_GameObject"]["m_PathID"]: p for p, t in self.tf.items()}
         self._world: dict[int, np.ndarray] = {}
+        self._paths: dict[int, str] = {}
+        self._gos_by_path: dict[str, list[int]] | None = None
 
     def world(self, tf_pid: int) -> np.ndarray:
         if tf_pid not in self._world:
@@ -132,15 +175,53 @@ class SceneGraph:
         return True
 
     def path(self, tf_pid: int) -> str:
-        parts = []
-        while tf_pid in self.tf:
-            parts.append(self.go.get(self.tf[tf_pid]["m_GameObject"]["m_PathID"], {}).get("m_Name", "?"))
-            tf_pid = self.tf[tf_pid]["m_Father"]["m_PathID"]
-        return "/".join(reversed(parts))
+        p = self._paths.get(tf_pid)
+        if p is None:
+            parts, t = [], tf_pid
+            while t in self.tf:
+                parts.append(self.go.get(self.tf[t]["m_GameObject"]["m_PathID"], {}).get("m_Name", "?"))
+                t = self.tf[t]["m_Father"]["m_PathID"]
+            p = self._paths[tf_pid] = "/".join(reversed(parts))
+        return p
+
+    def gos_at_path(self, path: str) -> list[int]:
+        """GameObjects whose transform path is `path`, in tf_of_go order."""
+        if self._gos_by_path is None:
+            index: dict[str, list[int]] = {}
+            for go_pid, tf in self.tf_of_go.items():
+                index.setdefault(self.path(tf), []).append(go_pid)
+            self._gos_by_path = index
+        return self._gos_by_path.get(path, [])
+
+
+_heads: dict[int, tuple] = {}
+
+
+def _head_node(node: TypeTreeNode) -> TypeTreeNode | None:
+    """The object typetree `node` cut after m_Script (the MonoBehaviour header), or None without an m_Script."""
+    hit = _heads.get(id(node))
+    if hit is not None and hit[0] is node:
+        return hit[1]
+    names = [c.m_Name for c in node.m_Children]
+    head = None
+    if "m_Script" in names:
+        head = TypeTreeNode(node.m_Level, node.m_Type, node.m_Name, node.m_ByteSize, node.m_Version,
+                            m_MetaFlag=node.m_MetaFlag, m_Children=node.m_Children[:names.index("m_Script") + 1])
+    _heads[id(node)] = (node, head)             # the node is kept alive, so its id is not reused
+    return head
 
 
 def script_class(obj) -> str:
-    """Class name of a MonoBehaviour (needs the monoscript bundle loaded)."""
+    """Class name of a MonoBehaviour (needs the monoscript bundle loaded). Reads the header up to m_Script with the
+    object's own typetree (not its fields); the whole object when that is not possible."""
+    try:
+        head = _head_node(obj._get_typetree_node())
+        if head is not None:
+            ms = deref(obj, obj.read_typetree(head, check_read=False)["m_Script"])
+            if ms is not None:
+                return ms.read().m_ClassName
+    except Exception:
+        pass
     return obj.read().m_Script.read().m_ClassName
 
 
