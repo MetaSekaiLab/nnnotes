@@ -10,6 +10,7 @@ import pytest
 from UnityPy.helpers.TypeTreeHelper import read_typetree
 from UnityPy.streams.EndianBinaryReader import EndianBinaryReader
 
+import synth
 from nnnotes import cli
 from nnnotes.config import ConfigError
 from nnnotes.player import (HEADER, TYPETREE_FORMAT, PlayerData, UnsupportedVersion, dump_typetrees, load_typetrees,
@@ -266,38 +267,10 @@ def test_read_must_consume_the_serialized_size(data):
 
 
 # ---------------------------------------------------------------- game version from the manifest
-def axml(strings: list[str], version_index: int | None, utf8: bool = False) -> bytes:
-    """A binary AndroidManifest.xml with a string pool and a <manifest> start element."""
-    blobs = []
-    for s in strings:
-        if utf8:
-            b = s.encode("utf-8")
-            blobs.append(bytes([len(s), len(b)]) + b + b"\x00")
-        else:
-            blobs.append(struct.pack("<H", len(s)) + s.encode("utf-16-le") + b"\x00\x00")
-    offsets, pos = [], 0
-    for b in blobs:
-        offsets.append(pos)
-        pos += len(b)
-    body = struct.pack(f"<{len(offsets)}I", *offsets) + b"".join(blobs)
-    body += b"\x00" * (-len(body) % 4)
-    pool = struct.pack("<HHIIIIII", 0x0001, 28, 28 + len(body), len(strings), 0, 0x100 if utf8 else 0,
-                       28 + 4 * len(strings), 0) + body
-    attrs = b""
-    if version_index is not None:
-        attrs = struct.pack("<IIIHBBI", 0xFFFFFFFF, strings.index("versionName"), version_index, 8, 0, 3,
-                            version_index)
-    ext = struct.pack("<IIHHHHHH", 0xFFFFFFFF, strings.index("manifest"), 20, 20, 1 if attrs else 0, 0, 0, 0)
-    elem_body = struct.pack("<II", 1, 0xFFFFFFFF) + ext + attrs
-    elem = struct.pack("<HHI", 0x0102, 16, 8 + len(elem_body)) + elem_body
-    chunks = pool + elem
-    return struct.pack("<HHI", 0x0003, 8, 8 + len(chunks)) + chunks
-
-
 @pytest.mark.parametrize("utf8", [False, True])
 def test_manifest_version_name(utf8):
-    assert manifest_version_name(axml(["versionName", "manifest", "1.2.3"], 2, utf8)) == "1.2.3"
-    assert manifest_version_name(axml(["versionName", "manifest"], None, utf8)) is None
+    assert manifest_version_name(synth.axml(["versionName", "manifest", "1.2.3"], 2, utf8)) == "1.2.3"
+    assert manifest_version_name(synth.axml(["versionName", "manifest"], None, utf8)) is None
 
 
 def test_manifest_version_name_garbage():

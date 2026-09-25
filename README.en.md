@@ -1,6 +1,6 @@
 # nnnotes？！
 
-[简体中文](README.md) | [English](README.en.md)
+[简体中文](https://github.com/MetaSekaiLab/nnnotes/blob/main/README.md) | [English](https://github.com/MetaSekaiLab/nnnotes/blob/main/README.en.md)
 
 nnnotes is an offline data toolkit for the game files of BanG Dream! Our Notes: it reads Addressables catalogs,
 downloads and decrypts asset bundles, downloads and decodes master data, and exports stories, Live2D models, spots,
@@ -88,7 +88,7 @@ overriding earlier ones:
 3. command-line flags: `--region`, `--language`, `--catalog`, `--cache`, `--master`, `--apk`, `--ffmpeg`,
    `--vgmstream`, `--node` go before the command name; `--player` is an option of `web`
 
-Copy [`nnnotes.example.toml`](nnnotes.example.toml) to `nnnotes.toml` and fill it in. The settings are: the bundle
+Copy [`nnnotes.example.toml`](https://github.com/MetaSekaiLab/nnnotes/blob/main/nnnotes.example.toml) to `nnnotes.toml` and fill it in. The settings are: the bundle
 key and nonce seed, the master data key and IV, the region in use (`[catalog] region`) and the catalog language
 (`[catalog] language`), the CDN base and API root of each region (`cdn`, `api` of `[servers.<region>]`), the client
 version (`[client] version`; unset: the APK's versionName), optionally the bootstrap API root (`[bootstrap] api`, for
@@ -98,7 +98,7 @@ Node.js (the three tools are looked up on `PATH` when unset). All values come fr
 A missing or malformed setting stops the command with exit status 2 and one line naming the TOML key, the
 environment variable and the flag; no setting value is printed. `nnnotes.toml` is in `.gitignore`; do not commit it.
 
-See [docs/configuration.md](docs/configuration.md) for the full reference.
+See [docs/configuration.md](https://github.com/MetaSekaiLab/nnnotes/blob/main/docs/configuration.md) for the full reference.
 
 ## Examples
 
@@ -135,7 +135,7 @@ no longer referenced are removed. Common options:
 - `--player-only`: rewrite the player files, `charts.json` and `models.json` only; `--reingest-json`: store every
   chart's and model's JSON files again under the current rules
 
-See [docs/commands.md](docs/commands.md) for every command's options and output layout.
+See [docs/commands.md](https://github.com/MetaSekaiLab/nnnotes/blob/main/docs/commands.md) for every command's options and output layout.
 
 ## Architecture
 
@@ -162,4 +162,4 @@ everywhere.
 
 ## License
 
-MIT, see [LICENSE](LICENSE).
+MIT, see [LICENSE](https://github.com/MetaSekaiLab/nnnotes/blob/main/LICENSE).

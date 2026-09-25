@@ -1,5 +1,6 @@
-"""Synthetic inputs for the tests: made-up keys, an independent Rijndael encryptor, bundle encryption and a
-binary catalog writer. Nothing here comes from game data."""
+"""Synthetic inputs for the tests: made-up keys, an independent Rijndael encryptor, master data files and a master
+data CDN tree, bundle encryption, a binary catalog writer and a binary AndroidManifest.xml. Nothing here comes from
+game data. Helpers several test modules use live here (test modules do not import each other)."""
 from __future__ import annotations
 
 import gzip
@@ -106,10 +107,26 @@ def rijndael256_cbc_encrypt(data: bytes, key: bytes, iv: bytes) -> bytes:
     return bytes(out)
 
 
+MASTER_TABLE = {"_allData": [{"_id": 1, "_name": "テスト", "_value": 0.5}, {"_id": 2, "_name": "test", "_value": -3}]}
+
+
 def master_file(table: dict, key: bytes = MASTER_KEY, iv: bytes = MASTER_IV, prefix: bytes | None = None) -> bytes:
     """A master data file as stored: 64-byte prefix + Rijndael-256-CBC(gzip(JSON))."""
     plain = gzip.compress(json.dumps(table, ensure_ascii=False).encode("utf-8"), mtime=0)
     return (prefix if prefix is not None else bytes(64)) + rijndael256_cbc_encrypt(plain, key, iv)
+
+
+def serve_master_version(root, version, files, bad_hash=()):
+    """A CDN tree on disk: <root>/master/<version>/MasterManifest.json and the files it lists."""
+    d = root / "master" / version
+    d.mkdir(parents=True)
+    listed = []
+    for name, data in files.items():
+        (d / name).write_bytes(data)
+        sha = hashlib.sha256(b"other" if name in bad_hash else data).hexdigest()
+        listed.append({"name": name, "hash": sha, "size": len(data)})
+    (d / "MasterManifest.json").write_text(json.dumps({"version": version, "files": listed}))
+    return root.as_uri()
 
 
 # ---------------------------------------------------------------- bundles
@@ -181,3 +198,32 @@ def remote(name: str) -> str:
 
 def local(name: str) -> str:
     return f"{LOCAL_PREFIX}/Android/{name}"
+
+
+# ---------------------------------------------------------------- APK manifest
+def axml(strings: list[str], version_index: int | None, utf8: bool = False) -> bytes:
+    """A binary AndroidManifest.xml with a string pool and a <manifest> start element."""
+    blobs = []
+    for s in strings:
+        if utf8:
+            b = s.encode("utf-8")
+            blobs.append(bytes([len(s), len(b)]) + b + b"\x00")
+        else:
+            blobs.append(struct.pack("<H", len(s)) + s.encode("utf-16-le") + b"\x00\x00")
+    offsets, pos = [], 0
+    for b in blobs:
+        offsets.append(pos)
+        pos += len(b)
+    body = struct.pack(f"<{len(offsets)}I", *offsets) + b"".join(blobs)
+    body += b"\x00" * (-len(body) % 4)
+    pool = struct.pack("<HHIIIIII", 0x0001, 28, 28 + len(body), len(strings), 0, 0x100 if utf8 else 0,
+                       28 + 4 * len(strings), 0) + body
+    attrs = b""
+    if version_index is not None:
+        attrs = struct.pack("<IIIHBBI", 0xFFFFFFFF, strings.index("versionName"), version_index, 8, 0, 3,
+                            version_index)
+    ext = struct.pack("<IIHHHHHH", 0xFFFFFFFF, strings.index("manifest"), 20, 20, 1 if attrs else 0, 0, 0, 0)
+    elem_body = struct.pack("<II", 1, 0xFFFFFFFF) + ext + attrs
+    elem = struct.pack("<HHI", 0x0102, 16, 8 + len(elem_body)) + elem_body
+    chunks = pool + elem
+    return struct.pack("<HHI", 0x0003, 8, 8 + len(chunks)) + chunks

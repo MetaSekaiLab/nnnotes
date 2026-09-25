@@ -12,8 +12,6 @@ import pytest
 import synth
 from nnnotes import cli, gameapi
 from nnnotes.config import Config, ConfigError
-from test_master import TABLE, serve_version
-from test_typetrees import axml
 
 API = "https://api.example.test"
 CDN_A, CDN_B = "https://cdn-a.example.test/prod/a1", "https://cdn-b.example.test/prod/a1"
@@ -245,7 +243,7 @@ def apk(tmp_path, version: str | None = "1.2.3", manifest: bool = True):
     with zipfile.ZipFile(p, "w") as z:
         if manifest:
             strings = ["versionName", "manifest"] + ([version] if version is not None else [])
-            z.writestr("AndroidManifest.xml", axml(strings, 2 if version is not None else None))
+            z.writestr("AndroidManifest.xml", synth.axml(strings, 2 if version is not None else None))
         z.writestr("classes.dex", b"")
     return p
 
@@ -358,7 +356,8 @@ def test_master_download_version_or_latest(argv, message, capsys):
 
 
 def test_master_download_latest(fake_api, tmp_path, capsys, monkeypatch):
-    cdn = serve_version(tmp_path / "cdn", "0123abcd", {"MasterA.bin": synth.master_file(TABLE)})
+    cdn = synth.serve_master_version(tmp_path / "cdn", "0123abcd",
+                                     {"MasterA.bin": synth.master_file(synth.MASTER_TABLE)})
     monkeypatch.setenv("NNNOTES_SERVERS_ZZ_CDN", cdn)
     monkeypatch.setenv("NNNOTES_CLIENT_VERSION", "1.2.3")
     argv = ["--region", "zz", "master", "download", "--latest", "-o", str(tmp_path / "m")]

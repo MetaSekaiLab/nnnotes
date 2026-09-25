@@ -1,5 +1,4 @@
 import gzip
-import hashlib
 import json
 
 import numpy as np
@@ -10,7 +9,7 @@ from nnnotes import master
 from nnnotes.master import MasterKey
 
 KEY = MasterKey(synth.MASTER_KEY, synth.MASTER_IV)
-TABLE = {"_allData": [{"_id": 1, "_name": "テスト", "_value": 0.5}, {"_id": 2, "_name": "test", "_value": -3}]}
+TABLE = synth.MASTER_TABLE
 
 # Rijndael (256-bit block, 256-bit key) known answer: the designers' reference implementation encrypts the all-zero
 # block under the all-zero key twice ("The Design of Rijndael", reference code test driver).
@@ -74,22 +73,9 @@ def test_decode_files(tmp_path):
         master.input_files([tmp_path / "absent"])
 
 
-def serve_version(root, version, files, bad_hash=()):
-    """A CDN tree on disk: <root>/master/<version>/MasterManifest.json and the files it lists."""
-    d = root / "master" / version
-    d.mkdir(parents=True)
-    listed = []
-    for name, data in files.items():
-        (d / name).write_bytes(data)
-        sha = hashlib.sha256(b"other" if name in bad_hash else data).hexdigest()
-        listed.append({"name": name, "hash": sha, "size": len(data)})
-    (d / "MasterManifest.json").write_text(json.dumps({"version": version, "files": listed}))
-    return root.as_uri()
-
-
 def test_download(tmp_path):
     files = {"MasterA.bin": synth.master_file(TABLE), "MasterB.bin": b"x" * 100, "MasterC.bin": b"y"}
-    cdn = serve_version(tmp_path / "cdn", "1.2.3", files, bad_hash={"MasterC.bin"})
+    cdn = synth.serve_master_version(tmp_path / "cdn", "1.2.3", files, bad_hash={"MasterC.bin"})
     out = tmp_path / "out"
     r = master.download(cdn, "1.2.3", out, workers=2)
     assert (r["version"], r["files"], r["downloaded"], r["kept"]) == ("1.2.3", 3, 2, 0)
