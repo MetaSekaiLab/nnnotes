@@ -13,7 +13,9 @@ nnnotes 是 BanG Dream! Our Notes 游戏文件的离线数据工具包：读取 
 | `catalog` | 区服 catalog | 列出 Addressables 资源键（可按前缀过滤） |
 | `browse` | 已配置的各区服 catalog | 本地网页浏览 catalog 与资源包（`--host` / `--port`） |
 | `pull` | 资源键 | 下载并解密该键依赖闭包中的全部资源包到本地缓存 |
-| `master download` | masterdata 版本号 | 该版本的 `MasterManifest.json` 与全部 `.bin` 文件（SHA-256 校验） |
+| `servers` | 引导 API 根地址 `[bootstrap] api` | 游戏 API 的服务器列表：各区服名称、区域 ID 与 CDN / API 根地址（地址仅在 `--show-hosts` 时输出） |
+| `master version` | 区服 | 该区服当前的 masterdata 版本与资源版本（游戏 API 匿名调用） |
+| `master download` | masterdata 版本号，或 `--latest`（区服当前版本） | 该版本的 `MasterManifest.json` 与全部 `.bin` 文件（SHA-256 校验） |
 | `master decode` | masterdata `.bin` 文件或目录 | 每张表一个 JSON（Rijndael-256 CBC 解密 + gzip 解压） |
 | `adv` | 剧情 ID | `episode.json`：命令表、五语台词、语音 / 音效 / 视频索引 |
 | `story` | 剧情 ID | 完整剧情目录：episode、全部 Live2D 模型、音频、舞台场景与着色器、剧情 UI |
@@ -66,7 +68,7 @@ nnnotes 是 BanG Dream! Our Notes 游戏文件的离线数据工具包：读取 
 2. 环境变量：`NNNOTES_<节>_<键>`（如 `NNNOTES_BUNDLE_KEY`、`NNNOTES_SERVERS_TW_CDN`）
 3. 命令行参数：`--region`、`--language`、`--catalog`、`--cache`、`--master`、`--apk`、`--ffmpeg`、`--vgmstream`、`--node` 写在命令名之前；`--player` 是 `web` 的参数
 
-复制 [`nnnotes.example.toml`](nnnotes.example.toml) 为 `nnnotes.toml` 后填写。需要的设置包括：资源包解密密钥与 nonce 种子、masterdata 的密钥与 IV、使用的区服 `[catalog] region` 与 catalog 语言 `[catalog] language`、每个区服的 CDN 地址（`[servers.<区服>]`），以及缓存目录、APK、masterdata 目录、ournotes-player 和 vgmstream / FFmpeg / Node.js 的路径（三个工具未设置时在 `PATH` 中查找）。这些值都来自使用者自己的游戏客户端。
+复制 [`nnnotes.example.toml`](nnnotes.example.toml) 为 `nnnotes.toml` 后填写。需要的设置包括：资源包解密密钥与 nonce 种子、masterdata 的密钥与 IV、使用的区服 `[catalog] region` 与 catalog 语言 `[catalog] language`、每个区服的 CDN 地址与 API 根地址（`[servers.<区服>]` 的 `cdn`、`api`）、客户端版本 `[client] version`（未设置时读取 APK 的 versionName）、可选的引导 API 根地址 `[bootstrap] api`（`servers` 使用），以及缓存目录、APK、masterdata 目录、ournotes-player 和 vgmstream / FFmpeg / Node.js 的路径（三个工具未设置时在 `PATH` 中查找）。这些值都来自使用者自己的游戏客户端。
 
 缺少或格式错误的设置会让命令以退出码 2 结束，并用一行说明对应的配置键、环境变量和命令行参数，不会输出任何设置值。`nnnotes.toml` 已在 `.gitignore` 中，请勿提交。
 
@@ -78,7 +80,8 @@ nnnotes 是 BanG Dream! Our Notes 游戏文件的离线数据工具包：读取 
 nnnotes catalog --prefix Live/MusicScore/ --limit 20
 nnnotes browse --port 8000
 nnnotes pull Live/MusicScore/0001/0001_03
-nnnotes master download --version <masterdata 版本> -o work/master-bin
+nnnotes master version
+nnnotes master download --latest -o work/master-bin
 nnnotes master decode work/master-bin -o work/master
 nnnotes --master work/master adv 10462 -o out/adv_10462.json
 nnnotes story 10462 -o out/story_10462
@@ -105,6 +108,7 @@ nnnotes web out/site --live2d adv_live2d_rana_003_casual_spring_01 --player <our
   └─ 访问层      addressables（catalog 解析、资源包解密、本地浏览）
                  catalog（依赖闭包、远端与 APK 内资源、本地缓存）
                  master（masterdata 下载与解码）
+                 gameapi（游戏 API 匿名调用：当前 masterdata 版本、服务器列表）
        └─ 读取层  unity（UnityPy 读取 typetree 与 TextAsset）
                   export（预制体 / 组件 / 引用全部解析为 JSON，贴图与着色器随同导出）
                   shader、tmpfont（TextMesh Pro 字体）、player（启动设置）、cri + crikey（CRI 音频）

@@ -28,8 +28,18 @@ language = ""
 name = ""
 # CDN base URL of the region: catalogs, bundles, raw audio data and master data are fetched below it
 cdn = ""
+# API root of the region, https://host[:port]: the current master data version (`master version`, `--latest`)
+api = ""
 # catalog languages the local catalog browser lists for the region, e.g. ["zh-Hant"]
 languages = []
+
+[bootstrap]
+# API root that serves the server list (every region's CDN and API roots, `nnnotes servers`), https://host[:port]
+api = ""
+
+[client]
+# client version sent to the game's API (x-client-version); empty: the versionName of [paths] apk
+version = ""
 
 [paths]
 # catalog .bin file to read instead of downloading catalog_main_<language>.bin into the cache (flag --catalog)

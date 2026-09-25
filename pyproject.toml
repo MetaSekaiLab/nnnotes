@@ -18,6 +18,7 @@ dependencies = [
     "fonttools>=4.50",
     "freetype-py>=2.5",
     "scipy>=1.13",
+    "grpcio>=1.49.1",
 ]
 classifiers = [
     "Programming Language :: Python :: 3",

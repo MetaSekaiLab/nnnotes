@@ -46,6 +46,9 @@ exist when they are given.
 | `[servers.<region>] name` | `NNNOTES_SERVERS_<REGION>_NAME` | — | label of the region in `browse` (default: the region name) |
 | `[servers.<region>] cdn` | `NNNOTES_SERVERS_<REGION>_CDN` | — | CDN base URL of the region (a trailing `/` is ignored) |
 | `[servers.<region>] languages` | `NNNOTES_SERVERS_<REGION>_LANGUAGES` | — | catalog languages `browse` lists: a TOML array of strings; comma-separated in the environment |
+| `[servers.<region>] api` | `NNNOTES_SERVERS_<REGION>_API` | — | API root of the region: `https://host[:port]` (TLS, port 443 by default), `host[:port]`, or `http://host[:port]` for a plain-text local server; no path |
+| `[bootstrap] api` | `NNNOTES_BOOTSTRAP_API` | — | API root that serves the server list (`nnnotes servers`), same format |
+| `[client] version` | `NNNOTES_CLIENT_VERSION` | — | client version sent to the game's API, e.g. `1.0.1`; unset: the `versionName` of `[paths] apk` |
 | `[paths] catalog` | `NNNOTES_PATHS_CATALOG` | `--catalog` | a catalog `.bin` file to read instead of downloading `catalog_main_<language>.bin` |
 | `[paths] cache` | `NNNOTES_PATHS_CACHE` | `--cache` | cache directory (created when missing) |
 | `[paths] master` | `NNNOTES_PATHS_MASTER` | `--master` | decoded master data directory, one `<Table>.json` per table |
@@ -75,7 +78,9 @@ in, and bundles that ship inside the APK can only be read with it.
 | `browse` | `[paths] cache`, `[bundle] key` + `nonce_seed`, and per region `cdn` + `languages` (`name` optional) |
 | `pull` | catalog |
 | `master decode` | `[master] key` + `iv` |
-| `master download` | `[catalog] region` and that region's `cdn` |
+| `master download` | `[catalog] region` and that region's `cdn`; `--latest` also that region's `api` and the client version |
+| `master version` | `[catalog] region` and that region's `api`; the client version: `[client] version` or `[paths] apk` |
+| `servers` | `[bootstrap] api`; the client version: `[client] version` or `[paths] apk` |
 | `adv` | catalog, `[paths] master` |
 | `story` | catalog, `[paths] master`, `apk`, `vgmstream`, `ffmpeg` |
 | `live2d` | catalog, `[paths] apk` |
@@ -107,16 +112,29 @@ An unreadable config file (not found, invalid TOML) is reported the same way. Co
 example a missing `-o`) also exit with status 2. Setting values are never printed, logged or put into an error
 message, and the `repr` of the settings and key objects shows no values.
 
+A failed call to the game's API (`master version`, `master download --latest`, `servers`) exits with status 1 and
+one line naming the method, the setting and the gRPC status, plus the game's error code when the server sent one;
+it never contains the address:
+
+```
+nnnotes: game API call Version to [servers.tw] api failed: UNAVAILABLE (server unreachable)
+```
+
 ## Where the values come from
 
 - **Keys, nonce seed, CDN base, region and language**: properties of the game client you own. nnnotes does not
   include them and does not derive them.
+- **API roots**: the region's API root and the bootstrap API root from your own client. With `[bootstrap] api` set,
+  `nnnotes servers --show-hosts` prints every region's CDN and API roots from the server list; a root field there
+  can hold several alternatives separated by `|`, and any one of them can be used as `cdn` / `api`.
+- **Client version**: the version of your game client (`versionName` of its `base.apk`). The game's API rejects a
+  version older than the one it accepts (`game error code CLIENT_UPDATE_REQUIRED`).
 - **`[paths] apk`**: the `base.apk` of your own installation of the game. `player`, `story`, `live` and `web`
   read MonoBehaviours of its boot data with type trees that ship with nnnotes, one set per Unity version (currently
   game version 1.0.1, Unity 6000.3.12f1). With an APK whose classes do not match them, these commands stop with
   exit status 2 and a line naming the class, the game version and the Unity version.
 - **`[paths] master`**: the output directory of `nnnotes master decode`, run on master data files from
-  `nnnotes master download --version <version>` or on the game client's own files.
+  `nnnotes master download --latest` (or `--version <version>`) or on the game client's own files.
 - **CRI HCA keycode**: not a setting. `audio`, `story`, `live` and `web` read it from the APK's boot data;
   `nnnotes crikey` shows whether one was found and can write it as a `.hcakey` file for vgmstream.
 - **Tools**: [vgmstream](https://vgmstream.org/) (`vgmstream-cli`), [FFmpeg](https://ffmpeg.org/) and, for

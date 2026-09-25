@@ -10,6 +10,7 @@ file at once). Key and IV come from the configuration (`[master] key`, `[master]
 
 `download` fetches a master data version from the region's CDN: `<cdn>/master/<version>/MasterManifest.json`
 (`{"version", "files": [{"name", "hash", "size"}]}`) and the files it lists, each checked against its SHA-256.
+The version a region serves now comes from the game's API (`gameapi.master_version`).
 """
 from __future__ import annotations
 

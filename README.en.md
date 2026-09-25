@@ -18,7 +18,9 @@ addresses in their own configuration, and the exports stay in local directories 
 | `catalog` | the region's catalog | addressable keys (optionally by prefix) |
 | `browse` | the configured regions' catalogs | a local web page to browse catalogs and bundles (`--host` / `--port`) |
 | `pull` | addressable keys | every bundle of each key's dependency closure, decrypted into the local cache |
-| `master download` | master data version | that version's `MasterManifest.json` and every `.bin` file (SHA-256 checked) |
+| `servers` | the bootstrap API root `[bootstrap] api` | the game API's server list: each region's name, area id and CDN / API roots (the roots only with `--show-hosts`) |
+| `master version` | region | the master data version and resource version the region serves now (anonymous game API call) |
+| `master download` | master data version, or `--latest` (the region's current one) | that version's `MasterManifest.json` and every `.bin` file (SHA-256 checked) |
 | `master decode` | master data `.bin` files or directories | one JSON per table (Rijndael-256 CBC decryption + gzip) |
 | `adv` | episode ID | `episode.json`: command list, lines in five languages, voice / sound / video index |
 | `story` | episode ID | a full story directory: episode, every Live2D model, audio, stage scene and shaders, story UI |
@@ -84,9 +86,10 @@ overriding earlier ones:
 
 Copy [`nnnotes.example.toml`](nnnotes.example.toml) to `nnnotes.toml` and fill it in. The settings are: the bundle
 key and nonce seed, the master data key and IV, the region in use (`[catalog] region`) and the catalog language
-(`[catalog] language`), the CDN base of each region (`[servers.<region>]`), and the paths of the cache, the APK, the
-master data directory, ournotes-player and vgmstream / FFmpeg / Node.js (the three tools are looked up on `PATH`
-when unset). All values come from the game client you own.
+(`[catalog] language`), the CDN base and API root of each region (`cdn`, `api` of `[servers.<region>]`), the client
+version (`[client] version`; unset: the APK's versionName), optionally the bootstrap API root (`[bootstrap] api`, for
+`servers`), and the paths of the cache, the APK, the master data directory, ournotes-player and vgmstream / FFmpeg /
+Node.js (the three tools are looked up on `PATH` when unset). All values come from the game client you own.
 
 A missing or malformed setting stops the command with exit status 2 and one line naming the TOML key, the
 environment variable and the flag; no setting value is printed. `nnnotes.toml` is in `.gitignore`; do not commit it.
@@ -99,7 +102,8 @@ See [docs/configuration.md](docs/configuration.md) for the full reference.
 nnnotes catalog --prefix Live/MusicScore/ --limit 20
 nnnotes browse --port 8000
 nnnotes pull Live/MusicScore/0001/0001_03
-nnnotes master download --version <master data version> -o work/master-bin
+nnnotes master version
+nnnotes master download --latest -o work/master-bin
 nnnotes master decode work/master-bin -o work/master
 nnnotes --master work/master adv 10462 -o out/adv_10462.json
 nnnotes story 10462 -o out/story_10462
@@ -131,6 +135,7 @@ settings (TOML / environment / flags)
   └─ access    addressables (catalog parsing, bundle decryption, local browser)
                catalog (dependency closures, remote and APK bundles, local cache)
                master (master data download and decoding)
+               gameapi (anonymous game API calls: current master data version, server list)
        └─ reading  unity (UnityPy type trees and TextAssets)
                    export (prefabs / components / references resolved to JSON, textures and shaders alongside)
                    shader, tmpfont (TextMesh Pro fonts), player (boot settings), cri + crikey (CRI audio)

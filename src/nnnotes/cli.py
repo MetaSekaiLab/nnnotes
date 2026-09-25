@@ -7,8 +7,10 @@ whatever the console encoding.
     nnnotes catalog --prefix Spot/ --limit 40
     nnnotes browse [--port 8000]
     nnnotes pull <key> [<key> ...]
+    nnnotes servers [--show-hosts]
+    nnnotes master version
     nnnotes master decode <dir or .bin files> -o <out dir>
-    nnnotes master download --version <master version> -o <dir>
+    nnnotes master download --version <master version> | --latest -o <dir>
     nnnotes adv 10462 -o out/adv_10462.json
     nnnotes story 10462 -o out/story_10462
     nnnotes live2d <Character/Live2D/.../model/... | model id> -o out/live2d/x
@@ -151,11 +153,34 @@ def cmd_master_decode(args, cfg):
         sys.exit(1)
 
 
-def cmd_master_download(args, cfg):
-    from . import master
+def cmd_servers(args, cfg):
+    from . import gameapi
     try:
-        r = master.download(cfg.cdn(cfg.region()), args.version, Path(args.out), workers=args.workers)
-    except master.DownloadError as e:
+        servers = gameapi.server_list(cfg)
+    except gameapi.GameApiError as e:
+        sys.exit(f"nnnotes: {e}")
+    configured = gameapi.configured_roots(cfg)
+    _print_json({"servers": [gameapi.server_summary(s, configured, args.show_hosts) for s in servers]})
+
+
+def cmd_master_version(args, cfg):
+    from . import gameapi
+    region = cfg.region()
+    try:
+        v = gameapi.master_version(cfg, region)
+    except gameapi.GameApiError as e:
+        sys.exit(f"nnnotes: {e}")
+    _print_json({"region": region, "masterVersion": v.version, "resourceVersion": v.resource_version})
+
+
+def cmd_master_download(args, cfg):
+    from . import gameapi, master
+    region = cfg.region()
+    cdn = cfg.cdn(region)
+    try:
+        version = gameapi.master_version(cfg, region).version if args.latest else args.version
+        r = master.download(cdn, version, Path(args.out), workers=args.workers)
+    except (gameapi.GameApiError, master.DownloadError) as e:
         sys.exit(f"nnnotes: {e}")
     _print_json(r)
     if r["failed"]:
@@ -349,15 +374,23 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("keys", nargs="+")
     c.set_defaults(func=cmd_pull)
 
+    c = sub.add_parser("servers", help="the server list of the bootstrap API root: regions, their CDN and API roots")
+    c.add_argument("--show-hosts", action="store_true", help="print the CDN and API roots, not only their counts")
+    c.set_defaults(func=cmd_servers)
+
     c = sub.add_parser("master", help="master data files")
     msub = c.add_subparsers(dest="master_cmd", required=True, metavar="<master command>")
+    m = msub.add_parser("version", help="the master data and resource version the region serves now (game API)")
+    m.set_defaults(func=cmd_master_version)
     m = msub.add_parser("decode", help="master data .bin files -> <Table>.json")
     m.add_argument("inputs", nargs="+", type=Path, help="directories (their *.bin files) or files")
     _out(m, "output directory")
     m.add_argument("--workers", type=int, default=8, help="parallel decodes")
     m.set_defaults(func=cmd_master_decode)
     m = msub.add_parser("download", help="a master data version from the region's CDN (SHA-256 checked)")
-    m.add_argument("--version", required=True, help="master data version")
+    g = m.add_mutually_exclusive_group(required=True)
+    g.add_argument("--version", help="master data version")
+    g.add_argument("--latest", action="store_true", help="the version the region serves now (`master version`)")
     _out(m, "directory for MasterManifest.json and the .bin files")
     m.add_argument("--workers", type=int, default=16, help="parallel downloads")
     m.set_defaults(func=cmd_master_download)

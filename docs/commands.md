@@ -55,6 +55,29 @@ nnnotes pull KEY [KEY ...]
 Fetches the bundle closure (the key's location and all its dependencies) of each key into the cache and prints the
 cached path of every bundle.
 
+## servers
+
+```
+nnnotes servers [--show-hosts]
+```
+
+Reads the server list from the bootstrap API root (`[bootstrap] api`) with an anonymous call to the game's API and
+prints `{servers: [{name, displayName, areaId, region, cdnRoots, apiRoots}]}`: per server its name, its area id, the
+configured region (`[servers.<region>]` table) whose `cdn` or `api` is one of the server's roots, or `null`, and how
+many alternative CDN and API roots the server list gives. `--show-hosts` adds the roots themselves (`cdn`, `api`:
+lists), ready for the `cdn` and `api` settings of a region. The exit status is 1 when the call fails.
+
+## master version
+
+```
+nnnotes master version
+```
+
+Asks the region's API root (`[servers.<region>] api`) for the master data version and the resource version the
+region serves now (the game's API, anonymous) and prints `{region, masterVersion, resourceVersion}`. The client
+version sent with the call is `[client] version`, else the `versionName` of `[paths] apk`. The exit status is 1 when
+the call fails.
+
 ## master decode
 
 ```
@@ -69,13 +92,14 @@ status is 1 when a file failed.
 ## master download
 
 ```
-nnnotes master download --version VERSION -o OUT [--workers N]
+nnnotes master download (--version VERSION | --latest) -o OUT [--workers N]
 ```
 
-Downloads master data version `VERSION` from the region's CDN: `OUT/MasterManifest.json` and every `.bin` file it
-lists, each checked against the manifest's SHA-256. Files already present with the right hash are kept.
+Downloads master data version `VERSION`, or with `--latest` the version the region serves now (as
+`master version`), from the region's CDN: `OUT/MasterManifest.json` and every `.bin` file it lists, each checked
+against the manifest's SHA-256. Files already present with the right hash are kept.
 `--workers` (default 16) downloads in parallel. Prints `{version, files, downloaded, kept, failed, out}`; the exit
-status is 1 when a file failed.
+status is 1 when a file failed or, with `--latest`, the version could not be fetched.
 
 ## adv
 
