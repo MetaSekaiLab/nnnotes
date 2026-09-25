@@ -28,7 +28,7 @@ addresses in their own configuration, and the exports stay in local directories 
 | `shader` | key or APK bundles | every platform variant of the shaders (GLSL ES and others) with an index |
 | `audio` | CRI cue sheet | one audio file per cue (FLAC / Ogg / WAV) + cue metadata |
 | `crikey` | APK | the CRI HCA keycode from the game's boot data (shows whether it was found; can write a `.hcakey`) |
-| `player` | APK + IL2CPP symbols | render-related global settings (color space, quality levels, renderers) as JSON |
+| `player` | APK | render-related global settings (color space, quality levels, renderers) as JSON |
 | `live` | music ID + difficulty | a full chart directory: chart and runtime notes, 3D scene, note and effect assets, BGM and sounds, sound routing |
 | `web` | `--pair music:difficulty` (repeatable) or `--all` | an ournotes-player static site: shared player + per-chart manifests + content-addressed assets |
 
@@ -63,9 +63,10 @@ Based on all data of the Taiwan server, version 1.0.1 (zh-Hant):
 ## Requirements
 
 - Python 3.11+; `pip install -e .` in the repository (not yet on PyPI)
-- the game's `base.apk`: APK-local bundles, the CRI keycode, boot settings
-- the APK's IL2CPP symbols (the DummyDll directory written by Il2CppDumper): needed by `player`, `story`, `live`,
-  `web`
+- the game's `base.apk`: APK-local bundles, the CRI keycode, boot settings. `player`, `story`, `live` and `web` read
+  MonoBehaviours of its boot data with type trees that ship with nnnotes; supported now: game version 1.0.1
+  (Unity 6000.3.12f1). With an APK of another version whose classes do not match, these commands stop with an
+  error naming the class, the game version and the Unity version
 - a decoded master data directory (from `master download` + `master decode`): needed by `adv`, `story`, `spot`,
   `live`, `web`
 - external tools: [vgmstream](https://vgmstream.org/) (CRI HCA decoding), [FFmpeg](https://ffmpeg.org/)
@@ -78,14 +79,14 @@ overriding earlier ones:
 
 1. config file: `--config <file>`, else `NNNOTES_CONFIG`, else `nnnotes.toml` in the working directory
 2. environment variables: `NNNOTES_<SECTION>_<KEY>` (e.g. `NNNOTES_BUNDLE_KEY`, `NNNOTES_SERVERS_TW_CDN`)
-3. command-line flags: `--region`, `--language`, `--catalog`, `--cache`, `--master`, `--apk`, `--dummy-dll`,
-   `--ffmpeg`, `--vgmstream`, `--node` go before the command name; `--player` is an option of `web`
+3. command-line flags: `--region`, `--language`, `--catalog`, `--cache`, `--master`, `--apk`, `--ffmpeg`,
+   `--vgmstream`, `--node` go before the command name; `--player` is an option of `web`
 
 Copy [`nnnotes.example.toml`](nnnotes.example.toml) to `nnnotes.toml` and fill it in. The settings are: the bundle
 key and nonce seed, the master data key and IV, the region in use (`[catalog] region`) and the catalog language
 (`[catalog] language`), the CDN base of each region (`[servers.<region>]`), and the paths of the cache, the APK, the
-IL2CPP symbols, the master data directory, ournotes-player and vgmstream / FFmpeg / Node.js (the three tools are
-looked up on `PATH` when unset). All values come from the game client you own.
+master data directory, ournotes-player and vgmstream / FFmpeg / Node.js (the three tools are looked up on `PATH`
+when unset). All values come from the game client you own.
 
 A missing or malformed setting stops the command with exit status 2 and one line naming the TOML key, the
 environment variable and the flag; no setting value is printed. `nnnotes.toml` is in `.gitignore`; do not commit it.

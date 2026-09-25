@@ -44,7 +44,6 @@ FLAG_SETTINGS = {
     ("paths", "cache"): ("cache", "--cache"),
     ("paths", "master"): ("master", "--master"),
     ("paths", "apk"): ("apk", "--apk"),
-    ("paths", "dummy_dll"): ("dummy_dll", "--dummy-dll"),
     ("paths", "ffmpeg"): ("ffmpeg", "--ffmpeg"),
     ("paths", "vgmstream"): ("vgmstream", "--vgmstream"),
     ("paths", "node"): ("node", "--node"),
@@ -93,8 +92,7 @@ def master_dir(cfg: Config) -> Path:
 def player_data(cfg: Config):
     from .player import PlayerData
     cfg.require_path("paths", "apk")
-    cfg.require_path("paths", "dummy_dll")
-    return PlayerData(_existing(cfg, "paths", "apk"), _existing(cfg, "paths", "dummy_dll", "directory"))
+    return PlayerData(_existing(cfg, "paths", "apk"))
 
 
 def master_key(cfg: Config):
@@ -310,7 +308,6 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--cache", help="cache directory ([paths] cache)")
     p.add_argument("--master", help="decoded master data directory ([paths] master)")
     p.add_argument("--apk", help="base.apk ([paths] apk)")
-    p.add_argument("--dummy-dll", help="Il2CppDumper DummyDll directory of the same APK ([paths] dummy_dll)")
     p.add_argument("--ffmpeg", help="ffmpeg executable ([paths] ffmpeg; else on PATH)")
     p.add_argument("--vgmstream", help="vgmstream-cli executable ([paths] vgmstream; else on PATH)")
     p.add_argument("--node", help="Node.js executable ([paths] node; else on PATH)")

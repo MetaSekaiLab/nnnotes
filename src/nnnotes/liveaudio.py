@@ -211,10 +211,11 @@ def _player_mono(player: PlayerData, cls: str) -> dict:
         if o.type.name != "MonoBehaviour":
             continue
         try:
-            if player.script(o)[2] == cls:
-                hits.append(player.mono(o))
+            if player.script(o)[2] != cls:
+                continue
         except Exception:        # MonoBehaviours without a resolvable script are not ours
             continue
+        hits.append(player.mono(o))
     if len(hits) != 1:
         raise RuntimeError(f"{cls}: {len(hits)} objects in the player data")
     return hits[0]

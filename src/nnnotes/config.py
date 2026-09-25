@@ -4,7 +4,7 @@ Sources, lowest to highest precedence:
 
 1. the TOML file: `--config <file>`, else the file named by `NNNOTES_CONFIG`, else `./nnnotes.toml` when present;
 2. environment variables `NNNOTES_<SECTION>_<KEY>`: the setting's dotted name upper-cased, dots and dashes as
-   underscores (`servers.tw.cdn` -> `NNNOTES_SERVERS_TW_CDN`, `paths.dummy_dll` -> `NNNOTES_PATHS_DUMMY_DLL`);
+   underscores (`servers.tw.cdn` -> `NNNOTES_SERVERS_TW_CDN`, `bundle.nonce_seed` -> `NNNOTES_BUNDLE_NONCE_SEED`);
 3. command-line flags.
 
 No setting has a default and an empty value counts as unset. A command that needs a setting nobody gave stops with

@@ -16,7 +16,7 @@ def write(path: Path, text: str) -> Path:
 
 def test_env_name():
     assert env_name("bundle", "key") == "NNNOTES_BUNDLE_KEY"
-    assert env_name("paths", "dummy_dll") == "NNNOTES_PATHS_DUMMY_DLL"
+    assert env_name("bundle", "nonce_seed") == "NNNOTES_BUNDLE_NONCE_SEED"
     assert env_name("servers.tw", "cdn") == "NNNOTES_SERVERS_TW_CDN"
     assert env_name("servers.a-b", "cdn") == "NNNOTES_SERVERS_A_B_CDN"
 
@@ -119,8 +119,8 @@ def test_paths_relative_to_their_source(tmp_path):
     assert cfg.path("paths", "master") == Path("env-m")
     assert cfg.path("paths", "apk") == Path("x.apk")
     assert cfg.path("paths", "ffmpeg") is None
-    with pytest.raises(ConfigError, match="NNNOTES_PATHS_DUMMY_DLL"):
-        cfg.require_path("paths", "dummy_dll")
+    with pytest.raises(ConfigError, match="NNNOTES_PATHS_VGMSTREAM"):
+        cfg.require_path("paths", "vgmstream")
 
 
 def test_lists():

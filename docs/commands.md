@@ -5,7 +5,7 @@ nnnotes [global options] <command> [command options]
 ```
 
 Global options (before the command): `--config`, `--region`, `--language`, `--catalog`, `--cache`, `--master`,
-`--apk`, `--dummy-dll`, `--ffmpeg`, `--vgmstream`, `--node`, plus `--version` and `--help`. They set the settings
+`--apk`, `--ffmpeg`, `--vgmstream`, `--node`, plus `--version` and `--help`. They set the settings
 described in [configuration.md](configuration.md), which also lists the settings each command needs.
 `nnnotes <command> --help` prints the options of a command.
 
@@ -197,7 +197,9 @@ nnnotes player -o OUT.json
 ```
 
 The game's render settings from the APK's boot data as JSON: `colorSpace`, `defaultPipeline`, `qualityLevels`,
-`qualityPerPlatform`, `pipelines`, `renderers`, `postProcessData`. Needs `[paths] apk` and `[paths] dummy_dll`.
+`qualityPerPlatform`, `pipelines`, `renderers`, `postProcessData`. Needs `[paths] apk`. The MonoBehaviours are read
+with the type trees that ship with nnnotes; an APK whose classes do not match them stops the command with exit
+status 2 and a line naming the class, the game version and the Unity version (as `story`, `live` and `web`).
 
 ## live
 

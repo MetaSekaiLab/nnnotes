@@ -11,7 +11,7 @@ Lowest to highest:
    `nnnotes.toml` in the working directory, when present. A file named by `--config` or `NNNOTES_CONFIG` must exist.
 2. **Environment variables** `NNNOTES_<SECTION>_<KEY>`: the setting's dotted name upper-cased, with dots, dashes
    and other non-alphanumeric characters as underscores (`bundle.key` → `NNNOTES_BUNDLE_KEY`,
-   `servers.tw.cdn` → `NNNOTES_SERVERS_TW_CDN`, `paths.dummy_dll` → `NNNOTES_PATHS_DUMMY_DLL`).
+   `servers.tw.cdn` → `NNNOTES_SERVERS_TW_CDN`, `bundle.nonce_seed` → `NNNOTES_BUNDLE_NONCE_SEED`).
 3. **Command-line flags**, for the settings that have one (table below).
 
 An empty value (`""`, `[]`, an empty environment variable, an empty flag) counts as unset, so a lower source still
@@ -30,8 +30,8 @@ NNNOTES_PATHS_MASTER=/data/master nnnotes adv 10462 -o episode.json
 ### Paths
 
 Relative paths in the TOML file are relative to the file's directory; relative paths from the environment or the
-command line are relative to the working directory. `~` is expanded. `[paths] catalog`, `apk`, `master` and
-`dummy_dll` must exist when they are given.
+command line are relative to the working directory. `~` is expanded. `[paths] catalog`, `apk` and `master` must
+exist when they are given.
 
 ## Settings
 
@@ -50,7 +50,6 @@ command line are relative to the working directory. `~` is expanded. `[paths] ca
 | `[paths] cache` | `NNNOTES_PATHS_CACHE` | `--cache` | cache directory (created when missing) |
 | `[paths] master` | `NNNOTES_PATHS_MASTER` | `--master` | decoded master data directory, one `<Table>.json` per table |
 | `[paths] apk` | `NNNOTES_PATHS_APK` | `--apk` | the game's `base.apk` |
-| `[paths] dummy_dll` | `NNNOTES_PATHS_DUMMY_DLL` | `--dummy-dll` | Il2CppDumper `DummyDll` directory generated from the same APK |
 | `[paths] ffmpeg` | `NNNOTES_PATHS_FFMPEG` | `--ffmpeg` | `ffmpeg` executable; unset: `ffmpeg` on `PATH` |
 | `[paths] vgmstream` | `NNNOTES_PATHS_VGMSTREAM` | `--vgmstream` | `vgmstream-cli` executable; unset: `vgmstream-cli` on `PATH` |
 | `[paths] node` | `NNNOTES_PATHS_NODE` | `--node` | Node.js executable; unset: `node` on `PATH` |
@@ -78,17 +77,17 @@ in, and bundles that ship inside the APK can only be read with it.
 | `master decode` | `[master] key` + `iv` |
 | `master download` | `[catalog] region` and that region's `cdn` |
 | `adv` | catalog, `[paths] master` |
-| `story` | catalog, `[paths] master`, `apk`, `dummy_dll`, `vgmstream`, `ffmpeg` |
+| `story` | catalog, `[paths] master`, `apk`, `vgmstream`, `ffmpeg` |
 | `live2d` | catalog, `[paths] apk` |
 | `spot` | catalog, `[paths] master`, `apk` |
 | `room` | catalog |
 | `shader` | catalog; `--apk-bundle` also `[paths] apk` |
 | `audio` | catalog, `[paths] apk`, `vgmstream`, `ffmpeg` (not for `--format wav`) |
 | `crikey` | `[paths] apk` |
-| `player` | `[paths] apk`, `dummy_dll` |
-| `live` | catalog, `[paths] master`, `apk`, `dummy_dll`, `vgmstream`, `ffmpeg` |
-| `site --pair` / `--all` | as `live`, plus `[catalog] language`, `[paths] player`, `node` |
-| `site --player-only` / `--reingest-json` | `[paths] player` |
+| `player` | `[paths] apk` |
+| `live` | catalog, `[paths] master`, `apk`, `vgmstream`, `ffmpeg` |
+| `web --pair` / `--all` | as `live`, plus `[catalog] language`, `[paths] player`, `node` |
+| `web --player-only` / `--reingest-json` | `[paths] player` |
 
 Bundles already in the cache are read from there; the commands still ask for the settings above.
 
@@ -112,10 +111,10 @@ message, and the `repr` of the settings and key objects shows no values.
 
 - **Keys, nonce seed, CDN base, region and language**: properties of the game client you own. nnnotes does not
   include them and does not derive them.
-- **`[paths] apk`**: the `base.apk` of your own installation of the game.
-- **`[paths] dummy_dll`**: the `DummyDll` directory that [Il2CppDumper](https://github.com/Perfare/Il2CppDumper)
-  writes for that same APK. `player`, `story`, `live` and `web` read the game's MonoBehaviours with type trees
-  generated from it.
+- **`[paths] apk`**: the `base.apk` of your own installation of the game. `player`, `story`, `live` and `web`
+  read MonoBehaviours of its boot data with type trees that ship with nnnotes, one set per Unity version (currently
+  game version 1.0.1, Unity 6000.3.12f1). With an APK whose classes do not match them, these commands stop with
+  exit status 2 and a line naming the class, the game version and the Unity version.
 - **`[paths] master`**: the output directory of `nnnotes master decode`, run on master data files from
   `nnnotes master download --version <version>` or on the game client's own files.
 - **CRI HCA keycode**: not a setting. `audio`, `story`, `live` and `web` read it from the APK's boot data;

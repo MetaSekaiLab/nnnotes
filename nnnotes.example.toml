@@ -40,13 +40,11 @@ cache = ""
 master = ""
 # the game's base.apk: APK-local bundles, player settings, CRI HCA keycode (flag --apk)
 apk = ""
-# Il2CppDumper DummyDll directory of the same APK: player data for story / live / site (flag --dummy-dll)
-dummy_dll = ""
 # ffmpeg executable; empty: ffmpeg on PATH (flag --ffmpeg)
 ffmpeg = ""
 # vgmstream-cli executable; empty: vgmstream-cli on PATH (flag --vgmstream)
 vgmstream = ""
-# Node.js executable for the site build's read-set script; empty: node on PATH (flag --node)
+# Node.js executable for the web build's read-set script; empty: node on PATH (flag --node)
 node = ""
-# ournotes-player checkout (built) or installed package for `nnnotes site` (flag --player)
+# ournotes-player checkout (built) or installed package for `nnnotes web` (flag --player)
 player = ""
