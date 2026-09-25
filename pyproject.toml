@@ -33,9 +33,9 @@ test = ["pytest>=8", "pyflakes>=3.2"]
 nnnotes = "nnnotes.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/empty-sekai/nnnotes"
-Source = "https://github.com/empty-sekai/nnnotes"
-Issues = "https://github.com/empty-sekai/nnnotes/issues"
+Homepage = "https://github.com/MetaSekaiLab/nnnotes"
+Source = "https://github.com/MetaSekaiLab/nnnotes"
+Issues = "https://github.com/MetaSekaiLab/nnnotes/issues"
 
 [tool.setuptools.dynamic]
 version = { attr = "nnnotes.__version__" }

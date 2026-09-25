@@ -9,13 +9,13 @@ All notable changes to this project are listed here. Versions follow [Semantic V
 """
 body = """
 {%- macro commit_link(id) -%}
-[{{ id | truncate(length=7, end="") }}](https://github.com/empty-sekai/nnnotes/commit/{{ id }})
+[{{ id | truncate(length=7, end="") }}](https://github.com/MetaSekaiLab/nnnotes/commit/{{ id }})
 {%- endmacro -%}
 {% if version %}\
     {% if previous.version %}\
-        ## [{{ version | trim_start_matches(pat="v") }}](https://github.com/empty-sekai/nnnotes/compare/{{ previous.version }}...{{ version }}) - {{ timestamp | date(format="%Y-%m-%d") }}
+        ## [{{ version | trim_start_matches(pat="v") }}](https://github.com/MetaSekaiLab/nnnotes/compare/{{ previous.version }}...{{ version }}) - {{ timestamp | date(format="%Y-%m-%d") }}
     {% else %}\
-        ## [{{ version | trim_start_matches(pat="v") }}](https://github.com/empty-sekai/nnnotes/releases/tag/{{ version }}) - {{ timestamp | date(format="%Y-%m-%d") }}
+        ## [{{ version | trim_start_matches(pat="v") }}](https://github.com/MetaSekaiLab/nnnotes/releases/tag/{{ version }}) - {{ timestamp | date(format="%Y-%m-%d") }}
     {% endif %}\
 {% else %}\
     ## Unreleased
@@ -43,7 +43,7 @@ topo_order = false
 sort_commits = "oldest"
 commit_preprocessors = [
     # link issue / pull request numbers
-    { pattern = '\((\w+\s)?#([0-9]+)\)', replace = "([#${2}](https://github.com/empty-sekai/nnnotes/issues/${2}))" },
+    { pattern = '\((\w+\s)?#([0-9]+)\)', replace = "([#${2}](https://github.com/MetaSekaiLab/nnnotes/issues/${2}))" },
 ]
 commit_parsers = [
     { message = "^feat", group = "<!-- 0 -->Features" },
