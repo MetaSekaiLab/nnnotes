@@ -23,9 +23,13 @@ profile is part of the scene (LiveEffectCamera's Volume).
 
 Objects are exported with export.Exporter in its "livescene" clip format (clips inlined once,
 bindings with crc32 keys, path candidates and curve counts).
+
+Only the music row, the slice and the jacket sprite depend on the music: `band_part` exports the rest once for a
+band and `music_part` completes it for each music of that band (the same document as `extract`).
 """
 from __future__ import annotations
 
+import json
 import math
 from pathlib import Path
 
@@ -289,9 +293,10 @@ def _texture_records(v, out: list) -> None:
             _texture_records(x, out)
 
 
-def _drop_scene_textures(doc: dict, base: Path) -> list[str]:
-    """Delete the texture files only the undrawn part of the scene prefab references (SCENE_DRAWN_TEXTURE_NODES)
-    and mark their records "exported": false. Returns the deleted files."""
+def _drop_scene_textures(doc: dict, base: Path, unlink: bool = True) -> list[str]:
+    """The texture files only the undrawn part of the scene prefab references (SCENE_DRAWN_TEXTURE_NODES): their
+    records marked "exported": false, the files deleted (`unlink`; else the caller does not write them). Returns
+    the files."""
     keep: list = []
     for k, v in doc.items():
         if k != "scene":
@@ -306,47 +311,34 @@ def _drop_scene_textures(doc: dict, base: Path) -> list[str]:
     for r in scene:
         if r["texture"] in dropped:
             r["exported"] = False
-    for rel in dropped:
-        (base / rel).unlink()
+    if unlink:
+        for rel in dropped:
+            (base / rel).unlink()
     return dropped
 
 
-def extract(cat, player, out_dir: Path, master: Path | None = None, music_id: int = 100001,
-            band: int | None = None, band_choice: dict | None = None, extra_keys: dict | None = None) -> dict:
-    """Write <out_dir>/livescene/scene.json (+ textures/, shaders/) and return a summary.
+class SharedSceneMismatch(RuntimeError):
+    """A music's scene cannot be composed from its band's part (see music_part); export it whole."""
 
-    `band`: the band of the LightWeight background (LightWeightBackgroundLoadStep.<LoadAsync>d__3:
-    SelfMemberList[2].BandID) and of the start timeline (LiveResourceBandResolver.Resolve). The game
-    takes it from the player's deck; the caller chooses it (live.resolve_band) and `band_choice` records how.
-    `master` (decoded master JSON dir) adds the music/option rows and the derived lane geometry; with `master`
-    the band is required. Without `master`: band 1 unless given, lane skin skin001."""
-    out_dir = Path(out_dir)
-    rows = master_rows(master, music_id) if master else None
-    if band is None:
-        if rows:
-            raise ValueError(f"music {music_id}: no band given; the LightWeight background and the start timeline "
-                             "take the band of the deck centre (SelfMemberList[2]), see live.resolve_band")
-        band = 1
-    skin = lane_skin(rows) if rows else "skin001"
-    base = out_dir / "livescene"
-    base.mkdir(parents=True, exist_ok=True)
-    ex = Exporter(cat, base, player=player, clip_format="livescene")
+
+def _export(cat, player, base: Path, rows: dict | None, band: int, skin: str, extra_keys: dict | None,
+            slice_: dict | None, jacket: str | None):
+    """The export sequence of extract (jacket None: without the jacket sprite, the slice and the music rows left as
+    placeholders for music_part). -> (exporter, doc, shader index, shader summary, timeline counts, dropped)."""
+    ex = Exporter(cat, base, player=player, clip_format="livescene", defer_writes=True)
     graphics = player.graphics()
     doc: dict = {"player": graphics}
-    doc["slice"] = {"musicId": music_id, "band": band, "laneSkin": skin}
-    if band_choice:
-        doc["slice"]["bandChoice"] = band_choice
+    doc["slice"] = slice_
     doc["scene"] = ex.prefab(SCENE_KEY)
     doc["laneSkin"] = {part: ex.key_sprite(f"Live/Lane/{skin}/{part}") for part in LANE_SKIN_PARTS}
     keys = dict(ASSET_KEYS)
     keys.update(extra_keys or {})
     doc["assets"] = {name: ex.export_key(key.format(band=band)) for name, key in keys.items()}
     timeline = bind_timeline(ex, doc, keys["startTimeline"].format(band=band))
-    jacket = rows["liveMusic"]["_jacketAssetName"] if rows else "jkt_001_100001"
     doc["sprites"] = {name: ex.key_sprite(key.format(band=band, jacket=jacket))
-                      for name, key in SPRITE_KEYS.items()}
+                      for name, key in SPRITE_KEYS.items() if jacket is not None or name != "jacket"}
     if rows:
-        doc["master"] = rows
+        doc["master"] = rows if jacket is not None else None
         opts = {k: v["value"] for k, v in rows["optionDefaultsPreset1"].items()}
         doc["derived"] = {
             "lane": derive_lane(doc["scene"]["nodes"], opts),
@@ -370,9 +362,101 @@ def extract(cat, player, out_dir: Path, master: Path | None = None, music_id: in
     doc["convention"] = ("Unity space (left-handed, Y up); transforms are local TRS; "
                          "quaternions (x,y,z,w); colours in the project's Gamma space")
     ex.resolve_pending()        # bindings whose target hierarchy / component class was exported after the clip
-    dropped = _drop_scene_textures(doc, base)
-    write_json(base / "scene.json", doc)
+    dropped = _drop_scene_textures(doc, base, unlink=False)
+    ex.write_textures(skip=dropped)
+    return ex, doc, index, summary, timeline, dropped
+
+
+def _summary(doc: dict, index: list, summary: dict, textures: int, dropped: list, timeline) -> dict:
     gles3 = sum(1 for r in index for v in r["variants"] if v["platform"] == "gles3")
     return {"scene": "livescene/scene.json", "nodes": len(doc["scene"]["nodes"]),
-            "assets": list(doc["assets"]), "textures": len(ex.textures) - len(dropped), "droppedTextures": len(dropped), "shaders": summary["count"],
-            "variants": summary["variants"], "gles3Variants": gles3, "timelineBindings": timeline}
+            "assets": list(doc["assets"]), "textures": textures - len(dropped), "droppedTextures": len(dropped),
+            "shaders": summary["count"], "variants": summary["variants"], "gles3Variants": gles3,
+            "timelineBindings": timeline}
+
+
+def extract(cat, player, out_dir: Path, master: Path | None = None, music_id: int = 100001,
+            band: int | None = None, band_choice: dict | None = None, extra_keys: dict | None = None) -> dict:
+    """Write <out_dir>/livescene/scene.json (+ textures/, shaders/) and return a summary.
+
+    `band`: the band of the LightWeight background (LightWeightBackgroundLoadStep.<LoadAsync>d__3:
+    SelfMemberList[2].BandID) and of the start timeline (LiveResourceBandResolver.Resolve). The game
+    takes it from the player's deck; the caller chooses it (live.resolve_band) and `band_choice` records how.
+    `master` (decoded master JSON dir) adds the music/option rows and the derived lane geometry; with `master`
+    the band is required. Without `master`: band 1 unless given, lane skin skin001."""
+    out_dir = Path(out_dir)
+    rows = master_rows(master, music_id) if master else None
+    if band is None:
+        if rows:
+            raise ValueError(f"music {music_id}: no band given; the LightWeight background and the start timeline "
+                             "take the band of the deck centre (SelfMemberList[2]), see live.resolve_band")
+        band = 1
+    skin = lane_skin(rows) if rows else "skin001"
+    base = out_dir / "livescene"
+    base.mkdir(parents=True, exist_ok=True)
+    slice_ = {"musicId": music_id, "band": band, "laneSkin": skin}
+    if band_choice:
+        slice_["bandChoice"] = band_choice
+    jacket = rows["liveMusic"]["_jacketAssetName"] if rows else "jkt_001_100001"
+    ex, doc, index, summary, timeline, dropped = _export(cat, player, base, rows, band, skin, extra_keys, slice_,
+                                                         jacket)
+    write_json(base / "scene.json", doc)
+    return _summary(doc, index, summary, len(ex.textures), dropped, timeline)
+
+
+BAND_DOC = "band.json"
+
+
+def band_part(cat, player, out_dir: Path, master: Path, music_id: int, band: int,
+              extra_keys: dict | None = None) -> dict:
+    """What `extract` writes for any music of `band`: <out_dir>/livescene/ (textures, shaders; no scene.json) and
+    <out_dir>/band.json (the document with the slice, the jacket sprite and the music rows left out). `music_id`:
+    any music of the band (the option rows it reads are the same for every music)."""
+    out_dir = Path(out_dir)
+    rows = master_rows(master, music_id)
+    base = out_dir / "livescene"
+    base.mkdir(parents=True, exist_ok=True)
+    ex, doc, index, summary, timeline, dropped = _export(cat, player, base, rows, band, lane_skin(rows),
+                                                         extra_keys, None, None)
+    part = {"band": band, "doc": doc, "summary": _summary(doc, index, summary, len(ex.textures), dropped, timeline),
+            "textures": sorted({r["texture"] for r in _records(doc["scene"])})}
+    write_json(out_dir / BAND_DOC, part)
+    return part
+
+
+def _records(v) -> list:
+    out: list = []
+    _texture_records(v, out)
+    return out
+
+
+def music_part(cat, player, out_dir: Path, part: dict, master: Path, music_id: int, band_choice: dict | None = None
+               ) -> dict:
+    """<out_dir>/livescene/scene.json of one music from its band's part (band_part; the part's livescene/ files
+    already in <out_dir>/livescene): the document extract writes. Raises SharedSceneMismatch when the jacket's
+    bundle closure holds shaders or a hierarchy (extract would dump or resolve against them) or the jacket texture
+    is one of the scene's (extract would keep it)."""
+    from .export import Exporter as _Exporter
+    out_dir = Path(out_dir)
+    band = part["band"]
+    rows = master_rows(master, music_id)
+    doc = json.loads(json.dumps(part["doc"]))
+    key = SPRITE_KEYS["jacket"].format(band=band, jacket=rows["liveMusic"]["_jacketAssetName"])
+    ex = _Exporter(cat, out_dir / "livescene", player=player, clip_format="livescene")
+    env, _ = ex.load(key)
+    kinds = {o.type.name for o in env.objects} & {"Shader", "GameObject", "Transform", "RectTransform"}
+    if kinds:
+        raise SharedSceneMismatch(f"{key}: its closure holds {', '.join(sorted(kinds))}")
+    jacket = ex.key_sprite(key)
+    if {r["texture"] for r in _records(jacket)} & set(part["textures"]):
+        raise SharedSceneMismatch(f"{key}: its texture is one of the scene's")
+    slice_ = {"musicId": music_id, "band": band, "laneSkin": lane_skin(rows)}
+    if band_choice:
+        slice_["bandChoice"] = band_choice
+    doc["slice"] = slice_
+    doc["sprites"]["jacket"] = jacket
+    doc["master"] = rows
+    write_json(out_dir / "livescene" / "scene.json", doc)
+    s = dict(part["summary"])
+    s["textures"] += len(ex.textures)
+    return s

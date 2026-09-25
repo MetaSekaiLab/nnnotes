@@ -121,7 +121,8 @@ no longer referenced are removed. Common options:
 - `--format aac|opus|vorbis|mp3|flac`: BGM format, default AAC; `--no-audio`: no audio files
 - `--band` / `--leader-card`: the band of the LightWeight background and the start timeline; default: the band of
   the music's first vocal character
-- `--workers`: parallel music processes (default up to 5) and model processes (default up to 4); `--tmp`:
+- `--workers`: parallel music processes (default a quarter of the CPUs, up to 8) and model processes (default up
+  to 4); `--read-workers`: chart read sets at a time (Node.js processes; default half the CPUs, up to 16); `--tmp`:
   temporary build directory (default `<site>.tmp`)
 - `--live2d MODEL` (model id or key, repeatable) / `--all-live2d`: add Live2D models (every model of the catalog);
   charts and models can be added in the same run

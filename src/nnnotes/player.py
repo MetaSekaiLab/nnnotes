@@ -13,6 +13,7 @@ serialized size raises UnsupportedVersion. `unity default resources`
 """
 from __future__ import annotations
 
+import copy
 import io
 import json
 import re
@@ -135,6 +136,16 @@ class PlayerData:
         self.unity_version = self._by_type["GraphicsSettings"][0].assets_file.unity_version
         self.typetrees = load_typetrees(self.unity_version)
         self._nodes: dict[str, tuple[TypeTreeNode, str]] = {}
+        self._clear_memos()
+
+    def _clear_memos(self) -> None:
+        """Empty the memos of script, mono, shader, resource and graphics (an object is kept with its entry, so its
+        id is not reused while the entry exists; the objects belong to `env` / `defaults` anyway)."""
+        self._scripts: dict[int, tuple] = {}          # id(object) -> (object, (assembly, namespace, class))
+        self._monos: dict[int, tuple] = {}            # id(object) -> (object, fields)
+        self._shader_names: dict[str, list] | None = None
+        self._container: dict[str, list] | None = None
+        self._graphics: dict | None = None
 
     # --- object access ---------------------------------------------------
     def one(self, type_name: str):
@@ -146,7 +157,11 @@ class PlayerData:
     def resource(self, path: str):
         """The object `Resources.Load(path)` returns (ResourceManager container, case-insensitive)."""
         rm = self.one("ResourceManager")
-        hits = [pp for p, pp in rm.read_typetree()["m_Container"] if p.lower() == path.lower()]
+        if self._container is None:                   # lower-case path -> PPtrs, in container order
+            self._container = {}
+            for p, pp in rm.read_typetree()["m_Container"]:
+                self._container.setdefault(p.lower(), []).append(pp)
+        hits = self._container.get(path.lower(), [])
         if len(hits) != 1:
             raise KeyError(f"Resources path {path}: {len(hits)} entries")
         o = self.deref(rm, hits[0])
@@ -157,8 +172,11 @@ class PlayerData:
     def shader(self, name: str, file: str | None = None):
         """The Shader object named `name` (parsed-form name, as Shader.Find sees it); `file` (serialized file
         name, e.g. "unity_builtin_extra") narrows the search. Exactly one must match."""
-        hits = [o for o in self._by_type.get("Shader", [])
-                if o.read().m_ParsedForm.m_Name == name and (file is None or o.assets_file.name == file)]
+        if self._shader_names is None:                # parsed-form name -> Shader objects, in object order
+            self._shader_names = {}
+            for o in self._by_type.get("Shader", []):
+                self._shader_names.setdefault(o.read().m_ParsedForm.m_Name, []).append(o)
+        hits = [o for o in self._shader_names.get(name, []) if file is None or o.assets_file.name == file]
         if len(hits) != 1:
             raise KeyError(f"shader {name!r}{f' in {file}' if file else ''}: {len(hits)} objects")
         return hits[0]
@@ -171,12 +189,25 @@ class PlayerData:
         return deref(owner, pptr)
 
     def script(self, o) -> tuple[str, str, str]:
-        """(assembly, namespace, class) of a MonoBehaviour from its raw m_Script PPtr."""
+        """(assembly, namespace, class) of a MonoBehaviour from its raw m_Script PPtr (read once per object)."""
+        hit = self._scripts.get(id(o))
+        if hit is not None and hit[0] is o:
+            return hit[1]
         fid, pid = struct.unpack_from("<iq", o.get_raw_data(), 16)
         ms = self.deref(o, {"m_FileID": fid, "m_PathID": pid}).read()
-        return ms.m_AssemblyName, ms.m_Namespace, ms.m_ClassName
+        r = ms.m_AssemblyName, ms.m_Namespace, ms.m_ClassName
+        self._scripts[id(o)] = (o, r)
+        return r
 
     def mono(self, o) -> dict:
+        """A MonoBehaviour's fields (header removed), read with the embedded typetree of its class; read once per
+        object, each call returns its own deep copy (callers may change what they get)."""
+        hit = self._monos.get(id(o))
+        if hit is None or hit[0] is not o:
+            hit = self._monos[id(o)] = (o, self._read_mono(o))
+        return copy.deepcopy(hit[1])
+
+    def _read_mono(self, o) -> dict:
         """A MonoBehaviour's fields (header removed), read with the embedded typetree of its class."""
         asm, ns, cls = self.script(o)
         key = typetree_key(asm, ns, cls)
@@ -241,6 +272,12 @@ class PlayerData:
         return COLOR_SPACE[o.read_typetree(prefix, check_read=False)["m_ActiveColorSpace"]]
 
     def graphics(self) -> dict:
+        """The render settings tree (_read_graphics), built once; each call returns its own deep copy."""
+        if self._graphics is None:
+            self._graphics = self._read_graphics()
+        return copy.deepcopy(self._graphics)
+
+    def _read_graphics(self) -> dict:
         gs_o, qs_o = self.one("GraphicsSettings"), self.one("QualitySettings")
         gs, qs = gs_o.read_typetree(), qs_o.read_typetree()
         pipelines, renderers, post = {}, {}, {}

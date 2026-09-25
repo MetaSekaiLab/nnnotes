@@ -323,7 +323,7 @@ summary.
 nnnotes web SITE [--pair MUSIC_ID:DIFFICULTY [--pair ...] | --all] [--live2d MODEL [--live2d ...] | --all-live2d]
 nnnotes web SITE (--player-only | --reingest-json)
                   [--player DIR] [--format aac|opus|vorbis|mp3|flac] [--no-audio] [--force]
-                  [--tmp DIR] [--workers N] [--band BAND | --leader-card CARD_ID]
+                  [--tmp DIR] [--workers N] [--read-workers N] [--band BAND | --leader-card CARD_ID]
                   [--region REGION [--region ...] | --all-regions] [--fonts open|game]
 ```
 
@@ -363,9 +363,15 @@ SITE/assets/<sha256>.<ext>                content-addressed files shared by all 
   `examples/live2d/index.html`, that page and `dist/ournotes-player.live2d.element.min.js` go to `SITE/live2d/`.
 - `--format` (default `aac`) is the BGM format; note SE, cheers and voices stay FLAC. `--no-audio` stores no audio
   (the player then runs the chart silent on its own clock).
-- `--workers`: parallel music processes (default up to 5) and model processes (default up to 4); `1` builds in this
-  process. `--tmp`: directory for the temporary live and model builds (default `SITE.tmp`); the build directories in
-  it are removed after use.
+- `--workers`: parallel music processes (default a quarter of the CPUs, up to 8) and model processes (default up
+  to 4); `1` builds in this process. `--read-workers`: chart read sets run at a time, each a Node.js process
+  (default half the CPUs, up to 16).
+- `--tmp`: directory for the temporary live and model builds (default `SITE.tmp`); the build directories in it are
+  removed after use. `SITE.tmp/cache/` is kept: decoded cue sheets, encoded PNGs, shader dumps and read sets, each
+  stored under a hash of everything it was made from (input bytes, settings, the external tools and libraries in use
+  and nnnotes' own code), so a later build with the same `--tmp` reuses what is unchanged and writes the same files
+  faster. Deleting it is
+  safe at any time outside a build; the next build then makes everything again.
 - `--band` / `--leader-card` / `--fonts`: as for `live`, for every chart (the site stores no start canvas files).
 - Models need `[paths] apk` (component classes and the mask materials are read from the APK), not `[paths] master`.
 - `--region` (repeatable) / `--all-regions`: the regions the site serves (see Regions); default: the one

@@ -2,6 +2,7 @@
 GameObject/Transform scene graph and PPtr references."""
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import threading
@@ -15,6 +16,77 @@ from UnityPy.helpers import MeshHelper
 from UnityPy.helpers.TypeTreeNode import TypeTreeNode
 
 from . import cache
+
+
+# ---- typetree blobs ---------------------------------------------------------
+# A serialized file lists the typetree of each of its classes as a blob, and UnityPy parses every blob in Python
+# (TypeTreeNode.parse_blob) each time a file is loaded; the same class trees recur in almost every bundle. The parse
+# is memoized per process by the blob itself: the parse arguments, the blob's length and its BLAKE2b-128 digest. A
+# hit returns the tree parsed before, shared: UnityPy and nnnotes only read typetree nodes (nnnotes builds new nodes
+# where it needs a cut tree, see _head_node), and one file's objects already share their class's tree.
+BLOB_MEMO_MAX = 8192                                      # distinct class trees kept per process (least recent go)
+_blobs: OrderedDict = OrderedDict()
+_blobs_lock = threading.Lock()
+_blob_stats = {"hits": 0, "misses": 0, "installed": False}
+
+
+def blob_memo_stats() -> dict:
+    """{installed, hits, misses, trees}: the typetree blob memo of this process."""
+    with _blobs_lock:
+        return {**_blob_stats, "trees": len(_blobs)}
+
+
+def clear_blob_memo() -> None:
+    with _blobs_lock:
+        _blobs.clear()
+        _blob_stats.update(hits=0, misses=0)
+
+
+def _install_blob_memo() -> bool:
+    """Wrap TypeTreeNode.parse_blob (once) with the memo; False (nothing changed) when this UnityPy has not the
+    blob layout the wrapper reads: node count, string buffer size, the node records, the string buffer."""
+    from UnityPy.helpers import TypeTreeNode as ttn
+    node_struct = getattr(ttn, "_get_blob_node_struct", None)
+    original = ttn.TypeTreeNode.__dict__.get("parse_blob")
+    if node_struct is None or not isinstance(original, classmethod):
+        return False
+    if getattr(original.__func__, "_nnnotes_memo", False):
+        return True
+    parse = original.__func__
+
+    def parse_blob(cls, reader, version):
+        if not cache.enabled():
+            return parse(cls, reader, version)
+        start = reader.Position
+        count, strings = reader.read_int(), reader.read_int()
+        body = reader.read(node_struct(reader.endian, version)[0].size * count + strings)
+        end = reader.Position
+        key = (cls, reader.endian, version, count, strings, len(body), hashlib.blake2b(body, digest_size=16).digest())
+        with _blobs_lock:
+            node = _blobs.get(key)
+            if node is not None:
+                _blobs.move_to_end(key)
+                _blob_stats["hits"] += 1
+                return node
+        reader.Position = start
+        node = parse(cls, reader, version)
+        if reader.Position != end:                         # another layout: this parse is not memoized
+            return node
+        with _blobs_lock:
+            _blob_stats["misses"] += 1
+            _blobs[key] = node
+            while len(_blobs) > BLOB_MEMO_MAX:
+                _blobs.popitem(last=False)
+        return node
+
+    parse_blob._nnnotes_memo = True
+    parse_blob._original = parse
+    ttn.TypeTreeNode.parse_blob = classmethod(parse_blob)
+    _blob_stats["installed"] = True
+    return True
+
+
+_install_blob_memo()
 
 
 def load(path: str | Path) -> "UnityPy.environment.Environment":

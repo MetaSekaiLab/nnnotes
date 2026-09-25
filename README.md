@@ -96,7 +96,7 @@ nnnotes web out/site --live2d adv_live2d_rana_003_casual_spring_01 --player <our
 
 - `--format aac|opus|vorbis|mp3|flac`：BGM 格式，默认 AAC；`--no-audio`：不导出音频
 - `--band` / `--leader-card`：轻量背景与开场时间轴所用乐队；默认取曲目第一位演唱角色的乐队
-- `--workers`：并行处理的曲目进程数（默认最多 5）与模型进程数（默认最多 4）；`--tmp`：临时构建目录（默认 `<站点>.tmp`）
+- `--workers`：并行处理的曲目进程数（默认为 CPU 数的四分之一，最多 8）与模型进程数（默认最多 4）；`--read-workers`：同时运行的谱面读取集（Node.js 进程）数（默认为 CPU 数的一半，最多 16）；`--tmp`：临时构建目录（默认 `<站点>.tmp`）
 - `--live2d 模型`（模型 ID 或资源键，可重复）/ `--all-live2d`：加入 Live2D 模型（catalog 中全部模型），可与谱面在同一次构建中加入
 - `--region 区服`（可重复）/ `--all-regions`：站点服务的区服（默认 `[catalog] region`）；每个区服的 masterdata 由 `[servers.<区服>] master` 指定。谱面数据相同的区服共用一份清单，列表页用 `?region=&lang=` 切换区服与语言
 - `--player-only`：只重写播放器文件与 `charts.json`、`models.json`；`--reingest-json`：按当前规则重新存储所有谱面与模型的 JSON

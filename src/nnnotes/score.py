@@ -1002,11 +1002,11 @@ def chart_key(file_name: str) -> str:
 
 def fetch_chart(cat, file_name: str) -> bytes:
     """Raw TextAsset bytes of a chart (still gzip, as shipped)."""
-    import UnityPy
+    from .unity import load_closure
     key = chart_key(file_name)
     name = file_name.rsplit("/", 1)[-1]
     for p in cat.fetch_key(key):
-        env = UnityPy.load(str(p))
+        env = load_closure([p])
         for o in env.objects:
             if o.type.name == "TextAsset":
                 d = o.read()
@@ -1050,11 +1050,27 @@ def music_rows(master_dir: Path, music_id: int) -> dict:
     }
 
 
+def extract_audio(cat, master_dir, music_id: int, out_dir, audio_fmt: str = "flac", *,
+                  flac_level: int = cri.FLAC_LEVEL, also=None, rows: dict | None = None) -> dict:
+    """<out>/audio/<cueSheet>/: the live BGM cue sheet decoded per cue + cues.json (cri.decode; `flac_level`,
+    `also` as there). -> the `audio` entry of extract's summary (paths relative to out_dir)."""
+    out_dir = Path(out_dir)
+    rows = rows or music_rows(Path(master_dir), music_id)
+    sheet = rows["music"]["MasterSoundCueSheet"]["_cueSheetName"]
+    cue = rows["music"]["MasterSound"]["_cueName"]
+    files = cri.decode(cat, sheet, out_dir / "audio" / sheet, fmt=audio_fmt, flac_level=flac_level, also=also)
+
+    def rel(p) -> str:
+        return Path(p).relative_to(out_dir).as_posix()
+    return {"cueSheet": sheet, "cue": cue, "file": rel(files[cue]) if cue in files else None,
+            "source": cri.layout(cat, sheet), "cues": {k: rel(v) for k, v in files.items()}}
+
+
 def extract(cat, master_dir, music_id: int, difficulty: str | int, out_dir, audio: bool = True,
-            audio_fmt: str = "flac") -> dict:
+            audio_fmt: str = "flac", *, flac_level: int = cri.FLAC_LEVEL, also=None) -> dict:
     """Write <out>/score/<file>.json (shipped chart JSON, un-gzipped), <file>.notes.json (converted runtime
     notes), <out>/score/master.json (master rows) and <out>/audio/<cueSheet>/ (the live BGM cue sheet decoded
-    per cue + cues.json, cri.decode)."""
+    per cue + cues.json, extract_audio)."""
     out_dir = Path(out_dir)
     sdir = out_dir / "score"
     sdir.mkdir(parents=True, exist_ok=True)
@@ -1079,10 +1095,7 @@ def extract(cat, master_dir, music_id: int, difficulty: str | int, out_dir, audi
                "fullComboCount": score_row["_fullComboCount"], "noteCount": len(conv["notes"]),
                "lastNoteTimeMs": conv["lastNoteTimeMs"]}
     if audio:
-        sheet = rows["music"]["MasterSoundCueSheet"]["_cueSheetName"]
-        cue = rows["music"]["MasterSound"]["_cueName"]
-        files = cri.decode(cat, sheet, out_dir / "audio" / sheet, fmt=audio_fmt)
-        summary["audio"] = {"cueSheet": sheet, "cue": cue, "file": rel(files[cue]) if cue in files else None,
-                            "source": cri.layout(cat, sheet), "cues": {k: rel(v) for k, v in files.items()}}
+        summary["audio"] = extract_audio(cat, master_dir, music_id, out_dir, audio_fmt, flac_level=flac_level,
+                                         also=also, rows=rows)
     write_json(out_dir / "score" / "summary.json", summary)
     return summary

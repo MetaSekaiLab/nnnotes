@@ -389,7 +389,8 @@ def cmd_web(args, cfg):
             _fonts_extra(args.fonts)
             r.update(web.build(out, None if args.all else args.pair, cfg, player, args.format,
                                audio=not args.no_audio, force=args.force, tmp_dir=args.tmp, workers=args.workers,
-                               band=args.band, leader_card=args.leader_card, regions=regions, fonts=args.fonts))
+                               band=args.band, leader_card=args.leader_card, regions=regions, fonts=args.fonts,
+                               read_workers=args.read_workers))
     _print_json(r)
     if r.get("failed") or r.get("modelsFailed"):
         sys.exit(1)
@@ -551,7 +552,10 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--force", action="store_true", help="rebuild charts and models whose manifest exists")
     c.add_argument("--tmp", help="directory for the temporary live and model builds (default <site>.tmp)")
     c.add_argument("--workers", type=int,
-                   help="parallel music / model processes (default up to 5 / 4, 1 = this process)")
+                   help="parallel music / model processes (default a quarter of the CPUs, up to 8 / up to 4; "
+                        "1 = this process)")
+    c.add_argument("--read-workers", type=int,
+                   help="chart read sets run at a time (default half the CPUs, up to 16)")
     r = c.add_mutually_exclusive_group()
     r.add_argument("--region", dest="web_regions", action="append", metavar="REGION",
                    help="a region the site serves: a [servers.<region>] table (repeatable; the first is the base; "

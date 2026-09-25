@@ -30,7 +30,7 @@ from .addressables import remote_path
 from .catalog import Catalog
 from .config import tool
 from .jsonio import write_json
-from . import adv, crikey
+from . import adv, cri
 
 VIDEO_DIR = "videos"
 INDEX = "videos/videos.json"
@@ -236,7 +236,7 @@ def extract(cat: Catalog, episode: dict, out_dir: Path, cri_key: int | None = No
     if cri_key is None:
         if cat.apk is None:
             raise RuntimeError("USM key: pass cri_key= or open the Catalog with apk=")
-        cri_key = crikey.find_key(cat.apk)
+        cri_key = cri.hca_key(cat.apk)
     out_dir = Path(out_dir)
     files: dict[str, dict] = {}
     names: dict[str, str] = {}

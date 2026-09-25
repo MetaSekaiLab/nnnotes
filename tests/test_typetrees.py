@@ -101,6 +101,7 @@ def player(classes=None, game_version="9.9.9"):
     p.typetrees = None if classes is None else {"format": 1, "unityVersion": p.unity_version,
                                                 "gameVersion": "1.0.0", "classes": classes}
     p._nodes = {}
+    p._clear_memos()
     p.script = lambda o: KEY
     return p
 

@@ -28,6 +28,7 @@ from pathlib import Path
 from .catalog import Catalog
 from .jsonio import write_json
 from .player import PlayerData
+from .score import master_table
 from . import cri
 
 ACF_IN_APK = "assets/Cri/Sound/Sirius.acf"
@@ -235,11 +236,6 @@ def category_volumes(player: PlayerData) -> dict:
     return out
 
 
-def _rows(master: Path, name: str) -> list[dict]:
-    import json
-    return json.loads((Path(master) / f"{name}.json").read_text(encoding="utf-8"))["_allData"]
-
-
 def _option(rows: list[dict], preset: int, item: int) -> str:
     hit = [r["_valueString"] for r in rows if r["_presetId"] == preset and r["_optionItemType"] == item]
     if len(hit) != 1:
@@ -249,11 +245,12 @@ def _option(rows: list[dict], preset: int, item: int) -> str:
 
 def note_se_settings(master: Path, preset: int = 1) -> dict:
     """LiveSettingCreator.CreateSESettings for a fresh profile (option preset `preset`)."""
-    opt = _rows(master, "MasterOptionDefault")
+    opt = master_table(master, "MasterOptionDefault")
     if _option(opt, preset, 421).upper() != "FALSE":
         raise NotImplementedError("UseIndividualNoteSe (421) true: BuildIndividualNoteSeDictionary not implemented")
     group = int(_option(opt, preset, 420))
-    types = {r["_liveNoteSeType"]: r["_seId"] for r in _rows(master, "MasterLiveNoteSe") if r["_groupID"] == group}
+    types = {r["_liveNoteSeType"]: r["_seId"] for r in master_table(master, "MasterLiveNoteSe")
+             if r["_groupID"] == group}
     volumes, mutes = {}, {}
     for t in range(1, 15):
         item = NOTE_SE_VOLUME_ITEM[t - 1]
@@ -301,21 +298,22 @@ def extract(cat: Catalog, master: Path, player: PlayerData, music_id: int, out_d
     out_dir = Path(out_dir)
     if cat.apk is None:
         raise RuntimeError("liveaudio needs the Catalog opened with apk= (ACF, HCA key)")
-    sounds = {str(r["_id"]): r for r in _rows(master, "MasterSound")}
-    sheets = {r["_id"]: r["_cueSheetName"] for r in _rows(master, "MasterSoundCueSheet")}
-    music = [r for r in _rows(master, "MasterLiveMusic") if r["_id"] == music_id]
+    sounds = {str(r["_id"]): r for r in master_table(master, "MasterSound")}
+    sheets = {r["_id"]: r["_cueSheetName"] for r in master_table(master, "MasterSoundCueSheet")}
+    music = [r for r in master_table(master, "MasterLiveMusic") if r["_id"] == music_id]
     if len(music) != 1:
         raise KeyError(f"MasterLiveMusic {music_id}")
     music_sound = music[0]["_musicSoundID"]
     nse = note_se_settings(master)
-    live_se = {r["_liveSeType"]: r["_seId"] for r in _rows(master, "MasterLiveSe")}
+    live_se = {r["_liveSeType"]: r["_seId"] for r in master_table(master, "MasterLiveSe")}
     want = [music_sound] + sorted(set(nse["types"].values())) + [live_se[t] for t in SLICE_LIVE_SE]
     voice = {"decision": "caller", "character": voice_character,
              "rule": "LotteryStartVoice: random deck member, random MasterLiveStartCharacterVoice row of that "
                      "character; finish voice from LotteryFinishVoice; no deck -> undefined",
              "startVoiceSoundIds": []}
     if voice_character is not None:
-        rows = [r for r in _rows(master, "MasterLiveStartCharacterVoice") if r["_characterId"] == voice_character]
+        rows = [r for r in master_table(master, "MasterLiveStartCharacterVoice")
+                if r["_characterId"] == voice_character]
         voice["startVoiceSoundIds"] = [r["_voiceSoundId"] for r in rows]
         want += voice["startVoiceSoundIds"]
 
