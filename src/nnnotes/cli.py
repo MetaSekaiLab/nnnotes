@@ -316,10 +316,11 @@ def cmd_player(args, cfg):
 
 
 def cmd_story(args, cfg):
-    from . import story
+    from . import languages, story
     if args.fonts == "game":
         from .tmpfont import require_extra
         require_extra()
+    languages.check(cfg.require("catalog", "language"))   # the story UI's language (advui reads the setting)
     md = master_dir(cfg)
     known_row(args, md, "MasterAdv", args.adv_id, "episode")
     cat = open_catalog(cfg)

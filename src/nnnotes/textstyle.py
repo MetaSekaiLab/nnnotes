@@ -7,7 +7,10 @@ game's localized font slots the text uses, so a renderer maps roles to fonts of 
 
   language_fonts   Fwk.Localization.LocalizeManager font names per LanguageMode (level0)
   localize_text    LocalizeText.Init / OnFontChanged: the font asset, material and line spacing a TMP text ends up
-                   with in the current language
+                   with in a language
+
+The language is a Fwk.Localization.LanguageMode (`mode`), the value languages.mode gives for a catalog language code;
+the callers take it from the client language they export (`[catalog] language`).
   font_role        the role of a font asset: its slot in LocalizeManager's font name list
   material_style   TMP distance-field material properties -> face / outline / underlay values in em
   text_style       one TMP text component -> its text record
@@ -24,8 +27,6 @@ from .player import PlayerData
 FONT_PREFIX = "EmbFont/"
 
 # Fwk.Localization.LanguageMode / language field names of the text tables.
-LANGUAGE_MODE = 2                      # TraditionalChinese (tw build)
-LANGUAGE_FIELD = "traditionalChinese"
 JAPANESE_MODE = 0
 LANGUAGE_FIELDS = {mode: column[1:] for mode, column in LANGUAGES.values()}   # LanguageMode -> text field
 # LocalizeManager.ApplyLanguageLineSpacing: lineSpacing per LanguageMode
@@ -127,13 +128,13 @@ def language_fonts(player: PlayerData) -> dict:
 # --------------------------------------------------------------------------
 # localized font / material of a TMP text (LocalizeText)
 # --------------------------------------------------------------------------
-def font_swap(lang: dict, mode: int = LANGUAGE_MODE) -> dict:
+def font_swap(lang: dict, mode: int) -> dict:
     """LocalizeManager.TryGetFontIndex + LocalizeText.OnFontChanged: the index of a font
     asset name in the Japanese lookup table (Japanese LanguageData font names + " SDF") selects fonts[index] of
-    the current language."""
+    the language `mode`."""
     ja = lang["languages"][JAPANESE_MODE]["fontNames"]
-    zh = lang["languages"][mode]["fontNames"]
-    return {f"{j} SDF": f"{z} SDF" for j, z in zip(ja, zh)}
+    fonts = lang["languages"][mode]["fontNames"]
+    return {f"{j} SDF": f"{f} SDF" for j, f in zip(ja, fonts)}
 
 
 def material_type(material_name: str | None) -> str:
@@ -144,8 +145,7 @@ def material_type(material_name: str | None) -> str:
     return material_name[material_name.index(" - "):].replace(" - ", "").replace(" (Instance)", "")
 
 
-def localize_text(path: str, font_asset: str, material: str, swap: dict, lang: dict,
-                  mode: int = LANGUAGE_MODE) -> dict:
+def localize_text(path: str, font_asset: str, material: str, swap: dict, lang: dict, mode: int) -> dict:
     """LocalizeText.Init -> OnFontChanged for a text with _localizeEnabled: font =
     fonts[TryGetFontIndex(font)], material = GetFontMaterial(index, GetMaterialType(sharedMaterial.name))
     ("<font> - <type>", key EmbFont/<font>/...), lineSpacing = ApplyLanguageLineSpacing."""
@@ -162,7 +162,7 @@ def localize_text(path: str, font_asset: str, material: str, swap: dict, lang: d
 
 def font_role(font_asset: str, lang: dict) -> str:
     """The role of a serialized font asset: its slot in the Japanese font name list (the slot LocalizeText
-    swaps to the current language's font), named by FONT_ROLES."""
+    swaps to the font of the text's language), named by FONT_ROLES."""
     ja = [f"{j} SDF" for j in lang["languages"][JAPANESE_MODE]["fontNames"]]
     if font_asset not in ja:
         raise RuntimeError(f"font {font_asset} not in the Japanese font lookup table")
@@ -265,9 +265,10 @@ def _enum(value: int, names: dict):
     return names.get(value, value)
 
 
-def text_style(comp: dict, localize: dict | None, lang: dict, style: dict, mode: int = LANGUAGE_MODE) -> dict:
+def text_style(comp: dict, localize: dict | None, lang: dict, style: dict, mode: int) -> dict:
     """The text record of one TMP text component (serialized fields, as in the prefab / scene node) with its
-    LocalizeText component (or None) and the material_style of the material it draws with."""
+    LocalizeText component (or None) and the material_style of the material it draws with, in the language
+    `mode`."""
     localized = bool(localize and localize["m_Enabled"] and localize["_localizeEnabled"])
     key = (localize or {}).get("_masterTextID")
     m = comp["m_margin"]
@@ -313,10 +314,10 @@ def text_style(comp: dict, localize: dict | None, lang: dict, style: dict, mode:
 
 
 class TextStyles:
-    """Text records of TMP texts read through an Exporter: the material each text draws with in the current
-    language (LocalizeText) and the face info of its font asset; no font data is kept."""
+    """Text records of TMP texts read through an Exporter: the material each text draws with in the language
+    `mode` (LocalizeText) and the face info of its font asset; no font data is kept."""
 
-    def __init__(self, ex: Exporter, player: PlayerData, mode: int = LANGUAGE_MODE):
+    def __init__(self, ex: Exporter, player: PlayerData, mode: int):
         self.ex, self.mode = ex, mode
         self.lang = language_fonts(player)
         self.swap = font_swap(self.lang, mode)
@@ -350,5 +351,5 @@ class TextStyles:
         return rec
 
     def summary(self) -> dict:
-        """The document-level part: units and the line metrics of each role used (current language)."""
+        """The document-level part: the language's text field, units and the line metrics of each role used."""
         return {"language": LANGUAGE_FIELDS[self.mode], "units": UNITS, "roles": self.roles}

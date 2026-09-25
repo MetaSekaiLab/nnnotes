@@ -5,7 +5,7 @@ A catalog is `catalog_main_<code>.bin`; the client's LanguageMode picks the colu
 """
 from __future__ import annotations
 
-from .config import ConfigError
+from .config import Config, ConfigError, active
 
 # code -> (Fwk.Localization.LanguageMode, text table column)
 LANGUAGES = {
@@ -22,6 +22,11 @@ def check(code: str) -> str:
     if code not in LANGUAGES:
         raise ConfigError(f"setting catalog.language: not one of the game's languages ({', '.join(LANGUAGES)})")
     return code
+
+
+def configured() -> str:
+    """`[catalog] language` of the process's settings (config.use; without them, of the environment), checked."""
+    return check((active() or Config()).require("catalog", "language"))
 
 
 def mode(code: str) -> int:

@@ -3,12 +3,15 @@ import json
 
 import pytest
 
-from nnnotes import advui, textstyle, tmpfont
+from nnnotes import advui, config, languages, textstyle, tmpfont
+from nnnotes.config import Config, ConfigError
 
 WHITE = {"r": 1.0, "g": 1.0, "b": 1.0, "a": 1.0}
 DARK = {"r": 0.2, "g": 0.2, "b": 0.2, "a": 0.8}
 SHADOW = {"r": 0.0, "g": 0.0, "b": 0.0, "a": 0.5}
+TW = languages.mode("zh-Hant")
 LANG = {"languages": {0: {"fontNames": ["MainJ", "Digits"], "additionalFontNames": []},
+                      1: {"fontNames": ["MainE", "DigitsE"], "additionalFontNames": []},
                       2: {"fontNames": ["MainT", "Digits"], "additionalFontNames": []}},
         "materialTypes": ["Default", "Outline"]}
 
@@ -85,9 +88,9 @@ def test_material_style_without_layers_and_unknown_keywords():
 
 
 def test_localization_and_roles():
-    swap = textstyle.font_swap(LANG)
+    swap = textstyle.font_swap(LANG, TW)
     assert swap == {"MainJ SDF": "MainT SDF", "Digits SDF": "Digits SDF"}
-    assert textstyle.localize_text("p", "MainJ SDF", "MainJ - Outline", swap, LANG) == \
+    assert textstyle.localize_text("p", "MainJ SDF", "MainJ - Outline", swap, LANG, TW) == \
         {"fontAsset": "MainT SDF", "material": "MainT - Outline", "lineSpacing": 5.0}
     assert textstyle.material_type("MainJ SDF Material") == "Default"
     assert textstyle.material_type("MainJ - Outline (Instance)") == "Outline"
@@ -104,7 +107,7 @@ def test_localization_and_roles():
 
 def test_text_record_shape():
     style = textstyle.material_style(material(["OUTLINE_ON"], _OutlineWidth=0.2), point_size=100.0)
-    rec = textstyle.text_style(component(), LOCALIZE, LANG, style)
+    rec = textstyle.text_style(component(), LOCALIZE, LANG, style, TW)
     assert rec["fontRole"] == "primary" and rec["materialType"] == "Outline"
     assert rec["localized"] is True and rec["textKey"] is None and rec["text"] == "placeholder"
     assert rec["fontSize"] == 36.0
@@ -121,17 +124,17 @@ def test_text_record_shape():
     assert rec["color"] == WHITE and rec["colorMode"] == "fourCornersGradient" and rec["colorGradient"] is None
     assert rec["face"] == style["face"] and rec["outline"] == style["outline"] and rec["underlay"] is None
     # without an enabled LocalizeText the serialized line spacing applies
-    plain = textstyle.text_style(component(m_lineSpacing=-10.0), None, LANG, style)
+    plain = textstyle.text_style(component(m_lineSpacing=-10.0), None, LANG, style, TW)
     assert plain["localized"] is False and plain["lineSpacing"] == {"serialized": -10.0, "applied": -10.0,
                                                                     "byLanguage": None}
     keyed = textstyle.text_style(component(m_enableVertexGradient=1), {**LOCALIZE, "_masterTextID": "4021"}, LANG,
-                                 style)
+                                 style, TW)
     assert keyed["textKey"] == "4021" and keyed["colorGradient"] == {"topLeft": WHITE}
 
 
 def test_no_font_data_in_the_record():
     style = textstyle.material_style(material(["OUTLINE_ON", "UNDERLAY_ON"], _OutlineWidth=0.2), point_size=100.0)
-    rec = textstyle.text_style(component(), LOCALIZE, LANG, style)
+    rec = textstyle.text_style(component(), LOCALIZE, LANG, style, TW)
     blob = json.dumps(rec)
     for leak in ("SDF", "MainJ", "MainT", "Atlas", "m_fontAsset", "m_sharedMaterial", "_MainTex", "glyph",
                  "texture", "shader"):
@@ -175,7 +178,7 @@ def test_text_styles_reads_the_localized_material(monkeypatch):
     ex = FakeExporter({"EmbFont/MainT/MainT SDF": FakeObject({"m_FaceInfo": face, "normalSpacingOffset": 0.0,
                                                               "boldSpacing": 7.0})},
                       {"EmbFont/MainT/MainT - Outline": material(["OUTLINE_ON"], _OutlineWidth=0.25)})
-    styles = textstyle.TextStyles(ex, player=None)
+    styles = textstyle.TextStyles(ex, player=None, mode=TW)
     rec = styles.record("Canvas/Text", component(), LOCALIZE)
     assert rec["outline"]["widthEm"] == pytest.approx(0.25 * 15 / 16 * 0.16, abs=1e-6)
     assert styles.summary()["roles"] == {"primary": {"lineHeightEm": 1.2, "ascentEm": 0.9, "descentEm": -0.3,
@@ -193,3 +196,58 @@ def test_font_modes_and_extra(monkeypatch):
     with pytest.raises(tmpfont.ConfigError, match=r"nnnotes\[fonts\]") as e:
         tmpfont.require_extra()
     assert "\n" not in str(e.value) and "fonttools" in str(e.value)
+
+
+def test_the_language_is_an_argument():
+    assert not hasattr(textstyle, "LANGUAGE_MODE") and not hasattr(textstyle, "LANGUAGE_FIELD")
+    en = languages.mode("en")
+    swap = textstyle.font_swap(LANG, en)
+    assert swap == {"MainJ SDF": "MainE SDF", "Digits SDF": "DigitsE SDF"}
+    assert textstyle.localize_text("p", "MainJ SDF", "MainJ - Outline", swap, LANG, en) == \
+        {"fontAsset": "MainE SDF", "material": "MainE - Outline", "lineSpacing": -100.0}
+    assert textstyle.font_swap(LANG, languages.mode("ja")) == {"MainJ SDF": "MainJ SDF", "Digits SDF": "Digits SDF"}
+    style = textstyle.material_style(material(), point_size=100.0)
+    assert textstyle.text_style(component(), LOCALIZE, LANG, style, en)["lineSpacing"]["applied"] == -100.0
+
+
+def test_story_ui_language_follows_the_setting(tmp_path):
+    assert advui.about("en") == "ADV front canvas UI data (UIAdvWidget + UIDefaultTalkWindow), en"
+    assert advui.language_doc("en") == {"mode": 1, "field": "english", "lineSpacing": -100.0}
+    assert advui.language_doc("zh-Hant") == {"mode": 2, "field": "traditionalChinese", "lineSpacing": 5.0}
+    assert list(advui.language_doc("ko")) == ["mode", "field", "lineSpacing"]
+    # no language: the setting is named before anything is read
+    with pytest.raises(ConfigError, match="catalog.language"):
+        advui.extract(None, None, {}, tmp_path)
+    with pytest.raises(ConfigError, match="not one of the game's languages"):
+        advui.extract(None, None, {}, tmp_path, language="xx")
+    config.use(Config(overrides={("catalog", "language"): "ko"}))
+    assert languages.configured() == "ko"
+    config.use(Config(overrides={("catalog", "language"): "xx"}))
+    with pytest.raises(ConfigError, match="catalog.language"):
+        languages.configured()
+
+
+def test_shown_texts_take_the_language_field():
+    def lines(ja, en):
+        return {"japanese": ja, "english": en}
+    episode = {
+        "commands": [
+            {"cmd": "Talk", "TargetName": "a", "AdvTextID": "t1", "TargetTextIDs": ["n1"],
+             "lines": lines("<b>ja1</b>", "en1")},
+            {"cmd": "Talk", "TargetName": "b", "AdvTextID": "t2", "TargetStatus": 1, "lines": lines("ja2", "en2")},
+            {"cmd": "Talk", "TargetName": "c", "AdvTextID": "t3", "TargetStatus": 2, "TargetTextIDs": ["n3"],
+             "lines": lines("ja3", "en3")},
+            {"cmd": "Location", "lines": lines("jaL", "enL")},
+            {"cmd": "Talk", "TargetName": "d", "AdvTextID": "t4", "TargetTextIDs": ["n1", "n2"],
+             "lines": lines("ja4", "en4")},
+        ],
+        "text": {"n1": lines("名1", "Name1"), "n2": lines("名2", "Name2"), "n3": lines("名3", "Name3"),
+                 "unk": lines("？", "???"), "split": lines("・", "&")},
+        "title": lines("題", "Title"),
+    }
+    ids = {"_unknownCharacterNameTextId": "unk", "_splitCharacterNameTextId": "split"}
+    assert advui.shown_texts(episode, ids, "english") == ["en1", "en2", "en3", "enL", "en4", "&", "???", "Name1",
+                                                          "Name2", "Title"]
+    assert advui.shown_texts(episode, ids, "japanese")[:2] == ["ja1", "ja2"]
+    with pytest.raises(RuntimeError, match="no title"):
+        advui.shown_texts({**episode, "title": None}, ids, "english")

@@ -70,7 +70,7 @@ Based on all data of the Taiwan server, version 1.0.1 (zh-Hant):
   (Unity 6000.3.12f1). With an APK of another version whose classes do not match, these commands stop with an
   error naming the class, the game version and the Unity version
 - a decoded master data directory (from `master download` + `master decode`): needed by `adv`, `story`, `spot`,
-  `live`, `web`
+  `live` and the charts of `web`; the Live2D models of `web` use it only for their character names (optional)
 - external tools: [vgmstream](https://vgmstream.org/) (CRI HCA decoding), [FFmpeg](https://ffmpeg.org/)
   (transcoding, including the WebM muxing and Opus audio of story videos); `web` also needs Node.js 20+ and a built
   ournotes-player

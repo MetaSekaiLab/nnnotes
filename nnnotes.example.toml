@@ -20,7 +20,7 @@ iv = ""
 # region the commands use: the name of one [servers.<region>] table below (flag --region)
 region = ""
 # catalog language: catalog_main_<language>.bin, one of ja, en, zh-Hant, zh-Hans, ko; also the client language of the
-# live start canvas (flag --language)
+# live start canvas, the story UI and the web model labels (flag --language)
 language = ""
 
 # One table per region; add more tables ([servers.<name>]) for other regions.

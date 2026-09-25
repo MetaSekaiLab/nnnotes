@@ -3,7 +3,8 @@
 Components are identified by their MonoScript class (resolved through the APK's
 shared_monoscripts bundle, so the Catalog must be opened with `apk=`).
 
-`extract_runtime` writes what a re-implementation of the game's own runtime needs:
+`extract_runtime` writes what a re-implementation of the game's own runtime needs (`export_runtime` writes the
+same and also returns the exporter state, for callers that export more of the model's bundles):
 
   <name>.moc3                 CubismMoc._bytes
   textures/*.png              atlas pages (Texture2D)
@@ -33,6 +34,7 @@ from __future__ import annotations
 
 import json
 import struct
+from dataclasses import dataclass
 from pathlib import Path
 
 from .catalog import Catalog
@@ -40,7 +42,7 @@ from .config import apk_missing
 from .export import Exporter
 from .jsonio import write_json
 from . import motion as motion_mod
-from .unity import script_class
+from .unity import SceneGraph, script_class
 
 # Live2D.Cubism.Core.CubismParameterBlendMode -> exp3.json "Blend"
 EXP_BLEND = {0: "Overwrite", 1: "Add", 2: "Multiply"}
@@ -130,7 +132,21 @@ def _only(by_cls, cls: str, name: str) -> dict:
     return objs[0].read_typetree()
 
 
-def _extract_runtime(cat: Catalog, key: str, out_dir: Path):
+@dataclass
+class RuntimeExport:
+    """What `export_runtime` wrote and read: `summary` (the result of `extract_runtime`), the Exporter it wrote with
+    (its shaders, textures, ...), the loaded bundle environment, its scene graph and the MonoBehaviours by script
+    class."""
+    summary: dict
+    exporter: Exporter
+    env: object
+    graph: SceneGraph
+    classes: dict[str, list]
+
+
+def export_runtime(cat: Catalog, key: str, out_dir: Path) -> RuntimeExport:
+    """Write the runtime files of the model `key` into `out_dir` (module docstring) and return them with the
+    exporter state."""
     if cat.apk is None:
         raise apk_missing("resolving the Cubism component classes")
     out_dir = Path(out_dir)
@@ -148,16 +164,19 @@ def _extract_runtime(cat: Catalog, key: str, out_dir: Path):
     tex_files = [ex.texture(o)["texture"] for o in pages]
     res = {"name": name, "moc3": f"{name}.moc3", "prefab": f"{name}.prefab.json",
            "moc3Bytes": len(moc), "textures": tex_files, "nodes": len(prefab["nodes"])}
-    return res, ex, env, graph, by_cls
+    return RuntimeExport(res, ex, env, graph, by_cls)
 
 
 def extract_runtime(cat: Catalog, key: str, out_dir: Path) -> dict:
-    return _extract_runtime(cat, key, out_dir)[0]
+    """Write the runtime files of the model `key` into `out_dir`; returns the summary: name, moc3, prefab,
+    moc3Bytes, textures, nodes."""
+    return export_runtime(cat, key, out_dir).summary
 
 
 def extract_model(cat: Catalog, key: str, out_dir: Path) -> dict:
     out_dir = Path(out_dir)
-    res, ex, env, graph, by_cls = _extract_runtime(cat, key, out_dir)
+    rt = export_runtime(cat, key, out_dir)
+    res, env, graph, by_cls = rt.summary, rt.env, rt.graph, rt.classes
     name = res["name"]
     (out_dir / "motions").mkdir(parents=True, exist_ok=True)
 

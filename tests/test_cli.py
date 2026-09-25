@@ -276,3 +276,8 @@ def test_missing_master_table_names_it(data, tmp_path, capsys):
     code, _, err = run(data + ["spot", "1", "-o", "s"], capsys)
     assert code == 2 and "no MasterHomeSpot.json" in err and len(err.strip().splitlines()) == 1
 
+
+def test_story_needs_the_language(data, capsys):
+    i = data.index("--language")
+    code, _, err = run(data[:i] + data[i + 2:] + ["story", "1", "-o", "s"], capsys)
+    assert code == 2 and "catalog.language" in err and "NNNOTES_CATALOG_LANGUAGE" in err

@@ -22,8 +22,14 @@ advscene.RESOURCES, read from the APK's boot data), exported as the story scene 
 Models are the catalog keys Character/Live2D/<group>/<name>/model/<name>; a model's id is <name> (unique in the
 catalog, URL-safe). Each model is exported into a temporary directory, stored, and the directory deleted; models run in
 parallel worker processes (catalog cache writes serialized by a lock). A model whose manifest exists is skipped unless
-`force`. Same inputs give byte-identical outputs. A model reads no master data and the regions serve the same catalog,
-so one build serves every region of a site (the bundles are fetched from the CDN of `region`).
+`force`. Same inputs and library versions give byte-identical outputs. A model's files read no master data and the
+regions serve the same catalog, so one build serves every region of a site (the bundles are fetched from the CDN of
+`region`).
+
+Names (optional): when master data is configured for `region`, the listing of each model the master data maps to a
+character (model_names: MasterCharacterCostume -> MasterCharacter -> MasterText) gets `character`, `names` and
+`label`; the manifests of skipped models get the same fields of this build. Without master data the fields are not
+written (and skipped manifests keep theirs).
 """
 from __future__ import annotations
 
@@ -37,7 +43,7 @@ import time
 import traceback
 from pathlib import Path
 
-from . import advscene, jsonio, live2d
+from . import advscene, jsonio, languages, live2d, master
 from . import shader as shader_mod
 from .config import Config, use
 from .export import Exporter
@@ -51,6 +57,8 @@ MODEL_INDEX = "model.json"
 MODEL_FORMAT = 1                                   # model.json "format"
 SHADER_DIR = "shaders"
 MASK_KEYWORD = "CUBISM_MASK_ON"                    # a drawable material's keyword: the drawable is masked
+COSTUME_TABLE = "MasterCharacterCostume"           # _live2dPath (the key after LIVE2D_PREFIX) -> _characterID
+NAME_FIELDS = ("character", "names", "label")      # listing fields from the master data (model_names)
 
 
 # ---------------------------------------------------------------- models and ids
@@ -97,6 +105,64 @@ def select(specs, models: dict[str, str]) -> dict[str, str]:
 def catalog_models(cat, specs=None) -> dict[str, str]:
     """`select` over the model keys of the catalog `cat`."""
     return select(specs, model_keys(cat.keys(LIVE2D_PREFIX)))
+
+
+# ---------------------------------------------------------------- names from the master data
+def model_names(master_dir: Path, language: str | None = None) -> dict[str, dict]:
+    """{model key: {"character", "names", "label"}} of the models the master data maps to one character: every
+    MasterCharacterCostume row maps the key LIVE2D_PREFIX + `_live2dPath` to `_characterID` (the MasterCharacter id,
+    `character`); `names`: {language code: the MasterText of the character's `_nameTextID`}, the languages with a
+    text; `label`: the name in `language` (left out without `language` or a text in it). A key the rows map to two
+    characters, or a character without a name text, is left out."""
+    chars_of: dict[str, set] = {}
+    for r in master.table(master_dir, COSTUME_TABLE):
+        if r.get("_live2dPath") and r.get("_characterID") is not None:
+            chars_of.setdefault(LIVE2D_PREFIX + r["_live2dPath"], set()).add(r["_characterID"])
+    chars = {r["_id"]: r for r in master.table(master_dir, "MasterCharacter")}
+    texts = {r["_id"]: r for r in master.table(master_dir, "MasterText")}
+    out = {}
+    for key, ids in sorted(chars_of.items()):
+        if len(ids) != 1:
+            continue
+        (cid,) = ids
+        row = texts.get((chars.get(cid) or {}).get("_nameTextID"))
+        names = {c: t for c, t in languages.texts(row).items() if isinstance(t, str) and t} if row else {}
+        if not names:
+            continue
+        entry = {"character": cid, "names": names}
+        if language in names:
+            entry["label"] = names[language]
+        out[key] = entry
+    return out
+
+
+def master_names(cfg: Config, region: str | None = None, log=None) -> dict[str, dict] | None:
+    """model_names of the master data of `region` (default: [catalog] region; the --master flag, else
+    [servers.<region>] master, else [paths] master), labels in [catalog] language; None when no master data is
+    configured or it lacks a table model_names reads (logged)."""
+    section, key = cfg.master(region or cfg.get("catalog", "region"))
+    if cfg.path(section, key) is None:
+        return None
+    from .cli import master_dir
+    code = cfg.get("catalog", "language")
+    try:
+        return model_names(master_dir(cfg, region), languages.check(code) if code else None)
+    except FileNotFoundError as e:
+        (log or _log)(f"model names left out: {Path(e.filename).name if e.filename else e} not in the master data")
+        return None
+
+
+def refresh_names(site: Path, mid: str, entry: dict | None) -> bool:
+    """Set the NAME_FIELDS of the model manifest of `mid` to those of `entry` (None: none); True when it changed."""
+    p = Path(site) / MODELS_DIR / f"{mid}.json"
+    man = json.loads(p.read_text(encoding="utf-8"))
+    model = {k: v for k, v in man.get("model", {}).items() if k not in NAME_FIELDS}
+    model.update({k: entry[k] for k in NAME_FIELDS if entry and k in entry})
+    if model == man.get("model"):
+        return False
+    man["model"] = model
+    p.write_bytes(_dump(man))
+    return True
 
 
 # ---------------------------------------------------------------- one model
@@ -164,7 +230,8 @@ def export_model(cat, player, key: str, out_dir: Path) -> dict:
     """The files of one model (module docstring) into `out_dir`; returns the runtime export summary with `canvas`,
     `shaders` (names) and `files` (read_files: the paths to store)."""
     out_dir = Path(out_dir)
-    res, ex, *_ = live2d._extract_runtime(cat, key, out_dir)
+    rt = live2d.export_runtime(cat, key, out_dir)
+    res, ex = rt.summary, rt.exporter
     prefab = json.loads((out_dir / res["prefab"]).read_text(encoding="utf-8"))
     rex = Exporter(cat, out_dir, player=player)
     resources = {name: rex.material(player.resource(path)) for name, path in advscene.RESOURCES.items()}
@@ -185,18 +252,22 @@ def export_model(cat, player, key: str, out_dir: Path) -> dict:
             "files": read_files(doc, prefab, index)}
 
 
-def model_facts(key: str, summary: dict) -> dict:
-    """What a model listing needs, from the key and the export summary."""
-    return {"group": MODEL_KEY.fullmatch(key)["group"], "canvas": summary["canvas"],
-            "textures": len(summary["textures"]), "nodes": summary["nodes"]}
+def model_facts(key: str, summary: dict, names: dict | None = None) -> dict:
+    """What a model listing needs, from the key and the export summary, plus the NAME_FIELDS of `names` (an entry
+    of model_names)."""
+    facts = {"group": MODEL_KEY.fullmatch(key)["group"], "canvas": summary["canvas"],
+             "textures": len(summary["textures"]), "nodes": summary["nodes"]}
+    facts.update({k: names[k] for k in NAME_FIELDS if names and k in names})
+    return facts
 
 
-def ingest(store: Store, site: Path, mid: str, key: str, model_dir: Path, summary: dict) -> dict:
-    """One exported model's files (summary["files"]) into the store + its manifest."""
+def ingest(store: Store, site: Path, mid: str, key: str, model_dir: Path, summary: dict,
+           names: dict | None = None) -> dict:
+    """One exported model's files (summary["files"]) into the store + its manifest (`names`: model_facts)."""
     text, binary = collect(Path(model_dir), summary["files"])
     entries = {p: store.put_file(p, text_asset(p, s)) for p, s in text.items()}
     entries.update({p: store.put(p, b) for p, b in binary.items()})
-    manifest = {"format": SITE_FORMAT, "id": mid, "key": key, "model": model_facts(key, summary),
+    manifest = {"format": SITE_FORMAT, "id": mid, "key": key, "model": model_facts(key, summary, names),
                 "files": dict(sorted(entries.items()))}
     (Path(site) / MODELS_DIR / f"{mid}.json").write_bytes(_dump(manifest))
     return {"id": mid, "ok": True, "files": len(entries), "bytes": sum(e["size"] for e in entries.values())}
@@ -249,7 +320,7 @@ def model_task(mid: str, key: str, job: dict | None = None, data=None) -> dict:
     try:
         summary = export_model(cat, player, key, work)
         stage = "ingest"
-        r = ingest(Store(site), site, mid, key, work, summary)
+        r = ingest(Store(site), site, mid, key, work, summary, (job.get("names") or {}).get(key))
         return {**r, "seconds": round(time.time() - t0, 1)}
     except Exception as e:
         cause = f"{type(e).__name__}: {e}"
@@ -269,8 +340,8 @@ def build(out_dir, models: dict[str, str] | None, cfg: Config, player_dir, force
     """Add the Live2D models `models` ({id: key}, see `catalog_models`; None: every model of the catalog) to the site
     at `out_dir`, with the player of the ournotes-player checkout or package at `player_dir` (its page files are
     written, models.json and charts.json rebuilt). The data comes from the settings `cfg` (each worker process opens
-    its own), bundles from the CDN of `region` (default: [catalog] region). `workers`: parallel model processes
-    (default up to 4)."""
+    its own), bundles from the CDN of `region` (default: [catalog] region), names from the master data of `region`
+    when it is configured (master_names). `workers`: parallel model processes (default up to 4)."""
     player_dir = check_player(player_dir)
     site = Path(out_dir).resolve()
     (site / MODELS_DIR).mkdir(parents=True, exist_ok=True)
@@ -292,7 +363,11 @@ def build(out_dir, models: dict[str, str] | None, cfg: Config, player_dir, force
             todo.append((mid, key))
     if workers is None:
         workers = max(1, min(4, len(todo), (os.cpu_count() or 2) // 2))
-    job = {"site": str(site), "tmp": str(tmp_root), "region": region}
+    names = master_names(cfg, region, log)
+    if names is not None:
+        for mid in skipped:
+            refresh_names(site, mid, names.get(models[mid]))
+    job = {"site": str(site), "tmp": str(tmp_root), "region": region, "names": names or {}}
     results = []
     if todo:
         log(f"{len(todo)} models, {workers} worker(s)")
@@ -319,4 +394,5 @@ def build(out_dir, models: dict[str, str] | None, cfg: Config, player_dir, force
             "modelsBuilt": [{k: r[k] for k in ("id", "files", "bytes")} for r in results if r["ok"]],
             "modelsFailed": [{k: r.get(k) for k in ("id", "stage", "error")} for r in failed],
             "modelsSkipped": skipped, "modelSeconds": round(time.time() - t0, 1), "modelWorkers": workers,
+            "modelNames": None if names is None else sum(1 for k in models.values() if k in names),
             **v, **idx}

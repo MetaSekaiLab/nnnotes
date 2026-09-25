@@ -20,6 +20,10 @@ button, curtains) and the letterbox bands, taken from the game data:
                player settings reference
   shaders      UI/Default, UI/Transition
 
+Language (`language`, a catalog language code; default `[catalog] language`):
+the LanguageMode of the localized fonts, materials and line spacing
+(LocalizeText) and the text field of the lines the episode shows.
+
 Fonts (`fonts`): "open" (default) writes no font data; a renderer draws the
 text records with fonts of its own. "game" also writes the game's TMP font
 data (tmpfont.py, optional `fonts` extra): per node the serialized TMP text
@@ -48,8 +52,8 @@ from .catalog import Catalog
 from .export import Exporter, TexelPacker, _safe
 from .jsonio import write_json
 from .player import PlayerData
-from . import textstyle
-from .textstyle import LANGUAGE_FIELD, LANGUAGE_LINE_SPACING, LANGUAGE_MODE
+from . import languages, textstyle
+from .textstyle import LANGUAGE_LINE_SPACING
 
 WIDGET_KEY = "EmbUI/Prefab/UIAdvWidget"
 WINDOW_KEY = "EmbUI/Prefab/Parts/Adv/Talk/UIDefaultTalkWindow"
@@ -174,10 +178,14 @@ def _component(node: dict, classes: tuple) -> dict | None:
     return hit[0] if hit else None
 
 
-def extract(cat: Catalog, player: PlayerData, episode: dict, out_dir: Path, fonts: str = "open") -> dict:
-    """Write <out_dir>/ui/. `fonts`: "open" (text records only) or "game" (also the game's TMP font data)."""
+def extract(cat: Catalog, player: PlayerData, episode: dict, out_dir: Path, fonts: str = "open", *,
+            language: str | None = None) -> dict:
+    """Write <out_dir>/ui/. `fonts`: "open" (text records only) or "game" (also the game's TMP font data);
+    `language`: the client language (a languages.LANGUAGES code; None: `[catalog] language` of the settings)."""
     if fonts not in FONT_MODES:
         raise ValueError(f"fonts must be one of {FONT_MODES}, not {fonts!r}")
+    language = languages.check(language) if language is not None else languages.configured()
+    mode, field = languages.mode(language), languages.column(language)[1:]
     game = fonts == "game"
     if game:
         from . import tmpfont
@@ -210,7 +218,7 @@ def extract(cat: Catalog, player: PlayerData, episode: dict, out_dir: Path, font
     for d in DRAWN:
         if d not in {n["path"] for n in nodes}:
             raise RuntimeError(f"{d} missing from the prefabs")
-    styles = textstyle.TextStyles(ex, player)
+    styles = textstyle.TextStyles(ex, player, mode)
     out_nodes = []
     for n in nodes:
         rec = {"path": n["path"], "name": n["name"], "active": n["active"],
@@ -229,7 +237,7 @@ def extract(cat: Catalog, player: PlayerData, episode: dict, out_dir: Path, font
 
     materials: dict = {}
     if game:
-        materials, font_doc = _game_fonts(ex, styles, episode, out_nodes)
+        materials, font_doc = _game_fonts(ex, styles, episode, out_nodes, field)
     rule = next(n for n in out_nodes if n["path"].endswith("FrontCanvas/RuleTransition"))
     rt_comp = [c for c in next(w for w in widget if w["path"] == rule["path"])["components"]
                if c.get("class") == "UIAdvRuleTransitionView"][0]
@@ -338,13 +346,9 @@ def extract(cat: Catalog, player: PlayerData, episode: dict, out_dir: Path, font
             raise RuntimeError(f"{sh}: no GLES3 variant for material {m['material']} keywords {want}")
         variants_needed[m["material"]] = want
 
-    language = {"mode": LANGUAGE_MODE, "field": LANGUAGE_FIELD}
-    if game:
-        language.update({"fonts": styles.lang, "fontSwap": styles.swap})
-    language["lineSpacing"] = LANGUAGE_LINE_SPACING[LANGUAGE_MODE]
     doc = {
-        "about": "ADV front canvas UI data (UIAdvWidget + UIDefaultTalkWindow), zh-Hant",
-        "language": language,
+        "about": about(language),
+        "language": language_doc(language, styles if game else None),
         "frontCanvasOrder": front_order,
         "nodes": out_nodes,
         "sprites": sprites_out,
@@ -386,9 +390,53 @@ def extract(cat: Catalog, player: PlayerData, episode: dict, out_dir: Path, font
                               for k, v in font_out.items() if v["runtimeGlyphs"]}}
 
 
-def _game_fonts(ex: Exporter, styles: textstyle.TextStyles, episode: dict, out_nodes: list) -> tuple[dict, dict]:
+def about(language: str) -> str:
+    """ui.json `about`: what the file holds, in which client language."""
+    return f"ADV front canvas UI data (UIAdvWidget + UIDefaultTalkWindow), {language}"
+
+
+def language_doc(language: str, styles: textstyle.TextStyles | None = None) -> dict:
+    """ui.json `language`: the LanguageMode and text field of `language`, with `styles` (fonts game) the
+    LocalizeManager font lists and the font swap, and the line spacing LocalizeText applies."""
+    mode = languages.mode(language)
+    doc = {"mode": mode, "field": languages.column(language)[1:]}
+    if styles is not None:
+        doc.update({"fonts": styles.lang, "fontSwap": styles.swap})
+    doc["lineSpacing"] = LANGUAGE_LINE_SPACING[mode]
+    return doc
+
+
+def shown_texts(episode: dict, master_ids: dict, field: str) -> list[str]:
+    """The texts the episode shows in the text field `field` (e.g. "traditionalChinese"), tags stripped: Talk and
+    Location lines, the speaker names of the Talk rows (TargetTextIDs; the unknown-speaker text for TargetStatus 1,
+    joined names with the split text; none for TargetStatus 2) and the title. `master_ids`: AdvMasterIdSettings."""
+    lines = []
+    for c in episode["commands"]:
+        if c["cmd"] in ("Talk", "Location") and c.get("lines"):
+            lines.append(c["lines"][field])
+    names = set()
+    for c in episode["commands"]:
+        if c["cmd"] == "Talk" and c.get("TargetName") and c.get("TargetStatus", 0) != 2 and c.get("AdvTextID"):
+            ids = list(c.get("TargetTextIDs") or [])
+            if c.get("TargetStatus", 0) == 1:
+                ids = [master_ids["_unknownCharacterNameTextId"]]
+            elif len(ids) > 1:
+                ids.append(master_ids["_splitCharacterNameTextId"])
+            for i in ids:
+                row = episode["text"].get(i)
+                if row is None:
+                    raise KeyError(f"speaker text id {i} not in the episode text shard")
+                names.add(row[field])
+    title = episode.get("title")
+    if not title:
+        raise RuntimeError("episode.json has no title lines (adv.extract)")
+    return [_strip_tags(s) for s in lines + sorted(names) + [title[field]]]
+
+
+def _game_fonts(ex: Exporter, styles: textstyle.TextStyles, episode: dict, out_nodes: list,
+                field: str) -> tuple[dict, dict]:
     """`--fonts game`: the localized font / material of every text node (`text.localized`), the TMP font assets,
-    the glyph coverage of the characters the episode shows and the text materials.
+    the glyph coverage of the characters the episode shows (in the text field `field`) and the text materials.
     -> (materials, the inputs of tmpfont.export_fonts + coverage)."""
     from . import tmpfont
     fonts = tmpfont.FontSet(ex)
@@ -396,35 +444,14 @@ def _game_fonts(ex: Exporter, styles: textstyle.TextStyles, episode: dict, out_n
     primaries = {}
     for n in used_text_nodes:
         t = n["text"]
-        t["localized"] = textstyle.localize_text(n["path"], t["fontAsset"], t["material"], styles.swap, styles.lang)
+        t["localized"] = textstyle.localize_text(n["path"], t["fontAsset"], t["material"], styles.swap, styles.lang,
+                                                 styles.mode)
         primaries[t["localized"]["fontAsset"]] = None
     for fname in primaries:
         primaries[fname] = fonts.by_key(textstyle.font_dir(fname) + fname)
 
     # -- characters the episode shows ------------------------------------------
-    lines = []
-    for c in episode["commands"]:
-        if c["cmd"] in ("Talk", "Location") and c.get("lines"):
-            lines.append(c["lines"][LANGUAGE_FIELD])
-    ms = ex.asset(MASTER_ID_SETTINGS_KEY)
-    names = set()
-    for c in episode["commands"]:
-        if c["cmd"] == "Talk" and c.get("TargetName") and c.get("TargetStatus", 0) != 2 and c.get("AdvTextID"):
-            ids = list(c.get("TargetTextIDs") or [])
-            if c.get("TargetStatus", 0) == 1:
-                ids = [ms["_unknownCharacterNameTextId"]]
-            elif len(ids) > 1:
-                ids.append(ms["_splitCharacterNameTextId"])
-            for i in ids:
-                row = episode["text"].get(i)
-                if row is None:
-                    raise KeyError(f"speaker text id {i} not in the episode text shard")
-                names.add(row[LANGUAGE_FIELD])
-    title = episode.get("title")
-    if not title:
-        raise RuntimeError("episode.json has no title lines (adv.extract)")
-    title_text = title[LANGUAGE_FIELD]
-    shown = [_strip_tags(s) for s in lines + sorted(names) + [title_text]]
+    shown = shown_texts(episode, ex.asset(MASTER_ID_SETTINGS_KEY), field)
     chars = sorted({ord(ch) for s in shown for ch in s})
 
     primary = [primaries[p] for p in primaries]

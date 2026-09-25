@@ -5,8 +5,10 @@ An addressable key `Cri/Sound/<cueSheet>` holds a cue sheet in one of three layo
   raw CDN data   the key depends on a small bundle holding the CriWare.Assets
                  MonoBehaviour and on the cue sheet's raw data on the CDN
                  (`cri_assets_cri/sound/<cueSheet>_<hash>`, stored as-is, not
-                 bundle-encrypted): an ACB (`@UTF`), optionally with an AWB
-                 (`AFS2`) for streamed waveforms (ADV voices, BGM, SE);
+                 bundle-encrypted): an ACB (`@UTF`, waveforms in its memory
+                 AWB); a separate AWB (`AFS2`, streamed waveforms) would come
+                 as a second dependency: decode refuses such a sheet
+                 (vgmstream opening the ACB lists only its memory waveforms);
   SplitAcbData   a `Fwk.Sound.SplitAcbData` MonoBehaviour whose `_chunks`
                  TextAssets, joined in order with every byte XORed with one mask
                  byte, are an ACB with its AWB embedded (full live songs;
@@ -26,7 +28,7 @@ crikey.py, read once per APK and process). Decoding uses vgmstream; flac/ogg enc
 vgmstream` / `[paths] ffmpeg`, else found on PATH). The streams of a sheet are decoded in parallel (`workers`).
 
 A sheet's ACB / AWB bytes are read once per bundle closure and process; a decoded sheet is kept by content (cache
-bucket "cuesheets": ACB and AWB bytes, HCA key, format, FLAC level and the tools' files), so a sheet that several
+bucket "cuesheets": ACB bytes, HCA key, format, FLAC level and the tools' files), so a sheet that several
 lives or episodes play (note SE, cheers) is decoded once and its files are written again from there.
 """
 from __future__ import annotations
@@ -205,7 +207,9 @@ def decode(cat: Catalog, cue_sheet: str, out_dir: Path, key: int | None = None,
 
     out_dir = Path(out_dir)
     files, _ = acb_data(cat, cue_sheet)
-    ck = DECODED.key(cue_sheet, files["acb"], files.get("awb"), int(key), fmt,
+    if "awb" in files:
+        raise NotImplementedError(f"cue sheet {cue_sheet}: external AWB (streamed waveforms) not supported")
+    ck = DECODED.key(cue_sheet, files["acb"], int(key), fmt,
                      int(flac_level) if fmt == "flac" else None, cache.file_id(vgm),
                      cache.file_id(ffmpeg) if ffmpeg else None, None if also is None else [also[0], list(also[1])])
     hit = DECODED.get(ck)
@@ -215,8 +219,6 @@ def decode(cat: Catalog, cue_sheet: str, out_dir: Path, key: int | None = None,
     work.mkdir(parents=True, exist_ok=True)
     acb = work / f"{cue_sheet}.acb"
     acb.write_bytes(files["acb"])
-    if "awb" in files:                       # vgmstream pairs <name>.acb with <name>.awb
-        (work / f"{cue_sheet}.awb").write_bytes(files["awb"])
     crikey.write_hcakey(key, work)
 
     def meta(i):

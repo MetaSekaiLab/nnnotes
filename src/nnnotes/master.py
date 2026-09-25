@@ -27,6 +27,8 @@ from pathlib import Path
 
 import numpy as np
 
+from . import jsonio
+
 PREFIX = 64                     # bytes before the ciphertext
 BLOCK = 32                      # 256-bit block
 NB = NK = 8                     # block / key length in 32-bit words
@@ -148,8 +150,9 @@ def decode(raw: bytes, key: MasterKey, rk: np.ndarray | None = None) -> bytes:
 
 
 def table_json(text: bytes) -> str:
-    """The stored form of a decoded table: parsed and written again, UTF-8, one-space indent."""
-    return json.dumps(json.loads(text.decode("utf-8")), ensure_ascii=False, indent=1)
+    """The stored form of a decoded table: parsed and written again by jsonio.dumps (UTF-8, one-space indent,
+    non-finite numbers as 1e999 / -1e999; a NaN raises ValueError naming where it is)."""
+    return jsonio.dumps(json.loads(text.decode("utf-8")), ensure_ascii=False, indent=1)
 
 
 def decode_files(files: list[Path], out_dir: Path, key: MasterKey, workers: int = 8) -> dict:

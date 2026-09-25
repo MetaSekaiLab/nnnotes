@@ -1,10 +1,13 @@
+import ast
 import hashlib
+import inspect
 import json
+from types import SimpleNamespace
 
 import pytest
 
-from nnnotes import cli, web, webmodel
-from nnnotes.config import ConfigError
+from nnnotes import cli, live2d, web, webmodel
+from nnnotes.config import Config, ConfigError
 
 KEY_A = "Character/Live2D/001_adv/adv_model_a/model/adv_model_a"
 KEY_B = "Character/Live2D/sub_x/adv_model_b/model/adv_model_b"
@@ -247,13 +250,14 @@ def test_build_skips_existing_models_unless_forced(tmp_path, monkeypatch):
     monkeypatch.setattr(webmodel, "model_task", fake_task)
     monkeypatch.setattr(webmodel, "_open", lambda cfg: (None, None))
     models = {"adv_model_a": KEY_A, "adv_model_b": KEY_B}
-    r = webmodel.build(site, models, None, fake_player(tmp_path / "p"), workers=1)
+    r = webmodel.build(site, models, Config(), fake_player(tmp_path / "p"), workers=1)
     assert done == ["adv_model_b"] and r["modelsSkipped"] == ["adv_model_a"] and r["models"] == 2
     assert [m["id"] for m in r["modelsBuilt"]] == ["adv_model_b"] and r["live2dPageFiles"] == 2
-    r = webmodel.build(site, models, None, fake_player(tmp_path / "p"), force=True, workers=1)
+    assert r["modelNames"] is None                  # no master data: no names
+    r = webmodel.build(site, models, Config(), fake_player(tmp_path / "p"), force=True, workers=1)
     assert done == ["adv_model_b", "adv_model_a", "adv_model_b"] and r["modelsSkipped"] == []
     with pytest.raises(ValueError, match="has the id"):
-        webmodel.build(site, {"other": KEY_A}, None, fake_player(tmp_path / "p"), workers=1)
+        webmodel.build(site, {"other": KEY_A}, Config(), fake_player(tmp_path / "p"), workers=1)
 
 
 # ---------------------------------------------------------------- command line
@@ -327,3 +331,117 @@ def test_web_unknown_model_is_a_usage_error(tmp_path, capsys, monkeypatch):
     code, _, err = run(["--apk", str(tmp_path / "base.apk"), "web", str(tmp_path / "s"),
                         "--player", str(fake_player(tmp_path / "p")), "--live2d", "nope"], capsys)
     assert code == 2 and "not a Live2D model of the catalog: nope" in err
+
+
+# ---------------------------------------------------------------- the runtime export
+def test_webmodel_uses_the_public_runtime_export(tmp_path, monkeypatch):
+    tree = ast.parse(inspect.getsource(webmodel))
+    used = {n.attr for n in ast.walk(tree)
+            if isinstance(n, ast.Attribute) and isinstance(n.value, ast.Name) and n.value.id == "live2d"}
+    assert "export_runtime" in used and not [a for a in used if a.startswith("_")]
+    assert not hasattr(live2d, "_extract_runtime")
+    rt = live2d.RuntimeExport({"name": "m", "moc3": "m.moc3"}, exporter=None, env=None, graph=None, classes={})
+    monkeypatch.setattr(live2d, "export_runtime", lambda cat, key, out_dir: rt)
+    assert live2d.extract_runtime(None, KEY_A, tmp_path) == {"name": "m", "moc3": "m.moc3"}
+
+
+def test_runtime_export_needs_the_apk(tmp_path):
+    with pytest.raises(ConfigError, match="paths.apk|NNNOTES_PATHS_APK"):
+        live2d.export_runtime(SimpleNamespace(apk=None), KEY_A, tmp_path)
+
+
+# ---------------------------------------------------------------- names from the master data
+def name_row(tid, ja, en, zh=None):
+    return {"_id": tid, "_japanese": ja, "_english": en, "_traditionalChinese": zh or ja,
+            "_simplifiedChinese": zh or ja, "_korean": ""}
+
+
+def write_master(md, costumes, characters=None, texts=None):
+    md.mkdir(parents=True, exist_ok=True)
+    tables = {
+        "MasterCharacterCostume": costumes,
+        "MasterCharacter": characters if characters is not None else [
+            {"_id": 1, "_nameTextID": "Name_A"}, {"_id": 2, "_nameTextID": "Name_B"},
+            {"_id": 3, "_nameTextID": "Gone"}],
+        "MasterText": texts if texts is not None else [name_row("Name_A", "エー", "Ay", "艾"),
+                                                        name_row("Name_B", "ビー", "Bee")],
+    }
+    for name, rows in tables.items():
+        (md / f"{name}.json").write_text(json.dumps({"_allData": rows}, ensure_ascii=False), encoding="utf-8")
+    return md
+
+
+def costume(cid, path, char):
+    return {"_id": cid, "_characterID": char, "_costumeID": cid % 1000, "_isDefault": False, "_live2dPath": path}
+
+
+PATH_A, PATH_B = KEY_A.removeprefix(webmodel.LIVE2D_PREFIX), KEY_B.removeprefix(webmodel.LIVE2D_PREFIX)
+
+
+def test_model_names_from_the_costume_rows(tmp_path):
+    md = write_master(tmp_path / "m", [
+        costume(1001, PATH_A, 1), costume(1002, PATH_A, 1),                      # two costumes, one model
+        costume(2001, PATH_B, 2),
+        costume(2002, "002_adv/shared/model/shared", 2), costume(3001, "002_adv/shared/model/shared", 1),
+        costume(3002, "003_adv/c/model/c", 3),                                   # no name text
+        {"_id": 9, "_characterID": 1, "_live2dPath": ""}])
+    names = webmodel.model_names(md, "zh-Hant")
+    assert names == {
+        KEY_A: {"character": 1, "names": {"ja": "エー", "en": "Ay", "zh-Hant": "艾", "zh-Hans": "艾"}, "label": "艾"},
+        KEY_B: {"character": 2, "names": {"ja": "ビー", "en": "Bee", "zh-Hant": "ビー", "zh-Hans": "ビー"},
+                "label": "ビー"}}
+    assert "label" not in webmodel.model_names(md)[KEY_A]
+    assert "label" not in webmodel.model_names(md, "ko")[KEY_A]           # no Korean text
+    assert webmodel.model_facts(KEY_A, {"canvas": {}, "textures": [], "nodes": 0}, names[KEY_A]) == {
+        "group": "001_adv", "canvas": {}, "textures": 0, "nodes": 0, **names[KEY_A]}
+
+
+def test_master_names_follow_the_settings(tmp_path):
+    md = write_master(tmp_path / "m", [costume(1001, PATH_A, 1)])
+    assert webmodel.master_names(Config()) is None
+    cfg = Config(overrides={("paths", "master"): str(md), ("catalog", "language"): "en"})
+    assert webmodel.master_names(cfg) == {KEY_A: {"character": 1, "names": {"ja": "エー", "en": "Ay", "zh-Hant": "艾",
+                                                                          "zh-Hans": "艾"}, "label": "Ay"}}
+    (md / "MasterCharacterCostume.json").unlink()
+    logged = []
+    assert webmodel.master_names(cfg, log=logged.append) is None
+    assert logged == ["model names left out: MasterCharacterCostume.json not in the master data"]
+    with pytest.raises(ConfigError, match="paths.master"):
+        webmodel.master_names(Config(overrides={("paths", "master"): str(tmp_path / "absent")}))
+
+
+def test_build_adds_names_and_refreshes_skipped_manifests(tmp_path, monkeypatch):
+    site = tmp_path / "site"
+    (site / "models").mkdir(parents=True)
+    old = {"key": KEY_A, "model": {"group": "001_adv", "character": 9, "label": "old"}, "files": {}}
+    (site / "models" / "adv_model_a.json").write_text(json.dumps(old), encoding="utf-8")
+    jobs = []
+
+    def fake_task(mid, key, job, data=None):
+        jobs.append((mid, job["names"].get(key)))
+        (site / "models" / f"{mid}.json").write_text(json.dumps({"key": key, "model": {}, "files": {}}),
+                                                     encoding="utf-8")
+        return {"id": mid, "ok": True, "files": 0, "bytes": 0}
+
+    monkeypatch.setattr(webmodel, "model_task", fake_task)
+    monkeypatch.setattr(webmodel, "_open", lambda cfg: (None, None))
+    md = write_master(tmp_path / "m", [costume(1001, PATH_A, 1), costume(2001, PATH_B, 2)])
+    cfg = Config(overrides={("paths", "master"): str(md), ("catalog", "language"): "ja"})
+    r = webmodel.build(site, {"adv_model_a": KEY_A, "adv_model_b": KEY_B}, cfg, fake_player(tmp_path / "p"),
+                       workers=1)
+    assert r["modelNames"] == 2 and r["modelsSkipped"] == ["adv_model_a"]
+    assert jobs == [("adv_model_b", {"character": 2, "names": {"ja": "ビー", "en": "Bee", "zh-Hant": "ビー",
+                                                               "zh-Hans": "ビー"}, "label": "ビー"})]
+    man = json.loads((site / "models" / "adv_model_a.json").read_text(encoding="utf-8"))
+    assert man["model"] == {"group": "001_adv", "character": 1, "names": {"ja": "エー", "en": "Ay", "zh-Hant": "艾",
+                                                                         "zh-Hans": "艾"}, "label": "エー"}
+    index = json.loads((site / "models.json").read_text(encoding="utf-8"))
+    assert [(m["id"], m.get("label")) for m in index["models"]] == [("adv_model_a", "エー"), ("adv_model_b", None)]
+    # the same names again: the skipped manifest is not rewritten
+    before = (site / "models" / "adv_model_a.json").read_bytes()
+    assert webmodel.refresh_names(site, "adv_model_a", webmodel.model_names(md, "ja")[KEY_A]) is False
+    assert (site / "models" / "adv_model_a.json").read_bytes() == before
+    # a key the master data no longer maps loses the fields
+    assert webmodel.refresh_names(site, "adv_model_a", None) is True
+    man = json.loads((site / "models" / "adv_model_a.json").read_text(encoding="utf-8"))
+    assert man["model"] == {"group": "001_adv"}

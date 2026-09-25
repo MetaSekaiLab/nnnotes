@@ -90,7 +90,7 @@ nnnotes master decode INPUT [INPUT ...] -o OUT [--workers N]
 
 `INPUT`: master data files, or directories whose `*.bin` files are decoded. Each file (64-byte prefix, then
 Rijndael-256 CBC with PKCS7 padding over gzip-compressed JSON) is written as `OUT/<file stem>.json` (UTF-8, one-space
-indent). `--workers` (default 8) decodes in parallel. Prints `{decoded, failed: [{file, error}], out}`; the exit
+indent, non-finite numbers as `1e999` / `-1e999`; a table with a NaN fails). `--workers` (default 8) decodes in parallel. Prints `{decoded, failed: [{file, error}], out}`; the exit
 status is 1 when a file failed.
 
 ## master download
@@ -154,6 +154,10 @@ frames, talk windows and chat keeps its layout and style; with `--fonts open` it
 materials are only named (no atlas is written), with `--fonts game` they are exported. The command stops before
 writing anything when the episode uses resources that are not in the catalog or resource kinds that are not
 supported (`timeline`). Prints the index with a summary.
+
+`ui/` follows the client language `[catalog] language` (`ja`, `en`, `zh-Hant`, `zh-Hans` or `ko`): the localized
+fonts and materials, the line spacing LocalizeText applies, and, with `--fonts game`, the characters of the lines,
+speaker names and title in that language (`ui/ui.json` `language`: `mode`, `field`, `lineSpacing`).
 
 `--fonts` (default `open`) chooses how `ui/` handles text. Both modes write a text record `textStyle` for each text
 node of `ui/ui.json`, and a document-level `textStyle` that holds the units and the line metrics of each font role.
@@ -353,7 +357,8 @@ SITE/charts.json                          chart index: listing facts (texts in e
 SITE/charts/<musicId>_<difficulty>.json   chart manifest: every path the player reads -> {asset, size}, or
                                           {parts: [[key, asset, size], ...], size} for a large JSON object
 SITE/charts/<region>/<id>.json            the manifest of a region whose chart files differ (see Regions)
-SITE/models.json                          Live2D model index: id, key, group, canvas, manifest path, sizes
+SITE/models.json                          Live2D model index: id, key, group, canvas, manifest path, sizes; with
+                                          master data the character and its names
 SITE/models/<id>.json                     model manifest, the same entry forms as a chart manifest
 SITE/live2d/                              the player's Live2D model page and its bundle (when the player has them)
 SITE/assets/<sha256>.<ext>                content-addressed files shared by all charts and models
@@ -388,7 +393,13 @@ SITE/assets/<sha256>.<ext>                content-addressed files shared by all 
   faster. Deleting it is
   safe at any time outside a build; the next build then makes everything again.
 - `--band` / `--leader-card` / `--fonts`: as for `live`, for every chart (the site stores no start canvas files).
-- Models need `[paths] apk` (component classes and the mask materials are read from the APK), not `[paths] master`.
+- Models need `[paths] apk` (component classes and the mask materials are read from the APK). Master data is
+  optional: when it is configured (of the site's first region), each model that a `MasterCharacterCostume` row maps
+  to a character (its `_live2dPath` is the key after `Character/Live2D/`) gets, in its manifest's `model` and its
+  `models.json` entry, `character` (the `MasterCharacter` id), `names` (`{language: the character's name}`, from the
+  `MasterText` row of `_nameTextID`, the languages that have a text) and `label` (the name in `[catalog] language`).
+  A key the rows map to two characters gets none. The manifests of skipped models get this build's fields; without
+  master data the fields are not written and skipped manifests keep theirs.
 - `--region` (repeatable) / `--all-regions`: the regions the site serves (see Regions); default: the one
   `[catalog] region`. This `--region` follows the command name (`nnnotes web SITE --region tw --region kr`); the
   global `--region` before it sets `[catalog] region`.

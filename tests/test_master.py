@@ -109,6 +109,35 @@ def test_download_rejects_path_names(tmp_path):
     assert not (tmp_path / "evil.bin").exists()
 
 
+# ---------------------------------------------------------------- the stored JSON
+def test_table_json_is_the_json_rule():
+    finite = {"_allData": [{"_id": 1, "_name": "テスト\n\"q\"", "_v": 0.1, "_w": -2.5e-12, "_big": 1e300, "_n": None,
+                            "_list": [1, 2.0, True, {"_x": []}], "_s": " "}]}
+    text = json.dumps(finite, ensure_ascii=False).encode("utf-8")
+    assert master.table_json(text) == json.dumps(finite, ensure_ascii=False, indent=1)      # byte-identical
+    # Python's own `Infinity` tokens (not JSON) come out as the project's out-of-range literals
+    inf = b'{"_allData": [{"_id": 1, "_a": Infinity, "_b": [-Infinity, 1.5]}]}'
+    out = master.table_json(inf)
+    assert "Infinity" not in out and '"_a": 1e999' in out and "-1e999" in out
+    assert json.loads(out) == {"_allData": [{"_id": 1, "_a": float("inf"), "_b": [float("-inf"), 1.5]}]}
+    assert master.table_json(out.encode("utf-8")) == out                                  # stable
+    with pytest.raises(ValueError, match=r"NaN at /_allData\[0\]/_c"):
+        master.table_json(b'{"_allData": [{"_c": NaN}]}')
+
+
+def test_decode_files_reports_a_nan_table(tmp_path):
+    src = tmp_path / "bin"
+    src.mkdir()
+    plain = gzip.compress(b'{"_allData": [{"_id": 1, "_v": NaN}]}', mtime=0)
+    (src / "MasterNaN.bin").write_bytes(bytes(64) + synth.rijndael256_cbc_encrypt(plain, synth.MASTER_KEY,
+                                                                                  synth.MASTER_IV))
+    (src / "MasterInf.bin").write_bytes(synth.master_file({"_allData": [{"_id": 1, "_v": float("inf")}]}))
+    r = master.decode_files(master.input_files([src]), tmp_path / "json", KEY)
+    assert r["decoded"] == 1 and r["failed"] == [
+        {"file": "MasterNaN.bin", "error": "ValueError: NaN at /_allData[0]/_v (no JSON representation)"}]
+    assert '"_v": 1e999' in (tmp_path / "json" / "MasterInf.json").read_text(encoding="utf-8")
+
+
 def test_table_rows(tmp_path):
     (tmp_path / "MasterX.json").write_text(json.dumps(TABLE, ensure_ascii=False), encoding="utf-8")
     assert master.table(tmp_path, "MasterX") == TABLE["_allData"]

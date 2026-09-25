@@ -57,7 +57,7 @@ nnnotes 是 BanG Dream! Our Notes 游戏文件的离线数据工具包：读取 
 
 - Python 3.11+，在仓库内 `pip install -e .`（尚未发布到 PyPI）
 - 游戏安装包 `base.apk`：APK 内置资源包、CRI 解码密钥、启动设置。`player`、`story`、`live`、`web` 用 nnnotes 自带的类型树读取 APK 启动数据中的 MonoBehaviour，目前支持游戏版本 1.0.1（Unity 6000.3.12f1）；其他版本的 APK 若类型不符，这些命令会报错并给出类名、游戏版本和 Unity 版本
-- 解码后的 masterdata 目录（可用 `master download` + `master decode` 生成）：`adv`、`story`、`spot`、`live`、`web` 需要
+- 解码后的 masterdata 目录（可用 `master download` + `master decode` 生成）：`adv`、`story`、`spot`、`live` 和 `web` 的谱面需要；`web` 的 Live2D 模型只用它取角色名（可选）
 - 外部工具：[vgmstream](https://vgmstream.org/)（CRI HCA 解码）、[FFmpeg](https://ffmpeg.org/)（转码，含剧情视频的 WebM 封装与 Opus 音频）；`web` 另需 Node.js 20+ 与构建好的 ournotes-player
 
 ## 配置

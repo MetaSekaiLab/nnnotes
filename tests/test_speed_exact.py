@@ -440,6 +440,14 @@ def test_decode_disk_cache_and_levels(tmp_path, tools):
     assert tree(tmp_path / "a")["a.flac"] != tree(tmp_path / "c12")["a.flac"]
 
 
+def test_decode_refuses_a_sheet_with_an_external_awb(tmp_path, tools, monkeypatch):
+    monkeypatch.setattr(cri, "acb_data", lambda cat, sheet: ({"acb": b"@UTF x", "awb": b"AFS2 y"}, cri.RAW_ACB))
+    with pytest.raises(NotImplementedError, match="^cue sheet Voices: external AWB \\(streamed waveforms\\) not "
+                                                  "supported$"):
+        cri.decode(None, "Voices", tmp_path / "o", key=0)
+    assert tools.calls == [] and not (tmp_path / "o").exists()
+
+
 def test_decode_also_encodes_from_the_same_samples(tmp_path, tools):
     args = ["-c:a", "aac", "-b:a", "160k"]
     got = cri.decode(None, "S", tmp_path / "x", key=0, also=(".m4a", args))
