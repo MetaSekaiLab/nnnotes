@@ -8,8 +8,17 @@ embedded. Geometry is read from the mesh's vertex/index buffers; each submesh
 becomes one primitive with the renderer's material of the same index.
 
 Materials are translated from the Unity material's shader and that shader's own
-pass render state (culling, blend factors, depth write, queue tags) -- not from
-names. Unsupported shaders raise instead of being approximated.
+pass render state (culling, blend factors and operations, depth write and test,
+colour mask, alpha to mask, queue tags) -- not from names. A render state value
+that names a property (URP/Lit's `Blend [_SrcBlend] [_DstBlend]`, `Cull [_Cull]`,
+`ZWrite [_ZWrite]`) takes the material's value of that property, else the
+shader's default for it, else the value the shader stores (render_state). Each
+glTF material records the resolved state in `extras.unityRenderState`.
+Unsupported shaders and states raise instead of being approximated. A submesh
+whose material slot is empty (null) is not written: nothing says what it would
+be drawn with; room.json lists it (`nullMaterialSubmeshes`). A MeshFilter with
+no mesh, or a mesh with no triangles, draws nothing; room.json lists the object
+(`nullMeshFilters`, `meshesWithoutTriangles`).
 
 The situation's backgroundPosition/Rotation/Scale (spot.json) is not baked in: it
 goes on top of this, as the game applies it to the prefab root. Objects that
@@ -26,10 +35,11 @@ import UnityPy
 
 from .catalog import Catalog
 from .jsonio import dumps, write_json
-from .unity import SceneGraph, mesh_arrays
+from .unity import SceneGraph, mesh_arrays, texture_image
 
 # UnityEngine.Rendering.BlendMode
 BLEND_ONE, BLEND_ZERO, BLEND_SRC_ALPHA, BLEND_ONE_MINUS_SRC_ALPHA = 1, 0, 5, 10
+BLEND_OP_ADD = 0                                 # UnityEngine.Rendering.BlendOp.Add
 # UnityEngine.Rendering.CullMode
 CULL_OFF, CULL_FRONT, CULL_BACK = 0, 1, 2
 # glTF sampler enums
@@ -38,11 +48,54 @@ REPEAT, CLAMP, MIRROR = 10497, 33071, 33648
 # UnityEngine.TextureWrapMode
 WRAP = {0: REPEAT, 1: CLAMP, 2: MIRROR, 3: MIRROR}
 UNLIT_SHADERS = ("Unlit/", "Universal Render Pipeline/Unlit")
+# render state of a pass (SerializedShaderState) read by room: record key -> path in m_State (render target 0)
+STATE_FIELDS = {
+    "srcBlend": ("rtBlend0", "srcBlend"), "dstBlend": ("rtBlend0", "destBlend"),
+    "srcBlendAlpha": ("rtBlend0", "srcBlendAlpha"), "dstBlendAlpha": ("rtBlend0", "destBlendAlpha"),
+    "blendOp": ("rtBlend0", "blendOp"), "blendOpAlpha": ("rtBlend0", "blendOpAlpha"),
+    "colorMask": ("rtBlend0", "colMask"), "cull": ("culling",), "zWrite": ("zWrite",), "zTest": ("zTest",),
+    "alphaToMask": ("alphaToMask",),
+}
+NO_PROPERTY = "<noninit>"                        # SerializedShaderFloatValue.name of a fixed value
 
 
 # ---- material translation -------------------------------------------------
-def _state_val(x):
-    return x.get("val") if isinstance(x, dict) else x
+def shader_defaults(shader_tt: dict) -> dict:
+    """{property name: default value} of a shader's properties (m_ParsedForm.m_PropInfo, first component)."""
+    props = shader_tt["m_ParsedForm"].get("m_PropInfo", {}).get("m_Props", [])
+    return {p["m_Name"]: p["m_DefValue[0]"] for p in props if "m_DefValue[0]" in p}
+
+
+def material_values(mat_tt: dict) -> dict:
+    """{property name: value} of a material's int and float properties."""
+    sp = mat_tt["m_SavedProperties"]
+    return {**dict(sp.get("m_Ints", [])), **dict(sp.get("m_Floats", []))}
+
+
+def state_value(x, values: dict, defaults: dict):
+    """One pass render state value. A SerializedShaderFloatValue {val, name} whose name is a property (not
+    "<noninit>") takes the material's value of it (`values`), else the shader's default (`defaults`), else `val`;
+    a fixed value is `val`. Enum values come back as int."""
+    if not isinstance(x, dict):
+        return x
+    name = x.get("name")
+    v = x.get("val")
+    if name and name != NO_PROPERTY:
+        v = values.get(name, defaults.get(name, v))
+    return int(v) if isinstance(v, float) and v.is_integer() else v
+
+
+def render_state(mat_tt: dict, shader_tt: dict) -> dict:
+    """The render state (STATE_FIELDS) of the shader's first pass for this material."""
+    state, _ = _pass_state(shader_tt)
+    values, defaults = material_values(mat_tt), shader_defaults(shader_tt)
+    out = {}
+    for key, path in STATE_FIELDS.items():
+        x = state
+        for part in path:
+            x = x.get(part, {}) if isinstance(x, dict) else {}
+        out[key] = state_value(x, values, defaults) if x != {} else None
+    return out
 
 
 def _pass_state(shader_tt: dict) -> tuple[dict, dict]:
@@ -57,10 +110,9 @@ def _pass_state(shader_tt: dict) -> tuple[dict, dict]:
 def translate_material(mat_tt: dict, shader_tt: dict) -> dict:
     """Unity material + shader -> glTF material fields (texture filled by caller)."""
     shader_name = shader_tt["m_ParsedForm"]["m_Name"]
-    state, tags = _pass_state(shader_tt)
-    rt = state.get("rtBlend0", {})
-    src, dst = _state_val(rt.get("srcBlend")), _state_val(rt.get("destBlend"))
-    cull = _state_val(state.get("culling"))
+    _, tags = _pass_state(shader_tt)
+    rs = render_state(mat_tt, shader_tt)
+    src, dst, cull = rs["srcBlend"], rs["dstBlend"], rs["cull"]
     floats = dict(mat_tt["m_SavedProperties"]["m_Floats"])
     colors = dict(mat_tt["m_SavedProperties"]["m_Colors"])
 
@@ -68,13 +120,15 @@ def translate_material(mat_tt: dict, shader_tt: dict) -> dict:
     if not unlit and shader_name != "Universal Render Pipeline/Lit":
         raise NotImplementedError(f"shader not translated: {shader_name}")
 
-    out: dict = {"name": mat_tt["m_Name"], "extras": {"unityShader": shader_name}}
+    out: dict = {"name": mat_tt["m_Name"], "extras": {"unityShader": shader_name, "unityRenderState": rs}}
     if (src, dst) == (BLEND_ONE, BLEND_ZERO):
         cutout = tags.get("RenderType") == "TransparentCutout" or tags.get("QUEUE") == "AlphaTest"
         if cutout:
             out["alphaMode"] = "MASK"
             out["alphaCutoff"] = floats["_Cutoff"]
     elif (src, dst) == (BLEND_SRC_ALPHA, BLEND_ONE_MINUS_SRC_ALPHA):
+        if rs["blendOp"] not in (None, BLEND_OP_ADD):
+            raise NotImplementedError(f"blend op {rs['blendOp']} in {shader_name}")
         out["alphaMode"] = "BLEND"
     else:
         raise NotImplementedError(f"blend {src}/{dst} in {shader_name}")
@@ -199,6 +253,39 @@ class _Glb:
 
 
 # ---- extraction ---------------------------------------------------------
+def submesh_primitives(tris: list, mats: list, material_for, on_null) -> list:
+    """[(glTF triangle indices, material index)] of a mesh's submeshes: `tris` (per submesh, Unity winding),
+    `mats` the renderer's material PPtrs of the same index. An empty submesh gives nothing; a submesh whose material
+    slot is empty (path id 0) gives nothing and is reported to `on_null(submesh index)`."""
+    prims = []
+    for i, t in enumerate(tris):
+        if not len(t):
+            continue
+        if not mats[i].path_id:                  # empty slot: no material to draw the submesh with
+            on_null(i)
+            continue
+        prims.append((t[:, [0, 2, 1]].reshape(-1).astype(np.uint32), material_for(mats[i])))
+    return prims
+
+
+def drawn_meshes(mf_by_go: dict, mr_by_go: dict, graph, on_null_mesh):
+    """(transform path id, Mesh, material PPtrs) of each GameObject with a MeshFilter and an enabled MeshRenderer.
+    A MeshFilter whose mesh reference is empty (path id 0) draws nothing: its object path goes to
+    `on_null_mesh(path)`."""
+    for go_pid, mf in mf_by_go.items():
+        tf_pid = graph.tf_of_go.get(go_pid)
+        mr = mr_by_go.get(go_pid)
+        if tf_pid is None or mr is None:
+            continue
+        if not mr.read_typetree().get("m_Enabled", 1):
+            continue
+        mesh_ref = mf.read().m_Mesh
+        if not mesh_ref.path_id:
+            on_null_mesh(graph.path(tf_pid))
+            continue
+        yield tf_pid, mesh_ref.read(), mr.read().m_Materials
+
+
 def extract_room(cat: Catalog, bg_key: str, out_path: Path) -> dict:
     env = UnityPy.load(*[str(p) for p in cat.fetch_key(bg_key)])
     graph = SceneGraph(env)
@@ -227,7 +314,7 @@ def extract_room(cat: Catalog, bg_key: str, out_path: Path) -> dict:
             tid = env_.m_Texture.path_id
             if tid not in tex_cache:
                 tex = env_.m_Texture.read()
-                buf = io.BytesIO(); tex.image.save(buf, format="PNG")
+                buf = io.BytesIO(); texture_image(tex).save(buf, format="PNG")
                 tex_cache[tid] = glb.texture(buf.getvalue(), tex.m_Name,
                                              _sampler(tex.object_reader.read_typetree()))
             info = {"index": tex_cache[tid]}
@@ -246,20 +333,18 @@ def extract_room(cat: Catalog, bg_key: str, out_path: Path) -> dict:
     n_mesh = 0
     n_inactive = 0
     skipped = []
-    for go_pid, mf in mf_by_go.items():
-        tf_pid = graph.tf_of_go.get(go_pid)
-        mr = mr_by_go.get(go_pid)
-        if tf_pid is None or mr is None:
-            continue
-        if not mr.read_typetree().get("m_Enabled", 1):
-            continue
-        mesh = mf.read().m_Mesh.read()
+    null_slots = []                              # submeshes whose material slot is empty
+    null_meshes = []                             # objects whose MeshFilter has no mesh
+    no_triangles = []                            # meshes with vertices but no triangles
+    for tf_pid, mesh, mats in drawn_meshes(mf_by_go, mr_by_go, graph, null_meshes.append):
         arrays = mesh_arrays(mesh)
         if arrays is None:
             skipped.append(mesh.m_Name)          # empty mesh (no vertex data)
             continue
         v, vn, uv0, tris = arrays
-        mats = mr.read().m_Materials
+        if not any(len(t) for t in tris):        # vertices only (e.g. a placeholder mesh without index data)
+            no_triangles.append({"mesh": mesh.m_Name, "path": graph.path(tf_pid)})
+            continue
         if len(mats) < len(tris):
             raise NotImplementedError(f"{mesh.m_Name}: {len(tris)} submeshes, {len(mats)} materials")
         m = graph.world(tf_pid)
@@ -273,8 +358,10 @@ def extract_room(cat: Catalog, bg_key: str, out_path: Path) -> dict:
             nw = np.empty((0, 3))
         uv = uv0.copy()
         uv[:, 1] = 1.0 - uv[:, 1]                # Unity UV origin bottom-left -> glTF top-left
-        prims = [(t[:, [0, 2, 1]].reshape(-1).astype(np.uint32), material_for(mats[i]))
-                 for i, t in enumerate(tris) if len(t)]
+        prims = submesh_primitives(tris, mats, material_for, lambda i: null_slots.append(
+            {"mesh": mesh.m_Name, "path": graph.path(tf_pid), "submesh": i}))
+        if not prims:
+            continue
         is_active = graph.active(tf_pid)
         glb.add_mesh(mesh.m_Name, p, nw, uv, prims, active=is_active)
         n_mesh += 1
@@ -287,11 +374,15 @@ def extract_room(cat: Catalog, bg_key: str, out_path: Path) -> dict:
         "backgroundKey": bg_key, "glb": out_path.name, "meshCount": n_mesh,
         "inactiveMeshes": n_inactive,
         "skippedEmptyMeshes": skipped,
+        "nullMaterialSubmeshes": null_slots,
+        "nullMeshFilters": null_meshes,
+        "meshesWithoutTriangles": no_triangles,
         "materials": [{"name": m["name"], "shader": m["extras"]["unityShader"],
                        "alphaMode": m.get("alphaMode", "OPAQUE"),
                        "alphaCutoff": m.get("alphaCutoff"),
                        "doubleSided": m.get("doubleSided", False),
-                       "unlit": "KHR_materials_unlit" in m.get("extensions", {})}
+                       "unlit": "KHR_materials_unlit" in m.get("extensions", {}),
+                       "renderState": m["extras"]["unityRenderState"]}
                       for m in glb.materials],
         "textures": [im["name"] for im in glb.images],
         "samplers": glb.samplers,

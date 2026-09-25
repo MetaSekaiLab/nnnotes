@@ -225,7 +225,11 @@ OUT/room.glb          the spot's background as binary glTF (as `room`), with roo
 OUT/shaders/          shaders of the spot's bundles (as `shader`)
 ```
 
-Needs `[paths] apk` and `[paths] master`.
+Needs `[paths] apk` and master data (`MasterHomeSpot`, `MasterText`, `MasterStoryHomeSpotTapTalkEpisode`). `room.glb` and
+`room.json` are the `room` export of the spot's background.
+
+A reference the situation prefab leaves empty is written as null: a Spine character with no `_animation` has null
+`skeletonData`, `animation` and `world`, and a tap target with no `_focus` has a null `focusWorld`.
 
 ## room
 
@@ -237,6 +241,17 @@ A spot background prefab as binary glTF: every mesh baked into prefab space, con
 textures embedded, materials translated from the shader's render state. Objects inactive in the prefab are kept with
 `extras.unityActive = false`. A summary (`meshCount`, materials, textures, samplers) is written next to it as
 `OUT.json`.
+
+The render state is that of the shader's first pass for the material: blend factors (colour and alpha), blend
+operations, colour mask, culling, depth write, depth test and alpha to mask. A state the shader takes from a
+property (`Blend [_SrcBlend] [_DstBlend]`, `Cull [_Cull]`, `ZWrite [_ZWrite]`, ...) is the material's value of that
+property, else the shader's default for it. Each glTF material keeps the resolved state in
+`extras.unityRenderState` (and `OUT.json` in `materials[].renderState`); a shader or a state glTF cannot express
+stops the command. A submesh whose material slot is empty is not written (there is no material to draw it with): the
+summary lists each as `nullMaterialSubmeshes` (`mesh`, object `path` in the prefab, `submesh` index), and a mesh
+left with no submesh is not written. A MeshFilter with no mesh, or a mesh with no triangles (no index data), draws
+nothing and is not written; the summary lists the object path in `nullMeshFilters`, or the mesh and object path in
+`meshesWithoutTriangles`.
 
 ## shader
 

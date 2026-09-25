@@ -6,6 +6,10 @@ SpotCharacter x N (tap targets with focus transforms) and SpotSpineCharacter x M
 each driving a Spine.Unity SkeletonAnimation. Components are identified by
 their MonoScript class (Catalog must be opened with `apk=`).
 
+A reference the prefab leaves empty is written as null, not filled in: a
+SpotSpineCharacter with no `_animation` has null `skeletonData`, `animation`
+and `world`; a SpotCharacter with no `_focus` has a null `focusWorld`.
+
 Spine files are written from the SkeletonDataAsset reference chain:
   SkeletonDataAsset.skeletonJSON           -> skeleton (.json or binary .skel)
   SkeletonDataAsset.atlasAssets[i].atlasFile -> <name>.atlas
@@ -22,7 +26,7 @@ import UnityPy
 from .catalog import Catalog
 from .config import apk_missing
 from .jsonio import write_json
-from .unity import SceneGraph, script_class, strip_pptrs
+from .unity import SceneGraph, script_class, strip_pptrs, texture_image
 
 LANGS = ("_japanese", "_english", "_traditionalChinese", "_simplifiedChinese", "_korean")
 
@@ -45,6 +49,52 @@ def _atlas_pages(text: str) -> list[str]:
 def _text_bytes(ta) -> bytes:
     s = ta.m_Script
     return s.encode("utf-8", "surrogateescape") if isinstance(s, str) else bytes(s)
+
+
+def _target(ref):
+    """The object a PPtr refers to, None for an empty reference (path id 0)."""
+    return ref.read() if ref.path_id else None
+
+
+def spine_characters(objs: list, graph, skeletons: dict, world_of) -> list[dict]:
+    """SpotSpineCharacter components: object path, the SkeletonAnimation they drive (its skeleton data name,
+    initial animation settings and world matrix). `skeletons`: SkeletonDataAsset path id -> skeleton record. One
+    whose `_animation` is empty has those three null."""
+    out = []
+    for o in objs:
+        ssc = o.read_typetree()
+        path = graph.path(graph.tf_of_go[ssc["m_GameObject"]["m_PathID"]])
+        anim_o = _target(o.read()._animation)
+        if anim_o is None:
+            out.append({"path": path, "skeletonData": None, "animation": None, "world": None})
+            continue
+        at = anim_o.object_reader.read_typetree()
+        out.append({
+            "path": path,
+            "skeletonData": skeletons[anim_o.skeletonDataAsset.path_id]["name"],
+            "animation": {k: at[k] for k in ("_animationName", "loop", "timeScale",
+                                             "initialSkinName", "initialFlipX", "initialFlipY",
+                                             "pmaVertexColors", "tintBlack", "zSpacing")},
+            "world": world_of(at["m_GameObject"]),
+        })
+    return out
+
+
+def tap_targets(objs: list, graph, world_of) -> list[dict]:
+    """SpotCharacter components (tap targets) by character id: object path, their fields, world matrix and the world
+    matrix of their `_focus` transform (null when the reference is empty)."""
+    out = []
+    for o in objs:
+        sc = o.read_typetree()
+        focus_o = _target(o.read()._focus)
+        out.append({
+            "path": graph.path(graph.tf_of_go[sc["m_GameObject"]["m_PathID"]]),
+            **strip_pptrs({k: v for k, v in sc.items() if k != "_focus"}),
+            "world": world_of(sc["m_GameObject"]),
+            "focusWorld": None if focus_o is None else world_of(focus_o.object_reader.read_typetree()["m_GameObject"]),
+        })
+    out.sort(key=lambda c: c["_characterId"])
+    return out
 
 
 def extract(cat: Catalog, md: Path, spot_id: int, out_dir: Path) -> dict:
@@ -103,7 +153,7 @@ def extract(cat: Catalog, md: Path, spot_id: int, out_dir: Path) -> dict:
                     mat = mp.read()
                     tex = next(e.m_Texture.read() for k, e in mat.m_SavedProperties.m_TexEnvs
                                if k == "_MainTex")
-                    buf = io.BytesIO(); tex.image.save(buf, format="PNG")
+                    buf = io.BytesIO(); texture_image(tex).save(buf, format="PNG")
                     (spine_dir / page).write_bytes(buf.getvalue())
                 written_atlases[ap.path_id] = a_file
             atlases.append(written_atlases[ap.path_id])
@@ -114,33 +164,8 @@ def extract(cat: Catalog, md: Path, spot_id: int, out_dir: Path) -> dict:
                       zip(sda.get("fromAnimation", []), sda.get("toAnimation", []), sda.get("duration", []))],
         }
 
-    # Spine characters (SkeletonAnimation placement + initial animation)
-    spine_chars = {}
-    for o in by_cls.get("SpotSpineCharacter", []):
-        ssc = o.read_typetree()
-        anim_o = o.read()._animation.read()
-        at = anim_o.object_reader.read_typetree()
-        spine_chars[o.path_id] = {
-            "path": graph.path(graph.tf_of_go[ssc["m_GameObject"]["m_PathID"]]),
-            "skeletonData": skeleton_files[anim_o.skeletonDataAsset.path_id]["name"],
-            "animation": {k: at[k] for k in ("_animationName", "loop", "timeScale",
-                                             "initialSkinName", "initialFlipX", "initialFlipY",
-                                             "pmaVertexColors", "tintBlack", "zSpacing")},
-            "world": world_of(at["m_GameObject"]),
-        }
-
-    # tap targets
-    characters = []
-    for o in by_cls.get("SpotCharacter", []):
-        sc = o.read_typetree()
-        focus = o.read()._focus.read().object_reader.read_typetree()
-        characters.append({
-            "path": graph.path(graph.tf_of_go[sc["m_GameObject"]["m_PathID"]]),
-            **strip_pptrs({k: v for k, v in sc.items() if k != "_focus"}),
-            "world": world_of(sc["m_GameObject"]),
-            "focusWorld": world_of(focus["m_GameObject"]),
-        })
-    characters.sort(key=lambda c: c["_characterId"])
+    spine_chars = spine_characters(by_cls.get("SpotSpineCharacter", []), graph, skeleton_files, world_of)
+    characters = tap_targets(by_cls.get("SpotCharacter", []), graph, world_of)
 
     doc = {
         "spotId": spot_id,
@@ -151,7 +176,7 @@ def extract(cat: Catalog, md: Path, spot_id: int, out_dir: Path) -> dict:
         "controller": {k: v for k, v in controller.items()
                        if k not in ("_spotSpineCharacters", "_characters")},
         "characters": characters,
-        "spineCharacters": list(spine_chars.values()),
+        "spineCharacters": spine_chars,
         "skeletons": list(skeleton_files.values()),
         "resources": {
             "background": [b.name for b in cat.resolve(sp["_backgroundAssetPath"])],

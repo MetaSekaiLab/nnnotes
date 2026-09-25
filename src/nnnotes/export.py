@@ -35,8 +35,8 @@ from UnityPy.helpers import MeshHelper
 
 from . import cache
 from .catalog import Catalog
-from .unity import (DEFAULT_RESOURCES, SceneGraph, deref, external_path, is_pptr, load_closure,
-                    mesh_arrays, script_class)
+from .unity import (DEFAULT_RESOURCES, SceneGraph, check_texture, deref, external_path, is_pptr, load_closure,
+                    mesh_arrays, script_class, texture_image)
 
 HEADER = ("m_GameObject", "m_Script")
 _SCALARS = (int, float, str, bool, type(None))
@@ -59,6 +59,7 @@ def _decode_inputs(tex) -> tuple:
 def texture_png(tex) -> bytes:
     """PNG bytes of a Texture2D's decoded image as Pillow writes it by default (`tex.image.save(PNG)`), cached by
     the decoder's inputs."""
+    check_texture(tex)
     k = PNG.key("texture", _decode_inputs(tex))
     data = PNG.get(k)
     if data is None:
@@ -212,7 +213,7 @@ class TexelPacker:
             ck = PIXELS.key(_decode_inputs(tex), tt["m_TextureFormat"] == 1, tt["m_Width"], tt["m_Height"])
             arr = PIXELS.get(ck)
             if arr is None:
-                img = tex.image
+                img = texture_image(tex)
                 if tt["m_TextureFormat"] == 1:               # Alpha8: value in the alpha channel
                     if img.mode == "L":
                         a = np.asarray(img, np.uint8)

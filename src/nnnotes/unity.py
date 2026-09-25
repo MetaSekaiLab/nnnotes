@@ -12,6 +12,7 @@ from pathlib import Path
 import numpy as np
 import UnityPy
 from UnityPy.classes import PPtr
+from UnityPy.enums import TextureFormat
 from UnityPy.helpers import MeshHelper
 from UnityPy.helpers.TypeTreeNode import TypeTreeNode
 
@@ -177,17 +178,60 @@ def shard_index(rows: list[dict], id_key: str = "_id") -> dict:
 
 
 # ---- meshes -------------------------------------------------------------
+def _channel(values, count: int, keep: int, what: str) -> np.ndarray:
+    """A vertex channel as a (count, keep) float64 array: each vertex's first `keep` components, whatever the
+    channel's own dimension (UnityPy gives a flat list or one tuple per vertex; e.g. normals stored with 4
+    components give xyz, the w is dropped)."""
+    a = np.asarray(values, np.float64)
+    if a.ndim == 1:
+        if not count or a.size % count:
+            raise ValueError(f"mesh {what}: {a.size} values for {count} vertices")
+        a = a.reshape(count, a.size // count)
+    if a.ndim != 2 or a.shape[0] != count or a.shape[1] < keep:
+        raise ValueError(f"mesh {what}: shape {a.shape} for {count} vertices of {keep} components")
+    return a if a.shape[1] == keep else np.ascontiguousarray(a[:, :keep])
+
+
 def mesh_arrays(mesh):
-    """(positions, normals, uv0, [triangles per submesh]) straight from the vertex/index buffers."""
+    """(positions, normals, uv0, [triangles per submesh]) straight from the vertex/index buffers: positions and
+    normals xyz, uv0 uv (a channel stored with more components gives these first ones), no normals as an empty
+    array, no uv0 as zeros, a mesh without an index buffer as no triangles (an empty array per submesh)."""
     h = MeshHelper.MeshHandler(mesh)
     h.process()
     if not h.m_VertexCount:
         return None
-    v = np.asarray(h.m_Vertices, np.float64).reshape(-1, 3)
-    n = np.asarray(h.m_Normals, np.float64).reshape(-1, 3) if h.m_Normals else np.empty((0, 3))
-    uv = np.asarray(h.m_UV0, np.float64).reshape(-1, 2) if h.m_UV0 else np.zeros((len(v), 2))
-    tris = [np.asarray(t, np.int64).reshape(-1, 3) for t in h.get_triangles()]
+    count = h.m_VertexCount
+    v = _channel(h.m_Vertices, count, 3, "positions")
+    n = _channel(h.m_Normals, count, 3, "normals") if h.m_Normals else np.empty((0, 3))
+    uv = _channel(h.m_UV0, count, 2, "uv0") if h.m_UV0 else np.zeros((len(v), 2))
+    if h.m_IndexBuffer is None or len(h.m_IndexBuffer) == 0:
+        tris = [np.empty((0, 3), np.int64) for _ in (getattr(mesh, "m_SubMeshes", None) or [])]
+    else:
+        tris = [np.asarray(t, np.int64).reshape(-1, 3) for t in h.get_triangles()]
     return v, n, uv, tris
+
+
+class UnsupportedTexture(RuntimeError):
+    """A texture whose format the decoder cannot decode correctly."""
+
+
+HDR_ASTC = frozenset(range(66, 72))                       # TextureFormat ASTC_HDR_4x4 .. ASTC_HDR_12x12
+
+
+def check_texture(tex) -> None:
+    """UnsupportedTexture, naming the texture, when UnityPy cannot decode its format correctly: HDR ASTC, whose
+    blocks its decoder turns into the error colour (so no wrong pixels are written)."""
+    fmt = int(tex.m_TextureFormat)
+    if fmt in HDR_ASTC:
+        name = TextureFormat(fmt).name
+        raise UnsupportedTexture(f"texture {tex.m_Name!r}: {name} (HDR ASTC) is not decoded: UnityPy's decoder "
+                                 f"returns its error colour for these blocks")
+
+
+def texture_image(tex):
+    """The decoded image of a Texture2D (UnityPy's `tex.image`), after check_texture."""
+    check_texture(tex)
+    return tex.image
 
 
 # ---- scene graph ----------------------------------------------------------
