@@ -18,7 +18,8 @@ shared_monoscripts bundle, so the Catalog must be opened with `apk=`).
 `extract_model` adds the Cubism SDK interchange files for other tools:
 
   <exp>.exp3.json             CubismExpressionData
-  <name>.physics3.json        CubismPhysicsController._rig (inverse of ToRig)
+  <name>.physics3.json        CubismPhysicsController._rig (inverse of ToRig), when the
+                              model has physics
   motions/<m>.motion3.json    CubismFadeMotionData (see motion.py)
   <name>.model3.json          file refs + EyeBlink/LipSync groups from the
                               model's own CubismEyeBlinkParameter/CubismMouthParameter
@@ -174,8 +175,9 @@ def extract_model(cat: Catalog, key: str, out_dir: Path) -> dict:
         exp_refs.append({"Name": ename, "File": fn})
     exp_refs.sort(key=lambda e: e["Name"])
 
-    # physics
-    rig = _only(by_cls, "CubismPhysicsController", name)["_rig"]
+    # physics (none without a CubismPhysicsController)
+    rig = (_only(by_cls, "CubismPhysicsController", name)["_rig"] if by_cls.get("CubismPhysicsController")
+           else {"SubRigs": []})
     phys_file = None
     if rig["SubRigs"]:
         phys_file = f"{name}.physics3.json"

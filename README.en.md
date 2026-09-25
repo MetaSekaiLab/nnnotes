@@ -22,7 +22,7 @@ addresses in their own configuration, and the exports stay in local directories 
 | `master decode` | master data `.bin` files or directories | one JSON per table (Rijndael-256 CBC decryption + gzip) |
 | `adv` | episode ID | `episode.json`: command list, lines in five languages, voice / sound / video index |
 | `story` | episode ID | a full story directory: episode, every Live2D model, audio, stage scene and shaders, story UI |
-| `live2d` | model key | a Live2D (Cubism) runtime directory: moc3, textures, motion3, physics, expressions, prefab parameters |
+| `live2d` | model key or model id | a Live2D (Cubism) runtime directory: moc3, textures, motion3, physics, expressions, prefab parameters |
 | `spot` | spot ID | `spot.json` + Spine characters + the room as `room.glb` + shaders |
 | `room` | background prefab key | the room model (binary glTF) |
 | `shader` | key or APK bundles | every platform variant of the shaders (GLSL ES and others) with an index |
@@ -30,7 +30,7 @@ addresses in their own configuration, and the exports stay in local directories 
 | `crikey` | APK | the CRI HCA keycode from the game's boot data (shows whether it was found; can write a `.hcakey`) |
 | `player` | APK | render-related global settings (color space, quality levels, renderers) as JSON |
 | `live` | music ID + difficulty | a full chart directory: chart and runtime notes, 3D scene, note and effect assets, BGM and sounds, sound routing |
-| `web` | `--pair music:difficulty` (repeatable) or `--all` | an ournotes-player static site: shared player + per-chart manifests + content-addressed assets |
+| `web` | `--pair music:difficulty` (repeatable) or `--all`; `--live2d model` (repeatable) or `--all-live2d` | an ournotes-player static site: shared player + per-chart / per-model manifests + content-addressed assets |
 
 Export conventions:
 
@@ -53,10 +53,10 @@ Based on all data of the Taiwan server, version 1.0.1 (zh-Hant):
 | master data decoding | working |
 | stories, `adv` | 946 / 946 episodes |
 | stories, `story` (full directory) | 712 / 946 episodes; the other 234 use resource types not yet supported (Frame 209, Effect 17, PostEffect 3; 5 reference resources missing from the catalog) |
-| Live2D models | 185 / 185 |
+| Live2D models | 239 / 239 (every model of the catalog; episodes use 185 of them) |
 | CRI audio | 681 / 681 cue sheets |
 | charts, `live` | 336 / 336 (music, difficulty) pairs |
-| web site, `web` | 336 / 336 charts |
+| web site, `web` | 336 / 336 charts, 239 / 239 Live2D models |
 | spots, `spot` / `room` | one spot verified, the others not individually checked |
 | other regions (en / kr) and languages | not verified |
 
@@ -106,18 +106,21 @@ nnnotes story 10462 -o out/story_10462
 nnnotes live 100001 --difficulty expert -o out/live_100001
 nnnotes web out/site --all --player <ournotes-player dir> --workers 5
 nnnotes web out/site --pair 100001:expert --pair 100001:hard --player <ournotes-player dir>
+nnnotes web out/site --live2d adv_live2d_rana_003_casual_spring_01 --player <ournotes-player dir>
 ```
 
-`web` builds incrementally: charts whose manifest exists are skipped (`--force` rebuilds them) and assets no longer
-referenced are removed. Common options:
+`web` builds incrementally: charts and models whose manifest exists are skipped (`--force` rebuilds them) and assets
+no longer referenced are removed. Common options:
 
 - `--format aac|opus|vorbis|mp3|flac`: BGM format, default AAC; `--no-audio`: no audio files
 - `--band` / `--leader-card`: the band of the LightWeight background and the start timeline; default: the band of
   the music's first vocal character
-- `--workers`: parallel music processes (default up to 5); `--tmp`: temporary build directory (default
-  `<site>.tmp`)
-- `--player-only`: rewrite the player files and `charts.json` only; `--reingest-json`: store every chart's JSON
-  files again under the current rules
+- `--workers`: parallel music processes (default up to 5) and model processes (default up to 4); `--tmp`:
+  temporary build directory (default `<site>.tmp`)
+- `--live2d MODEL` (model id or key, repeatable) / `--all-live2d`: add Live2D models (every model of the catalog);
+  charts and models can be added in the same run
+- `--player-only`: rewrite the player files, `charts.json` and `models.json` only; `--reingest-json`: store every
+  chart's and model's JSON files again under the current rules
 
 See [docs/commands.md](docs/commands.md) for every command's options and output layout.
 
@@ -136,7 +139,7 @@ settings (TOML / environment / flags)
                         spots: spot, room
                         charts: score (chart parsing and a reimplementation of the game's chart converter),
                                 livescene, livenotes, liveui, liveaudio, live
-                        site: site (ournotes-player data)
+                        site: web, webmodel (ournotes-player data)
 ```
 
 Every JSON file is written by one writer (`jsonio`), so encoding, line endings and number formatting are the same

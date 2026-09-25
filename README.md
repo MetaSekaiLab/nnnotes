@@ -17,7 +17,7 @@ nnnotes 是 BanG Dream! Our Notes 游戏文件的离线数据工具包：读取 
 | `master decode` | masterdata `.bin` 文件或目录 | 每张表一个 JSON（Rijndael-256 CBC 解密 + gzip 解压） |
 | `adv` | 剧情 ID | `episode.json`：命令表、五语台词、语音 / 音效 / 视频索引 |
 | `story` | 剧情 ID | 完整剧情目录：episode、全部 Live2D 模型、音频、舞台场景与着色器、剧情 UI |
-| `live2d` | 模型资源键 | Live2D（Cubism）运行时目录：moc3、贴图、motion3、物理、表情、预制体参数 |
+| `live2d` | 模型资源键或模型 ID | Live2D（Cubism）运行时目录：moc3、贴图、motion3、物理、表情、预制体参数 |
 | `spot` | 据点 ID | `spot.json` + Spine 角色 + 房间 `room.glb` + 着色器 |
 | `room` | 背景预制体键 | 房间模型（binary glTF） |
 | `shader` | 资源键或 APK 内资源包 | 着色器各平台变体（GLSL ES 等）与索引 |
@@ -25,7 +25,7 @@ nnnotes 是 BanG Dream! Our Notes 游戏文件的离线数据工具包：读取 
 | `crikey` | APK | 读出游戏启动数据中的 CRI HCA 解码密钥（只显示是否找到，可写成 `.hcakey`） |
 | `player` | APK | 渲染相关的全局设置（色彩空间、画质等级、渲染器）JSON |
 | `live` | 曲目 ID + 难度 | 完整谱面目录：谱面与运行时音符、3D 场景、音符与特效资源、BGM 与音效、声音路由 |
-| `web` | `--pair 曲目:难度`（可重复）或 `--all` | ournotes-player 静态站点：共享播放器 + 每谱清单 + 内容寻址资源 |
+| `web` | `--pair 曲目:难度`（可重复）或 `--all`；`--live2d 模型`（可重复）或 `--all-live2d` | ournotes-player 静态站点：共享播放器 + 每谱 / 每模型清单 + 内容寻址资源 |
 
 导出约定：
 
@@ -44,10 +44,10 @@ nnnotes 是 BanG Dream! Our Notes 游戏文件的离线数据工具包：读取 
 | masterdata 解码 | 可用 |
 | 剧情 `adv` | 946 / 946 集可导出 |
 | 剧情 `story`（完整目录） | 712 / 946 集可导出；其余 234 集用到尚未支持的资源类型（Frame 209 集、Effect 17 集、PostEffect 3 集，另有 5 集引用的资源不在 catalog 中） |
-| Live2D 模型 | 185 / 185 个可导出 |
+| Live2D 模型 | 239 / 239 个可导出（catalog 中的全部模型，剧情用到其中 185 个） |
 | CRI 音频 | 681 / 681 个 cue sheet 可解码 |
 | 谱面 `live` | 336 / 336 个（曲目, 难度）组合可导出 |
-| 网页站点 `web` | 336 / 336 张谱面 |
+| 网页站点 `web` | 336 / 336 张谱面，239 / 239 个 Live2D 模型 |
 | 据点 `spot` / `room` | 已验证单个据点，其余未逐一验证 |
 | 其他区服（en / kr）与其他语言 | 未验证 |
 
@@ -85,14 +85,16 @@ nnnotes story 10462 -o out/story_10462
 nnnotes live 100001 --difficulty expert -o out/live_100001
 nnnotes web out/site --all --player <ournotes-player 目录> --workers 5
 nnnotes web out/site --pair 100001:expert --pair 100001:hard --player <ournotes-player 目录>
+nnnotes web out/site --live2d adv_live2d_rana_003_casual_spring_01 --player <ournotes-player 目录>
 ```
 
-`web` 可以增量构建：清单已存在的谱面会跳过（`--force` 重建），不再被引用的资源会被清理。常用参数：
+`web` 可以增量构建：清单已存在的谱面和模型会跳过（`--force` 重建），不再被引用的资源会被清理。常用参数：
 
 - `--format aac|opus|vorbis|mp3|flac`：BGM 格式，默认 AAC；`--no-audio`：不导出音频
 - `--band` / `--leader-card`：轻量背景与开场时间轴所用乐队；默认取曲目第一位演唱角色的乐队
-- `--workers`：并行处理的曲目进程数（默认最多 5）；`--tmp`：临时构建目录（默认 `<站点>.tmp`）
-- `--player-only`：只重写播放器文件与 `charts.json`；`--reingest-json`：按当前规则重新存储所有谱面的 JSON
+- `--workers`：并行处理的曲目进程数（默认最多 5）与模型进程数（默认最多 4）；`--tmp`：临时构建目录（默认 `<站点>.tmp`）
+- `--live2d 模型`（模型 ID 或资源键，可重复）/ `--all-live2d`：加入 Live2D 模型（catalog 中全部模型），可与谱面在同一次构建中加入
+- `--player-only`：只重写播放器文件与 `charts.json`、`models.json`；`--reingest-json`：按当前规则重新存储所有谱面与模型的 JSON
 
 各命令的参数与输出目录结构见 [docs/commands.md](docs/commands.md)。
 
@@ -110,7 +112,7 @@ nnnotes web out/site --pair 100001:expert --pair 100001:hard --player <ournotes-
                        Live2D：live2d、motion
                        据点：spot、room
                        谱面：score（谱面解析与游戏谱面转换器的复现）、livescene、livenotes、liveui、liveaudio、live
-                       站点：site（ournotes-player 数据）
+                       站点：web、webmodel（ournotes-player 数据）
 ```
 
 所有 JSON 由同一个写出器生成（`jsonio`），保证编码、换行与数值格式一致。

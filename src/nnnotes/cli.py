@@ -11,7 +11,7 @@ whatever the console encoding.
     nnnotes master download --version <master version> -o <dir>
     nnnotes adv 10462 -o out/adv_10462.json
     nnnotes story 10462 -o out/story_10462
-    nnnotes live2d <Character/Live2D/.../model/...> -o out/live2d/x
+    nnnotes live2d <Character/Live2D/.../model/... | model id> -o out/live2d/x
     nnnotes spot 10001 -o out/spot_10001
     nnnotes room <Spot/.../Background/...> -o out/room.glb
     nnnotes shader --key <key> | --apk-bundle <substring> -o out/shaders
@@ -19,7 +19,8 @@ whatever the console encoding.
     nnnotes crikey [--write <dir>]
     nnnotes player -o out/player.json
     nnnotes live 100001 --difficulty expert [--band 1 | --leader-card <MasterMemberCard id>] -o out/live_100001
-    nnnotes web out/site --player <ournotes-player> --pair 100001:expert [--pair ...] | --all [--format aac]
+    nnnotes web out/site --player <ournotes-player> [--pair 100001:expert [--pair ...] | --all] [--format aac]
+                         [--live2d <model id | key> [--live2d ...] | --all-live2d]
 """
 from __future__ import annotations
 
@@ -172,10 +173,16 @@ def cmd_adv(args, cfg):
 
 
 def cmd_live2d(args, cfg):
-    from . import live2d
+    from . import live2d, webmodel
     cfg.require_path("paths", "apk")                 # the Cubism component classes are read from the APK
     cat = open_catalog(cfg)
-    r = live2d.extract_model(cat, args.key, Path(args.out))
+    key = args.key
+    if "/" not in key:                               # a model id
+        try:
+            (key,) = webmodel.catalog_models(cat, [key]).values()
+        except ValueError as e:
+            args.usage(str(e))
+    r = live2d.extract_model(cat, key, Path(args.out))
     print(dumps(r, ensure_ascii=False))
 
 
@@ -262,7 +269,12 @@ def cmd_live(args, cfg):
 
 
 def cmd_web(args, cfg):
-    from . import web
+    from . import web, webmodel
+    charts, models = bool(args.pair or args.all), bool(args.live2d or args.all_live2d)
+    if not (charts or models or args.player_only or args.reingest_json):
+        args.usage("one of the arguments --pair --all --live2d --all-live2d --player-only --reingest-json is required")
+    if models and (args.player_only or args.reingest_json):
+        args.usage("--player-only and --reingest-json build nothing: leave out --live2d / --all-live2d")
     player = cfg.path("paths", "player")
     out = Path(args.out)
     if args.player_only or args.reingest_json:
@@ -270,11 +282,21 @@ def cmd_web(args, cfg):
              **web.write_player(out, web.check_player(player)), **web.write_index(out)}
     else:
         web.check_player(player)
-        pairs = web.all_pairs(master_dir(cfg)) if args.all else args.pair
-        r = web.build(out, pairs, cfg, player, args.format, audio=not args.no_audio, force=args.force,
-                       tmp_dir=args.tmp, workers=args.workers, band=args.band, leader_card=args.leader_card)
+        r = {}
+        if models:
+            cfg.require_path("paths", "apk")         # the Cubism component classes and mask materials: the APK
+            try:
+                selected = webmodel.catalog_models(open_catalog(cfg, bundles=False), args.live2d)
+            except ValueError as e:
+                args.usage(str(e))
+            r.update(webmodel.build(out, selected, cfg, player, force=args.force, tmp_dir=args.tmp,
+                                    workers=args.workers))
+        if charts:
+            pairs = web.all_pairs(master_dir(cfg)) if args.all else args.pair
+            r.update(web.build(out, pairs, cfg, player, args.format, audio=not args.no_audio, force=args.force,
+                               tmp_dir=args.tmp, workers=args.workers, band=args.band, leader_card=args.leader_card))
     _print_json(r)
-    if r.get("failed"):
+    if r.get("failed") or r.get("modelsFailed"):
         sys.exit(1)
 
 
@@ -352,9 +374,9 @@ def build_parser() -> argparse.ArgumentParser:
     c.set_defaults(func=cmd_story)
 
     c = sub.add_parser("live2d", help="Live2D model -> runtime model dir")
-    c.add_argument("key")
+    c.add_argument("key", help="model key Character/Live2D/<group>/<name>/model/<name>, or its model id <name>")
     _out(c, "output directory")
-    c.set_defaults(func=cmd_live2d)
+    c.set_defaults(func=cmd_live2d, usage=c.error)
 
     c = sub.add_parser("spot", help="spot -> spot.json + Spine + room.glb + shaders")
     c.add_argument("spot_id", type=int)
@@ -395,21 +417,28 @@ def build_parser() -> argparse.ArgumentParser:
     _out(c, "output directory")
     c.set_defaults(func=cmd_live)
 
-    c = sub.add_parser("web", help="live charts -> static site for ournotes-player (shared player + per-chart data)")
+    c = sub.add_parser("web", help="live charts and Live2D models -> static site for ournotes-player "
+                                   "(shared player + per-chart / per-model data)")
     c.add_argument("out", help="site directory")
     c.add_argument("--player", help="ournotes-player checkout (built) or installed package ([paths] player)")
-    g = c.add_mutually_exclusive_group(required=True)
+    g = c.add_mutually_exclusive_group()
     g.add_argument("--pair", type=parse_pair, action="append", help="<musicId>:<difficulty> (repeatable)")
     g.add_argument("--all", action="store_true", help="every MasterLiveMusic x difficulty")
-    g.add_argument("--player-only", action="store_true", help="rewrite the player files and charts.json only")
-    g.add_argument("--reingest-json", action="store_true", help="store every chart's JSON files again")
+    g.add_argument("--player-only", action="store_true",
+                   help="rewrite the player files, charts.json and models.json only")
+    g.add_argument("--reingest-json", action="store_true", help="store every chart's and model's JSON files again")
+    m = c.add_mutually_exclusive_group()
+    m.add_argument("--live2d", action="append", metavar="MODEL",
+                   help="Live2D model id or key Character/Live2D/<group>/<name>/model/<name> (repeatable)")
+    m.add_argument("--all-live2d", action="store_true", help="every Live2D model of the catalog")
     c.add_argument("--format", default=DEFAULT_AUDIO_FORMAT, choices=tuple(WEB_AUDIO), help="BGM format")
     c.add_argument("--no-audio", action="store_true", help="export no audio files")
-    c.add_argument("--force", action="store_true", help="rebuild charts whose manifest exists")
-    c.add_argument("--tmp", help="directory for the temporary live builds (default <site>.tmp)")
-    c.add_argument("--workers", type=int, help="parallel music processes (default up to 5, 1 = this process)")
+    c.add_argument("--force", action="store_true", help="rebuild charts and models whose manifest exists")
+    c.add_argument("--tmp", help="directory for the temporary live and model builds (default <site>.tmp)")
+    c.add_argument("--workers", type=int,
+                   help="parallel music / model processes (default up to 5 / 4, 1 = this process)")
     _band_args(c)
-    c.set_defaults(func=cmd_web)
+    c.set_defaults(func=cmd_web, usage=c.error)
     return p
 
 

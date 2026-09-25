@@ -111,17 +111,19 @@ the catalog or resource kinds that are not supported. Prints the index with a su
 ## live2d
 
 ```
-nnnotes live2d KEY -o OUT
+nnnotes live2d MODEL -o OUT
 ```
 
-A Live2D (Cubism) model prefab as a Cubism runtime directory (`<name>` is the last part of `KEY`):
+A Live2D (Cubism) model prefab as a Cubism runtime directory. `MODEL` is the model's key
+`Character/Live2D/<group>/<name>/model/<name>` or its id `<name>` (`nnnotes catalog --prefix Character/Live2D/` lists
+the keys):
 
 ```
 OUT/<name>.moc3                   the model's moc3
 OUT/textures/*.png                atlas pages
 OUT/<name>.prefab.json            the whole prefab: every GameObject and component, motions and expressions inlined
 OUT/<exp>.exp3.json               expressions
-OUT/<name>.physics3.json          physics
+OUT/<name>.physics3.json          physics (not written for a model without physics)
 OUT/motions/<motion>.motion3.json motions (and motions/_fades.json)
 OUT/<name>.model3.json            file references, EyeBlink / LipSync groups
 ```
@@ -229,12 +231,14 @@ summary.
 ## web
 
 ```
-nnnotes web SITE (--pair MUSIC_ID:DIFFICULTY [--pair ...] | --all | --player-only | --reingest-json)
+nnnotes web SITE [--pair MUSIC_ID:DIFFICULTY [--pair ...] | --all] [--live2d MODEL [--live2d ...] | --all-live2d]
+nnnotes web SITE (--player-only | --reingest-json)
                   [--player DIR] [--format aac|opus|vorbis|mp3|flac] [--no-audio] [--force]
                   [--tmp DIR] [--workers N] [--band BAND | --leader-card CARD_ID]
 ```
 
-Builds or updates a static [ournotes-player](https://github.com/empty-sekai/ournotes-player) site:
+Builds or updates a static [ournotes-player](https://github.com/empty-sekai/ournotes-player) site of charts, Live2D
+models or both:
 
 ```
 SITE/index.html, chart-list.js ...        the player's chart list page; ?music=<id>&difficulty=<d> plays one chart
@@ -242,22 +246,35 @@ SITE/ournotes-player.element.min.js       the player's built bundle (and its sou
 SITE/charts.json                          chart index: listing facts, manifest path, sizes
 SITE/charts/<musicId>_<difficulty>.json   chart manifest: every path the player reads -> {asset, size}, or
                                           {parts: [[key, asset, size], ...], size} for a large JSON object
-SITE/assets/<sha256>.<ext>                content-addressed files shared by all charts
+SITE/models.json                          Live2D model index: id, key, group, canvas, manifest path, sizes
+SITE/models/<id>.json                     model manifest, the same entry forms as a chart manifest
+SITE/live2d/                              the player's Live2D model page and its bundle (when the player has them)
+SITE/assets/<sha256>.<ext>                content-addressed files shared by all charts and models
 ```
 
 - `--pair` (repeatable; `<musicId>:<difficulty>` or `<musicId>_<difficulty>`) adds the given charts; `--all` adds
   every music and difficulty that has a `MasterLiveMusicScore` row.
-- A chart whose manifest exists is skipped unless `--force`. Assets no chart references are removed.
-- `--player-only` rewrites the player files and `charts.json` only; `--reingest-json` stores every chart's JSON
-  files again from the site's own assets (then rewrites the player files and `charts.json`).
+- `--live2d` (repeatable; a model id `<name>` or key `Character/Live2D/<group>/<name>/model/<name>`) adds the given
+  Live2D models; `--all-live2d` adds every model key of the catalog. A model's id is its `<name>`. Its manifest lists
+  the files the player's Live2D viewer reads: `model.json` (index: moc3, prefab, textures, shader index and the Cubism
+  mask materials), the moc3 and prefab as `live2d` writes them, the atlas pages the drawables use, and the GLSL ES 3.00
+  programs of the Live2D shaders that the drawables' materials select (the mask shader only for a model with masked
+  drawables). Charts and models can be added in one run; models are built first.
+- A chart or model whose manifest exists is skipped unless `--force`. Assets no chart and no model references are
+  removed.
+- `--player-only` rewrites the player files, `charts.json` and `models.json` only; `--reingest-json` stores every
+  chart's and model's JSON files again from the site's own assets (then rewrites the player files and the indexes).
 - `--player`: the ournotes-player checkout (after its build) or installed package; it must contain
   `scripts/read-set.mjs`, `dist/ournotes-player.element.min.js` and `examples/chart-list/index.html`. The read-set
-  script runs under Node.js to list the files the player reads for each chart; only those are stored.
+  script runs under Node.js to list the files the player reads for each chart; only those are stored. When it also has
+  `examples/live2d/index.html`, that page and `dist/ournotes-player.live2d.element.min.js` go to `SITE/live2d/`.
 - `--format` (default `aac`) is the BGM format; note SE, cheers and voices stay FLAC. `--no-audio` stores no audio
   (the player then runs the chart silent on its own clock).
-- `--workers`: parallel music processes (default up to 5; `1` builds in this process). `--tmp`: directory for the
-  temporary live builds (default `SITE.tmp`); the build directories in it are removed after use.
+- `--workers`: parallel music processes (default up to 5) and model processes (default up to 4); `1` builds in this
+  process. `--tmp`: directory for the temporary live and model builds (default `SITE.tmp`); the build directories in
+  it are removed after use.
 - `--band` / `--leader-card`: as for `live`, for every chart.
+- Models need `[paths] apk` (component classes and the mask materials are read from the APK), not `[paths] master`.
 
 Same inputs give byte-identical outputs. Charts that fail are listed in the printed summary and in
-`SITE.failures.json`, and the exit status is then 1.
+`SITE.failures.json`, models that fail in the summary and in `SITE.model-failures.json`; the exit status is then 1.

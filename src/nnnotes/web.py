@@ -10,6 +10,10 @@
     <site>/assets/<sha256>.<ext>               content-addressed files (text assets as UTF-8, JSON without
                                                whitespace); charts share the note skins, effects, SE sheets, band
                                                stages and the common parts of the scene, each stored once
+    <site>/models.json, models/<id>.json       Live2D model index and manifests (webmodel.py), same entry forms and
+                                               the same assets/; write_index keeps what either kind references
+    <site>/live2d/                             the player's Live2D model page and its bundle, when the player has
+                                               them (LIVE2D_PAGE_DIR, LIVE2D_BUNDLES)
 
 Per music (the four difficulties share the scene, the sounds and the note assets): score + BGM decode, live sounds and
 scene extracted once into a temporary base directory, the note assets once per build (they depend on no music); per
@@ -70,6 +74,15 @@ PLAYER_BUNDLES = ("dist/ournotes-player.element.min.js",)
 PLAYER_PAGE_DIR = "examples/chart-list"
 # module specifiers of the page that name the player's sources -> the bundle copied next to the page
 PAGE_IMPORTS = {"../../src/element.js": "./ournotes-player.element.min.js"}
+# the player's Live2D model page (when the player has it): its files and bundle go to SITE/<LIVE2D_PAGE_SITE_DIR>/
+LIVE2D_PAGE_DIR = "examples/live2d"
+LIVE2D_PAGE_SITE_DIR = "live2d"
+LIVE2D_BUNDLES = ("dist/ournotes-player.live2d.element.min.js",)
+LIVE2D_PAGE_IMPORTS = {"../../src/live2d/define.js": "./ournotes-player.live2d.element.min.js"}
+# site data written by the build (never overwritten by page files)
+MODELS_DIR = "models"
+MODELS_INDEX = "models.json"
+SITE_DATA = ("assets", "charts", MODELS_DIR, "charts.json", MODELS_INDEX)
 PLAYER_VERSION_MARKER = "@PLAYER_VERSION@"         # replaced in the page's files by the bundles' short hash
 # collected files: text as UTF-8, binary as is; shader programs of the WebGL2 tier only
 TEXT_EXT = {".json", ".glsl"}
@@ -514,36 +527,60 @@ def read_set(live_dir: Path, player_dir: Path) -> list[str]:
     return out
 
 
-def write_player(site: Path, player_dir: Path) -> dict:
-    """The player's page (every file of PLAYER_PAGE_DIR; in its .html / .js files the PAGE_IMPORTS specifiers point
-    at the bundle and PLAYER_VERSION_MARKER is the bundles' short hash) and bundles (PLAYER_BUNDLES and their source
-    maps) into the site root."""
-    player_dir = check_player(player_dir)
+def player_bundles(player_dir: Path, rels) -> tuple[dict[str, bytes], str]:
+    """The bundles `rels` of the player and their source maps ({file name: bytes}), and the bundles' short hash."""
     bundles = {}
-    for rel in PLAYER_BUNDLES:
+    for rel in rels:
         bundles[Path(rel).name] = (player_dir / rel).read_bytes()
         if (player_dir / f"{rel}.map").is_file():
             bundles[Path(rel).name + ".map"] = (player_dir / f"{rel}.map").read_bytes()
-    version = hashlib.sha256(b"".join(bundles[Path(rel).name] for rel in PLAYER_BUNDLES)).hexdigest()[:16]
-    page_dir = player_dir / PLAYER_PAGE_DIR
+    return bundles, hashlib.sha256(b"".join(bundles[Path(rel).name] for rel in rels)).hexdigest()[:16]
+
+
+def page_files(page_dir: Path, imports: dict[str, str], version: str,
+               names: str = "PAGE_IMPORTS") -> dict[str, bytes]:
+    """The files of a player page directory; in its .html / .js files the module specifiers `imports` (`names`)
+    point at the bundles copied next to the page and PLAYER_VERSION_MARKER is `version`."""
     page = {f.relative_to(page_dir).as_posix(): f.read_bytes() for f in sorted(page_dir.rglob("*")) if f.is_file()}
     for rel, data in page.items():
         if Path(rel).suffix not in (".html", ".js", ".mjs"):
             continue
         t = data.decode("utf-8")
-        for src, dst in PAGE_IMPORTS.items():
+        for src, dst in imports.items():
             for q in ('"', "'"):
                 t = t.replace(f"{q}{src}{q}", f"{q}{dst}{q}")
         if re.search(r"""["'](?:\.\./)+src/""", t):
-            raise RuntimeError(f"player page {rel} imports the player's sources beyond PAGE_IMPORTS")
+            raise RuntimeError(f"player page {rel} imports the player's sources beyond {names}")
         page[rel] = t.replace(PLAYER_VERSION_MARKER, version).encode("utf-8")
-    for rel, data in {**page, **bundles}.items():
-        if rel.split("/", 1)[0] in ("assets", "charts") or rel == "charts.json":
+    return page
+
+
+def write_player(site: Path, player_dir: Path) -> dict:
+    """The player's page (every file of PLAYER_PAGE_DIR; in its .html / .js files the PAGE_IMPORTS specifiers point
+    at the bundle and PLAYER_VERSION_MARKER is the bundles' short hash) and bundles (PLAYER_BUNDLES and their source
+    maps) into the site root; when the player has the Live2D page, the same for LIVE2D_PAGE_DIR, LIVE2D_PAGE_IMPORTS
+    and LIVE2D_BUNDLES into LIVE2D_PAGE_SITE_DIR."""
+    player_dir = check_player(player_dir)
+    bundles, version = player_bundles(player_dir, PLAYER_BUNDLES)
+    page = page_files(player_dir / PLAYER_PAGE_DIR, PAGE_IMPORTS, version)
+    files = {**page, **bundles}
+    live2d = {}
+    if (player_dir / LIVE2D_PAGE_DIR / "index.html").is_file():
+        missing = [rel for rel in LIVE2D_BUNDLES if not (player_dir / rel).is_file()]
+        if missing:
+            raise ConfigError(f"{player_dir} has the Live2D page but not {', '.join(missing)} "
+                              f"(a checkout needs its build first)")
+        live2d_bundles, live2d_version = player_bundles(player_dir, LIVE2D_BUNDLES)
+        live2d = page_files(player_dir / LIVE2D_PAGE_DIR, LIVE2D_PAGE_IMPORTS, live2d_version, "LIVE2D_PAGE_IMPORTS")
+        files.update({f"{LIVE2D_PAGE_SITE_DIR}/{r}": d for r, d in {**live2d, **live2d_bundles}.items()})
+    for rel, data in files.items():
+        if rel.split("/", 1)[0] in SITE_DATA:
             raise RuntimeError(f"player page file {rel} would overwrite the site data")
         dst = Path(site) / rel
         dst.parent.mkdir(parents=True, exist_ok=True)
         dst.write_bytes(data)
-    return {"playerVersion": version, "playerBytes": sum(map(len, bundles.values())), "pageFiles": len(page)}
+    return {"playerVersion": version, "playerBytes": sum(map(len, bundles.values())), "pageFiles": len(page),
+            "live2dPageFiles": len(live2d)}
 
 
 def entry_text(site: Path, e: dict) -> bytes:
@@ -554,10 +591,10 @@ def entry_text(site: Path, e: dict) -> bytes:
 
 
 def reingest_json(site: Path) -> dict:
-    """Every JSON file of every chart stored again through text_asset (after a change of the stored-text rules);
-    the manifests follow, unreferenced assets go with write_index."""
+    """Every JSON file of every chart and model stored again through text_asset (after a change of the stored-text
+    rules); the manifests follow, unreferenced assets go with write_index."""
     store, changed, memo = Store(site), 0, {}
-    for mf in sorted((site / "charts").glob("*.json")):
+    for mf in [*sorted((site / "charts").glob("*.json")), *sorted((site / MODELS_DIR).glob("*.json"))]:
         man = json.loads(mf.read_text(encoding="utf-8"))
         files = man["files"]
         for p, e in files.items():
@@ -575,7 +612,9 @@ def reingest_json(site: Path) -> dict:
 
 
 def write_index(site: Path) -> dict:
-    """site/charts.json from every chart manifest present; unreferenced assets removed."""
+    """site/charts.json from every chart manifest present and site/models.json from every model manifest
+    (webmodel.write_models_index); assets no chart and no model references removed."""
+    from .webmodel import write_models_index
     order = {d: i for i, d in enumerate(DIFFICULTIES)}
     charts, used = [], set()
     (site / "assets").mkdir(parents=True, exist_ok=True)
@@ -588,13 +627,16 @@ def write_index(site: Path) -> dict:
                        "flows": man.get("flows"), "bytes": sum(f["size"] for f in man["files"].values()), **man["chart"]})
     charts.sort(key=lambda c: (c["musicId"], order[c["difficulty"]]))
     (site / "charts.json").write_bytes(_dump({"format": SITE_FORMAT, "charts": charts}))
+    models, model_assets = write_models_index(site)
+    used |= model_assets
     removed = 0
     for f in (site / "assets").iterdir():
         if f"assets/{f.name}" not in used:
             f.unlink()
             removed += 1
     sizes = [f.stat().st_size for f in (site / "assets").iterdir()]
-    return {"charts": len(charts), "assets": len(sizes), "assetBytes": sum(sizes), "removedAssets": removed}
+    return {"charts": len(charts), "models": models, "assets": len(sizes), "assetBytes": sum(sizes),
+            "removedAssets": removed}
 
 
 # ---------------------------------------------------------------- build
