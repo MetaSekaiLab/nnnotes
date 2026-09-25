@@ -116,10 +116,6 @@ nnnotes web out/site --pair 100001:expert --pair 100001:hard --player <ournotes-
 
 所有 JSON 由同一个写出器生成（`jsonio`），保证编码、换行与数值格式一致。
 
-## 参与开发
-
-测试、提交规范与发布流程见 [CONTRIBUTING.md](CONTRIBUTING.md)。
-
 ## License
 
 MIT，见 [LICENSE](LICENSE)。

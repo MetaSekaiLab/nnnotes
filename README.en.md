@@ -141,10 +141,6 @@ settings (TOML / environment / flags)
 Every JSON file is written by one writer (`jsonio`), so encoding, line endings and number formatting are the same
 everywhere.
 
-## Contributing
-
-Tests, commit conventions and the release process: [CONTRIBUTING.md](CONTRIBUTING.md).
-
 ## License
 
 MIT, see [LICENSE](LICENSE).
