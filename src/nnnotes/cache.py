@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import secrets
 import struct
 import threading
 from collections import OrderedDict
@@ -77,7 +78,7 @@ def bucket(name: str, *, salt: str = "", disk: bool = False, max_item: int | Non
 
 
 def stats() -> dict:
-    """Per bucket: items, bytes, hits, misses, disk hits, disk writes."""
+    """Per bucket: items, bytes, hits, misses, disk hits, disk writes, disk write errors."""
     return {n: b.stats() for n, b in sorted(_buckets.items())}
 
 
@@ -147,7 +148,7 @@ class Bucket:
         self._items: OrderedDict[str, tuple] = OrderedDict()
         self._bytes = 0
         self._lock = threading.Lock()
-        self.hits = self.misses = self.disk_hits = self.disk_writes = 0
+        self.hits = self.misses = self.disk_hits = self.disk_writes = self.disk_errors = 0
 
     def key(self, *parts) -> str:
         return key(self.name, self.salt, parts)
@@ -184,9 +185,12 @@ class Bucket:
         n = len(value) if size is None else int(size)
         self._remember(k, value, n)
         if self.disk and _settings["directory"] is not None and n <= max(self._limit(), 64 << 20):
-            _disk_write(self._path(k), value)
+            ok = _disk_write(self._path(k), value)
             with self._lock:
-                self.disk_writes += 1
+                if ok:
+                    self.disk_writes += 1
+                else:
+                    self.disk_errors += 1
 
     def _remember(self, k: str, value, n: int) -> None:
         if n > self._limit():
@@ -213,7 +217,7 @@ class Bucket:
     def stats(self) -> dict:
         with self._lock:
             return {"items": len(self._items), "bytes": self._bytes, "hits": self.hits, "misses": self.misses,
-                    "diskHits": self.disk_hits, "diskWrites": self.disk_writes}
+                    "diskHits": self.disk_hits, "diskWrites": self.disk_writes, "diskErrors": self.disk_errors}
 
 
 def _disk_read(p: Path) -> bytes | None:
@@ -227,14 +231,37 @@ def _disk_read(p: Path) -> bytes | None:
     return raw[12:] if len(raw) == 12 + n else None
 
 
-def _disk_write(p: Path, data: bytes) -> None:
+def temp_path(dst: Path) -> Path:
+    """A new temporary file name next to `dst` for writing it atomically: short whatever `dst`'s name (a long name
+    plus a suffix would pass the file system's name limit), random, so unique across processes and threads."""
+    return Path(dst).with_name(f".{secrets.token_hex(8)}.part")
+
+
+def write_atomic(dst: Path, data: bytes) -> None:
+    """Write `data` to `dst` through temp_path(dst) (created exclusively, default permissions) and a rename; the
+    temporary file is removed when anything fails."""
+    tmp = temp_path(dst)
+    try:
+        with open(tmp, "xb") as f:
+            f.write(data)
+        os.replace(tmp, dst)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def _disk_write(p: Path, data: bytes) -> bool:
+    """Write a disk entry atomically; False when the file system refused (counted as diskErrors: a cache that
+    cannot write only misses later, the result is the same)."""
     try:
         p.parent.mkdir(parents=True, exist_ok=True)
-        tmp = p.with_name(f"{p.name}.{os.getpid()}.{threading.get_ident()}.part")
-        tmp.write_bytes(DISK_MAGIC + struct.pack("<Q", len(data)) + bytes(data))
-        os.replace(tmp, p)
+        write_atomic(p, DISK_MAGIC + struct.pack("<Q", len(data)) + bytes(data))
+        return True
     except OSError:
-        pass                                    # a cache that cannot write is a cache that misses
+        return False
 
 
 # ---------------------------------------------------------------- packing several blobs into one value

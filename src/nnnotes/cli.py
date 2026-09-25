@@ -77,15 +77,15 @@ def _existing(cfg: Config, section: str, key: str, kind: str = "file") -> Path |
 def open_catalog(cfg: Config, bundles: bool = True, region: str | None = None) -> Catalog:
     """The catalog of [catalog] language (merged with the APK's when [paths] apk is set), fetching from the CDN of
     `region` (default: [catalog] region); the regions serve the same catalog for a language, so one cached file
-    serves them all. `bundles`: bundles will be fetched, so the CDN base and the bundle key are required; else only
-    what reading the catalog needs."""
+    serves them all. `bundles`: bundles will be fetched; else only the catalog is read. The region, its CDN base
+    and the bundle key are read from the settings only when something must be downloaded (every file in the cache:
+    none of them is needed), then a missing one is a ConfigError naming the setting."""
     cache = cfg.require_path("paths", "cache")
     catbin = _existing(cfg, "paths", "catalog")
     apk = _existing(cfg, "paths", "apk")
     language = cfg.require("catalog", "language") if catbin is None else None
-    download = catbin is None and not Catalog.cache_file(language, cache).is_file()
-    cdn = cfg.cdn(region or cfg.region()) if bundles or download else None
-    key = bundle_key(cfg) if bundles else None
+    cdn = (lambda: cfg.cdn(region or cfg.region())) if bundles or catbin is None else None
+    key = (lambda: bundle_key(cfg)) if bundles else None
     if catbin is not None:
         return Catalog(catbin.read_bytes(), cache, cdn=cdn, bundle_key=key, apk=apk)
     return Catalog.load(language, cache, cdn=cdn, bundle_key=key, apk=apk)

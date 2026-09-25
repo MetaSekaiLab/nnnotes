@@ -83,8 +83,9 @@ def test_missing_settings_exit_2_and_name_the_setting(catalog_file, tmp_path, cd
     base = ["--catalog", str(catalog_file), "--cache", str(tmp_path / "cache")]
     code, out, err = run(base + ["pull", "Char/A"], capsys)
     assert code == 2 and out == ""
-    assert err.strip() == ("nnnotes: setting catalog.region is not set: give it as `region` in the [catalog] "
-                           "table of the config file, the environment variable NNNOTES_CATALOG_REGION or --region")
+    assert err.strip() == ("nnnotes: a_01.bundle is not in the cache: setting catalog.region is not set: give it "
+                           "as `region` in the [catalog] table of the config file, the environment variable "
+                           "NNNOTES_CATALOG_REGION or --region")
     code, _, err = run(base + ["--region", "zz", "pull", "Char/A"], capsys)
     assert code == 2 and "servers.zz.cdn" in err and "NNNOTES_SERVERS_ZZ_CDN" in err
     monkeypatch.setenv("NNNOTES_SERVERS_ZZ_CDN", cdn)
@@ -102,7 +103,8 @@ def test_malformed_setting_names_setting_not_value(catalog_file, tmp_path, cdn, 
     monkeypatch.setenv("NNNOTES_SERVERS_ZZ_CDN", cdn)
     code, _, err = run(["--catalog", str(catalog_file), "--cache", str(tmp_path / "cache"), "--region", "zz",
                         "pull", "Char/A"], capsys)
-    assert code == 2 and err.strip() == "nnnotes: setting bundle.key: must be 16 bytes (32 hex digits)"
+    assert code == 2 and err.strip() == ("nnnotes: a_01.bundle is not in the cache: setting bundle.key: must be "
+                                         "16 bytes (32 hex digits)")
     assert bad not in err
 
 

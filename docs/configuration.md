@@ -74,9 +74,9 @@ the region in use.
 
 ## What each command needs
 
-"Catalog" below means: `[paths] cache`; `[catalog] region` and that region's `cdn`; `[bundle] key` and
-`nonce_seed`; and either `[paths] catalog` or `[catalog] language` (the catalog is then downloaded into the cache on
-first use). `[paths] apk` is optional for the catalog: when it is set, the APK's own catalog and bundles are merged
+"Catalog" below means: `[paths] cache`; either `[paths] catalog` or `[catalog] language` (the catalog is then
+downloaded into the cache on first use); and, for what must be downloaded, `[catalog] region` and that region's
+`cdn`, `[bundle] key` and `nonce_seed`. `[paths] apk` is optional for the catalog: when it is set, the APK's own catalog and bundles are merged
 in, and bundles that ship inside the APK can only be read with it.
 
 | Command | Settings |
@@ -101,7 +101,9 @@ in, and bundles that ship inside the APK can only be read with it.
 | `web --pair` / `--all` | as `live`, plus `[paths] player`, `node`; with `--region` / `--all-regions` each region's `cdn` and master data (`[servers.<region>] master`; `[paths] master` for at most one region) |
 | `web --player-only` / `--reingest-json` | `[paths] player` |
 
-Bundles already in the cache are read from there; the commands still ask for the settings above.
+The region, its `cdn`, `[bundle] key` and `nonce_seed` are read only when a file must be downloaded: when the
+catalog and every bundle a command needs are in the cache, none of them is needed. A download that needs a missing
+one stops the command with one line naming the file and the setting (see Errors).
 
 ## Errors
 
@@ -110,6 +112,7 @@ the setting, its environment variable and its flag where there is one; it never 
 
 ```
 nnnotes: setting catalog.region is not set: give it as `region` in the [catalog] table of the config file, the environment variable NNNOTES_CATALOG_REGION or --region
+nnnotes: <name>.bundle is not in the cache: setting bundle.key is not set: give it as `key` in the [bundle] table of the config file, the environment variable NNNOTES_BUNDLE_KEY
 nnnotes: setting bundle.key: must be 16 bytes (32 hex digits)
 nnnotes: setting paths.apk: file <path> not found
 nnnotes: ffmpeg not found on PATH: give its path as `ffmpeg` in the [paths] table of the config file, the environment variable NNNOTES_PATHS_FFMPEG or --ffmpeg

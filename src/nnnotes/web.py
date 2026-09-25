@@ -60,7 +60,7 @@ import traceback
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from . import jsonio, languages, live
+from . import cache, jsonio, languages, live
 from .config import Config, ConfigError, tool, use
 from .score import DIFFICULTIES, master_table
 
@@ -302,7 +302,7 @@ class Store:
         if dst.exists() and dst.stat().st_size == len(data):
             self.reused += 1
         else:
-            tmp = dst.with_name(f"{name}.{os.getpid()}.{threading.get_ident()}.part")
+            tmp = cache.temp_path(dst)
             tmp.write_bytes(data)
             for i in range(20):
                 try:
