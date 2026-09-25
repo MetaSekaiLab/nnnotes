@@ -23,7 +23,7 @@ addresses in their own configuration, and the exports stay in local directories 
 | `master download` | master data version, or `--latest` (the region's current one) | that version's `MasterManifest.json` and every `.bin` file (SHA-256 checked) |
 | `master decode` | master data `.bin` files or directories | one JSON per table (Rijndael-256 CBC decryption + gzip) |
 | `adv` | episode ID | `episode.json`: command list, lines in five languages, voice / sound / video index |
-| `story` | episode ID | a full story directory: episode, every Live2D model, audio, stage scene and shaders, story UI |
+| `story` | episode ID | a full story directory: episode, every Live2D model, audio, stage scene and shaders, story UI, frames / particle effects / post effects / stills / talk windows / chat assets, videos (WebM) |
 | `live2d` | model key or model id | a Live2D (Cubism) runtime directory: moc3, textures, motion3, physics, expressions, prefab parameters |
 | `spot` | spot ID | `spot.json` + Spine characters + the room as `room.glb` + shaders |
 | `room` | background prefab key | the room model (binary glTF) |
@@ -54,7 +54,7 @@ Based on all data of the Taiwan server, version 1.0.1 (zh-Hant):
 | catalog / bundle decryption / dependency closure | working |
 | master data decoding | working |
 | stories, `adv` | 946 / 946 episodes |
-| stories, `story` (full directory) | 712 / 946 episodes; the other 234 use resource types not yet supported (Frame 209, Effect 17, PostEffect 3; 5 reference resources missing from the catalog) |
+| stories, `story` (full directory) | 946 / 946 episodes have all their resources in the catalog and of supported kinds (the resource closure equals the game's own per-episode download list); 759 exported one by one, the other 187 (with frames, effects, post effects, stills and the like) not yet one by one |
 | Live2D models | 239 / 239 (every model of the catalog; episodes use 185 of them) |
 | CRI audio | 681 / 681 cue sheets |
 | charts, `live` | 336 / 336 (music, difficulty) pairs |
@@ -72,7 +72,8 @@ Based on all data of the Taiwan server, version 1.0.1 (zh-Hant):
 - a decoded master data directory (from `master download` + `master decode`): needed by `adv`, `story`, `spot`,
   `live`, `web`
 - external tools: [vgmstream](https://vgmstream.org/) (CRI HCA decoding), [FFmpeg](https://ffmpeg.org/)
-  (transcoding); `web` also needs Node.js 20+ and a built ournotes-player
+  (transcoding, including the WebM muxing and Opus audio of story videos); `web` also needs Node.js 20+ and a built
+  ournotes-player
 
 ## Configuration
 
@@ -143,7 +144,8 @@ settings (TOML / environment / flags)
        └─ reading  unity (UnityPy type trees and TextAssets)
                    export (prefabs / components / references resolved to JSON, textures and shaders alongside)
                    shader, textstyle (text layout and style), tmpfont (TextMesh Pro fonts), player (boot settings), cri + crikey (CRI audio)
-            └─ content  stories: adv, advscene, advui, story
+            └─ content  stories: adv, advscene, advmedia (frames / effects / post effects / stills / chat),
+                                 advvideo (USM videos), advui, story
                         Live2D: live2d, motion
                         spots: spot, room
                         charts: score (chart parsing and a reimplementation of the game's chart converter),

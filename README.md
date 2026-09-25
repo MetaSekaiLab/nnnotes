@@ -18,7 +18,7 @@ nnnotes 是 BanG Dream! Our Notes 游戏文件的离线数据工具包：读取 
 | `master download` | masterdata 版本号，或 `--latest`（区服当前版本） | 该版本的 `MasterManifest.json` 与全部 `.bin` 文件（SHA-256 校验） |
 | `master decode` | masterdata `.bin` 文件或目录 | 每张表一个 JSON（Rijndael-256 CBC 解密 + gzip 解压） |
 | `adv` | 剧情 ID | `episode.json`：命令表、五语台词、语音 / 音效 / 视频索引 |
-| `story` | 剧情 ID | 完整剧情目录：episode、全部 Live2D 模型、音频、舞台场景与着色器、剧情 UI |
+| `story` | 剧情 ID | 完整剧情目录：episode、全部 Live2D 模型、音频、舞台场景与着色器、剧情 UI、Frame / 粒子特效 / 后处理 / 静帧 / 对话框 / 聊天资源、视频（WebM） |
 | `live2d` | 模型资源键或模型 ID | Live2D（Cubism）运行时目录：moc3、贴图、motion3、物理、表情、预制体参数 |
 | `spot` | 据点 ID | `spot.json` + Spine 角色 + 房间 `room.glb` + 着色器 |
 | `room` | 背景预制体键 | 房间模型（binary glTF） |
@@ -45,7 +45,7 @@ nnnotes 是 BanG Dream! Our Notes 游戏文件的离线数据工具包：读取 
 | catalog / 资源包解密 / 依赖闭包 | 可用 |
 | masterdata 解码 | 可用 |
 | 剧情 `adv` | 946 / 946 集可导出 |
-| 剧情 `story`（完整目录） | 712 / 946 集可导出；其余 234 集用到尚未支持的资源类型（Frame 209 集、Effect 17 集、PostEffect 3 集，另有 5 集引用的资源不在 catalog 中） |
+| 剧情 `story`（完整目录） | 946 / 946 集的资源都在 catalog 中且类型均受支持（资源闭包与游戏自带的每集下载清单一致）；已逐集导出验证 759 集，其余 187 集（用到 Frame / Effect / PostEffect / Still 等资源）未逐一验证 |
 | Live2D 模型 | 239 / 239 个可导出（catalog 中的全部模型，剧情用到其中 185 个） |
 | CRI 音频 | 681 / 681 个 cue sheet 可解码 |
 | 谱面 `live` | 336 / 336 个（曲目, 难度）组合可导出 |
@@ -58,7 +58,7 @@ nnnotes 是 BanG Dream! Our Notes 游戏文件的离线数据工具包：读取 
 - Python 3.11+，在仓库内 `pip install -e .`（尚未发布到 PyPI）
 - 游戏安装包 `base.apk`：APK 内置资源包、CRI 解码密钥、启动设置。`player`、`story`、`live`、`web` 用 nnnotes 自带的类型树读取 APK 启动数据中的 MonoBehaviour，目前支持游戏版本 1.0.1（Unity 6000.3.12f1）；其他版本的 APK 若类型不符，这些命令会报错并给出类名、游戏版本和 Unity 版本
 - 解码后的 masterdata 目录（可用 `master download` + `master decode` 生成）：`adv`、`story`、`spot`、`live`、`web` 需要
-- 外部工具：[vgmstream](https://vgmstream.org/)（CRI HCA 解码）、[FFmpeg](https://ffmpeg.org/)（转码）；`web` 另需 Node.js 20+ 与构建好的 ournotes-player
+- 外部工具：[vgmstream](https://vgmstream.org/)（CRI HCA 解码）、[FFmpeg](https://ffmpeg.org/)（转码，含剧情视频的 WebM 封装与 Opus 音频）；`web` 另需 Node.js 20+ 与构建好的 ournotes-player
 
 ## 配置
 
@@ -114,7 +114,7 @@ nnnotes web out/site --live2d adv_live2d_rana_003_casual_spring_01 --player <our
        └─ 读取层  unity（UnityPy 读取 typetree 与 TextAsset）
                   export（预制体 / 组件 / 引用全部解析为 JSON，贴图与着色器随同导出）
                   shader、textstyle（文字排版与样式）、tmpfont（TextMesh Pro 字体）、player（启动设置）、cri + crikey（CRI 音频）
-            └─ 内容层  剧情：adv、advscene、advui、story
+            └─ 内容层  剧情：adv、advscene、advmedia（Frame / 特效 / 后处理 / 静帧 / 聊天）、advvideo（USM 视频）、advui、story
                        Live2D：live2d、motion
                        据点：spot、room
                        谱面：score（谱面解析与游戏谱面转换器的复现）、livescene、livenotes、liveui、liveaudio、live

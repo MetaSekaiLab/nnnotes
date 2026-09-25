@@ -291,7 +291,7 @@ def cmd_story(args, cfg):
         require_extra()
     cat = open_catalog(cfg)
     r = story.build(cat, master_dir(cfg), player_data(cfg), args.adv_id, Path(args.out),
-                    audio_format=args.format, fonts=args.fonts)
+                    audio_format=args.format, audio=not args.no_audio, fonts=args.fonts)
     _print_json(r)
 
 
@@ -431,10 +431,11 @@ def build_parser() -> argparse.ArgumentParser:
     _out(c, "output .json file")
     c.set_defaults(func=cmd_adv)
 
-    c = sub.add_parser("story", help="ADV episode -> story dir (episode, models, audio, scene, UI)")
+    c = sub.add_parser("story", help="ADV episode -> story dir (episode, models, audio, scene, UI, media, videos)")
     c.add_argument("adv_id", type=int)
     _out(c, "output directory")
     c.add_argument("--format", default="flac", choices=AUDIO_CHOICES)
+    c.add_argument("--no-audio", action="store_true", help="do not decode the cue sheets")
     c.add_argument("--fonts", default="open", choices=("open", "game"),
                    help="open: text layout and style only, no font data (default); game: also the game's TMP fonts "
                         "(needs the 'fonts' extra)")

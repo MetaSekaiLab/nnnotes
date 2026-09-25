@@ -19,8 +19,9 @@ the Live2D models and the audio:
                   URP chain (film grain textures, indexed by FilmGrain.type)
 
 Objects are exported with export.Exporter (references resolved, textures as
-PNG). Shaders referenced anywhere, every Shader in the loaded bundle closures
-and the ADV camera renderer's shaders are dumped with shader.py.
+PNG). Shaders referenced anywhere, every Shader in the loaded bundle closures,
+the ADV camera renderer's shaders and the shaders handed in by the caller (those
+of advmedia's kind files) are dumped with shader.py into one `shaders/`.
 """
 from __future__ import annotations
 
@@ -59,7 +60,9 @@ def camera_renderer(player_graphics: dict, pipeline: str, renderer_index: int) -
     return rl[i]
 
 
-def extract(cat: Catalog, player: PlayerData, episode: dict, out_dir: Path) -> dict:
+def extract(cat: Catalog, player: PlayerData, episode: dict, out_dir: Path, shaders: dict | None = None) -> dict:
+    """Write scene.json, textures/ and shaders/. `shaders`: further {name: Shader object} to dump with the scene's
+    (the scene's object wins for a name both have)."""
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     ex = Exporter(cat, out_dir, player=player)
@@ -92,6 +95,8 @@ def extract(cat: Catalog, player: PlayerData, episode: dict, out_dir: Path) -> d
     for rn in sorted(renderers):
         for o in player.renderer_shaders(rn):
             ex._shader(o)
+    for name, o in (shaders or {}).items():
+        ex.shaders.setdefault(name, o)
     # post-process textures the URP chain samples (film grain lookup by FilmGrain.type)
     doc["postTextures"] = {rn: {"filmGrainTex": [ex.texture(o) for o in player.post_textures(rn, "filmGrainTex")]}
                            for rn in sorted(renderers)}

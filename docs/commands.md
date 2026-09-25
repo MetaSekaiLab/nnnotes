@@ -112,10 +112,17 @@ One ADV episode as JSON: `advId`, `asset`, `commandCount`, `commands` (the episo
 sound and video rows resolved), `text` (every line in the five languages), `sounds`, `cuesheets`, `videos`,
 `resources` (`kind`, `address`, `present` in the catalog), `master` (the `MasterAdv` row) and `title`.
 
+`resources` lists the assets the game loads for the episode's command rows (rows marked `IgnoreData` load nothing;
+cue sheets are in `cuesheets`): `live2d`, `stage`, `still`, `frame`, `effect`, `posteffect`, `timeline` and
+`chatstamp` named by the row's asset name; `transition` for FadeIn / FadeOut rows (a row without a transition name
+takes the player settings' default transition, which is read from `[paths] apk`); `talkwindow` for TalkWindow rows;
+`chatwindow` and `chaticon` from the `MasterAdvChat` row of the chat rows' chat id; `video` from the episode's video
+row of a Movie / Clip row's video id.
+
 ## story
 
 ```
-nnnotes story ADV_ID -o OUT [--format flac|ogg|wav] [--fonts open|game]
+nnnotes story ADV_ID -o OUT [--format flac|ogg|wav] [--no-audio] [--fonts open|game]
 ```
 
 One ADV episode as a self-contained directory:
@@ -125,13 +132,25 @@ OUT/episode.json          as `adv`
 OUT/live2d/<model>/       every Live2D model of the episode: moc3, atlas pages, full prefab
 OUT/audio/<cueSheet>/     every cue sheet of the episode, one file per cue + cues.json, streams.json
 OUT/scene.json            player graphics, cameras, ADV fields, volumes, settings and stages
-OUT/textures/, shaders/   textures and shaders of the scene
-OUT/ui/                   ADV front canvas UI: ui.json, packed textures, UI shaders
-OUT/story.json            index of the above
+OUT/frames.json           Frame prefabs by asset name: uGUI, Animator controllers and clips, UI particle systems
+OUT/effects.json          particle effect prefabs by asset name, `instances` (effect name -> asset name)
+OUT/posteffects.json      PostEffect volume profiles by asset name
+OUT/stills.json           Still prefabs by asset name
+OUT/talkwindows.json      talk window prefabs of the TalkWindow rows
+OUT/chat.json             chat window prefabs, icons and stamps (sprites), the MasterAdvChat rows, shared chat texts
+OUT/textures/, shaders/   textures and shaders of the scene and of the files above
+OUT/videos/               Movie / Clip videos as WebM + videos.json (video id -> file, video row, size, frame rate)
+OUT/ui/                   ADV front canvas UI: ui.json, packed textures, UI shaders, rule transitions
+OUT/story.json            index of the above (a file the episode does not need is null and not written)
 ```
 
-`--format` (default `flac`) is the audio format. The command stops when the episode uses resources that are not in
-the catalog or resource kinds that are not supported. Prints the index with a summary.
+`--format` (default `flac`) is the audio format; `--no-audio` leaves the cue sheets undecoded (no `audio/`, `audio`
+in story.json is empty). Videos keep the VP9 stream of the game's USM file and carry its ADX audio as Opus (FFmpeg,
+`[paths] ffmpeg`); the USM streams are unmasked with the CRI key read from `[paths] apk`. TextMesh Pro text in
+frames, talk windows and chat keeps its layout and style; with `--fonts open` its font and sprite assets and text
+materials are only named (no atlas is written), with `--fonts game` they are exported. The command stops before
+writing anything when the episode uses resources that are not in the catalog or resource kinds that are not
+supported (`timeline`). Prints the index with a summary.
 
 `--fonts` (default `open`) chooses how `ui/` handles text. Both modes write a text record `textStyle` for each text
 node of `ui/ui.json`, and a document-level `textStyle` that holds the units and the line metrics of each font role.
