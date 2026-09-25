@@ -1,4 +1,4 @@
-# nnnotes
+# nnnotes？！
 
 [简体中文](README.md) | [English](README.en.md)
 
@@ -23,7 +23,7 @@ nnnotes 是 BanG Dream! Our Notes 游戏文件的离线数据工具包：读取 
 | `shader` | 资源键或 APK 内资源包 | 着色器各平台变体（GLSL ES 等）与索引 |
 | `audio` | CRI cue sheet | 每个 cue 一个音频文件（FLAC / Ogg / WAV）+ cue 元数据 |
 | `crikey` | APK | 读出游戏启动数据中的 CRI HCA 解码密钥（只显示是否找到，可写成 `.hcakey`） |
-| `player` | APK + IL2CPP 符号 | 渲染相关的全局设置（色彩空间、画质等级、渲染器）JSON |
+| `player` | APK | 渲染相关的全局设置（色彩空间、画质等级、渲染器）JSON |
 | `live` | 曲目 ID + 难度 | 完整谱面目录：谱面与运行时音符、3D 场景、音符与特效资源、BGM 与音效、声音路由 |
 | `web` | `--pair 曲目:难度`（可重复）或 `--all` | ournotes-player 静态站点：共享播放器 + 每谱清单 + 内容寻址资源 |
 
@@ -54,8 +54,7 @@ nnnotes 是 BanG Dream! Our Notes 游戏文件的离线数据工具包：读取 
 ## 需要准备
 
 - Python 3.11+，在仓库内 `pip install -e .`（尚未发布到 PyPI）
-- 游戏安装包 `base.apk`：APK 内置资源包、CRI 解码密钥、启动设置
-- 该 APK 的 IL2CPP 符号（Il2CppDumper 生成的 DummyDll 目录）：`player`、`story`、`live`、`web` 需要
+- 游戏安装包 `base.apk`：APK 内置资源包、CRI 解码密钥、启动设置。`player`、`story`、`live`、`web` 用 nnnotes 自带的类型树读取 APK 启动数据中的 MonoBehaviour，目前支持游戏版本 1.0.1（Unity 6000.3.12f1）；其他版本的 APK 若类型不符，这些命令会报错并给出类名、游戏版本和 Unity 版本
 - 解码后的 masterdata 目录（可用 `master download` + `master decode` 生成）：`adv`、`story`、`spot`、`live`、`web` 需要
 - 外部工具：[vgmstream](https://vgmstream.org/)（CRI HCA 解码）、[FFmpeg](https://ffmpeg.org/)（转码）；`web` 另需 Node.js 20+ 与构建好的 ournotes-player
 
@@ -65,9 +64,9 @@ nnnotes 是 BanG Dream! Our Notes 游戏文件的离线数据工具包：读取 
 
 1. 配置文件：`--config <文件>`，否则 `NNNOTES_CONFIG`，否则当前目录的 `nnnotes.toml`
 2. 环境变量：`NNNOTES_<节>_<键>`（如 `NNNOTES_BUNDLE_KEY`、`NNNOTES_SERVERS_TW_CDN`）
-3. 命令行参数：`--region`、`--language`、`--catalog`、`--cache`、`--master`、`--apk`、`--dummy-dll`、`--ffmpeg`、`--vgmstream`、`--node` 写在命令名之前；`--player` 是 `web` 的参数
+3. 命令行参数：`--region`、`--language`、`--catalog`、`--cache`、`--master`、`--apk`、`--ffmpeg`、`--vgmstream`、`--node` 写在命令名之前；`--player` 是 `web` 的参数
 
-复制 [`nnnotes.example.toml`](nnnotes.example.toml) 为 `nnnotes.toml` 后填写。需要的设置包括：资源包解密密钥与 nonce 种子、masterdata 的密钥与 IV、使用的区服 `[catalog] region` 与 catalog 语言 `[catalog] language`、每个区服的 CDN 地址（`[servers.<区服>]`），以及缓存目录、APK、IL2CPP 符号、masterdata 目录、ournotes-player 和 vgmstream / FFmpeg / Node.js 的路径（三个工具未设置时在 `PATH` 中查找）。这些值都来自使用者自己的游戏客户端。
+复制 [`nnnotes.example.toml`](nnnotes.example.toml) 为 `nnnotes.toml` 后填写。需要的设置包括：资源包解密密钥与 nonce 种子、masterdata 的密钥与 IV、使用的区服 `[catalog] region` 与 catalog 语言 `[catalog] language`、每个区服的 CDN 地址（`[servers.<区服>]`），以及缓存目录、APK、masterdata 目录、ournotes-player 和 vgmstream / FFmpeg / Node.js 的路径（三个工具未设置时在 `PATH` 中查找）。这些值都来自使用者自己的游戏客户端。
 
 缺少或格式错误的设置会让命令以退出码 2 结束，并用一行说明对应的配置键、环境变量和命令行参数，不会输出任何设置值。`nnnotes.toml` 已在 `.gitignore` 中，请勿提交。
 
