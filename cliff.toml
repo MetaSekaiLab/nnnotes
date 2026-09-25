@@ -1,0 +1,62 @@
+# git-cliff configuration: release notes and changelog from conventional commits.
+# https://git-cliff.org/docs/configuration
+
+[changelog]
+header = """
+# Changelog
+
+All notable changes to this project are listed here. Versions follow [Semantic Versioning](https://semver.org/).\n
+"""
+body = """
+{%- macro commit_link(id) -%}
+[{{ id | truncate(length=7, end="") }}](https://github.com/empty-sekai/nnnotes/commit/{{ id }})
+{%- endmacro -%}
+{% if version %}\
+    {% if previous.version %}\
+        ## [{{ version | trim_start_matches(pat="v") }}](https://github.com/empty-sekai/nnnotes/compare/{{ previous.version }}...{{ version }}) - {{ timestamp | date(format="%Y-%m-%d") }}
+    {% else %}\
+        ## [{{ version | trim_start_matches(pat="v") }}](https://github.com/empty-sekai/nnnotes/releases/tag/{{ version }}) - {{ timestamp | date(format="%Y-%m-%d") }}
+    {% endif %}\
+{% else %}\
+    ## Unreleased
+{% endif %}\
+{% for group, commits in commits | group_by(attribute="group") %}
+    ### {{ group | striptags | trim | upper_first }}
+    {% for commit in commits %}
+        - {% if commit.scope %}**{{ commit.scope }}:** {% endif %}\
+          {% if commit.breaking %}[**breaking**] {% endif %}\
+          {{ commit.message | upper_first }} ({{ self::commit_link(id=commit.id) }})\
+    {% endfor %}
+{% endfor %}\n
+"""
+footer = ""
+trim = true
+
+[git]
+conventional_commits = true
+filter_unconventional = true
+split_commits = false
+protect_breaking_commits = true
+filter_commits = false
+tag_pattern = "v[0-9].*"
+topo_order = false
+sort_commits = "oldest"
+commit_preprocessors = [
+    # link issue / pull request numbers
+    { pattern = '\((\w+\s)?#([0-9]+)\)', replace = "([#${2}](https://github.com/empty-sekai/nnnotes/issues/${2}))" },
+]
+commit_parsers = [
+    { message = "^feat", group = "<!-- 0 -->Features" },
+    { message = "^fix", group = "<!-- 1 -->Bug fixes" },
+    { message = "^perf", group = "<!-- 2 -->Performance" },
+    { message = "^refactor", group = "<!-- 3 -->Refactoring" },
+    { message = "^doc", group = "<!-- 4 -->Documentation" },
+    { message = "^test", group = "<!-- 5 -->Tests" },
+    { message = "^build", group = "<!-- 6 -->Build" },
+    { message = "^ci", group = "<!-- 7 -->CI" },
+    { message = "^chore\\(release\\)", skip = true },
+    { message = "^chore", group = "<!-- 8 -->Miscellaneous" },
+    { message = "^style", group = "<!-- 8 -->Miscellaneous" },
+    { message = "^revert", group = "<!-- 9 -->Reverts" },
+    { body = ".*security", group = "<!-- 10 -->Security" },
+]

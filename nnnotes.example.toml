@@ -1,0 +1,52 @@
+# nnnotes configuration. Copy to nnnotes.toml (or point --config / NNNOTES_CONFIG at your copy) and fill in.
+# Every value is empty here: nnnotes has no built-in keys, server addresses or data paths, and an empty value
+# counts as unset. Each setting can also be given as an environment variable NNNOTES_<SECTION>_<KEY>
+# (e.g. NNNOTES_BUNDLE_KEY, NNNOTES_SERVERS_TW_CDN); command-line flags override both.
+# Relative paths here are relative to this file. Do not commit a filled-in copy.
+
+[bundle]
+# AES-128 key of the asset bundle encryption, 32 hex digits
+key = ""
+# seed of the per-bundle nonce (SHA-256 of seed + bundle file name), hex
+nonce_seed = ""
+
+[master]
+# Rijndael-256 key of the master data files, 64 hex digits
+key = ""
+# Rijndael-256 CBC initialization vector of the master data files, 64 hex digits
+iv = ""
+
+[catalog]
+# region the commands use: the name of one [servers.<region>] table below (flag --region)
+region = ""
+# catalog language: catalog_main_<language>.bin, e.g. zh-Hant (flag --language)
+language = ""
+
+# One table per region; add more tables ([servers.<name>]) for other regions.
+[servers.tw]
+# label of the region in the local catalog browser (`nnnotes browse`)
+name = ""
+# CDN base URL of the region: catalogs, bundles, raw audio data and master data are fetched below it
+cdn = ""
+# catalog languages the local catalog browser lists for the region, e.g. ["zh-Hant"]
+languages = []
+
+[paths]
+# catalog .bin file to read instead of downloading catalog_main_<language>.bin into the cache (flag --catalog)
+catalog = ""
+# cache directory: downloaded catalogs, decrypted bundles, raw CDN files (flag --cache)
+cache = ""
+# decoded master data directory, one <Table>.json per table (`nnnotes master decode`) (flag --master)
+master = ""
+# the game's base.apk: APK-local bundles, player settings, CRI HCA keycode (flag --apk)
+apk = ""
+# Il2CppDumper DummyDll directory of the same APK: player data for story / live / site (flag --dummy-dll)
+dummy_dll = ""
+# ffmpeg executable; empty: ffmpeg on PATH (flag --ffmpeg)
+ffmpeg = ""
+# vgmstream-cli executable; empty: vgmstream-cli on PATH (flag --vgmstream)
+vgmstream = ""
+# Node.js executable for the site build's read-set script; empty: node on PATH (flag --node)
+node = ""
+# ournotes-player checkout (built) or installed package for `nnnotes site` (flag --player)
+player = ""

@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nnnotes"
+description = "Offline data toolkit for BanG Dream! Our Notes game files: catalogs, bundles, master data, stories, Live2D, audio and live charts"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.11"
+authors = [{ name = "emptysekai" }]
+dependencies = [
+    "UnityPy>=1.25",
+    "numpy>=2.0",
+    "Pillow>=10.0",
+    "pycryptodome>=3.20",
+    "fonttools>=4.50",
+    "freetype-py>=2.5",
+    "scipy>=1.13",
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+    "Topic :: Multimedia",
+]
+dynamic = ["version"]
+
+[project.optional-dependencies]
+test = ["pytest>=8", "pyflakes>=3.2"]
+
+[project.scripts]
+nnnotes = "nnnotes.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/empty-sekai/nnnotes"
+Source = "https://github.com/empty-sekai/nnnotes"
+Issues = "https://github.com/empty-sekai/nnnotes/issues"
+
+[tool.setuptools.dynamic]
+version = { attr = "nnnotes.__version__" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"

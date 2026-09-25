@@ -1,0 +1,45 @@
+name: Commit messages
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  commitlint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install commitlint
+        run: npm install --no-save --no-package-lock @commitlint/cli@19 @commitlint/config-conventional@19
+      - name: Pull request title
+        if: github.event_name == 'pull_request'
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: printf '%s\n' "$TITLE" | npx --no-install commitlint --verbose
+      - name: Pull request commits
+        if: github.event_name == 'pull_request'
+        run: >-
+          npx --no-install commitlint --verbose
+          --from ${{ github.event.pull_request.base.sha }}
+          --to ${{ github.event.pull_request.head.sha }}
+      - name: Pushed commits
+        if: github.event_name == 'push'
+        env:
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.event.after }}
+        run: |
+          if [ -z "${BEFORE//0/}" ] || ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            npx --no-install commitlint --verbose --last
+          else
+            npx --no-install commitlint --verbose --from "$BEFORE" --to "$AFTER"
+          fi
