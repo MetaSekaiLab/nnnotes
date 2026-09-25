@@ -1,104 +1,43 @@
-"""TextMeshPro font assets for the ADV and live UI exports (shared by advui.py and liveui.py).
+"""TextMeshPro font assets for the UI exports with game fonts (`--fonts game`).
 
-  language_fonts   Fwk.Localization.LocalizeManager font names per LanguageMode (level0)
-  localize_text    LocalizeText.Init / OnFontChanged: the font asset, material and line spacing a
-                   TMP text ends up with in the current language
   FontSet          TMP font assets reachable from the localized fonts (fallback chains) with TMP
                    character lookup; RuntimeGlyphs generates the SDF glyphs a dynamic font asset adds
                    at runtime (FontEngine) from the source font file, validated against the baked ones
   glyph_coverage / export_fonts / resolve_font_blocks
                    the character and glyph tables reduced to the characters a page shows, their texel
                    blocks copied into packed textures (export.TexelPacker)
+
+The localized font / material / line spacing of a text (LocalizeText) and the text records are in textstyle.py.
+Needs the optional dependencies of the `fonts` extra (require_extra).
 """
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import io
 import math
-import struct
 
 import numpy as np
 
+from .config import ConfigError
 from .export import Exporter, TexelPacker, _key, grow_box
-from .player import PlayerData
+from .textstyle import font_dir
 
-FONT_PREFIX = "EmbFont/"
-
-# Fwk.Localization.LanguageMode / language field names of the text tables.
-LANGUAGE_MODE = 2                      # TraditionalChinese (tw build)
-LANGUAGE_FIELD = "traditionalChinese"
-JAPANESE_MODE = 0
-# LocalizeManager.ApplyLanguageLineSpacing: lineSpacing per LanguageMode
-# (immediates in code, not serialized data).
-LANGUAGE_LINE_SPACING = {0: 0.0, 1: -100.0, 2: 5.0, 3: 5.0, 4: 5.0}
+EXTRA = "fonts"
+EXTRA_MODULES = {"fontTools": "fonttools", "freetype": "freetype-py", "scipy": "scipy"}
 
 # TextMeshPro synthesized control characters (TMP_FontAsset.AddSynthesizedCharactersAndFaceMetrics):
 # zero-metric glyphs used when the font file does not map them.
 TMP_SYNTHESIZED = (0x03, 0x09, 0x0A, 0x0B, 0x0D, 0x061C, 0x200B, 0x200E, 0x200F, 0x2028, 0x2029, 0x2060)
 
 
-class _Reader:
-    """Little-endian serialized-field reader with 4-byte alignment."""
+def require_extra() -> None:
+    """Raise ConfigError naming the `fonts` extra when one of its packages is not installed."""
+    missing = [pkg for mod, pkg in EXTRA_MODULES.items() if importlib.util.find_spec(mod) is None]
+    if missing:
+        raise ConfigError(f"--fonts game needs the optional '{EXTRA}' dependencies ({', '.join(missing)} not "
+                          f"installed): pip install 'nnnotes[{EXTRA}]'")
 
-    def __init__(self, raw: bytes, pos: int = 0):
-        self.raw, self.pos = raw, pos
-
-    def align(self):
-        self.pos = (self.pos + 3) & ~3
-
-    def i32(self) -> int:
-        v = struct.unpack_from("<i", self.raw, self.pos)[0]
-        self.pos += 4
-        return v
-
-    def i64(self) -> int:
-        v = struct.unpack_from("<q", self.raw, self.pos)[0]
-        self.pos += 8
-        return v
-
-    def u8(self) -> int:
-        v = self.raw[self.pos]
-        self.pos += 1
-        return v
-
-    def string(self) -> str:
-        n = self.i32()
-        s = self.raw[self.pos:self.pos + n].decode("utf-8")
-        self.pos += n
-        self.align()
-        return s
-
-    def strings(self) -> list[str]:
-        return [self.string() for _ in range(self.i32())]
-
-
-def language_fonts(player: PlayerData) -> dict:
-    """Fwk.Localization.LocalizeManager (level0): font names per LanguageMode.
-
-    Read field by field: the generated typetree for this class omits the
-    alignment after `_dontDestroyOnload`, so the serialized bytes are parsed
-    directly (layout: m_GameObject, m_Enabled, m_Script, m_Name,
-    _dontDestroyOnload, _languageDataList[{_languageMode, _fontNames[],
-    _additionalFontNames[]}], _materialTypeList[]).
-    """
-    hits = [o for o in player._by_type.get("MonoBehaviour", [])
-            if player.script(o)[1:] == ("Fwk.Localization", "LocalizeManager")]
-    if len(hits) != 1:
-        raise RuntimeError(f"LocalizeManager: {len(hits)} objects")
-    r = _Reader(hits[0].get_raw_data())
-    r.i32(); r.i64()                      # m_GameObject
-    r.u8(); r.align()                     # m_Enabled
-    r.i32(); r.i64()                      # m_Script
-    r.string()                            # m_Name
-    r.u8(); r.align()                     # _dontDestroyOnload
-    langs = {}
-    for _ in range(r.i32()):
-        mode = r.i32()
-        langs[mode] = {"fontNames": r.strings(), "additionalFontNames": r.strings()}
-    materials = r.strings()
-    if r.pos != len(r.raw):
-        raise RuntimeError(f"LocalizeManager: {len(r.raw) - r.pos} trailing bytes")
-    return {"languages": langs, "materialTypes": materials}
 
 # --------------------------------------------------------------------------
 # fonts
@@ -352,7 +291,7 @@ def rgba_alpha(a: np.ndarray) -> np.ndarray:
 
 
 def material_by_name(ex: Exporter, font: Font, mat_name: str):
-    key = f"{FONT_PREFIX}{font.name[:-4] if font.name.endswith(' SDF') else font.name}/{mat_name}"
+    key = font_dir(font.name) + mat_name
     if not ex.cat.has(key):
         raise KeyError(f"material key {key}")
     return ex.material(ex.key_object(key))
@@ -417,43 +356,6 @@ def runtime_glyphs(f: Font, extra: set, baked: set, margin: int, packer: TexelPa
             "the player's FontEngine.",
         ],
     }
-
-
-
-# --------------------------------------------------------------------------
-# localized font / material of a TMP text (LocalizeText)
-# --------------------------------------------------------------------------
-def font_swap(lang: dict, mode: int = LANGUAGE_MODE) -> dict:
-    """LocalizeManager.TryGetFontIndex + LocalizeText.OnFontChanged: the index of a font
-    asset name in the Japanese lookup table (Japanese LanguageData font names + " SDF") selects fonts[index] of
-    the current language."""
-    ja = lang["languages"][JAPANESE_MODE]["fontNames"]
-    zh = lang["languages"][mode]["fontNames"]
-    return {f"{j} SDF": f"{z} SDF" for j, z in zip(ja, zh)}
-
-
-def material_type(material_name: str | None) -> str:
-    """LocalizeManager.GetMaterialType: "Default", or the part after " - " without " (Instance)".
-    (Its ".mat" branch rewrites the literal "Default", a no-op.)"""
-    if material_name is None or " - " not in material_name:
-        return "Default"
-    return material_name[material_name.index(" - "):].replace(" - ", "").replace(" (Instance)", "")
-
-
-def localize_text(path: str, font_asset: str, material: str, swap: dict, lang: dict,
-                  mode: int = LANGUAGE_MODE) -> dict:
-    """LocalizeText.Init -> OnFontChanged for a text with _localizeEnabled: font =
-    fonts[TryGetFontIndex(font)], material = GetFontMaterial(index, GetMaterialType(sharedMaterial.name))
-    ("<font> - <type>", key EmbFont/<font>/...), lineSpacing = ApplyLanguageLineSpacing."""
-    if font_asset not in swap:
-        raise RuntimeError(f"{path}: font {font_asset} not in the Japanese font lookup table")
-    font_name = swap[font_asset]
-    mat_type = material_type(material)
-    if mat_type not in lang["materialTypes"]:
-        # ExistsFontMaterial false -> GetDefaultFontMaterial; the loaded handle set is not modelled
-        raise NotImplementedError(f"{path}: material type {mat_type} not in LocalizeManager._materialTypeList")
-    return {"fontAsset": font_name, "material": f"{font_name[:-4]} - {mat_type}",
-            "lineSpacing": LANGUAGE_LINE_SPACING[mode]}
 
 
 # --------------------------------------------------------------------------

@@ -9,7 +9,7 @@
     <out>/livenotes/            note / line / effect prefabs, skins, clips, particle systems,
                                 textures and shaders (livenotes.py)
     <out>/liveui/               the start canvas (music title, credits, difficulty) in the client language:
-                                strings, fonts, materials, sprites (liveui.py)
+                                strings, text records or the game's fonts, sprites (liveui.py)
     <out>/live.json             index of the above
 
 The band of the LightWeight background and of the start timeline is the band of the player's deck centre
@@ -74,8 +74,9 @@ def resolve_band(cat: Catalog, master: Path, music_id: int, band: int | None = N
 
 def build(cat: Catalog, master: Path, player: PlayerData, music_id: int, difficulty: str,
           out_dir: Path, audio_format: str = "flac", band: int | None = None,
-          leader_card: int | None = None, *, language: str) -> dict:
-    """One live directory. `language`: the client language of the start canvas (a languages.LANGUAGES code)."""
+          leader_card: int | None = None, *, language: str, fonts: str = "open") -> dict:
+    """One live directory. `language`: the client language of the start canvas (a languages.LANGUAGES code);
+    `fonts`: "open" or "game" (liveui.extract)."""
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     choice = resolve_band(cat, Path(master), music_id, band=band, leader_card=leader_card)
@@ -84,7 +85,7 @@ def build(cat: Catalog, master: Path, player: PlayerData, music_id: int, difficu
     sc = livescene.extract(cat, player, out_dir, master=Path(master), music_id=music_id, band=choice["band"],
                            band_choice=choice)
     lu = liveui.extract(cat, player, out_dir, master=Path(master), music_id=music_id,   # reads livescene's shaders
-                        difficulty=difficulty, language=language)
+                        difficulty=difficulty, language=language, fonts=fonts)
     nt = livenotes.extract(cat, player, out_dir, master=Path(master))
     index = {"musicId": music_id, "difficulty": difficulty, "chart": s["chart"], "notes": s["notes"],
              "master": s["master"], "audio": s["audio"], "liveAudio": la["index"], "scene": "livescene/scene.json",

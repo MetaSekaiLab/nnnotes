@@ -113,7 +113,7 @@ nnnotes web out/site --live2d adv_live2d_rana_003_casual_spring_01 --player <our
                  gameapi（游戏 API 匿名调用：当前 masterdata 版本、服务器列表）
        └─ 读取层  unity（UnityPy 读取 typetree 与 TextAsset）
                   export（预制体 / 组件 / 引用全部解析为 JSON，贴图与着色器随同导出）
-                  shader、tmpfont（TextMesh Pro 字体）、player（启动设置）、cri + crikey（CRI 音频）
+                  shader、textstyle（文字排版与样式）、tmpfont（TextMesh Pro 字体）、player（启动设置）、cri + crikey（CRI 音频）
             └─ 内容层  剧情：adv、advscene、advui、story
                        Live2D：live2d、motion
                        据点：spot、room

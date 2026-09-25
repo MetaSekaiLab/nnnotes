@@ -20,7 +20,8 @@ whatever the console encoding.
     nnnotes audio <cueSheet> -o out/audio
     nnnotes crikey [--write <dir>]
     nnnotes player -o out/player.json
-    nnnotes live 100001 --difficulty expert [--band 1 | --leader-card <MasterMemberCard id>] -o out/live_100001
+    nnnotes live 100001 --difficulty expert [--band 1 | --leader-card <MasterMemberCard id>] [--fonts game]
+                 -o out/live_100001
     nnnotes web out/site --player <ournotes-player> [--pair 100001:expert [--pair ...] | --all] [--format aac]
                          [--live2d <model id | key> [--live2d ...] | --all-live2d]
                          [--region <region> [--region ...] | --all-regions]
@@ -285,18 +286,30 @@ def cmd_player(args, cfg):
 
 def cmd_story(args, cfg):
     from . import story
+    if args.fonts == "game":
+        from .tmpfont import require_extra
+        require_extra()
     cat = open_catalog(cfg)
     r = story.build(cat, master_dir(cfg), player_data(cfg), args.adv_id, Path(args.out),
-                    audio_format=args.format)
+                    audio_format=args.format, fonts=args.fonts)
     _print_json(r)
+
+
+def _fonts_extra(fonts: str) -> None:
+    """`--fonts game` needs the optional `fonts` dependencies."""
+    if fonts == "game":
+        from .tmpfont import require_extra
+        require_extra()
 
 
 def cmd_live(args, cfg):
     from . import languages, live
+    _fonts_extra(args.fonts)
     language = languages.check(cfg.require("catalog", "language"))
     cat = open_catalog(cfg)
     r = live.build(cat, master_dir(cfg), player_data(cfg), args.music_id, args.difficulty, Path(args.out),
-                   audio_format=args.format, band=args.band, leader_card=args.leader_card, language=language)
+                   audio_format=args.format, band=args.band, leader_card=args.leader_card, language=language,
+                   fonts=args.fonts)
     _print_json(r)
 
 
@@ -327,9 +340,10 @@ def cmd_web(args, cfg):
             r.update(webmodel.build(out, selected, cfg, player, force=args.force, tmp_dir=args.tmp,
                                     workers=args.workers, **base))
         if charts:
+            _fonts_extra(args.fonts)
             r.update(web.build(out, None if args.all else args.pair, cfg, player, args.format,
                                audio=not args.no_audio, force=args.force, tmp_dir=args.tmp, workers=args.workers,
-                               band=args.band, leader_card=args.leader_card, regions=regions))
+                               band=args.band, leader_card=args.leader_card, regions=regions, fonts=args.fonts))
     _print_json(r)
     if r.get("failed") or r.get("modelsFailed"):
         sys.exit(1)
@@ -348,6 +362,12 @@ def _band_args(c) -> None:
     g.add_argument("--band", type=int, help="band of the LightWeight background and start timeline "
                                             "(default: band of the music's first vocal character)")
     g.add_argument("--leader-card", type=int, help="deck centre MasterMemberCard id (its character's band)")
+
+
+def _fonts_arg(c) -> None:
+    c.add_argument("--fonts", default="open", choices=("open", "game"),
+                   help="start canvas text: open: layout and style only, no font data (default); game: also the "
+                        "game's TMP fonts (needs the 'fonts' extra)")
 
 
 def _out(c, what: str, required: bool = True) -> None:
@@ -415,6 +435,9 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("adv_id", type=int)
     _out(c, "output directory")
     c.add_argument("--format", default="flac", choices=AUDIO_CHOICES)
+    c.add_argument("--fonts", default="open", choices=("open", "game"),
+                   help="open: text layout and style only, no font data (default); game: also the game's TMP fonts "
+                        "(needs the 'fonts' extra)")
     c.set_defaults(func=cmd_story)
 
     c = sub.add_parser("live2d", help="Live2D model -> runtime model dir")
@@ -457,6 +480,7 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("music_id", type=int)
     c.add_argument("--difficulty", default="expert", choices=DIFFICULTY_CHOICES)
     c.add_argument("--format", default="flac", choices=AUDIO_CHOICES)
+    _fonts_arg(c)
     _band_args(c)
     _out(c, "output directory")
     c.set_defaults(func=cmd_live)
@@ -486,6 +510,7 @@ def build_parser() -> argparse.ArgumentParser:
                    help="a region the site serves: a [servers.<region>] table (repeatable; the first is the base; "
                         "default: [catalog] region)")
     r.add_argument("--all-regions", action="store_true", help="every configured region")
+    _fonts_arg(c)
     _band_args(c)
     c.set_defaults(func=cmd_web, usage=c.error)
     return p

@@ -467,11 +467,11 @@ def _link_tree(src: Path, dst: Path) -> None:
 
 def build_music_dirs(cat, master: Path, player, music_id: int, difficulties: list[str], root: Path,
                      livenotes_dir: Path, band: int | None = None, leader_card: int | None = None, *,
-                     language: str) -> dict:
+                     language: str, fonts: str = "open") -> dict:
     """The live directories of one music's charts under root/<difficulty>/, composed as live.build composes one:
     score + BGM decode (first difficulty), live sounds and scene into root/base, shared by hard links; per difficulty
     its own score/ (score.extract without audio), liveui/ and live.json; livenotes/ linked from `livenotes_dir`
-    (livenotes.extract reads no music input). `band` / `leader_card` / `language`: as for live.build.
+    (livenotes.extract reads no music input). `band` / `leader_card` / `language` / `fonts`: as for live.build.
     Returns {difficulty: (dir, summary)}."""
     from . import liveaudio, livescene, liveui, score
     base = root / "base"
@@ -488,7 +488,8 @@ def build_music_dirs(cat, master: Path, player, music_id: int, difficulties: lis
             _link_tree(base / sub, pdir / sub)
         _link_tree(livenotes_dir, pdir / "livenotes")
         s = score.extract(cat, master, music_id, d, pdir, audio=False, audio_fmt="flac")
-        liveui.extract(cat, player, pdir, master=master, music_id=music_id, difficulty=d, language=language)
+        liveui.extract(cat, player, pdir, master=master, music_id=music_id, difficulty=d, language=language,
+                       fonts=fonts)
         index = {"musicId": music_id, "difficulty": d, "chart": s["chart"], "notes": s["notes"],
                  "master": s["master"], "audio": first["audio"], "liveAudio": la["index"],
                  "scene": "livescene/scene.json", "noteAssets": "livenotes/notes.json", "liveUi": "liveui/liveui.json"}
@@ -598,7 +599,8 @@ def music_task(music_id: int, difficulties: list[str], cfg: dict | None = None, 
     try:
         try:
             dirs = build_music_dirs(cat, master, player, music_id, difficulties, root, Path(cfg["livenotes"]),
-                                    band=cfg["band"], leader_card=cfg["leaderCard"], language=cfg["language"])
+                                    band=cfg["band"], leader_card=cfg["leaderCard"], language=cfg["language"],
+                                    fonts=cfg.get("fonts", "open"))
         except Exception as e:
             cause = f"{type(e).__name__}: {e}"
             _log(f"{music_id}: live directories failed: {cause}")
@@ -871,14 +873,15 @@ def _build_group(site: Path, tmp_root: Path, pairs, cfg: Config, region: str, pr
 
 def build(out_dir, pairs, cfg: Config, player_dir: Path, audio_format: str = DEFAULT_AUDIO_FORMAT,
           audio: bool = True, force: bool = False, *, tmp_dir=None, log=None, workers: int | None = None,
-          band: int | None = None, leader_card: int | None = None, regions: list[str] | None = None) -> dict:
+          band: int | None = None, leader_card: int | None = None, regions: list[str] | None = None,
+          fonts: str = "open") -> dict:
     """Add the charts `pairs` ([(musicId, difficulty)]; None: every chart of every region's master data) to the site
     at `out_dir`, with the player of the ournotes-player checkout or package at `player_dir`. The data comes from the
     settings `cfg` (each worker process opens its own). `regions`: the regions the charts serve (default: the one
     [catalog] region), grouped by chart inputs (module docstring); the first region's group writes charts/<id>.json,
     the others charts/<region>/<id>.json unless their files equal the shared manifest's. `workers`: parallel music
     processes (default up to 5). `band` / `leader_card`: the band of every chart's stage, as for live.build
-    (default: the band of the music's first vocal character)."""
+    (default: the band of the music's first vocal character); `fonts`: the start canvas fonts (liveui.extract)."""
     player_dir = check_player(player_dir)
     if audio_format not in WEB_AUDIO:
         raise ValueError(f"audio format {audio_format}: one of {', '.join(WEB_AUDIO)}")
@@ -899,7 +902,7 @@ def build(out_dir, pairs, cfg: Config, player_dir: Path, audio_format: str = DEF
     log = log or _log
     t0 = time.time()
     job = {"site": str(site), "tmp": str(tmp_root), "audioFormat": audio_format, "audio": bool(audio),
-           "player": str(player_dir), "language": language, "band": band, "leaderCard": leader_card}
+           "player": str(player_dir), "language": language, "fonts": fonts, "band": band, "leaderCard": leader_card}
     results, skipped, folded, used_workers = [], [], [], 1
     offered = set()
     for gi, group in enumerate(groups):

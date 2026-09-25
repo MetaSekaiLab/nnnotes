@@ -8,22 +8,28 @@ button, curtains) and the letterbox bands, taken from the game data:
                FrontCanvas with the default talk window (UIDefaultTalkWindow)
                attached under UIContainer/TalkView (AdvTalkView.SetWindow), and
                the AdvLetterBoxCanvas bands; per node the uGUI components the
-               runtime needs (Image, CanvasGroup, UIGradientImage, TMP text
-               settings, layout groups, DOTweenSequence durations)
+               runtime needs (Image, CanvasGroup, UIGradientImage, layout
+               groups, DOTweenSequence durations) and, for a TMP text, its text
+               record `textStyle` (textstyle.py: layout, colours, style flags,
+               face / outline / underlay values in em, font role)
   sprites      sprite geometry (rect, border, pivot, pixels per unit, texture
                rect/offset) remapped into packed textures
-  fonts        TMP font assets reached from the localized fonts (face info,
-               style values, fallback chain) with the character and glyph
-               tables reduced to the characters the episode shows; characters
-               a dynamic font asset would add at runtime (in the source font
-               file, not baked) are generated here the way FontEngine renders
-               them (see tmpfont.RuntimeGlyphs) and validated against the baked ones
-  materials    TMP materials (localized "<font> - <type>"), fallback font
-               materials, UI-Transition, the built-in Default UI Material
+  materials    UI-Transition, the built-in Default UI Material
   clips        Animator clips (NextIndicator, AutoNext, AdvLocation/AdvTitle Play)
   transitions  RuleTransitionSettings of every transition the episode or the
                player settings reference
-  shaders      UI/Default, TextMeshPro/Mobile/Distance Field, UI/Transition
+  shaders      UI/Default, UI/Transition
+
+Fonts (`fonts`): "open" (default) writes no font data; a renderer draws the
+text records with fonts of its own. "game" also writes the game's TMP font
+data (tmpfont.py, optional `fonts` extra): per node the serialized TMP text
+settings with the localized font / material (`text`), the TMP font assets
+reached from the localized fonts (face info, style values, fallback chain)
+with the character and glyph tables reduced to the characters the episode
+shows (characters a dynamic font asset would add at runtime are generated the
+way FontEngine renders them, see tmpfont.RuntimeGlyphs), their materials, the
+glyph coverage, the TMP settings and the TextMeshPro/Mobile/Distance Field
+shader.
 
 Textures: sprite atlases and SDF font atlases are large; only the texel blocks
 a draw can sample are kept (export.Exporter deferred-texture mode with
@@ -42,8 +48,8 @@ from .catalog import Catalog
 from .export import Exporter, TexelPacker, _safe
 from .jsonio import write_json
 from .player import PlayerData
-from . import tmpfont
-from .tmpfont import LANGUAGE_FIELD, LANGUAGE_LINE_SPACING, LANGUAGE_MODE
+from . import textstyle
+from .textstyle import LANGUAGE_FIELD, LANGUAGE_LINE_SPACING, LANGUAGE_MODE
 
 WIDGET_KEY = "EmbUI/Prefab/UIAdvWidget"
 WINDOW_KEY = "EmbUI/Prefab/Parts/Adv/Talk/UIDefaultTalkWindow"
@@ -88,6 +94,7 @@ TMP_FIELDS = (
     "m_enableVertexGradient", "m_TextStyleHashCode", "m_useMaxVisibleDescender", "m_horizontalMapping",
     "m_verticalMapping", "m_charWidthMaxAdj", "m_lineSpacingMax", "m_isRightToLeft", "m_text",
 )
+FONT_MODES = ("open", "game")
 IMAGE_FIELDS = ("m_Enabled", "m_Color", "m_Type", "m_PreserveAspect", "m_FillCenter", "m_FillMethod",
                 "m_FillAmount", "m_UseSpriteMesh", "m_PixelsPerUnitMultiplier", "m_Maskable")
 
@@ -160,7 +167,21 @@ def _layout_components(node: dict) -> dict:
 # --------------------------------------------------------------------------
 # main entry
 # --------------------------------------------------------------------------
-def extract(cat: Catalog, player: PlayerData, episode: dict, out_dir: Path) -> dict:
+def _component(node: dict, classes: tuple) -> dict | None:
+    hit = [c for c in node["components"] if c.get("class") in classes]
+    if len(hit) > 1:
+        raise RuntimeError(f"{node['path']}: {len(hit)} components of {classes}")
+    return hit[0] if hit else None
+
+
+def extract(cat: Catalog, player: PlayerData, episode: dict, out_dir: Path, fonts: str = "open") -> dict:
+    """Write <out_dir>/ui/. `fonts`: "open" (text records only) or "game" (also the game's TMP font data)."""
+    if fonts not in FONT_MODES:
+        raise ValueError(f"fonts must be one of {FONT_MODES}, not {fonts!r}")
+    game = fonts == "game"
+    if game:
+        from . import tmpfont
+        tmpfont.require_extra()
     ui_dir = Path(out_dir) / "ui"
     ui_dir.mkdir(parents=True, exist_ok=True)
     ex = Exporter(cat, ui_dir, player=player, textures="deferred",
@@ -189,31 +210,196 @@ def extract(cat: Catalog, player: PlayerData, episode: dict, out_dir: Path) -> d
     for d in DRAWN:
         if d not in {n["path"] for n in nodes}:
             raise RuntimeError(f"{d} missing from the prefabs")
+    styles = textstyle.TextStyles(ex, player)
     out_nodes = []
     for n in nodes:
         rec = {"path": n["path"], "name": n["name"], "active": n["active"],
                "localPosition": n["localPosition"], "localRotation": n["localRotation"],
                "localScale": n["localScale"], "rect": n.get("rect")}
         rec.update(_layout_components(n))
+        if "text" in rec:
+            if not (rec.get("localizeText") or {}).get("localizeEnabled"):
+                raise NotImplementedError(f"{n['path']}: text without LocalizeText")
+            rec["textStyle"] = styles.record(n["path"], _component(n, TMP_CLASSES), _component(n, ("LocalizeText",)))
+            if not game:
+                del rec["text"]
         out_nodes.append(rec)
     front = [n for n in widget if n["path"].startswith("UIAdvWidget/FrontCanvas/") and n["path"].count("/") == 2]
     front_order = [n["name"] for n in front]
 
-    # -- localization: fonts of the language mode -----------------------------
-    lang = tmpfont.language_fonts(player)
-    font_swap = tmpfont.font_swap(lang)
+    materials: dict = {}
+    if game:
+        materials, font_doc = _game_fonts(ex, styles, episode, out_nodes)
+    rule = next(n for n in out_nodes if n["path"].endswith("FrontCanvas/RuleTransition"))
+    rt_comp = [c for c in next(w for w in widget if w["path"] == rule["path"])["components"]
+               if c.get("class") == "UIAdvRuleTransitionView"][0]
+    materials[rt_comp["_material"]["material"]] = rt_comp["_material"]
+    rule["ruleTransition"] = {"material": rt_comp["_material"]["material"]}
+    # Graphic.defaultGraphicMaterial (Canvas.GetDefaultCanvasMaterial): the player
+    # ships the built-in UI/Default shader (unity_builtin_extra) but no serialized
+    # "Default UI Material", so its values are the shader's property defaults.
+    ui_default = player.shader("UI/Default", file="unity_builtin_extra")
+    materials["Default UI Material"] = {"material": "Default UI Material", "shader": {"shader": "UI/Default"},
+                                        "keywords": [], "textures": {}, "ints": {}, "floats": {}, "colors": {},
+                                        "shaderDefaults": True}
 
+    # -- glyph blocks -------------------------------------------------------------
+    if game:
+        font_out = tmpfont.export_fonts(ex, font_doc["fonts"], font_doc["primaries"], font_doc["needed"],
+                                        font_doc["runtime"], font_doc["textMaterials"], packer,
+                                        "characters shown by this episode (plus baked control characters); runtime "
+                                        "characters generated from the source font (runtimeGlyphs)")
+
+    # -- sprites -------------------------------------------------------------------
+    sprite_refs = set()
+    for n in out_nodes:
+        if n.get("image") and n["image"]["spriteRef"]:
+            sprite_refs.add(n["image"]["spriteRef"])
+    lb_sprite = ex.key_sprite(LETTERBOX_KEY)
+    sprite_refs.add(lb_sprite["spriteRef"])
+    sprites_out = {}
+    for ref in sorted(sprite_refs):
+        s = ex.sprite_recs[ref]
+        tex_name = s["tex"].read_typetree()["m_Name"]
+        ex.pack_sprite(ref, packer, "sprites" if "FixUiSpriteAtlas" in tex_name else f"sprite_{s['name']}")
+    # transitions
+    ps = ex.asset(PLAYER_SETTINGS_KEY)
+    addresses = {ps["_defaultTransitionAssetAddress"]}
+    for c in list(ps["_initializeEpisodes"]) + list(ps["_finalizeEpisodes"]) + episode["commands"]:
+        cmd = c.get("Command") if "Command" in c else c.get("raw")
+        if cmd in (5, 6) and c.get("TargetAssetName"):
+            addresses.add(c["TargetAssetName"])
+    transitions = {}
+    for addr in sorted(addresses):
+        a = ex.asset(TRANSITION_PREFIX + addr)
+        tex = a["_texture"]
+        if tex is None:
+            raise RuntimeError(f"transition {addr}: no rule texture")
+        if tex["mipCount"] > 1:
+            raise NotImplementedError(f"transition {addr}: mipmapped rule texture")
+        o = ex.tex_objs[tex["textureRef"]]
+        a["_block"] = packer.add(f"rule_{_safe(addr)}", o, 0, 0, tex["width"], tex["height"])
+        transitions[addr] = a
+
+    textures = packer.build()
+
+    # resolve blocks
+    if game:
+        tmpfont.resolve_font_blocks(font_out)
+    for ref in sorted(sprite_refs):
+        sprites_out[ex.sprite_recs[ref]["name"]] = ex.packed_sprite(ref)
+    for n in out_nodes:
+        if n.get("image"):
+            n["image"].pop("spriteRef", None)
+    for addr, a in transitions.items():
+        b = a.pop("_block")
+        t = textures[b["texture"]]
+        # rule textures are sampled with screen-space UVs over [0, 1]: they stay whole
+        if b["offset"] != (0, 0) or (t["width"], t["height"]) != (a["_texture"]["width"], a["_texture"]["height"]):
+            raise RuntimeError(f"transition {addr}: rule texture not copied whole")
+        a["_texture"] = {"texture": b["texture"], "name": a["_texture"]["name"]}
+    for m in materials.values():
+        for k, v in m["textures"].items():
+            if v["texture"] is not None:
+                v["texture"] = {"name": v["texture"]["name"], "width": v["texture"]["width"],
+                                "height": v["texture"]["height"], "format": v["texture"]["format"]}
+
+    # -- clips ----------------------------------------------------------------------
+    clips = {}
+    for name, key in CLIP_KEYS.items():
+        o = ex.key_object(key)
+        if o.type.name != "AnimationClip":
+            raise RuntimeError(f"{key}: container asset is {o.type.name}")
+        clips[name] = ex.clip_curves(o)
+    controllers = {name: ex.controller_states(ex.key_object(key)) for name, key in CONTROLLER_KEYS.items()}
+
+    # -- DOTween defaults (Resources/DOTweenSettings) ------------------------------------
+    dts = player.mono(player.resource("DOTweenSettings"))
+
+    # -- shaders ----------------------------------------------------------------------
+    needed = {}
+    for name in sorted({m["shader"]["shader"] for m in materials.values()}):
+        if name == "UI/Default":
+            needed[name] = ui_default
+        elif name in ex.shaders:
+            needed[name] = ex.shaders[name]
+        else:
+            raise RuntimeError(f"shader {name} not in the loaded bundles")
+    index, shader_summary = ex.dump_shaders(ui_dir / "shaders", needed)
+    variants_needed = {}
+    for m in materials.values():
+        sh = m["shader"]["shader"]
+        rec = next(r for r in index if r["name"] == sh)
+        known = {k for v in rec["variants"] if v["platform"] == "gles3" and v["type"] == "GLES3" for k in v["keywords"]}
+        want = sorted(k for k in m["keywords"] if k in known)
+        ok = any(v["platform"] == "gles3" and v["type"] == "GLES3" and sorted(v["keywords"]) == want
+                 and v["stage"] == "vertex" for v in rec["variants"])
+        if not ok:
+            raise RuntimeError(f"{sh}: no GLES3 variant for material {m['material']} keywords {want}")
+        variants_needed[m["material"]] = want
+
+    language = {"mode": LANGUAGE_MODE, "field": LANGUAGE_FIELD}
+    if game:
+        language.update({"fonts": styles.lang, "fontSwap": styles.swap})
+    language["lineSpacing"] = LANGUAGE_LINE_SPACING[LANGUAGE_MODE]
+    doc = {
+        "about": "ADV front canvas UI data (UIAdvWidget + UIDefaultTalkWindow), zh-Hant",
+        "language": language,
+        "frontCanvasOrder": front_order,
+        "nodes": out_nodes,
+        "sprites": sprites_out,
+        "letterBoxSprite": lb_sprite["name"],
+        "textures": textures,
+        "materials": materials,
+        "materialKeywords": variants_needed,
+    }
+    if game:
+        tmp_settings = player.names_in(player.resource("TMP Settings"), player.mono(player.resource("TMP Settings")))
+        doc["fonts"] = font_out
+        doc["tmpSettings"] = {k: tmp_settings[k] for k in ("m_fallbackFontAssets", "m_defaultFontAsset",
+                                                          "m_missingGlyphCharacter", "m_matchMaterialPreset",
+                                                          "m_enableExtraPadding", "m_warningsDisabled")}
+    doc.update({
+        "clips": clips,
+        "controllers": controllers,
+        "transitions": transitions,
+        "playerSettings": {k: ps[k] for k in (
+            "_defaultTransitionAssetAddress", "_waitAfterVoiceTime", "_waitTalkTextUnitTime",
+            "_minTalkDisplayTime", "_isAdvViewportFollowOnResolutionChanged")},
+        "dotween": {k: dts[k] for k in ("defaultEaseType", "defaultUpdateType", "defaultTimeScaleIndependent",
+                                        "timeScale", "defaultEaseOvershootOrAmplitude", "defaultEasePeriod")},
+        "shaders": {"index": "shaders/shaders.json", "names": shader_summary["names"]},
+    })
+    if game:
+        doc["glyphCoverage"] = font_doc["coverage"]
+    doc["textStyle"] = styles.summary()
+    write_json(ui_dir / "ui.json", doc)
+    out = {"textures": {k: (v["width"], v["height"]) for k, v in textures.items()},
+           "shaders": shader_summary["names"]}
+    if not game:
+        return {**out, "fonts": "open", "texts": sum(1 for n in out_nodes if "textStyle" in n)}
+    return {**out, "coverage": font_doc["coverage"]["counts"],
+            "fonts": sorted(font_out),
+            "runtimeGlyphs": {k: {"generated": len(v["runtimeGlyphs"]["generated"]),
+                                  "validation": {kk: v["runtimeGlyphs"]["validation"][kk] for kk in
+                                                 ("glyphs", "maxAbsError", "meanAbsError", "exactGlyphs")}}
+                              for k, v in font_out.items() if v["runtimeGlyphs"]}}
+
+
+def _game_fonts(ex: Exporter, styles: textstyle.TextStyles, episode: dict, out_nodes: list) -> tuple[dict, dict]:
+    """`--fonts game`: the localized font / material of every text node (`text.localized`), the TMP font assets,
+    the glyph coverage of the characters the episode shows and the text materials.
+    -> (materials, the inputs of tmpfont.export_fonts + coverage)."""
+    from . import tmpfont
     fonts = tmpfont.FontSet(ex)
     used_text_nodes = [n for n in out_nodes if "text" in n]
     primaries = {}
     for n in used_text_nodes:
         t = n["text"]
-        if not (n.get("localizeText") or {}).get("localizeEnabled"):
-            raise NotImplementedError(f"{n['path']}: text without LocalizeText")
-        t["localized"] = tmpfont.localize_text(n["path"], t["fontAsset"], t["material"], font_swap, lang)
+        t["localized"] = textstyle.localize_text(n["path"], t["fontAsset"], t["material"], styles.swap, styles.lang)
         primaries[t["localized"]["fontAsset"]] = None
     for fname in primaries:
-        primaries[fname] = fonts.by_key(f"{tmpfont.FONT_PREFIX}{fname[:-4]}/{fname}")
+        primaries[fname] = fonts.by_key(textstyle.font_dir(fname) + fname)
 
     # -- characters the episode shows ------------------------------------------
     lines = []
@@ -250,143 +436,5 @@ def extract(cat: Catalog, player: PlayerData, episode: dict, out_dir: Path) -> d
     # -- materials ---------------------------------------------------------------
     materials, text_materials = tmpfont.text_materials(ex, fonts, [n["text"]["localized"] for n in used_text_nodes],
                                                        {primary.name}, needed, runtime_units)
-    rule = next(n for n in out_nodes if n["path"].endswith("FrontCanvas/RuleTransition"))
-    rt_comp = [c for c in next(w for w in widget if w["path"] == rule["path"])["components"]
-               if c.get("class") == "UIAdvRuleTransitionView"][0]
-    materials[rt_comp["_material"]["material"]] = rt_comp["_material"]
-    rule["ruleTransition"] = {"material": rt_comp["_material"]["material"]}
-    # Graphic.defaultGraphicMaterial (Canvas.GetDefaultCanvasMaterial): the player
-    # ships the built-in UI/Default shader (unity_builtin_extra) but no serialized
-    # "Default UI Material", so its values are the shader's property defaults.
-    ui_default = player.shader("UI/Default", file="unity_builtin_extra")
-    materials["Default UI Material"] = {"material": "Default UI Material", "shader": {"shader": "UI/Default"},
-                                        "keywords": [], "textures": {}, "ints": {}, "floats": {}, "colors": {},
-                                        "shaderDefaults": True}
-
-    # -- glyph blocks -------------------------------------------------------------
-    font_out = tmpfont.export_fonts(ex, fonts, {primary.name}, needed, runtime_units, text_materials, packer,
-                                    "characters shown by this episode (plus baked control characters); runtime "
-                                    "characters generated from the source font (runtimeGlyphs)")
-
-    # -- sprites -------------------------------------------------------------------
-    sprite_refs = set()
-    for n in out_nodes:
-        if n.get("image") and n["image"]["spriteRef"]:
-            sprite_refs.add(n["image"]["spriteRef"])
-    lb_sprite = ex.key_sprite(LETTERBOX_KEY)
-    sprite_refs.add(lb_sprite["spriteRef"])
-    sprites_out = {}
-    for ref in sorted(sprite_refs):
-        s = ex.sprite_recs[ref]
-        tex_name = s["tex"].read_typetree()["m_Name"]
-        ex.pack_sprite(ref, packer, "sprites" if "FixUiSpriteAtlas" in tex_name else f"sprite_{s['name']}")
-    # transitions
-    ps = ex.asset(PLAYER_SETTINGS_KEY)
-    addresses = {ps["_defaultTransitionAssetAddress"]}
-    for c in list(ps["_initializeEpisodes"]) + list(ps["_finalizeEpisodes"]) + episode["commands"]:
-        cmd = c.get("Command") if "Command" in c else c.get("raw")
-        if cmd in (5, 6) and c.get("TargetAssetName"):
-            addresses.add(c["TargetAssetName"])
-    transitions = {}
-    for addr in sorted(addresses):
-        a = ex.asset(TRANSITION_PREFIX + addr)
-        tex = a["_texture"]
-        if tex is None:
-            raise RuntimeError(f"transition {addr}: no rule texture")
-        if tex["mipCount"] > 1:
-            raise NotImplementedError(f"transition {addr}: mipmapped rule texture")
-        o = ex.tex_objs[tex["textureRef"]]
-        a["_block"] = packer.add(f"rule_{_safe(addr)}", o, 0, 0, tex["width"], tex["height"])
-        transitions[addr] = a
-
-    textures = packer.build()
-
-    # resolve blocks
-    tmpfont.resolve_font_blocks(font_out)
-    for ref in sorted(sprite_refs):
-        sprites_out[ex.sprite_recs[ref]["name"]] = ex.packed_sprite(ref)
-    for n in out_nodes:
-        if n.get("image"):
-            n["image"].pop("spriteRef", None)
-    for addr, a in transitions.items():
-        b = a.pop("_block")
-        t = textures[b["texture"]]
-        # rule textures are sampled with screen-space UVs over [0, 1]: they stay whole
-        if b["offset"] != (0, 0) or (t["width"], t["height"]) != (a["_texture"]["width"], a["_texture"]["height"]):
-            raise RuntimeError(f"transition {addr}: rule texture not copied whole")
-        a["_texture"] = {"texture": b["texture"], "name": a["_texture"]["name"]}
-    for m in materials.values():
-        for k, v in m["textures"].items():
-            if v["texture"] is not None:
-                v["texture"] = {"name": v["texture"]["name"], "width": v["texture"]["width"],
-                                "height": v["texture"]["height"], "format": v["texture"]["format"]}
-
-    # -- clips ----------------------------------------------------------------------
-    clips = {}
-    for name, key in CLIP_KEYS.items():
-        o = ex.key_object(key)
-        if o.type.name != "AnimationClip":
-            raise RuntimeError(f"{key}: container asset is {o.type.name}")
-        clips[name] = ex.clip_curves(o)
-    controllers = {name: ex.controller_states(ex.key_object(key)) for name, key in CONTROLLER_KEYS.items()}
-
-    # -- DOTween defaults (Resources/DOTweenSettings) ------------------------------------
-    dts = player.mono(player.resource("DOTweenSettings"))
-    tmp_settings = player.names_in(player.resource("TMP Settings"), player.mono(player.resource("TMP Settings")))
-
-    # -- shaders ----------------------------------------------------------------------
-    needed = {}
-    for name in sorted({m["shader"]["shader"] for m in materials.values()}):
-        if name == "UI/Default":
-            needed[name] = ui_default
-        elif name in ex.shaders:
-            needed[name] = ex.shaders[name]
-        else:
-            raise RuntimeError(f"shader {name} not in the loaded bundles")
-    index, shader_summary = ex.dump_shaders(ui_dir / "shaders", needed)
-    variants_needed = {}
-    for m in materials.values():
-        sh = m["shader"]["shader"]
-        rec = next(r for r in index if r["name"] == sh)
-        known = {k for v in rec["variants"] if v["platform"] == "gles3" and v["type"] == "GLES3" for k in v["keywords"]}
-        want = sorted(k for k in m["keywords"] if k in known)
-        ok = any(v["platform"] == "gles3" and v["type"] == "GLES3" and sorted(v["keywords"]) == want
-                 and v["stage"] == "vertex" for v in rec["variants"])
-        if not ok:
-            raise RuntimeError(f"{sh}: no GLES3 variant for material {m['material']} keywords {want}")
-        variants_needed[m["material"]] = want
-
-    doc = {
-        "about": "ADV front canvas UI data (UIAdvWidget + UIDefaultTalkWindow), zh-Hant",
-        "language": {"mode": LANGUAGE_MODE, "field": LANGUAGE_FIELD, "fonts": lang,
-                     "fontSwap": font_swap, "lineSpacing": LANGUAGE_LINE_SPACING[LANGUAGE_MODE]},
-        "frontCanvasOrder": front_order,
-        "nodes": out_nodes,
-        "sprites": sprites_out,
-        "letterBoxSprite": lb_sprite["name"],
-        "textures": textures,
-        "materials": materials,
-        "materialKeywords": variants_needed,
-        "fonts": font_out,
-        "tmpSettings": {k: tmp_settings[k] for k in ("m_fallbackFontAssets", "m_defaultFontAsset",
-                                                     "m_missingGlyphCharacter", "m_matchMaterialPreset",
-                                                     "m_enableExtraPadding", "m_warningsDisabled")},
-        "clips": clips,
-        "controllers": controllers,
-        "transitions": transitions,
-        "playerSettings": {k: ps[k] for k in (
-            "_defaultTransitionAssetAddress", "_waitAfterVoiceTime", "_waitTalkTextUnitTime",
-            "_minTalkDisplayTime", "_isAdvViewportFollowOnResolutionChanged")},
-        "dotween": {k: dts[k] for k in ("defaultEaseType", "defaultUpdateType", "defaultTimeScaleIndependent",
-                                        "timeScale", "defaultEaseOvershootOrAmplitude", "defaultEasePeriod")},
-        "shaders": {"index": "shaders/shaders.json", "names": shader_summary["names"]},
-        "glyphCoverage": coverage,
-    }
-    write_json(ui_dir / "ui.json", doc)
-    return {"textures": {k: (v["width"], v["height"]) for k, v in textures.items()},
-            "shaders": shader_summary["names"], "coverage": coverage["counts"],
-            "fonts": sorted(font_out),
-            "runtimeGlyphs": {k: {"generated": len(v["runtimeGlyphs"]["generated"]),
-                                  "validation": {kk: v["runtimeGlyphs"]["validation"][kk] for kk in
-                                                 ("glyphs", "maxAbsError", "meanAbsError", "exactGlyphs")}}
-                              for k, v in font_out.items() if v["runtimeGlyphs"]}}
+    return materials, {"fonts": fonts, "primaries": {primary.name}, "needed": needed, "runtime": runtime_units,
+                       "textMaterials": text_materials, "coverage": coverage}

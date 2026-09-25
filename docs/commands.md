@@ -115,7 +115,7 @@ sound and video rows resolved), `text` (every line in the five languages), `soun
 ## story
 
 ```
-nnnotes story ADV_ID -o OUT [--format flac|ogg|wav]
+nnnotes story ADV_ID -o OUT [--format flac|ogg|wav] [--fonts open|game]
 ```
 
 One ADV episode as a self-contained directory:
@@ -132,6 +132,41 @@ OUT/story.json            index of the above
 
 `--format` (default `flac`) is the audio format. The command stops when the episode uses resources that are not in
 the catalog or resource kinds that are not supported. Prints the index with a summary.
+
+`--fonts` (default `open`) chooses how `ui/` handles text. Both modes write a text record `textStyle` for each text
+node of `ui/ui.json`, and a document-level `textStyle` that holds the units and the line metrics of each font role.
+With `open`, `ui/` contains no font data: no font atlases, glyph tables, font materials or text shader. `game` also
+exports the game's TextMesh Pro fonts: per node the serialized text settings with the localized font and material
+(`text`), and in the document the font assets reduced to the characters the episode shows (`fonts`), runtime glyphs,
+text materials, `glyphCoverage`, `tmpSettings` and the text shader. `game` needs the optional `fonts` dependencies
+(`pip install -e ".[fonts]"`).
+
+The `ui/ui.json` text record (`textStyle` of a node; the node's `rect` and transform give its layout box):
+
+| Field | Value |
+|---|---|
+| `class`, `enabled` | TMP component class, enabled flag |
+| `fontRole` | font slot of the game's localized fonts: `primary` (main text face), `number` (Latin / numeral face) |
+| `materialType` | material style name of the text (`Default`, `OutlineAdvCommon`, ...) |
+| `localized`, `textKey` | LocalizeText enabled; its master text id, or null when the runtime sets the text (talk, speaker, location and title texts come from `episode.json`, one field per language) |
+| `text`, `richText`, `parseControlCharacters` | serialized text, rich text tags on, `\n`-style escapes parsed |
+| `fontSize`, `autoSize` | size in canvas units; auto-size `enabled`, `min`, `max`, `maxCharWidthAdjust`, `maxLineSpacingAdjust` |
+| `fontStyle`, `fontWeight` | style flags (`bold`, `italic`, `underline`, `strikethrough`, `lowerCase`, `upperCase`, `smallCaps`, `superscript`, `subscript`, `highlight`), weight 100-900 |
+| `alignment` | `horizontal` (`left`, `center`, `right`, `justified`, `flush`, `geometry`), `vertical` (`top`, `middle`, `bottom`, `baseline`, `geometry`, `capline`) |
+| `wrapping`, `overflow` | `noWrap` / `normal` / `preserveWhitespace` / `preserveWhitespaceNoWrap`; `overflow` / `ellipsis` / `masking` / `truncate` / `scrollRect` / `page` / `linked` |
+| `margin` | `left`, `top`, `right`, `bottom` insets of the rect |
+| `lineSpacing` | `serialized`, `applied` (the value for the export language), `byLanguage` (the per-language line spacing LocalizeText applies; null when not localized) |
+| `paragraphSpacing`, `characterSpacing`, `wordSpacing` | spacing in 1/100 em |
+| `characterHorizontalScale`, `kerning`, `rightToLeft`, `orthographic` | as serialized |
+| `color`, `colorMode`, `colorGradient`, `overrideHtmlColors` | vertex colour, gradient mode, four-corner gradient (null when off) |
+| `face` | `color` (fill = `color` x `face.color`), `dilateEm`, `boldDilateEm` (glyph edge moved outwards), `softnessEm` (edge ramp width) |
+| `outline` | null, or `color`, `widthEm` (band on each side of the glyph edge: stroke width 2 x `widthEm`, drawn over the fill), `softnessEm` |
+| `underlay` | null, or `color`, `offsetEm` [x, y] (+x right, +y down), `dilateEm`, `softnessEm`, `inner` (shadow inside the glyph) |
+
+`*Em` values are fractions of the drawn font size, converted from the text material's distance-field properties the
+way the TMP shader applies them. The document-level `textStyle.roles` gives, per role, `lineHeightEm`, `ascentEm`,
+`descentEm` (line pitch = `lineHeightEm` + `lineSpacing` / 100 em) and the font's `spacingOffset` / `boldSpacing`
+(1/100 em) for the export language.
 
 ## live2d
 
@@ -232,7 +267,7 @@ status 2 and a line naming the class, the game version and the Unity version (as
 
 ```
 nnnotes live MUSIC_ID -o OUT [--difficulty easy|normal|hard|expert] [--format flac|ogg|wav]
-                             [--band BAND | --leader-card CARD_ID]
+                             [--fonts open|game] [--band BAND | --leader-card CARD_ID]
 ```
 
 One chart (music + difficulty, default `expert`) as a self-contained directory, the format ournotes-player reads:
@@ -245,12 +280,15 @@ OUT/audio/live-audio.json    the live's sounds (BGM, note SE, live SE) with thei
                              decoded next to the BGM
 OUT/livescene/               scene graph, cameras, lane, background, start timeline, textures and shaders
 OUT/livenotes/               note, line and effect prefabs, skins, clips, particle systems, textures and shaders
-OUT/liveui/                  the start canvas in [catalog] language: strings, fonts, materials, sprites
+OUT/liveui/                  the start canvas in [catalog] language: strings, text records or fonts, sprites
 OUT/live.json                index of the above
 ```
 
 The start canvas follows the client language `[catalog] language` (`ja`, `en`, `zh-Hant`, `zh-Hans` or `ko`): its
-text table column, fonts and line spacing.
+text table column, fonts and line spacing. `--fonts open` (default) writes each text's layout and style (size,
+alignment, wrapping, spacing, colours, outline / underlay from its material) and only the names of the game's fonts
+and materials; `--fonts game` also writes the game's TextMesh Pro fonts reduced to the characters shown, with their
+atlas textures (needs the optional `fonts` dependencies: `pip install 'nnnotes[fonts]'`).
 
 The game takes the band of the background and start timeline from the player's deck centre. Without a deck the
 band is `--band`, or the band of the character of `--leader-card` (a `MasterMemberCard` id), or by default the band
@@ -264,7 +302,7 @@ nnnotes web SITE [--pair MUSIC_ID:DIFFICULTY [--pair ...] | --all] [--live2d MOD
 nnnotes web SITE (--player-only | --reingest-json)
                   [--player DIR] [--format aac|opus|vorbis|mp3|flac] [--no-audio] [--force]
                   [--tmp DIR] [--workers N] [--band BAND | --leader-card CARD_ID]
-                  [--region REGION [--region ...] | --all-regions]
+                  [--region REGION [--region ...] | --all-regions] [--fonts open|game]
 ```
 
 Builds or updates a static [ournotes-player](https://github.com/empty-sekai/ournotes-player) site of charts, Live2D
@@ -306,7 +344,7 @@ SITE/assets/<sha256>.<ext>                content-addressed files shared by all 
 - `--workers`: parallel music processes (default up to 5) and model processes (default up to 4); `1` builds in this
   process. `--tmp`: directory for the temporary live and model builds (default `SITE.tmp`); the build directories in
   it are removed after use.
-- `--band` / `--leader-card`: as for `live`, for every chart.
+- `--band` / `--leader-card` / `--fonts`: as for `live`, for every chart (the site stores no start canvas files).
 - Models need `[paths] apk` (component classes and the mask materials are read from the APK), not `[paths] master`.
 - `--region` (repeatable) / `--all-regions`: the regions the site serves (see Regions); default: the one
   `[catalog] region`. This `--region` follows the command name (`nnnotes web SITE --region tw --region kr`); the

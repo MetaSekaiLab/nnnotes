@@ -7,10 +7,13 @@ UILiveStartCanvas.Initialize leaves it:
 
   strings     the texts Initialize sets: music title, singer, the credit lines (LocalizeText master text id +
               replacement word), music level, high score, resolved as the game resolves them
-  texts       per TMP text of the drawn part: the LocalizeText font / material / line spacing overrides
-  fonts       TMP font assets reduced to the characters shown (tmpfont); FZLTH's runtime glyphs generated from
-              its source font; VibeMOPro's glyph pair adjustment lookup (kerning)
-  materials   the localized TMP materials ("<font> - Default") and the fonts' default materials
+  texts       per TMP text of the drawn part: the LocalizeText font / material / line spacing overrides; with
+              fonts "open" also its text record (textstyle: layout, colours, style values of its material)
+  fonts       fonts "game": TMP font assets reduced to the characters shown (tmpfont); FZLTH's runtime glyphs
+              generated from its source font; VibeMOPro's glyph pair adjustment lookup (kerning). fonts "open"
+              (default): the font asset names only, no font data and no atlases
+  materials   fonts "game": the localized TMP materials ("<font> - Default") and the fonts' default materials;
+              fonts "open": none
   sprites     WhiteRect, Songtitle_base, the Difficulty_* icons of _difficultyPairs and the music jacket; their
               texel blocks copied into textures/ (export.TexelPacker, deferred-texture mode)
   controller  the root Animator's controller (evidence only: the start timeline drives the canvas)
@@ -28,8 +31,8 @@ from .export import Exporter, TexelPacker, _safe
 from .jsonio import write_json
 from .player import PlayerData
 from .score import master_table
-from . import languages, tmpfont
-from .tmpfont import LANGUAGE_LINE_SPACING
+from . import languages, textstyle, tmpfont
+from .textstyle import LANGUAGE_LINE_SPACING
 
 SCENE_KEY = "EmbScene/Live"
 CANVAS = "Live/UILiveStartCanvas"
@@ -43,6 +46,8 @@ LIVE_DIFFICULTY = {"easy": 0, "normal": 1, "hard": 2, "expert": 3, "master": 4}
 TMP_STUBS = ("TMP_FontAsset", "TMP_SpriteAsset", "TMP_StyleSheet")
 TMP_CLASS = "TextMeshProUGUI"
 JAPANESE_COLUMN = languages.column("ja")
+FONT_CHOICES = ("open", "game")
+FONT_NOTE = "not exported (fonts \"open\"): the text record in `texts` describes the text without font data"
 
 
 def _drawn(path: str) -> bool:
@@ -125,16 +130,45 @@ TEXT_FIELDS = {"_musicTitleText": "musicTitle", "_singerText": "singerName", "_l
                "_musicLevelTexts": "musicLevel", "_highScoreTexts": "highScore"}
 
 
+def _game_fonts(ex: Exporter, fontset, texts: dict, chars_by_font: dict, packer: TexelPacker):
+    """The game's TMP fonts of the texts, reduced to the characters shown (tmpfont), their atlas blocks added to
+    `packer`. -> (glyph coverage, materials, fonts)."""
+    coverage: dict[str, dict] = {}
+    needed: dict[str, set] = {}
+    runtime_units: dict[str, set] = {}
+    primaries = set()
+    for fname in sorted(chars_by_font):
+        primary = fontset.by_key(textstyle.font_dir(fname) + fname)
+        primaries.add(primary.name)
+        cov, nd, rt = tmpfont.glyph_coverage(fontset, primary, sorted(chars_by_font[fname]))
+        if cov["missing"]:
+            raise RuntimeError(f"{fname}: characters {cov['missing']} missing from the font chain")
+        coverage[fname] = cov
+        for k, v in nd.items():
+            needed.setdefault(k, set()).update(v)
+        for k, v in rt.items():
+            runtime_units.setdefault(k, set()).update(v)
+    materials, text_mats = tmpfont.text_materials(ex, fontset, [t["localized"] for t in texts.values()],
+                                                  primaries, needed, runtime_units)
+    font_out = tmpfont.export_fonts(ex, fontset, primaries, needed, runtime_units, text_mats, packer,
+                                    "characters shown by the live start canvas (plus baked control characters); "
+                                    "runtime characters generated from the source font (runtimeGlyphs)")
+    return coverage, materials, font_out
+
+
 def extract(cat: Catalog, player: PlayerData, out_dir: Path, master: Path, music_id: int,
-            difficulty: str, *, language: str) -> dict:
+            difficulty: str, *, language: str, fonts: str = "open") -> dict:
     """Write <out_dir>/liveui/ (liveui.json, textures/) for one live and return a summary. Needs
     <out_dir>/livescene/shaders/shaders.json (livescene.extract) for the shader check. `language`: the client
-    language (a languages.LANGUAGES code)."""
+    language (a languages.LANGUAGES code); `fonts`: "open" (text records, font names only) or "game" (the game's
+    TMP fonts reduced to the characters shown; needs the `fonts` extra)."""
     out_dir = Path(out_dir)
     base = out_dir / "liveui"
     base.mkdir(parents=True, exist_ok=True)
     if difficulty not in LIVE_DIFFICULTY:
         raise KeyError(f"difficulty {difficulty}")
+    if fonts not in FONT_CHOICES:
+        raise ValueError(f"fonts {fonts}: one of {', '.join(FONT_CHOICES)}")
     mode, column = languages.mode(language), languages.column(language)
     ex = Exporter(cat, base, player=player, textures="deferred", stub_assets=TMP_STUBS,
                   follow=("AnimatorController",))
@@ -162,9 +196,10 @@ def extract(cat: Catalog, player: PlayerData, out_dir: Path, master: Path, music
             text_of[r["gameObject"]] = strings[key]
 
     # -- TMP texts of the drawn part: LocalizeText overrides and the characters they show -------------
-    lang = tmpfont.language_fonts(player)
-    swap = tmpfont.font_swap(lang, mode)
-    fonts = tmpfont.FontSet(ex)
+    styles = textstyle.TextStyles(ex, player, mode) if fonts == "open" else None
+    lang = styles.lang if styles else textstyle.language_fonts(player)
+    swap = styles.swap if styles else textstyle.font_swap(lang, mode)
+    fontset = tmpfont.FontSet(ex) if fonts == "game" else None
     texts: dict[str, dict] = {}
     chars_by_font: dict[str, set] = {}
     for n in nodes:
@@ -178,35 +213,24 @@ def extract(cat: Catalog, player: PlayerData, out_dir: Path, master: Path, music
         lt = _comp(n, "LocalizeText")
         if not (lt and lt["m_Enabled"] and lt["_localizeEnabled"]):
             raise NotImplementedError(f"{n['path']}: text without an enabled LocalizeText")
-        loc = tmpfont.localize_text(n["path"], t["m_fontAsset"]["name"], t["m_sharedMaterial"]["material"],
-                                    swap, lang, mode)
+        loc = textstyle.localize_text(n["path"], t["m_fontAsset"]["name"], t["m_sharedMaterial"]["material"],
+                                      swap, lang, mode)
         shown = text_of.get(n["path"], t["m_text"])
         texts[n["path"]] = {"localized": loc, "text": shown, "setByInitialize": n["path"] in text_of}
+        if styles:
+            record = styles.record(n["path"], t, lt)
+            record.pop("text")                        # the serialized text; `text` above is the one shown
+            texts[n["path"]]["style"] = record
         chars_by_font.setdefault(loc["fontAsset"], set()).update(ord(ch) for ch in shown)
     for p in text_of:
         if _drawn(p) and p not in texts:
             raise RuntimeError(f"{p}: Initialize writes a text that is not exported")
 
-    coverage: dict[str, dict] = {}
-    needed: dict[str, set] = {}
-    runtime_units: dict[str, set] = {}
-    primaries = set()
-    for fname in sorted(chars_by_font):
-        primary = fonts.by_key(f"{tmpfont.FONT_PREFIX}{fname[:-4]}/{fname}")
-        primaries.add(primary.name)
-        cov, nd, rt = tmpfont.glyph_coverage(fonts, primary, sorted(chars_by_font[fname]))
-        if cov["missing"]:
-            raise RuntimeError(f"{fname}: characters {cov['missing']} missing from the font chain")
-        coverage[fname] = cov
-        for k, v in nd.items():
-            needed.setdefault(k, set()).update(v)
-        for k, v in rt.items():
-            runtime_units.setdefault(k, set()).update(v)
-    materials, text_mats = tmpfont.text_materials(ex, fonts, [t["localized"] for t in texts.values()],
-                                                  primaries, needed, runtime_units)
-    font_out = tmpfont.export_fonts(ex, fonts, primaries, needed, runtime_units, text_mats, packer,
-                                    "characters shown by the live start canvas (plus baked control characters); "
-                                    "runtime characters generated from the source font (runtimeGlyphs)")
+    if fontset is not None:
+        coverage, materials, font_out = _game_fonts(ex, fontset, texts, chars_by_font, packer)
+    else:                                          # name stubs: no font data, no atlases
+        coverage, materials = None, {}
+        font_out = {f: {"name": f, "note": FONT_NOTE} for f in sorted(chars_by_font)}
 
     # -- sprites: drawn Images, the difficulty icons, the jacket ----------------------------------------
     replaced = {r["gameObject"] for f in ("_jacketImages", "_difficultyImages") for r in canvas[f]}
@@ -231,7 +255,8 @@ def extract(cat: Catalog, player: PlayerData, out_dir: Path, master: Path, music
         ex.pack_sprite(ref, packer, f"sprites_{_safe(s['tex'].read_typetree()['m_Name'])}")
 
     textures = packer.build()
-    tmpfont.resolve_font_blocks(font_out)
+    if fontset is not None:
+        tmpfont.resolve_font_blocks(font_out)
     sprites_out = {name: ex.packed_sprite(ref) for name, ref in sorted(sprite_refs.items())}
     for m in materials.values():
         for v in m["textures"].values():
@@ -291,9 +316,13 @@ def extract(cat: Catalog, player: PlayerData, out_dir: Path, master: Path, music
                     "names": sorted({m["shader"]["shader"] for m in materials.values()} | {"UI/Default"})},
         "controller": controller,
     }
+    if styles:
+        doc["fontData"] = "open"
+        doc["textStyle"] = styles.summary()
     write_json(base / "liveui.json", doc)
     return {"liveui": str(base / "liveui.json"), "texts": len(texts), "sprites": sorted(sprites_out),
             "textures": {k: (v["width"], v["height"]) for k, v in textures.items()},
-            "fonts": sorted(font_out), "coverage": {k: v["counts"] for k, v in coverage.items()},
+            "fonts": sorted(font_out), "coverage": {k: v["counts"] for k, v in (coverage or {}).items()},
             "strings": strings,
-            "runtimeGlyphs": {k: len(v["runtimeGlyphs"]["generated"]) for k, v in font_out.items() if v["runtimeGlyphs"]}}
+            "runtimeGlyphs": {k: len(v["runtimeGlyphs"]["generated"]) for k, v in font_out.items()
+                              if v.get("runtimeGlyphs")}}

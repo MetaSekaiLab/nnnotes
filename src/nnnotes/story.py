@@ -23,7 +23,8 @@ from . import adv, advscene, advui, cri, live2d
 
 
 def build(cat: Catalog, master: Path, player: PlayerData, adv_id: int, out_dir: Path,
-          audio_format: str = "flac") -> dict:
+          audio_format: str = "flac", fonts: str = "open") -> dict:
+    """Build the story directory. `fonts`: "open" exports no font data of the game, "game" exports it (advui)."""
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     episode = adv.to_json(adv.extract(cat, master, adv_id))
@@ -48,7 +49,7 @@ def build(cat: Catalog, master: Path, player: PlayerData, adv_id: int, out_dir: 
         audio[sheet] = f"audio/{sheet}"
 
     scene = advscene.extract(cat, player, episode, out_dir)
-    ui = advui.extract(cat, player, episode, out_dir)
+    ui = advui.extract(cat, player, episode, out_dir, fonts=fonts)
     index = {"advId": adv_id, "episode": "episode.json", "scene": "scene.json", "ui": "ui/ui.json",
              "models": models, "audio": audio}
     write_json(out_dir / "story.json", index)

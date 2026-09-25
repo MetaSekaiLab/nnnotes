@@ -142,7 +142,7 @@ settings (TOML / environment / flags)
                gameapi (anonymous game API calls: current master data version, server list)
        └─ reading  unity (UnityPy type trees and TextAssets)
                    export (prefabs / components / references resolved to JSON, textures and shaders alongside)
-                   shader, tmpfont (TextMesh Pro fonts), player (boot settings), cri + crikey (CRI audio)
+                   shader, textstyle (text layout and style), tmpfont (TextMesh Pro fonts), player (boot settings), cri + crikey (CRI audio)
             └─ content  stories: adv, advscene, advui, story
                         Live2D: live2d, motion
                         spots: spot, room
