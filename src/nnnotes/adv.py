@@ -45,7 +45,7 @@ RESOURCE_PREFIX = {
     "PostEffect": ("posteffect", "Adv/PostEffect/"),
     "Timeline": ("timeline", "Adv/Timeline/"),
     "ChatWindow": ("chat", "Adv/Chat/"),
-    "ChatStamp": ("chatstamp", "Adv/Chat/"),
+    "ChatStamp": ("chatstamp", "Adv/Chat/Stamp/"),
 }
 
 LANGS = ("_japanese", "_english", "_traditionalChinese", "_simplifiedChinese", "_korean")
@@ -139,7 +139,8 @@ def extract(cat: Catalog, master_dir: Path, adv_id: int) -> AdvExtract:
             r = text_idx[tid]
             item["lines"] = {lang[1:]: r.get(lang, "") for lang in LANGS}
         tgt = c.get("TargetAssetName") or ""
-        if name in RESOURCE_PREFIX and tgt:
+        # AddEpisodeLoadingTask registers an IgnoreData row's Key and returns: its asset is never loaded
+        if name in RESOURCE_PREFIX and tgt and not c.get("IgnoreData"):
             kind, prefix = RESOURCE_PREFIX[name]
             addr = _addr(prefix, tgt)
             resources.setdefault((kind, addr), {
