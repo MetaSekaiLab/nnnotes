@@ -13,6 +13,9 @@ Commands that write files take the output path with `-o/--out` (required), excep
 directory as its positional argument. JSON summaries on standard output are UTF-8. Every JSON file is written by one
 writer: UTF-8, LF line endings, deterministic, non-finite numbers as `1e999` / `-1e999`.
 
+A key, id or model the catalog or the master data does not have is a usage error: the command stops with exit
+status 2 and a line naming it (`nnnotes <command>: error: ...`), before any bundle is fetched or file written.
+
 ## Cache
 
 `pull` and every extractor read bundles through the cache (`[paths] cache`):
@@ -341,9 +344,9 @@ SITE/live2d/                              the player's Live2D model page and its
 SITE/assets/<sha256>.<ext>                content-addressed files shared by all charts and models
 ```
 
-- `--pair` (repeatable; `<musicId>:<difficulty>` or `<musicId>_<difficulty>`) adds the given charts; `--all` adds
-  every music and difficulty that has a `MasterLiveMusicScore` row (in the master data of any of the site's
-  regions).
+- `--pair` (repeatable; `<musicId>:<difficulty>` or `<musicId>_<difficulty>`) adds the given charts (a chart that
+  no region of the site has a `MasterLiveMusicScore` row for is a usage error); `--all` adds every music and
+  difficulty that has a `MasterLiveMusicScore` row (in the master data of any of the site's regions).
 - `--live2d` (repeatable; a model id `<name>` or key `Character/Live2D/<group>/<name>/model/<name>`) adds the given
   Live2D models; `--all-live2d` adds every model key of the catalog. A model's id is its `<name>`. Its manifest lists
   the files the player's Live2D viewer reads: `model.json` (index: moc3, prefab, textures, shader index and the Cubism

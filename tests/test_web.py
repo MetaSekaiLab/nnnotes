@@ -120,6 +120,7 @@ def test_web_exit_status_follows_failed_charts(tmp_path, capsys, monkeypatch, fa
         return {"site": str(out), "built": [], "failed": failed, "skipped": []}
 
     monkeypatch.setattr(web, "build", fake_build)
+    monkeypatch.setattr(web, "unknown_pairs", lambda cfg, pairs, regions=None: [])   # no master data here
     exit_code = 0
     try:
         cli.main(["web", str(tmp_path / "s"), "--player", str(fake_player(tmp_path / "p")),

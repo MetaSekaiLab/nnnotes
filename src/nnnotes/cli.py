@@ -110,6 +110,25 @@ def master_key(cfg: Config):
     return MasterKey(cfg.hex("master", "key", 32), cfg.hex("master", "iv", 32))
 
 
+def known_keys(args, cat: Catalog, keys) -> None:
+    """A usage error (exit 2) naming the keys the catalog does not have."""
+    unknown = [k for k in keys if not cat.has(k)]
+    if unknown:
+        args.usage(f"not a key of the catalog: {', '.join(unknown)}")
+
+
+def known_row(args, md: Path, table: str, row_id: int, what: str) -> None:
+    """A usage error (exit 2) naming `row_id` when the master table `table` has no row with that `_id`."""
+    from .master import has_row
+    try:
+        found = has_row(md, table, row_id)
+    except FileNotFoundError:
+        raise ConfigError(f"master data {md}: no {table}.json (a directory written by `nnnotes master decode`)") \
+            from None
+    if not found:
+        args.usage(f"{what} {row_id}: no {table} row with this id")
+
+
 def _print_json(r) -> None:
     """Print a JSON summary as UTF-8 bytes (a GBK / cp932 console cannot encode every string)."""
     sys.stdout.flush()
@@ -143,6 +162,7 @@ def cmd_browse(args, cfg):
 
 def cmd_pull(args, cfg):
     cat = open_catalog(cfg)
+    known_keys(args, cat, args.keys)
     for key in args.keys:
         for p in cat.fetch_key(key):
             print(p)
@@ -196,8 +216,10 @@ def cmd_master_download(args, cfg):
 
 def cmd_adv(args, cfg):
     from . import adv
+    md = master_dir(cfg)
+    known_row(args, md, "MasterAdv", args.adv_id, "episode")
     cat = open_catalog(cfg)
-    doc = adv.to_json(adv.extract(cat, master_dir(cfg), args.adv_id))
+    doc = adv.to_json(adv.extract(cat, md, args.adv_id))
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     write_json(out, doc)
@@ -208,12 +230,10 @@ def cmd_live2d(args, cfg):
     from . import live2d, webmodel
     cfg.require_path("paths", "apk")                 # the Cubism component classes are read from the APK
     cat = open_catalog(cfg)
-    key = args.key
-    if "/" not in key:                               # a model id
-        try:
-            (key,) = webmodel.catalog_models(cat, [key]).values()
-        except ValueError as e:
-            args.usage(str(e))
+    try:                                             # a model id or a model key
+        (key,) = webmodel.catalog_models(cat, [args.key]).values()
+    except ValueError as e:
+        args.usage(str(e))
     r = live2d.extract_model(cat, key, Path(args.out))
     print(dumps(r, ensure_ascii=False))
 
@@ -221,9 +241,11 @@ def cmd_live2d(args, cfg):
 def cmd_spot(args, cfg):
     from . import spot, room, shader
     cfg.require_path("paths", "apk")                 # the Spot / Spine component classes are read from the APK
+    md = master_dir(cfg)
+    known_row(args, md, "MasterHomeSpot", args.spot_id, "spot")
     cat = open_catalog(cfg)
     out = Path(args.out)
-    doc = spot.extract(cat, master_dir(cfg), args.spot_id, out)
+    doc = spot.extract(cat, md, args.spot_id, out)
     print(f"{out}/spot.json  ({len(doc['characters'])} tap targets, {len(doc['skeletons'])} skeletons)")
     bg = doc["master"]["_backgroundAssetPath"]
     r = room.extract_room(cat, bg, out / "room.glb")
@@ -236,6 +258,7 @@ def cmd_spot(args, cfg):
 def cmd_room(args, cfg):
     from . import room
     cat = open_catalog(cfg)
+    known_keys(args, cat, [args.key])
     r = room.extract_room(cat, args.key, Path(args.out))
     print(f"{r['glb']}  ({r['meshCount']} meshes, {r['inactiveMeshes']} inactive)")
 
@@ -244,11 +267,17 @@ def cmd_shader(args, cfg):
     from . import shader
     cat = open_catalog(cfg)
     if args.key:
+        known_keys(args, cat, [args.key])
         bundles = cat.fetch_key(args.key)
     else:
         if cat.apk is None:
             cfg.require_path("paths", "apk")
-        bundles = [cat.apk_bundle(s) for s in args.apk_bundle]
+        bundles = []
+        for s in args.apk_bundle:
+            try:
+                bundles.append(cat.apk_bundle(s))
+            except KeyError as e:                    # none or several bundles match
+                args.usage(f"--apk-bundle {e.args[0]}")
     r = shader.dump(bundles, Path(args.out))
     print(f"{r['count']} shaders, {r['variants']} variants")
     for n in r["names"]:
@@ -259,6 +288,8 @@ def cmd_audio(args, cfg):
     from . import cri
     cfg.require_path("paths", "apk")                 # the HCA keycode is read from the APK
     cat = open_catalog(cfg)
+    if not cat.has(f"Cri/Sound/{args.cue_sheet}"):
+        args.usage(f"cue sheet {args.cue_sheet}: no key Cri/Sound/{args.cue_sheet} in the catalog")
     out = Path(args.out)
     r = cri.decode(cat, args.cue_sheet, out, fmt=args.format)
     print(f"{out}  ({len(r)} cues)")
@@ -289,8 +320,10 @@ def cmd_story(args, cfg):
     if args.fonts == "game":
         from .tmpfont import require_extra
         require_extra()
+    md = master_dir(cfg)
+    known_row(args, md, "MasterAdv", args.adv_id, "episode")
     cat = open_catalog(cfg)
-    r = story.build(cat, master_dir(cfg), player_data(cfg), args.adv_id, Path(args.out),
+    r = story.build(cat, md, player_data(cfg), args.adv_id, Path(args.out),
                     audio_format=args.format, audio=not args.no_audio, fonts=args.fonts)
     _print_json(r)
 
@@ -304,10 +337,19 @@ def _fonts_extra(fonts: str) -> None:
 
 def cmd_live(args, cfg):
     from . import languages, live
+    from .web import all_pairs
     _fonts_extra(args.fonts)
     language = languages.check(cfg.require("catalog", "language"))
+    md = master_dir(cfg)
+    known_row(args, md, "MasterLiveMusic", args.music_id, "music")
+    if (args.music_id, args.difficulty) not in all_pairs(md):
+        args.usage(f"music {args.music_id}: no {args.difficulty} chart (no MasterLiveMusicScore row)")
     cat = open_catalog(cfg)
-    r = live.build(cat, master_dir(cfg), player_data(cfg), args.music_id, args.difficulty, Path(args.out),
+    try:                                             # an unknown --leader-card, a --band without its scene keys
+        live.resolve_band(cat, md, args.music_id, band=args.band, leader_card=args.leader_card)
+    except (KeyError, ValueError) as e:
+        args.usage(e.args[0] if e.args else type(e).__name__)
+    r = live.build(cat, md, player_data(cfg), args.music_id, args.difficulty, Path(args.out),
                    audio_format=args.format, band=args.band, leader_card=args.leader_card, language=language,
                    fonts=args.fonts)
     _print_json(r)
@@ -330,6 +372,10 @@ def cmd_web(args, cfg):
         regions = (web.site_regions(cfg, args.web_regions, args.all_regions)
                    if args.web_regions or args.all_regions else None)   # None: the one [catalog] region
         base = {"region": regions[0]} if regions else {}
+        unknown = web.unknown_pairs(cfg, args.pair, regions) if args.pair else []
+        if unknown:
+            args.usage(f"chart{'s' if len(unknown) > 1 else ''} {', '.join(f'{m}:{d}' for m, d in unknown)}: no "
+                       f"MasterLiveMusicScore row in the master data of the site's region(s)")
         r = {}
         if models:
             cfg.require_path("paths", "apk")         # the Cubism component classes and mask materials: the APK
@@ -403,7 +449,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     c = sub.add_parser("pull", help="fetch the bundle closure of keys into the cache")
     c.add_argument("keys", nargs="+")
-    c.set_defaults(func=cmd_pull)
+    c.set_defaults(func=cmd_pull, usage=c.error)
 
     c = sub.add_parser("servers", help="the server list of the bootstrap API root: regions, their CDN and API roots")
     c.add_argument("--show-hosts", action="store_true", help="print the CDN and API roots, not only their counts")
@@ -429,7 +475,7 @@ def build_parser() -> argparse.ArgumentParser:
     c = sub.add_parser("adv", help="ADV episode -> JSON")
     c.add_argument("adv_id", type=int)
     _out(c, "output .json file")
-    c.set_defaults(func=cmd_adv)
+    c.set_defaults(func=cmd_adv, usage=c.error)
 
     c = sub.add_parser("story", help="ADV episode -> story dir (episode, models, audio, scene, UI, media, videos)")
     c.add_argument("adv_id", type=int)
@@ -439,7 +485,7 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--fonts", default="open", choices=("open", "game"),
                    help="open: text layout and style only, no font data (default); game: also the game's TMP fonts "
                         "(needs the 'fonts' extra)")
-    c.set_defaults(func=cmd_story)
+    c.set_defaults(func=cmd_story, usage=c.error)
 
     c = sub.add_parser("live2d", help="Live2D model -> runtime model dir")
     c.add_argument("key", help="model key Character/Live2D/<group>/<name>/model/<name>, or its model id <name>")
@@ -449,25 +495,25 @@ def build_parser() -> argparse.ArgumentParser:
     c = sub.add_parser("spot", help="spot -> spot.json + Spine + room.glb + shaders")
     c.add_argument("spot_id", type=int)
     _out(c, "output directory")
-    c.set_defaults(func=cmd_spot)
+    c.set_defaults(func=cmd_spot, usage=c.error)
 
     c = sub.add_parser("room", help="background prefab -> glb")
     c.add_argument("key")
     _out(c, "output .glb file")
-    c.set_defaults(func=cmd_room)
+    c.set_defaults(func=cmd_room, usage=c.error)
 
     c = sub.add_parser("shader", help="dump shaders of a key's closure or of APK bundles")
     g = c.add_mutually_exclusive_group(required=True)
     g.add_argument("--key")
     g.add_argument("--apk-bundle", nargs="+", help="substring(s) of APK bundle file names")
     _out(c, "output directory")
-    c.set_defaults(func=cmd_shader)
+    c.set_defaults(func=cmd_shader, usage=c.error)
 
     c = sub.add_parser("audio", help="decode a CRI cue sheet")
     c.add_argument("cue_sheet")
     _out(c, "output directory")
     c.add_argument("--format", default="flac", choices=AUDIO_CHOICES)
-    c.set_defaults(func=cmd_audio)
+    c.set_defaults(func=cmd_audio, usage=c.error)
 
     c = sub.add_parser("crikey", help="find the HCA keycode in base.apk")
     c.add_argument("--write", help="directory to write .hcakey into")
@@ -484,7 +530,7 @@ def build_parser() -> argparse.ArgumentParser:
     _fonts_arg(c)
     _band_args(c)
     _out(c, "output directory")
-    c.set_defaults(func=cmd_live)
+    c.set_defaults(func=cmd_live, usage=c.error)
 
     c = sub.add_parser("web", help="live charts and Live2D models -> static site for ournotes-player "
                                    "(shared player + per-chart / per-model data)")

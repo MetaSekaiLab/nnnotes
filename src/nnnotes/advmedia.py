@@ -39,6 +39,7 @@ from .export import HEADER, Exporter
 from .jsonio import write_json
 from .player import PlayerData
 from . import adv, unity
+from . import master as master_mod
 
 TMP_SHADER_PREFIX = "TextMeshPro/"
 TMP_ASSETS = ("TMP_FontAsset", "TMP_SpriteAsset", "TMP_StyleSheet")
@@ -116,7 +117,7 @@ def effect_instances(commands: list[dict]) -> dict[str, str]:
 
 
 def _chat(cat: Catalog, master: Path, ex: Exporter, episode: dict, resources: list[dict]) -> dict:
-    rows = {r["_id"]: r for r in adv._master_table(master, "MasterAdvChat")}
+    rows = {r["_id"]: r for r in master_mod.table(master, "MasterAdvChat")}
     ids = sorted({c["TargetChatID"] for c in episode["commands"] if c.get("TargetChatID")})
     doc: dict = {"chats": {str(i): rows[i] for i in ids if i in rows},
                  "windows": {}, "icons": {}, "stamps": {}}

@@ -308,6 +308,7 @@ def test_web_builds_models_then_charts(tmp_path, capsys, monkeypatch, failed, co
 
     monkeypatch.setattr(webmodel, "build", fake_models)
     monkeypatch.setattr(web, "build", fake_charts)
+    monkeypatch.setattr(web, "unknown_pairs", lambda cfg, pairs, regions=None: [])   # no master data here
     (tmp_path / "base.apk").write_bytes(b"")
     code_, out, _ = run(["--apk", str(tmp_path / "base.apk"), "web", str(tmp_path / "s"),
                          "--player", str(fake_player(tmp_path / "p")), "--pair", "7:hard", "--live2d", "adv_model_b",

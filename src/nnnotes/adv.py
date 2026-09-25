@@ -10,13 +10,12 @@ builds it row by row (see `closure`); cue sheets are not listed (the -SoundCueSh
 """
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from pathlib import Path
 
 from .catalog import Catalog
 from .config import apk_missing
-from . import unity
+from . import master, unity
 
 # AdvCommand enum; values 0-69, 8 and 22 unused.
 COMMAND = {
@@ -82,14 +81,14 @@ class AdvExtract:
 
 
 def _master_row(adv_id: int, master_dir: Path) -> dict:
-    for r in json.loads((master_dir / "MasterAdv.json").read_text(encoding="utf-8"))["_allData"]:
+    for r in master.table(master_dir, "MasterAdv"):
         if r["_id"] == adv_id:
             return r
     raise KeyError(f"MasterAdv has no row {adv_id}")
 
 
 def _master_text(text_id: str, master_dir: Path) -> dict:
-    for r in json.loads((master_dir / "MasterText.json").read_text(encoding="utf-8"))["_allData"]:
+    for r in master.table(master_dir, "MasterText"):
         if r["_id"] == text_id:
             return {lang[1:]: r[lang] for lang in LANGS}
     raise KeyError(f"MasterText has no row {text_id}")
@@ -161,7 +160,7 @@ def extract(cat: Catalog, master_dir: Path, adv_id: int) -> AdvExtract:
 
     def chat(chat_id: int) -> dict:
         if not chats:
-            chats.update({r["_id"]: r for r in _master_table(master_dir, "MasterAdvChat")})
+            chats.update({r["_id"]: r for r in master.table(master_dir, "MasterAdvChat")})
         if chat_id not in chats:
             raise KeyError(f"MasterAdvChat has no row {chat_id}")
         return chats[chat_id]
@@ -238,10 +237,6 @@ def closure(rows: list[dict], has, videos: dict, chat, default_transition) -> li
                 if icon:
                     add("chaticon", CHAT_ICON_PREFIX + icon)
     return sorted(found.values(), key=lambda d: (d["kind"], d["address"]))
-
-
-def _master_table(master_dir: Path, name: str) -> list[dict]:
-    return json.loads((Path(master_dir) / f"{name}.json").read_text(encoding="utf-8"))["_allData"]
 
 
 def _default_transition(cat: Catalog) -> str:

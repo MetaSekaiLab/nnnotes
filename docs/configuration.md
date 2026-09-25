@@ -115,9 +115,17 @@ nnnotes: setting paths.apk: file <path> not found
 nnnotes: ffmpeg not found on PATH: give its path as `ffmpeg` in the [paths] table of the config file, the environment variable NNNOTES_PATHS_FFMPEG or --ffmpeg
 ```
 
-An unreadable config file (not found, invalid TOML) is reported the same way. Command-line usage errors (for
-example a missing `-o`) also exit with status 2. Setting values are never printed, logged or put into an error
-message, and the `repr` of the settings and key objects shows no values.
+An unreadable config file (not found, invalid TOML) is reported the same way. Command-line usage errors also exit
+with status 2: a missing `-o`, or a key or id the data does not have (a key not in the catalog, an episode, spot or
+music id without its master data row, a Live2D model the catalog does not have), which the error line names:
+
+```
+nnnotes adv: error: episode 99999: no MasterAdv row with this id
+nnnotes pull: error: not a key of the catalog: Live/MusicScore/9999/9999_03
+```
+
+Setting values are never printed, logged or put into an error message, and the `repr` of the settings and key
+objects shows no values.
 
 A failed call to the game's API (`master version`, `master download --latest`, `servers`) exits with status 1 and
 one line naming the method, the setting and the gRPC status, plus the game's error code when the server sent one;

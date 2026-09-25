@@ -375,6 +375,19 @@ def site_regions(cfg: Config, regions=None, all_regions: bool = False) -> list[s
     return names
 
 
+def unknown_pairs(cfg: Config, pairs, regions=None) -> list[tuple[int, str]]:
+    """The charts of `pairs` ([(musicId, difficulty)], duplicates dropped) that no region of the site
+    (site_regions(cfg, regions)) has: no MasterLiveMusicScore row for that music and difficulty in its master data."""
+    have: set = set()
+    for md in dict.fromkeys(region_masters(cfg, site_regions(cfg, regions)).values()):
+        try:
+            have.update(all_pairs(md))
+        except FileNotFoundError as e:
+            raise ConfigError(f"master data {md}: no {Path(e.filename).name} (a directory written by "
+                              f"`nnnotes master decode`)") from None
+    return [p for p in dict.fromkeys((int(m), d) for m, d in pairs) if p not in have]
+
+
 def region_masters(cfg: Config, regions: list[str]) -> dict[str, Path]:
     """{region: decoded master dir} (cli.master_dir). With more than one region the --master flag is refused and
     at most one region may use [paths] master (the others need their own `[servers.<region>] master`)."""

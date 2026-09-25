@@ -1,4 +1,5 @@
 import json
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -204,3 +205,72 @@ def test_crikey_write_creates_the_directory(tmp_path, capsys, monkeypatch):
     assert "12 digits" in out and "987654321012" not in out
     code, _, err = run(["crikey"], capsys)
     assert code == 2 and "paths.apk" in err
+
+
+# ---------------------------------------------------------------- unknown keys and ids: usage errors
+MASTER_TABLES = {
+    "MasterAdv": [{"_id": 1}],
+    "MasterHomeSpot": [{"_id": 1}],
+    "MasterLiveMusic": [{"_id": 7, "_expertID": 70, "_easyID": 0, "_vocalCharacterIDs": [1]}],
+    "MasterLiveMusicScore": [{"_id": 70}],
+    "MasterMemberCard": [{"_id": 5, "_characterID": 1}],
+    "MasterCharacter": [{"_id": 1, "_bandID": 2}],
+}
+
+
+@pytest.fixture
+def data(catalog_file, tmp_path, cdn, monkeypatch):
+    """Global options of a synthetic catalog, APK (one local bundle) and master data directory."""
+    monkeypatch.setenv("NNNOTES_BUNDLE_KEY", KEY_HEX)
+    monkeypatch.setenv("NNNOTES_BUNDLE_NONCE_SEED", SEED_HEX)
+    monkeypatch.setenv("NNNOTES_SERVERS_ZZ_CDN", cdn)
+    apk = tmp_path / "base.apk"
+    with zipfile.ZipFile(apk, "w") as z:
+        z.writestr("assets/aa/catalog.bin", synth.CatalogWriter().build([("EmbX", synth.local("x_01.bundle"), [])]))
+        z.writestr("assets/aa/Android/x_01.bundle", synth.fake_bundle("x_01.bundle"))
+    md = tmp_path / "master"
+    md.mkdir()
+    for name, rows in MASTER_TABLES.items():
+        (md / f"{name}.json").write_text(json.dumps({"_allData": rows}), encoding="utf-8")
+    return ["--catalog", str(catalog_file), "--cache", str(tmp_path / "cache"), "--region", "zz", "--language", "ja",
+            "--master", str(md), "--apk", str(apk)]
+
+
+@pytest.mark.parametrize("argv, message", [
+    (["pull", "Char/A", "Nope/1", "Nope/2"], "not a key of the catalog: Nope/1, Nope/2"),
+    (["room", "Nope/1", "-o", "r.glb"], "not a key of the catalog: Nope/1"),
+    (["shader", "--key", "Nope/1", "-o", "s"], "not a key of the catalog: Nope/1"),
+    (["shader", "--apk-bundle", "zz", "-o", "s"], "--apk-bundle 'zz': 0 APK bundles match"),
+    (["audio", "Nope", "-o", "a"], "cue sheet Nope: no key Cri/Sound/Nope in the catalog"),
+    (["live2d", "nope", "-o", "m"], "not a Live2D model of the catalog: nope"),
+    (["live2d", "Character/Live2D/g/x/model/x", "-o", "m"], "not a Live2D model of the catalog: Character/Live2D/g/x"),
+    (["live2d", "Char/A", "-o", "m"], "not a Live2D model of the catalog: Char/A"),
+    (["adv", "99", "-o", "e.json"], "episode 99: no MasterAdv row with this id"),
+    (["story", "99", "-o", "s"], "episode 99: no MasterAdv row with this id"),
+    (["spot", "99", "-o", "s"], "spot 99: no MasterHomeSpot row with this id"),
+    (["live", "99", "-o", "l"], "music 99: no MasterLiveMusic row with this id"),
+    (["live", "7", "--difficulty", "easy", "-o", "l"], "music 7: no easy chart"),
+    (["live", "7", "--leader-card", "9", "-o", "l"], "MasterMemberCard 9: 0 rows"),
+    (["live", "7", "--band", "4", "-o", "l"], "band 4: Band/4/live_stage/lightweight_background"),
+])
+def test_unknown_key_or_id_is_a_usage_error(data, argv, message, capsys):
+    code, out, err = run(data + argv, capsys)
+    assert code == 2 and out == "", err
+    assert f"nnnotes {argv[0]}: error: {message}" in err and "Traceback" not in err
+    assert KEY_HEX not in err
+
+
+def test_known_id_reaches_the_extractor(data, tmp_path, capsys, monkeypatch):
+    from nnnotes import adv
+    seen = []
+    monkeypatch.setattr(adv, "extract", lambda cat, md, adv_id: seen.append(adv_id) or "x")
+    monkeypatch.setattr(adv, "to_json", lambda x: {"commandCount": 0, "resources": []})
+    code, out, err = run(data + ["adv", "1", "-o", str(tmp_path / "e.json")], capsys)
+    assert code == 0 and seen == [1], err
+
+
+def test_missing_master_table_names_it(data, tmp_path, capsys):
+    (tmp_path / "master" / "MasterHomeSpot.json").unlink()
+    code, _, err = run(data + ["spot", "1", "-o", "s"], capsys)
+    assert code == 2 and "no MasterHomeSpot.json" in err and len(err.strip().splitlines()) == 1
+

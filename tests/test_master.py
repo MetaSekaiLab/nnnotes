@@ -107,3 +107,11 @@ def test_download_rejects_path_names(tmp_path):
     r = master.download((tmp_path / "cdn").as_uri(), "v", tmp_path / "out")
     assert r["failed"] == [{"file": "../evil.bin", "error": "unexpected file name"}]
     assert not (tmp_path / "evil.bin").exists()
+
+
+def test_table_rows(tmp_path):
+    (tmp_path / "MasterX.json").write_text(json.dumps(TABLE, ensure_ascii=False), encoding="utf-8")
+    assert master.table(tmp_path, "MasterX") == TABLE["_allData"]
+    assert master.has_row(tmp_path, "MasterX", 2) and not master.has_row(tmp_path, "MasterX", 3)
+    with pytest.raises(FileNotFoundError):
+        master.table(tmp_path, "MasterY")

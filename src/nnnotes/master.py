@@ -171,6 +171,16 @@ def decode_files(files: list[Path], out_dir: Path, key: MasterKey, workers: int 
     return {"decoded": len(files) - len(failed), "failed": failed, "out": str(out_dir)}
 
 
+def table(master_dir: Path, name: str) -> list[dict]:
+    """The rows of a decoded master table: `_allData` of <master_dir>/<name>.json."""
+    return json.loads((Path(master_dir) / f"{name}.json").read_text(encoding="utf-8"))["_allData"]
+
+
+def has_row(master_dir: Path, name: str, row_id) -> bool:
+    """Whether the decoded master table `name` has a row whose `_id` is `row_id`."""
+    return any(r.get("_id") == row_id for r in table(master_dir, name))
+
+
 def input_files(inputs: list[Path]) -> list[Path]:
     """Files given, and the `*.bin` files of directories given, sorted by name per directory."""
     out: list[Path] = []
