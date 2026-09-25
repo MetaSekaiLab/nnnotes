@@ -28,7 +28,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import cri
+from . import cri, languages
 from .jsonio import write_json
 
 f32 = np.float32
@@ -1020,7 +1020,8 @@ def fetch_chart(cat, file_name: str) -> bytes:
 
 
 def music_rows(master_dir: Path, music_id: int) -> dict:
-    """MasterLiveMusic row, its 4 MasterLiveMusicScore rows, title/band text and sound rows."""
+    """MasterLiveMusic row, its 4 MasterLiveMusicScore rows, title / band name texts in every language
+    (languages.LANGUAGES) and sound rows."""
     music = next(r for r in master_table(master_dir, "MasterLiveMusic") if r["_id"] == music_id)
     scores = {r["_id"]: r for r in master_table(master_dir, "MasterLiveMusicScore")}
     text = {r["_id"]: r for r in master_table(master_dir, "MasterText")}
@@ -1030,7 +1031,7 @@ def music_rows(master_dir: Path, music_id: int) -> dict:
 
     def tx(i):
         r = text.get(i)
-        return None if r is None else {"id": i, "zh-Hant": r.get("_traditionalChinese"), "ja": r.get("_japanese")}
+        return None if r is None else {"id": i, **languages.texts(r)}
 
     def snd(i):
         r = sounds.get(i)

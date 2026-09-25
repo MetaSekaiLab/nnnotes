@@ -106,6 +106,10 @@ class Config:
     def has(self, section: str, key: str) -> bool:
         return self._raw(section, key)[0] is not None
 
+    def origin(self, section: str, key: str) -> str | None:
+        """Where a setting comes from: 'flag', 'env', 'file', or None when it is unset."""
+        return self._raw(section, key)[1]
+
     def missing(self, section: str, key: str) -> ConfigError:
         return ConfigError(f"setting {section}.{key} is not set: give it as "
                            f"{describe(section, key, self._flags.get((section, key)))}")
@@ -185,6 +189,13 @@ class Config:
     def cdn(self, region: str) -> str:
         """CDN base of a region, without a trailing slash."""
         return self.require(f"servers.{region}", "cdn").rstrip("/")
+
+    def master(self, region: str | None) -> tuple[str, str]:
+        """The setting that names the decoded master data of `region`: the --master flag, else
+        `[servers.<region>] master`, else `[paths] master` -> (section, key)."""
+        if region and self.origin("paths", "master") != "flag" and self.has(f"servers.{region}", "master"):
+            return f"servers.{region}", "master"
+        return "paths", "master"
 
 
 # ---------------------------------------------------------------- the process's settings

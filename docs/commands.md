@@ -18,7 +18,8 @@ writer: UTF-8, LF line endings, deterministic, non-finite numbers as `1e999` / `
 `pull` and every extractor read bundles through the cache (`[paths] cache`):
 
 ```
-<cache>/catalog_main_<language>.bin     the region's catalog (downloaded on first use unless [paths] catalog is set)
+<cache>/catalog_main_<language>.bin     the catalog of the language, the same for every region (downloaded on first
+                                        use unless [paths] catalog is set)
 <cache>/bundles/<bundle file name>      bundles of the dependency closures, decrypted (UnityFS)
 <cache>/raw/<path>                      raw CDN files stored as they are (e.g. CRI cue sheet data)
 <cache>/catalogs/<region>/              catalogs downloaded by `browse`
@@ -237,15 +238,19 @@ nnnotes live MUSIC_ID -o OUT [--difficulty easy|normal|hard|expert] [--format fl
 One chart (music + difficulty, default `expert`) as a self-contained directory, the format ournotes-player reads:
 
 ```
-OUT/score/                   the chart as shipped, the converted runtime notes, master rows, summary.json
+OUT/score/                   the chart as shipped, the converted runtime notes, master rows (title and band
+                             names in every language), summary.json
 OUT/audio/<cueSheet>/        the BGM cue sheet decoded per cue + cues.json, streams.json
 OUT/audio/live-audio.json    the live's sounds (BGM, note SE, live SE) with their CRI routing; their cue sheets
                              decoded next to the BGM
 OUT/livescene/               scene graph, cameras, lane, background, start timeline, textures and shaders
 OUT/livenotes/               note, line and effect prefabs, skins, clips, particle systems, textures and shaders
-OUT/liveui/                  the start canvas: strings, fonts, materials, sprites
+OUT/liveui/                  the start canvas in [catalog] language: strings, fonts, materials, sprites
 OUT/live.json                index of the above
 ```
+
+The start canvas follows the client language `[catalog] language` (`ja`, `en`, `zh-Hant`, `zh-Hans` or `ko`): its
+text table column, fonts and line spacing.
 
 The game takes the band of the background and start timeline from the player's deck centre. Without a deck the
 band is `--band`, or the band of the character of `--leader-card` (a `MasterMemberCard` id), or by default the band
@@ -259,6 +264,7 @@ nnnotes web SITE [--pair MUSIC_ID:DIFFICULTY [--pair ...] | --all] [--live2d MOD
 nnnotes web SITE (--player-only | --reingest-json)
                   [--player DIR] [--format aac|opus|vorbis|mp3|flac] [--no-audio] [--force]
                   [--tmp DIR] [--workers N] [--band BAND | --leader-card CARD_ID]
+                  [--region REGION [--region ...] | --all-regions]
 ```
 
 Builds or updates a static [ournotes-player](https://github.com/empty-sekai/ournotes-player) site of charts, Live2D
@@ -267,9 +273,11 @@ models or both:
 ```
 SITE/index.html, chart-list.js ...        the player's chart list page; ?music=<id>&difficulty=<d> plays one chart
 SITE/ournotes-player.element.min.js       the player's built bundle (and its source map)
-SITE/charts.json                          chart index: listing facts, manifest path, sizes
+SITE/charts.json                          chart index: listing facts (texts in every language), regions,
+                                          manifest path, sizes
 SITE/charts/<musicId>_<difficulty>.json   chart manifest: every path the player reads -> {asset, size}, or
                                           {parts: [[key, asset, size], ...], size} for a large JSON object
+SITE/charts/<region>/<id>.json            the manifest of a region whose chart files differ (see Regions)
 SITE/models.json                          Live2D model index: id, key, group, canvas, manifest path, sizes
 SITE/models/<id>.json                     model manifest, the same entry forms as a chart manifest
 SITE/live2d/                              the player's Live2D model page and its bundle (when the player has them)
@@ -277,7 +285,8 @@ SITE/assets/<sha256>.<ext>                content-addressed files shared by all 
 ```
 
 - `--pair` (repeatable; `<musicId>:<difficulty>` or `<musicId>_<difficulty>`) adds the given charts; `--all` adds
-  every music and difficulty that has a `MasterLiveMusicScore` row.
+  every music and difficulty that has a `MasterLiveMusicScore` row (in the master data of any of the site's
+  regions).
 - `--live2d` (repeatable; a model id `<name>` or key `Character/Live2D/<group>/<name>/model/<name>`) adds the given
   Live2D models; `--all-live2d` adds every model key of the catalog. A model's id is its `<name>`. Its manifest lists
   the files the player's Live2D viewer reads: `model.json` (index: moc3, prefab, textures, shader index and the Cubism
@@ -299,6 +308,31 @@ SITE/assets/<sha256>.<ext>                content-addressed files shared by all 
   it are removed after use.
 - `--band` / `--leader-card`: as for `live`, for every chart.
 - Models need `[paths] apk` (component classes and the mask materials are read from the APK), not `[paths] master`.
+- `--region` (repeatable) / `--all-regions`: the regions the site serves (see Regions); default: the one
+  `[catalog] region`. This `--region` follows the command name (`nnnotes web SITE --region tw --region kr`); the
+  global `--region` before it sets `[catalog] region`.
+
+### Regions and languages
+
+One site serves several regions and every language:
+
+- The regions serve the same catalog for a language, so a chart's files depend on the region's master data only.
+  Regions whose chart tables (the master tables the chart build reads) are identical share one manifest,
+  `charts/<id>.json`, built once from the first region's data. A region with other chart tables is built on its own
+  into `charts/<region>/<id>.json`; such a manifest whose files equal the shared one's is dropped and the region joins
+  the shared manifest. Models read no master data: one build serves every region.
+- Each region's master data: `[servers.<region>] master` (else `[paths] master`, for at most one of the regions; the
+  global `--master` flag is refused with more than one region). A region offers the charts its master data has a
+  `MasterLiveMusicScore` row for.
+- Chart files come from the catalog of `[catalog] language`; the listing texts come from the text tables in every
+  language: a manifest's `chart` has `title` and `bands` in `[catalog] language` (`language`), and `titles` /
+  `bandNames` in `ja`, `en`, `zh-Hant`, `zh-Hans` and `ko`. The manifest's `regions` lists the regions it serves;
+  regions accumulate over builds (a skipped chart gains the regions of the build), so a region is dropped by building
+  the site again from scratch.
+- `charts.json` has one entry per manifest (an id appears once per region) with `regions`, `titles`, `bandNames`,
+  and at the top `language` (the default listing language: `[catalog] language` of the latest build), `languages`
+  and `regions` (`id`, `name` from `[servers.<region>] name`, `languages` from `[servers.<region>] languages`). The
+  chart list page switches with `?region=<id>&lang=<language>`.
 
 Same inputs give byte-identical outputs. Charts that fail are listed in the printed summary and in
 `SITE.failures.json`, models that fail in the summary and in `SITE.model-failures.json`; the exit status is then 1.

@@ -4,9 +4,13 @@
                                                source import pointed at the bundle); without a query it lists the
                                                charts, with ?music=<musicId>&difficulty=<d> it plays one
     <site>/ournotes-player.element.min.js      the player's built bundle (PLAYER_BUNDLES, with its source map)
-    <site>/charts.json                         the chart index (facts for a listing, manifest path, sizes)
+    <site>/charts.json                         the chart index (facts for a listing in every language, regions,
+                                               manifest path, sizes)
     <site>/charts/<musicId>_<difficulty>.json  chart manifest: every path the player reads -> {asset, size}, or,
-                                               for a large JSON object, {parts: [[key, asset, size], ...], size}
+                                               for a large JSON object, {parts: [[key, asset, size], ...], size};
+                                               `regions`: the regions it serves
+    <site>/charts/<region>/<id>.json           the manifest of a region whose chart inputs differ from the first
+                                               region's (only where its files differ)
     <site>/assets/<sha256>.<ext>               content-addressed files (text assets as UTF-8, JSON without
                                                whitespace); charts share the note skins, effects, SE sheets, band
                                                stages and the common parts of the scene, each stored once
@@ -25,6 +29,14 @@ voices stay FLAC: small and shared), ingest. Musics run in parallel worker proce
 by a lock); temporary directories are deleted after use. A chart whose manifest exists is skipped unless `force`.
 Same inputs give byte-identical outputs. `audio=False` exports no audio file (the player then runs the chart on its
 own clock, silent).
+
+Regions: one build can serve several regions. The regions serve the same catalog for a language, so the chart files
+depend on a region's master data only: regions whose chart tables (LIVE_TABLES) are byte-identical share one manifest
+(charts/<id>.json for the first region's group); another group's charts go to charts/<region>/<id>.json (region = the
+first of the group), and such a manifest whose files equal the shared one's is dropped, its regions joining the
+shared manifest. A region offers the charts its master data has a MasterLiveMusicScore row for. The listing texts
+(title, band names) are in every language of the text tables (languages.LANGUAGES); `title` / `bands` in
+[catalog] language.
 
 A JSON object larger than SPLIT_MIN_BYTES is stored per top-level key: each value's text (the same minified encoding)
 is its own asset, and the player rebuilds the file as `{"k1":` + t1 + `,"k2":` + t2 + `}`, so the values the charts
@@ -48,7 +60,7 @@ import traceback
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from . import jsonio, live
+from . import jsonio, languages, live
 from .config import Config, ConfigError, tool, use
 from .score import DIFFICULTIES, master_table
 
@@ -89,6 +101,13 @@ TEXT_EXT = {".json", ".glsl"}
 BINARY_EXT = {".png", ".flac", ".ogg", ".wav", ".moc3"}
 SHADER_PLATFORM = "gles3"
 SHADER_TYPE = "GLES3"
+# master tables the chart build reads (score, live, liveaudio, livescene, livenotes, liveui): a region's chart inputs
+LIVE_TABLES = ("MasterBand", "MasterCharacter", "MasterLiveJudgementSprite", "MasterLiveLaneSkin", "MasterLiveMusic",
+               "MasterLiveMusicScore", "MasterLiveNoteEffectSkin", "MasterLiveNoteSe", "MasterLiveNoteSkin",
+               "MasterLiveQualitySettings", "MasterLiveSe", "MasterLiveSettings", "MasterLiveStageVideo",
+               "MasterLiveStartCharacterVoice", "MasterMemberCard", "MasterOptionDefault", "MasterOptionRange",
+               "MasterSound", "MasterSoundCueSheet", "MasterText")
+CHARTS_INDEX = "charts.json"
 # documentation fields of the extractors the player does not read (live-audio.json `spec`, the voice rule notes,
 # scene.json `slice` / `derived` notes): left out of the site's copies
 DOC_FIELDS = {
@@ -228,9 +247,19 @@ def _web_audio(live_dir: Path, text: dict[str, str], binary: dict[str, bytes], f
     text["live.json"] = jsonio.dumps(index, ensure_ascii=False, indent=1)
 
 
+def localized_texts(master: dict) -> tuple[dict, dict]:
+    """({language: title}, {language: [band names]}) of a live's master rows (score/master.json), every language of
+    languages.LANGUAGES the texts have (for the band names: every band has one)."""
+    title = master.get("title") or {}
+    bands = [b.get("name") or {} for b in master.get("bands") or []]
+    titles = {c: title[c] for c in languages.LANGUAGES if isinstance(title.get(c), str)}
+    names = {c: [b[c] for b in bands] for c in languages.LANGUAGES if all(isinstance(b.get(c), str) for b in bands)}
+    return titles, names
+
+
 def chart_facts(live_dir: Path, summary: dict, difficulty: str, language: str) -> dict:
-    """What a chart listing needs, from the live directory (master rows, sounds) and the build summary; texts in
-    `language`."""
+    """What a chart listing needs, from the live directory (master rows, sounds) and the build summary: `title` and
+    `bands` in `language`, `titles` and `bandNames` in every language."""
     rd = lambda rel: json.loads((Path(live_dir) / rel).read_text(encoding="utf-8"))
     index = rd("live.json")
     master = rd(index["master"])
@@ -238,9 +267,13 @@ def chart_facts(live_dir: Path, summary: dict, difficulty: str, language: str) -
     layer = la["sounds"][str(la["music"]["soundId"])]["layers"][0]
     score_row = master["MasterLiveMusicScore"][difficulty]
     music = master["MasterLiveMusic"]
+    titles, band_names = localized_texts(master)
     return {
         "title": (master.get("title") or {}).get(language),
         "bands": [(b.get("name") or {}).get(language) for b in master.get("bands") or []],
+        "language": language,
+        "titles": titles,
+        "bandNames": band_names,
         "bandIds": list(music.get("_bandIDs") or []),
         "stageBand": summary["band"]["band"],
         "level": score_row["_musicScoreLevel"],
@@ -298,10 +331,11 @@ def entry_assets(e: dict) -> list[str]:
 
 
 # ---------------------------------------------------------------- data
-def open_data(cfg: Config):
-    """Catalog, master dir and PlayerData from the settings (as the command line opens them)."""
+def open_data(cfg: Config, region: str | None = None):
+    """Catalog (fetching from the CDN of `region`), the master dir of `region` and PlayerData from the settings (as
+    the command line opens them; `region` None: [catalog] region)."""
     from .cli import master_dir, open_catalog, player_data
-    return open_catalog(cfg), master_dir(cfg), player_data(cfg)
+    return open_catalog(cfg, region=region), master_dir(cfg, region), player_data(cfg)
 
 
 def _lock_fetches(cat, lock) -> None:
@@ -323,18 +357,122 @@ def all_pairs(master: Path) -> list[tuple[int, str]]:
     return out
 
 
+# ---------------------------------------------------------------- regions
+def site_regions(cfg: Config, regions=None, all_regions: bool = False) -> list[str]:
+    """The regions of a build: `regions` (given order, duplicates dropped), every configured region
+    (`all_regions`, config order), else the one [catalog] region. Each needs its `[servers.<region>]` table."""
+    if all_regions:
+        names = cfg.regions()
+        if not names:
+            raise ConfigError("no region configured: add a [servers.<region>] table with `cdn` to the config file "
+                              "(or set NNNOTES_SERVERS_<REGION>_CDN)")
+    else:
+        names = list(dict.fromkeys(regions or [])) or [cfg.region()]
+    known = set(cfg.regions())
+    for r in names:
+        if r not in known:
+            raise cfg.missing(f"servers.{r}", "cdn")
+    return names
+
+
+def region_masters(cfg: Config, regions: list[str]) -> dict[str, Path]:
+    """{region: decoded master dir} (cli.master_dir). With more than one region the --master flag is refused and
+    at most one region may use [paths] master (the others need their own `[servers.<region>] master`)."""
+    from .cli import master_dir
+    if len(regions) > 1 and cfg.origin("paths", "master") == "flag":
+        raise ConfigError("--master names one directory: give each region's master data as `master` in its "
+                          "[servers.<region>] table of the config file (NNNOTES_SERVERS_<REGION>_MASTER)")
+    shared = [r for r in regions if cfg.master(r) == ("paths", "master")]
+    if len(shared) > 1:
+        raise cfg.missing(f"servers.{shared[1]}", "master")
+    return {r: master_dir(cfg, r) for r in regions}
+
+
+def chart_inputs(master: Path) -> str:
+    """Fingerprint of a region's chart inputs: SHA-256 over the LIVE_TABLES files of its master dir."""
+    h = hashlib.sha256()
+    for t in LIVE_TABLES:
+        f = Path(master) / f"{t}.json"
+        h.update(t.encode("ascii") + b"\0" + (f.read_bytes() if f.is_file() else b"\0missing") + b"\0")
+    return h.hexdigest()
+
+
+def region_groups(masters: dict[str, Path]) -> list[list[str]]:
+    """The regions grouped by chart inputs (chart_inputs), groups and regions in the order of `masters`."""
+    groups: dict[str, list[str]] = {}
+    for r, m in masters.items():
+        groups.setdefault(chart_inputs(m), []).append(r)
+    return list(groups.values())
+
+
+def region_meta(cfg: Config, regions: list[str]) -> list[dict]:
+    """The index records of `regions`: id, name (`[servers.<region>] name`, else the id) and, when configured, the
+    client languages (`[servers.<region>] languages`)."""
+    out = []
+    for r in regions:
+        rec = {"id": r, "name": cfg.get(f"servers.{r}", "name") or r}
+        langs = cfg.get_list(f"servers.{r}", "languages")
+        if langs:
+            rec["languages"] = langs
+        out.append(rec)
+    return out
+
+
+def merge_regions(old, new) -> list[str]:
+    """`old` (a manifest's regions, may be None) followed by the regions of `new` it lacks."""
+    out = list(old or [])
+    return out + [r for r in new if r not in out]
+
+
+def manifest_file(site: Path, chart_id: str, prefix: str = "") -> Path:
+    """charts/<prefix><chart id>.json (`prefix`: "" or "<region>/")."""
+    return Path(site) / "charts" / f"{prefix}{chart_id}.json"
+
+
+def chart_manifests(site: Path) -> list[Path]:
+    """Every chart manifest: charts/*.json, then the region manifests charts/<region>/*.json."""
+    d = Path(site) / "charts"
+    return [*sorted(d.glob("*.json")), *sorted(d.glob("*/*.json"))]
+
+
+def add_regions(path: Path, regions: list[str]) -> bool:
+    """Add `regions` to a manifest's regions; True when the file changed."""
+    man = json.loads(Path(path).read_text(encoding="utf-8"))
+    merged = merge_regions(man.get("regions"), regions)
+    if merged == man.get("regions"):
+        return False
+    man["regions"] = merged
+    Path(path).write_bytes(_dump(man))
+    return True
+
+
+def fold_variant(site: Path, chart_id: str, prefix: str) -> bool:
+    """Drop the region manifest charts/<prefix><id>.json when its files equal those of the shared charts/<id>.json;
+    its regions join the shared manifest. True when it was dropped."""
+    var, shared = manifest_file(site, chart_id, prefix), manifest_file(site, chart_id)
+    if not (prefix and var.is_file() and shared.is_file()):
+        return False
+    v = json.loads(var.read_text(encoding="utf-8"))
+    if v["files"] != json.loads(shared.read_text(encoding="utf-8"))["files"]:
+        return False
+    add_regions(shared, v.get("regions") or [])
+    var.unlink()
+    return True
+
+
 # ---------------------------------------------------------------- live directories
 def _link_tree(src: Path, dst: Path) -> None:
     shutil.copytree(src, dst, copy_function=os.link)
 
 
 def build_music_dirs(cat, master: Path, player, music_id: int, difficulties: list[str], root: Path,
-                     livenotes_dir: Path, band: int | None = None, leader_card: int | None = None) -> dict:
+                     livenotes_dir: Path, band: int | None = None, leader_card: int | None = None, *,
+                     language: str) -> dict:
     """The live directories of one music's charts under root/<difficulty>/, composed as live.build composes one:
     score + BGM decode (first difficulty), live sounds and scene into root/base, shared by hard links; per difficulty
     its own score/ (score.extract without audio), liveui/ and live.json; livenotes/ linked from `livenotes_dir`
-    (livenotes.extract reads no music input). `band` / `leader_card`: as for live.build. Returns
-    {difficulty: (dir, summary)}."""
+    (livenotes.extract reads no music input). `band` / `leader_card` / `language`: as for live.build.
+    Returns {difficulty: (dir, summary)}."""
     from . import liveaudio, livescene, liveui, score
     base = root / "base"
     base.mkdir(parents=True)
@@ -350,7 +488,7 @@ def build_music_dirs(cat, master: Path, player, music_id: int, difficulties: lis
             _link_tree(base / sub, pdir / sub)
         _link_tree(livenotes_dir, pdir / "livenotes")
         s = score.extract(cat, master, music_id, d, pdir, audio=False, audio_fmt="flac")
-        liveui.extract(cat, player, pdir, master=master, music_id=music_id, difficulty=d)
+        liveui.extract(cat, player, pdir, master=master, music_id=music_id, difficulty=d, language=language)
         index = {"musicId": music_id, "difficulty": d, "chart": s["chart"], "notes": s["notes"],
                  "master": s["master"], "audio": first["audio"], "liveAudio": la["index"],
                  "scene": "livescene/scene.json", "noteAssets": "livenotes/notes.json", "liveUi": "liveui/liveui.json"}
@@ -409,8 +547,9 @@ def collect(live_dir: Path, files: list[str]) -> tuple[dict[str, str], dict[str,
 
 def ingest(store: Store, site: Path, music_id: int, difficulty: str, live_dir: Path, summary: dict,
            files: list[str], flows: list[str], audio_format: str, audio: bool, work: Path, bgm_cache: dict,
-           language: str) -> dict:
-    """One chart's files into the store + its manifest."""
+           language: str, prefix: str = "", regions: list[str] | None = None) -> dict:
+    """One chart's files into the store + its manifest charts/<prefix><id>.json, serving `regions` (added to the
+    regions of the manifest it replaces)."""
     text, binary = collect(live_dir, files)
     facts = chart_facts(live_dir, summary, difficulty, language)
     if audio:
@@ -422,7 +561,12 @@ def ingest(store: Store, site: Path, music_id: int, difficulty: str, live_dir: P
     manifest = {"format": SITE_FORMAT, "musicId": music_id, "difficulty": difficulty, "audio": bool(audio),
                 "audioFormat": audio_format if audio else None, "flows": flows, "quality": TRACE_QUALITY,
                 "chart": facts, "files": dict(sorted(entries.items()))}
-    (site / "charts" / f"{music_id}_{difficulty}.json").write_bytes(_dump(manifest))
+    path = manifest_file(site, f"{music_id}_{difficulty}", prefix)
+    old = json.loads(path.read_text(encoding="utf-8")).get("regions") if path.is_file() else None
+    if old or regions:
+        manifest["regions"] = merge_regions(old, regions or [])
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(_dump(manifest))
     return {"id": f"{music_id}_{difficulty}", "ok": True, "files": len(entries), "bytes": sum(e["size"] for e in entries.values()),
             "flows": flows}
 
@@ -433,7 +577,7 @@ _W: dict = {}
 
 def _worker_init(cfg: Config, lock, job: dict) -> None:
     use(cfg)
-    cat, master, player = open_data(cfg)
+    cat, master, player = open_data(cfg, job.get("region"))
     _lock_fetches(cat, lock)
     _W.update(cat=cat, master=master, player=player, cfg=job)
 
@@ -454,7 +598,7 @@ def music_task(music_id: int, difficulties: list[str], cfg: dict | None = None, 
     try:
         try:
             dirs = build_music_dirs(cat, master, player, music_id, difficulties, root, Path(cfg["livenotes"]),
-                                    band=cfg["band"], leader_card=cfg["leaderCard"])
+                                    band=cfg["band"], leader_card=cfg["leaderCard"], language=cfg["language"])
         except Exception as e:
             cause = f"{type(e).__name__}: {e}"
             _log(f"{music_id}: live directories failed: {cause}")
@@ -472,7 +616,8 @@ def music_task(music_id: int, difficulties: list[str], cfg: dict | None = None, 
                 stage = "ingest"
                 with lock:                            # one ingest at a time (BGM transcode cache, memory)
                     return ingest(store, site, music_id, d, pdir, summary, files, flows, cfg["audioFormat"],
-                                  cfg["audio"], root, bgm, cfg["language"])
+                                  cfg["audio"], root, bgm, cfg["language"], cfg.get("prefix", ""),
+                                  cfg.get("regions"))
             except Exception as e:
                 cause = f"{type(e).__name__}: {e}"
                 _log(f"{music_id}_{d}: {stage} failed: {cause[:300]}")
@@ -594,7 +739,7 @@ def reingest_json(site: Path) -> dict:
     """Every JSON file of every chart and model stored again through text_asset (after a change of the stored-text
     rules); the manifests follow, unreferenced assets go with write_index."""
     store, changed, memo = Store(site), 0, {}
-    for mf in [*sorted((site / "charts").glob("*.json")), *sorted((site / MODELS_DIR).glob("*.json"))]:
+    for mf in [*chart_manifests(site), *sorted((site / MODELS_DIR).glob("*.json"))]:
         man = json.loads(mf.read_text(encoding="utf-8"))
         files = man["files"]
         for p, e in files.items():
@@ -611,22 +756,48 @@ def reingest_json(site: Path) -> dict:
     return {"changedEntries": changed}
 
 
-def write_index(site: Path) -> dict:
-    """site/charts.json from every chart manifest present and site/models.json from every model manifest
-    (webmodel.write_models_index); assets no chart and no model references removed."""
+def index_meta(site: Path, charts: list[dict], language: str | None = None,
+               regions: list[dict] | None = None) -> dict:
+    """The top-level keys of charts.json besides `charts`: `language` (the default listing language), `languages`
+    (the languages of the entries' `titles`) and `regions` (id, name, languages; merged by id into those of the
+    existing charts.json, first the ones it has); keys without a value are left out."""
+    old = {}
+    f = Path(site) / CHARTS_INDEX
+    if f.is_file():
+        try:
+            old = json.loads(f.read_text(encoding="utf-8"))
+        except ValueError:
+            old = {}
+    new = {r["id"]: r for r in regions or []}
+    recs = [new.pop(r["id"], r) for r in old.get("regions") or [] if isinstance(r, dict) and "id" in r]
+    recs += list(new.values())
+    known = {c for e in charts for c in (e.get("titles") or {})}
+    langs = [c for c in languages.LANGUAGES if c in known] + sorted(known - set(languages.LANGUAGES))
+    meta = {"language": language or old.get("language"), "languages": langs, "regions": recs}
+    return {k: v for k, v in meta.items() if v}
+
+
+def write_index(site: Path, language: str | None = None, regions: list[dict] | None = None) -> dict:
+    """site/charts.json from every chart manifest present (index_meta: `language`, `regions` of this build) and
+    site/models.json from every model manifest (webmodel.write_models_index); assets no chart and no model
+    references removed."""
     from .webmodel import write_models_index
     order = {d: i for i, d in enumerate(DIFFICULTIES)}
     charts, used = [], set()
     (site / "assets").mkdir(parents=True, exist_ok=True)
-    for p in sorted((site / "charts").glob("*.json")):
+    for p in chart_manifests(site):
         man = json.loads(p.read_text(encoding="utf-8"))
         for e in man["files"].values():
             used.update(entry_assets(e))
-        charts.append({"id": p.stem, "manifest": f"charts/{p.name}", "musicId": man["musicId"],
-                       "difficulty": man["difficulty"], "audio": man["audio"], "audioFormat": man.get("audioFormat"),
-                       "flows": man.get("flows"), "bytes": sum(f["size"] for f in man["files"].values()), **man["chart"]})
-    charts.sort(key=lambda c: (c["musicId"], order[c["difficulty"]]))
-    (site / "charts.json").write_bytes(_dump({"format": SITE_FORMAT, "charts": charts}))
+        entry = {"id": p.stem, "manifest": p.relative_to(site).as_posix(), "musicId": man["musicId"],
+                 "difficulty": man["difficulty"], "audio": man["audio"], "audioFormat": man.get("audioFormat"),
+                 "flows": man.get("flows"), "bytes": sum(f["size"] for f in man["files"].values()), **man["chart"]}
+        if man.get("regions"):
+            entry["regions"] = man["regions"]
+        charts.append(entry)
+    charts.sort(key=lambda c: (c["musicId"], order[c["difficulty"]], c["manifest"]))
+    meta = index_meta(site, charts, language, regions)
+    (site / CHARTS_INDEX).write_bytes(_dump({"format": SITE_FORMAT, **meta, "charts": charts}))
     models, model_assets = write_models_index(site)
     used |= model_assets
     removed = 0
@@ -640,16 +811,86 @@ def write_index(site: Path) -> dict:
 
 
 # ---------------------------------------------------------------- build
+def _group_pairs(pairs, master: Path) -> list[tuple[int, str]]:
+    """The charts of a region group: `pairs` (None: every chart) that its master data has, in the given order."""
+    have = all_pairs(master)
+    if pairs is None:
+        return have
+    have = set(have)
+    return [p for p in pairs if p in have]
+
+
+def _build_group(site: Path, tmp_root: Path, pairs, cfg: Config, region: str, prefix: str, regions: list[str],
+                 job: dict, force: bool, workers: int | None, log) -> tuple[list, list, int]:
+    """The charts `pairs` of one region group into charts/<prefix><id>.json (data of `region`); manifests that exist
+    are skipped unless `force` and gain the group's `regions`. -> (results, skipped ids, workers)."""
+    by_music: dict[int, list[str]] = {}
+    skipped = []
+    for music_id, difficulty in pairs:
+        cid = f"{music_id}_{difficulty}"
+        if manifest_file(site, cid, prefix).exists() and not force:
+            add_regions(manifest_file(site, cid, prefix), regions)
+            skipped.append(prefix + cid)
+            continue
+        ds = by_music.setdefault(music_id, [])
+        if difficulty not in ds:
+            ds.append(difficulty)
+    for ds in by_music.values():
+        ds.sort(key=DIFFICULTIES.index)
+    if workers is None:
+        workers = max(1, min(5, len(by_music), (os.cpu_count() or 2) // 2))
+    results = []
+    if not by_music:
+        return results, skipped, workers
+    gdir = Path(tempfile.mkdtemp(prefix="global-", dir=tmp_root))
+    try:
+        cat, master, player = open_data(cfg, region)
+        from . import livenotes
+        livenotes.extract(cat, player, gdir, master=master)
+        job = {**job, "livenotes": str(gdir / "livenotes"), "region": region, "prefix": prefix, "regions": regions}
+        tasks = [(m, ds, job) for m, ds in sorted(by_music.items())]
+        log(f"{sum(len(ds) for ds in by_music.values())} charts of {len(tasks)} musics"
+            f"{f' for {prefix[:-1]}' if prefix else ''}, {workers} worker(s)")
+        if workers <= 1:
+            for m, ds, c in tasks:
+                results += music_task(m, ds, c, data=(cat, master, player))
+        else:
+            ctx = mp.get_context("spawn")
+            with ctx.Manager() as mgr:
+                lock = mgr.Lock()
+                with ctx.Pool(workers, initializer=_worker_init, initargs=(cfg, lock, job)) as pool:
+                    for rs in pool.imap_unordered(_pool_task, tasks):
+                        results += rs
+    finally:
+        shutil.rmtree(gdir, ignore_errors=True)
+    for r in results:
+        if prefix:
+            r["id"] = prefix + r["id"]
+    return results, skipped, workers
+
+
 def build(out_dir, pairs, cfg: Config, player_dir: Path, audio_format: str = DEFAULT_AUDIO_FORMAT,
           audio: bool = True, force: bool = False, *, tmp_dir=None, log=None, workers: int | None = None,
-          band: int | None = None, leader_card: int | None = None) -> dict:
-    """Add the charts `pairs` ([(musicId, difficulty)]) to the site at `out_dir`, with the player of the
-    ournotes-player checkout or package at `player_dir`. The data comes from the settings `cfg` (each worker process
-    opens its own). `workers`: parallel music processes (default up to 5). `band` / `leader_card`: the band of every
-    chart's stage, as for live.build (default: the band of the music's first vocal character)."""
+          band: int | None = None, leader_card: int | None = None, regions: list[str] | None = None) -> dict:
+    """Add the charts `pairs` ([(musicId, difficulty)]; None: every chart of every region's master data) to the site
+    at `out_dir`, with the player of the ournotes-player checkout or package at `player_dir`. The data comes from the
+    settings `cfg` (each worker process opens its own). `regions`: the regions the charts serve (default: the one
+    [catalog] region), grouped by chart inputs (module docstring); the first region's group writes charts/<id>.json,
+    the others charts/<region>/<id>.json unless their files equal the shared manifest's. `workers`: parallel music
+    processes (default up to 5). `band` / `leader_card`: the band of every chart's stage, as for live.build
+    (default: the band of the music's first vocal character)."""
     player_dir = check_player(player_dir)
     if audio_format not in WEB_AUDIO:
         raise ValueError(f"audio format {audio_format}: one of {', '.join(WEB_AUDIO)}")
+    if pairs is not None:
+        pairs = list(dict.fromkeys((int(m), d) for m, d in pairs))
+        bad = [d for _, d in pairs if d not in DIFFICULTIES]
+        if bad:
+            raise ValueError(f"difficulty {bad[0]}")
+    regions = site_regions(cfg, regions)
+    language = languages.check(cfg.require("catalog", "language"))
+    masters = region_masters(cfg, regions)
+    groups = region_groups(masters)
     site = Path(out_dir).resolve()
     (site / "charts").mkdir(parents=True, exist_ok=True)
     Store(site)
@@ -657,51 +898,32 @@ def build(out_dir, pairs, cfg: Config, player_dir: Path, audio_format: str = DEF
     tmp_root.mkdir(parents=True, exist_ok=True)
     log = log or _log
     t0 = time.time()
-    by_music: dict[int, list[str]] = {}
-    skipped = []
-    for music_id, difficulty in pairs:
-        if difficulty not in DIFFICULTIES:
-            raise ValueError(f"difficulty {difficulty}")
-        if (site / "charts" / f"{int(music_id)}_{difficulty}.json").exists() and not force:
-            skipped.append(f"{int(music_id)}_{difficulty}")
-            continue
-        ds = by_music.setdefault(int(music_id), [])
-        if difficulty not in ds:
-            ds.append(difficulty)
-    for ds in by_music.values():
-        ds.sort(key=DIFFICULTIES.index)
-    if workers is None:
-        workers = max(1, min(5, len(by_music), (os.cpu_count() or 2) // 2))
-    language = cfg.require("catalog", "language")
-    results = []
-    gdir = Path(tempfile.mkdtemp(prefix="global-", dir=tmp_root))
-    try:
-        if by_music:
-            cat, master, player = open_data(cfg)
-            from . import livenotes
-            livenotes.extract(cat, player, gdir, master=master)
-            job = {"site": str(site), "tmp": str(tmp_root), "livenotes": str(gdir / "livenotes"),
-                   "audioFormat": audio_format, "audio": bool(audio), "player": str(player_dir),
-                   "language": language, "band": band, "leaderCard": leader_card}
-            tasks = [(m, ds, job) for m, ds in sorted(by_music.items())]
-            log(f"{sum(len(ds) for ds in by_music.values())} charts of {len(tasks)} musics, {workers} worker(s)")
-            if workers <= 1:
-                for m, ds, c in tasks:
-                    results += music_task(m, ds, c, data=(cat, master, player))
-            else:
-                ctx = mp.get_context("spawn")
-                with ctx.Manager() as mgr:
-                    lock = mgr.Lock()
-                    with ctx.Pool(workers, initializer=_worker_init, initargs=(cfg, lock, job)) as pool:
-                        for rs in pool.imap_unordered(_pool_task, tasks):
-                            results += rs
-    finally:
-        shutil.rmtree(gdir, ignore_errors=True)
+    job = {"site": str(site), "tmp": str(tmp_root), "audioFormat": audio_format, "audio": bool(audio),
+           "player": str(player_dir), "language": language, "band": band, "leaderCard": leader_card}
+    results, skipped, folded, used_workers = [], [], [], 1
+    offered = set()
+    for gi, group in enumerate(groups):
+        rep = group[0]
+        prefix = "" if gi == 0 else f"{rep}/"
+        gpairs = _group_pairs(pairs, masters[rep])
+        offered.update(gpairs)
+        rs, sk, w = _build_group(site, tmp_root, gpairs, cfg, rep, prefix, group, job, force, workers, log)
+        results += rs
+        skipped += sk
+        used_workers = max(used_workers, w)
+        if prefix:
+            folded += [prefix + f"{m}_{d}" for m, d in gpairs if fold_variant(site, f"{m}_{d}", prefix)]
+    for m, d in pairs or []:
+        if (m, d) not in offered:
+            results.append({"id": f"{m}_{d}", "ok": False, "stage": "master",
+                            "error": f"no MasterLiveMusicScore row for {m}_{d} in the master data of "
+                                     f"{', '.join(regions)}"})
     v = write_player(site, player_dir)
-    idx = write_index(site)
+    idx = write_index(site, language, region_meta(cfg, regions))
     failed = [r for r in results if not r["ok"]]
     if failed:
         (site.parent / f"{site.name}.failures.json").write_bytes(_dump(sorted(failed, key=lambda r: r["id"])))
     return {"site": str(site), "built": [{k: r[k] for k in ("id", "files", "bytes", "flows")} for r in results if r["ok"]],
             "failed": [{k: r.get(k) for k in ("id", "stage", "error")} for r in failed], "skipped": skipped,
-            "seconds": round(time.time() - t0, 1), "workers": workers, **v, **idx}
+            "regions": regions, "regionGroups": groups, "foldedRegionManifests": folded,
+            "seconds": round(time.time() - t0, 1), "workers": used_workers, **v, **idx}

@@ -19,7 +19,8 @@ iv = ""
 [catalog]
 # region the commands use: the name of one [servers.<region>] table below (flag --region)
 region = ""
-# catalog language: catalog_main_<language>.bin, e.g. zh-Hant (flag --language)
+# catalog language: catalog_main_<language>.bin, one of ja, en, zh-Hant, zh-Hans, ko; also the client language of the
+# live start canvas (flag --language)
 language = ""
 
 # One table per region; add more tables ([servers.<name>]) for other regions.
@@ -30,8 +31,10 @@ name = ""
 cdn = ""
 # API root of the region, https://host[:port]: the current master data version (`master version`, `--latest`)
 api = ""
-# catalog languages the local catalog browser lists for the region, e.g. ["zh-Hant"]
+# catalog languages the local catalog browser lists for the region (also listed in a web site's index), e.g. ["zh-Hant"]
 languages = []
+# decoded master data directory of the region (`nnnotes master decode`); empty: [paths] master
+master = ""
 
 [bootstrap]
 # API root that serves the server list (every region's CDN and API roots, `nnnotes servers`), https://host[:port]

@@ -22,7 +22,8 @@ advscene.RESOURCES, read from the APK's boot data), exported as the story scene 
 Models are the catalog keys Character/Live2D/<group>/<name>/model/<name>; a model's id is <name> (unique in the
 catalog, URL-safe). Each model is exported into a temporary directory, stored, and the directory deleted; models run in
 parallel worker processes (catalog cache writes serialized by a lock). A model whose manifest exists is skipped unless
-`force`. Same inputs give byte-identical outputs.
+`force`. Same inputs give byte-identical outputs. A model reads no master data and the regions serve the same catalog,
+so one build serves every region of a site (the bundles are fetched from the CDN of `region`).
 """
 from __future__ import annotations
 
@@ -226,14 +227,14 @@ def write_models_index(site: Path) -> tuple[int, set[str]]:
 _W: dict = {}
 
 
-def _open(cfg: Config):
+def _open(cfg: Config, region: str | None = None):
     from .cli import open_catalog, player_data
-    return open_catalog(cfg), player_data(cfg)
+    return open_catalog(cfg, region=region), player_data(cfg)
 
 
 def _worker_init(cfg: Config, lock, job: dict) -> None:
     use(cfg)
-    cat, player = _open(cfg)
+    cat, player = _open(cfg, job.get("region"))
     _lock_fetches(cat, lock)
     _W.update(cat=cat, player=player, job=job)
 
@@ -264,11 +265,12 @@ def _pool_task(args):
 
 # ---------------------------------------------------------------- build
 def build(out_dir, models: dict[str, str] | None, cfg: Config, player_dir, force: bool = False, *, tmp_dir=None,
-          log=None, workers: int | None = None) -> dict:
+          log=None, workers: int | None = None, region: str | None = None) -> dict:
     """Add the Live2D models `models` ({id: key}, see `catalog_models`; None: every model of the catalog) to the site
     at `out_dir`, with the player of the ournotes-player checkout or package at `player_dir` (its page files are
     written, models.json and charts.json rebuilt). The data comes from the settings `cfg` (each worker process opens
-    its own). `workers`: parallel model processes (default up to 4)."""
+    its own), bundles from the CDN of `region` (default: [catalog] region). `workers`: parallel model processes
+    (default up to 4)."""
     player_dir = check_player(player_dir)
     site = Path(out_dir).resolve()
     (site / MODELS_DIR).mkdir(parents=True, exist_ok=True)
@@ -279,7 +281,7 @@ def build(out_dir, models: dict[str, str] | None, cfg: Config, player_dir, force
     t0 = time.time()
     if models is None:
         from .cli import open_catalog
-        models = catalog_models(open_catalog(cfg, bundles=False))
+        models = catalog_models(open_catalog(cfg, bundles=False, region=region))
     todo, skipped = [], []
     for mid, key in sorted(models.items()):
         if model_id(key) != mid:
@@ -290,12 +292,12 @@ def build(out_dir, models: dict[str, str] | None, cfg: Config, player_dir, force
             todo.append((mid, key))
     if workers is None:
         workers = max(1, min(4, len(todo), (os.cpu_count() or 2) // 2))
-    job = {"site": str(site), "tmp": str(tmp_root)}
+    job = {"site": str(site), "tmp": str(tmp_root), "region": region}
     results = []
     if todo:
         log(f"{len(todo)} models, {workers} worker(s)")
         if workers <= 1:
-            data = _open(cfg)
+            data = _open(cfg) if region is None else _open(cfg, region)
             for mid, key in todo:
                 results.append(model_task(mid, key, job, data=data))
         else:

@@ -42,16 +42,17 @@ exist when they are given.
 | `[master] key` | `NNNOTES_MASTER_KEY` | — | Rijndael-256 key of the master data files: 32 bytes as 64 hex digits |
 | `[master] iv` | `NNNOTES_MASTER_IV` | — | Rijndael-256 CBC initialization vector: 32 bytes as 64 hex digits |
 | `[catalog] region` | `NNNOTES_CATALOG_REGION` | `--region` | name of one `[servers.<region>]` table |
-| `[catalog] language` | `NNNOTES_CATALOG_LANGUAGE` | `--language` | catalog language: the `<language>` of `catalog_main_<language>.bin`, e.g. `zh-Hant` |
+| `[catalog] language` | `NNNOTES_CATALOG_LANGUAGE` | `--language` | catalog language: the `<language>` of `catalog_main_<language>.bin`: `ja`, `en`, `zh-Hant`, `zh-Hans` or `ko`; also the client language of `live` / `web` |
 | `[servers.<region>] name` | `NNNOTES_SERVERS_<REGION>_NAME` | — | label of the region in `browse` (default: the region name) |
 | `[servers.<region>] cdn` | `NNNOTES_SERVERS_<REGION>_CDN` | — | CDN base URL of the region (a trailing `/` is ignored) |
 | `[servers.<region>] languages` | `NNNOTES_SERVERS_<REGION>_LANGUAGES` | — | catalog languages `browse` lists: a TOML array of strings; comma-separated in the environment |
 | `[servers.<region>] api` | `NNNOTES_SERVERS_<REGION>_API` | — | API root of the region: `https://host[:port]` (TLS, port 443 by default), `host[:port]`, or `http://host[:port]` for a plain-text local server; no path |
+| `[servers.<region>] master` | `NNNOTES_SERVERS_<REGION>_MASTER` | — | decoded master data directory of the region (default: `[paths] master`) |
 | `[bootstrap] api` | `NNNOTES_BOOTSTRAP_API` | — | API root that serves the server list (`nnnotes servers`), same format |
 | `[client] version` | `NNNOTES_CLIENT_VERSION` | — | client version sent to the game's API, e.g. `1.0.1`; unset: the `versionName` of `[paths] apk` |
 | `[paths] catalog` | `NNNOTES_PATHS_CATALOG` | `--catalog` | a catalog `.bin` file to read instead of downloading `catalog_main_<language>.bin` |
 | `[paths] cache` | `NNNOTES_PATHS_CACHE` | `--cache` | cache directory (created when missing) |
-| `[paths] master` | `NNNOTES_PATHS_MASTER` | `--master` | decoded master data directory, one `<Table>.json` per table |
+| `[paths] master` | `NNNOTES_PATHS_MASTER` | `--master` | decoded master data directory, one `<Table>.json` per table; the flag overrides `[servers.<region>] master` |
 | `[paths] apk` | `NNNOTES_PATHS_APK` | `--apk` | the game's `base.apk` |
 | `[paths] ffmpeg` | `NNNOTES_PATHS_FFMPEG` | `--ffmpeg` | `ffmpeg` executable; unset: `ffmpeg` on `PATH` |
 | `[paths] vgmstream` | `NNNOTES_PATHS_VGMSTREAM` | `--vgmstream` | `vgmstream-cli` executable; unset: `vgmstream-cli` on `PATH` |
@@ -62,8 +63,14 @@ Hex values are case-insensitive; a `0x` prefix and surrounding whitespace are ig
 except `languages` (array of strings).
 
 Regions: `browse` serves every region that has a `[servers.<region>]` table or an `NNNOTES_SERVERS_<REGION>_CDN`
-variable (the region name is then the lower-cased `<REGION>`). The other commands use the one region named by
-`[catalog] region`. Add one `[servers.<name>]` table per region.
+variable (the region name is then the lower-cased `<REGION>`), and `web --region` / `--all-regions` builds one site
+for several of them. The other commands use the one region named by `[catalog] region`. Add one `[servers.<name>]`
+table per region.
+
+Master data per region: a command that reads master data for region `<r>` takes the directory of the `--master` flag,
+else `[servers.<r>] master`, else `[paths] master`. The regions serve the same catalog for a language, so the
+catalog settings and the cached `catalog_main_<language>.bin` serve every region; bundles are fetched from the CDN of
+the region in use.
 
 ## What each command needs
 
@@ -90,8 +97,8 @@ in, and bundles that ship inside the APK can only be read with it.
 | `audio` | catalog, `[paths] apk`, `vgmstream`, `ffmpeg` (not for `--format wav`) |
 | `crikey` | `[paths] apk` |
 | `player` | `[paths] apk` |
-| `live` | catalog, `[paths] master`, `apk`, `vgmstream`, `ffmpeg` |
-| `web --pair` / `--all` | as `live`, plus `[catalog] language`, `[paths] player`, `node` |
+| `live` | catalog, `[catalog] language`, the region's master data (`[servers.<region>] master` or `[paths] master`), `[paths] apk`, `vgmstream`, `ffmpeg` |
+| `web --pair` / `--all` | as `live`, plus `[paths] player`, `node`; with `--region` / `--all-regions` each region's `cdn` and master data (`[servers.<region>] master`; `[paths] master` for at most one region) |
 | `web --player-only` / `--reingest-json` | `[paths] player` |
 
 Bundles already in the cache are read from there; the commands still ask for the settings above.
@@ -135,6 +142,8 @@ nnnotes: game API call Version to [servers.tw] api failed: UNAVAILABLE (server u
   exit status 2 and a line naming the class, the game version and the Unity version.
 - **`[paths] master`**: the output directory of `nnnotes master decode`, run on master data files from
   `nnnotes master download --latest` (or `--version <version>`) or on the game client's own files.
+  `[servers.<region>] master` the same for one region: `nnnotes --region <region> master download --latest -o <dir>`,
+  then `nnnotes master decode <dir> -o <region dir>` (the regions serve different master data versions).
 - **CRI HCA keycode**: not a setting. `audio`, `story`, `live` and `web` read it from the APK's boot data;
   `nnnotes crikey` shows whether one was found and can write it as a `.hcakey` file for vgmstream.
 - **Tools**: [vgmstream](https://vgmstream.org/) (`vgmstream-cli`), [FFmpeg](https://ffmpeg.org/) and, for

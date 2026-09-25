@@ -14,6 +14,9 @@ UILiveStartCanvas.Initialize leaves it:
   sprites     WhiteRect, Songtitle_base, the Difficulty_* icons of _difficultyPairs and the music jacket; their
               texel blocks copied into textures/ (export.TexelPacker, deferred-texture mode)
   controller  the root Animator's controller (evidence only: the start timeline drives the canvas)
+
+Texts and fonts follow the client language `language` (a catalog language code, languages.LANGUAGES): its
+LanguageMode selects the text table column, the LocalizeManager fonts and the line spacing.
 """
 from __future__ import annotations
 
@@ -25,8 +28,8 @@ from .export import Exporter, TexelPacker, _safe
 from .jsonio import write_json
 from .player import PlayerData
 from .score import master_table
-from . import tmpfont
-from .tmpfont import LANGUAGE_FIELD, LANGUAGE_LINE_SPACING, LANGUAGE_MODE
+from . import languages, tmpfont
+from .tmpfont import LANGUAGE_LINE_SPACING
 
 SCENE_KEY = "EmbScene/Live"
 CANVAS = "Live/UILiveStartCanvas"
@@ -39,8 +42,7 @@ JACKET_KEY = "Image/Jacket/{jacket}"
 LIVE_DIFFICULTY = {"easy": 0, "normal": 1, "hard": 2, "expert": 3, "master": 4}
 TMP_STUBS = ("TMP_FontAsset", "TMP_SpriteAsset", "TMP_StyleSheet")
 TMP_CLASS = "TextMeshProUGUI"
-TEXT_COLUMN = f"_{LANGUAGE_FIELD}"             # MasterText column of the current LanguageMode
-JAPANESE_COLUMN = "_japanese"
+JAPANESE_COLUMN = languages.column("ja")
 
 
 def _drawn(path: str) -> bool:
@@ -54,16 +56,16 @@ def _comp(node: dict, cls: str) -> dict | None:
     return hit[0] if hit else None
 
 
-def resolve_strings(master: Path, music_id: int, difficulty: str) -> tuple[dict, dict]:
-    """The strings UILiveStartCanvas.Initialize sets (IReadOnlyLiveMusicScore slots 2..8), for a fresh profile.
-    -> (strings, sources)."""
+def resolve_strings(master: Path, music_id: int, difficulty: str, column: str) -> tuple[dict, dict]:
+    """The strings UILiveStartCanvas.Initialize sets (IReadOnlyLiveMusicScore slots 2..8), for a fresh profile, with
+    the text table column `column` of the current LanguageMode. -> (strings, sources)."""
     music = next(r for r in master_table(master, "MasterLiveMusic") if r["_id"] == music_id)
     text = {r["_id"]: r for r in master_table(master, "MasterText")}
 
     def localized(tid: str) -> str:
         # MasterLoader.GetLocalizedText in the current LanguageMode: the column as it is, "" included (no
         # fallback language); LocalizedTextTokenResolver.Resolve returns an empty text unchanged
-        return text[tid][TEXT_COLUMN]
+        return text[tid][column]
 
     def word(tid: str) -> str:
         # MasterLiveMusic.get_LyricistText / get_ComposerText / get_ArrangerText
@@ -104,10 +106,10 @@ def resolve_strings(master: Path, music_id: int, difficulty: str) -> tuple[dict,
     sources = {
         "musicTitle": {"textId": music["_titleTextID"], "column": JAPANESE_COLUMN,
                        "why": "SongTitleDisplaySetting._useTranslation false (option 999 default)"},
-        "singerName": {"textId": band_tid, "column": TEXT_COLUMN},
-        "lyricsWriter": {"label": "ui_credit_lyrics", "word": music["_lyricistTextID"], "column": TEXT_COLUMN},
-        "composer": {"label": "ui_credit_composer", "word": music["_composerTextID"], "column": TEXT_COLUMN},
-        "arranger": {"label": "ui_credit_arranger", "word": music["_arrangerTextID"], "column": TEXT_COLUMN},
+        "singerName": {"textId": band_tid, "column": column},
+        "lyricsWriter": {"label": "ui_credit_lyrics", "word": music["_lyricistTextID"], "column": column},
+        "composer": {"label": "ui_credit_composer", "word": music["_composerTextID"], "column": column},
+        "arranger": {"label": "ui_credit_arranger", "word": music["_arrangerTextID"], "column": column},
         "musicLevel": {"MasterLiveMusicScore": score_id, "field": "_musicScoreLevel"},
         "highScore": {"why": "fresh profile: no LiveMusicResult entry, HighScore 0"},
     }
@@ -124,14 +126,16 @@ TEXT_FIELDS = {"_musicTitleText": "musicTitle", "_singerText": "singerName", "_l
 
 
 def extract(cat: Catalog, player: PlayerData, out_dir: Path, master: Path, music_id: int,
-            difficulty: str) -> dict:
+            difficulty: str, *, language: str) -> dict:
     """Write <out_dir>/liveui/ (liveui.json, textures/) for one live and return a summary. Needs
-    <out_dir>/livescene/shaders/shaders.json (livescene.extract) for the shader check."""
+    <out_dir>/livescene/shaders/shaders.json (livescene.extract) for the shader check. `language`: the client
+    language (a languages.LANGUAGES code)."""
     out_dir = Path(out_dir)
     base = out_dir / "liveui"
     base.mkdir(parents=True, exist_ok=True)
     if difficulty not in LIVE_DIFFICULTY:
         raise KeyError(f"difficulty {difficulty}")
+    mode, column = languages.mode(language), languages.column(language)
     ex = Exporter(cat, base, player=player, textures="deferred", stub_assets=TMP_STUBS,
                   follow=("AnimatorController",))
     packer = TexelPacker(base)
@@ -150,7 +154,7 @@ def extract(cat: Catalog, player: PlayerData, out_dir: Path, master: Path, music
         raise RuntimeError(f"{CANVAS}: no UILiveStartCanvas")
 
     # -- strings, and which texts Initialize writes them to ---------------------------------------------
-    strings, sources = resolve_strings(master, music_id, difficulty)
+    strings, sources = resolve_strings(master, music_id, difficulty, column)
     text_of: dict[str, str] = {}
     for field, key in TEXT_FIELDS.items():
         refs = canvas[field] if isinstance(canvas[field], list) else [canvas[field]]
@@ -159,7 +163,7 @@ def extract(cat: Catalog, player: PlayerData, out_dir: Path, master: Path, music
 
     # -- TMP texts of the drawn part: LocalizeText overrides and the characters they show -------------
     lang = tmpfont.language_fonts(player)
-    swap = tmpfont.font_swap(lang)
+    swap = tmpfont.font_swap(lang, mode)
     fonts = tmpfont.FontSet(ex)
     texts: dict[str, dict] = {}
     chars_by_font: dict[str, set] = {}
@@ -175,7 +179,7 @@ def extract(cat: Catalog, player: PlayerData, out_dir: Path, master: Path, music
         if not (lt and lt["m_Enabled"] and lt["_localizeEnabled"]):
             raise NotImplementedError(f"{n['path']}: text without an enabled LocalizeText")
         loc = tmpfont.localize_text(n["path"], t["m_fontAsset"]["name"], t["m_sharedMaterial"]["material"],
-                                    swap, lang)
+                                    swap, lang, mode)
         shown = text_of.get(n["path"], t["m_text"])
         texts[n["path"]] = {"localized": loc, "text": shown, "setByInitialize": n["path"] in text_of}
         chars_by_font.setdefault(loc["fontAsset"], set()).update(ord(ch) for ch in shown)
@@ -261,12 +265,13 @@ def extract(cat: Catalog, player: PlayerData, out_dir: Path, master: Path, music
     tmp_settings = player.names_in(player.resource("TMP Settings"), player.mono(player.resource("TMP Settings")))
 
     doc = {
-        "about": "Live start canvas (Live/UILiveStartCanvas, LightWeight mode): what livescene/scene.json lacks, zh-Hant",
+        "about": f"Live start canvas (Live/UILiveStartCanvas, LightWeight mode): what livescene/scene.json lacks, "
+                 f"{language}",
         "canvas": CANVAS,
         "slice": {"musicId": music_id, "difficulty": difficulty, "liveDifficulty": LIVE_DIFFICULTY[difficulty],
                   "lightweight": True, "profile": "fresh (no play records)"},
-        "language": {"mode": LANGUAGE_MODE, "field": LANGUAGE_FIELD, "fonts": lang, "fontSwap": swap,
-                     "lineSpacing": LANGUAGE_LINE_SPACING[LANGUAGE_MODE]},
+        "language": {"mode": mode, "field": column[1:], "fonts": lang, "fontSwap": swap,
+                     "lineSpacing": LANGUAGE_LINE_SPACING[mode]},
         "strings": strings,
         "stringSources": sources,
         "texts": texts,

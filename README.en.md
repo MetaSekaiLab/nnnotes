@@ -32,7 +32,7 @@ addresses in their own configuration, and the exports stay in local directories 
 | `crikey` | APK | the CRI HCA keycode from the game's boot data (shows whether it was found; can write a `.hcakey`) |
 | `player` | APK | render-related global settings (color space, quality levels, renderers) as JSON |
 | `live` | music ID + difficulty | a full chart directory: chart and runtime notes, 3D scene, note and effect assets, BGM and sounds, sound routing |
-| `web` | `--pair music:difficulty` (repeatable) or `--all`; `--live2d model` (repeatable) or `--all-live2d` | an ournotes-player static site: shared player + per-chart / per-model manifests + content-addressed assets |
+| `web` | `--pair music:difficulty` (repeatable) or `--all`; `--live2d model` (repeatable) or `--all-live2d`; `--region region` (repeatable) or `--all-regions` | an ournotes-player static site: shared player + per-chart / per-model manifests + content-addressed assets; one site can serve several regions, with listing texts in five languages |
 
 Export conventions:
 
@@ -60,7 +60,7 @@ Based on all data of the Taiwan server, version 1.0.1 (zh-Hant):
 | charts, `live` | 336 / 336 (music, difficulty) pairs |
 | web site, `web` | 336 / 336 charts, 239 / 239 Live2D models |
 | spots, `spot` / `room` | one spot verified, the others not individually checked |
-| other regions (en / kr) and languages | not verified |
+| other regions (en / kr) and languages | checked: the regions serve the same catalog for a language and the same bundles, and the keys are shared; the master tables the charts use are the same in the three regions, and the text tables have all five languages; the chart exports checked match the Taiwan server's. A full multi-region site build is not verified yet |
 
 ## Requirements
 
@@ -110,6 +110,7 @@ nnnotes story 10462 -o out/story_10462
 nnnotes live 100001 --difficulty expert -o out/live_100001
 nnnotes web out/site --all --player <ournotes-player dir> --workers 5
 nnnotes web out/site --pair 100001:expert --pair 100001:hard --player <ournotes-player dir>
+nnnotes web out/site --all --region tw --region en --region kr --player <ournotes-player dir>
 nnnotes web out/site --live2d adv_live2d_rana_003_casual_spring_01 --player <ournotes-player dir>
 ```
 
@@ -123,6 +124,9 @@ no longer referenced are removed. Common options:
   temporary build directory (default `<site>.tmp`)
 - `--live2d MODEL` (model id or key, repeatable) / `--all-live2d`: add Live2D models (every model of the catalog);
   charts and models can be added in the same run
+- `--region REGION` (repeatable) / `--all-regions`: the regions the site serves (default: `[catalog] region`);
+  each region's master data is `[servers.<region>] master`. Regions with the same chart data share one manifest;
+  the chart list page switches region and language with `?region=&lang=`
 - `--player-only`: rewrite the player files, `charts.json` and `models.json` only; `--reingest-json`: store every
   chart's and model's JSON files again under the current rules
 

@@ -27,7 +27,7 @@ nnnotes 是 BanG Dream! Our Notes 游戏文件的离线数据工具包：读取 
 | `crikey` | APK | 读出游戏启动数据中的 CRI HCA 解码密钥（只显示是否找到，可写成 `.hcakey`） |
 | `player` | APK | 渲染相关的全局设置（色彩空间、画质等级、渲染器）JSON |
 | `live` | 曲目 ID + 难度 | 完整谱面目录：谱面与运行时音符、3D 场景、音符与特效资源、BGM 与音效、声音路由 |
-| `web` | `--pair 曲目:难度`（可重复）或 `--all`；`--live2d 模型`（可重复）或 `--all-live2d` | ournotes-player 静态站点：共享播放器 + 每谱 / 每模型清单 + 内容寻址资源 |
+| `web` | `--pair 曲目:难度`（可重复）或 `--all`；`--live2d 模型`（可重复）或 `--all-live2d`；`--region 区服`（可重复）或 `--all-regions` | ournotes-player 静态站点：共享播放器 + 每谱 / 每模型清单 + 内容寻址资源；一个站点可服务多个区服，列表文本含五种语言 |
 
 导出约定：
 
@@ -51,7 +51,7 @@ nnnotes 是 BanG Dream! Our Notes 游戏文件的离线数据工具包：读取 
 | 谱面 `live` | 336 / 336 个（曲目, 难度）组合可导出 |
 | 网页站点 `web` | 336 / 336 张谱面，239 / 239 个 Live2D 模型 |
 | 据点 `spot` / `room` | 已验证单个据点，其余未逐一验证 |
-| 其他区服（en / kr）与其他语言 | 未验证 |
+| 其他区服（en / kr）与其他语言 | 已核对：各区服同一语言的 catalog 相同、资源包相同，密钥通用；谱面用到的 masterdata 表在三个区服间一致，文本表五种语言齐全；抽查的谱面导出与台服一致。多区服整站构建未做全量验证 |
 
 ## 需要准备
 
@@ -88,6 +88,7 @@ nnnotes story 10462 -o out/story_10462
 nnnotes live 100001 --difficulty expert -o out/live_100001
 nnnotes web out/site --all --player <ournotes-player 目录> --workers 5
 nnnotes web out/site --pair 100001:expert --pair 100001:hard --player <ournotes-player 目录>
+nnnotes web out/site --all --region tw --region en --region kr --player <ournotes-player 目录>
 nnnotes web out/site --live2d adv_live2d_rana_003_casual_spring_01 --player <ournotes-player 目录>
 ```
 
@@ -97,6 +98,7 @@ nnnotes web out/site --live2d adv_live2d_rana_003_casual_spring_01 --player <our
 - `--band` / `--leader-card`：轻量背景与开场时间轴所用乐队；默认取曲目第一位演唱角色的乐队
 - `--workers`：并行处理的曲目进程数（默认最多 5）与模型进程数（默认最多 4）；`--tmp`：临时构建目录（默认 `<站点>.tmp`）
 - `--live2d 模型`（模型 ID 或资源键，可重复）/ `--all-live2d`：加入 Live2D 模型（catalog 中全部模型），可与谱面在同一次构建中加入
+- `--region 区服`（可重复）/ `--all-regions`：站点服务的区服（默认 `[catalog] region`）；每个区服的 masterdata 由 `[servers.<区服>] master` 指定。谱面数据相同的区服共用一份清单，列表页用 `?region=&lang=` 切换区服与语言
 - `--player-only`：只重写播放器文件与 `charts.json`、`models.json`；`--reingest-json`：按当前规则重新存储所有谱面与模型的 JSON
 
 各命令的参数与输出目录结构见 [docs/commands.md](docs/commands.md)。
