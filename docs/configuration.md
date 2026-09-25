@@ -25,7 +25,14 @@ nnnotes --config ~/nnnotes.toml --cache /data/nnnotes-cache pull <key>
 NNNOTES_PATHS_MASTER=/data/master nnnotes adv 10462 -o episode.json
 ```
 
-`--player` is the exception: it is an option of `web` and follows the command.
+`--player` is the exception: it is an option of `web` and follows the command. `web` also has a `--region` of its
+own (with `--all-regions`), which follows the command and chooses the regions the site serves; the global `--region`
+before the command sets `[catalog] region`:
+
+```bash
+nnnotes --region tw web out/site --all              # the one region [catalog] region = tw
+nnnotes web out/site --all --region tw --region kr  # a site for two regions
+```
 
 ### Paths
 
@@ -79,6 +86,12 @@ downloaded into the cache on first use); and, for what must be downloaded, `[cat
 `cdn`, `[bundle] key` and `nonce_seed`. `[paths] apk` is optional for the catalog: when it is set, the APK's own catalog and bundles are merged
 in, and bundles that ship inside the APK can only be read with it.
 
+"Master data" means the decoded master data directory of the region: the `--master` flag, else
+`[servers.<region>] master` of `[catalog] region`, else `[paths] master`.
+
+`--fonts game` (`story`, `live`, `web`) also needs the optional `fonts` dependencies (`pip install 'nnnotes[fonts]'`);
+it is not a setting.
+
 | Command | Settings |
 |---|---|
 | `catalog` | `[paths] cache`; `[paths] catalog`, or `[catalog] language` (plus region and `cdn` while the catalog is not in the cache); no bundle key |
@@ -88,17 +101,18 @@ in, and bundles that ship inside the APK can only be read with it.
 | `master download` | `[catalog] region` and that region's `cdn`; `--latest` also that region's `api` and the client version |
 | `master version` | `[catalog] region` and that region's `api`; the client version: `[client] version` or `[paths] apk` |
 | `servers` | `[bootstrap] api`; the client version: `[client] version` or `[paths] apk` |
-| `adv` | catalog, `[paths] master` |
-| `story` | catalog, `[paths] master`, `apk`, `vgmstream`, `ffmpeg` |
+| `adv` | catalog, master data |
+| `story` | catalog, `[catalog] language`, master data, `[paths] apk`, `ffmpeg` (audio and videos), `vgmstream` (not with `--no-audio`) |
 | `live2d` | catalog, `[paths] apk` |
-| `spot` | catalog, `[paths] master`, `apk` |
+| `spot` | catalog, master data, `[paths] apk` |
 | `room` | catalog |
 | `shader` | catalog; `--apk-bundle` also `[paths] apk` |
 | `audio` | catalog, `[paths] apk`, `vgmstream`, `ffmpeg` (not for `--format wav`) |
 | `crikey` | `[paths] apk` |
 | `player` | `[paths] apk` |
-| `live` | catalog, `[catalog] language`, the region's master data (`[servers.<region>] master` or `[paths] master`), `[paths] apk`, `vgmstream`, `ffmpeg` |
-| `web --pair` / `--all` | as `live`, plus `[paths] player`, `node`; with `--region` / `--all-regions` each region's `cdn` and master data (`[servers.<region>] master`; `[paths] master` for at most one region) |
+| `live` | catalog, `[catalog] language`, master data, `[paths] apk`, `vgmstream`, `ffmpeg` |
+| `web --pair` / `--all` | as `live`, plus `[paths] player`, `node`; with `--region` / `--all-regions` each region's `[servers.<region>]` table (its `cdn` for what must be downloaded) and master data (`[servers.<region>] master`; `[paths] master` for at most one region) |
+| `web --live2d` / `--all-live2d` | catalog (bundles from the CDN of the site's first region), `[paths] apk`, `[paths] player`; not `node`; master data only for the model names (optional: without it `models.json` has no names) |
 | `web --player-only` / `--reingest-json` | `[paths] player` |
 
 The region, its `cdn`, `[bundle] key` and `nonce_seed` are read only when a file must be downloaded: when the

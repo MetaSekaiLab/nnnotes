@@ -19,7 +19,8 @@ bundle closures is handed back to advscene, which dumps them with the scene's sh
                     `windows` ("Adv/Chat/Prefabs/" + _chatWindowAssetName, AdvChatWindow prefabs), `icons`
                     ("Adv/Chat/Icon/" + _chatIconAssetName) and `stamps` ("Adv/Chat/Stamp/" + TargetAssetName) as
                     sprites, `text` / `sounds` / `cueSheets`: the rows of the shared chat shards
-                    (Adv/Chat/AdvChat-Text, -Sound, -SoundCueSheet)
+                    (Adv/Chat/AdvChat-Text, -Sound, -SoundCueSheet); the cue sheet those rows name, AdvSe_Common,
+                    is in no language's catalog and not in the APK (1.0.1 data), so nothing is decoded for them
   talkwindows.json  TalkWindow: "UI/Prefab/Parts/Adv/Talk/" + TargetAssetName (embedded content), keyed by window
                     name (the default window is also in ui/ui.json in its drawn form)
 
@@ -136,8 +137,9 @@ def _chat(cat: Catalog, master: Path, ex: Exporter, episode: dict, resources: li
 
 def extract(cat: Catalog, player: PlayerData, master: Path, episode: dict, out_dir: Path,
             fonts: str = "open") -> dict:
-    """Write the kind files the episode needs (`fonts`: see the module docstring). Returns {"files": {index key: file or None} for every INDEX_KEYS
-    entry, "shaders": {name: Shader object}, "counts": {index key: entries}, "textures": textures written}."""
+    """Write the kind files the episode needs (`fonts`: see the module docstring). Returns {"files": {index key:
+    file or None} for every INDEX_KEYS entry, "shaders": {name: Shader object}, "counts": {index key: entries},
+    "textures": textures written}."""
     out_dir = Path(out_dir)
     by_kind: dict[str, list[dict]] = {}
     for r in episode["resources"]:

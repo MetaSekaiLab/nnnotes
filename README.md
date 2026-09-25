@@ -32,7 +32,8 @@ nnnotes 是 BanG Dream! Our Notes 游戏文件的离线数据工具包：读取 
 导出约定：
 
 - 写文件的命令都用 `-o` 指定输出路径（必填）；`web` 的站点目录是位置参数。
-- JSON 一律 UTF-8、LF、确定性输出；同样的输入两次导出逐字节相同。无穷大写作 `1e999`。
+- JSON 一律 UTF-8、LF 换行；无穷大写作 `1e999`。
+- 在同一套环境下导出是确定的：同样的输入，在 nnnotes、Python 依赖库（UnityPy、Pillow、numpy 等）和外部工具（vgmstream、FFmpeg）版本都相同时，导出文件逐字节相同。版本不同时，相同内容可能写成不同的字节：例如不同版本的 Pillow 写出的 PNG 像素相同，字节可能不同。
 - 数值保留 Unity 序列化值与字段名（`m_LocalPosition`、`_bandIDs` 等），便于与游戏数据对照。
 - 贴图导出为 PNG，着色器保留游戏自带的编译结果，音频由 CRI 格式解码为通用格式。
 

@@ -38,8 +38,11 @@ Export conventions:
 
 - Commands that write files take the output path with `-o` (required); `web` takes the site directory as a
   positional argument.
-- JSON is always UTF-8, LF and deterministic: the same input exported twice is byte-identical. Infinity is written
-  as `1e999`.
+- JSON is always UTF-8 with LF line endings; infinity is written as `1e999`.
+- Exports are deterministic for a given installation: the same input with the same versions of nnnotes, its Python
+  dependencies (UnityPy, Pillow, numpy, ...) and the external tools (vgmstream, FFmpeg) gives byte-identical files.
+  Other versions can encode the same content into other bytes: PNG files written by another Pillow version can
+  differ in their bytes while their pixels are equal.
 - Values keep Unity's serialized values and field names (`m_LocalPosition`, `_bandIDs`, ...), so they can be
   compared with the game data.
 - Textures are exported as PNG, shaders keep the game's own compiled programs, audio is decoded from the CRI formats

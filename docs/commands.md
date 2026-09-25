@@ -11,7 +11,10 @@ described in [configuration.md](configuration.md), which also lists the settings
 
 Commands that write files take the output path with `-o/--out` (required), except `web`, which takes the site
 directory as its positional argument. JSON summaries on standard output are UTF-8. Every JSON file is written by one
-writer: UTF-8, LF line endings, deterministic, non-finite numbers as `1e999` / `-1e999`.
+writer: UTF-8, LF line endings, non-finite numbers as `1e999` / `-1e999` (a NaN is an error). The output is
+deterministic for a given installation: the same inputs with the same versions of nnnotes, its Python dependencies
+and the external tools give byte-identical files. Other versions can encode the same content into other bytes (a
+PNG written by another Pillow version can differ in its bytes while its pixels are equal).
 
 A key, id or model the catalog or the master data does not have is a usage error: the command stops with exit
 status 2 and a line naming it (`nnnotes <command>: error: ...`), before any bundle is fetched or file written.
@@ -140,7 +143,8 @@ OUT/effects.json          particle effect prefabs by asset name, `instances` (ef
 OUT/posteffects.json      PostEffect volume profiles by asset name
 OUT/stills.json           Still prefabs by asset name
 OUT/talkwindows.json      talk window prefabs of the TalkWindow rows
-OUT/chat.json             chat window prefabs, icons and stamps (sprites), the MasterAdvChat rows, shared chat texts
+OUT/chat.json             chat window prefabs, icons and stamps (sprites), the MasterAdvChat rows, shared chat texts,
+                          sounds and cue sheet rows
 OUT/textures/, shaders/   textures and shaders of the scene and of the files above
 OUT/videos/               Movie / Clip videos as WebM + videos.json (video id -> file, video row, size, frame rate)
 OUT/ui/                   ADV front canvas UI: ui.json, packed textures, UI shaders, rule transitions
@@ -154,6 +158,12 @@ frames, talk windows and chat keeps its layout and style; with `--fonts open` it
 materials are only named (no atlas is written), with `--fonts game` they are exported. The command stops before
 writing anything when the episode uses resources that are not in the catalog or resource kinds that are not
 supported (`timeline`). Prints the index with a summary.
+
+The shared chat sound rows (`chat.json` `sounds`, `cueSheets`) name the cue sheet `AdvSe_Common`. In the version
+1.0.1 data nothing holds it: no catalog language (`ja`, `en`, `zh-Hant`, `zh-Hans`, `ko`) has a key
+`Cri/Sound/AdvSe_Common` or `EmbCri/Sound/AdvSe_Common` (remote or APK catalog), the APK has no ACB file of that
+name, and it is not a Resources asset. The story therefore has no audio for these rows; the rows are kept as they
+are. Every cue sheet of the episodes' own `-SoundCueSheet` shards has its `Cri/Sound/` key.
 
 `ui/` follows the client language `[catalog] language` (`ja`, `en`, `zh-Hant`, `zh-Hans` or `ko`): the localized
 fonts and materials, the line spacing LocalizeText applies, and, with `--fonts game`, the characters of the lines,
@@ -426,5 +436,6 @@ One site serves several regions and every language:
   and `regions` (`id`, `name` from `[servers.<region>] name`, `languages` from `[servers.<region>] languages`). The
   chart list page switches with `?region=<id>&lang=<language>`.
 
-Same inputs give byte-identical outputs. Charts that fail are listed in the printed summary and in
-`SITE.failures.json`, models that fail in the summary and in `SITE.model-failures.json`; the exit status is then 1.
+The same inputs with the same versions of nnnotes, its libraries and tools give byte-identical outputs. Charts that
+fail are listed in the printed summary and in `SITE.failures.json`, models that fail in the summary and in
+`SITE.model-failures.json`; the exit status is then 1.
