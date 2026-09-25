@@ -5,7 +5,7 @@
 nnnotes is an offline data toolkit for the game files of BanG Dream! Our Notes: it reads Addressables catalogs,
 downloads and decrypts asset bundles, downloads and decodes master data, and exports stories, Live2D models, spots,
 shaders, CRI audio and live charts as structured JSON and common file formats. The chart export is the data that
-[ournotes-player](https://github.com/empty-sekai/ournotes-player) reads.
+[ournotes-player](https://github.com/empty-sekai/ournotes-player) reads. The naming was inspired by [mos9527/sssekai](https://github.com/mos9527/sssekai).
 
 This is an unofficial fan project, not affiliated with the game's developer or operator. The repository contains no
 game assets, keys or server addresses: users supply the game files, the keys needed for decryption and the server
