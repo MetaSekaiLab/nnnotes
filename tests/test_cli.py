@@ -47,7 +47,7 @@ def test_version_and_help(capsys):
     code, out, _ = run(["--help"], capsys)
     assert code == 0
     for cmd in ("catalog", "browse", "pull", "master", "adv", "story", "live2d", "spot", "room", "shader", "audio",
-                "crikey", "player", "live", "site"):
+                "crikey", "player", "live", "web"):
         assert cmd in out
 
 
@@ -60,8 +60,8 @@ def test_output_is_required(argv, capsys):
     assert code == 2 and "-o/--out" in err
 
 
-def test_site_needs_a_selection(capsys):
-    code, _, err = run(["site", "out"], capsys)
+def test_web_needs_a_selection(capsys):
+    code, _, err = run(["web", "out"], capsys)
     assert code == 2 and "--pair" in err and "--all" in err
 
 
@@ -165,8 +165,8 @@ def test_browse_region_needs_languages(capsys, monkeypatch):
     assert code == 2 and "servers.zz.languages" in err and "NNNOTES_SERVERS_ZZ_LANGUAGES" in err
 
 
-def test_site_needs_the_player(tmp_path, capsys):
-    code, _, err = run(["site", str(tmp_path / "site"), "--player-only"], capsys)
+def test_web_needs_the_player(tmp_path, capsys):
+    code, _, err = run(["web", str(tmp_path / "site"), "--player-only"], capsys)
     assert code == 2 and "--player" in err and "NNNOTES_PATHS_PLAYER" in err
 
 

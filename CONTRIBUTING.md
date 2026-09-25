@@ -28,7 +28,7 @@ python -m venv .venv
 python -m pip install -e ".[test]"
 ```
 
-The extractors also need vgmstream, FFmpeg and, for `site`, Node.js with a built ournotes-player; see
+The extractors also need vgmstream, FFmpeg and, for `web`, Node.js with a built ournotes-player; see
 [docs/configuration.md](docs/configuration.md). The tests need none of them.
 
 ## Tests and lint

@@ -30,11 +30,11 @@ addresses in their own configuration, and the exports stay in local directories 
 | `crikey` | APK | the CRI HCA keycode from the game's boot data (shows whether it was found; can write a `.hcakey`) |
 | `player` | APK + IL2CPP symbols | render-related global settings (color space, quality levels, renderers) as JSON |
 | `live` | music ID + difficulty | a full chart directory: chart and runtime notes, 3D scene, note and effect assets, BGM and sounds, sound routing |
-| `site` | `--pair music:difficulty` (repeatable) or `--all` | an ournotes-player static site: shared player + per-chart manifests + content-addressed assets |
+| `web` | `--pair music:difficulty` (repeatable) or `--all` | an ournotes-player static site: shared player + per-chart manifests + content-addressed assets |
 
 Export conventions:
 
-- Commands that write files take the output path with `-o` (required); `site` takes the site directory as a
+- Commands that write files take the output path with `-o` (required); `web` takes the site directory as a
   positional argument.
 - JSON is always UTF-8, LF and deterministic: the same input exported twice is byte-identical. Infinity is written
   as `1e999`.
@@ -56,7 +56,7 @@ Based on all data of the Taiwan server, version 1.0.1 (zh-Hant):
 | Live2D models | 185 / 185 |
 | CRI audio | 681 / 681 cue sheets |
 | charts, `live` | 336 / 336 (music, difficulty) pairs |
-| site, `site` | 336 / 336 charts |
+| web site, `web` | 336 / 336 charts |
 | spots, `spot` / `room` | one spot verified, the others not individually checked |
 | other regions (en / kr) and languages | not verified |
 
@@ -65,11 +65,11 @@ Based on all data of the Taiwan server, version 1.0.1 (zh-Hant):
 - Python 3.11+; `pip install -e .` in the repository (not yet on PyPI)
 - the game's `base.apk`: APK-local bundles, the CRI keycode, boot settings
 - the APK's IL2CPP symbols (the DummyDll directory written by Il2CppDumper): needed by `player`, `story`, `live`,
-  `site`
+  `web`
 - a decoded master data directory (from `master download` + `master decode`): needed by `adv`, `story`, `spot`,
-  `live`, `site`
+  `live`, `web`
 - external tools: [vgmstream](https://vgmstream.org/) (CRI HCA decoding), [FFmpeg](https://ffmpeg.org/)
-  (transcoding); `site` also needs Node.js 20+ and a built ournotes-player
+  (transcoding); `web` also needs Node.js 20+ and a built ournotes-player
 
 ## Configuration
 
@@ -79,7 +79,7 @@ overriding earlier ones:
 1. config file: `--config <file>`, else `NNNOTES_CONFIG`, else `nnnotes.toml` in the working directory
 2. environment variables: `NNNOTES_<SECTION>_<KEY>` (e.g. `NNNOTES_BUNDLE_KEY`, `NNNOTES_SERVERS_TW_CDN`)
 3. command-line flags: `--region`, `--language`, `--catalog`, `--cache`, `--master`, `--apk`, `--dummy-dll`,
-   `--ffmpeg`, `--vgmstream`, `--node` go before the command name; `--player` is an option of `site`
+   `--ffmpeg`, `--vgmstream`, `--node` go before the command name; `--player` is an option of `web`
 
 Copy [`nnnotes.example.toml`](nnnotes.example.toml) to `nnnotes.toml` and fill it in. The settings are: the bundle
 key and nonce seed, the master data key and IV, the region in use (`[catalog] region`) and the catalog language
@@ -103,11 +103,11 @@ nnnotes master decode work/master-bin -o work/master
 nnnotes --master work/master adv 10462 -o out/adv_10462.json
 nnnotes story 10462 -o out/story_10462
 nnnotes live 100001 --difficulty expert -o out/live_100001
-nnnotes site out/site --all --player <ournotes-player dir> --workers 5
-nnnotes site out/site --pair 100001:expert --pair 100001:hard --player <ournotes-player dir>
+nnnotes web out/site --all --player <ournotes-player dir> --workers 5
+nnnotes web out/site --pair 100001:expert --pair 100001:hard --player <ournotes-player dir>
 ```
 
-`site` builds incrementally: charts whose manifest exists are skipped (`--force` rebuilds them) and assets no longer
+`web` builds incrementally: charts whose manifest exists are skipped (`--force` rebuilds them) and assets no longer
 referenced are removed. Common options:
 
 - `--format aac|opus|vorbis|mp3|flac`: BGM format, default AAC; `--no-audio`: no audio files

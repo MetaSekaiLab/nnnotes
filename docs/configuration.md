@@ -25,7 +25,7 @@ nnnotes --config ~/nnnotes.toml --cache /data/nnnotes-cache pull <key>
 NNNOTES_PATHS_MASTER=/data/master nnnotes adv 10462 -o episode.json
 ```
 
-`--player` is the exception: it is an option of `site` and follows the command.
+`--player` is the exception: it is an option of `web` and follows the command.
 
 ### Paths
 
@@ -54,7 +54,7 @@ command line are relative to the working directory. `~` is expanded. `[paths] ca
 | `[paths] ffmpeg` | `NNNOTES_PATHS_FFMPEG` | `--ffmpeg` | `ffmpeg` executable; unset: `ffmpeg` on `PATH` |
 | `[paths] vgmstream` | `NNNOTES_PATHS_VGMSTREAM` | `--vgmstream` | `vgmstream-cli` executable; unset: `vgmstream-cli` on `PATH` |
 | `[paths] node` | `NNNOTES_PATHS_NODE` | `--node` | Node.js executable; unset: `node` on `PATH` |
-| `[paths] player` | `NNNOTES_PATHS_PLAYER` | `--player` (of `site`) | ournotes-player checkout (built) or installed package |
+| `[paths] player` | `NNNOTES_PATHS_PLAYER` | `--player` (of `web`) | ournotes-player checkout (built) or installed package |
 
 Hex values are case-insensitive; a `0x` prefix and surrounding whitespace are ignored. All values are TOML strings
 except `languages` (array of strings).
@@ -114,12 +114,12 @@ message, and the `repr` of the settings and key objects shows no values.
   include them and does not derive them.
 - **`[paths] apk`**: the `base.apk` of your own installation of the game.
 - **`[paths] dummy_dll`**: the `DummyDll` directory that [Il2CppDumper](https://github.com/Perfare/Il2CppDumper)
-  writes for that same APK. `player`, `story`, `live` and `site` read the game's MonoBehaviours with type trees
+  writes for that same APK. `player`, `story`, `live` and `web` read the game's MonoBehaviours with type trees
   generated from it.
 - **`[paths] master`**: the output directory of `nnnotes master decode`, run on master data files from
   `nnnotes master download --version <version>` or on the game client's own files.
-- **CRI HCA keycode**: not a setting. `audio`, `story`, `live` and `site` read it from the APK's boot data;
+- **CRI HCA keycode**: not a setting. `audio`, `story`, `live` and `web` read it from the APK's boot data;
   `nnnotes crikey` shows whether one was found and can write it as a `.hcakey` file for vgmstream.
 - **Tools**: [vgmstream](https://vgmstream.org/) (`vgmstream-cli`), [FFmpeg](https://ffmpeg.org/) and, for
-  `site`, [Node.js](https://nodejs.org/) 20+ with a built
+  `web`, [Node.js](https://nodejs.org/) 20+ with a built
   [ournotes-player](https://github.com/empty-sekai/ournotes-player).

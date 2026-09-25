@@ -19,7 +19,7 @@ whatever the console encoding.
     nnnotes crikey [--write <dir>]
     nnnotes player -o out/player.json
     nnnotes live 100001 --difficulty expert [--band 1 | --leader-card <MasterMemberCard id>] -o out/live_100001
-    nnnotes site out/site --player <ournotes-player> --pair 100001:expert [--pair ...] | --all [--format aac]
+    nnnotes web out/site --player <ournotes-player> --pair 100001:expert [--pair ...] | --all [--format aac]
 """
 from __future__ import annotations
 
@@ -263,17 +263,17 @@ def cmd_live(args, cfg):
     _print_json(r)
 
 
-def cmd_site(args, cfg):
-    from . import site
+def cmd_web(args, cfg):
+    from . import web
     player = cfg.path("paths", "player")
     out = Path(args.out)
     if args.player_only or args.reingest_json:
-        r = {**(site.reingest_json(out) if args.reingest_json else {}),
-             **site.write_player(out, site.check_player(player)), **site.write_index(out)}
+        r = {**(web.reingest_json(out) if args.reingest_json else {}),
+             **web.write_player(out, web.check_player(player)), **web.write_index(out)}
     else:
-        site.check_player(player)
-        pairs = site.all_pairs(master_dir(cfg)) if args.all else args.pair
-        r = site.build(out, pairs, cfg, player, args.format, audio=not args.no_audio, force=args.force,
+        web.check_player(player)
+        pairs = web.all_pairs(master_dir(cfg)) if args.all else args.pair
+        r = web.build(out, pairs, cfg, player, args.format, audio=not args.no_audio, force=args.force,
                        tmp_dir=args.tmp, workers=args.workers, band=args.band, leader_card=args.leader_card)
     _print_json(r)
     if r.get("failed"):
@@ -300,7 +300,7 @@ def _out(c, what: str, required: bool = True) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    from .site import WEB_AUDIO, DEFAULT_AUDIO_FORMAT
+    from .web import WEB_AUDIO, DEFAULT_AUDIO_FORMAT
     p = argparse.ArgumentParser(prog="nnnotes", description="BanG Dream! Our Notes data toolkit")
     p.add_argument("--version", action="version", version=f"nnnotes {__version__}")
     p.add_argument("--config", help="TOML config file (else NNNOTES_CONFIG, else ./nnnotes.toml)")
@@ -398,7 +398,7 @@ def build_parser() -> argparse.ArgumentParser:
     _out(c, "output directory")
     c.set_defaults(func=cmd_live)
 
-    c = sub.add_parser("site", help="live charts -> static ournotes-player site (shared player + per-chart data)")
+    c = sub.add_parser("web", help="live charts -> static site for ournotes-player (shared player + per-chart data)")
     c.add_argument("out", help="site directory")
     c.add_argument("--player", help="ournotes-player checkout (built) or installed package ([paths] player)")
     g = c.add_mutually_exclusive_group(required=True)
@@ -412,7 +412,7 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--tmp", help="directory for the temporary live builds (default <site>.tmp)")
     c.add_argument("--workers", type=int, help="parallel music processes (default up to 5, 1 = this process)")
     _band_args(c)
-    c.set_defaults(func=cmd_site)
+    c.set_defaults(func=cmd_web)
     return p
 
 

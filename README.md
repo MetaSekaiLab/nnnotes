@@ -25,11 +25,11 @@ nnnotes 是 BanG Dream! Our Notes 游戏文件的离线数据工具包：读取 
 | `crikey` | APK | 读出游戏启动数据中的 CRI HCA 解码密钥（只显示是否找到，可写成 `.hcakey`） |
 | `player` | APK + IL2CPP 符号 | 渲染相关的全局设置（色彩空间、画质等级、渲染器）JSON |
 | `live` | 曲目 ID + 难度 | 完整谱面目录：谱面与运行时音符、3D 场景、音符与特效资源、BGM 与音效、声音路由 |
-| `site` | `--pair 曲目:难度`（可重复）或 `--all` | ournotes-player 静态站点：共享播放器 + 每谱清单 + 内容寻址资源 |
+| `web` | `--pair 曲目:难度`（可重复）或 `--all` | ournotes-player 静态站点：共享播放器 + 每谱清单 + 内容寻址资源 |
 
 导出约定：
 
-- 写文件的命令都用 `-o` 指定输出路径（必填）；`site` 的站点目录是位置参数。
+- 写文件的命令都用 `-o` 指定输出路径（必填）；`web` 的站点目录是位置参数。
 - JSON 一律 UTF-8、LF、确定性输出；同样的输入两次导出逐字节相同。无穷大写作 `1e999`。
 - 数值保留 Unity 序列化值与字段名（`m_LocalPosition`、`_bandIDs` 等），便于与游戏数据对照。
 - 贴图导出为 PNG，着色器保留游戏自带的编译结果，音频由 CRI 格式解码为通用格式。
@@ -47,7 +47,7 @@ nnnotes 是 BanG Dream! Our Notes 游戏文件的离线数据工具包：读取 
 | Live2D 模型 | 185 / 185 个可导出 |
 | CRI 音频 | 681 / 681 个 cue sheet 可解码 |
 | 谱面 `live` | 336 / 336 个（曲目, 难度）组合可导出 |
-| 站点 `site` | 336 / 336 张谱面 |
+| 网页站点 `web` | 336 / 336 张谱面 |
 | 据点 `spot` / `room` | 已验证单个据点，其余未逐一验证 |
 | 其他区服（en / kr）与其他语言 | 未验证 |
 
@@ -55,9 +55,9 @@ nnnotes 是 BanG Dream! Our Notes 游戏文件的离线数据工具包：读取 
 
 - Python 3.11+，在仓库内 `pip install -e .`（尚未发布到 PyPI）
 - 游戏安装包 `base.apk`：APK 内置资源包、CRI 解码密钥、启动设置
-- 该 APK 的 IL2CPP 符号（Il2CppDumper 生成的 DummyDll 目录）：`player`、`story`、`live`、`site` 需要
-- 解码后的 masterdata 目录（可用 `master download` + `master decode` 生成）：`adv`、`story`、`spot`、`live`、`site` 需要
-- 外部工具：[vgmstream](https://vgmstream.org/)（CRI HCA 解码）、[FFmpeg](https://ffmpeg.org/)（转码）；`site` 另需 Node.js 20+ 与构建好的 ournotes-player
+- 该 APK 的 IL2CPP 符号（Il2CppDumper 生成的 DummyDll 目录）：`player`、`story`、`live`、`web` 需要
+- 解码后的 masterdata 目录（可用 `master download` + `master decode` 生成）：`adv`、`story`、`spot`、`live`、`web` 需要
+- 外部工具：[vgmstream](https://vgmstream.org/)（CRI HCA 解码）、[FFmpeg](https://ffmpeg.org/)（转码）；`web` 另需 Node.js 20+ 与构建好的 ournotes-player
 
 ## 配置
 
@@ -65,7 +65,7 @@ nnnotes 是 BanG Dream! Our Notes 游戏文件的离线数据工具包：读取 
 
 1. 配置文件：`--config <文件>`，否则 `NNNOTES_CONFIG`，否则当前目录的 `nnnotes.toml`
 2. 环境变量：`NNNOTES_<节>_<键>`（如 `NNNOTES_BUNDLE_KEY`、`NNNOTES_SERVERS_TW_CDN`）
-3. 命令行参数：`--region`、`--language`、`--catalog`、`--cache`、`--master`、`--apk`、`--dummy-dll`、`--ffmpeg`、`--vgmstream`、`--node` 写在命令名之前；`--player` 是 `site` 的参数
+3. 命令行参数：`--region`、`--language`、`--catalog`、`--cache`、`--master`、`--apk`、`--dummy-dll`、`--ffmpeg`、`--vgmstream`、`--node` 写在命令名之前；`--player` 是 `web` 的参数
 
 复制 [`nnnotes.example.toml`](nnnotes.example.toml) 为 `nnnotes.toml` 后填写。需要的设置包括：资源包解密密钥与 nonce 种子、masterdata 的密钥与 IV、使用的区服 `[catalog] region` 与 catalog 语言 `[catalog] language`、每个区服的 CDN 地址（`[servers.<区服>]`），以及缓存目录、APK、IL2CPP 符号、masterdata 目录、ournotes-player 和 vgmstream / FFmpeg / Node.js 的路径（三个工具未设置时在 `PATH` 中查找）。这些值都来自使用者自己的游戏客户端。
 
@@ -84,11 +84,11 @@ nnnotes master decode work/master-bin -o work/master
 nnnotes --master work/master adv 10462 -o out/adv_10462.json
 nnnotes story 10462 -o out/story_10462
 nnnotes live 100001 --difficulty expert -o out/live_100001
-nnnotes site out/site --all --player <ournotes-player 目录> --workers 5
-nnnotes site out/site --pair 100001:expert --pair 100001:hard --player <ournotes-player 目录>
+nnnotes web out/site --all --player <ournotes-player 目录> --workers 5
+nnnotes web out/site --pair 100001:expert --pair 100001:hard --player <ournotes-player 目录>
 ```
 
-`site` 可以增量构建：清单已存在的谱面会跳过（`--force` 重建），不再被引用的资源会被清理。常用参数：
+`web` 可以增量构建：清单已存在的谱面会跳过（`--force` 重建），不再被引用的资源会被清理。常用参数：
 
 - `--format aac|opus|vorbis|mp3|flac`：BGM 格式，默认 AAC；`--no-audio`：不导出音频
 - `--band` / `--leader-card`：轻量背景与开场时间轴所用乐队；默认取曲目第一位演唱角色的乐队

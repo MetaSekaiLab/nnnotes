@@ -9,7 +9,7 @@ Global options (before the command): `--config`, `--region`, `--language`, `--ca
 described in [configuration.md](configuration.md), which also lists the settings each command needs.
 `nnnotes <command> --help` prints the options of a command.
 
-Commands that write files take the output path with `-o/--out` (required), except `site`, which takes the site
+Commands that write files take the output path with `-o/--out` (required), except `web`, which takes the site
 directory as its positional argument. JSON summaries on standard output are UTF-8. Every JSON file is written by one
 writer: UTF-8, LF line endings, deterministic, non-finite numbers as `1e999` / `-1e999`.
 
@@ -224,10 +224,10 @@ band is `--band`, or the band of the character of `--leader-card` (a `MasterMemb
 of the music's first vocal character; the choice is recorded in `livescene/scene.json`. Prints the index with a
 summary.
 
-## site
+## web
 
 ```
-nnnotes site SITE (--pair MUSIC_ID:DIFFICULTY [--pair ...] | --all | --player-only | --reingest-json)
+nnnotes web SITE (--pair MUSIC_ID:DIFFICULTY [--pair ...] | --all | --player-only | --reingest-json)
                   [--player DIR] [--format aac|opus|vorbis|mp3|flac] [--no-audio] [--force]
                   [--tmp DIR] [--workers N] [--band BAND | --leader-card CARD_ID]
 ```
