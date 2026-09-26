@@ -194,6 +194,24 @@ Where the CPU time goes:
 A second run over the same store is a no-op: `export` takes 40 s (633 MiB) and `plan -o <out>` 36-39 s (741-749
 MiB), each in one process (every task is a hit, so no worker starts).
 
+### Incremental runs
+
+`export` over the store of an earlier run, 12 workers. These runs were made on a machine that ran at about half the
+speed of the run above (the bundle export stage took 2.2-2.4 times as long), so compare them with each other only.
+
+| Change since the earlier run | Tasks that ran | Wall time | New store |
+|---|---|---|---|
+| a copy of the catalog with 3 bundles changed, 3 removed, 2 added and 1 renamed | 5 `unity.export`, `link.addresses`, `link.artifacts`, 2 views | 92 s | 1 347 s |
+| the zh-Hans catalog of the same version (292 bundles and 17 raw files differ) | 292 `unity.export`, 17 `cri.movie`, … | 115 s | 1 375 s |
+| a new version of the mesh converter | the 82 `unity.export` tasks of the bundles with meshes, `link.artifacts` | 95 s | |
+
+The results and the layout equal those of a run into a new store, and `plan` lists beforehand which tasks will run.
+The census of a new or changed bundle runs in `plan --census` or at the start of `export`.
+
+Raw files (CRI audio and movies) that are not in the cache are downloaded in the background while the bundle stages
+run; `cri.audio` waits for them. With every bundle cached and the 944 raw files (4.6 GB) not cached, a run into a new
+store took 1 315 s on the same machine.
+
 ### Memory
 
 Runs under a memory limit (`export` with `--workers 1` and `--memory` at the limit); a run is stopped when the
