@@ -45,6 +45,7 @@ share (most of livescene/scene.json) are stored once.
 """
 from __future__ import annotations
 
+import collections
 import hashlib
 import json
 import multiprocessing as mp
@@ -854,6 +855,7 @@ def check_player(player_dir) -> Path:
 
 READ_SETS = cache.bucket("readsets", salt=cache.source_salt(__file__), disk=True)
 READ_SET_CHECK = 10          # plan mode: the build's first chart and 1 in this many others also run the full simulation
+READ_SET_SERVE_TIMEOUT = 600.0   # seconds a served read set may take (ReadSetServers); then its process is ended
 _player_ids: dict = {}
 _features: dict = {}
 _features_lock = threading.Lock()
@@ -903,16 +905,18 @@ def live_dir_digest(live_dir: Path) -> list:
     return [(p.relative_to(live_dir).as_posix(), hashlib.sha256(p.read_bytes()).digest()) for p in files]
 
 
-def read_set_cached(live_dir: Path, player_dir: Path, mode: str = "full", digest: list | None = None) -> list[str]:
+def read_set_cached(live_dir: Path, player_dir: Path, mode: str = "full", digest: list | None = None,
+                    run=None) -> list[str]:
     """read_set, reused when the live directory's files, the player code, Node and the mode are the same as for a
     read set stored before (READ_SETS: this process, and the disk layer of the build's cache). `digest`: the live
-    directory's live_dir_digest when the caller has it."""
+    directory's live_dir_digest when the caller has it. `run`: what reads a set that is not stored, with read_set's
+    arguments and answer (default read_set; ReadSetServers.read_set answers the same)."""
     live_dir = Path(live_dir)
     k = READ_SETS.key(player_id(player_dir), mode, digest if digest is not None else live_dir_digest(live_dir))
     hit = READ_SETS.get(k)
     if hit is not None:
         return json.loads(hit)
-    out = read_set(live_dir, player_dir, mode)
+    out = (run or read_set)(live_dir, player_dir, mode)
     READ_SETS.put(k, json.dumps(out).encode("utf-8"))
     return out
 
@@ -928,7 +932,12 @@ def read_set(live_dir: Path, player_dir: Path, mode: str = "full") -> list[str]:
                         *(["--plan"] if mode == "plan" else [])], capture_output=True, text=True, encoding="utf-8")
     if r.returncode != 0:
         raise RuntimeError(f"read set of {Path(live_dir).name} failed:\n{(r.stderr or r.stdout)[-4000:]}")
-    out = json.loads(r.stdout)
+    return read_set_answer(json.loads(r.stdout), mode)
+
+
+def read_set_answer(out, mode: str) -> list[str]:
+    """The files of an answer of the read-set script (its JSON output) in `mode`, checked: a plan answered in plan
+    mode, a full simulation that reached the end of the chart, a list of paths."""
     if mode == "plan" and not (isinstance(out, dict) and out.get("mode") == "plan"):
         raise RuntimeError("read set --plan: the player did not answer in plan mode")
     if isinstance(out, dict):                          # {files, state, frames} form
@@ -938,6 +947,139 @@ def read_set(live_dir: Path, player_dir: Path, mode: str = "full") -> list[str]:
     if not isinstance(out, list) or not all(isinstance(p, str) for p in out):
         raise RuntimeError("read set: expected a JSON list of paths")
     return out
+
+
+class ReadSetServerError(RuntimeError):
+    """A read-set server that exited, answered something else than an answer, or none within the timeout (hung)."""
+
+    def __init__(self, message: str, hung: bool = False):
+        super().__init__(message)
+        self.hung = hung
+
+
+class ReadSetServer:
+    """One `node READ_SET_SCRIPT --serve` process (the player's feature "serve"): read sets one at a time, each asked
+    by a JSON line on its stdin and answered by one on its stdout; the last lines of its stderr are kept for errors."""
+
+    def __init__(self, player_dir: Path):
+        self.proc = subprocess.Popen([tool("node", "node"), str(Path(player_dir) / READ_SET_SCRIPT), "--serve"],
+                                     stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                     text=True, encoding="utf-8", errors="replace")
+        self.lines: queue.Queue = queue.Queue()
+        self.stderr: collections.deque = collections.deque(maxlen=50)
+        threading.Thread(target=self._pump, args=(self.proc.stdout, self.lines.put, True), daemon=True).start()
+        self._stderr_pump = threading.Thread(target=self._pump, args=(self.proc.stderr, self.stderr.append, False),
+                                             daemon=True)
+        self._stderr_pump.start()
+
+    @staticmethod
+    def _pump(stream, put, eof: bool) -> None:
+        for line in stream:
+            put(line)
+        if eof:
+            put(None)
+
+    def ask(self, request: dict, timeout: float) -> dict:
+        """The answer to `request`: {"ok": true, "result"} or {"ok": false, "error"}. ReadSetServerError when the
+        process has exited, answers something else or nothing within `timeout` seconds."""
+        try:
+            self.proc.stdin.write(json.dumps(request) + "\n")
+            self.proc.stdin.flush()
+        except OSError:
+            pass                                       # exited: the end of its stdout follows
+        try:
+            line = self.lines.get(timeout=timeout)
+        except queue.Empty:
+            raise ReadSetServerError(f"no answer within {timeout:.0f} s", hung=True) from None
+        if line is None:
+            code = self.proc.wait()
+            self._stderr_pump.join(timeout=2)
+            raise ReadSetServerError(f"the read-set server exited ({code}):\n"
+                                     f"{''.join(self.stderr)[-4000:]}")
+        try:
+            doc = json.loads(line)
+        except ValueError:
+            doc = None
+        if not isinstance(doc, dict) or not isinstance(doc.get("ok"), bool):
+            raise ReadSetServerError(f"the read-set server answered {line[:200]!r}")
+        return doc
+
+    def close(self, wait: float = 10.0) -> None:
+        """End of its stdin: the server exits (ended after `wait` seconds if it does not)."""
+        try:
+            self.proc.stdin.close()
+        except OSError:
+            pass
+        try:
+            self.proc.wait(timeout=wait)
+        except subprocess.TimeoutExpired:
+            self.kill()
+
+    def kill(self) -> None:
+        self.proc.kill()
+        self.proc.wait()
+        try:
+            self.proc.stdin.close()
+        except OSError:
+            pass
+
+
+class ReadSetServers:
+    """Read-set servers for the reads of a build: a read takes an idle server or starts one (so there are at most as
+    many as reads run at a time: one per read-set slot), and gives it back for the build's later charts; close()
+    ends them. `read_set` has read_set's arguments and answers as read_set does. A server that exits or answers
+    something else is replaced and the chart asked once more; a chart it answers no read set for within `timeout`
+    seconds fails (RuntimeError, as a failed read_set) and the server is ended."""
+
+    def __init__(self, player_dir: Path, timeout: float = READ_SET_SERVE_TIMEOUT):
+        self.player_dir, self.timeout = Path(player_dir), timeout
+        self.lock = threading.Lock()
+        self.idle: list[ReadSetServer] = []
+        self.started = 0
+        self.closed = False
+
+    def _take(self) -> ReadSetServer:
+        with self.lock:
+            if self.closed:
+                raise RuntimeError("read set: the build's read-set servers are closed")
+            while self.idle:
+                s = self.idle.pop()
+                if s.proc.poll() is None:
+                    return s
+                s.kill()                               # exited while idle
+            self.started += 1
+        return ReadSetServer(self.player_dir)
+
+    def _give(self, s: ReadSetServer) -> None:
+        with self.lock:
+            if not self.closed:
+                self.idle.append(s)
+                return
+        s.close()
+
+    def read_set(self, live_dir: Path, player_dir: Path, mode: str = "full") -> list[str]:
+        if mode not in ("full", "plan"):
+            raise ValueError(f"read set mode {mode}")
+        name = Path(live_dir).name
+        for attempt in (1, 2):
+            s = self._take()
+            try:
+                doc = s.ask({"chart": str(Path(live_dir)), "plan": mode == "plan"}, self.timeout)
+            except ReadSetServerError as e:
+                s.kill()
+                if e.hung or attempt == 2:
+                    raise RuntimeError(f"read set of {name} failed: {e}") from None
+                continue
+            self._give(s)
+            if not doc["ok"]:
+                raise RuntimeError(f"read set of {name} failed:\n{str(doc.get('error'))[-4000:]}")
+            return read_set_answer(doc.get("result"), mode)
+
+    def close(self) -> None:
+        with self.lock:
+            self.closed, idle, self.idle = True, self.idle, []
+        for s in idle:
+            s.close()
 
 
 class ReadSetMismatch(RuntimeError):
@@ -953,7 +1095,10 @@ class ReadSets:
     differences), the full simulation reads every later chart, and the charts read from an unchecked plan until then
     are listed. A chart the plan cannot list (the script fails) is read by the full simulation, logged and listed in
     the summary (planErrors). A player without the plan mode: the full simulation for every chart. The player is
-    asked for its modes when the first chart needs a read set. `summary()` goes into the build result."""
+    asked for its modes when the first chart needs a read set. With a player that also has the serve mode, the plans
+    are read by long-lived processes (ReadSetServers, one per read-set slot) instead of one process per chart; the
+    full simulation always runs in a process of its own. close() ends the servers. `summary()` goes into the build
+    result."""
 
     def __init__(self, player_dir: Path, log=_log, check_every: int = READ_SET_CHECK):
         self.player_dir = Path(player_dir)
@@ -966,13 +1111,24 @@ class ReadSets:
         self.unchecked: list[str] = []
         self.mismatches: list[dict] = []
         self.plan_errors: list[dict] = []
+        self.servers: ReadSetServers | None = None      # the plans' servers (the player's serve mode)
 
     def start(self) -> str:
         """The mode (player_features), asked once."""
         with self.lock:
             if self.initial is None:
-                self.initial = self.mode = "plan" if "plan" in player_features(self.player_dir) else "full"
+                features = player_features(self.player_dir)
+                self.initial = self.mode = "plan" if "plan" in features else "full"
+                if self.initial == "plan" and "serve" in features:
+                    self.servers = ReadSetServers(self.player_dir)
             return self.mode
+
+    def close(self) -> None:
+        """Ends the plans' servers; a later plan runs in a process of its own."""
+        with self.lock:
+            servers, self.servers = self.servers, None
+        if servers is not None:
+            servers.close()
 
     def expect(self, chart_ids) -> None:
         """The charts a build (group) reads, in build order; the first of the first call is the chart checked as the
@@ -984,7 +1140,8 @@ class ReadSets:
     def describe(self) -> str:
         if self.start() == "full":
             return "read sets: the full simulation of every chart (the player has no plan mode)"
-        return (f"read sets: the player's plan; {self.first or 'no first chart'} and 1 in {self.check_every} other "
+        return (f"read sets: the player's plan{' (served)' if self.servers is not None else ''}; "
+                f"{self.first or 'no first chart'} and 1 in {self.check_every} other "
                 f"charts checked by the full simulation")
 
     def sampled(self, chart_id: str) -> bool:
@@ -1011,8 +1168,10 @@ class ReadSets:
 
     def _plan(self, live_dir: Path, chart_id: str, digest: list) -> list[str] | None:
         """The plan's read set, None when the player's script failed on the chart (logged, listed)."""
+        servers = self.servers
         try:
-            return read_set_cached(live_dir, self.player_dir, "plan", digest)
+            return read_set_cached(live_dir, self.player_dir, "plan", digest,
+                                   run=servers.read_set if servers is not None else None)
         except RuntimeError as e:
             with self.lock:
                 self.plan_errors.append({"id": chart_id, "error": str(e)[-500:]})
@@ -1250,6 +1409,7 @@ def _build_group(site: Path, tmp_root: Path, pairs, cfg: Config, region: str, pr
             f"{pipeline_window(workers, read_workers)} musics in flight; caches "
             f"{cache.settings()['memory'] >> 20} MB per bucket, disk "
             f"{job.get('cache') or 'none'}")
+        own_reads = reads is None
         reads = reads or ReadSets(Path(job["player"]), log)
         reads.expect([f"{m}_{d}" for m, ds in sorted(by_music.items()) for d in ds])     # the Pipeline's order
         log(reads.describe())
@@ -1289,6 +1449,8 @@ def _build_group(site: Path, tmp_root: Path, pairs, cfg: Config, region: str, pr
             ex.shutdown()
             if ctx is not None:
                 mgr.shutdown()
+            if own_reads:
+                reads.close()
     finally:
         shutil.rmtree(gdir, ignore_errors=True)
     for r in results:
@@ -1335,18 +1497,21 @@ def build(out_dir, pairs, cfg: Config, player_dir: Path, audio_format: str = DEF
     results, skipped, folded, used_workers = [], [], [], 1
     offered = set()
     reads = ReadSets(player_dir, log)
-    for gi, group in enumerate(groups):
-        rep = group[0]
-        prefix = "" if gi == 0 else f"{rep}/"
-        gpairs = _group_pairs(pairs, masters[rep])
-        offered.update(gpairs)
-        rs, sk, w = _build_group(site, tmp_root, gpairs, cfg, rep, prefix, group, job, force, workers, log,
-                                 read_workers, reads)
-        results += rs
-        skipped += sk
-        used_workers = max(used_workers, w)
-        if prefix:
-            folded += [prefix + f"{m}_{d}" for m, d in gpairs if fold_variant(site, f"{m}_{d}", prefix)]
+    try:
+        for gi, group in enumerate(groups):
+            rep = group[0]
+            prefix = "" if gi == 0 else f"{rep}/"
+            gpairs = _group_pairs(pairs, masters[rep])
+            offered.update(gpairs)
+            rs, sk, w = _build_group(site, tmp_root, gpairs, cfg, rep, prefix, group, job, force, workers, log,
+                                     read_workers, reads)
+            results += rs
+            skipped += sk
+            used_workers = max(used_workers, w)
+            if prefix:
+                folded += [prefix + f"{m}_{d}" for m, d in gpairs if fold_variant(site, f"{m}_{d}", prefix)]
+    finally:
+        reads.close()
     for m, d in pairs or []:
         if (m, d) not in offered:
             results.append({"id": f"{m}_{d}", "ok": False, "stage": "master",

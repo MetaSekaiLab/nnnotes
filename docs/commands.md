@@ -398,7 +398,10 @@ SITE/assets/<sha256>.<ext>                content-addressed files shared by all 
   (the player then runs the chart silent on its own clock).
 - `--workers`: parallel music processes (default a quarter of the CPUs, up to 8) and model processes (default up
   to 4); `1` builds in this process. `--read-workers`: chart read sets run at a time, each a Node.js process
-  (default half the CPUs, up to 16).
+  (default half the CPUs, up to 16). With a player whose read-set script lists a chart's files from its plan
+  (without stepping the chart) and serves many charts from one process, the plans run in one long-lived Node.js
+  process per read-set slot, ended with the build; the full simulations that check a sample of the plans still run
+  in a process each.
 - `--tmp`: directory for the temporary live and model builds (default `SITE.tmp`); the build directories in it are
   removed after use. `SITE.tmp/cache/` is kept: decoded cue sheets, encoded PNGs, shader dumps and read sets, each
   stored under a hash of everything it was made from (input bytes, settings, the external tools and libraries in use
