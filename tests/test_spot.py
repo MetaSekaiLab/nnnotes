@@ -145,6 +145,14 @@ def test_write_skeleton_writes_the_skeleton_atlas_and_pages_in_order():
     assert got == [("chr2.json", b' {"skeleton": 1}')] and rec2["atlases"] == ["chr.atlas"]
 
 
+def test_write_skeleton_keeps_a_name_that_already_has_the_extension():
+    a, b = images()
+    got = []
+    shared = Ref(40, atlas_asset("chr.atlas", [Tex(a), Tex(b)]))
+    rec = spot.write_skeleton(skeleton("chr.skel", b"\x00binary", [shared]), lambda n, d: got.append((n, d)))
+    assert [n for n, _ in got] == ["chr.skel", "chr.atlas", "p1.png", "p2.png"] and rec["skeleton"] == "chr.skel"
+
+
 def test_write_skeleton_checks_pages_against_materials():
     a, _ = images()
     with pytest.raises(RuntimeError, match="2 pages vs 1 materials"):

@@ -52,9 +52,12 @@ def check_kinds(resources: list[dict]) -> None:
 
 
 def build(cat: Catalog, master: Path, player: PlayerData, adv_id: int, out_dir: Path,
-          audio_format: str = "flac", audio: bool = True, fonts: str = "open") -> dict:
+          audio_format: str = "flac", audio: bool = True, fonts: str = "open", *, ui: bool = True,
+          audio_options: dict | None = None) -> dict:
     """Build the story directory. `audio=False` leaves the cue sheets undecoded (story.json `audio` is empty);
-    `fonts`: "open" exports no font data of the game, "game" exports it (advmedia, advui)."""
+    `fonts`: "open" exports no font data of the game, "game" exports it (advmedia, advui). `ui=False` writes no
+    ui/ (story.json still names ui/ui.json: the caller writes it, e.g. per language as storysite does);
+    `audio_options`: further cri.decode options of every cue sheet (flac_level, also)."""
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     episode = adv.to_json(adv.extract(cat, master, adv_id))
@@ -72,12 +75,12 @@ def build(cat: Catalog, master: Path, player: PlayerData, adv_id: int, out_dir: 
     sheets = {}
     if audio:
         for sheet in sorted({c["_cueSheetName"] for c in episode["cuesheets"].values()}):
-            cri.decode(cat, sheet, out_dir / "audio" / sheet, fmt=audio_format)
+            cri.decode(cat, sheet, out_dir / "audio" / sheet, fmt=audio_format, **(audio_options or {}))
             sheets[sheet] = f"audio/{sheet}"
 
     media = advmedia.extract(cat, player, master, episode, out_dir, fonts=fonts)
     scene = advscene.extract(cat, player, episode, out_dir, shaders=media["shaders"])
-    ui = advui.extract(cat, player, episode, out_dir, fonts=fonts)
+    ui = advui.extract(cat, player, episode, out_dir, fonts=fonts, master=master) if ui else None
     videos = advvideo.extract(cat, episode, out_dir)
     index = {"advId": adv_id, "episode": "episode.json", "scene": "scene.json", "ui": "ui/ui.json",
              "models": models, "audio": sheets, **media["files"],

@@ -18,6 +18,10 @@
                                                the same assets/; write_index keeps what either kind references
     <site>/live2d/                             the player's Live2D model page and its bundle, when the player has
                                                them (LIVE2D_PAGE_DIR, LIVE2D_BUNDLES)
+    <site>/stories.json, stories/<id>.json     story index and manifests (storysite.py), same entry forms and the
+                                               same assets/; write_index keeps what they reference as well
+    <site>/story/                              the player's story page and its bundle, when the player has them
+                                               (STORY_PAGE_DIR, STORY_BUNDLES)
 
 Per music (the four difficulties share the scene, the sounds and the note assets): score + BGM decode, live sounds and
 scene extracted once into a temporary base directory, the note assets once per build (they depend on no music); per
@@ -74,7 +78,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from . import cache, cri, jsonio, languages, live, liveoptions, livenotes, livescene
-from .config import Config, ConfigError, tool, use
+from .config import Config, ConfigError, tool, usable_cpus, use
 from .score import DIFFICULTIES, master_table
 
 SITE_FORMAT = 2
@@ -108,14 +112,21 @@ LIVE2D_PAGE_DIR = "examples/live2d"
 LIVE2D_PAGE_SITE_DIR = "live2d"
 LIVE2D_BUNDLES = ("dist/ournotes-player.live2d.element.min.js",)
 LIVE2D_PAGE_IMPORTS = {"../../src/live2d/define.js": "./ournotes-player.live2d.element.min.js"}
+# the player's story page (when the player has it and its bundle): its files and bundle go to SITE/<STORY_PAGE_SITE_DIR>/
+STORY_PAGE_DIR = "examples/story-list"
+STORY_PAGE_SITE_DIR = "story"
+STORY_BUNDLES = ("dist/ournotes-player.story.element.min.js",)
+STORY_PAGE_IMPORTS = {"../../src/story/define.js": "./ournotes-player.story.element.min.js"}
 # site data written by the build (never overwritten by page files)
 MODELS_DIR = "models"
 MODELS_INDEX = "models.json"
-SITE_DATA = ("assets", "charts", MODELS_DIR, "charts.json", MODELS_INDEX)
+STORIES_DIR = "stories"
+STORIES_INDEX = "stories.json"
+SITE_DATA = ("assets", "charts", MODELS_DIR, "charts.json", MODELS_INDEX, STORIES_DIR, STORIES_INDEX)
 PLAYER_VERSION_MARKER = "@PLAYER_VERSION@"         # replaced in the page's files by the bundles' short hash
 # collected files: text as UTF-8, binary as is; shader programs of the WebGL2 tier only
 TEXT_EXT = {".json", ".glsl"}
-BINARY_EXT = {".png", ".flac", ".ogg", ".wav", ".moc3"}
+BINARY_EXT = {".png", ".flac", ".ogg", ".wav", ".moc3", ".glb", ".atlas", ".skel"}   # .glb / .atlas / .skel: an Overlay story's home spot
 SHADER_PLATFORM = "gles3"
 SHADER_TYPE = "GLES3"
 # master tables the chart build reads (score, live, liveaudio, livescene, livenotes, liveui): a region's chart inputs
@@ -1292,11 +1303,13 @@ def page_files(page_dir: Path, imports: dict[str, str], version: str,
     return page
 
 
-def write_player(site: Path, player_dir: Path) -> dict:
+def write_player(site: Path, player_dir: Path, stories: bool = False) -> dict:
     """The player's page (every file of PLAYER_PAGE_DIR; in its .html / .js files the PAGE_IMPORTS specifiers point
     at the bundle and PLAYER_VERSION_MARKER is the bundles' short hash) and bundles (PLAYER_BUNDLES and their source
     maps) into the site root; when the player has the Live2D page, the same for LIVE2D_PAGE_DIR, LIVE2D_PAGE_IMPORTS
-    and LIVE2D_BUNDLES into LIVE2D_PAGE_SITE_DIR."""
+    and LIVE2D_BUNDLES into LIVE2D_PAGE_SITE_DIR; when it has the story page and its bundles, the same for
+    STORY_PAGE_DIR, STORY_PAGE_IMPORTS and STORY_BUNDLES into STORY_PAGE_SITE_DIR (`stories`: the build adds stories,
+    so a story page without its bundles is a ConfigError instead of being left out)."""
     player_dir = check_player(player_dir)
     bundles, version = player_bundles(player_dir, PLAYER_BUNDLES)
     page = page_files(player_dir / PLAYER_PAGE_DIR, PAGE_IMPORTS, version)
@@ -1310,14 +1323,28 @@ def write_player(site: Path, player_dir: Path) -> dict:
         live2d_bundles, live2d_version = player_bundles(player_dir, LIVE2D_BUNDLES)
         live2d = page_files(player_dir / LIVE2D_PAGE_DIR, LIVE2D_PAGE_IMPORTS, live2d_version, "LIVE2D_PAGE_IMPORTS")
         files.update({f"{LIVE2D_PAGE_SITE_DIR}/{r}": d for r, d in {**live2d, **live2d_bundles}.items()})
+    story_page = {}
+    if (player_dir / STORY_PAGE_DIR / "index.html").is_file():
+        missing = [rel for rel in STORY_BUNDLES if not (player_dir / rel).is_file()]
+        if missing and stories:
+            raise ConfigError(f"{player_dir} has the story page but not {', '.join(missing)} "
+                              f"(a checkout needs its build first)")
+        if not missing:
+            story_bundles, story_version = player_bundles(player_dir, STORY_BUNDLES)
+            story_page = page_files(player_dir / STORY_PAGE_DIR, STORY_PAGE_IMPORTS, story_version,
+                                    "STORY_PAGE_IMPORTS")
+            files.update({f"{STORY_PAGE_SITE_DIR}/{r}": d for r, d in {**story_page, **story_bundles}.items()})
     for rel, data in files.items():
         if rel.split("/", 1)[0] in SITE_DATA:
             raise RuntimeError(f"player page file {rel} would overwrite the site data")
         dst = Path(site) / rel
         dst.parent.mkdir(parents=True, exist_ok=True)
         dst.write_bytes(data)
-    return {"playerVersion": version, "playerBytes": sum(map(len, bundles.values())), "pageFiles": len(page),
-            "live2dPageFiles": len(live2d)}
+    out = {"playerVersion": version, "playerBytes": sum(map(len, bundles.values())), "pageFiles": len(page),
+           "live2dPageFiles": len(live2d)}
+    if story_page:
+        out["storyPageFiles"] = len(story_page)
+    return out
 
 
 def entry_text(site: Path, e: dict) -> bytes:
@@ -1370,9 +1397,11 @@ def index_meta(site: Path, charts: list[dict], language: str | None = None,
 
 
 def write_index(site: Path, language: str | None = None, regions: list[dict] | None = None) -> dict:
-    """site/charts.json from every chart manifest present (index_meta: `language`, `regions` of this build) and
-    site/models.json from every model manifest (webmodel.write_models_index); assets no chart and no model
-    references removed."""
+    """site/charts.json from every chart manifest present (index_meta: `language`, `regions` of this build),
+    site/models.json from every model manifest (webmodel.write_models_index) and site/stories.json from every story
+    manifest (storysite.write_stories_index; its `language` and `regions` are those storysite.build wrote); assets
+    no chart, no model and no story (common files and every language group) references removed."""
+    from .storysite import write_stories_index
     from .webmodel import write_models_index
     order = {d: i for i, d in enumerate(DIFFICULTIES)}
     charts, used = [], set()
@@ -1392,14 +1421,19 @@ def write_index(site: Path, language: str | None = None, regions: list[dict] | N
     (site / CHARTS_INDEX).write_bytes(_dump({"format": SITE_FORMAT, **meta, "charts": charts}))
     models, model_assets = write_models_index(site)
     used |= model_assets
+    stories, story_assets = write_stories_index(site)
+    used |= story_assets
     removed = 0
     for f in (site / "assets").iterdir():
         if f"assets/{f.name}" not in used:
             f.unlink()
             removed += 1
     sizes = [f.stat().st_size for f in (site / "assets").iterdir()]
-    return {"charts": len(charts), "models": models, "assets": len(sizes), "assetBytes": sum(sizes),
-            "removedAssets": removed}
+    out = {"charts": len(charts), "models": models, "assets": len(sizes), "assetBytes": sum(sizes),
+           "removedAssets": removed}
+    if stories:
+        out["stories"] = stories
+    return out
 
 
 # ---------------------------------------------------------------- build
@@ -1437,7 +1471,7 @@ def _build_group(site: Path, tmp_root: Path, pairs, cfg: Config, region: str, pr
             ds.append(difficulty)
     for ds in by_music.values():
         ds.sort(key=DIFFICULTIES.index)
-    cpus = os.cpu_count() or 2
+    cpus = usable_cpus()
     if workers is None:
         workers = max(1, min(8, len(by_music), cpus // 4))
     if read_workers is None:

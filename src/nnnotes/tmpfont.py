@@ -200,6 +200,66 @@ class RuntimeGlyphs:
         if self.face.units_per_EM != tt["m_FaceInfo"]["m_UnitsPerEM"]:
             raise RuntimeError(f"{font.name}: units per EM differ from the face info")
 
+    oversample = 1                       # raster pixels per texel (cell(); 1: the runtime rasterization above)
+
+    @classmethod
+    def from_font_file(cls, data: bytes, face_index: int, point_size: int, padding: int,
+                       oversample: int = 1) -> "RuntimeGlyphs":
+        """The same generator for a font file of one's own (open font assets, storyfonts.py): `point_size` px per
+        em, `padding` texels of distance field (spread padding + 1). `oversample` > 1: cell() rasterizes at that
+        many times the point size and takes the distance at each texel centre from the finer grid (the
+        supersampled GlyphRenderModes). The glyph metrics and rects are those at `point_size` in every case."""
+        import freetype
+        from scipy.ndimage import distance_transform_edt
+        if point_size != int(point_size) or point_size <= 0:
+            raise ValueError(f"point size {point_size}: a positive whole number of px per em")
+        if oversample < 1 or oversample != int(oversample):
+            raise ValueError(f"oversample {oversample}")
+        g = cls.__new__(cls)
+        g.ft, g.edt, g.font = freetype, distance_transform_edt, None
+        g.pad, g.spread, g.point_size, g.oversample = int(padding), int(padding) + 1, int(point_size), int(oversample)
+        g.face = freetype.Face(io.BytesIO(data), face_index)
+        g.face.set_char_size(g.point_size * 64, 0, 72, 72)
+        g.fine = g.face
+        if g.oversample > 1:
+            g.fine = freetype.Face(io.BytesIO(data), face_index)
+            g.fine.set_char_size(g.point_size * g.oversample * 64, 0, 72, 72)
+        return g
+
+    def cell(self, gi: int, margin: int) -> tuple[dict, tuple, np.ndarray]:
+        """-> (metrics, (xMin, yMin, w, h) rect box in glyph pixels, alpha of the rect grown by `margin` texels on
+        each side (h + 2 margin, w + 2 margin), bottom row first). The distance field is computed over the whole
+        cell (`margin` >= padding), with the mapping of sdf(); with oversample k the binary raster is k x k pixels
+        per texel and a texel's distance is the mean of the k-grid distances at its centre, divided by k."""
+        if margin < self.pad:
+            raise ValueError(f"margin {margin} < padding {self.pad}")
+        ft, k = self.ft, self.oversample
+        m = self.metrics(gi)
+        xmin, ymin, w, h = self.pixel_box(m)
+        rows, cols = h + 2 * margin, w + 2 * margin
+        self.fine.load_glyph(gi, ft.FT_LOAD_NO_HINTING)
+        self.fine.glyph.render(ft.FT_RENDER_MODE_MONO)
+        bm = self.fine.glyph.bitmap
+        grid = np.zeros((rows * k, cols * k), bool)
+        if bm.rows and bm.width:
+            if bm.pixel_mode != ft.FT_PIXEL_MODE_MONO:
+                raise RuntimeError(f"glyph {gi}: FreeType returned pixel mode {bm.pixel_mode}")
+            raw = np.frombuffer(bytes(bm.buffer), np.uint8).reshape(bm.rows, bm.pitch)
+            bits = np.unpackbits(raw, axis=1)[:, :bm.width].astype(bool)[::-1]      # bottom row first
+            ox = self.fine.glyph.bitmap_left - (xmin - margin) * k
+            oy = (self.fine.glyph.bitmap_top - bm.rows) - (ymin - margin) * k
+            if ox < 0 or oy < 0 or ox + bm.width > grid.shape[1] or oy + bm.rows > grid.shape[0]:
+                raise RuntimeError(f"glyph {gi}: raster outside the cell")
+            grid[oy:oy + bm.rows, ox:ox + bm.width] = bits
+        if not grid.any():
+            return m, (xmin, ymin, w, h), np.zeros((rows, cols), np.uint8)
+        d = self.edt(grid) - self.edt(~grid)
+        if k > 1:
+            lo, hi = (k - 1) // 2, k // 2 + 1                    # the fine pixels whose centres are nearest the texel's
+            d = d.reshape(rows, k, cols, k)[:, lo:hi, :, lo:hi].mean(axis=(1, 3)) / k
+        a = np.floor(255.0 * np.clip(0.5 + d / (2.0 * self.spread), 0.0, 1.0) + 0.5).astype(np.uint8)
+        return m, (xmin, ymin, w, h), a
+
     def glyph_index(self, u: int) -> int:
         return self.face.get_char_index(u)
 

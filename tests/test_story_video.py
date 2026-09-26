@@ -126,6 +126,22 @@ def test_demux_rejects_other_streams_and_files():
         advvideo.adx_info(b"HCA\x00" + bytes(60))
 
 
+def test_adx_frames_drop_the_end_of_stream_block():
+    """The frames the header counts (ceil(samples / 32) per channel, 18 bytes each) are kept; the end-of-stream block
+    after them is dropped; other trailing bytes or a short stream are errors."""
+    head = adx(samples=100, channels=2)
+    frames = rand(4 * 18 * 2, 11)                                     # ceil(100 / 32) = 4 frames per channel
+    end = bytes([0x80, 0x01]) + struct.pack(">H", 14) + bytes(14)
+    assert advvideo.adx_frames(head + frames + end) == head + frames
+    assert advvideo.adx_frames(head + frames) == head + frames
+    with pytest.raises(ValueError, match="not an end-of-stream block"):
+        advvideo.adx_frames(head + frames + end[:-1] + bytes([1]))
+    with pytest.raises(ValueError, match="not an end-of-stream block"):
+        advvideo.adx_frames(head + frames + rand(18, 12))
+    with pytest.raises(ValueError, match="header counts"):
+        advvideo.adx_frames(head + frames[:-1])
+
+
 def test_video_index(tmp_path, monkeypatch):
     def fake_export(cat, key, dst, cri_key, work):
         assert cri_key == KEY

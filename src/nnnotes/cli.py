@@ -24,6 +24,7 @@ whatever the console encoding.
                  -o out/live_100001
     nnnotes web out/site --player <ournotes-player> [--pair 100001:expert [--pair ...] | --all] [--format aac]
                          [--live2d <model id | key> [--live2d ...] | --all-live2d]
+                         [--story 10462 [--story ...] | --all-stories] [--story-languages en,ja] [--font en=<file>]
                          [--region <region> [--region ...] | --all-regions]
     nnnotes export -o out/assets [--select group:<group> | key:<prefix> | bundle:<glob> ...] [--layout original,cas]
     nnnotes plan [--select ...] [--json] [--check] [--emit-tasks <dir>]
@@ -383,13 +384,17 @@ def cmd_live(args, cfg):
 
 
 def cmd_web(args, cfg):
-    from . import liveoptions, web, webmodel
+    from . import liveoptions, storysite, web, webmodel
     live_options = _live_options(args)
     charts, models = bool(args.pair or args.all), bool(args.live2d or args.all_live2d)
-    if not (charts or models or args.player_only or args.reingest_json):
-        args.usage("one of the arguments --pair --all --live2d --all-live2d --player-only --reingest-json is required")
+    stories = bool(args.story or args.all_stories)
+    if not (charts or models or stories or args.player_only or args.reingest_json):
+        args.usage("one of the arguments --pair --all --live2d --all-live2d --story --all-stories --player-only "
+                   "--reingest-json is required")
     if models and (args.player_only or args.reingest_json):
         args.usage("--player-only and --reingest-json build nothing: leave out --live2d / --all-live2d")
+    if stories and (args.player_only or args.reingest_json):
+        args.usage("--player-only and --reingest-json build nothing: leave out --story / --all-stories")
     if live_options and not charts:
         args.usage("--live-option applies to charts: give --pair or --all")
     player = cfg.path("paths", "player")
@@ -427,8 +432,21 @@ def cmd_web(args, cfg):
                                audio=not args.no_audio, force=args.force, tmp_dir=args.tmp, workers=args.workers,
                                band=args.band, leader_card=args.leader_card, regions=regions, fonts=args.fonts,
                                read_workers=args.read_workers, live_options=live_options))
+        if stories:
+            from .tmpfont import require_extra
+            require_extra()                          # the font assets of the story text (open and game)
+            cfg.require_path("paths", "apk")         # the ADV settings and UI are embedded content of the APK
+            unknown = storysite.unknown_stories(cfg, args.story, regions) if args.story else []
+            if unknown:
+                noun = "stories" if len(unknown) > 1 else "story"
+                args.usage(f"{noun} {', '.join(map(str, unknown))}: no MasterAdv row in the master data of the "
+                           f"site's region(s)")
+            r.update(storysite.build(out, args.story, cfg, player, args.format, audio=not args.no_audio,
+                                     force=args.force, tmp_dir=args.tmp, workers=args.workers, regions=regions,
+                                     story_languages=args.story_languages, fonts=args.fonts,
+                                     fonts_flags=dict(args.font or [])))
     _print_json(r)
-    if r.get("failed") or r.get("modelsFailed"):
+    if r.get("failed") or r.get("modelsFailed") or r.get("storiesFailed"):
         sys.exit(1)
 
 
@@ -438,6 +456,23 @@ def parse_pair(s: str) -> tuple[int, str]:
     if not m:
         raise argparse.ArgumentTypeError(f"{s}: expected <musicId>:<difficulty>")
     return int(m.group(1)), m.group(2)
+
+
+def parse_languages(s: str) -> list[str]:
+    from .languages import LANGUAGES
+    codes = [c.strip() for c in s.split(",") if c.strip()]
+    if not codes or any(c not in LANGUAGES for c in codes):
+        raise argparse.ArgumentTypeError(f"{s}: expected languages from {', '.join(LANGUAGES)}, comma-separated")
+    return codes
+
+
+def parse_font(s: str) -> tuple[str, str]:
+    from .languages import LANGUAGES
+    lang, sep, path = s.partition("=")
+    if not sep or lang not in LANGUAGES or not path:
+        raise argparse.ArgumentTypeError(f"{s}: expected <language>=<font file>, language one of "
+                                         f"{', '.join(LANGUAGES)}")
+    return lang, path
 
 
 def _live_option_arg(c) -> None:
@@ -577,8 +612,8 @@ def build_parser() -> argparse.ArgumentParser:
     _out(c, "output directory")
     c.set_defaults(func=cmd_live, usage=c.error)
 
-    c = sub.add_parser("web", help="live charts and Live2D models -> static site for ournotes-player "
-                                   "(shared player + per-chart / per-model data)")
+    c = sub.add_parser("web", help="live charts, Live2D models and stories -> static site for ournotes-player "
+                                   "(shared player + per-chart / per-model / per-story data)")
     c.add_argument("out", help="site directory")
     c.add_argument("--player", help="ournotes-player checkout (built) or installed package ([paths] player)")
     g = c.add_mutually_exclusive_group()
@@ -600,12 +635,23 @@ def build_parser() -> argparse.ArgumentParser:
                         "1 = this process)")
     c.add_argument("--read-workers", type=int,
                    help="chart read sets run at a time (default half the CPUs, up to 16)")
+    t = c.add_mutually_exclusive_group()
+    t.add_argument("--story", type=int, action="append", metavar="ADV_ID",
+                   help="story episode: its MasterAdv id (repeatable)")
+    t.add_argument("--all-stories", action="store_true", help="every story episode (MasterAdv) of the master data")
+    c.add_argument("--story-languages", type=parse_languages, metavar="LANGS",
+                   help="languages of the stories' text, comma-separated (default: ja,en,zh-Hant,zh-Hans,ko)")
+    c.add_argument("--font", type=parse_font, action="append", metavar="LANG=PATH",
+                   help="font file the story text of a language is drawn with (repeatable; [paths] fonts.<lang>)")
     r = c.add_mutually_exclusive_group()
     r.add_argument("--region", dest="web_regions", action="append", metavar="REGION",
                    help="a region the site serves: a [servers.<region>] table (repeatable; the first is the base; "
                         "default: [catalog] region)")
     r.add_argument("--all-regions", action="store_true", help="every configured region")
-    _fonts_arg(c)
+    c.add_argument("--fonts", default="open", choices=("open", "game"),
+                   help="text of the start canvas and the stories: open (default): the start canvas has layout and "
+                        "style only, the stories glyphs from your font files (--font); game: the game's TMP fonts "
+                        "(needs the 'fonts' extra)")
     _band_args(c)
     _live_option_arg(c)
     c.set_defaults(func=cmd_web, usage=c.error)

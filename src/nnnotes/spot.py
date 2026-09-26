@@ -66,7 +66,8 @@ def write_skeleton(o, write, written_atlases: dict[int, str] | None = None) -> d
     sk = o.read().skeletonJSON.read()
     raw = _text_bytes(sk)
     is_json = raw.lstrip()[:1] == b"{"
-    sk_file = f"{sk.m_Name}.json" if is_json else f"{sk.m_Name}.skel"
+    ext = ".json" if is_json else ".skel"
+    sk_file = sk.m_Name if sk.m_Name.endswith(ext) else f"{sk.m_Name}{ext}"   # as the atlas below
     write(sk_file, raw)
     atlases = []
     for ap in o.read().atlasAssets:

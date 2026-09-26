@@ -151,7 +151,8 @@ OUT/chat.json             chat window prefabs, icons and stamps (sprites), the M
                           sounds and cue sheet rows
 OUT/textures/, shaders/   textures and shaders of the scene and of the files above
 OUT/videos/               Movie / Clip videos as WebM + videos.json (video id -> file, video row, size, frame rate)
-OUT/ui/                   ADV front canvas UI: ui.json, packed textures, UI shaders, rule transitions
+OUT/ui/                   ADV UI: ui.json (front canvas, still / frame / video canvases and their camera, letterbox),
+                          packed textures, UI shaders, rule transitions
 OUT/story.json            index of the above (a file the episode does not need is null and not written)
 ```
 
@@ -169,9 +170,21 @@ The shared chat sound rows (`chat.json` `sounds`, `cueSheets`) name the cue shee
 name, and it is not a Resources asset. The story therefore has no audio for these rows; the rows are kept as they
 are. Every cue sheet of the episodes' own `-SoundCueSheet` shards has its `Cri/Sound/` key.
 
+`ui/ui.json` holds the parts of the game's ADV widget the story draws: the front canvas (talk window, speaker plate,
+location caption, title, rule transition, curtains, flash, subtitles caption, next indicator, menu entry button, menu
+panel and video buttons, backlog, choices, tap areas), the canvases of stills, frames and videos with the screen
+image and the camera they render with (`videoAndStillCamera`), and the letterbox bands; per node its transform, rect
+and uGUI components, the views' serialized references as node paths (the menu view with its fast-forward sprites),
+the other game components' serialized fields (`behaviours`), the widget's canvas sort orders (`widget`), the ADV
+screen's dialogs (`dialogs`: the skip confirm and common dialog prefabs) and their texts of the language
+(`masterIdTexts`), the chat phone (`chatWidget`), the text
+records of the episode's chat windows (`chatTexts`) with their status texts (`chatStatusTexts`), and the emoji
+sprite asset's sequence table and characters (`emoji`).
+
 `ui/` follows the client language `[catalog] language` (`ja`, `en`, `zh-Hant`, `zh-Hans` or `ko`): the localized
-fonts and materials, the line spacing LocalizeText applies, and, with `--fonts game`, the characters of the lines,
-speaker names and title in that language (`ui/ui.json` `language`: `mode`, `field`, `lineSpacing`).
+fonts and materials, the line spacing LocalizeText applies, and, with `--fonts game`, the characters of the lines
+(Talk, Location and Subtitles rows, ruby readings included), speaker names, title and UI texts in that language
+(`ui/ui.json` `language`: `mode`, `field`, `lineSpacing`).
 
 `--fonts` (default `open`) chooses how `ui/` handles text. Both modes write a text record `textStyle` for each text
 node of `ui/ui.json`, and a document-level `textStyle` that holds the units and the line metrics of each font role.
@@ -375,6 +388,7 @@ value is always included; a value the master data does not have is a usage error
 
 ```
 nnnotes web SITE [--pair MUSIC_ID:DIFFICULTY [--pair ...] | --all] [--live2d MODEL [--live2d ...] | --all-live2d]
+                 [--story ADV_ID [--story ...] | --all-stories] [--story-languages LANG,...] [--font LANG=PATH ...]
 nnnotes web SITE (--player-only | --reingest-json)
                   [--player DIR] [--format aac|opus|vorbis|mp3|flac] [--no-audio] [--force]
                   [--tmp DIR] [--workers N] [--read-workers N] [--band BAND | --leader-card CARD_ID]
@@ -383,7 +397,7 @@ nnnotes web SITE (--player-only | --reingest-json)
 ```
 
 Builds or updates a static [ournotes-player](https://github.com/empty-sekai/ournotes-player) site of charts, Live2D
-models or both:
+models, stories or any of them:
 
 ```
 SITE/index.html, chart-list.js ...        the player's chart list page; ?music=<id>&difficulty=<d> plays one chart
@@ -397,7 +411,13 @@ SITE/models.json                          Live2D model index: id, key, group, ca
                                           master data the character and its names
 SITE/models/<id>.json                     model manifest, the same entry forms as a chart manifest
 SITE/live2d/                              the player's Live2D model page and its bundle (when the player has them)
-SITE/assets/<sha256>.<ext>                content-addressed files shared by all charts and models
+SITE/stories.json                         story index: titles and story groups in every language, commands,
+                                          languages, manifest path, sizes, regions
+SITE/stories/<advId>.json                 story manifest: the common files and one file group per language, the
+                                          same entry forms as a chart manifest
+SITE/stories/<region>/<advId>.json        the manifest of a region whose story files differ (see Regions)
+SITE/story/                               the player's story page and its bundle (when the player has them)
+SITE/assets/<sha256>.<ext>                content-addressed files shared by all charts, models and stories
 ```
 
 - `--pair` (repeatable; `<musicId>:<difficulty>` or `<musicId>_<difficulty>`) adds the given charts (a chart that
@@ -409,18 +429,26 @@ SITE/assets/<sha256>.<ext>                content-addressed files shared by all 
   mask materials), the moc3 and prefab as `live2d` writes them, the atlas pages the drawables use, and the GLSL ES 3.00
   programs of the Live2D shaders that the drawables' materials select (the mask shader only for a model with masked
   drawables). Charts and models can be added in one run; models are built first.
-- A chart or model whose manifest exists is skipped unless `--force`. Assets no chart and no model references are
-  removed.
-- `--player-only` rewrites the player files, `charts.json` and `models.json` only; `--reingest-json` stores every
-  chart's and model's JSON files again from the site's own assets (then rewrites the player files and the indexes).
+- `--story` (repeatable; a `MasterAdv` id) adds the given story episodes (an id no region of the site has is a usage
+  error); `--all-stories` adds every `MasterAdv` episode. See [Stories](#stories) below. Stories are built after
+  models and charts.
+- A chart, model or story whose manifest exists is skipped unless `--force`. Assets no chart, no model and no story
+  (common or language file) references are removed.
+- `--player-only` rewrites the player files, `charts.json`, `models.json` and `stories.json` only; `--reingest-json`
+  stores every chart's and model's JSON files again from the site's own assets (then rewrites the player files and
+  the indexes; story manifests are left as they are).
 - `--player`: the ournotes-player checkout (after its build) or installed package; it must contain
   `scripts/read-set.mjs`, `dist/ournotes-player.element.min.js` and `examples/chart-list/index.html`. The read-set
   script runs under Node.js to list the files the player reads for each chart; only those are stored. When it also has
-  `examples/live2d/index.html`, that page and `dist/ournotes-player.live2d.element.min.js` go to `SITE/live2d/`.
-- `--format` (default `aac`) is the BGM format; note SE, cheers and voices stay FLAC. `--no-audio` stores no audio
-  (the player then runs the chart silent on its own clock).
-- `--workers`: parallel music processes (default a quarter of the CPUs, up to 8) and model processes (default up
-  to 4); `1` builds in this process. `--read-workers`: chart read sets run at a time, each a Node.js process
+  `examples/live2d/index.html`, that page and `dist/ournotes-player.live2d.element.min.js` go to `SITE/live2d/`;
+  when it has `examples/story-list/index.html` and `dist/ournotes-player.story.element.min.js`, they go to
+  `SITE/story/` (a build that adds stories stops when the page is there without its bundle).
+- `--format` (default `aac`) is the BGM format of the charts and the format of every story sound (music, sound
+  effects, voices); the charts' note SE, cheers and voices stay FLAC. `--no-audio` stores no audio (the player then
+  runs the chart silent on its own clock, and plays stories without their sounds; story videos keep their sound
+  track).
+- `--workers`: parallel music processes (default a quarter of the CPUs, up to 8), model processes (default up
+  to 4) and story processes (default a quarter of the CPUs, up to 8); `1` builds in this process. `--read-workers`: chart read sets run at a time, each a Node.js process
   (default half the CPUs, up to 16). With a player whose read-set script lists a chart's files from its plan
   (without stepping the chart) and serves many charts from one process, the plans run in one long-lived Node.js
   process per read-set slot, ended with the build; the full simulations that check a sample of the plans still run
@@ -431,7 +459,8 @@ SITE/assets/<sha256>.<ext>                content-addressed files shared by all 
   and nnnotes' own code), so a later build with the same `--tmp` reuses what is unchanged and writes the same files
   faster. Deleting it is
   safe at any time outside a build; the next build then makes everything again.
-- `--band` / `--leader-card` / `--fonts`: as for `live`, for every chart (the site stores no start canvas files).
+- `--band` / `--leader-card`: as for `live`, for every chart. `--fonts`: for charts as for `live` (the site stores
+  no start canvas files); for stories where the glyphs of the story text come from (see Stories).
 - `--live-option` (repeatable): as for `live`, for the charts of this run (with `--pair` or `--all`). The live
   directories carry the variants' files, and a chart's read set is the union of its read set with the default
   options and its read sets with the settings of each offered variant (every combination of the offered mirror,
@@ -451,6 +480,42 @@ SITE/assets/<sha256>.<ext>                content-addressed files shared by all 
   `[catalog] region`. This `--region` follows the command name (`nnnotes web SITE --region tw --region kr`); the
   global `--region` before it sets `[catalog] region`.
 
+### Stories
+
+A story's manifest lists what the player's story page reads, in the layout of `story` (below the site's `assets/`):
+`story.json`, `episode.json`, `scene.json`, the scene and model shaders (GLSL ES 3.00 programs only), textures, the
+Live2D models, per cue sheet `cues.json` and the file of each cue in the `--format` (an AAC file's encoder delay in
+`cues.json` as `encoderDelay`), the media files the episode uses and its videos; per language (`--story-languages`,
+default `ja,en,zh-Hant,zh-Hans,ko`) the story UI in that language (`ui/ui.json`), its font data (`ui/fonts.json` with
+glyph pages under `ui/fonts/`) and `ui/languages.json`. UI files that are equal in every language are common files.
+`scene.json` and `ui/ui.json` are stored split per top-level key, so the parts stories and languages share are stored
+once. The format is described in the player's `docs/story-data-format.md`.
+
+- Story text is laid out with TextMeshPro's rules from TextMeshPro font assets holding exactly the characters the
+  episode shows in the language (its text table, title and UI labels). `--fonts open` (default) generates them from
+  a font file per language: `--font LANG=PATH` (repeatable) or `fonts.<lang>` in the `[paths]` table of the config
+  file (`NNNOTES_PATHS_FONTS_<LANG>`, e.g. `NNNOTES_PATHS_FONTS_ZH_HANT`); every language of `--story-languages`
+  needs one. Any OpenType or TrueType font (the first face of a collection) with the characters of the language
+  works; characters the font lacks are listed in `ui/fonts.json` `coverage.missing`. Each generated asset takes the
+  point size, padding, style settings and render mode of the game font asset the texts use in that language, so the
+  game's text materials apply unchanged; its face info and glyph metrics come from the font file (FreeType, no
+  hinting), its distance field from the generator `--fonts game` uses for runtime glyphs (supersampled render modes
+  at up to 8x). The asset records the font's family, version, license and SHA-256. `--fonts game` uses the game's
+  font assets instead (the `fonts` extra); the format is the same. No font file is stored in the site other than as
+  the generated glyph pages.
+- Stories need `[paths] apk` and the optional `fonts` dependencies (`pip install 'nnnotes[fonts]'`) in both modes.
+- The story index's groups come from the story tables of the master data (`MasterStoryEpisode` and its chapter,
+  `MasterStoryFriendshipEpisode`, `MasterStoryHomeSpotTapTalkEpisode`, `MasterStoryLiveResultEpisode`,
+  `MasterHomeSpot`), with chapter, character and spot names in every language.
+- An Overlay episode (`MasterAdv._playbackMode` 1: the game plays it in its simple ADV player over the screen that
+  opened it) is listed with `playbackMode` 1. With `--fonts open` its story also has the host screen (`host/`: the
+  home spot or the live result screen of its story group) and, per language, the simple talk window
+  (`ui/simple/ui.json`, `ui/simple/fonts.json` and its glyph pages); the manifest names them in `host`. The host has
+  no game-font variant: with `--fonts game` an Overlay story has neither.
+- With `--fonts open` the chat window texts of an episode with chat rows get their bindings in `ui/fonts.json`
+  `chatTexts`, and the font assets also hold the chat windows' status texts and the texts they format at run time.
+- Stories that fail are listed in the printed summary and in `SITE.story-failures.json`; the exit status is then 1.
+
 ### Regions and languages
 
 One site serves several regions and every language:
@@ -459,7 +524,9 @@ One site serves several regions and every language:
   Regions whose chart tables (the master tables the chart build reads) are identical share one manifest,
   `charts/<id>.json`, built once from the first region's data. A region with other chart tables is built on its own
   into `charts/<region>/<id>.json`; such a manifest whose files equal the shared one's is dropped and the region joins
-  the shared manifest. Models read no master data: one build serves every region.
+  the shared manifest. Models read no master data: one build serves every region. Stories follow the charts' rule
+  with the master tables the story build reads (`stories/<id>.json`, `stories/<region>/<id>.json`); a region offers
+  the stories of its `MasterAdv`.
 - Each region's master data: `[servers.<region>] master` (else `[paths] master`, for at most one of the regions; the
   global `--master` flag is refused with more than one region). A region offers the charts its master data has a
   `MasterLiveMusicScore` row for.
@@ -473,6 +540,7 @@ One site serves several regions and every language:
   and `regions` (`id`, `name` from `[servers.<region>] name`, `languages` from `[servers.<region>] languages`). The
   chart list page switches with `?region=<id>&lang=<language>`.
 
-The same inputs with the same versions of nnnotes, its libraries and tools give byte-identical outputs. Charts that
-fail are listed in the printed summary and in `SITE.failures.json`, models that fail in the summary and in
-`SITE.model-failures.json`; the exit status is then 1.
+The same inputs with the same versions of nnnotes, its libraries and tools (and the same font files) give
+byte-identical outputs. Charts that fail are listed in the printed summary and in `SITE.failures.json`, models that
+fail in the summary and in `SITE.model-failures.json`, stories in `SITE.story-failures.json`; the exit status is then
+1.

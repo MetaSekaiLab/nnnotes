@@ -32,7 +32,7 @@ addresses in their own configuration, and the exports stay in local directories 
 | `crikey` | APK | the CRI HCA keycode from the game's boot data (shows whether it was found; can write a `.hcakey`) |
 | `player` | APK | render-related global settings (color space, quality levels, renderers) as JSON |
 | `live` | music ID + difficulty | a full chart directory: chart and runtime notes, 3D scene, note and effect assets, BGM and sounds, sound routing |
-| `web` | `--pair music:difficulty` (repeatable) or `--all`; `--live2d model` (repeatable) or `--all-live2d`; `--region region` (repeatable) or `--all-regions` | an ournotes-player static site: shared player + per-chart / per-model manifests + content-addressed assets; one site can serve several regions, with listing texts in five languages |
+| `web` | `--pair music:difficulty` (repeatable) or `--all`; `--live2d model` (repeatable) or `--all-live2d`; `--story episode` (repeatable) or `--all-stories`; `--region region` (repeatable) or `--all-regions` | an ournotes-player static site: shared player + per-chart / per-model / per-episode manifests + content-addressed assets; one site can serve several regions, with listing texts in five languages; a story's interface texts are grouped by language, with TextMeshPro font assets generated from open fonts (the game's fonts with `--fonts game`) |
 
 Export conventions:
 
@@ -61,7 +61,7 @@ Based on all data of the Taiwan server, version 1.0.1 (zh-Hant):
 | Live2D models | 239 / 239 (every model of the catalog; episodes use 185 of them) |
 | CRI audio | 681 / 681 cue sheets |
 | charts, `live` | 336 / 336 (music, difficulty) pairs |
-| web site, `web` | 336 / 336 charts, 239 / 239 Live2D models |
+| web site, `web` | 336 / 336 charts, 239 / 239 Live2D models, 946 / 946 story episodes (two full builds in English without audio are byte-identical and 946 / 946 pass the data validation; a 27-episode sample in five languages with AAC audio is likewise identical across two builds and valid) |
 | spots, `spot` / `room` | one spot verified, the others not individually checked |
 | other regions (en / kr) and languages | checked: the regions serve the same catalog for a language and the same bundles, and the keys are shared; the master tables the charts use are the same in the three regions, and the text tables have all five languages; the chart exports checked match the Taiwan server's. A full multi-region site build is not verified yet |
 

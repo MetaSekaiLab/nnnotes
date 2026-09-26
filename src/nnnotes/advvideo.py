@@ -38,6 +38,8 @@ AUDIO_BITRATE = "192k"
 # movieInfo.codecType (CriMana.CodecType)
 CODECS = {1: "sofdec.prime", 5: "h264", 9: "vp9"}
 ADX_SIGNATURE = b"\x80\x00"
+ADX_FRAME = 18                 # bytes of one ADX frame: 32 samples of one channel
+ADX_END = b"\x80\x01"          # the end-of-stream block after the last frame: 0x8001, its size, zero padding
 
 
 # --- USM ------------------------------------------------------------------------------
@@ -161,6 +163,22 @@ def adx_info(adx: bytes) -> dict:
             "samples": struct.unpack_from(">I", adx, 12)[0]}
 
 
+def adx_frames(adx: bytes) -> bytes:
+    """The ADX stream up to the last frame its header counts (ceil(samples / 32) frames per channel after the
+    header), without the end-of-stream block the USM streams carry after it (0x8001, the block size, zeros). ffmpeg's
+    ADX demuxer reports a final read shorter than one frame of every channel as an input/output error; the decoded
+    samples are the same without the block."""
+    info = adx_info(adx)
+    end = struct.unpack_from(">H", adx, 2)[0] + 4 + -(-info["samples"] // 32) * ADX_FRAME * info["channels"]
+    if len(adx) < end:
+        raise ValueError(f"ADX: {len(adx)} bytes, the header counts frames up to byte {end}")
+    tail = adx[end:]
+    if tail and not (tail[:2] == ADX_END and len(tail) >= 4 and len(tail) == 4 + struct.unpack_from(">H", tail, 2)[0]
+                     and not tail[4:].strip(bytes(1))):
+        raise ValueError(f"ADX: the {len(tail)} bytes after the last frame are not an end-of-stream block")
+    return adx[:end]
+
+
 # --- catalog ----------------------------------------------------------------------------
 def usm_asset(cat: Catalog, key: str) -> tuple[dict, Path]:
     """(the movie's CriWare.Assets MonoBehaviour typetree, the USM file) of a `Cri/Video/...` key."""
@@ -208,7 +226,7 @@ def export(cat: Catalog, key: str, dst: Path, cri_key: int, work: Path) -> dict:
     if "audio" in streams:
         audio = adx_info(streams["audio"])
         adx = work / "audio.adx"
-        adx.write_bytes(streams["audio"])
+        adx.write_bytes(adx_frames(streams["audio"]))
         inputs += ["-f", "adx", "-i", str(adx)]
         maps += ["-map", "1:a:0", "-c:a", "libopus", "-b:a", AUDIO_BITRATE, "-flags:a", "+bitexact"]
     elif mi["numAudioStreams"]:

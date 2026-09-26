@@ -336,7 +336,7 @@ class SpineStage(Stage):
     name = SPINE
     version = 1
     after = (CENSUS, SCRIPTS)
-    ATOMS = {"spot.write_skeleton": impl_id(LIBRARIES, 1)}
+    ATOMS = {"spot.write_skeleton": impl_id(LIBRARIES, 2)}
 
     def __init__(self):
         self._memo = None
