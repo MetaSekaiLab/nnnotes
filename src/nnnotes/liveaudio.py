@@ -10,8 +10,11 @@ and writes `<out>/audio/live-audio.json`:
   categories    CRI category volumes for a fresh profile (SoundVolumeSettings x AppConfigDefaultData)
   react         the ACF's REACT (ducking) entries between live categories
   music         the BGM sound id and PlayMusic volume
-  noteSe        LiveNoteSeType -> sound id / volume / mute for the default preset (LiveSettingCreator.CreateSESettings)
-  liveSe        LiveSeType -> sound id (MasterLiveSe)
+  noteSe        LiveNoteSeType -> sound id / volume / mute for the default preset (LiveSettingCreator.CreateSESettings);
+                with liveoptions.LiveOptions offering note sound sets also `groups`: set id -> LiveNoteSeType ->
+                sound id (MasterLiveNoteSe), every offered set's sounds decoded as well
+  liveSe        LiveSeType -> sound id (MasterLiveSe); `sounds` has those of LIVE_SE_SOUNDS: the start and finish
+                cheers and the finish direction of every result (the one a live ends with depends on how it is played)
   timeline      intro / end timings the runtime needs
   voice         the start / finish character voice rule and the voice character the caller chose (none by default)
 
@@ -27,6 +30,7 @@ from pathlib import Path
 
 from .catalog import Catalog
 from .jsonio import write_json
+from .liveoptions import LiveOptions
 from .player import PlayerData
 from .score import master_table
 from . import cri
@@ -46,8 +50,14 @@ NOTE_SE_VOLUME_ITEM = [431, 433, 433, 433, 435, 437, 439, 433, 441, 439, 451, 45
 # OptionSoundUtility.GetMuteTypeForVolume: volume item -> mute item (OptionItemType 431..459 -> 460..470)
 NOTE_SE_MUTE_ITEM = {431: 460, 433: 461, 435: 462, 437: 463, 439: 464, 441: 465, 451: 466, 453: 467, 455: 468,
                      457: 469, 459: 470}
-# live SE a preview of an auto-play (AP) run plays: start / finish cheers, all-perfect direction
-SLICE_LIVE_SE = (9, 10, 16)
+# LiveSettingCreator.BuildIndividualNoteSeDictionary: the sound set item (OptionItemType) of each note SE type
+NOTE_SE_ID_ITEM = {1: 430, 2: 432, 3: 432, 4: 432, 8: 432, 5: 434, 6: 436, 7: 438, 10: 438, 9: 440, 11: 450,
+                   12: 452, 13: 454, 14: 456}
+# live SE whose sounds a live directory carries: the start / finish cheers (9, 10) and the finish direction of every
+# result (LivePlayingStateNodeBase.PlayFinishVoiceAndCheer: after the result's voice and the finish cheer, 16
+# AllPerfectDirection, else 14 FullComboDirection, else 15 AssistFullComboDirection, else 13 LiveClearDirection; none
+# when the life is below 1), in type order
+LIVE_SE_SOUNDS = (9, 10, 13, 14, 15, 16)
 
 
 # --------------------------------------------------------------------------- CRI @UTF tables
@@ -243,25 +253,55 @@ def _option(rows: list[dict], preset: int, item: int) -> str:
     return hit[0]
 
 
-def note_se_settings(master: Path, preset: int = 1) -> dict:
-    """LiveSettingCreator.CreateSESettings for a fresh profile (option preset `preset`)."""
+def note_se_groups(master: Path) -> dict[int, dict[int, int]]:
+    """MasterLiveNoteSe: sound set (_groupID) -> LiveNoteSeType -> sound id."""
+    out: dict[int, dict[int, int]] = {}
+    for r in master_table(master, "MasterLiveNoteSe"):
+        out.setdefault(r["_groupID"], {})[r["_liveNoteSeType"]] = r["_seId"]
+    return out
+
+
+def _volume(opt: list[dict], preset: int, item: int) -> float:
+    """OptionSoundUtility.GetIndividualNoteSeVolume: 0 when the item's mute (GetMuteTypeForVolume) is on, else
+    clamp01(value / 100)."""
+    if _option(opt, preset, NOTE_SE_MUTE_ITEM[item]).upper() == "TRUE":
+        return 0.0
+    return min(max(int(_option(opt, preset, item)) / 100.0, 0.0), 1.0)
+
+
+def note_se_settings(master: Path, preset: int = 1, groups: tuple = ()) -> dict:
+    """LiveSettingCreator.CreateSESettings for a fresh profile (option preset `preset`): pattern mode takes the
+    MasterLiveNoteSe rows of the set NoteSePatternId (420); UseIndividualNoteSe (421) takes, per note SE type, the
+    row of the set its sound item names (BuildIndividualNoteSeDictionary; a type whose set has no row for it has no
+    entry). `groups`: sound set ids whose tables are written as `groups` as well (the sets a viewer may choose)."""
     opt = master_table(master, "MasterOptionDefault")
-    if _option(opt, preset, 421).upper() != "FALSE":
-        raise NotImplementedError("UseIndividualNoteSe (421) true: BuildIndividualNoteSeDictionary not implemented")
+    table = note_se_groups(master)
     group = int(_option(opt, preset, 420))
-    types = {r["_liveNoteSeType"]: r["_seId"] for r in master_table(master, "MasterLiveNoteSe")
-             if r["_groupID"] == group}
+    individual = _option(opt, preset, 421).upper() == "TRUE"
+    if individual:
+        types = {}
+        for t, item in NOTE_SE_ID_ITEM.items():
+            se = table.get(int(_option(opt, preset, item)), {}).get(t)
+            if se is not None:
+                types[t] = se
+    else:
+        types = dict(table.get(group, {}))
     volumes, mutes = {}, {}
     for t in range(1, 15):
         item = NOTE_SE_VOLUME_ITEM[t - 1]
         mute = _option(opt, preset, NOTE_SE_MUTE_ITEM[item]).upper() == "TRUE"
-        v = min(max(int(_option(opt, preset, item)) / 100.0, 0.0), 1.0)
         # GetIndividualNoteSeVolume (mute -> 0) / GetNoteSeMute (GetMuteTypeForVolume)
-        volumes[t], mutes[t] = (0.0 if mute else v), mute
-    return {"preset": preset, "patternId": group, "useIndividualNoteSe": False,
-            "types": {str(k): types[k] for k in sorted(types)}, "typeNames": NOTE_SE_TYPES,
-            "volumes": {str(k): v for k, v in volumes.items()}, "mutes": {str(k): v for k, v in mutes.items()},
-            "gekisouTraceVolume": min(max(int(_option(opt, preset, 459)) / 100.0, 0.0), 1.0)}
+        volumes[t], mutes[t] = _volume(opt, preset, item), mute
+    out = {"preset": preset, "patternId": group, "useIndividualNoteSe": individual,
+           "types": {str(k): types[k] for k in sorted(types)}, "typeNames": NOTE_SE_TYPES,
+           "volumes": {str(k): v for k, v in volumes.items()}, "mutes": {str(k): v for k, v in mutes.items()},
+           "gekisouTraceVolume": _volume(opt, preset, 459)}
+    if groups:
+        missing = [g for g in groups if g not in table]
+        if missing:
+            raise KeyError(f"MasterLiveNoteSe has no rows of sound set(s) {missing}")
+        out["groups"] = {str(g): {str(t): table[g][t] for t in sorted(table[g])} for g in groups}
+    return out
 
 
 # --------------------------------------------------------------------------- extraction
@@ -291,10 +331,11 @@ def _sound_entry(row: dict, sheet: str, cue: dict, streams: list[dict], cue_name
 
 
 def extract(cat: Catalog, master: Path, player: PlayerData, music_id: int, out_dir: Path,
-            fmt: str = "flac", voice_character: int | None = None) -> dict:
+            fmt: str = "flac", voice_character: int | None = None, options: LiveOptions = LiveOptions()) -> dict:
     """Decode the live's sound cue sheets and write <out>/audio/live-audio.json. Returns a summary.
     voice_character: None = no character voice (the game picks the voice from the player's deck; there is no rule
-    without a deck)."""
+    without a deck). `options`: the note sound sets it offers are written as noteSe.groups, their sounds decoded
+    after the default ones."""
     out_dir = Path(out_dir)
     if cat.apk is None:
         raise RuntimeError("liveaudio needs the Catalog opened with apk= (ACF, HCA key)")
@@ -304,9 +345,9 @@ def extract(cat: Catalog, master: Path, player: PlayerData, music_id: int, out_d
     if len(music) != 1:
         raise KeyError(f"MasterLiveMusic {music_id}")
     music_sound = music[0]["_musicSoundID"]
-    nse = note_se_settings(master)
+    nse = note_se_settings(master, groups=options.se_patterns)
     live_se = {r["_liveSeType"]: r["_seId"] for r in master_table(master, "MasterLiveSe")}
-    want = [music_sound] + sorted(set(nse["types"].values())) + [live_se[t] for t in SLICE_LIVE_SE]
+    want = [music_sound] + sorted(set(nse["types"].values())) + [live_se[t] for t in LIVE_SE_SOUNDS]
     voice = {"decision": "caller", "character": voice_character,
              "rule": "LotteryStartVoice: random deck member, random MasterLiveStartCharacterVoice row of that "
                      "character; finish voice from LotteryFinishVoice; no deck -> undefined",
@@ -316,6 +357,9 @@ def extract(cat: Catalog, master: Path, player: PlayerData, music_id: int, out_d
                 if r["_characterId"] == voice_character]
         voice["startVoiceSoundIds"] = [r["_voiceSoundId"] for r in rows]
         want += voice["startVoiceSoundIds"]
+    for se in sorted({v for g in nse.get("groups", {}).values() for v in g.values()}):
+        if se not in want:
+            want.append(se)
 
     by_sheet: dict[str, list[int]] = {}
     for sid in want:

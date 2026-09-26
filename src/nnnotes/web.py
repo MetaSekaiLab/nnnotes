@@ -39,6 +39,14 @@ shared manifest. A region offers the charts its master data has a MasterLiveMusi
 (title, band names) are in every language of the text tables (languages.LANGUAGES); `title` / `bands` in
 [catalog] language.
 
+Live options (`live_options`, from `--live-option`; liveoptions.py): a site can offer the Live options that select
+files (mirrored score, note skins, effect sets and qualities, bar lines, note sound sets) besides the defaults. The
+live directories then also carry those files (live.build's `options`), and each chart's read set is the union of the
+default read set and the player's read sets with the settings of every offered variant (LiveOptions.read_variants;
+the player's read-set script needs its "settings" feature); the full-simulation check of the plans runs on the
+default settings. The manifests list the offered qualities (`options`). Without live options
+the site holds only what the default options read.
+
 A JSON object larger than SPLIT_MIN_BYTES is stored per top-level key: each value's text (the same minified encoding)
 is its own asset, and the player rebuilds the file as `{"k1":` + t1 + `,"k2":` + t2 + `}`, so the values the charts
 share (most of livescene/scene.json) are stored once.
@@ -65,7 +73,7 @@ from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from pathlib import Path
 from types import SimpleNamespace
 
-from . import cache, cri, jsonio, languages, live, livenotes, livescene
+from . import cache, cri, jsonio, languages, live, liveoptions, livenotes, livescene
 from .config import Config, ConfigError, tool, use
 from .score import DIFFICULTIES, master_table
 
@@ -496,13 +504,13 @@ def add_regions(path: Path, regions: list[str]) -> bool:
 
 
 def fold_variant(site: Path, chart_id: str, prefix: str) -> bool:
-    """Drop the region manifest charts/<prefix><id>.json when its files equal those of the shared charts/<id>.json;
-    its regions join the shared manifest. True when it was dropped."""
+    """Drop the region manifest charts/<prefix><id>.json when its files (and offered live options) equal those of
+    the shared charts/<id>.json; its regions join the shared manifest. True when it was dropped."""
     var, shared = manifest_file(site, chart_id, prefix), manifest_file(site, chart_id)
     if not (prefix and var.is_file() and shared.is_file()):
         return False
-    v = json.loads(var.read_text(encoding="utf-8"))
-    if v["files"] != json.loads(shared.read_text(encoding="utf-8"))["files"]:
+    v, s = json.loads(var.read_text(encoding="utf-8")), json.loads(shared.read_text(encoding="utf-8"))
+    if v["files"] != s["files"] or v.get("options") != s.get("options"):
         return False
     add_regions(shared, v.get("regions") or [])
     var.unlink()
@@ -528,19 +536,20 @@ def bgm_options(audio_format: str, audio: bool) -> dict:
 
 def build_music_dirs(cat, master: Path, player, music_id: int, difficulties: list[str], root: Path,
                      livenotes_dir: Path, band: int | None = None, leader_card: int | None = None, *,
-                     language: str, fonts: str = "open", scene=None, bgm: dict | None = None) -> dict:
+                     language: str, fonts: str = "open", scene=None, bgm: dict | None = None,
+                     options: liveoptions.LiveOptions = liveoptions.LiveOptions()) -> dict:
     """The live directories of one music's charts under root/<difficulty>/, composed as live.build composes one:
     BGM decode (bgm: cri.decode options), live sounds and scene into root/base, shared by hard links; per difficulty
     its own score/ (score.extract without audio) and live.json (liveui/ only with WEB_LIVEUI); livenotes/ linked
     from `livenotes_dir` (livenotes.extract reads no music input). `scene`: (band part, its files) of the music's
-    band (livescene.band_part), else the scene is exported whole. `band` / `leader_card` / `language` / `fonts`: as
-    for live.build. Returns {difficulty: (dir, summary)}."""
+    band (livescene.band_part), else the scene is exported whole. `band` / `leader_card` / `language` / `fonts` /
+    `options`: as for live.build (livenotes_dir made with the same options). Returns {difficulty: (dir, summary)}."""
     from . import liveaudio, liveui, score
     base = root / "base"
     base.mkdir(parents=True)
     choice = live.resolve_band(cat, master, music_id, band=band, leader_card=leader_card)
     first = {"audio": score.extract_audio(cat, master, music_id, base, "flac", **(bgm or {}))}
-    la = liveaudio.extract(cat, master, player, music_id, base, fmt="flac")
+    la = liveaudio.extract(cat, master, player, music_id, base, fmt="flac", options=options)
     mode = "whole (no band part)"                      # how the scene was made: reported per chart
     if scene is not None and scene[0]["band"] == choice["band"]:
         _link_tree(scene[1], base / "livescene")
@@ -561,14 +570,11 @@ def build_music_dirs(cat, master: Path, player, music_id: int, difficulties: lis
         for sub in ("audio", "livescene"):
             _link_tree(base / sub, pdir / sub)
         _link_tree(livenotes_dir, pdir / "livenotes")
-        s = score.extract(cat, master, music_id, d, pdir, audio=False, audio_fmt="flac")
+        s = score.extract(cat, master, music_id, d, pdir, audio=False, audio_fmt="flac", mirror=options.mirror)
         if WEB_LIVEUI:
             liveui.extract(cat, player, pdir, master=master, music_id=music_id, difficulty=d, language=language,
                            fonts=fonts)
-        index = {"musicId": music_id, "difficulty": d, "chart": s["chart"], "notes": s["notes"],
-                 "master": s["master"], "audio": first["audio"], "liveAudio": la["index"],
-                 "scene": "livescene/scene.json", "noteAssets": "livenotes/notes.json", "liveUi": "liveui/liveui.json"}
-        jsonio.write_json(pdir / "live.json", index)
+        jsonio.write_json(pdir / "live.json", live.index_doc(music_id, d, s, first["audio"], la["index"]))
         out[d] = (pdir, {"band": choice, "judgementNoteCount": s["judgementNoteCount"],
                          "fullComboCount": s["fullComboCount"], "scene": mode})
     return out
@@ -623,9 +629,11 @@ def collect(live_dir: Path, files: list[str]) -> tuple[dict[str, str], dict[str,
 
 def ingest(store: Store, site: Path, music_id: int, difficulty: str, live_dir: Path, summary: dict,
            files: list[str], flows: list[str], audio_format: str, audio: bool, work: Path, bgm_cache: dict,
-           language: str, prefix: str = "", regions: list[str] | None = None, memo: str | None = None) -> dict:
+           language: str, prefix: str = "", regions: list[str] | None = None, memo: str | None = None,
+           options: liveoptions.LiveOptions | None = None) -> dict:
     """One chart's files into the store + its manifest charts/<prefix><id>.json, serving `regions` (added to the
-    regions of the manifest it replaces). `memo`: the build's id for stored_text."""
+    regions of the manifest it replaces). `memo`: the build's id for stored_text. `options`: the live options the
+    files carry (the manifest's `options`: LiveOptions.manifest_options)."""
     text, binary = collect(live_dir, files)
     facts = chart_facts(live_dir, summary, difficulty, language)
     if audio:
@@ -634,9 +642,10 @@ def ingest(store: Store, site: Path, music_id: int, difficulty: str, live_dir: P
         binary = {k: v for k, v in binary.items() if Path(k).suffix.lower() not in AUDIO_EXT}
     entries = {p: stored_text(store, p, s, memo) for p, s in text.items()}
     entries.update({p: store.put(p, b) for p, b in binary.items()})
+    offered = options.manifest_options() if options else None
     manifest = {"format": SITE_FORMAT, "musicId": music_id, "difficulty": difficulty, "audio": bool(audio),
                 "audioFormat": audio_format if audio else None, "flows": flows, "quality": TRACE_QUALITY,
-                "chart": facts, "files": dict(sorted(entries.items()))}
+                **({"options": offered} if offered else {}), "chart": facts, "files": dict(sorted(entries.items()))}
     path = manifest_file(site, f"{music_id}_{difficulty}", prefix)
     old = json.loads(path.read_text(encoding="utf-8")).get("regions") if path.is_file() else None
     if old or regions:
@@ -706,7 +715,8 @@ def extract_task(music_id: int, difficulties: list[str], cfg: dict | None = None
         dirs = build_music_dirs(cat, master, player, music_id, difficulties, root, Path(cfg["livenotes"]),
                                 band=cfg["band"], leader_card=cfg["leaderCard"], language=cfg["language"],
                                 fonts=cfg.get("fonts", "open"), scene=_scene_part(cfg, choice["band"]),
-                                bgm=bgm_options(cfg["audioFormat"], cfg["audio"]))
+                                bgm=bgm_options(cfg["audioFormat"], cfg["audio"]),
+                                options=cfg.get("options") or liveoptions.LiveOptions())
     except BaseException:
         shutil.rmtree(root, ignore_errors=True)
         raise
@@ -723,7 +733,7 @@ def ingest_task(music_id: int, charts: list, root: str, cfg: dict | None = None)
         try:
             r = ingest(store, site, music_id, d, Path(pdir), summary, files, list(FLOWS), cfg["audioFormat"],
                        cfg["audio"], Path(root), bgm, cfg["language"], cfg.get("prefix", ""), cfg.get("regions"),
-                       memo=cfg.get("build"))
+                       memo=cfg.get("build"), options=cfg.get("options"))
             r["scene"] = summary.get("scene")
             out.append(r)
         except ConfigError:
@@ -906,30 +916,36 @@ def live_dir_digest(live_dir: Path) -> list:
 
 
 def read_set_cached(live_dir: Path, player_dir: Path, mode: str = "full", digest: list | None = None,
-                    run=None) -> list[str]:
-    """read_set, reused when the live directory's files, the player code, Node and the mode are the same as for a
-    read set stored before (READ_SETS: this process, and the disk layer of the build's cache). `digest`: the live
-    directory's live_dir_digest when the caller has it. `run`: what reads a set that is not stored, with read_set's
-    arguments and answer (default read_set; ReadSetServers.read_set answers the same)."""
+                    run=None, settings: dict | None = None) -> list[str]:
+    """read_set, reused when the live directory's files, the player code, Node, the mode and the settings are the
+    same as for a read set stored before (READ_SETS: this process, and the disk layer of the build's cache).
+    `digest`: the live directory's live_dir_digest when the caller has it. `run`: what reads a set that is not
+    stored, with read_set's arguments and answer (default read_set; ReadSetServers.read_set answers the same)."""
     live_dir = Path(live_dir)
-    k = READ_SETS.key(player_id(player_dir), mode, digest if digest is not None else live_dir_digest(live_dir))
+    parts = [player_id(player_dir), mode, digest if digest is not None else live_dir_digest(live_dir)]
+    if settings:
+        parts.append(json.dumps(settings, sort_keys=True))
+    k = READ_SETS.key(*parts)
     hit = READ_SETS.get(k)
     if hit is not None:
         return json.loads(hit)
-    out = (run or read_set)(live_dir, player_dir, mode)
+    out = (run or read_set)(live_dir, player_dir, mode, **({"settings": settings} if settings else {}))
     READ_SETS.put(k, json.dumps(out).encode("utf-8"))
     return out
 
 
-def read_set(live_dir: Path, player_dir: Path, mode: str = "full") -> list[str]:
-    """Every file of `live_dir` the player reads for the whole chart in its default state, from the player's own
-    code run in Node (READ_SET_SCRIPT). mode "full": the simulation (no-op WebGL2 / WebAudio, every frame from the
-    start to the chart's end); "plan": the player lists the same files from the chart's contents without stepping
-    frames (player_features has "plan"; ReadSets checks it against the full simulation)."""
+def read_set(live_dir: Path, player_dir: Path, mode: str = "full", settings: dict | None = None) -> list[str]:
+    """Every file of `live_dir` the player reads for the whole chart in its default state (`settings`: with those
+    Live options instead, player_features has "settings"), from the player's own code run in Node
+    (READ_SET_SCRIPT). mode "full": the simulation (no-op WebGL2 / WebAudio, every frame from the start to the
+    chart's end); "plan": the player lists the same files from the chart's contents without stepping frames
+    (player_features has "plan"; ReadSets checks it against the full simulation)."""
     if mode not in ("full", "plan"):
         raise ValueError(f"read set mode {mode}")
     r = subprocess.run([tool("node", "node"), str(Path(player_dir) / READ_SET_SCRIPT), str(Path(live_dir)),
-                        *(["--plan"] if mode == "plan" else [])], capture_output=True, text=True, encoding="utf-8")
+                        *(["--plan"] if mode == "plan" else []),
+                        *([f"--settings={json.dumps(settings, sort_keys=True)}"] if settings else [])],
+                       capture_output=True, text=True, encoding="utf-8")
     if r.returncode != 0:
         raise RuntimeError(f"read set of {Path(live_dir).name} failed:\n{(r.stderr or r.stdout)[-4000:]}")
     return read_set_answer(json.loads(r.stdout), mode)
@@ -1057,14 +1073,15 @@ class ReadSetServers:
                 return
         s.close()
 
-    def read_set(self, live_dir: Path, player_dir: Path, mode: str = "full") -> list[str]:
+    def read_set(self, live_dir: Path, player_dir: Path, mode: str = "full", settings: dict | None = None) -> list[str]:
         if mode not in ("full", "plan"):
             raise ValueError(f"read set mode {mode}")
         name = Path(live_dir).name
+        request = {"chart": str(Path(live_dir)), "plan": mode == "plan", **({"settings": settings} if settings else {})}
         for attempt in (1, 2):
             s = self._take()
             try:
-                doc = s.ask({"chart": str(Path(live_dir)), "plan": mode == "plan"}, self.timeout)
+                doc = s.ask(request, self.timeout)
             except ReadSetServerError as e:
                 s.kill()
                 if e.hung or attempt == 2:
@@ -1098,7 +1115,9 @@ class ReadSets:
     asked for its modes when the first chart needs a read set. With a player that also has the serve mode, the plans
     are read by long-lived processes (ReadSetServers, one per read-set slot) instead of one process per chart; the
     full simulation always runs in a process of its own. close() ends the servers. `summary()` goes into the build
-    result."""
+    result. `read(..., variants)`: the union with the chart's read sets under each of the Live option settings
+    `variants` (the player's feature "settings"; plans in plan mode, a variant whose plan fails read by the full
+    simulation), not checked by the full simulation."""
 
     def __init__(self, player_dir: Path, log=_log, check_every: int = READ_SET_CHECK):
         self.player_dir = Path(player_dir)
@@ -1108,6 +1127,8 @@ class ReadSets:
         self.lock = threading.Lock()                   # counters, mode
         self.first: str | None = None                  # the chart checked as the build's first (expect)
         self.counts = {"plan": 0, "full": 0, "checked": 0}
+        self.variants = 0                              # read sets of option variants (read's `variants`)
+        self.features: frozenset = frozenset()
         self.unchecked: list[str] = []
         self.mismatches: list[dict] = []
         self.plan_errors: list[dict] = []
@@ -1117,7 +1138,7 @@ class ReadSets:
         """The mode (player_features), asked once."""
         with self.lock:
             if self.initial is None:
-                features = player_features(self.player_dir)
+                features = self.features = player_features(self.player_dir)
                 self.initial = self.mode = "plan" if "plan" in features else "full"
                 if self.initial == "plan" and "serve" in features:
                     self.servers = ReadSetServers(self.player_dir)
@@ -1144,14 +1165,47 @@ class ReadSets:
                 f"{self.first or 'no first chart'} and 1 in {self.check_every} other "
                 f"charts checked by the full simulation")
 
+    def need_settings(self) -> None:
+        """ConfigError unless the player's read-set script reads with given settings (feature "settings")."""
+        self.start()
+        if "settings" not in self.features:
+            raise ConfigError(f"{self.player_dir}: its {READ_SET_SCRIPT} has no settings (feature \"settings\"), "
+                              f"which the read sets of live options need")
+
     def sampled(self, chart_id: str) -> bool:
         h = hashlib.sha256(f"{player_id(self.player_dir)}|{chart_id}".encode("utf-8")).digest()
         return int.from_bytes(h[:4], "big") % self.check_every == 0
 
-    def read(self, live_dir, chart_id: str) -> list[str]:
+    def read(self, live_dir, chart_id: str, variants=()) -> list[str]:
         live_dir = Path(live_dir)
         self.start()
         digest = live_dir_digest(live_dir)
+        files = self._default(live_dir, chart_id, digest)
+        if not variants:
+            return files
+        have = set(files)
+        more: set[str] = set()
+        for settings in variants:
+            more.update(p for p in self._variant(live_dir, chart_id, digest, settings) if p not in have)
+        with self.lock:
+            self.variants += len(variants)
+        return files + sorted(more)
+
+    def _variant(self, live_dir: Path, chart_id: str, digest: list, settings: dict) -> list[str]:
+        """The read set with `settings`: the plan in plan mode (the full simulation when the plan fails)."""
+        if self.mode == "plan":
+            servers = self.servers
+            try:
+                return read_set_cached(live_dir, self.player_dir, "plan", digest,
+                                       run=servers.read_set if servers is not None else None, settings=settings)
+            except RuntimeError as e:
+                with self.lock:
+                    self.plan_errors.append({"id": chart_id, "settings": settings, "error": str(e)[-500:]})
+                self.log(f"{chart_id}: the player's read-set plan with {json.dumps(settings, sort_keys=True)} "
+                         f"failed; the full simulation reads it")
+        return read_set_cached(live_dir, self.player_dir, "full", digest, settings=settings)
+
+    def _default(self, live_dir: Path, chart_id: str, digest: list) -> list[str]:
         if self.mode == "plan":
             if chart_id == self.first or self.sampled(chart_id):
                 return self._checked(live_dir, chart_id, digest)
@@ -1201,11 +1255,12 @@ class ReadSets:
                               f"{' ...' if len(extra) > 10 else ''}")
 
     def summary(self) -> dict:
-        """{mode, plan, full, checked, mismatches, planErrors, unchecked}: charts read by each mode (checked: by
-        both); after a mismatch the charts whose set came from an unchecked plan are listed, else counted."""
+        """{mode, plan, full, checked, variants?, mismatches, planErrors, unchecked}: charts read by each mode
+        (checked: by both), read sets of option variants (when there were any); after a mismatch the charts whose
+        set came from an unchecked plan are listed, else counted."""
         with self.lock:
-            return {"mode": self.initial, **self.counts, "mismatches": list(self.mismatches),
-                    "planErrors": list(self.plan_errors),
+            return {"mode": self.initial, **self.counts, **({"variants": self.variants} if self.variants else {}),
+                    "mismatches": list(self.mismatches), "planErrors": list(self.plan_errors),
                     "unchecked": sorted(self.unchecked) if self.mismatches else len(self.unchecked)}
 
 
@@ -1393,9 +1448,11 @@ def _build_group(site: Path, tmp_root: Path, pairs, cfg: Config, region: str, pr
     gdir = Path(tempfile.mkdtemp(prefix="global-", dir=tmp_root))
     try:
         cat, master, player = open_data(cfg, region)
-        livenotes.extract(cat, player, gdir, master=master)
+        options = liveoptions.resolve(job.get("liveOptions"), master)
+        livenotes.extract(cat, player, gdir, master=master, options=options)
         job = {**job, "livenotes": str(gdir / "livenotes"), "scenes": str(gdir / "scenes"), "region": region,
-               "prefix": prefix, "regions": regions}
+               "prefix": prefix, "regions": regions, "options": options}
+        variants = options.read_variants()
         bands: dict[int, int] = {}                     # band -> a music of it (the scene is built once per band)
         for m in sorted(by_music):
             try:
@@ -1413,6 +1470,9 @@ def _build_group(site: Path, tmp_root: Path, pairs, cfg: Config, region: str, pr
         reads = reads or ReadSets(Path(job["player"]), log)
         reads.expect([f"{m}_{d}" for m, ds in sorted(by_music.items()) for d in ds])     # the Pipeline's order
         log(reads.describe())
+        if variants:
+            reads.need_settings()
+            log(f"live options: the read set of each chart adds {len(variants)} option variant(s)")
 
         if workers <= 1:
             data = (cat, master, player)
@@ -1441,7 +1501,9 @@ def _build_group(site: Path, tmp_root: Path, pairs, cfg: Config, region: str, pr
             with ThreadPoolExecutor(read_workers) as readers:
                 shim = SimpleNamespace(submit=lambda fn, *a: submit({extract_task: "extract",
                                                                      ingest_task: "ingest"}[fn], *a))
-                results = Pipeline(shim, readers, extract_task, reads.read, ingest_task,
+                def read(live_dir, chart_id):
+                    return reads.read(live_dir, chart_id, variants)
+                results = Pipeline(shim, readers, extract_task, read, ingest_task,
                                    lambda root: shutil.rmtree(root, ignore_errors=True),
                                    window=pipeline_window(workers, read_workers), log=log
                                    ).run(sorted(by_music.items()))
@@ -1462,7 +1524,7 @@ def _build_group(site: Path, tmp_root: Path, pairs, cfg: Config, region: str, pr
 def build(out_dir, pairs, cfg: Config, player_dir: Path, audio_format: str = DEFAULT_AUDIO_FORMAT,
           audio: bool = True, force: bool = False, *, tmp_dir=None, log=None, workers: int | None = None,
           band: int | None = None, leader_card: int | None = None, regions: list[str] | None = None,
-          fonts: str = "open", read_workers: int | None = None) -> dict:
+          fonts: str = "open", read_workers: int | None = None, live_options: dict | None = None) -> dict:
     """Add the charts `pairs` ([(musicId, difficulty)]; None: every chart of every region's master data) to the site
     at `out_dir`, with the player of the ournotes-player checkout or package at `player_dir`. The data comes from the
     settings `cfg` (each worker process opens its own). `regions`: the regions the charts serve (default: the one
@@ -1470,7 +1532,9 @@ def build(out_dir, pairs, cfg: Config, player_dir: Path, audio_format: str = DEF
     the others charts/<region>/<id>.json unless their files equal the shared manifest's. `workers`: parallel music
     processes (default a quarter of the CPUs, up to 8); `read_workers`: read sets at a time (default half the CPUs,
     up to 16). `band` / `leader_card`: the band of every chart's stage, as for live.build (default: the band of the
-    music's first vocal character); `fonts`: the start canvas fonts (liveui.extract, with WEB_LIVEUI)."""
+    music's first vocal character); `fonts`: the start canvas fonts (liveui.extract, with WEB_LIVEUI);
+    `live_options`: the Live option variants the charts offer (a liveoptions.parse_specs request; checked against
+    every region's master data before anything is built, liveoptions.OptionSpecError)."""
     player_dir = check_player(player_dir)
     if audio_format not in WEB_AUDIO:
         raise ValueError(f"audio format {audio_format}: one of {', '.join(WEB_AUDIO)}")
@@ -1482,6 +1546,8 @@ def build(out_dir, pairs, cfg: Config, player_dir: Path, audio_format: str = DEF
     regions = site_regions(cfg, regions)
     language = languages.check(cfg.require("catalog", "language"))
     masters = region_masters(cfg, regions)
+    for m in masters.values():
+        liveoptions.resolve(live_options, m)
     groups = region_groups(masters)
     site = Path(out_dir).resolve()
     (site / "charts").mkdir(parents=True, exist_ok=True)
@@ -1492,7 +1558,7 @@ def build(out_dir, pairs, cfg: Config, player_dir: Path, audio_format: str = DEF
     t0 = time.time()
     job = {"site": str(site), "tmp": str(tmp_root), "audioFormat": audio_format, "audio": bool(audio),
            "player": str(player_dir), "language": language, "fonts": fonts, "band": band, "leaderCard": leader_card,
-           "cache": str(tmp_root / "cache"), "build": uuid.uuid4().hex}
+           "cache": str(tmp_root / "cache"), "build": uuid.uuid4().hex, "liveOptions": live_options or None}
     configure_caches(job)
     results, skipped, folded, used_workers = [], [], [], 1
     offered = set()

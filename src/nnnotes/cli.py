@@ -348,15 +348,29 @@ def _fonts_extra(fonts: str) -> None:
         require_extra()
 
 
+def _live_options(args) -> dict:
+    """The --live-option specs as a request (liveoptions.parse_specs); a malformed spec is a usage error."""
+    from .liveoptions import OptionSpecError, parse_specs
+    try:
+        return parse_specs(args.live_option)
+    except OptionSpecError as e:
+        args.usage(str(e))
+
+
 def cmd_live(args, cfg):
-    from . import languages, live
+    from . import languages, live, liveoptions
     from .web import all_pairs
     _fonts_extra(args.fonts)
+    request = _live_options(args)
     language = languages.check(cfg.require("catalog", "language"))
     md = master_dir(cfg)
     known_row(args, md, "MasterLiveMusic", args.music_id, "music")
     if (args.music_id, args.difficulty) not in all_pairs(md):
         args.usage(f"music {args.music_id}: no {args.difficulty} chart (no MasterLiveMusicScore row)")
+    try:
+        options = liveoptions.resolve(request, md)
+    except liveoptions.OptionSpecError as e:
+        args.usage(str(e))
     cat = open_catalog(cfg)
     try:                                             # an unknown --leader-card, a --band without its scene keys
         live.resolve_band(cat, md, args.music_id, band=args.band, leader_card=args.leader_card)
@@ -364,17 +378,20 @@ def cmd_live(args, cfg):
         args.usage(e.args[0] if e.args else type(e).__name__)
     r = live.build(cat, md, player_data(cfg), args.music_id, args.difficulty, Path(args.out),
                    audio_format=args.format, band=args.band, leader_card=args.leader_card, language=language,
-                   fonts=args.fonts)
+                   fonts=args.fonts, options=options)
     _print_json(r)
 
 
 def cmd_web(args, cfg):
-    from . import web, webmodel
+    from . import liveoptions, web, webmodel
+    live_options = _live_options(args)
     charts, models = bool(args.pair or args.all), bool(args.live2d or args.all_live2d)
     if not (charts or models or args.player_only or args.reingest_json):
         args.usage("one of the arguments --pair --all --live2d --all-live2d --player-only --reingest-json is required")
     if models and (args.player_only or args.reingest_json):
         args.usage("--player-only and --reingest-json build nothing: leave out --live2d / --all-live2d")
+    if live_options and not charts:
+        args.usage("--live-option applies to charts: give --pair or --all")
     player = cfg.path("paths", "player")
     out = Path(args.out)
     if args.player_only or args.reingest_json:
@@ -389,6 +406,12 @@ def cmd_web(args, cfg):
         if unknown:
             args.usage(f"chart{'s' if len(unknown) > 1 else ''} {', '.join(f'{m}:{d}' for m, d in unknown)}: no "
                        f"MasterLiveMusicScore row in the master data of the site's region(s)")
+        if live_options:                             # a value a region's master data does not have
+            try:
+                for md in web.region_masters(cfg, web.site_regions(cfg, regions)).values():
+                    liveoptions.resolve(live_options, md)
+            except liveoptions.OptionSpecError as e:
+                args.usage(str(e))
         r = {}
         if models:
             cfg.require_path("paths", "apk")         # the Cubism component classes and mask materials: the APK
@@ -403,7 +426,7 @@ def cmd_web(args, cfg):
             r.update(web.build(out, None if args.all else args.pair, cfg, player, args.format,
                                audio=not args.no_audio, force=args.force, tmp_dir=args.tmp, workers=args.workers,
                                band=args.band, leader_card=args.leader_card, regions=regions, fonts=args.fonts,
-                               read_workers=args.read_workers))
+                               read_workers=args.read_workers, live_options=live_options))
     _print_json(r)
     if r.get("failed") or r.get("modelsFailed"):
         sys.exit(1)
@@ -415,6 +438,13 @@ def parse_pair(s: str) -> tuple[int, str]:
     if not m:
         raise argparse.ArgumentTypeError(f"{s}: expected <musicId>:<difficulty>")
     return int(m.group(1)), m.group(2)
+
+
+def _live_option_arg(c) -> None:
+    c.add_argument("--live-option", action="append", metavar="OPTION[=VALUES]",
+                   help="also export the files of a Live option's variants (repeatable): MirrorChart, "
+                        "MeasureLineDisplay, NoteDesignId, NoteEffectId, LiveQuality, NoteSePatternId (every value "
+                        "of the master data, or =v,v...), defaults (the option defaults and ranges only) or all")
 
 
 def _band_args(c) -> None:
@@ -543,6 +573,7 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--format", default="flac", choices=AUDIO_CHOICES)
     _fonts_arg(c)
     _band_args(c)
+    _live_option_arg(c)
     _out(c, "output directory")
     c.set_defaults(func=cmd_live, usage=c.error)
 
@@ -576,6 +607,7 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--all-regions", action="store_true", help="every configured region")
     _fonts_arg(c)
     _band_args(c)
+    _live_option_arg(c)
     c.set_defaults(func=cmd_web, usage=c.error)
 
     cli_assets.register(sub, argparse.Namespace(open_catalog=open_catalog, print_json=_print_json))

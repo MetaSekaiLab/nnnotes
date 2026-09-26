@@ -1067,10 +1067,11 @@ def extract_audio(cat, master_dir, music_id: int, out_dir, audio_fmt: str = "fla
 
 
 def extract(cat, master_dir, music_id: int, difficulty: str | int, out_dir, audio: bool = True,
-            audio_fmt: str = "flac", *, flac_level: int = cri.FLAC_LEVEL, also=None) -> dict:
+            audio_fmt: str = "flac", *, flac_level: int = cri.FLAC_LEVEL, also=None, mirror: bool = False) -> dict:
     """Write <out>/score/<file>.json (shipped chart JSON, un-gzipped), <file>.notes.json (converted runtime
     notes), <out>/score/master.json (master rows) and <out>/audio/<cueSheet>/ (the live BGM cue sheet decoded
-    per cue + cues.json, extract_audio)."""
+    per cue + cues.json, extract_audio). `mirror`: also <file>.mirror.notes.json, the notes converted with the
+    MirrorChart option on (convert(mirror=True); summary `notesMirror`)."""
     out_dir = Path(out_dir)
     sdir = out_dir / "score"
     sdir.mkdir(parents=True, exist_ok=True)
@@ -1082,15 +1083,22 @@ def extract(cat, master_dir, music_id: int, difficulty: str | int, out_dir, audi
     txt = gzip.decompress(raw) if raw[:2] == b"\x1f\x8b" else raw
     base = fname.rsplit("/", 1)[-1]
     (sdir / f"{base}.json").write_bytes(txt)
-    conv = convert(load_bytes(raw))
-    conv["source"] = {"key": chart_key(fname), "musicId": music_id, "difficulty": diff,
-                      "masterLiveMusicScoreId": score_row["_id"], "fullComboCount": score_row["_fullComboCount"]}
+    source = {"key": chart_key(fname), "musicId": music_id, "difficulty": diff,
+              "masterLiveMusicScoreId": score_row["_id"], "fullComboCount": score_row["_fullComboCount"]}
+    root = load_bytes(raw)
+    conv = convert(root)
+    conv["source"] = source
     write_json(sdir / f"{base}.notes.json", conv)
+    if mirror:
+        conv_m = convert(root, mirror=True)
+        conv_m["source"] = source
+        write_json(sdir / f"{base}.mirror.notes.json", conv_m)
     write_json(sdir / "master.json", rows)
     def rel(p) -> str:  # paths in summary.json are relative to out_dir, POSIX separators (loadable as relative URLs)
         return Path(p).relative_to(out_dir).as_posix()
 
     summary = {"chart": rel(sdir / f"{base}.json"), "notes": rel(sdir / f"{base}.notes.json"),
+               **({"notesMirror": rel(sdir / f"{base}.mirror.notes.json")} if mirror else {}),
                "master": rel(sdir / "master.json"), "judgementNoteCount": conv["judgementNoteCount"],
                "fullComboCount": score_row["_fullComboCount"], "noteCount": len(conv["notes"]),
                "lastNoteTimeMs": conv["lastNoteTimeMs"]}

@@ -12,6 +12,11 @@
                                 strings, text records or the game's fonts, sprites (liveui.py)
     <out>/live.json             index of the above
 
+`options` (liveoptions.LiveOptions, from `--live-option`) adds the files of the option variants it offers: the
+mirrored score (score.py, live.json `notesMirror`), the other note skins and effect sets, the bar line view and the
+option tables (livenotes.py), the other note sound sets (liveaudio.py). Without it the directory holds what the
+default options read.
+
 The band of the LightWeight background and of the start timeline is the band of the player's deck centre
 (`SelfMemberList[2]`: LightWeightBackgroundLoadStep.<LoadAsync>d__3 reads its BandID, LiveResourceBandResolver.Resolve
 its MemberCard's Character.Band; MasterMemberCard.get_BandID = Character._bandID). The preview has no deck:
@@ -23,6 +28,7 @@ from pathlib import Path
 
 from .catalog import Catalog
 from .jsonio import write_json
+from .liveoptions import LiveOptions
 from .player import PlayerData
 from .score import master_table
 from . import liveaudio, livenotes, livescene, liveui, score
@@ -72,24 +78,36 @@ def resolve_band(cat: Catalog, master: Path, music_id: int, band: int | None = N
     return {"band": b, "source": source, "note": BAND_NOTE}
 
 
+def index_doc(music_id: int, difficulty: str, score_summary: dict, audio: dict, live_audio: str) -> dict:
+    """live.json: `score_summary` from score.extract (its `notesMirror` when the score was also converted
+    mirrored), `audio` its BGM entry, `live_audio` the path of the live sounds (liveaudio.extract)."""
+    s = score_summary
+    return {"musicId": music_id, "difficulty": difficulty, "chart": s["chart"], "notes": s["notes"],
+            **({"notesMirror": s["notesMirror"]} if "notesMirror" in s else {}),
+            "master": s["master"], "audio": audio, "liveAudio": live_audio, "scene": "livescene/scene.json",
+            "noteAssets": "livenotes/notes.json", "liveUi": "liveui/liveui.json"}
+
+
 def build(cat: Catalog, master: Path, player: PlayerData, music_id: int, difficulty: str,
           out_dir: Path, audio_format: str = "flac", band: int | None = None,
-          leader_card: int | None = None, *, language: str, fonts: str = "open") -> dict:
+          leader_card: int | None = None, *, language: str, fonts: str = "open",
+          options: LiveOptions = LiveOptions()) -> dict:
     """One live directory. `language`: the client language of the start canvas (a languages.LANGUAGES code);
-    `fonts`: "open" or "game" (liveui.extract)."""
+    `fonts`: "open" or "game" (liveui.extract); `options`: the option variants whose files it carries as well
+    (liveoptions.resolve)."""
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     choice = resolve_band(cat, Path(master), music_id, band=band, leader_card=leader_card)
-    s = score.extract(cat, master, music_id, difficulty, out_dir, audio=True, audio_fmt=audio_format)
-    la = liveaudio.extract(cat, Path(master), player, music_id, out_dir, fmt=audio_format)   # reuses the BGM decode
+    s = score.extract(cat, master, music_id, difficulty, out_dir, audio=True, audio_fmt=audio_format,
+                      mirror=options.mirror)
+    la = liveaudio.extract(cat, Path(master), player, music_id, out_dir, fmt=audio_format,   # reuses the BGM decode
+                           options=options)
     sc = livescene.extract(cat, player, out_dir, master=Path(master), music_id=music_id, band=choice["band"],
                            band_choice=choice)
     lu = liveui.extract(cat, player, out_dir, master=Path(master), music_id=music_id,   # reads livescene's shaders
                         difficulty=difficulty, language=language, fonts=fonts)
-    nt = livenotes.extract(cat, player, out_dir, master=Path(master))
-    index = {"musicId": music_id, "difficulty": difficulty, "chart": s["chart"], "notes": s["notes"],
-             "master": s["master"], "audio": s["audio"], "liveAudio": la["index"], "scene": "livescene/scene.json",
-             "noteAssets": "livenotes/notes.json", "liveUi": "liveui/liveui.json"}
+    nt = livenotes.extract(cat, player, out_dir, master=Path(master), options=options)
+    index = index_doc(music_id, difficulty, s, s["audio"], la["index"])
     write_json(out_dir / "live.json", index)
     return {**index, "band": choice, "sceneSummary": sc, "noteAssetSummary": nt, "liveAudioSummary": la,
             "liveUiSummary": lu, "judgementNoteCount": s["judgementNoteCount"], "fullComboCount": s["fullComboCount"]}

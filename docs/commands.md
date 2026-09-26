@@ -323,6 +323,7 @@ status 2 and a line naming the class, the game version and the Unity version (as
 ```
 nnnotes live MUSIC_ID -o OUT [--difficulty easy|normal|hard|expert] [--format flac|ogg|wav]
                              [--fonts open|game] [--band BAND | --leader-card CARD_ID]
+                             [--live-option OPTION[=VALUES] ...]
 ```
 
 One chart (music + difficulty, default `expert`) as a self-contained directory, the format ournotes-player reads:
@@ -331,8 +332,9 @@ One chart (music + difficulty, default `expert`) as a self-contained directory, 
 OUT/score/                   the chart as shipped, the converted runtime notes, master rows (title and band
                              names in every language), summary.json
 OUT/audio/<cueSheet>/        the BGM cue sheet decoded per cue + cues.json, streams.json
-OUT/audio/live-audio.json    the live's sounds (BGM, note SE, live SE) with their CRI routing; their cue sheets
-                             decoded next to the BGM
+OUT/audio/live-audio.json    the live's sounds (BGM, note SE, live SE: the start and finish cheers and the finish
+                             sound of every result, all perfect, full combo, assist full combo and clear) with
+                             their CRI routing; their cue sheets decoded next to the BGM
 OUT/livescene/               scene graph, cameras, lane, background, start timeline, textures and shaders
 OUT/livenotes/               note, line and effect prefabs, skins, clips, particle systems, textures and shaders
 OUT/liveui/                  the start canvas in [catalog] language: strings, text records or fonts, sprites
@@ -350,6 +352,25 @@ band is `--band`, or the band of the character of `--leader-card` (a `MasterMemb
 of the music's first vocal character; the choice is recorded in `livescene/scene.json`. Prints the index with a
 summary.
 
+The directory holds what a live reads with the game's default options (option preset 1 of a fresh profile).
+`--live-option` (repeatable) adds the files of other values of the options that select files, so that a player can
+offer them; the options are named as in the game (the names ournotes-player's settings use):
+
+| `--live-option` | Adds |
+|---|---|
+| `MirrorChart` | `score/<chart>.mirror.notes.json`, the chart converted with lanes and flick directions mirrored (the game mirrors while it converts the chart); `live.json` `notesMirror` |
+| `NoteDesignId` | the other note skins (`MasterLiveNoteSkin`): `livenotes/notes.json` `noteSkins` (skin asset name -> a record like `noteSkin`) and `settings.skins` (`NoteDesignId` -> skin asset name) |
+| `NoteEffectId` | the other note effect sets (`MasterLiveNoteEffectSkin`; the lane effects are the same for every set): their assets in `livenotes/notes.json` `assets`, and `settings.effects` (`NoteEffectId` -> effect set name) |
+| `LiveQuality` | the qualities of `MasterLiveQualitySettings`; at the Low quality (2) the game loads the `<name>Light` variant of a note effect set where the catalog has one (else the set itself), whose assets are added (and `settings.effects`) |
+| `NoteSePatternId` | the other note sound sets (`MasterLiveNoteSe` groups): `audio/live-audio.json` `noteSe.groups` (set -> `LiveNoteSeType` -> sound id) and their sounds, decoded next to the others |
+| `MeasureLineDisplay` | the bar lines: `livenotes/notes.json` `prefabs.bar_line_view`, the bar line view the live scene's bar line container instantiates (a node list like the note view prefabs), and its sprite's texture; the bar times and the BPM and time signature changes are in the score's notes (`barLineTimeMs`, `bpmChanges`, `barChanges`) with or without the option |
+| `defaults` | only `settings.optionDefaults` / `optionRanges` of every option the player offers (note timing, the live and note sound volumes and mutes, the note sound set and per-type sounds, ...) |
+| `all` | every option above with every value |
+
+An option without values offers every value the master data has; `NAME=v,v,...` offers those values (the default
+value is always included; a value the master data does not have is a usage error). Any option also writes the
+`defaults` tables. Without `--live-option` the directory holds the files of the default options only.
+
 ## web
 
 ```
@@ -358,6 +379,7 @@ nnnotes web SITE (--player-only | --reingest-json)
                   [--player DIR] [--format aac|opus|vorbis|mp3|flac] [--no-audio] [--force]
                   [--tmp DIR] [--workers N] [--read-workers N] [--band BAND | --leader-card CARD_ID]
                   [--region REGION [--region ...] | --all-regions] [--fonts open|game]
+                  [--live-option OPTION[=VALUES] ...]
 ```
 
 Builds or updates a static [ournotes-player](https://github.com/empty-sekai/ournotes-player) site of charts, Live2D
@@ -410,6 +432,14 @@ SITE/assets/<sha256>.<ext>                content-addressed files shared by all 
   faster. Deleting it is
   safe at any time outside a build; the next build then makes everything again.
 - `--band` / `--leader-card` / `--fonts`: as for `live`, for every chart (the site stores no start canvas files).
+- `--live-option` (repeatable): as for `live`, for the charts of this run (with `--pair` or `--all`). The live
+  directories carry the variants' files, and a chart's read set is the union of its read set with the default
+  options and its read sets with the settings of each offered variant (every combination of the offered mirror,
+  note skin, effect set and quality values, the bar lines on, and each other note sound set; the player's read-set
+  script needs its `--settings`); only the files a variant reads are stored, the shared ones once per site. A chart
+  manifest lists the offered qualities as `options` (`{"LiveQuality": [0, 1, 2]}`); the other options are offered by
+  the chart's files. Each variant adds a read-set plan per chart (`all` makes several dozen), so such a build takes
+  longer. Charts whose manifest exists keep the options they were built with unless `--force`.
 - Models need `[paths] apk` (component classes and the mask materials are read from the APK). Master data is
   optional: when it is configured (of the site's first region), each model that a `MasterCharacterCostume` row maps
   to a character (its `_live2dPath` is the key after `Character/Live2D/`) gets, in its manifest's `model` and its

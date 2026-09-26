@@ -37,6 +37,7 @@ import numpy as np
 
 from .export import Exporter
 from .jsonio import write_json
+from .liveoptions import OPTION_ITEM_TYPES
 from .score import master_table
 
 
@@ -76,19 +77,6 @@ PLAYER_SHADERS = ("Hidden/CompositeRectBlit", "Hidden/SimpleGaussianBlur", "Siri
                   "Sirius/Live/LiveSofdecPrimeYuv_Android", "UI/Default")
 # URP renderer indices used by the scene's live cameras
 LIVE_RENDERERS = (2, 3, 4, 5)
-# App.Options.OptionItemType names (MasterOptionDefault / MasterOptionRange _optionItemType)
-OPTION_ITEM_TYPES = {1: "NoteSpeed", 3: "ChartPosition", 4: "MirrorChart", 6: "LiveQuality",
-                     100: "FastSlowDisplay", 101: "PerfectFastSlowDisplay", 102: "JudgeOffsetMsDisplay",
-                     103: "JudgeResultPositionType", 104: "JudgePosition", 105: "JudgePositionDisplay",
-                     106: "SlideOpacity", 107: "GuideOpacity", 108: "SimultaneousLineDisplay",
-                     109: "MeasureLineDisplay", 110: "MvQuality", 112: "LiveSkillEffect", 113: "ComboEffect",
-                     115: "StageEffect", 117: "PreLiveSimpleOption", 119: "GekisouEffect", 200: "ScreenMode",
-                     201: "BackgroundBrightness", 202: "MvModeBrightness", 203: "BackgroundSwitch",
-                     205: "SkillEffectDisplay", 206: "ComboCountDisplay", 207: "JudgeDetailDisplay",
-                     208: "ContinuationEffectDisplay", 300: "LaneOpacity", 301: "GuidelineOpacity",
-                     302: "GuidelineCount", 305: "LiveSkinId", 306: "NoteDesignId", 307: "NoteEffectId",
-                     308: "NoteStartPosition", 309: "LiveSkillActivationPositionDisplay",
-                     310: "GekisouSimpleEffect", 600: "QualitySetting"}
 # option items the render path reads
 OPTION_ITEMS = {k: OPTION_ITEM_TYPES[k] for k in (3, 6, 104, 105, 106, 107, 108, 109, 110, 115, 200, 201, 202,
                                                   203, 300, 301, 302, 305, 306, 307, 308, 600)}
