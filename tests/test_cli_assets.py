@@ -5,6 +5,7 @@ export stages of the pipeline are replaced by small stages that read them (the r
 link and layout parts are the real ones."""
 import hashlib
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -347,8 +348,64 @@ def test_usage_errors(tmp_path, capsys, fake, monkeypatch):
     monkeypatch.setattr(cli_assets, "STAGE_SOURCES", tuple(s for s in FAKE_SOURCES if s.name != "unity.export"))
     code, _, err = export(capsys, tmp_path, d, "s", "o", "--png-level", "3")
     assert code == 2 and "--png-level" in err
+    code, _, err = export(capsys, tmp_path, d, "s", "o", "--flac-level", "5")
+    assert code == 2 and "no stage of the pipeline encodes FLAC" in err
     code, _, err = nn(capsys, "export", "-o", tmp_path / "o")
     assert code == 2 and "paths.store" in err                        # no store and no cache
+
+
+def test_the_flac_level_is_a_parameter_of_the_stages_that_encode_flac(tmp_path, capsys, fake, monkeypatch):
+    monkeypatch.setattr(FakeExport, "PARAMS", {**FakeExport.PARAMS, "flac": {"level": 8}})
+    d = setup_data(tmp_path)
+    assert export(capsys, tmp_path, d, "s", "o", "--flac-level", "13")[0] == 2
+    export(capsys, tmp_path, d, "s", "o")
+    base = [*flags(d), "plan", "--store", tmp_path / "s", "--flac-level", "5"]
+    code, out, _ = nn(capsys, *base, "--json")
+    tid = next(n["id"] for n in json.loads(out)["nodes"] if n["stage"] == "unity.export")
+    code, out, _ = nn(capsys, *base, "--why", tid)
+    assert json.loads(out)["keyParts"]["new"]["params"]["flac"] == {"level": 5}
+
+
+def test_the_placement_is_probed_once_and_never_changes_the_files(tmp_path, capsys, fake, monkeypatch):
+    import errno
+    from nnnotes import layout
+
+    def clone_by_copy(src, dst):
+        with open(dst, "xb") as f:
+            f.write(Path(src).read_bytes())
+
+    def unsupported(*a, **k):
+        raise OSError(errno.EOPNOTSUPP, "not here")
+    d = setup_data(tmp_path)
+    monkeypatch.setattr(layout, "clone", unsupported)
+    code, _, err = export(capsys, tmp_path, d, "s", "o0", "--link", "clone")
+    assert code == 2 and "--link clone: clone unsupported" in err
+    assert not (tmp_path / "s" / "ac").exists()                                  # nothing ran
+    trees, runs = {}, {}
+    for how in ("copy", "hard", "clone", "auto"):
+        if how == "clone":
+            monkeypatch.setattr(layout, "clone", clone_by_copy)
+        code, out, err = export(capsys, tmp_path, d, "s", f"o-{how}", *(("--link", how) if how != "auto" else ()))
+        summary = json.loads(out)
+        assert code == 1, err
+        runs[how] = contract.loads((tmp_path / f"o-{how}" / cli_assets.REPORTS / "run.json").read_bytes())
+        trees[how] = {k: v for k, v in tree(tmp_path / f"o-{how}").items() if not k.endswith("/run.json")}
+        n = summary["layouts"]["original"]
+        assert summary["placement"] == runs[how]["placement"] and n["failed"] == 0
+        assert n[{"copy": "copied", "hard": "linked", "clone": "cloned", "auto": "cloned"}[how]] == n["write"] > 0
+        assert "hard-linked (read-only)" in err
+    assert trees["copy"] == trees["hard"] == trees["clone"] == trees["auto"]
+    assert {h: r["placement"]["method"] for h, r in runs.items()} == {"copy": "copy", "hard": "hard",
+                                                                       "clone": "clone", "auto": "clone"}
+    assert len({r["id"] for r in runs.values()}) == 1 and runs["copy"]["placement"]["reason"] == "copy: as asked"
+    monkeypatch.setattr(layout.os, "link", lambda *a: (_ for _ in ()).throw(OSError(errno.EXDEV, "elsewhere")))
+    assert export(capsys, tmp_path, d, "s", "o5", "--link", "hard")[0] == 2
+    monkeypatch.setenv("NNNOTES_EXPORT_LINK", "copy")
+    code, out, _ = export(capsys, tmp_path, d, "s", "o6")
+    assert json.loads(out)["placement"] == {"method": "copy", "reason": "copy: as asked"}
+    monkeypatch.setenv("NNNOTES_EXPORT_LINK", "symlink")
+    code, _, err = export(capsys, tmp_path, d, "s", "o7")
+    assert code == 2 and "export.link" in err
 
 
 def test_an_aborted_run_keeps_its_results(tmp_path, capsys, fake):
@@ -448,6 +505,8 @@ def test_store_verify(tmp_path, capsys, fake):
     r = json.loads(out)
     assert code == 0 and r["problemCount"] == 0 and r["contents"] > 0 and r["results"] > 0
     victim = next(p for p in sorted((tmp_path / "s" / "cas").rglob("*")) if p.is_file())
+    assert os.stat(victim).st_mode & 0o222 == 0                          # store objects are read-only
+    os.chmod(victim, 0o666)
     victim.write_bytes(victim.read_bytes() + b"x")
     code, out, _ = nn(capsys, "store", "verify", "--store", tmp_path / "s")
     problems = {p["problem"] for p in json.loads(out)["problems"]}

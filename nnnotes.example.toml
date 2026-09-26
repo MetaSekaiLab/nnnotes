@@ -64,3 +64,8 @@ vgmstream = ""
 node = ""
 # ournotes-player checkout (built) or installed package for `nnnotes web` (flag --player)
 player = ""
+
+[export]
+# how `nnnotes export` makes the layout files from the store: auto (a clone where the file system makes them, else
+# a hard link to the read-only store object, else a copy), clone, hard or copy; empty: auto (flag --link)
+link = ""

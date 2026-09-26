@@ -48,12 +48,12 @@ import numpy as np
 from .addressables import remote_path
 from .catalog import Catalog
 from .config import tool, usable_cpus
+from .cristages import FLAC_LEVEL                           # ffmpeg -compression_level of the flac output
 from . import cache, crikey
 from .jsonio import dumps, write_json
 
 DECODED = cache.bucket("cuesheets", salt=cache.source_salt(__file__), disk=True)
 SHEETS = cache.bucket("acb", max_item=128 << 20)           # (cue sheet, bundle closure) -> ACB / AWB bytes, layout
-FLAC_LEVEL = 12                                             # ffmpeg -compression_level of the flac output
 _keys: dict[tuple, int] = {}
 _keys_lock = threading.Lock()
 

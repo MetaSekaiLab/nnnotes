@@ -20,7 +20,8 @@ nnnotes plan --check && echo "up to date"
 ```
 nnnotes export -o OUT [--layout original[,cas]] [--select group:G|key:PREFIX|bundle:GLOB ...] [--views all|none|a,b]
                [--store DIR] [--workers N] [--memory GiB] [--fetch-workers N] [--catalog-version L|SHA]
-               [--png-level N] [--only-class C,...] [--link copy|hard] [--strict] [--dry-run] [--explain]
+               [--png-level N] [--flac-level N] [--only-class C,...] [--link auto|clone|hard|copy] [--strict]
+               [--dry-run] [--explain]
 nnnotes plan  [the selection and parameters of export] [-o OUT] [--json] [--since RUN] [--check] [--census]
               [--emit-tasks DIR] [--why TASK]
 nnnotes run-stage TASK.json|DIR [...] [--store DIR] [--fetch] [--force]
@@ -43,8 +44,9 @@ nnnotes store verify [--quick]
 | `--fetch-workers N` | parallel downloads of bundles not in the cache (default 8) |
 | `--catalog-version` | an imported catalog version (`catalogs list`) instead of the current catalog |
 | `--png-level N` | zlib level 0-9 of the PNG files (default 6); part of the task keys |
+| `--flac-level N` | FLAC compression level 0-12 of the CRI audio and the movies' audio (default 8; every level decodes to the same samples; 12 writes files 0.2-1.3 % smaller in about five times the encoding time); part of the task keys |
 | `--only-class C,...` | export only objects of these Unity classes; part of the task keys |
-| `--link` | `copy` the files from the store (default) or `hard`-link them (a file that cannot be linked is copied) |
+| `--link` | how the layout files are made from the store (below): `auto` (default; `[export] link`), `clone`, `hard` or `copy` |
 | `--strict` | exit 1 when a view has gaps: a required role whose address names no catalog key or no fitting sub-object (empty values and roles that do not apply are not gaps) |
 | `--dry-run` | print the plan and stop |
 | `--explain` | print every setting of the run first: store, context, selection, pipeline, stages not installed, parameters, workers, memory budget, recycling, layouts |
@@ -135,8 +137,24 @@ no longer wanted, never touches other files, and continues an interrupted write 
   case get `~<8 hex>` and are listed in the layout report;
 - the outputs of the CRI stages at the catalog names of their content: `Cri/Sound/<sheet>/<stream>.flac` with
   `cues.json` and `streams.json`, `Cri/Video/<name>/…`; a content several names refer to is placed under each
-  name (linked or copied as `--link` says) and listed in the layout report;
+  name and listed in the layout report;
 - the views: `views/<view>.json`, each object entry with the `path` of its file in this layout.
+
+How the files are made (`--link`, or `[export] link`). Every method writes the same files and the same layout
+manifest; the run manifest and the printed summary name the method and why it was chosen.
+
+| `--link` | the files | extra space | an edit of a file |
+|---|---|---|---|
+| `clone` | clones (reflinks) of the store objects: Linux FICLONE (Btrfs, XFS, bcachefs, …), macOS APFS `clonefile` | none until a file is written (a quota that counts each file's blocks, such as an XFS project quota, counts them in full) | changes that file only |
+| `hard` | hard links to the store objects (same file system) | none | fails, except for the superuser: the store objects are read-only (on Windows a delete fails too) |
+| `copy` | copies | the whole layout again | changes that file only |
+| `auto` (default) | `clone` where the file system makes clones, else `hard` on the same file system, else `copy` | | |
+
+`auto` tries each method once, on a temporary file, before the run starts. An explicit `clone` or `hard` that does
+not work there is a usage error (exit 2) before anything runs; a file that fails with the chosen method is reported
+(summary, layout report, exit 1), left out of the manifest and placed by the next run: no file falls back to
+another method. The store writes its objects read-only; a layout clears the attribute of a file it owns before it
+replaces or removes it where the system needs that (Windows), and the store object stays read-only.
 
 `cas` is `assets/<sha256>.<ext>` per distinct content, plus the manifest. Each layout follows from the other: `cas`
 from the `original` manifest alone, `original` from `cas` and the results. The views are the exception: `original`

@@ -49,6 +49,7 @@ ACB_NAME = "sheet"                        # the stem of the ACB file vgmstream r
 TOOL_REVISION = 1
 FORMATS = ("mkv", "webm")
 WEBM_AUDIO_BITRATE = "192k"               # as advvideo.AUDIO_BITRATE
+FLAC_LEVEL = 8                            # ffmpeg's FLAC compression level by default (here and in cri.decode)
 REASONS = ("unsupported.cri.awb_external", "unsupported.usm.codec", "unsupported.usm.alpha",
            "unsupported.usm.subtitle", "unsupported.usm.audio_streams")
 _lock = threading.Lock()
@@ -256,7 +257,7 @@ def _flac_params(p) -> dict:
     unknown = sorted(set(flac) - {"level"})
     if unknown:
         raise ValueError(f"unknown flac parameters {', '.join(unknown)}")
-    level = flac.get("level", 12)
+    level = flac.get("level", FLAC_LEVEL)
     if not isinstance(level, int) or isinstance(level, bool) or not 0 <= level <= 12:
         raise ValueError(f"flac level {level!r}: expected 0-12")
     return {"level": level}
@@ -269,7 +270,7 @@ class AudioStage(_CriStage):
     version = 1
     after = (EXPORT,)
     CLASS = "ACB"
-    PARAMS = {"flac": {"level": 12}}
+    PARAMS = {"flac": {"level": FLAC_LEVEL}}
 
     @property
     def ATOMS(self) -> dict:
@@ -376,7 +377,7 @@ class MovieStage(_CriStage):
     name = MOVIE
     version = 1
     CLASS = "USM"
-    PARAMS = {"format": "mkv", "flac": {"level": 12}}
+    PARAMS = {"format": "mkv", "flac": {"level": FLAC_LEVEL}}
 
     @property
     def ATOMS(self) -> dict:
@@ -454,7 +455,7 @@ class MovieStage(_CriStage):
                 (work / "audio.adx").write_bytes(audio)
             dst = work / f"movie.{fmt}"
             args = mux_args(work / "video.ivf", work / "audio.adx" if audio is not None else None, dst, fmt,
-                            (task.params.get("flac") or {}).get("level", 12))
+                            (task.params.get("flac") or {}).get("level", FLAC_LEVEL))
             r = subprocess.run([ff, *args], capture_output=True, text=True)
             if r.returncode != 0:
                 raise RuntimeError(f"ffmpeg {fmt} failed: {r.stderr[-2000:]}")
@@ -493,7 +494,7 @@ def ivf_info(video: bytes) -> dict | None:
     return {"codec": "vp9", "width": w, "height": h, "frameRate": [rate, scale], "frames": frames}
 
 
-def mux_args(ivf: Path, adx: Path | None, dst: Path, fmt: str, flac_level: int = 12) -> list[str]:
+def mux_args(ivf: Path, adx: Path | None, dst: Path, fmt: str, flac_level: int = FLAC_LEVEL) -> list[str]:
     """ffmpeg arguments (after the executable) of the movie file: the VP9 stream copied; the ADX audio as FLAC in
     Matroska (`flac_level`), as Opus in WebM; no metadata, bit-exact container and codec flags."""
     inputs, maps = ["-f", "ivf", "-i", str(ivf)], ["-map", "0:v:0"]

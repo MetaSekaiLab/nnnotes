@@ -280,14 +280,15 @@ class Run:
         """0 when every task and item succeeded (unsupported objects allowed), else 1."""
         return 1 if self.failures() else 0
 
-    def manifest(self, layouts: dict | None = None) -> dict:
+    def manifest(self, layouts: dict | None = None, placement: dict | None = None) -> dict:
         return contract.run_doc(context=self.context, selection=self.selection, params=self.params,
                                 stages=self.stages, tasks=list(self.tasks.values()), layouts=layouts or {},
-                                summary=self.summary())
+                                summary=self.summary(), placement=placement)
 
-    def write(self, layouts: dict | None = None) -> dict:
-        """Write the run manifest (layouts: {name: sha256 of its layout manifest}) and this execution's log."""
-        doc = self.manifest(layouts)
+    def write(self, layouts: dict | None = None, placement: dict | None = None) -> dict:
+        """Write the run manifest (layouts: {name: sha256 of its layout manifest}; placement: how their files were
+        made) and this execution's log."""
+        doc = self.manifest(layouts, placement)
         self.store.write_run(doc, self.log)
         return doc
 

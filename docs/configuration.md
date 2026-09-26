@@ -66,6 +66,7 @@ exist when they are given.
 | `[paths] vgmstream` | `NNNOTES_PATHS_VGMSTREAM` | `--vgmstream` | `vgmstream-cli` executable; unset: `vgmstream-cli` on `PATH` |
 | `[paths] node` | `NNNOTES_PATHS_NODE` | `--node` | Node.js executable; unset: `node` on `PATH` |
 | `[paths] player` | `NNNOTES_PATHS_PLAYER` | `--player` (of `web`) | ournotes-player checkout (built) or installed package |
+| `[export] link` | `NNNOTES_EXPORT_LINK` | `--link` (of `export`) | how `export` makes the layout files from the store: `auto` (unset), `clone`, `hard` or `copy` ([assets.md](assets.md)) |
 
 Hex values are case-insensitive; a `0x` prefix and surrounding whitespace are ignored. All values are TOML strings
 except `languages` (array of strings).

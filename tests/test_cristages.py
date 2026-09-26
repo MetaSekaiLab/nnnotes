@@ -189,7 +189,7 @@ def test_audio_subjects_by_content(tmp_path, tools):
     t = describe(stage, sha, None, env)
     assert t.id == f"{AUDIO}:{sha}" and [i.role for i in t.inputs] == ["acb", "boot"]
     assert t.input("acb").locators[0]["kind"] == "file" and t.atoms == FAKE_ATOMS
-    assert t.params == {"flac": {"level": 12}}
+    assert t.params == {"flac": {"level": 8}}
     b = describe(stage, other_sha, None, env)
     assert b.input("acb").locators == ({"kind": "store"},)
     waiting = Env(store, env.facts)
@@ -292,7 +292,7 @@ def test_movie_streams_as_stored_and_the_mkv(tmp_path, tools):
     assert stage.subjects(env) == [sha] and stage.names(env) == {sha: ["MemberCard/1/movie/anime_part1"]}
     with fake_tools(key=KEY):
         t, doc = run(stage, env, sha)
-    assert t.params == {"format": "mkv", "flac": {"level": 12}} and set(t.atoms) == {"usm.demux", "movie.mux"}
+    assert t.params == {"format": "mkv", "flac": {"level": 8}} and set(t.atoms) == {"usm.demux", "movie.mux"}
     streams = advvideo.demux(data, KEY)
     assert load(store, doc, f"{t.id}#video.ivf") == streams["video"] == b"".join(frames)
     assert load(store, doc, f"{t.id}#audio.adx") == streams["audio"]
@@ -302,7 +302,7 @@ def test_movie_streams_as_stored_and_the_mkv(tmp_path, tools):
     mkv = art(doc, f"{t.id}#movie.mkv")
     assert mkv["content"]["mediaType"] == "video/x-matroska" and mkv["semantics"]["facts"] == {"video": "vp9",
                                                                                               "audio": "flac"}
-    assert b"-c:a|flac|-compression_level|12" in load(store, doc, mkv["id"])
+    assert b"-c:a|flac|-compression_level|8" in load(store, doc, mkv["id"])
     assert doc["items"][0]["status"] == "exported" and doc["items"][0]["class"] == "USM"
     with fake_tools(key=KEY):
         tw, dw = run(stage, env, sha, {"format": "webm"})

@@ -14,6 +14,8 @@
 
 Every file is written through a temporary file and a rename, so concurrent writers (threads, processes, machines on
 a shared file system) never see or leave a partial file, and a crash before a result's entry leaves no false hit.
+The files of cas/ are read-only (a layout may hard-link them: an edit of such a file fails instead of changing the
+store).
 Only costs/, runs/ and inputs/ hold non-deterministic data; cas/ and ac/ are a function of the tasks run.
 """
 from __future__ import annotations
@@ -53,15 +55,24 @@ def _replace(tmp: Path, dst: Path, same) -> bool:
             except PermissionError:
                 try:
                     if dst.exists() and same(dst):
-                        tmp.unlink(missing_ok=True)
+                        _drop(tmp)
                         return False
                 except PermissionError:
                     pass
                 time.sleep(0.1 * (i + 1))
         raise RuntimeError(f"could not store {dst}")
     except BaseException:
-        tmp.unlink(missing_ok=True)
+        _drop(tmp)
         raise
+
+
+def _drop(tmp: Path) -> None:
+    """Remove a temporary file, read-only or not (Windows refuses to delete a read-only file)."""
+    try:
+        tmp.unlink(missing_ok=True)
+    except PermissionError:
+        os.chmod(tmp, 0o666)
+        tmp.unlink(missing_ok=True)
 
 
 def _read(p: Path) -> bytes | None:
@@ -76,16 +87,18 @@ def _read(p: Path) -> bytes | None:
     return p.read_bytes()
 
 
-def _write(dst: Path, data: bytes, same=None) -> bool:
+def _write(dst: Path, data: bytes, same=None, read_only: bool = False) -> bool:
     """Write `data` to `dst` atomically (creating the directory); with `same`, keep an existing `dst` for which
-    same(dst) holds. True when this call wrote the file."""
+    same(dst) holds; `read_only`: the file is read-only (store objects). True when this call wrote the file."""
     dst.parent.mkdir(parents=True, exist_ok=True)
     tmp = temp_path(dst)
     try:
         with open(tmp, "xb") as f:
             f.write(data)
+        if read_only:
+            os.chmod(tmp, 0o444)
     except BaseException:
-        tmp.unlink(missing_ok=True)
+        _drop(tmp)
         raise
     return _replace(tmp, dst, same or (lambda p: False))
 
@@ -198,7 +211,7 @@ class Store:
         if self.has(sha, len(data)):
             self.reused += 1
             return sha
-        if _write(self.path(sha), data, lambda p: p.stat().st_size == len(data)):
+        if _write(self.path(sha), data, lambda p: p.stat().st_size == len(data), read_only=True):
             self.written += 1
         else:
             self.reused += 1
@@ -227,6 +240,7 @@ class Store:
         if h.hexdigest() != sha:
             tmp.unlink(missing_ok=True)
             raise RuntimeError(f"{src} changed while it was stored")
+        os.chmod(tmp, 0o444)
         if _replace(tmp, dst, lambda p: p.stat().st_size == size):
             self.written += 1
         self._have.add(sha)
@@ -260,6 +274,7 @@ class Store:
         else:
             dst = self.path(sha)
             dst.parent.mkdir(parents=True, exist_ok=True)
+            os.chmod(tmp, 0o444)
             if _replace(tmp, dst, lambda p: p.stat().st_size == size):
                 self.written += 1
             else:

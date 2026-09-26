@@ -477,10 +477,13 @@ def run_id(doc: dict) -> str:
 
 
 def run_doc(*, context: dict, selection: list, params: dict, stages: dict, tasks: list[dict], layouts: dict,
-            summary: dict) -> dict:
-    """A run manifest (nnnotes.run/1): tasks sorted by id."""
+            summary: dict, placement: dict | None = None) -> dict:
+    """A run manifest (nnnotes.run/1): tasks sorted by id; `placement` ({method, reason}: how the layouts' files
+    were made) when layouts were written. The id covers neither the summary nor the placement."""
     doc = {"schema": RUN, "context": context, "selection": list(selection), "params": params, "stages": stages,
            "tasks": sorted(tasks, key=lambda t: t["id"]), "layouts": layouts, "summary": summary}
+    if placement is not None:
+        doc["placement"] = placement
     for t in doc["tasks"]:
         if t["status"] not in RUN_TASK_STATUSES:
             raise ValueError(f"run task {t['id']}: unknown status {t['status']!r}")

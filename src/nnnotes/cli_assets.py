@@ -3,8 +3,8 @@ the store.
 
     nnnotes export -o OUT [--layout original[,cas]] [--select group:G|key:PREFIX|bundle:GLOB ...]
                    [--views all|none|a,b] [--store DIR] [--workers N] [--memory GiB] [--fetch-workers N]
-                   [--catalog-version L|SHA] [--png-level N] [--only-class C,...] [--link copy|hard] [--strict]
-                   [--dry-run] [--explain]
+                   [--catalog-version L|SHA] [--png-level N] [--flac-level N] [--only-class C,...]
+                   [--link auto|clone|hard|copy] [--strict] [--dry-run] [--explain]
     nnnotes plan [the selection and parameters of export] [-o OUT] [--json] [--since RUN] [--check] [--census]
                  [--emit-tasks DIR] [--why TASK]
     nnnotes run-stage TASK.json|DIR [...] [--store DIR] [--fetch] [--force]
@@ -575,6 +575,15 @@ class Workspace:
             for n in takers:
                 base = stages[n].PARAMS["png"]
                 out.setdefault(n, {})["png"] = {**(base if isinstance(base, dict) else {}), "level": level}
+        level = getattr(self.args, "flac_level", None)
+        if level is not None:
+            if not 0 <= level <= 12:
+                self.args.usage(f"--flac-level {level}: expected 0 to 12")
+            takers = [n for n in pipeline if "flac" in stages[n].PARAMS]
+            if not takers:
+                self.args.usage("--flac-level: no stage of the pipeline encodes FLAC")
+            for n in takers:
+                out.setdefault(n, {})["flac"] = {**stages[n].PARAMS["flac"], "level": level}
         only = getattr(self.args, "only_class", None)
         if only:
             classes = sorted({c.strip() for c in only.split(",") if c.strip()})
@@ -707,7 +716,7 @@ class Workspace:
                                "message": message})
 
     # ---------------------------------------------------------------- explain
-    def explain(self, pipeline: list[str], params: dict, orch=None, layouts=()) -> list[str]:
+    def explain(self, pipeline: list[str], params: dict, orch=None, layouts=(), placement=None) -> list[str]:
         ctx = self.context()
         c = ctx["catalog"]
         lines = [f"store: {self.root}", f"cache: {self.cache if self.cache is not None else 'not set'}",
@@ -727,7 +736,8 @@ class Workspace:
         if orch is not None:
             lines += orch.explain()
         if layouts:
-            lines.append(f"layouts: {', '.join(layouts)} (link: {getattr(self.args, 'link', 'copy')})")
+            how = placement[1] if placement else f"{link_mode(self.args, self.cfg)}, probed when the files are placed"
+            lines.append(f"layouts: {', '.join(layouts)} (placement: {how})")
         return lines
 
     # ---------------------------------------------------------------- plan
@@ -1010,10 +1020,16 @@ def cmd_export(args, cfg, common):
     orch = Orchestrator(ws.store, ws.scheduled, workers=ws.workers(), memory=ws.memory(),
                         recycle_tasks=RECYCLE_TASKS, recycle_rss=ws.recycle_rss(), initializer=_worker_init,
                         initargs=(cfg,), log=ws.log)
-    if args.explain:
-        for line in ws.explain(pipeline, params, orch, names):
-            print(line, file=sys.stderr)
     out = Path(args.out)
+    placement = None
+    if not args.dry_run:                              # before any work: an explicit method that cannot work stops it
+        try:
+            placement = layout.probe(out, ws.root / "cas" / "sha256", link_mode(args, cfg))
+        except layout.LayoutError as e:
+            args.usage(str(e))
+    if args.explain:
+        for line in ws.explain(pipeline, params, orch, names, placement):
+            print(line, file=sys.stderr)
     if args.dry_run:
         sys.stdout.write(ws.plan(pipeline, params, out=out, layouts=names).text())
         return
@@ -1051,16 +1067,21 @@ def cmd_export(args, cfg, common):
     run.scan(visit, census=totals.census)             # the only reading of the results
     run.context["master"] = ws.master_context(totals.views)
     reports = out / REPORTS
-    written, shas = {}, {}
+    written, shas, unplaced = {}, {}, 0
     for name, d in layout_dirs(out, names).items():
         entries, report = ws.layout_entries(name, placed)
-        w = layout.materialize(d, name, {}, entries, layout.from_store(ws.store), link=args.link)
+        w = layout.materialize(d, name, {}, entries, layout.from_store(ws.store), link=placement[0])
         shas[name] = w["sha256"]
         written[name] = {"dir": str(d), "files": len(w["manifest"]["entries"]), "write": w["write"],
-                         "remove": w["remove"], "keep": w["keep"], "collisions": len(report["collisions"]),
+                         "remove": w["remove"], "keep": w["keep"], "cloned": w["cloned"], "linked": w["linked"],
+                         "copied": w["copied"], "failed": len(w["failed"]), "collisions": len(report["collisions"]),
                          "shared": len(report.get("shared", []))}
-        _write_report(reports, f"layout-{name}.json", report)
-    manifest = run.write(shas)
+        unplaced += len(w["failed"])
+        ws.log(f"layout {name}: placed {w['cloned'] + w['linked'] + w['copied']}: {w['cloned']} cloned / "
+               f"{w['linked']} hard-linked (read-only) / {w['copied']} copied"
+               + (f"; {len(w['failed'])} not placed (layout-{name}.json)" if w["failed"] else ""))
+        _write_report(reports, f"layout-{name}.json", dict(report, failed=w["failed"]) if w["failed"] else report)
+    manifest = run.write(shas, placement={"method": placement[0], "reason": placement[1]})
     write_calibration(ws.root, calibrate(run.log, ws.calibration, orch.worker_bytes))
     _write_report(reports, "run.json", manifest)
     _write_report(reports, "coverage.json", run.coverage(totals.census()))
@@ -1071,12 +1092,24 @@ def cmd_export(args, cfg, common):
     common.print_json({"run": manifest["id"], "selection": ws.selection, "tasks": {k: s[k] for k in (
         "tasks", "hit", "ran", "failed")}, "items": s["items"], "artifacts": s["artifacts"],
         "failures": len(run.failures()), "sources": dict(sorted(Counter(p["code"] for p in ws.problems()).items())),
-        "viewGaps": gaps, "layouts": written, "reports": str(reports)})
+        "viewGaps": gaps, "placement": manifest["placement"], "layouts": written, "reports": str(reports)})
     if aborted:
         print(f"nnnotes: aborted: {aborted}", file=sys.stderr)
         sys.exit(EXIT_ABORTED)
-    if run.failures() or (args.strict and gaps):
+    if run.failures() or unplaced or (args.strict and gaps):
         sys.exit(EXIT_FAILED)
+
+
+def link_mode(args, cfg) -> str:
+    """How export places the layout files (layout.LINKS): --link, else [export] link, else auto."""
+    from .layout import LINKS
+    v = getattr(args, "link", None)
+    if v:
+        return v
+    v = cfg.get("export", "link") or "auto"
+    if v not in LINKS:
+        raise ConfigError(f"setting export.link: {v!r} is not one of {', '.join(LINKS)}")
+    return v
 
 
 # ---------------------------------------------------------------- plan
@@ -1346,6 +1379,9 @@ def _run_args(c) -> None:
     c.add_argument("--catalog-version", metavar="LABEL|SHA",
                    help="an imported catalog version (`catalogs list`; default: the current catalog)")
     c.add_argument("--png-level", type=int, metavar="N", help="PNG compression level 0-9 (changes the output)")
+    c.add_argument("--flac-level", type=int, metavar="N",
+                   help="FLAC compression level 0-12 of the CRI audio (default 8; every level decodes to the same "
+                        "samples; changes the files)")
     c.add_argument("--only-class", metavar="C,...", help="export only objects of these classes")
     c.add_argument("--workers", type=int,
                    help="worker processes (default: the CPUs this process may use; 0: this process)")
@@ -1368,8 +1404,9 @@ def register(sub, common=None) -> None:
     c = sub.add_parser("export", help="every object of the selected bundles -> common formats (store + layouts)")
     c.add_argument("-o", "--out", required=True, help="output directory")
     _run_args(c)
-    c.add_argument("--link", default="copy", choices=("copy", "hard"),
-                   help="copy the files from the store, or hard-link them")
+    c.add_argument("--link", choices=("auto", "clone", "hard", "copy"),
+                   help="how the layout files are made from the store: auto (default; [export] link): a clone where "
+                        "the file system makes them, else a hard link (read-only), else a copy; or that method only")
     c.add_argument("--strict", action="store_true", help="exit 1 when a view has gaps")
     c.add_argument("--dry-run", action="store_true", help="print the plan, run nothing")
     c.set_defaults(func=bind(cmd_export), usage=c.error)

@@ -376,7 +376,7 @@ def tools(tmp_path, monkeypatch):
     return fake
 
 
-def ref_decode(sheet, out_dir: Path, fmt, level=12):
+def ref_decode(sheet, out_dir: Path, fmt, level=cri.FLAC_LEVEL):
     """The sequential decode as it was (same tool calls)."""
     vgm, ffmpeg = cri.tool("vgmstream", ""), cri.tool("ffmpeg", "")
     work = out_dir / "_work"

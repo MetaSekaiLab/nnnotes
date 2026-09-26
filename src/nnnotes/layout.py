@@ -32,15 +32,25 @@ the paths (the views with the files of their objects) are the exception: `origin
 `cas` the records they are made from.
 
 Writing (materialize): the layout manifest (nnnotes.layout/1) lists the files the layout owns. A run writes a
-journal of the files it will write and remove, writes each file atomically (copied or hard-linked from the byte
-source), removes the owned files no longer wanted, then writes the manifest and deletes the journal; a run after
-an interrupted one owns what the journal lists too. Files the layout does not own are never touched: an unowned
-file in the way is an error unless it already has the right content.
+journal of the files it will write and remove, writes each file atomically (from the byte source by one method:
+a clone, a hard link or a copy), removes the owned files no longer wanted, then writes the manifest and deletes the
+journal; a run after an interrupted one owns what the journal lists too. Files the layout does not own are never
+touched: an unowned file in the way is an error unless it already has the right content. A file the method cannot
+place is reported and left out of the manifest (the next run tries it again); no file falls back to another method.
+
+Placement (PLACEMENTS; probe() picks one per run for `auto` and checks an explicit one): a clone (reflink: Linux
+FICLONE, macOS clonefile) shares the store object's blocks until either file is written, so it is independent and
+takes no space; a hard link is the store object itself, read-only like every object of the store (an edit fails
+instead of changing the store); a copy is independent and writable, and takes the space again. Every method gives
+the same files and the same manifest.
 """
 from __future__ import annotations
 
+import errno
 import os
 import shutil
+import stat
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -51,7 +61,9 @@ from .store import write_doc, write_file
 MANIFEST = "manifest.json"
 JOURNAL = ".nnnotes-layout-journal.json"
 LAYOUTS = ("original", "cas")
-LINKS = ("copy", "hard")
+PLACEMENTS = ("clone", "hard", "copy")      # how a file is made from its byte source
+LINKS = ("auto", *PLACEMENTS)               # what a run may ask for: auto probes
+FICLONE = 0x40049409                        # Linux ioctl: make a file share another's blocks
 DEFAULT_ROOT = "_tasks/{stage}/{subject}"
 # container extension -> the classes of the object that owns the container path (lower case, without the dot)
 EXT_CLASSES = {
@@ -392,11 +404,11 @@ def diff(out_dir, entries_: list[dict]) -> dict:
 
 def materialize(out_dir, name: str, params: dict, entries_: list[dict], source, *, link: str = "copy") -> dict:
     """Write layout `name` into `out_dir` (see the module documentation). `source(sha256) -> Path` gives the bytes
-    (from_store, from_layout); `link`: copy the files, or hard-link them (a file that cannot be linked is copied
-    and counted). -> {"manifest": the layout document, "sha256": of its file, "write", "remove", "keep",
-    "linked", "copied"}."""
-    if link not in LINKS:
-        raise ValueError(f"unknown link mode {link!r}")
+    (from_store, from_layout); `link`: the placement (PLACEMENTS). -> {"manifest": the layout document (without
+    the files not placed), "sha256": of its file, "write", "remove", "keep", "cloned", "linked", "copied",
+    "failed": [{path, message}] of the files not placed}."""
+    if link not in PLACEMENTS:
+        raise ValueError(f"unknown placement {link!r}")
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     doc = contract.layout_doc(name, params, entries_)
@@ -409,18 +421,36 @@ def materialize(out_dir, name: str, params: dict, entries_: list[dict], source, 
     if blocked:
         raise LayoutError(f"{len(blocked)} files in {out} are not this layout's: {', '.join(blocked[:5])}")
     write_file(out / JOURNAL, contract.encode({"write": write, "remove": remove}))
-    stats = {"linked": 0, "copied": 0}
+    stats = {"cloned": 0, "linked": 0, "copied": 0}
+    failed = []
+
+    def restore(p):                              # a replaced or removed hard link's store object: read-only again
+        if p in owned:
+            try:
+                _read_only(Path(source(owned[p][0])))
+            except (KeyError, OSError):
+                pass
+
     for p in write:
         sha, size = files[p]
         dst = out / p
         if not (p not in mine and _present(dst, size) and _same(dst, files[p])):
-            _place(Path(source(sha)), dst, link, stats)
+            try:
+                _place(Path(source(sha)), dst, link, stats, lambda p=p: restore(p))
+            except OSError as e:
+                failed.append({"path": p, "message": f"{type(e).__name__}: {e.strerror or e}"})
     for p in remove:
-        _remove(out, p)
+        _remove(out, p, lambda p=p: restore(p))
+    lost = {f["path"] for f in failed}
+    if lost:
+        doc = dict(doc, entries=[e for e in doc["entries"] if e["path"] not in lost])
     sha = write_doc(out / MANIFEST, doc)
-    (out / JOURNAL).unlink(missing_ok=True)
-    return {"manifest": doc, "sha256": sha, "write": len(write), "remove": len(remove),
-            "keep": len(files) - len(write), **stats}
+    if lost:                                     # still owned: the next run replaces them
+        write_file(out / JOURNAL, contract.encode({"write": sorted(lost), "remove": []}))
+    else:
+        (out / JOURNAL).unlink(missing_ok=True)
+    return {"manifest": doc, "sha256": sha, "write": len(write) - len(failed), "remove": len(remove),
+            "keep": len(files) - len(write), **stats, "failed": failed}
 
 
 def _same(p: Path, v: tuple[str, int]) -> bool:
@@ -429,29 +459,134 @@ def _same(p: Path, v: tuple[str, int]) -> bool:
     return contract.sha256(p.read_bytes()) == v[0]
 
 
-def _place(src: Path, dst: Path, link: str, stats: dict) -> None:
+def _place(src: Path, dst: Path, link: str, stats: dict, restore) -> None:
     dst.parent.mkdir(parents=True, exist_ok=True)
     tmp = temp_path(dst)
     try:
-        if link == "hard":
-            try:
-                os.link(src, tmp)
-                stats["linked"] += 1
-            except OSError:
-                shutil.copyfile(src, tmp)
-                stats["copied"] += 1
+        if link == "clone":
+            clone(src, tmp)
+        elif link == "hard":
+            _read_only(src)                          # an object stored before the store made them read-only
+            os.link(src, tmp)
         else:
             shutil.copyfile(src, tmp)
-            stats["copied"] += 1
+        again = _writable(dst)
         os.replace(tmp, dst)
+        if again:
+            restore()
     except BaseException:
         tmp.unlink(missing_ok=True)
         raise
+    stats[{"clone": "cloned", "hard": "linked", "copy": "copied"}[link]] += 1
 
 
-def _remove(out: Path, rel: str) -> None:
+def _read_only(p: Path) -> None:
+    """Make a store object read-only (its hard links in layouts are the object itself)."""
+    try:
+        mode = os.stat(p).st_mode
+        if mode & 0o222:
+            os.chmod(p, mode & ~0o222)
+    except OSError:
+        pass
+
+
+def _writable(p: Path) -> bool:
+    """Clear the read-only attribute of a layout file about to be replaced or removed, where the system refuses
+    to do either to a read-only file (Windows; the attribute belongs to the file, so a hard link's store object
+    loses it too: True, the caller sets it again). Elsewhere nothing: False."""
+    if os.name != "nt":
+        return False
+    try:
+        mode = os.stat(p).st_mode
+    except OSError:
+        return False
+    if mode & stat.S_IWRITE:
+        return False
+    os.chmod(p, mode | stat.S_IWRITE)
+    return True
+
+
+def clone(src: Path, dst: Path) -> None:
+    """Make `dst` (a new file) a clone of `src`: its own file, sharing src's blocks until either is written (Linux
+    FICLONE, macOS clonefile). OSError where the file system or the platform cannot."""
+    if sys.platform.startswith("linux"):
+        import fcntl
+        fd = os.open(dst, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o666)
+        try:
+            with open(src, "rb") as f:
+                fcntl.ioctl(fd, FICLONE, f.fileno())
+        except OSError:
+            os.close(fd)
+            os.unlink(dst)
+            raise
+        os.close(fd)
+    elif sys.platform == "darwin":
+        import ctypes
+        import ctypes.util
+        libc = ctypes.CDLL(ctypes.util.find_library("c"), use_errno=True)
+        if libc.clonefile(os.fsencode(src), os.fsencode(dst), 0) != 0:
+            e = ctypes.get_errno()
+            raise OSError(e, os.strerror(e), str(dst))
+    else:
+        raise OSError(errno.EOPNOTSUPP, "files cannot be cloned on this platform", str(dst))
+
+
+_ELSEWHERE = (errno.EXDEV,)
+
+
+def _why(e: OSError, what: str) -> str:
+    if e.errno in _ELSEWHERE:
+        return "store on another file system"
+    if "platform" in str(e):
+        return f"{what} unsupported on this platform"
+    return f"{what} unsupported on this file system ({errno.errorcode.get(e.errno, e.errno)})"
+
+
+def probe(out_dir, store_dir, want: str = "auto") -> tuple[str, str]:
+    """The placement of a layout in `out_dir` whose files come from the store objects in `store_dir`, for `want`
+    (LINKS), tried once on a temporary file in each: (placement, reason). auto: a clone where the file system makes
+    them, else a hard link on the same file system, else a copy. An explicit clone or hard link that does not work
+    raises LayoutError."""
+    if want not in LINKS:
+        raise ValueError(f"unknown link mode {want!r} (one of {', '.join(LINKS)})")
+    if want == "copy":
+        return "copy", "copy: as asked"
+    out, store = Path(out_dir), Path(store_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    store.mkdir(parents=True, exist_ok=True)
+    src, made = temp_path(store / "probe"), []
+    try:
+        with open(src, "xb") as f:
+            f.write(b"nnnotes placement probe\n")
+        why = "as asked"
+        if want in ("auto", "clone"):
+            made.append(temp_path(out / "probe"))
+            try:
+                clone(src, made[-1])
+                return "clone", "clone: the file system shares the store objects' blocks"
+            except OSError as e:
+                why = _why(e, "clone")
+                if want == "clone":
+                    raise LayoutError(f"--link clone: {why}") from None
+        made.append(temp_path(out / "probe"))
+        try:
+            os.link(src, made[-1])
+        except OSError as e:
+            if want == "hard":
+                raise LayoutError(f"--link hard: {_why(e, 'hard links')}") from None
+            return "copy", f"copy: {_why(e, 'hard links')}"
+        return "hard", f"hard links: {why}"
+    finally:
+        for p in (src, *made):
+            p.unlink(missing_ok=True)
+
+
+def _remove(out: Path, rel: str, restore=None) -> None:
     p = out / rel
+    again = _writable(p)
     p.unlink(missing_ok=True)
+    if again and restore is not None:
+        restore()
     d = p.parent
     while d != out and out in d.parents:
         try:

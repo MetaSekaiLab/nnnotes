@@ -239,12 +239,88 @@ def test_hard_links(tmp_path):
     s, sources = two_bundles(tmp_path)
     cas, _ = layout.entries("cas", sources)
     w = layout.materialize(tmp_path / "out", "cas", {}, cas, layout.from_store(s), link="hard")
-    assert w["linked"] + w["copied"] == w["write"]
+    assert w["linked"] == w["write"] and w["copied"] == w["cloned"] == 0 and w["failed"] == []
     e = cas[0]
-    if w["linked"]:
-        assert os.path.samefile(tmp_path / "out" / e["path"], s.path(e["sha256"]))
-    with pytest.raises(ValueError):
-        layout.materialize(tmp_path / "out", "cas", {}, cas, layout.from_store(s), link="soft")
+    assert os.path.samefile(tmp_path / "out" / e["path"], s.path(e["sha256"]))
+    assert os.stat(tmp_path / "out" / e["path"]).st_mode & 0o222 == 0    # the store object itself: read-only
+    if not (hasattr(os, "geteuid") and os.geteuid() == 0):               # (the superuser writes anyway)
+        with pytest.raises(PermissionError):
+            (tmp_path / "out" / e["path"]).write_bytes(b"edited")
+    for bad in ("soft", "auto"):
+        with pytest.raises(ValueError):
+            layout.materialize(tmp_path / "out", "cas", {}, cas, layout.from_store(s), link=bad)
+
+
+def _clone_by_copy(src, dst):
+    with open(dst, "xb") as f:
+        f.write(Path(src).read_bytes())
+
+
+def _no(code):
+    def fail(*a, **k):
+        raise OSError(code, os.strerror(code))
+    return fail
+
+
+def test_the_probe_prefers_clone_then_hard_link_then_copy(tmp_path, monkeypatch):
+    import errno
+    out, store = tmp_path / "out", tmp_path / "s" / "cas" / "sha256"
+    monkeypatch.setattr(layout, "clone", _clone_by_copy)
+    assert layout.probe(out, store)[0] == "clone" and layout.probe(out, store, "clone")[0] == "clone"
+    monkeypatch.setattr(layout, "clone", _no(errno.EOPNOTSUPP))
+    how, why = layout.probe(out, store)
+    assert how == "hard" and why.startswith("hard links: clone unsupported on this file system (")
+    with pytest.raises(LayoutError, match="--link clone: clone unsupported"):
+        layout.probe(out, store, "clone")
+    monkeypatch.setattr(layout.os, "link", _no(errno.EXDEV))
+    assert layout.probe(out, store) == ("copy", "copy: store on another file system")
+    with pytest.raises(LayoutError, match="--link hard: store on another file system"):
+        layout.probe(out, store, "hard")
+    assert layout.probe(out, store, "copy") == ("copy", "copy: as asked")
+    assert list(out.iterdir()) == [] and list(store.iterdir()) == []             # nothing left behind
+
+
+def test_every_placement_gives_the_same_files_and_manifest(tmp_path, monkeypatch):
+    s, sources = two_bundles(tmp_path)
+    orig, _ = layout.entries("original", sources)
+    monkeypatch.setattr(layout, "clone", _clone_by_copy)
+    got = {}
+    for how in layout.PLACEMENTS:
+        w = layout.materialize(tmp_path / how, "original", {}, orig, layout.from_store(s), link=how)
+        counts = {k: w[k] for k in ("cloned", "linked", "copied")}
+        assert counts[{"clone": "cloned", "hard": "linked", "copy": "copied"}[how]] == w["write"] == len(orig)
+        got[how] = (files(tmp_path / how), w["sha256"])
+    assert got["clone"] == got["hard"] == got["copy"]
+    (tmp_path / "copy" / orig[0]["path"]).write_bytes(b"a copy is writable")
+    assert all(os.stat(s.path(e["sha256"])).st_mode & 0o222 == 0 for e in orig)   # store objects: read-only
+
+
+def test_a_file_the_placement_cannot_make_is_reported_and_placed_next_time(tmp_path, monkeypatch):
+    import errno
+    s, sources = two_bundles(tmp_path)
+    cas, _ = layout.entries("cas", sources)
+    real = os.link
+    victim = s.path(cas[0]["sha256"])
+    monkeypatch.setattr(layout.os, "link", lambda a, b: _no(errno.EMLINK)() if Path(a) == victim else real(a, b))
+    w = layout.materialize(tmp_path / "out", "cas", {}, cas, layout.from_store(s), link="hard")
+    assert [f["path"] for f in w["failed"]] == [cas[0]["path"]] and w["write"] == len(cas) - 1
+    assert cas[0]["path"] not in {e["path"] for e in layout.read_manifest(tmp_path / "out")["entries"]}
+    monkeypatch.setattr(layout.os, "link", real)
+    w = layout.materialize(tmp_path / "out", "cas", {}, cas, layout.from_store(s), link="hard")
+    assert w["failed"] == [] and w["write"] == 1 and len(layout.read_manifest(tmp_path / "out")["entries"]) == len(cas)
+
+
+def test_a_layout_replaces_and_removes_its_read_only_files(tmp_path):
+    s, sources = two_bundles(tmp_path)
+    cas, _ = layout.entries("cas", sources)
+    layout.materialize(tmp_path / "out", "cas", {}, cas, layout.from_store(s), link="hard")
+    layout.materialize(tmp_path / "out", "cas", {}, cas[1:], layout.from_store(s), link="copy")   # remove one
+    assert not (tmp_path / "out" / cas[0]["path"]).exists()
+    assert os.stat(s.path(cas[0]["sha256"])).st_mode & 0o222 == 0          # its store object stays read-only
+    other = [dict(cas[1], path=cas[2]["path"])] + [e for e in cas[1:] if e["path"] != cas[2]["path"]]
+    layout.materialize(tmp_path / "out", "cas", {}, other, layout.from_store(s), link="copy")    # replace one
+    assert (tmp_path / "out" / cas[2]["path"]).read_bytes() == s.read(cas[1]["sha256"])
+    assert os.stat(s.path(cas[2]["sha256"])).st_mode & 0o222 == 0
 
 
 def test_an_objects_artifacts_from_several_results_are_placed_together(tmp_path):

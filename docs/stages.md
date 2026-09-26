@@ -98,7 +98,7 @@ when the catalog has no such key).
 
 | Stage | Parameters | Atoms | Artifacts (`<task id>#<role>`) |
 |---|---|---|---|
-| `cri.audio` | `flac.level` (12): ffmpeg's FLAC compression level (every level decodes to the same samples) | `hca.decode` (vgmstream), `flac.encode` (ffmpeg) | one FLAC per vgmstream stream (a name repeated within the sheet gets `<name>_<stream>`; facts: stream, name, sample rate, channels, samples, loop points), `cues.json` (the first stream of each name), `streams.json` (every stream in order): the bytes `nnnotes audio` writes for the sheet (FLAC) |
+| `cri.audio` | `flac.level` (8): ffmpeg's FLAC compression level 0-12 (every level decodes to the same samples) | `hca.decode` (vgmstream), `flac.encode` (ffmpeg) | one FLAC per vgmstream stream (a name repeated within the sheet gets `<name>_<stream>`; facts: stream, name, sample rate, channels, samples, loop points), `cues.json` (the first stream of each name), `streams.json` (every stream in order): the bytes `nnnotes audio` writes for the sheet (FLAC) |
 | `cri.movie` | `format`: `mkv` (default; with `flac.level`) or `webm` | `usm.demux` (nnnotes: `numpy-<v>/1`), `movie.mux` (ffmpeg) | `video.ivf` (the VP9 stream in its IVF container, unmasked; facts: size, frame rate, frames), `audio.adx` (the ADX stream when there is one; facts: channels, sample rate, samples), `movie.mkv` (VP9 copied, the audio as FLAC) or with `format: webm` `movie.webm` (VP9 copied, the audio as Opus, as the story's videos) |
 
 The ids of the external tools are `<tool>-<version>+sha256.<sha256 of the executable>/<revision>` (the version as
