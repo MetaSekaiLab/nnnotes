@@ -1,0 +1,642 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:nnnotes:schema:catalog-diff",
+  "title": "nnnotes.catalog-diff/1",
+  "description": "The difference between two catalog versions: keys added, removed and changed (internal id, provider, type, dependencies named by stable file names), bundles and raw files matched by stable name (added, removed, changed with old and new name, hash, size, crc), the keys whose dependency closure reaches a changed file, and, when both address tables are known, the objects by stable address (nnnotes.addresses/1). Every list is sorted.",
+  "type": "object",
+  "required": [
+    "schema",
+    "old",
+    "new",
+    "keys",
+    "bundles",
+    "rawFiles",
+    "affectedKeys",
+    "summary"
+  ],
+  "properties": {
+    "schema": {
+      "const": "nnnotes.catalog-diff/1"
+    },
+    "old": {
+      "type": "object",
+      "required": [
+        "remote",
+        "apk"
+      ],
+      "properties": {
+        "remote": {
+          "anyOf": [
+            {
+              "$ref": "urn:nnnotes:schema:common#/$defs/sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "apk": {
+          "anyOf": [
+            {
+              "$ref": "urn:nnnotes:schema:common#/$defs/sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "new": {
+      "type": "object",
+      "required": [
+        "remote",
+        "apk"
+      ],
+      "properties": {
+        "remote": {
+          "anyOf": [
+            {
+              "$ref": "urn:nnnotes:schema:common#/$defs/sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "apk": {
+          "anyOf": [
+            {
+              "$ref": "urn:nnnotes:schema:common#/$defs/sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "keys": {
+      "type": "object",
+      "required": [
+        "added",
+        "removed",
+        "changed"
+      ],
+      "properties": {
+        "added": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "removed": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "changed": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "key",
+              "fields",
+              "old",
+              "new"
+            ],
+            "properties": {
+              "key": {
+                "type": "string"
+              },
+              "fields": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "old": {
+                "type": "array",
+                "items": {}
+              },
+              "new": {
+                "type": "array",
+                "items": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "bundles": {
+      "type": "object",
+      "required": [
+        "added",
+        "removed",
+        "changed",
+        "unchanged"
+      ],
+      "properties": {
+        "added": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "stable",
+              "name",
+              "hash",
+              "size",
+              "crc",
+              "bundleName"
+            ],
+            "properties": {
+              "stable": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "hash": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{32}$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "size": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "crc": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "bundleName": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          }
+        },
+        "removed": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "stable",
+              "name",
+              "hash",
+              "size",
+              "crc",
+              "bundleName"
+            ],
+            "properties": {
+              "stable": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "hash": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{32}$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "size": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "crc": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "bundleName": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          }
+        },
+        "changed": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "stable",
+              "fields",
+              "old",
+              "new"
+            ],
+            "properties": {
+              "stable": {
+                "type": "string"
+              },
+              "fields": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "old": {
+                "type": "object",
+                "required": [
+                  "name",
+                  "hash",
+                  "size",
+                  "crc",
+                  "bundleName"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "hash": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{32}$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "size": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "crc": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "bundleName": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                }
+              },
+              "new": {
+                "type": "object",
+                "required": [
+                  "name",
+                  "hash",
+                  "size",
+                  "crc",
+                  "bundleName"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "hash": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{32}$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "size": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "crc": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "bundleName": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "unchanged": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "rawFiles": {
+      "type": "object",
+      "required": [
+        "added",
+        "removed",
+        "changed",
+        "unchanged"
+      ],
+      "properties": {
+        "added": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "stable",
+              "name",
+              "hash",
+              "size",
+              "crc",
+              "bundleName"
+            ],
+            "properties": {
+              "stable": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "hash": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{32}$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "size": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "crc": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "bundleName": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          }
+        },
+        "removed": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "stable",
+              "name",
+              "hash",
+              "size",
+              "crc",
+              "bundleName"
+            ],
+            "properties": {
+              "stable": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "hash": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{32}$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "size": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "crc": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "bundleName": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          }
+        },
+        "changed": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "stable",
+              "fields",
+              "old",
+              "new"
+            ],
+            "properties": {
+              "stable": {
+                "type": "string"
+              },
+              "fields": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "old": {
+                "type": "object",
+                "required": [
+                  "name",
+                  "hash",
+                  "size",
+                  "crc",
+                  "bundleName"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "hash": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{32}$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "size": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "crc": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "bundleName": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                }
+              },
+              "new": {
+                "type": "object",
+                "required": [
+                  "name",
+                  "hash",
+                  "size",
+                  "crc",
+                  "bundleName"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "hash": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{32}$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "size": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "crc": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "bundleName": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "unchanged": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "affectedKeys": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "objects": {
+      "type": "object",
+      "required": [
+        "added",
+        "removed",
+        "changed",
+        "rebuilt",
+        "unchanged",
+        "summary"
+      ],
+      "properties": {
+        "added": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "removed": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "changed": {
+          "type": "array",
+          "items": {}
+        },
+        "rebuilt": {
+          "type": "array",
+          "items": {}
+        },
+        "unchanged": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "summary": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "summary": {
+      "type": "object"
+    }
+  }
+}

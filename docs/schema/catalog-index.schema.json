@@ -1,0 +1,681 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:nnnotes:schema:catalog-index",
+  "title": "nnnotes.catalog-index/1",
+  "description": "The index of a catalog pair (stage catalog.index): per catalog (remote, apk) its content id, size, header and counts; every location in catalog order (id \"<catalog>:<offset>\", primary key, internal id, kind, provider, resource type, dependencies, AssetBundleRequestOptions extra data); the bundle and raw files the locations name, by name, with their stable names and change signals (hash, crc, size); stable-name collisions. A function of the catalog bytes alone.",
+  "type": "object",
+  "required": [
+    "schema",
+    "catalogs",
+    "locations",
+    "bundles",
+    "rawFiles",
+    "collisions"
+  ],
+  "properties": {
+    "schema": {
+      "const": "nnnotes.catalog-index/1"
+    },
+    "catalogs": {
+      "type": "object",
+      "required": [
+        "remote"
+      ],
+      "properties": {
+        "remote": {
+          "type": "object",
+          "required": [
+            "sha256",
+            "size",
+            "header",
+            "keys",
+            "locations"
+          ],
+          "properties": {
+            "sha256": {
+              "$ref": "urn:nnnotes:schema:common#/$defs/sha256"
+            },
+            "size": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "header": {
+              "type": "object",
+              "required": [
+                "magic",
+                "version",
+                "keysOffset",
+                "locatorId",
+                "instanceProvider",
+                "sceneProvider",
+                "initObjects",
+                "buildResultHash"
+              ],
+              "properties": {
+                "magic": {
+                  "type": "integer"
+                },
+                "version": {
+                  "type": "integer"
+                },
+                "keysOffset": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "locatorId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "instanceProvider": {
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "assembly",
+                    "type",
+                    "data"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "assembly": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "type": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "data": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  }
+                },
+                "sceneProvider": {
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "assembly",
+                    "type",
+                    "data"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "assembly": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "type": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "data": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  }
+                },
+                "initObjects": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "id",
+                      "assembly",
+                      "type",
+                      "data"
+                    ],
+                    "properties": {
+                      "id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "assembly": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "type": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "data": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    }
+                  }
+                },
+                "buildResultHash": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              }
+            },
+            "keys": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "locations": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "apk": {
+          "type": "object",
+          "required": [
+            "sha256",
+            "size",
+            "header",
+            "keys",
+            "locations"
+          ],
+          "properties": {
+            "sha256": {
+              "$ref": "urn:nnnotes:schema:common#/$defs/sha256"
+            },
+            "size": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "header": {
+              "type": "object",
+              "required": [
+                "magic",
+                "version",
+                "keysOffset",
+                "locatorId",
+                "instanceProvider",
+                "sceneProvider",
+                "initObjects",
+                "buildResultHash"
+              ],
+              "properties": {
+                "magic": {
+                  "type": "integer"
+                },
+                "version": {
+                  "type": "integer"
+                },
+                "keysOffset": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "locatorId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "instanceProvider": {
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "assembly",
+                    "type",
+                    "data"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "assembly": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "type": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "data": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  }
+                },
+                "sceneProvider": {
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "assembly",
+                    "type",
+                    "data"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "assembly": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "type": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "data": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  }
+                },
+                "initObjects": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "id",
+                      "assembly",
+                      "type",
+                      "data"
+                    ],
+                    "properties": {
+                      "id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "assembly": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "type": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "data": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    }
+                  }
+                },
+                "buildResultHash": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              }
+            },
+            "keys": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "locations": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "locations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "primaryKey",
+          "internalId",
+          "kind",
+          "provider",
+          "type",
+          "dependencies",
+          "dependencyHash",
+          "extraData"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^(remote|apk):[0-9]+$"
+          },
+          "primaryKey": {
+            "type": "string"
+          },
+          "internalId": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "bundle",
+              "raw",
+              "asset",
+              "other"
+            ]
+          },
+          "provider": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "dependencies": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^(remote|apk):[0-9]+$"
+            }
+          },
+          "dependencyHash": {
+            "type": "integer"
+          },
+          "extraData": {
+            "anyOf": [
+              {
+                "type": "object",
+                "required": [
+                  "type"
+                ],
+                "properties": {
+                  "type": {
+                    "type": "string"
+                  },
+                  "hash": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{32}$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "bundleName": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "crc": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "bundleSize": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "timeout": {
+                    "type": "integer"
+                  },
+                  "redirectLimit": {
+                    "type": "integer"
+                  },
+                  "retryCount": {
+                    "type": "integer"
+                  },
+                  "flags": {
+                    "type": "integer"
+                  },
+                  "assetLoadMode": {
+                    "type": "integer"
+                  },
+                  "chunkedTransfer": {
+                    "type": "boolean"
+                  },
+                  "useCrcForCachedBundle": {
+                    "type": "boolean"
+                  },
+                  "useUnityWebRequestForLocalBundles": {
+                    "type": "boolean"
+                  },
+                  "clearOtherCachedVersionsWhenLoaded": {
+                    "type": "boolean"
+                  }
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "bundles": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "stable",
+          "remote",
+          "location",
+          "locations",
+          "hash",
+          "bundleName",
+          "crc",
+          "size",
+          "flags"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "stable": {
+            "type": "string"
+          },
+          "remote": {
+            "type": "boolean"
+          },
+          "location": {
+            "type": "string",
+            "pattern": "^(remote|apk):[0-9]+$"
+          },
+          "locations": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^(remote|apk):[0-9]+$"
+            },
+            "minItems": 1
+          },
+          "hash": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9a-f]{32}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "bundleName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "crc": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "size": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "flags": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "rawFiles": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "stable",
+          "remote",
+          "location",
+          "locations",
+          "hash",
+          "bundleName",
+          "crc",
+          "size",
+          "flags"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "stable": {
+            "type": "string"
+          },
+          "remote": {
+            "type": "boolean"
+          },
+          "location": {
+            "type": "string",
+            "pattern": "^(remote|apk):[0-9]+$"
+          },
+          "locations": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^(remote|apk):[0-9]+$"
+            },
+            "minItems": 1
+          },
+          "hash": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9a-f]{32}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "bundleName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "crc": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "size": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "flags": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "collisions": {
+      "type": "object",
+      "required": [
+        "bundles",
+        "rawFiles"
+      ],
+      "properties": {
+        "bundles": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "rawFiles": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  }
+}

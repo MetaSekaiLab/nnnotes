@@ -49,6 +49,9 @@ version = ""
 catalog = ""
 # cache directory: downloaded catalogs, decrypted bundles, raw CDN files (flag --cache)
 cache = ""
+# store of the asset export: contents, task results, catalog versions, run manifests; empty: <cache>/store
+# (flag --store)
+store = ""
 # decoded master data directory, one <Table>.json per table (`nnnotes master decode`) (flag --master)
 master = ""
 # the game's base.apk: APK-local bundles, player settings, CRI HCA keycode (flag --apk)

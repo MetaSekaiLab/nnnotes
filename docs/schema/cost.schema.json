@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:nnnotes:schema:cost",
+  "title": "nnnotes.cost/1",
+  "description": "The measured cost of a task's last run (not deterministic).",
+  "type": "object",
+  "required": [
+    "schema",
+    "key",
+    "task",
+    "cpuSeconds",
+    "wallSeconds"
+  ],
+  "properties": {
+    "schema": {
+      "const": "nnnotes.cost/1"
+    },
+    "key": {
+      "$ref": "urn:nnnotes:schema:common#/$defs/sha256"
+    },
+    "task": {
+      "$ref": "urn:nnnotes:schema:common#/$defs/taskId"
+    },
+    "cpuSeconds": {
+      "type": "number",
+      "minimum": 0,
+      "description": "CPU seconds of the task's process and of its child processes."
+    },
+    "wallSeconds": {
+      "type": "number",
+      "minimum": 0
+    },
+    "peakRssBytes": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "childCpuSeconds": {
+      "description": "CPU seconds of the child processes the task ran (external tools), included in cpuSeconds; null where the platform does not report them.",
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0
+    }
+  }
+}

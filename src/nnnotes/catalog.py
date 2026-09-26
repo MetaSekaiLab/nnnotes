@@ -11,7 +11,7 @@ import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from .addressables import BundleKey, decrypt, parse, remote_path
+from .addressables import BundleKey, decrypt, parse, parse_locations, remote_path
 from .cache import write_atomic as _write_atomic
 from .config import ConfigError, apk_missing
 
@@ -27,6 +27,26 @@ class Bundle:
     internal_id: str
     name: str          # bare file name (embeds content hash)
     remote: bool       # True: on CDN; False: shipped inside the APK
+
+
+def location_kind(internal_id: str) -> str:
+    """What a location names: "bundle" or "raw" (a file on the CDN or in the APK, `.bundle` or not), "asset" (a path
+    inside a bundle), else "other"."""
+    if remote_path(internal_id) is not None or internal_id.startswith(LOCAL_PREFIX):
+        return "bundle" if internal_id.endswith(".bundle") else "raw"
+    if internal_id.startswith(("Assets/", "Packages/")):
+        return "asset"
+    return "other"
+
+
+def file_name(internal_id: str) -> str:
+    """The name of a bundle or raw file location: its path below the platform directory (`Android/`), which for a
+    bundle is its bare file name."""
+    rel = remote_path(internal_id)
+    if rel is None:
+        rel = internal_id[len(LOCAL_PREFIX):] if internal_id.startswith(LOCAL_PREFIX) else internal_id
+    head, sep, tail = rel.partition("/Android/")
+    return tail if sep else rel.rsplit("/", 1)[-1]
 
 
 def _unityfs(data: bytes, name: str, key: BundleKey | None) -> bytes:
@@ -55,9 +75,12 @@ class Catalog:
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.apk = Path(apk) if apk else None
         self.entries = parse(catalog_bytes)
+        self._sources = {"remote": catalog_bytes}
+        self._locations: list[dict] | None = None
         if self.apk is not None:
             with zipfile.ZipFile(self.apk) as z:
-                for e in parse(z.read(APK_CATALOG)):
+                self._sources["apk"] = z.read(APK_CATALOG)
+                for e in parse(self._sources["apk"]):
                     e["offset"] += APK_OFFSET_BASE
                     e["dependencies"] = [d + APK_OFFSET_BASE for d in e["dependencies"]]
                     self.entries.append(e)
@@ -127,6 +150,49 @@ class Catalog:
         if iid.startswith(LOCAL_PREFIX) and iid.endswith(".bundle"):
             return Bundle(e["offset"], iid, iid.rsplit("/", 1)[1], remote=False)
         return None
+
+    def sources(self) -> dict[str, bytes]:
+        """The catalog files this catalog was made of: {"remote": bytes, "apk": bytes (with an APK)}."""
+        return dict(self._sources)
+
+    def locations(self) -> list[dict]:
+        """Every location of the remote catalog and (with an APK) of the APK catalog, fully decoded
+        (addressables.parse_locations), with `catalog` ("remote" / "apk") and `kind` (location_kind). Offsets and
+        dependencies are those of `entries` (APK ones in their own namespace)."""
+        if self._locations is None:
+            out = []
+            for name, base in (("remote", 0), ("apk", APK_OFFSET_BASE)):
+                if name not in self._sources:
+                    continue
+                for e in parse_locations(self._sources[name]):
+                    e["offset"] += base
+                    e["dependencies"] = [d + base for d in e["dependencies"]]
+                    e["catalog"] = name
+                    e["kind"] = location_kind(e["internal_id"])
+                    out.append(e)
+            self._locations = out
+        return [dict(e) for e in self._locations]
+
+    def bundles(self) -> list[Bundle]:
+        """Every bundle file the catalogs name (remote and APK-local), one per file name, sorted by name. A file the
+        APK catalog lists gets the APK catalog's location (the remote catalog's references to APK files may describe
+        another build), else its first location."""
+        out: dict[str, Bundle] = {}
+        for e in sorted(self.entries, key=lambda e: (e["offset"] < APK_OFFSET_BASE, e["offset"])):
+            b = self._as_bundle(e)
+            if b is not None:
+                out.setdefault(b.name, b)
+        return [out[n] for n in sorted(out)]
+
+    def raw_files(self) -> list[dict]:
+        """Every raw file the catalogs name (a CDN or APK file that is not a bundle, e.g. CRI ACB/AWB/USM data), one
+        entry per file name (file_name), sorted by name, preferring the APK catalog's as bundles() does. Remote ones
+        are what fetch_raw takes."""
+        out: dict[str, dict] = {}
+        for e in sorted(self.entries, key=lambda e: (e["offset"] < APK_OFFSET_BASE, e["offset"])):
+            if location_kind(e["internal_id"]) == "raw":
+                out.setdefault(file_name(e["internal_id"]), e)
+        return [out[n] for n in sorted(out)]
 
     def resolve(self, key: str) -> list[Bundle]:
         """Full bundle closure for an addressable key (BFS over dependencies)."""

@@ -59,6 +59,7 @@ exist when they are given.
 | `[client] version` | `NNNOTES_CLIENT_VERSION` | — | client version sent to the game's API, e.g. `1.0.1`; unset: the `versionName` of `[paths] apk` |
 | `[paths] catalog` | `NNNOTES_PATHS_CATALOG` | `--catalog` | a catalog `.bin` file to read instead of downloading `catalog_main_<language>.bin` |
 | `[paths] cache` | `NNNOTES_PATHS_CACHE` | `--cache` | cache directory (created when missing) |
+| `[paths] store` | `NNNOTES_PATHS_STORE` | `--store` (of `export`, `plan`, `run-stage`, `catalogs`, `store`) | store directory of the asset export ([assets.md](assets.md)); unset: `<[paths] cache>/store` |
 | `[paths] master` | `NNNOTES_PATHS_MASTER` | `--master` | decoded master data directory, one `<Table>.json` per table; the flag overrides `[servers.<region>] master` |
 | `[paths] apk` | `NNNOTES_PATHS_APK` | `--apk` | the game's `base.apk` |
 | `[paths] ffmpeg` | `NNNOTES_PATHS_FFMPEG` | `--ffmpeg` | `ffmpeg` executable; unset: `ffmpeg` on `PATH` |
@@ -114,6 +115,10 @@ it is not a setting.
 | `web --pair` / `--all` | as `live`, plus `[paths] player`, `node`; with `--region` / `--all-regions` each region's `[servers.<region>]` table (its `cdn` for what must be downloaded) and master data (`[servers.<region>] master`; `[paths] master` for at most one region) |
 | `web --live2d` / `--all-live2d` | catalog (bundles from the CDN of the site's first region), `[paths] apk`, `[paths] player`; not `node`; master data only for the model names (optional: without it `models.json` has no names) |
 | `web --player-only` / `--reingest-json` | `[paths] player` |
+| `export`, `plan` | the store (`[paths] store` or `[paths] cache`); catalog (bundles are fetched into the cache); `[paths] apk` for the bundles inside the APK (without it they are reported as `source.absent`); master data for `--views`; with `--catalog-version` an imported catalog version instead of the current catalog |
+| `run-stage` | the store; `[paths] cache` for inputs located in the cache; `--fetch` also what fetching needs (region, `cdn`, bundle key, `[paths] apk`) |
+| `catalogs list` / `import` / `diff`, `store verify` | the store; `import` reads the APK's catalog from `[paths] apk` when it is set |
+| `catalogs fetch` | the store, `[catalog] region` and `language`, that region's `cdn`; its `api` (optional) for the resource version label |
 
 The region, its `cdn`, `[bundle] key` and `nonce_seed` are read only when a file must be downloaded: when the
 catalog and every bundle a command needs are in the cache, none of them is needed. A download that needs a missing

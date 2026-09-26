@@ -25,6 +25,11 @@ whatever the console encoding.
     nnnotes web out/site --player <ournotes-player> [--pair 100001:expert [--pair ...] | --all] [--format aac]
                          [--live2d <model id | key> [--live2d ...] | --all-live2d]
                          [--region <region> [--region ...] | --all-regions]
+    nnnotes export -o out/assets [--select group:<group> | key:<prefix> | bundle:<glob> ...] [--layout original,cas]
+    nnnotes plan [--select ...] [--json] [--check] [--emit-tasks <dir>]
+    nnnotes run-stage <task.json> [...]
+    nnnotes catalogs list | import <catalog.bin> | fetch | diff <old> <new>
+    nnnotes store verify
 """
 from __future__ import annotations
 
@@ -39,7 +44,7 @@ from pathlib import Path
 # inherit it.
 os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
 
-from . import __version__
+from . import __version__, cli_assets
 from .addressables import BundleKey
 from .catalog import Catalog
 from .config import Config, ConfigError, use
@@ -59,6 +64,7 @@ FLAG_SETTINGS = {
     ("paths", "vgmstream"): ("vgmstream", "--vgmstream"),
     ("paths", "node"): ("node", "--node"),
     ("paths", "player"): ("player", "--player"),
+    ("paths", "store"): ("store", "--store"),
 }
 
 
@@ -571,6 +577,8 @@ def build_parser() -> argparse.ArgumentParser:
     _fonts_arg(c)
     _band_args(c)
     c.set_defaults(func=cmd_web, usage=c.error)
+
+    cli_assets.register(sub, argparse.Namespace(open_catalog=open_catalog, print_json=_print_json))
     return p
 
 

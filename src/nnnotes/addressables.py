@@ -2,7 +2,10 @@
 
 A remote content catalog (`catalog_main_<language>.bin`, Addressables binary catalog format version 2) lists every
 addressable key with its location: an asset path inside a bundle, a bundle, or a raw file. Remote locations are
-absolute URLs on a placeholder host that the game replaces with its CDN base at load time.
+absolute URLs on a placeholder host that the game replaces with its CDN base at load time. `parse` reads what the
+extractors need (keys, internal ids, dependencies); `parse_locations` decodes every field of every location,
+including the AssetBundleRequestOptions of bundle and raw file locations (content hash, CRC, size, internal bundle
+name), and `parse_header` / `parse_keys` the header and the key table.
 
 Asset bundles on the CDN and inside the APK are encrypted in their first 16 KiB with AES-128 in CTR mode: the nonce
 is the first 8 bytes of SHA-256(nonce seed + UTF-8 bundle file name), the counter block is nonce + 64-bit big-endian
@@ -94,6 +97,184 @@ def parse(data: bytes) -> list[dict]:
         result.append({"offset": pos, "primary_key": text(primary),
                        "internal_id": text(internal), "dependencies": array(deps)})
     return result
+
+
+# ---------------------------------------------------------------- full decode
+# The binary catalog is a BinaryStorageBuffer: every value lives at an offset (0xFFFFFFFF = null). Fixed-size values
+# (the header, ResourceLocation.Serializer.Data, ObjectTypeData, TypeSerializer.Data, DynamicString,
+# AssetBundleRequestOptionsSerializationAdapter.SerializedData and .Common, Hash128) are read as `sizeof` bytes at
+# their offset with no length prefix; arrays and strings carry a u32 byte length just before their offset. A string
+# offset has flags in its top bits: bit 31 UTF-16LE (else one byte per character), bit 30 a DynamicString chain
+# {u32 part, u32 previous} that starts at the last part; the reader supplies the separator the parts are joined with.
+UNICODE = 0x80000000
+DYNAMIC = 0x40000000
+OFFSET_MASK = 0x3FFFFFFF
+HEADER = struct.Struct("<iiIIIIII")          # ContentCatalogData.ResourceLocator.Header, 32 bytes
+LOCATION = struct.Struct("<IIIIiII")         # ResourceLocation.Serializer.Data, 28 bytes
+REQUEST_OPTIONS = "UnityEngine.ResourceManagement.ResourceProviders.AssetBundleRequestOptions"
+# AssetBundleRequestOptions flag bits (SerializedData.Common.flags)
+FLAG_BITS = (("assetLoadMode", 1), ("chunkedTransfer", 2), ("useCrcForCachedBundle", 4),
+             ("useUnityWebRequestForLocalBundles", 8), ("clearOtherCachedVersionsWhenLoaded", 16))
+
+
+class _Buffer:
+    """Typed reads from a binary catalog."""
+
+    def __init__(self, data: bytes):
+        self.data = data
+
+    def u32(self, offset: int) -> int:
+        return struct.unpack_from("<I", self.data, offset)[0]
+
+    def array(self, offset: int) -> list[int]:
+        """A u32 array (its byte length is the u32 before it); [] for null."""
+        if offset == NONE:
+            return []
+        n = self.u32(offset - 4)
+        if n % 4:
+            raise ValueError(f"catalog array at {offset}: byte length {n} is not a multiple of 4")
+        return list(struct.unpack_from(f"<{n // 4}I", self.data, offset))
+
+    def plain(self, offset: int) -> str:
+        pos = offset & OFFSET_MASK
+        raw = self.data[pos:pos + self.u32(pos - 4)]
+        return raw.decode("utf-16-le" if offset & UNICODE else "ascii")
+
+    def string(self, offset: int, sep: str) -> str | None:
+        """A string read with separator `sep` ("" reads plain strings only); None for null."""
+        if offset == NONE:
+            return None
+        if not offset & DYNAMIC:
+            return self.plain(offset)
+        if not sep:
+            raise ValueError(f"catalog string at {offset & OFFSET_MASK}: a part list where a plain string belongs")
+        parts, link, seen = [], offset, set()
+        while link != NONE:
+            pos = link & OFFSET_MASK
+            if pos in seen:
+                raise ValueError(f"catalog string at {offset & OFFSET_MASK}: the part chain loops")
+            seen.add(pos)
+            part, link = struct.unpack_from("<II", self.data, pos)
+            if part != NONE and part & DYNAMIC:
+                raise ValueError(f"catalog string at {pos}: a nested part list")
+            parts.append("" if part == NONE else self.plain(part))
+        return sep.join(reversed(parts))
+
+    def type_name(self, offset: int) -> tuple[str | None, str | None] | None:
+        """TypeSerializer.Data {assembly, class}, both read with '.'; None for null."""
+        if offset == NONE:
+            return None
+        assembly, cls = struct.unpack_from("<II", self.data, offset)
+        return self.string(assembly, "."), self.string(cls, ".")
+
+    def object_init(self, offset: int) -> dict | None:
+        """ObjectInitializationData.Serializer.Data {id, type, data}: id and data plain strings, type a
+        TypeSerializer.Data."""
+        if offset == NONE:
+            return None
+        ident, typ, data = struct.unpack_from("<III", self.data, offset)
+        t = self.type_name(typ) or (None, None)
+        return {"id": self.string(ident, ""), "assembly": t[0], "type": t[1], "data": self.string(data, "")}
+
+    def key(self, offset: int) -> tuple[str | None, object]:
+        """A key object (ObjectTypeData {type, object}) -> (type name, value). System.String keys are an
+        ObjectToStringRemap {u32 string, u16 separator}; System.Int32 keys a 4-byte integer; other types None."""
+        typ, obj = struct.unpack_from("<II", self.data, offset)
+        cls = (self.type_name(typ) or (None, None))[1]
+        if cls == "System.String":
+            sid, sep = struct.unpack_from("<IH", self.data, obj)
+            return cls, self.string(sid, chr(sep) if sep else "")
+        if cls == "System.Int32":
+            return cls, struct.unpack_from("<i", self.data, obj)[0]
+        return cls, None
+
+    def extra(self, offset: int) -> dict | None:
+        """A location's extra data (ObjectTypeData {type, object}): {"type": class name} plus, for
+        AssetBundleRequestOptions, the decoded options; None for null."""
+        if offset == NONE:
+            return None
+        typ, obj = struct.unpack_from("<II", self.data, offset)
+        cls = (self.type_name(typ) or (None, None))[1]
+        out: dict = {"type": cls}
+        if cls == REQUEST_OPTIONS and obj != NONE:
+            out.update(self.request_options(obj))
+        return out
+
+    def request_options(self, offset: int) -> dict:
+        """AssetBundleRequestOptionsSerializationAdapter.SerializedData {u32 hash, u32 bundleName, u32 crc,
+        u32 bundleSize, u32 common}: hash a Hash128 (16 raw bytes, hex in stored order), bundleName read with '_',
+        common a SerializedData.Common {i16 timeout, u8 redirectLimit, u8 retryCount, i32 flags}."""
+        hash_id, name_id, crc, size, common = struct.unpack_from("<5I", self.data, offset)
+        out = {"hash": None if hash_id == NONE else self.data[hash_id:hash_id + 16].hex(),
+               "bundleName": self.string(name_id, "_"), "crc": crc, "bundleSize": size}
+        if common == NONE:
+            out.update(timeout=None, redirectLimit=None, retryCount=None, flags=None)
+            return out
+        timeout, redirects, retries, flags = struct.unpack_from("<hBBi", self.data, common)
+        out.update(timeout=timeout, redirectLimit=redirects, retryCount=retries, flags=flags)
+        for name, bit in FLAG_BITS:
+            out[name] = (flags & bit) // bit if name == "assetLoadMode" else bool(flags & bit)
+        return out
+
+
+def parse_header(data: bytes) -> dict:
+    """The header of a binary catalog: magic, version, keysOffset, locatorId, instanceProvider, sceneProvider
+    ({id, assembly, type, data}), initObjects (the same, the providers the catalog initializes), buildResultHash."""
+    if len(data) < HEADER.size:
+        raise ValueError("unsupported catalog format")
+    magic, version, keys, locator, instance, scene, init, build = HEADER.unpack_from(data, 0)
+    if magic != CATALOG_MAGIC or version != CATALOG_VERSION:
+        raise ValueError("unsupported catalog format")
+    buf = _Buffer(data)
+    return {"magic": magic, "version": version, "keysOffset": keys, "locatorId": buf.string(locator, ""),
+            "instanceProvider": buf.object_init(instance), "sceneProvider": buf.object_init(scene),
+            "initObjects": [buf.object_init(o) for o in buf.array(init)],
+            "buildResultHash": buf.string(build, "")}
+
+
+def parse_keys(data: bytes) -> list[dict]:
+    """The key table of a binary catalog in stored order (ContentCatalogData.ResourceLocator.KeyData {u32 key object,
+    u32 location set}): {"key": value, "type": the key's type name, "locations": location offsets}."""
+    header = parse_header(data)
+    buf = _Buffer(data)
+    out = []
+    table = header["keysOffset"]
+    n = buf.u32(table - 4)
+    if n % 8:
+        raise ValueError(f"catalog key table: byte length {n} is not a multiple of 8")
+    for pos in range(table, table + n, 8):
+        key_obj, locations = struct.unpack_from("<II", data, pos)
+        cls, value = buf.key(key_obj) if key_obj != NONE else (None, None)
+        out.append({"key": value, "type": cls, "locations": buf.array(locations)})
+    return out
+
+
+def parse_locations(data: bytes) -> list[dict]:
+    """Every location of a binary catalog, fully decoded, by offset: what parse() gives (offset, primary_key,
+    internal_id, dependencies) plus provider, dependency_hash, resource_type (class names) and extra_data.
+
+    A location record (ResourceLocation.Serializer.Data) is a fixed 28-byte value with no length prefix: primary key
+    and internal id (strings read with '/'), provider (read with '.'), dependency set (u32 array of location
+    offsets), dependency hash (i32), extra data (an ObjectTypeData) and resource type (a TypeSerializer.Data).
+    extra_data of bundle and raw file locations is an AssetBundleRequestOptions: {type, hash, bundleName, crc,
+    bundleSize, timeout, redirectLimit, retryCount, flags and the flag bits by name}."""
+    header = parse_header(data)
+    buf = _Buffer(data)
+    offsets: set[int] = set()
+    table = header["keysOffset"]
+    for pos in range(table, table + buf.u32(table - 4), 8):
+        offsets.update(buf.array(buf.u32(pos + 4)))
+    out = []
+    for pos in sorted(offsets):
+        if pos + LOCATION.size > len(data):
+            raise ValueError(f"catalog location at {pos}: past the end of the catalog")
+        primary, internal, provider, deps, dep_hash, extra, typ = LOCATION.unpack_from(data, pos)
+        rtype = buf.type_name(typ)
+        out.append({"offset": pos, "primary_key": buf.string(primary, "/") or "",
+                    "internal_id": buf.string(internal, "/") or "", "dependencies": buf.array(deps),
+                    "provider": buf.string(provider, "."), "dependency_hash": dep_hash,
+                    "resource_type": rtype[1] if rtype else None, "extra_data": buf.extra(extra)})
+    return out
 
 
 # ---------------------------------------------------------------- local browser

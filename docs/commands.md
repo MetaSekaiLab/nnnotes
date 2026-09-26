@@ -7,7 +7,8 @@ nnnotes [global options] <command> [command options]
 Global options (before the command): `--config`, `--region`, `--language`, `--catalog`, `--cache`, `--master`,
 `--apk`, `--ffmpeg`, `--vgmstream`, `--node`, plus `--version` and `--help`. They set the settings
 described in [configuration.md](configuration.md), which also lists the settings each command needs.
-`nnnotes <command> --help` prints the options of a command.
+`nnnotes <command> --help` prints the options of a command. The asset export commands (`export`, `plan`,
+`run-stage`, `catalogs`, `store`) are described in [assets.md](assets.md).
 
 Commands that write files take the output path with `-o/--out` (required), except `web`, which takes the site
 directory as its positional argument. JSON summaries on standard output are UTF-8. Every JSON file is written by one

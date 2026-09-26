@@ -1,0 +1,202 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:nnnotes:schema:result",
+  "title": "nnnotes.result/1",
+  "description": "The result of a task (its action-cache entry, the commit point): a function of its key alone. Artifacts sorted by id, items by object; status `partial` when an item failed.",
+  "type": "object",
+  "required": [
+    "schema",
+    "key",
+    "keyParts",
+    "status",
+    "artifacts",
+    "items"
+  ],
+  "properties": {
+    "schema": {
+      "const": "nnnotes.result/1"
+    },
+    "key": {
+      "$ref": "urn:nnnotes:schema:common#/$defs/sha256"
+    },
+    "keyParts": {
+      "$ref": "urn:nnnotes:schema:common#/$defs/keyParts"
+    },
+    "status": {
+      "enum": [
+        "ok",
+        "partial"
+      ]
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "$ref": "urn:nnnotes:schema:artifact"
+      }
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/item"
+      }
+    }
+  },
+  "$defs": {
+    "item": {
+      "type": "object",
+      "required": [
+        "object",
+        "status"
+      ],
+      "properties": {
+        "object": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "urn:nnnotes:schema:common#/$defs/itemStatus"
+        },
+        "class": {
+          "type": "string"
+        },
+        "artifacts": {
+          "type": "array",
+          "items": {
+            "$ref": "urn:nnnotes:schema:common#/$defs/artifactId"
+          },
+          "minItems": 1
+        },
+        "in": {
+          "$ref": "urn:nnnotes:schema:common#/$defs/artifactId"
+        },
+        "reason": {
+          "$ref": "urn:nnnotes:schema:common#/$defs/reason"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "exported"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "artifacts"
+            ],
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "reason"
+                  ]
+                },
+                {
+                  "required": [
+                    "in"
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "contained"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "in"
+            ],
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "reason"
+                  ]
+                },
+                {
+                  "required": [
+                    "artifacts"
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "generic"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "artifacts",
+              "reason"
+            ],
+            "not": {
+              "required": [
+                "in"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "unsupported"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "reason"
+            ],
+            "not": {
+              "required": [
+                "in"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "failed"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "reason"
+            ],
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "artifacts"
+                  ]
+                },
+                {
+                  "required": [
+                    "in"
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:nnnotes:schema:scripts",
+  "title": "nnnotes.scripts/1",
+  "description": "The script table (stage link.scripts): every MonoScript of the censuses by object id, as \"assembly|namespace|class\" (the assembly without .dll).",
+  "type": "object",
+  "required": [
+    "schema",
+    "scripts"
+  ],
+  "properties": {
+    "schema": {
+      "const": "nnnotes.scripts/1"
+    },
+    "scripts": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^[^|]*\\|[^|]*\\|[^|]*$"
+      }
+    }
+  }
+}

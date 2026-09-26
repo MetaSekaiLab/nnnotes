@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:nnnotes:schema:task",
+  "title": "nnnotes.task/1",
+  "description": "One stage applied to one subject: everything needed to run it. `key` is the key hash of the key parts (stage, subject, params, atoms, [role, sha256] of the inputs, context); input names, locators and the cost estimate are not part of it.",
+  "type": "object",
+  "required": [
+    "schema",
+    "id",
+    "stage",
+    "params",
+    "atoms",
+    "inputs",
+    "context",
+    "key"
+  ],
+  "properties": {
+    "schema": {
+      "const": "nnnotes.task/1"
+    },
+    "id": {
+      "$ref": "urn:nnnotes:schema:common#/$defs/taskId"
+    },
+    "stage": {
+      "$ref": "urn:nnnotes:schema:common#/$defs/stage"
+    },
+    "params": {
+      "type": "object"
+    },
+    "atoms": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "inputs": {
+      "type": "array",
+      "items": {
+        "$ref": "urn:nnnotes:schema:common#/$defs/input"
+      }
+    },
+    "context": {
+      "type": "object"
+    },
+    "key": {
+      "$ref": "urn:nnnotes:schema:common#/$defs/sha256"
+    },
+    "cost": {
+      "$ref": "urn:nnnotes:schema:common#/$defs/cost"
+    }
+  }
+}

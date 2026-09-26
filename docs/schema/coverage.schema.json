@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:nnnotes:schema:coverage",
+  "title": "nnnotes.coverage/1",
+  "description": "Coverage of a run: per class the census total, the objects without an item (`missing`) and the count of every item status; per reason code its count and the first five object ids.",
+  "type": "object",
+  "required": [
+    "schema",
+    "classes",
+    "reasons"
+  ],
+  "properties": {
+    "schema": {
+      "const": "nnnotes.coverage/1"
+    },
+    "classes": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "total",
+          "exported",
+          "contained",
+          "generic",
+          "unsupported",
+          "failed",
+          "missing"
+        ],
+        "properties": {
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "exported": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "contained": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "generic": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "unsupported": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "failed": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "missing": {
+            "type": "integer"
+          }
+        }
+      }
+    },
+    "reasons": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "count",
+          "examples"
+        ],
+        "properties": {
+          "count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "examples": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 5
+          }
+        }
+      }
+    }
+  }
+}

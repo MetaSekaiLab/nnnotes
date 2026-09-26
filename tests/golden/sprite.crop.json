@@ -1,0 +1,22 @@
+{
+ "atoms": {
+  "png.encode": "pillow-12.3.0/1",
+  "sprite.crop": "pillow-12.3.0+numpy-2.4.6/1"
+ },
+ "fixtures": {
+  "atlas": {
+   "key": "b1f819e7c9328fb5accdbd6366070fb94a45f592ae5cc1d1a531d4326c90d873",
+   "result": "6f2bc5adaf8e95fe9a17028d47fdac301436432523758fbfedc8a0034338945c"
+  }
+ },
+ "libraries": {
+  "Pillow": "12.3.0",
+  "UnityPy": "1.25.3",
+  "astc-encoder-py": "0.1.12",
+  "numpy": "2.4.6",
+  "texture2ddecoder": "1.0.6"
+ },
+ "provider": "test_objexport:crop_golden",
+ "stage": "sprite.crop",
+ "version": 1
+}

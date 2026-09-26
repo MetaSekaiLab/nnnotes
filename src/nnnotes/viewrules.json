@@ -1,0 +1,350 @@
+{
+  "format": 1,
+  "resolvers": {
+    "GameResourceType": {
+      "1": {"name": "Item", "table": "MasterItem", "vars": {"path": "_imagePath"}, "address": "{path}",
+            "expect": "Sprite", "names": {"name": "_nameTextId"}},
+      "2": {"name": "MemberCard", "table": "MasterMemberCard", "vars": {"asset": "_assetID"},
+            "address": "MemberCard/{asset}/member_thumbnail[member_thumbnail]", "expect": "Sprite",
+            "names": {"name": "_nameTextID"}},
+      "3": {"name": "SupportCard", "table": "MasterSupportCard", "vars": {"asset": "_assetID"},
+            "address": "SupportCard/{asset}/snap_thumbnail", "expect": "Sprite", "names": {"name": "_nameTextID"}},
+      "7": {"name": "GachaPoint", "address": "Item/common/item_icon_seal_member", "expect": "Sprite"},
+      "8": {"name": "Music", "table": "MasterLiveMusic", "vars": {"jacket": "_jacketAssetName"},
+            "address": "Image/Jacket/{jacket}", "expect": "Sprite", "names": {"name": "_titleTextID"}},
+      "9": {"name": "Stamp", "table": "MasterStamp", "vars": {"path": "_stampAsset"}, "address": "{path}",
+            "expect": "Sprite", "names": {"name": "_nameTextId"}},
+      "10": {"name": "PremiumPass", "table": "MasterSeasonPass", "vars": {"banner": "_bannerAsset"},
+             "address": "SeasonPass/Banner/{banner}", "expect": "Sprite", "names": {"name": "_nameTextId"}},
+      "17": {"name": "Degree", "table": "MasterDegree", "vars": {"path": "_imagePath"}, "address": "{path}",
+             "expect": "Sprite", "names": {"name": "_nameTextId"}},
+      "18": {"name": "Background", "table": "MasterBackground", "vars": {"path": "_thumbnailAssetPath"},
+             "address": "{path}", "expect": "Sprite", "names": {"name": "_nameTextId"}},
+      "19": {"name": "Spot", "table": "MasterHomeSpot", "vars": {"path": "_thumbnailAssetPath"}, "address": "{path}",
+             "expect": "Sprite", "names": {"name": "_nameTextId"}},
+      "1001": {"name": "BiliChatTheme", "table": "MasterBiliChatTheme", "vars": {"path": "_iconAssetPath"},
+               "address": "{path}", "expect": "Sprite", "names": {"name": "_skinNameTextId"}},
+      "1002": {"name": "BiliChatBubble", "table": "MasterBiliChatBubble", "vars": {"path": "_iconAssetPath"},
+               "address": "{path}", "expect": "Sprite", "names": {"name": "_skinNameTextId"}},
+      "1003": {"name": "BiliChatFrame", "table": "MasterBiliChatFrame", "vars": {"path": "_iconAssetPath"},
+               "address": "{path}", "expect": "Sprite", "names": {"name": "_skinNameTextId"}}
+    }
+  },
+  "views": {
+    "cards": {
+      "version": 1, "table": "MasterMemberCard",
+      "vars": {"id": "_id", "asset": "_assetID", "rarity": "_rarity",
+               "band": ["_characterID", "MasterCharacter._bandID"],
+               "r_background": ["_characterID", "MasterCharacter._bandID", "MasterBand._memberRarityRBackgroundAssetPath"]},
+      "names": {"name": "_nameTextID", "subtitle": "_subtitleTextID"},
+      "prefixes": ["MemberCard/"],
+      "roles": [
+        {"role": "member_full", "address": "MemberCard/{asset}/member_full[member_full]", "expect": "Sprite", "required": true},
+        {"role": "member_full_detail_pivot", "address": "MemberCard/{asset}/member_full[detail_pivot]", "expect": "Sprite"},
+        {"role": "member_full_face_center_x", "address": "MemberCard/{asset}/member_full[face_center_x]", "expect": "Sprite"},
+        {"role": "member_full_face_center", "address": "MemberCard/{asset}/member_full[face_center]", "expect": "Sprite"},
+        {"role": "member_full_sprite_meta_data", "address": "MemberCard/{asset}/member_full_sprite_meta_data"},
+        {"role": "member_character", "address": "MemberCard/{asset}/member_character[main]", "expect": "Sprite", "required": true},
+        {"role": "member_character_formation", "address": "MemberCard/{asset}/member_character[formation]", "expect": "Sprite"},
+        {"role": "member_character_member_result", "address": "MemberCard/{asset}/member_character[member_result]", "expect": "Sprite"},
+        {"role": "member_character_face_center_x", "address": "MemberCard/{asset}/member_character[face_center_x]", "expect": "Sprite"},
+        {"role": "member_character_face_center", "address": "MemberCard/{asset}/member_character[face_center]", "expect": "Sprite"},
+        {"role": "member_character_sprite_meta_data", "address": "MemberCard/{asset}/member_character_sprite_meta_data"},
+        {"role": "member_background", "address": "MemberCard/{asset}/member_background[member_background]", "expect": "Sprite",
+         "when": {"field": "rarity", "op": "ne", "value": 2}},
+        {"role": "member_background_formation", "address": "MemberCard/{asset}/member_background[formation]", "expect": "Sprite",
+         "when": {"field": "rarity", "op": "ne", "value": 2}},
+        {"role": "member_background_texture", "address": "MemberCard/{asset}/member_background", "expect": "Texture2D"},
+        {"role": "member_background_r", "address": "{r_background}", "expect": "Sprite",
+         "when": {"field": "rarity", "op": "eq", "value": 2}},
+        {"role": "gacha_band_background", "address": "MemberCard/MemberCommon/member_background{band}[member_background{band}_0]", "expect": "Sprite"},
+        {"role": "member_thumbnail", "address": "MemberCard/{asset}/member_thumbnail[member_thumbnail]", "expect": "Sprite", "required": true},
+        {"role": "member_thumbnail_square", "address": "MemberCard/{asset}/member_thumbnail[square]", "expect": "Sprite", "required": true},
+        {"role": "skill_sprite", "address": "MemberCard/{asset}/skill_sprite", "expect": "Sprite"},
+        {"role": "member_preview_movie", "address": "MemberCard/{asset}/member_preview_movie"},
+        {"role": "movie", "address": "MemberCard/{id}/movie/{part}",
+         "each": {"var": "part", "values": ["anime_part1", "anime_part2", "live2d_in", "live2d_loop"]},
+         "when": {"field": "rarity", "op": "eq", "value": 4}},
+        {"role": "member_gacha_animation_config", "address": "MemberCard/{asset}/member_gacha_animation_config"}
+      ]
+    },
+    "support_cards": {
+      "version": 1, "table": "MasterSupportCard",
+      "vars": {"asset": "_assetID"},
+      "names": {"name": "_nameTextID", "description": "_descriptionTextID"},
+      "prefixes": ["SupportCard/"],
+      "roles": [
+        {"role": "snap_full", "address": "SupportCard/{asset}/snap_full[snap_full]", "expect": "Sprite", "required": true},
+        {"role": "snap_thumbnail", "address": "SupportCard/{asset}/snap_thumbnail", "expect": "Sprite", "required": true},
+        {"role": "skill_sprite", "address": "SupportCard/{asset}/skill_sprite", "expect": "Sprite"}
+      ]
+    },
+    "characters": {
+      "version": 1, "table": "MasterCharacter",
+      "vars": {"id": "_id"},
+      "names": {"name": "_nameTextID", "short_name": "_shortNameTextID"},
+      "prefixes": ["Character/Image/"],
+      "roles": [
+        {"role": "character_sprite", "address": "Character/Image/{id}/character_sprite", "expect": "Sprite"},
+        {"role": "character_thumbnail", "address": "Character/Image/{id}/character_thumbnail", "expect": "Sprite"},
+        {"role": "character_face_icon", "address": "Character/Image/{id}/character_face_icon", "expect": "Sprite"},
+        {"role": "character_round_icon", "address": "Character/Image/{id}/character_round_icon", "expect": "Sprite"},
+        {"role": "board_icon", "address": "Character/Image/{id}/board_icon", "expect": "Sprite"}
+      ]
+    },
+    "bands": {
+      "version": 1, "table": "MasterBand",
+      "vars": {"id": "_id", "r_background": "_memberRarityRBackgroundAssetPath"},
+      "names": {"name": "_nameTextID"},
+      "prefixes": ["Band/"],
+      "exclude": ["Band/*/BandItem/"],
+      "roles": [
+        {"role": "band_small_icon", "address": "Band/{id}/band_small_Icon", "expect": "Sprite"},
+        {"role": "band_small_icon_white", "address": "Band/{id}/band_small_icon_white", "expect": "Sprite"},
+        {"role": "band_room_background", "address": "Band/{id}/band_room_background", "expect": "Sprite"},
+        {"role": "band_board_self", "address": "Band/{id}/Friendship/BandBoard_Self", "expect": "GameObject"},
+        {"role": "band_board_other", "address": "Band/{id}/Friendship/BandBoard_Other", "expect": "GameObject"},
+        {"role": "band_logo", "address": "Band/{id}/band_logo", "expect": "Sprite"},
+        {"role": "band_logo_white", "address": "Band/{id}/band_logo_white", "expect": "Sprite"},
+        {"role": "band_menu_enabled_icon", "address": "Band/{id}/band_menu_enabled_icon", "expect": "Sprite"},
+        {"role": "band_menu_disabled_icon", "address": "Band/{id}/band_menu_disabled_icon", "expect": "Sprite"},
+        {"role": "live_stage", "address": "Band/{id}/live_stage/live_stage"},
+        {"role": "live_stage_lightweight_background", "address": "Band/{id}/live_stage/lightweight_background", "expect": "Sprite"},
+        {"role": "live_start_timeline", "address": "Band/{id}/timeline/live_start_playable_timeline"},
+        {"role": "band_profile", "address": "Band/{id}/BandProfile/BandProfile"},
+        {"role": "band_fade", "address": "Band/{id}/band_fade", "expect": "Sprite"},
+        {"role": "band_studio_background", "address": "Band/{id}/band_studio_background", "expect": "Sprite"},
+        {"role": "band_stage_background", "address": "Band/{id}/band_stage_background", "expect": "Sprite"},
+        {"role": "band_arena_background", "address": "Band/{id}/band_arena_background", "expect": "Sprite"},
+        {"role": "login_bonus_bg", "address": "Band/{id}/LoginBonus/LoginBonusBg"},
+        {"role": "login_bonus_screen_bg", "address": "Band/{id}/LoginBonus/LoginBonusScreenBg"},
+        {"role": "login_bonus_screen_frame", "address": "Band/{id}/LoginBonus/LoginBonusScreenFrame"},
+        {"role": "member_rarity_r_background", "address": "{r_background}", "expect": "Sprite"}
+      ]
+    },
+    "band_items": {
+      "version": 1, "table": "MasterBandItem",
+      "vars": {"id": "_id", "band": "_bandId"},
+      "names": {"name": "_nameTextId", "description": "_descriptionTextId"},
+      "prefixes": ["Band/*/BandItem/"],
+      "roles": [
+        {"role": "band_item", "address": "Band/{band}/BandItem/{id}/band_item", "expect": "Sprite", "required": true}
+      ]
+    },
+    "stamps": {
+      "version": 1, "table": "MasterStamp",
+      "vars": {"path": "_stampAsset"},
+      "names": {"name": "_nameTextId"},
+      "prefixes": ["Stamp/"],
+      "roles": [{"role": "stamp", "address": "{path}", "expect": "Sprite", "required": true}]
+    },
+    "items": {
+      "version": 1, "table": "MasterItem",
+      "vars": {"path": "_imagePath"},
+      "names": {"name": "_nameTextId", "description": "_descriptionTextId"},
+      "prefixes": ["Item/"],
+      "roles": [{"role": "icon", "address": "{path}", "expect": "Sprite", "required": true}]
+    },
+    "degrees": {
+      "version": 1, "table": "MasterDegree",
+      "vars": {"path": "_imagePath"},
+      "names": {"name": "_nameTextId", "description": "_descriptionTextId"},
+      "prefixes": ["Image/Degree/"],
+      "roles": [{"role": "image", "address": "{path}", "expect": "Sprite", "required": true}]
+    },
+    "backgrounds": {
+      "version": 1, "table": "MasterBackground",
+      "vars": {"path": "_assetPath", "thumbnail": "_thumbnailAssetPath"},
+      "names": {"name": "_nameTextId", "description": "_descriptionTextId"},
+      "prefixes": ["Image/Background/", "thumbnail/Background/"],
+      "roles": [
+        {"role": "image", "address": "{path}", "required": true},
+        {"role": "thumbnail", "address": "{thumbnail}", "expect": "Sprite", "required": true}
+      ]
+    },
+    "spots": {
+      "version": 1, "table": "MasterHomeSpot",
+      "vars": {"thumbnail": "_thumbnailAssetPath", "background": "_backgroundAssetPath", "situation": "_situationAssetPath"},
+      "names": {"name": "_nameTextId"},
+      "prefixes": ["Image/Spot/"],
+      "roles": [
+        {"role": "thumbnail", "address": "{thumbnail}", "expect": "Sprite", "required": true},
+        {"role": "background", "address": "{background}"},
+        {"role": "situation", "address": "{situation}"}
+      ]
+    },
+    "jackets": {
+      "version": 1, "table": "MasterLiveMusic",
+      "vars": {"jacket": "_jacketAssetName"},
+      "names": {"title": "_titleTextID"},
+      "prefixes": ["Image/Jacket/"],
+      "roles": [
+        {"role": "jacket", "address": "Image/Jacket/{jacket}", "expect": "Sprite", "required": true},
+        {"role": "jacket_small", "address": "Image/Jacket/small/{jacket}", "expect": "Sprite", "required": true}
+      ]
+    },
+    "gacha": {
+      "version": 1, "table": "MasterGacha",
+      "vars": {"id": "_id", "banner": "_bannerAssetName", "logo_asset": "_logoAssetName"},
+      "names": {"name": "_nameTextId"},
+      "prefixes": ["Gacha/Banner/", "Gacha/Logo/"],
+      "roles": [
+        {"role": "banner", "address": "{banner}", "expect": "Sprite", "required": true},
+        {"role": "logo", "address": "Gacha/Logo/gacha_logo_{id}", "expect": "Sprite"},
+        {"role": "logo_asset", "address": "{logo_asset}", "expect": "Sprite"}
+      ]
+    },
+    "home_banners": {
+      "version": 1, "table": "MasterHomeBanner",
+      "vars": {"image": "_imageAsset"},
+      "roles": [{"role": "image", "address": "{image}", "expect": "Sprite", "required": true}]
+    },
+    "login_bonuses": {
+      "version": 1, "table": "MasterLoginBonus",
+      "vars": {"sheet": "_sheetImageAsset", "background": "_backgroundImageAsset"},
+      "names": {"name": "_nameTextID"},
+      "prefixes": ["LoginBonus/"],
+      "roles": [
+        {"role": "sheet", "address": "{sheet}", "expect": "Sprite", "required": true},
+        {"role": "background", "address": "{background}", "expect": "Sprite", "required": true}
+      ]
+    },
+    "story_chapters": {
+      "version": 1, "table": "MasterStoryChapter",
+      "vars": {"banner": "_banner", "image": "_image", "icon": "_icon"},
+      "names": {"name": "_nameTextId", "description": "_descriptionTextId"},
+      "prefixes": ["Story/Banner/Chapter/", "Story/Image/Chapter/", "Story/Icon/"],
+      "roles": [
+        {"role": "banner", "address": "Story/Banner/Chapter/{banner}", "expect": "Sprite", "required": true},
+        {"role": "image", "address": "Story/Image/Chapter/{image}", "expect": "Sprite", "required": true},
+        {"role": "icon", "address": "Story/Icon/{icon}", "expect": "Sprite", "required": true}
+      ]
+    },
+    "story_episodes": {
+      "version": 1, "table": "MasterStoryEpisode",
+      "vars": {"banner": "_banner", "image": "_image"},
+      "names": {"description": "_descriptionTextId"},
+      "prefixes": ["Story/Banner/Episode/", "Story/Image/Episode/"],
+      "roles": [
+        {"role": "banner", "address": "Story/Banner/Episode/{banner}", "expect": "Sprite", "required": true},
+        {"role": "image", "address": "Story/Image/Episode/{image}", "expect": "Sprite", "required": true}
+      ]
+    },
+    "friendship_episodes": {
+      "version": 1, "table": "MasterStoryFriendshipEpisode",
+      "vars": {"banner": "_banner"},
+      "prefixes": ["Story/Banner/Episode/"],
+      "roles": [{"role": "banner", "address": "Story/Banner/Episode/{banner}", "expect": "Sprite", "required": true}]
+    },
+    "friendships": {
+      "version": 1, "table": "MasterCharacterFriendship",
+      "vars": {"banner": "_storyBanner"},
+      "prefixes": ["Character/StoryBanner/"],
+      "roles": [{"role": "story_banner", "address": "Character/StoryBanner/{banner}", "expect": "Sprite", "required": true}]
+    },
+    "events": {
+      "version": 1, "table": "MasterEvent",
+      "vars": {"image": "_imageAsset", "logo": "_logoAsset", "background": "_backgroundAsset", "banner": "_bannerAsset"},
+      "names": {"name": "_nameTextId"},
+      "prefixes": ["Image/Event/"],
+      "roles": [
+        {"role": "image", "address": "Image/Event/{image}", "expect": "Sprite", "required": true},
+        {"role": "logo", "address": "Image/Event/{logo}", "expect": "Sprite", "required": true},
+        {"role": "background", "address": "Image/Event/{background}", "expect": "Sprite", "required": true},
+        {"role": "banner", "address": "Image/Event/{banner}", "expect": "Sprite", "required": true}
+      ]
+    },
+    "shops": {
+      "version": 1, "table": "MasterShop",
+      "vars": {"thumbnail": "_thumbnailAsset", "dialog": "_dialogAsset", "tab": "_tabAsset"},
+      "names": {"name": "_nameTextId", "description": "_descriptionTextId"},
+      "prefixes": ["Shop/ItemThumbnail/", "Shop/Dialog/", "Shop/Tab/"],
+      "roles": [
+        {"role": "thumbnail", "address": "Shop/ItemThumbnail/{thumbnail}", "expect": "Sprite", "required": true},
+        {"role": "dialog", "address": "Shop/Dialog/{dialog}", "expect": "Sprite", "required": true},
+        {"role": "tab", "address": "Shop/Tab/{tab}", "expect": "Sprite", "required": true}
+      ]
+    },
+    "monthly_passes": {
+      "version": 1, "table": "MasterMonthlyPass",
+      "vars": {"id": "_id"},
+      "names": {"name": "_nameTextId", "description": "_descriptionTextId"},
+      "prefixes": ["Shop/Pass/Banner/"],
+      "roles": [{"role": "banner", "address": "Shop/Pass/Banner/{id:05d}", "expect": "Sprite", "required": true}]
+    },
+    "season_passes": {
+      "version": 1, "table": "MasterSeasonPass",
+      "vars": {"banner": "_bannerAsset"},
+      "names": {"name": "_nameTextId", "description": "_descriptionTextId"},
+      "prefixes": ["SeasonPass/Banner/"],
+      "roles": [{"role": "banner", "address": "SeasonPass/Banner/{banner}", "expect": "Sprite", "required": true}]
+    },
+    "exchange_categories": {
+      "version": 1, "table": "MasterExchangeCategory",
+      "vars": {"banner": "_bannerAsset"},
+      "names": {"name": "_nameTextId"},
+      "prefixes": ["Exchange/Category/"],
+      "roles": [{"role": "banner", "address": "Exchange/Category/{banner}", "expect": "Sprite", "required": true}]
+    },
+    "exchange_products": {
+      "version": 1, "table": "MasterExchangeProduct",
+      "vars": {"thumbnail": "_thumbnailAsset"},
+      "prefixes": ["Exchange/ItemThumbnail/"],
+      "roles": [{"role": "thumbnail", "address": "Exchange/ItemThumbnail/{thumbnail}", "expect": "Sprite", "required": true}]
+    },
+    "comics": {
+      "version": 1, "table": "MasterLoadingComics",
+      "vars": {"image": "_imageAsset"},
+      "prefixes": ["Image/Comic/"],
+      "roles": [{"role": "comic", "address": "Image/Comic/{image}", "expect": "Sprite", "required": true}]
+    },
+    "skill_icons": {
+      "version": 1, "table": "MasterSkillIcon",
+      "vars": {"icon": "_normalIconAssetName"},
+      "prefixes": ["Character/Skill/"],
+      "roles": [{"role": "icon", "address": "Character/Skill/{icon}", "expect": "Sprite", "required": true}]
+    },
+    "rewards": {
+      "version": 1,
+      "sources": [
+        {"table": "MasterArenaDailyReward", "type": "_resourceType", "id": "_resourceId"},
+        {"table": "MasterArenaPromotionReward", "type": "_resourceType", "id": "_resourceId"},
+        {"table": "MasterArenaRankingReward", "type": "_resourceType", "id": "_resourceId"},
+        {"table": "MasterArenaSeasonReward", "type": "_resourceType", "id": "_resourceId"},
+        {"table": "MasterBattleLiveReward", "type": "_resourceType", "id": "_resourceId"},
+        {"table": "MasterChallengeLiveEventReward", "type": "_resourceType", "id": "_resourceId"},
+        {"table": "MasterCharacterFriendshipRankReward", "type": "_resourceType", "id": "_resourceId"},
+        {"table": "MasterCharacterRankReward", "type": "_resourceType", "id": "_resourceId"},
+        {"table": "MasterCircleMissionReward", "type": "_resourceType", "id": "_resourceId"},
+        {"table": "MasterExchange", "type": "_paymentResourceType", "id": "_paymentResourceId"},
+        {"table": "MasterExchangeProduct", "type": "_resourceType", "id": "_resourceId"},
+        {"table": "MasterGachaBonusLot", "type": "_bonusPrizeType", "id": "_bonusPrizeId"},
+        {"table": "MasterGachaPrize", "type": "_resourceType", "id": "_resourceId"},
+        {"table": "MasterGekisouLiveRankReward", "type": "_resourceType", "id": "_resourceId"},
+        {"table": "MasterInvitationReward", "type": "_resourceType", "id": "_resourceId"},
+        {"table": "MasterInvitationSuccessReward", "type": "_resourceType", "id": "_resourceId"},
+        {"table": "MasterLiveArenaRankReward", "type": "_resourceType", "id": "_resourceId"},
+        {"table": "MasterLiveEventReward", "type": "_resourceType", "id": "_resourceId"},
+        {"table": "MasterLiveFreeReward", "type": "_resourceType", "id": "_resourceId"},
+        {"table": "MasterLiveMusicComboReward", "type": "_resourceType", "id": "_resourceId"},
+        {"table": "MasterLiveMusicScoreReward", "type": "_resourceType", "id": "_resourceId"},
+        {"table": "MasterLiveStamp", "type": "_resourceType", "id": "_resourceId"},
+        {"table": "MasterLoginBonusSlot", "type": "_resourceType", "id": "_resourceId"},
+        {"table": "MasterMissionReward", "type": "_resourceType", "id": "_resourceId"},
+        {"table": "MasterMonthlyPassContinuationReward", "type": "_resourceType", "id": "_resourceId"},
+        {"table": "MasterMonthlyPassDailyReward", "type": "_resourceType", "id": "_resourceId"},
+        {"table": "MasterMonthlyPassFirstTimeReward", "type": "_resourceType", "id": "_resourceId"},
+        {"table": "MasterMonthlyPassPurchaseReward", "type": "_resourceType", "id": "_resourceId"},
+        {"table": "MasterOfflineBonusItemLot", "type": "_resourceType", "id": "_resourceId"},
+        {"table": "MasterReward", "type": "_resourceType", "id": "_resourceId"},
+        {"table": "MasterSeasonPassReward", "type": "_resourceType", "id": "_resourceId"},
+        {"table": "MasterShopProduct", "type": "_resourceType", "id": "_resourceId"},
+        {"table": "MasterStoryReward", "type": "_resourceType", "id": "_resourceId"},
+        {"table": "MasterVipDailyReward", "type": "_resourceType", "id": "_resourceId"},
+        {"table": "MasterVipRankPack", "type": "_resourceType", "id": "_resourceId"},
+        {"table": "MasterVipRankUpReward", "type": "_resourceType", "id": "_resourceId"}
+      ],
+      "roles": [{"role": "icon", "resolver": "GameResourceType", "required": true}]
+    }
+  }
+}

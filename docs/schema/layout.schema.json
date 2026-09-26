@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:nnnotes:schema:layout",
+  "title": "nnnotes.layout/1",
+  "description": "A layout manifest: the files a layout owns in its directory, sorted by path (then id); artifacts of equal content may share a path.",
+  "type": "object",
+  "required": [
+    "schema",
+    "name",
+    "params",
+    "entries"
+  ],
+  "properties": {
+    "schema": {
+      "const": "nnnotes.layout/1"
+    },
+    "name": {
+      "type": "string"
+    },
+    "params": {
+      "type": "object"
+    },
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "path",
+          "sha256",
+          "size",
+          "id"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sha256": {
+            "$ref": "urn:nnnotes:schema:common#/$defs/sha256"
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "id": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

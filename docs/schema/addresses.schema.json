@@ -1,0 +1,218 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:nnnotes:schema:addresses",
+  "title": "nnnotes.addresses/1",
+  "description": "The address table of a catalog version and the censuses of its bundles (stage link.addresses): per stable bundle name its file name, serialized files, AssetBundle name and keys; serialized file -> bundle; per catalog key its locations with their bundle (or raw files) and the objects the container path names; per stable address the object it names; the problems found.",
+  "type": "object",
+  "required": [
+    "schema",
+    "catalog",
+    "bundles",
+    "files",
+    "keys",
+    "objects",
+    "problems"
+  ],
+  "properties": {
+    "schema": {
+      "const": "nnnotes.addresses/1"
+    },
+    "catalog": {
+      "type": "object",
+      "required": [
+        "remote",
+        "apk"
+      ],
+      "properties": {
+        "remote": {
+          "anyOf": [
+            {
+              "$ref": "urn:nnnotes:schema:common#/$defs/sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "apk": {
+          "anyOf": [
+            {
+              "$ref": "urn:nnnotes:schema:common#/$defs/sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "bundles": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "name",
+          "files",
+          "assetBundleName",
+          "keys"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "assetBundleName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "keys": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "files": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "keys": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "location",
+            "type",
+            "internalId"
+          ],
+          "properties": {
+            "location": {
+              "type": "string",
+              "pattern": "^(remote|apk):[0-9]+$"
+            },
+            "type": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "internalId": {
+              "type": "string"
+            },
+            "bundle": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "raw": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              ]
+            },
+            "objects": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    "objects": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "object",
+          "class",
+          "name",
+          "byteSize",
+          "typeHash"
+        ],
+        "properties": {
+          "object": {
+            "type": "string"
+          },
+          "class": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "byteSize": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "typeHash": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "problems": {
+      "type": "object",
+      "required": [
+        "files",
+        "bundleNames",
+        "keys"
+      ],
+      "properties": {
+        "files": {
+          "type": "array",
+          "items": {}
+        },
+        "bundleNames": {
+          "type": "array",
+          "items": {}
+        },
+        "keys": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

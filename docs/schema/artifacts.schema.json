@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:nnnotes:schema:artifacts",
+  "title": "nnnotes.artifacts/1",
+  "description": "The artifact table (stage link.artifacts): the artifact ids of every object with artifacts, the artifact each contained object is part of, and per artifact its content id, size and extension. With a layout manifest it gives every object's files.",
+  "type": "object",
+  "required": [
+    "schema",
+    "objects",
+    "contained",
+    "artifacts"
+  ],
+  "properties": {
+    "schema": {
+      "const": "nnnotes.artifacts/1"
+    },
+    "objects": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "$ref": "urn:nnnotes:schema:common#/$defs/artifactId"
+        },
+        "minItems": 1
+      }
+    },
+    "contained": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "urn:nnnotes:schema:common#/$defs/artifactId"
+      }
+    },
+    "artifacts": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "sha256",
+          "size",
+          "ext"
+        ],
+        "properties": {
+          "sha256": {
+            "$ref": "urn:nnnotes:schema:common#/$defs/sha256"
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "ext": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

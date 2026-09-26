@@ -10,7 +10,7 @@ A reference the prefab leaves empty is written as null, not filled in: a
 SpotSpineCharacter with no `_animation` has null `skeletonData`, `animation`
 and `world`; a SpotCharacter with no `_focus` has a null `focusWorld`.
 
-Spine files are written from the SkeletonDataAsset reference chain:
+Spine files are written from the SkeletonDataAsset reference chain (write_skeleton):
   SkeletonDataAsset.skeletonJSON           -> skeleton (.json or binary .skel)
   SkeletonDataAsset.atlasAssets[i].atlasFile -> <name>.atlas
   SpineAtlasAsset.materials[j]._MainTex    -> PNG named after atlas page j
@@ -54,6 +54,47 @@ def _text_bytes(ta) -> bytes:
 def _target(ref):
     """The object a PPtr refers to, None for an empty reference (path id 0)."""
     return ref.read() if ref.path_id else None
+
+
+def write_skeleton(o, write, written_atlases: dict[int, str] | None = None) -> dict:
+    """The Spine files of the SkeletonDataAsset object `o` (module docstring), each given to `write(file name,
+    bytes)` in this order: the skeleton, then for each of its atlases not in `written_atlases` ({SpineAtlasAsset
+    path id: atlas file name}, updated here) the atlas text as stored and one PNG per page. Returns the skeleton's
+    record of spot.json: name, skeleton file, atlas files, scale, default mix, mixes."""
+    written = {} if written_atlases is None else written_atlases
+    sda = o.read_typetree()
+    sk = o.read().skeletonJSON.read()
+    raw = _text_bytes(sk)
+    is_json = raw.lstrip()[:1] == b"{"
+    sk_file = f"{sk.m_Name}.json" if is_json else f"{sk.m_Name}.skel"
+    write(sk_file, raw)
+    atlases = []
+    for ap in o.read().atlasAssets:
+        atlas_asset = ap.read()
+        if ap.path_id not in written:
+            af = atlas_asset.atlasFile.read()
+            araw = _text_bytes(af)
+            atext = araw.decode("utf-8")
+            a_file = af.m_Name if af.m_Name.endswith(".atlas") else f"{af.m_Name}.atlas"
+            write(a_file, araw)                  # the atlas text exactly as the game stores it
+            pages = _atlas_pages(atext)
+            mats = list(atlas_asset.materials)
+            if len(mats) != len(pages):
+                raise RuntimeError(f"{a_file}: {len(pages)} pages vs {len(mats)} materials")
+            for page, mp in zip(pages, mats):
+                mat = mp.read()
+                tex = next(e.m_Texture.read() for k, e in mat.m_SavedProperties.m_TexEnvs
+                           if k == "_MainTex")
+                buf = io.BytesIO(); texture_image(tex).save(buf, format="PNG")
+                write(page, buf.getvalue())
+            written[ap.path_id] = a_file
+        atlases.append(written[ap.path_id])
+    return {
+        "name": sda["m_Name"], "skeleton": sk_file, "atlases": atlases,
+        "scale": sda["scale"], "defaultMix": sda["defaultMix"],
+        "mixes": [{"from": f, "to": t, "duration": d} for f, t, d in
+                  zip(sda.get("fromAnimation", []), sda.get("toAnimation", []), sda.get("duration", []))],
+    }
 
 
 def spine_characters(objs: list, graph, skeletons: dict, world_of) -> list[dict]:
@@ -127,42 +168,13 @@ def extract(cat: Catalog, md: Path, spot_id: int, out_dir: Path) -> dict:
     controller = strip_pptrs(controller_o.read_typetree())
 
     # Spine skeleton data -> files
+    def write(name: str, data: bytes) -> None:
+        (spine_dir / name).write_bytes(data)
+
     skeleton_files: dict[int, dict] = {}
     written_atlases: dict[int, str] = {}
     for o in by_cls.get("SkeletonDataAsset", []):
-        sda = o.read_typetree()
-        sk = o.read().skeletonJSON.read()
-        raw = _text_bytes(sk)
-        is_json = raw.lstrip()[:1] == b"{"
-        sk_file = f"{sk.m_Name}.json" if is_json else f"{sk.m_Name}.skel"
-        (spine_dir / sk_file).write_bytes(raw)
-        atlases = []
-        for ap in o.read().atlasAssets:
-            atlas_asset = ap.read()
-            if ap.path_id not in written_atlases:
-                af = atlas_asset.atlasFile.read()
-                araw = _text_bytes(af)
-                atext = araw.decode("utf-8")
-                a_file = af.m_Name if af.m_Name.endswith(".atlas") else f"{af.m_Name}.atlas"
-                (spine_dir / a_file).write_bytes(araw)   # the atlas text exactly as the game stores it
-                pages = _atlas_pages(atext)
-                mats = list(atlas_asset.materials)
-                if len(mats) != len(pages):
-                    raise RuntimeError(f"{a_file}: {len(pages)} pages vs {len(mats)} materials")
-                for page, mp in zip(pages, mats):
-                    mat = mp.read()
-                    tex = next(e.m_Texture.read() for k, e in mat.m_SavedProperties.m_TexEnvs
-                               if k == "_MainTex")
-                    buf = io.BytesIO(); texture_image(tex).save(buf, format="PNG")
-                    (spine_dir / page).write_bytes(buf.getvalue())
-                written_atlases[ap.path_id] = a_file
-            atlases.append(written_atlases[ap.path_id])
-        skeleton_files[o.path_id] = {
-            "name": sda["m_Name"], "skeleton": sk_file, "atlases": atlases,
-            "scale": sda["scale"], "defaultMix": sda["defaultMix"],
-            "mixes": [{"from": f, "to": t, "duration": d} for f, t, d in
-                      zip(sda.get("fromAnimation", []), sda.get("toAnimation", []), sda.get("duration", []))],
-        }
+        skeleton_files[o.path_id] = write_skeleton(o, write, written_atlases)
 
     spine_chars = spine_characters(by_cls.get("SpotSpineCharacter", []), graph, skeleton_files, world_of)
     characters = tap_targets(by_cls.get("SpotCharacter", []), graph, world_of)

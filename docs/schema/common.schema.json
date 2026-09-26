@@ -1,0 +1,245 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:nnnotes:schema:common",
+  "title": "nnnotes common definitions",
+  "description": "Definitions shared by the nnnotes document schemas.",
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "stageName": {
+      "type": "string",
+      "pattern": "^[^:#]+$",
+      "minLength": 1
+    },
+    "taskId": {
+      "type": "string",
+      "pattern": "^[^:#]+:[^#]*$"
+    },
+    "artifactId": {
+      "type": "string",
+      "pattern": "^[^#]+#.+$"
+    },
+    "stage": {
+      "type": "object",
+      "required": [
+        "name",
+        "version"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "urn:nnnotes:schema:common#/$defs/stageName"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "cost": {
+      "type": "object",
+      "required": [
+        "cpuSeconds",
+        "peakBytes"
+      ],
+      "properties": {
+        "cpuSeconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "peakBytes": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "reason": {
+      "type": "object",
+      "required": [
+        "code",
+        "message"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "message": {
+          "type": "string"
+        }
+      }
+    },
+    "content": {
+      "type": "object",
+      "required": [
+        "sha256",
+        "size",
+        "mediaType",
+        "ext"
+      ],
+      "properties": {
+        "sha256": {
+          "$ref": "urn:nnnotes:schema:common#/$defs/sha256"
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "mediaType": {
+          "type": "string"
+        },
+        "ext": {
+          "type": "string",
+          "pattern": "^[0-9a-z]+$"
+        }
+      }
+    },
+    "locator": {
+      "type": "object",
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "store",
+            "cache",
+            "file",
+            "catalog"
+          ]
+        },
+        "path": {
+          "type": "string"
+        },
+        "catalog": {
+          "$ref": "urn:nnnotes:schema:common#/$defs/sha256"
+        },
+        "location": {
+          "type": "string"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "cache",
+                  "file"
+                ]
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "path"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "catalog"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "catalog",
+              "location"
+            ]
+          }
+        }
+      ]
+    },
+    "input": {
+      "type": "object",
+      "required": [
+        "role",
+        "sha256",
+        "size",
+        "locators"
+      ],
+      "properties": {
+        "role": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sha256": {
+          "$ref": "urn:nnnotes:schema:common#/$defs/sha256"
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "name": {
+          "type": "string"
+        },
+        "locators": {
+          "type": "array",
+          "items": {
+            "$ref": "urn:nnnotes:schema:common#/$defs/locator"
+          }
+        }
+      }
+    },
+    "itemStatus": {
+      "enum": [
+        "exported",
+        "contained",
+        "generic",
+        "unsupported",
+        "failed"
+      ]
+    },
+    "keyParts": {
+      "type": "object",
+      "required": [
+        "stage",
+        "subject",
+        "params",
+        "atoms",
+        "inputs",
+        "context"
+      ],
+      "properties": {
+        "stage": {
+          "$ref": "urn:nnnotes:schema:common#/$defs/stage"
+        },
+        "subject": {
+          "type": "string"
+        },
+        "params": {
+          "type": "object"
+        },
+        "atoms": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "inputs": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "prefixItems": [
+              {
+                "type": "string"
+              },
+              {
+                "$ref": "urn:nnnotes:schema:common#/$defs/sha256"
+              }
+            ],
+            "minItems": 2,
+            "maxItems": 2
+          }
+        },
+        "context": {
+          "type": "object"
+        }
+      }
+    }
+  }
+}

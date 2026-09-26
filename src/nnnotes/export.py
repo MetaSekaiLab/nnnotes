@@ -329,11 +329,13 @@ class Exporter:
     `follow`: referenced kinds exported instead of named ("AnimatorController",
     "SpriteAtlas").
     `defer_writes` (textures "write"): texture records are made as usual but their PNG files are written only by
-    `write_textures`, which can leave out the files a caller would delete."""
+    `write_textures`, which can leave out the files a caller would delete.
+    `class_of(o)`: the class name of a MonoBehaviour (default: unity.script_class, through its m_Script with the
+    script bundle loaded)."""
 
     def __init__(self, cat: Catalog, out_dir: Path, player=None, inline_meshes: bool = True,
                  stub_assets: tuple[str, ...] = (), textures: str = "write", clip_format: str = "generic",
-                 follow: tuple[str, ...] = (), defer_writes: bool = False):
+                 follow: tuple[str, ...] = (), defer_writes: bool = False, class_of=None):
         if textures not in ("write", "deferred"):
             raise ValueError(f"textures={textures!r}")
         if clip_format not in CLIP_FORMATS:
@@ -347,6 +349,7 @@ class Exporter:
         self.clip_format = clip_format
         self.follow = tuple(follow)
         self.defer_writes = defer_writes
+        self.script_class = class_of or script_class
         self._unwritten: dict[str, object] = {}    # defer_writes: file -> Texture2D
         self.textures: dict[tuple, dict] = {}
         self.shaders: dict[str, object] = {}
@@ -450,7 +453,7 @@ class Exporter:
         if _key(o) in self._component_ref:
             desc = {"component": t, "gameObject": self._component_ref[_key(o)]}
             if t == "MonoBehaviour":
-                desc["class"] = script_class(o)
+                desc["class"] = self.script_class(o)
             return desc
         if t == "MonoBehaviour":
             return self.scriptable(o)
@@ -684,7 +687,7 @@ class Exporter:
         k = _key(o)
         if k not in self._class_of:
             try:
-                self._class_of[k] = script_class(o)
+                self._class_of[k] = self.script_class(o)
             except Exception:                  # script not loadable from this closure
                 self._class_of[k] = None
         return self._class_of[k]
@@ -1305,7 +1308,7 @@ class Exporter:
         k = _key(o)
         if k in self._done:
             return self._done[k]
-        cls = script_class(o)
+        cls = self.script_class(o)
         tt = o.read_typetree()
         ref = {"asset": cls, "name": tt.get("m_Name", "")}
         if cls in self.stub_assets:
@@ -1319,7 +1322,7 @@ class Exporter:
         body = {k: v for k, v in tt.items() if k not in HEADER}
         out = {"type": o.type.name}
         if o.type.name == "MonoBehaviour":
-            out["class"] = script_class(o)
+            out["class"] = self.script_class(o)
         out.update(self.value(o, body))
         return out
 

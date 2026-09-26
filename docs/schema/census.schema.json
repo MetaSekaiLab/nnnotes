@@ -1,0 +1,393 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:nnnotes:schema:census",
+  "title": "nnnotes.census/1",
+  "description": "The census of one bundle (stage unity.census), read without decoding any object: its serialized files by name (Unity version, platform, type trees, externals, objects by path id with class, size, type hash, m_Name and m_Script), the other files of the bundle, its AssetBundle objects (container in stored order, dependencies, scene hashes), its MonoScripts, objects per class and the objects whose header could not be read. A function of the bundle's bytes.",
+  "type": "object",
+  "required": [
+    "schema",
+    "files",
+    "resources",
+    "assetBundles",
+    "scripts",
+    "classes",
+    "objects",
+    "errors"
+  ],
+  "properties": {
+    "schema": {
+      "const": "nnnotes.census/1"
+    },
+    "files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "unityVersion",
+          "platform",
+          "typetree",
+          "externals",
+          "objects"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "unityVersion": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "platform": {
+            "type": "integer"
+          },
+          "typetree": {
+            "type": "boolean"
+          },
+          "externals": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "file",
+                "path",
+                "guid",
+                "type"
+              ],
+              "properties": {
+                "file": {
+                  "type": "string"
+                },
+                "path": {
+                  "type": "string"
+                },
+                "guid": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "type": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                }
+              }
+            }
+          },
+          "objects": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "pathId",
+                "classId",
+                "class",
+                "byteSize",
+                "typeHash"
+              ],
+              "properties": {
+                "pathId": {
+                  "type": "integer"
+                },
+                "classId": {
+                  "type": "integer"
+                },
+                "class": {
+                  "type": "string"
+                },
+                "byteSize": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "typeHash": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "pattern": "^[0-9a-f]*$"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "script": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "required": [
+                        "file",
+                        "pathId"
+                      ],
+                      "properties": {
+                        "file": {
+                          "type": "string"
+                        },
+                        "pathId": {
+                          "type": "integer"
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "fileId",
+                        "pathId"
+                      ],
+                      "properties": {
+                        "fileId": {
+                          "type": "integer"
+                        },
+                        "pathId": {
+                          "type": "integer"
+                        }
+                      }
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "bindingScripts": {
+                  "description": "An AnimationClip's MonoScripts named by its bindings (the MonoBehaviour fields it animates), sorted; present only when there are any (stage unity.census version 2).",
+                  "type": "array",
+                  "items": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "required": [
+                          "file",
+                          "pathId"
+                        ],
+                        "properties": {
+                          "file": {
+                            "type": "string"
+                          },
+                          "pathId": {
+                            "type": "integer"
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "required": [
+                          "fileId",
+                          "pathId"
+                        ],
+                        "properties": {
+                          "fileId": {
+                            "type": "integer"
+                          },
+                          "pathId": {
+                            "type": "integer"
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "minItems": 1
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "resources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "size"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "size": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "assetBundles": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "file",
+          "pathId",
+          "name",
+          "assetBundleName",
+          "dependencies",
+          "isStreamedSceneAssetBundle",
+          "sceneHashes",
+          "container"
+        ],
+        "properties": {
+          "file": {
+            "type": "string"
+          },
+          "pathId": {
+            "type": "integer"
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "assetBundleName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "dependencies": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "isStreamedSceneAssetBundle": {
+            "type": "boolean"
+          },
+          "sceneHashes": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 2,
+              "maxItems": 2
+            }
+          },
+          "container": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "path",
+                "file",
+                "pathId",
+                "preloadIndex",
+                "preloadSize"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "file": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "pathId": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "preloadIndex": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "preloadSize": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "scripts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "file",
+          "pathId",
+          "assembly",
+          "namespace",
+          "class",
+          "name"
+        ],
+        "properties": {
+          "file": {
+            "type": "string"
+          },
+          "pathId": {
+            "type": "integer"
+          },
+          "assembly": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "namespace": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "class": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "classes": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "objects": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "errors": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "object",
+          "message"
+        ],
+        "properties": {
+          "object": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

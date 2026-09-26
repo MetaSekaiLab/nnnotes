@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:nnnotes:schema:failures",
+  "title": "nnnotes.failures/1",
+  "description": "The failures of a run: failed tasks (object null) and failed items, sorted by task and object.",
+  "type": "object",
+  "required": [
+    "schema",
+    "failures"
+  ],
+  "properties": {
+    "schema": {
+      "const": "nnnotes.failures/1"
+    },
+    "failures": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "task",
+          "stage",
+          "input",
+          "object",
+          "code",
+          "message"
+        ],
+        "properties": {
+          "task": {
+            "$ref": "urn:nnnotes:schema:common#/$defs/taskId"
+          },
+          "stage": {
+            "$ref": "urn:nnnotes:schema:common#/$defs/stageName"
+          },
+          "input": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "object": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "code": {
+            "type": "string",
+            "minLength": 1
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

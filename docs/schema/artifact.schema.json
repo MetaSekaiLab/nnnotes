@@ -1,0 +1,149 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:nnnotes:schema:artifact",
+  "title": "nnnotes.artifact/1",
+  "description": "An artifact record: the content, provenance and semantics of one output file.",
+  "type": "object",
+  "required": [
+    "id",
+    "content",
+    "provenance",
+    "semantics"
+  ],
+  "properties": {
+    "id": {
+      "$ref": "urn:nnnotes:schema:common#/$defs/artifactId"
+    },
+    "content": {
+      "$ref": "urn:nnnotes:schema:common#/$defs/content"
+    },
+    "provenance": {
+      "type": "object",
+      "required": [
+        "stage",
+        "atoms",
+        "inputs"
+      ],
+      "properties": {
+        "stage": {
+          "type": "object",
+          "required": [
+            "name",
+            "version",
+            "params"
+          ],
+          "properties": {
+            "name": {
+              "$ref": "urn:nnnotes:schema:common#/$defs/stageName"
+            },
+            "version": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "params": {
+              "$ref": "urn:nnnotes:schema:common#/$defs/sha256"
+            }
+          }
+        },
+        "atoms": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "inputs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "role",
+              "sha256"
+            ],
+            "properties": {
+              "role": {
+                "type": "string"
+              },
+              "sha256": {
+                "$ref": "urn:nnnotes:schema:common#/$defs/sha256"
+              }
+            }
+          }
+        },
+        "object": {
+          "type": "object",
+          "required": [
+            "file",
+            "pathId"
+          ],
+          "properties": {
+            "file": {
+              "type": "string"
+            },
+            "pathId": {
+              "type": "integer"
+            },
+            "classId": {
+              "type": "integer"
+            },
+            "class": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "typeHash": {
+              "type": "string"
+            },
+            "typetree": {
+              "type": "string"
+            },
+            "unityVersion": {
+              "type": "string"
+            },
+            "container": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "semantics": {
+      "type": "object",
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "minLength": 1
+        },
+        "format": {
+          "type": "string"
+        },
+        "facts": {
+          "type": "object"
+        },
+        "refs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "rel"
+            ],
+            "properties": {
+              "rel": {
+                "type": "string"
+              },
+              "object": {
+                "type": "string"
+              },
+              "artifact": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

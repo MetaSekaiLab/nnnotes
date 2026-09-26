@@ -1,0 +1,214 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:nnnotes:schema:run",
+  "title": "nnnotes.run/1",
+  "description": "A run manifest: the context, selection, parameters and stage versions of a run, the tasks it covered (sorted by id) with their keys and statuses, the layout manifests and a summary. `id` is the key hash of context, selection, params, stages, the tasks' [id, key] and layouts.",
+  "type": "object",
+  "required": [
+    "schema",
+    "id",
+    "context",
+    "selection",
+    "params",
+    "stages",
+    "tasks",
+    "layouts",
+    "summary"
+  ],
+  "properties": {
+    "schema": {
+      "const": "nnnotes.run/1"
+    },
+    "id": {
+      "$ref": "urn:nnnotes:schema:common#/$defs/sha256"
+    },
+    "context": {
+      "type": "object",
+      "description": "What the run read besides its tasks' inputs: region, language, the catalog version (id, remote catalog sha256, first label, resource version, APK catalog sha256, APK version name) and the master data its views read (the version of MasterManifest.json when present, the sha256 of each table; null without views).",
+      "properties": {
+        "region": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "language": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "catalog": {
+          "type": "object",
+          "required": [
+            "id",
+            "sha"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "urn:nnnotes:schema:common#/$defs/sha256"
+            },
+            "sha": {
+              "$ref": "urn:nnnotes:schema:common#/$defs/sha256"
+            },
+            "label": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "resourceVersion": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "apkCatalogSha": {
+              "anyOf": [
+                {
+                  "$ref": "urn:nnnotes:schema:common#/$defs/sha256"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "apkVersionName": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        },
+        "master": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "required": [
+                "version",
+                "tables"
+              ],
+              "properties": {
+                "version": {
+                  "type": [
+                    "string",
+                    "integer",
+                    "null"
+                  ]
+                },
+                "tables": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "$ref": "urn:nnnotes:schema:common#/$defs/sha256"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "selection": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "params": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object"
+      }
+    },
+    "stages": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "tasks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "key",
+          "status"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "urn:nnnotes:schema:common#/$defs/taskId"
+          },
+          "key": {
+            "anyOf": [
+              {
+                "$ref": "urn:nnnotes:schema:common#/$defs/sha256"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "enum": [
+              "hit",
+              "ran",
+              "failed"
+            ]
+          }
+        }
+      }
+    },
+    "layouts": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "urn:nnnotes:schema:common#/$defs/sha256"
+      }
+    },
+    "summary": {
+      "type": "object",
+      "required": [
+        "tasks",
+        "hit",
+        "ran",
+        "failed",
+        "items",
+        "artifacts"
+      ],
+      "properties": {
+        "tasks": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "hit": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ran": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "failed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "items": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "artifacts": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    }
+  }
+}

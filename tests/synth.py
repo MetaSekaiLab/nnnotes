@@ -6,6 +6,7 @@ from __future__ import annotations
 import gzip
 import hashlib
 import json
+import re
 import struct
 
 from Crypto.Cipher import AES
@@ -146,12 +147,49 @@ def encrypt_bundle(data: bytes, filename: str, key: bytes = BUNDLE_KEY, seed: by
 
 
 # ---------------------------------------------------------------- binary catalog (format version 2)
+RM = "UnityEngine.ResourceManagement.ResourceProviders."
+RM_ASSEMBLY = "Unity.ResourceManager, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null"
+CORE_ASSEMBLY = "UnityEngine.CoreModule, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null"
+LIB_ASSEMBLY = "mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089"
+BUNDLE_PROVIDER = RM + "AssetBundleProvider"
+ASSET_PROVIDER = RM + "BundledAssetProvider"
+BUNDLE_TYPE = RM + "IAssetBundleResource"
+REQUEST_OPTIONS = RM + "AssetBundleRequestOptions"
+_HASHED = re.compile(r"_([0-9a-f]{32})(\.bundle)?$")
+
+
+def is_file_location(internal_id: str) -> bool:
+    return "://" in internal_id or internal_id.startswith(LOCAL_PREFIX)
+
+
+def request_options(internal_id: str, **given) -> dict:
+    """The AssetBundleRequestOptions a bundle or raw file location gets unless told otherwise: the file name's
+    `_<32 hex>` as hash (else a digest of the name), a two-part internal bundle name (one part for raw files), crc
+    and size 0, flags 4 for files in the APK."""
+    name = internal_id.rsplit("/", 1)[-1]
+    m = _HASHED.search(name)
+    h = hashlib.md5(name.encode()).hexdigest()
+    parts = [hashlib.md5(b"bundle:" + name.encode()).hexdigest()]
+    if name.endswith(".bundle"):
+        parts.append(h[:12])
+    opts = {"hash": m.group(1) if m else h, "bundleName": "_".join(parts), "crc": 0, "bundleSize": 0,
+            "timeout": 0, "redirectLimit": 32, "retryCount": 0,
+            "flags": 4 if internal_id.startswith(LOCAL_PREFIX) else 0}
+    opts.update(given)
+    return opts
+
+
 class CatalogWriter:
-    """Writes the subset of the binary catalog layout the reader uses: a key table of (key, locations) pairs and
-    location records (primary key, internal id, provider, dependencies)."""
+    """Writes the binary catalog layout (format 2): the 32-byte header (locator id, instance and scene providers,
+    initialization objects, build result hash), the key table (key objects -> location sets), 28-byte location
+    records with no length prefix (primary key, internal id, provider, dependencies, dependency hash, extra data,
+    resource type), AssetBundleRequestOptions extra data on bundle and raw file locations, type records and part
+    lists. Arrays and strings carry a u32 byte length before their offset; fixed-size values do not."""
 
     def __init__(self):
-        self.buf = bytearray(12)
+        self.buf = bytearray(32)
+        self._types: dict = {}
+        self._commons: dict = {}
 
     def blob(self, data: bytes) -> int:
         self.buf += struct.pack("<I", len(data))
@@ -159,36 +197,103 @@ class CatalogWriter:
         self.buf += data
         return off
 
+    def value(self, data: bytes) -> int:
+        """A fixed-size value: no length prefix."""
+        off = len(self.buf)
+        self.buf += data
+        return off
+
+    def reserve(self, size: int) -> int:
+        return self.value(bytes(size))
+
     def text(self, s: str) -> int:
         try:
             return self.blob(s.encode("ascii"))
         except UnicodeEncodeError:
             return self.blob(s.encode("utf-16-le")) | 0x80000000
 
+    def parts(self, s: str, sep: str) -> int:
+        """A string stored as parts split at `sep`, chained last part first (DynamicString values)."""
+        head = NONE
+        for part in s.split(sep):
+            head = self.value(struct.pack("<II", self.text(part), head)) | 0x40000000
+        return head
+
     def path(self, s: str) -> int:
         """A path stored as parts, last part first."""
-        head = NONE
-        for part in s.split("/"):
-            head = self.blob(struct.pack("<II", self.text(part), head)) | 0x40000000
-        return head
+        return self.parts(s, "/")
+
+    def string(self, s: str | None, sep: str) -> int:
+        if s is None:
+            return NONE
+        return self.parts(s, sep) if sep and sep in s else self.text(s)
 
     def array(self, values) -> int:
         values = list(values)
         return self.blob(struct.pack(f"<{len(values)}I", *values)) if values else NONE
 
-    def build(self, entries: list[tuple[str, str, list[int]]], path_ids: bool = False) -> bytes:
-        """entries: (primary key, internal id, dependency indices). `path_ids`: internal ids as part lists."""
-        records = [self.blob(bytes(16)) for _ in entries]
-        for rec, (primary, internal, deps) in zip(records, entries):
-            iid = self.path(internal) if path_ids and "/" in internal and "://" not in internal else self.text(internal)
-            struct.pack_into("<4I", self.buf, rec, self.text(primary), iid, NONE,
-                             self.array(records[d] for d in deps))
+    def type_data(self, cls: str, assembly: str) -> int:
+        """A TypeSerializer.Data {assembly, class} (both read with '.'), one per type."""
+        if (cls, assembly) not in self._types:
+            self._types[(cls, assembly)] = self.value(struct.pack("<II", self.string(assembly, "."),
+                                                                  self.string(cls, ".")))
+        return self._types[(cls, assembly)]
+
+    def key_object(self, key: str) -> int:
+        """An ObjectTypeData of a System.String key: an ObjectToStringRemap {string, u16 separator}."""
+        sep = "/" if "/" in key else ""
+        obj = self.value(struct.pack("<IH", self.string(key, sep), ord(sep) if sep else 0) + bytes(2))
+        return self.value(struct.pack("<II", self.type_data("System.String", LIB_ASSEMBLY), obj))
+
+    def object_init(self, ident: str, cls: str) -> int:
+        """An ObjectInitializationData {id, type, data}."""
+        return self.value(struct.pack("<III", self.text(ident), self.type_data(cls, RM_ASSEMBLY), NONE))
+
+    def request_options(self, opts: dict) -> int:
+        """An ObjectTypeData of an AssetBundleRequestOptions: SerializedData {Hash128, bundle name (read with
+        '_'), crc, size, Common}; equal Common values are written once."""
+        common = (opts["timeout"], opts["redirectLimit"], opts["retryCount"], opts["flags"])
+        if common not in self._commons:
+            self._commons[common] = self.value(struct.pack("<hBBi", *common))
+        hash_id = NONE if opts["hash"] is None else self.value(bytes.fromhex(opts["hash"]))
+        data = self.value(struct.pack("<5I", hash_id, self.string(opts["bundleName"], "_"), opts["crc"],
+                                      opts["bundleSize"], self._commons[common]))
+        return self.value(struct.pack("<II", self.type_data(REQUEST_OPTIONS, RM_ASSEMBLY), data))
+
+    def build(self, entries: list[tuple], path_ids: bool = False, *, build_hash: str = "0" * 32) -> bytes:
+        """entries: (primary key, internal id, dependency indices[, options]). `path_ids`: internal ids as part
+        lists. Options: provider, type (resource type class), extra (AssetBundleRequestOptions fields over the
+        defaults of `request_options`; None: no extra data; default: extra data on bundle and raw file
+        locations), extra_object ((class name, bytes): extra data of another type), dependency_hash."""
         by_key: dict[str, list[int]] = {}
-        for rec, (primary, _, _) in zip(records, entries):
-            by_key.setdefault(primary, []).append(rec)
-        table = b"".join(struct.pack("<II", self.text(k), self.array(v)) for k, v in by_key.items())
-        keys = self.blob(table)
-        struct.pack_into("<III", self.buf, 0, CATALOG_MAGIC, 2, keys)
+        for i, e in enumerate(entries):
+            by_key.setdefault(e[0], []).append(i)
+        table_len = 8 * len(by_key)
+        self.buf += struct.pack("<I", table_len)
+        keys = self.reserve(table_len)
+        records = [self.reserve(28) for _ in entries]           # packed back to back, no length prefix
+        for rec, e in zip(records, entries):
+            primary, internal, deps = e[:3]
+            opts = e[3] if len(e) > 3 else {}
+            file = is_file_location(internal)
+            iid = self.path(internal) if path_ids and "/" in internal and "://" not in internal else self.text(internal)
+            provider = opts.get("provider", BUNDLE_PROVIDER if file else ASSET_PROVIDER)
+            rtype = opts.get("type", BUNDLE_TYPE if file else "UnityEngine.Object")
+            extra = opts.get("extra", {}) if "extra" in opts or file else None
+            extra_id = NONE if extra is None else self.request_options(request_options(internal, **extra))
+            if "extra_object" in opts:                              # (class name, bytes) of another extra type
+                cls, raw = opts["extra_object"]
+                extra_id = self.value(struct.pack("<II", self.type_data(cls, CORE_ASSEMBLY), self.value(raw)))
+            struct.pack_into("<IIIIiII", self.buf, rec, self.string(primary, "/"), iid, self.string(provider, "."),
+                             self.array(records[d] for d in deps), opts.get("dependency_hash", 0), extra_id,
+                             self.type_data(rtype, RM_ASSEMBLY if rtype.startswith(RM) else CORE_ASSEMBLY))
+        for i, (k, idx) in enumerate(by_key.items()):
+            struct.pack_into("<II", self.buf, keys + 8 * i, self.key_object(k), self.array(records[j] for j in idx))
+        providers = [self.object_init(RM + n, RM + n) for n in ("AssetBundleProvider", "BundledAssetProvider")]
+        struct.pack_into("<iiIIIIII", self.buf, 0, CATALOG_MAGIC, 2, keys, self.text("AddressablesMainContentCatalog"),
+                         self.object_init(RM + "InstanceProvider", RM + "InstanceProvider"),
+                         self.object_init(RM + "SceneProvider", RM + "SceneProvider"), self.array(providers),
+                         self.text(build_hash))
         return bytes(self.buf)
 
 

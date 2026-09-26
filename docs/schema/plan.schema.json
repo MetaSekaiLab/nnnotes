@@ -1,0 +1,188 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:nnnotes:schema:plan",
+  "title": "nnnotes.plan/1",
+  "description": "What a run would do: every task as a node (hit, run or unknown) with its reasons and cost estimate, the edges between tasks, and a summary.",
+  "type": "object",
+  "required": [
+    "schema",
+    "nodes",
+    "edges",
+    "summary"
+  ],
+  "properties": {
+    "schema": {
+      "const": "nnnotes.plan/1"
+    },
+    "nodes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "stage",
+          "key",
+          "status",
+          "reasons",
+          "cost"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "stage": {
+            "$ref": "urn:nnnotes:schema:common#/$defs/stageName"
+          },
+          "key": {
+            "anyOf": [
+              {
+                "$ref": "urn:nnnotes:schema:common#/$defs/sha256"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "enum": [
+              "hit",
+              "run",
+              "unknown"
+            ]
+          },
+          "reasons": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "code"
+              ],
+              "properties": {
+                "code": {
+                  "enum": [
+                    "new-input",
+                    "input-changed",
+                    "stage-version",
+                    "atom-changed",
+                    "params-changed",
+                    "context-changed",
+                    "previous-failed",
+                    "result-missing",
+                    "key-changed",
+                    "forced",
+                    "unchanged",
+                    "cached",
+                    "pending"
+                  ]
+                }
+              }
+            }
+          },
+          "cost": {
+            "anyOf": [
+              {
+                "$ref": "urn:nnnotes:schema:common#/$defs/cost"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "edges": {
+      "type": "array",
+      "items": {
+        "type": "array",
+        "prefixItems": [
+          {
+            "$ref": "urn:nnnotes:schema:common#/$defs/taskId"
+          },
+          {
+            "$ref": "urn:nnnotes:schema:common#/$defs/taskId"
+          }
+        ],
+        "minItems": 2,
+        "maxItems": 2
+      }
+    },
+    "summary": {
+      "type": "object",
+      "required": [
+        "tasks",
+        "hit",
+        "run",
+        "unknown",
+        "cpuSeconds",
+        "peakBytes",
+        "budget",
+        "oversize",
+        "layouts"
+      ],
+      "properties": {
+        "tasks": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "hit": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "run": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unknown": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "cpuSeconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "peakBytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "budget": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "oversize": {
+          "type": "array",
+          "items": {
+            "$ref": "urn:nnnotes:schema:common#/$defs/taskId"
+          }
+        },
+        "layouts": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "required": [
+              "write",
+              "remove",
+              "keep"
+            ],
+            "properties": {
+              "write": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "remove": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "keep": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

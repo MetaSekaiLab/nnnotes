@@ -151,3 +151,58 @@ OpenBLAS's default on this machine) instead of one, the outputs are the same and
    them with `nm -n` of that binary. Drop the samples of waiting threads (interpreter lock, locks, pipes, child
    processes) and scale each process's samples to its CPU time from `/proc/<pid>/stat`.
 5. Compare the files of the sampled and the unsampled build (SHA-256 of every file); they are the same.
+
+## Asset export
+
+`nnnotes export` of a whole catalog ([assets.md](assets.md)), measured the same way (wall time and CPU time of all
+processes; resident memory sampled every second over the process tree).
+
+| | |
+|---|---|
+| Data | the Taiwan server's zh-Hant catalog of version 1.0.1 with the APK's catalog: 14 694 bundles (14 692 present; two APK entries have no file), 1 805 921 objects |
+| Command | `nnnotes export -o <out> --store <new store> --link hard` with the default pipeline (catalog index, census, script and address tables, bundle export, atlas sprites, artifact table, 27 views of the embedded master data) |
+| Bundle cache | every bundle already downloaded and decrypted |
+| Software | Python 3.13.15; UnityPy 1.25.3, Pillow 12.3.0, numpy 2.4.6 |
+| Machine | as above; the runs were pinned to 32 of the 64 CPUs while other jobs used the rest |
+
+| | 32 workers | 12 workers |
+|---|---|---|
+| Wall time, new store | 166 s | 286 s |
+| CPU time of all processes | 2 700 s | 2 450 s |
+| Resident memory of all processes, summed, at the peak | 12.9 GB | 5.7 GB |
+| Largest process (the main process: catalog index, results, layout) | 4.4 GB | 4.4 GB |
+
+Both runs, and a third made of `plan --emit-tasks` rounds and `run-stage` batches (12 processes of 50 tasks at a
+time, 402 s wall, 3 280 s CPU: every `run-stage` process loads its libraries, every round plans again), wrote the
+same store (84 473 contents, 11.2 GB; 29 445 results) and the same layout (79 655 files).
+
+Where the CPU time of the 32-worker run goes:
+
+| Stage | Tasks | CPU time | Largest task |
+|---|---|---|---|
+| `unity.export` | 14 692 | 2 460 s | 8.9 s, 0.74 GB resident |
+| `unity.census` | 14 692 | 120 s | 1.3 s |
+| `link.addresses`, `link.artifacts`, `link.scripts` | 3 | 14 s | `link.artifacts`: 2.2 GB resident |
+| `sprite.crop` | 30 | 4 s | |
+| the 27 views | 27 | under 1 s | |
+| outside the tasks (planning, scheduling, layout, reports) | | 107 s (4 %) | |
+
+The median worker process peaked at 0.38 GB resident. A second run over the same store is a no-op: `plan -o <out>
+--check` takes 24 s (1.9 GB) and `export` 43 s (4.3 GB), each in one process (every task is a hit, so no worker
+starts).
+
+### PNG level
+
+PNG encoding is more than half of the CPU time of `unity.export` at the default zlib level 6 (the texture images
+alone about 40 %). `--png-level` trades file size for CPU time; every level writes the same pixels:
+
+| `--png-level` | `unity.export` CPU time | PNG bytes of the catalog |
+|---|---|---|
+| 6 (default) | 2 690 s | 7.57 GB |
+| 3 | −41 % | +12.1 % (8.49 GB) |
+| 1 | −50 % | +19.6 % (9.05 GB) |
+
+Measured on the same catalog with 16 workers (level 6: 171 s wall, level 1: 97 s). The default stays 6: the store
+keeps each content once and for good, so the extra bytes of a lower level are kept by every store and copy, while
+the CPU time is spent once per content; and level 6 writes the same bytes as the textures of the other commands.
+The level is a task parameter, so changing it runs the bundles with textures and sprites again.

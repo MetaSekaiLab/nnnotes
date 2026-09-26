@@ -1,0 +1,30 @@
+{
+ "atoms": {
+  "movie.mux": "ffmpeg-fake/1",
+  "usm.demux": "numpy-2.4.6/1"
+ },
+ "fixtures": {
+  "alpha": {
+   "key": "5baf31d8300b01dd2b19d972a77860cea30bdde4ee5806ad64b71ed0e4a92926",
+   "result": "c4800a06aaacb1e5b8216508e6f13330b399de145c9823c89369c4ad8d9d7dbe"
+  },
+  "mkv": {
+   "key": "dbbd5f32062533ced440f15ebc061bbd5a34bb2dad73e607f58a02245d0051d6",
+   "result": "a904b279d14e24b8dcc3aa93072de05acf22799cca47e1279de7bd9442d9a246"
+  },
+  "silent": {
+   "key": "40292041ccf927d54264250a92016ebb284ac352cd7c1602f6a04b8e3909728f",
+   "result": "111fc0d106471598131889926857b27a8fbb78a2f25ccf31e0cb9bc7f2f23357"
+  },
+  "webm": {
+   "key": "9ddd109466ec1df1804e5d58de876be09efd194baf5821b3db735b0775007ebc",
+   "result": "2092d215ade80724bd42f72b242dbecd5c8f470bbc7bab29ccfb7329fed39cb1"
+  }
+ },
+ "libraries": {
+  "numpy": "2.4.6"
+ },
+ "provider": "test_cristages:movie_golden",
+ "stage": "cri.movie",
+ "version": 1
+}

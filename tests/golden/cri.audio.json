@@ -1,0 +1,20 @@
+{
+ "atoms": {
+  "flac.encode": "ffmpeg-fake/1",
+  "hca.decode": "vgmstream-fake/1"
+ },
+ "fixtures": {
+  "level0": {
+   "key": "221722bad2a51e1a3b65b56f8bbb32b10f0410fd742847df3315d457db616659",
+   "result": "8c0d105d6de4ebef729282035fb352cb18d2b24e64c2b49f00500aff1765f73f"
+  },
+  "sheet": {
+   "key": "a8848e7a66d96c4d912ff3b2f82aa50db87a00a18986efd67375ff610e03e37d",
+   "result": "cee0d3aa668e8533f1e548ec95dfb1b1edfd3e5b53f9dc0d96d7a1915ac0250a"
+  }
+ },
+ "libraries": {},
+ "provider": "test_cristages:audio_golden",
+ "stage": "cri.audio",
+ "version": 1
+}

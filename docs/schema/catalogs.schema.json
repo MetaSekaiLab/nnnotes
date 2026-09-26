@@ -1,0 +1,132 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:nnnotes:schema:catalogs",
+  "title": "nnnotes.catalogs/1",
+  "description": "The catalog versions of a store (<store>/catalogs/index.json), in import order: id (key hash of the two catalogs' content ids), labels, region, language, the remote and APK catalogs (content id, size, build result hash), the CDN's .hash text when it was served, resource version and APK version name.",
+  "type": "object",
+  "required": [
+    "schema",
+    "versions"
+  ],
+  "properties": {
+    "schema": {
+      "const": "nnnotes.catalogs/1"
+    },
+    "versions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "seq",
+          "labels",
+          "region",
+          "language",
+          "remote",
+          "apk",
+          "hash",
+          "resourceVersion",
+          "apkVersionName"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "urn:nnnotes:schema:common#/$defs/sha256"
+          },
+          "seq": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "labels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "region": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "language": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "remote": {
+            "type": "object",
+            "required": [
+              "sha256",
+              "size",
+              "buildResultHash"
+            ],
+            "properties": {
+              "sha256": {
+                "$ref": "urn:nnnotes:schema:common#/$defs/sha256"
+              },
+              "size": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "buildResultHash": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          },
+          "apk": {
+            "anyOf": [
+              {
+                "type": "object",
+                "required": [
+                  "sha256",
+                  "size",
+                  "buildResultHash"
+                ],
+                "properties": {
+                  "sha256": {
+                    "$ref": "urn:nnnotes:schema:common#/$defs/sha256"
+                  },
+                  "size": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "buildResultHash": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "hash": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resourceVersion": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "apkVersionName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

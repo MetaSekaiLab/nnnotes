@@ -1,0 +1,280 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:nnnotes:schema:view",
+  "title": "nnnotes.view/1",
+  "description": "A semantic view (stage view.<name>): the rows of a master table, each with its values, its names in the text languages and per role the entry its address resolves to (an object id, never a content hash; enumerated roles: a list of entries); its coverage (per role the status counts and the rows of required gaps; the catalog keys under the view's prefixes no row references). The `original` layout writes a copy with `layout` and each entry's `path` and `files`.",
+  "type": "object",
+  "required": [
+    "schema",
+    "view",
+    "version",
+    "rules",
+    "tables",
+    "rows",
+    "coverage"
+  ],
+  "properties": {
+    "schema": {
+      "const": "nnnotes.view/1"
+    },
+    "view": {
+      "type": "string"
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "rules": {
+      "$ref": "urn:nnnotes:schema:common#/$defs/sha256"
+    },
+    "tables": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "rows": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "vars",
+          "roles"
+        ],
+        "properties": {
+          "id": {
+            "type": [
+              "integer",
+              "number",
+              "string"
+            ]
+          },
+          "vars": {
+            "type": "object"
+          },
+          "names": {
+            "type": "object"
+          },
+          "from": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "roles": {
+            "type": "object",
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "required": [
+                    "status"
+                  ],
+                  "properties": {
+                    "status": {
+                      "enum": [
+                        "ok",
+                        "missing-key",
+                        "missing-sub",
+                        "ambiguous-sub",
+                        "not-applicable",
+                        "no-value"
+                      ]
+                    },
+                    "address": {
+                      "type": "string"
+                    },
+                    "object": {
+                      "type": "string"
+                    },
+                    "class": {
+                      "type": "string"
+                    },
+                    "stable": {
+                      "type": "string"
+                    },
+                    "among": {
+                      "type": "integer",
+                      "minimum": 2
+                    },
+                    "detail": {
+                      "type": "string"
+                    },
+                    "available": {
+                      "type": "array",
+                      "items": {
+                        "type": "array",
+                        "items": {}
+                      }
+                    },
+                    "resource": {
+                      "type": "string"
+                    },
+                    "each": {
+                      "type": "object"
+                    },
+                    "path": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "files": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "status"
+                    ],
+                    "properties": {
+                      "status": {
+                        "enum": [
+                          "ok",
+                          "missing-key",
+                          "missing-sub",
+                          "ambiguous-sub",
+                          "not-applicable",
+                          "no-value"
+                        ]
+                      },
+                      "address": {
+                        "type": "string"
+                      },
+                      "object": {
+                        "type": "string"
+                      },
+                      "class": {
+                        "type": "string"
+                      },
+                      "stable": {
+                        "type": "string"
+                      },
+                      "among": {
+                        "type": "integer",
+                        "minimum": 2
+                      },
+                      "detail": {
+                        "type": "string"
+                      },
+                      "available": {
+                        "type": "array",
+                        "items": {
+                          "type": "array",
+                          "items": {}
+                        }
+                      },
+                      "resource": {
+                        "type": "string"
+                      },
+                      "each": {
+                        "type": "object"
+                      },
+                      "path": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "files": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    "layout": {
+      "type": "string"
+    },
+    "coverage": {
+      "type": "object",
+      "required": [
+        "rows",
+        "roles",
+        "reverse"
+      ],
+      "properties": {
+        "rows": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "roles": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "required": [
+              "required",
+              "counts",
+              "gaps"
+            ],
+            "properties": {
+              "required": {
+                "type": "boolean"
+              },
+              "counts": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "gaps": {
+                "type": "array",
+                "items": {}
+              }
+            }
+          }
+        },
+        "reverse": {
+          "type": "object",
+          "required": [
+            "prefixes",
+            "exclude",
+            "keys",
+            "unreferenced"
+          ],
+          "properties": {
+            "prefixes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "exclude": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "keys": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "unreferenced": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
