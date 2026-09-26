@@ -6,7 +6,7 @@ import struct
 
 import pytest
 
-from nnnotes import storysite, web
+from nnnotes import storysite, tmpfont, web
 from nnnotes.config import Config, ConfigError
 
 
@@ -422,6 +422,7 @@ def test_cli_web_stories(tmp_path, capsys, monkeypatch):
         return {"site": str(out), "storiesBuilt": [], "storiesFailed": [], "storiesSkipped": []}
     monkeypatch.setattr(storysite, "build", fake_build)
     monkeypatch.setattr(storysite, "unknown_stories", lambda cfg, ids, regions=None: [])
+    monkeypatch.setattr(tmpfont, "require_extra", lambda what=None: None)      # the fonts extra is optional
     cli.main(["--apk", str(tmp_path / "base.apk"), "web", str(tmp_path / "s"), "--player",
               str(fake_player(tmp_path / "p")), "--story", "10462", "--story", "7", "--story-languages", "en,ja",
               "--font", "en=a.otf", "--font", "ja=b.otf", "--no-audio", "--workers", "2"])
@@ -430,6 +431,16 @@ def test_cli_web_stories(tmp_path, capsys, monkeypatch):
     assert kw["story_languages"] == ["en", "ja"] and kw["fonts_flags"] == {"en": "a.otf", "ja": "b.otf"}
     assert kw["fonts"] == "open"
     assert json.loads(capsys.readouterr().out)["storiesFailed"] == []
+
+
+def test_cli_web_stories_need_the_fonts_extra(tmp_path, capsys, monkeypatch):
+    from nnnotes import cli
+    monkeypatch.setattr(tmpfont.importlib.util, "find_spec", lambda name: None)
+    with pytest.raises(SystemExit) as e:
+        cli.main(["--apk", str(tmp_path / "base.apk"), "web", str(tmp_path / "s"), "--player",
+                  str(fake_player(tmp_path / "p")), "--story", "1", "--no-audio"])
+    err = capsys.readouterr().err
+    assert e.value.code == 2 and "--story / --all-stories" in err and "nnnotes[fonts]" in err
 
 
 @pytest.mark.parametrize("argv, message", [

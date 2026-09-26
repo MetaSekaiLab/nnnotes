@@ -90,8 +90,9 @@ in, and bundles that ship inside the APK can only be read with it.
 "Master data" means the decoded master data directory of the region: the `--master` flag, else
 `[servers.<region>] master` of `[catalog] region`, else `[paths] master`.
 
-`--fonts game` (`story`, `live`, `web`) also needs the optional `fonts` dependencies (`pip install 'nnnotes[fonts]'`);
-it is not a setting.
+`--fonts game` (`story`, `live`, `web`) also needs the optional `fonts` dependencies (`pip install 'nnnotes[fonts]'`),
+and so does `web --story` / `--all-stories` with either font source (it generates the TextMesh Pro font assets of the
+story text); it is not a setting.
 
 | Command | Settings |
 |---|---|

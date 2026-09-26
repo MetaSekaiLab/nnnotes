@@ -31,11 +31,12 @@ EXTRA_MODULES = {"fontTools": "fonttools", "freetype": "freetype-py", "scipy": "
 TMP_SYNTHESIZED = (0x03, 0x09, 0x0A, 0x0B, 0x0D, 0x061C, 0x200B, 0x200E, 0x200F, 0x2028, 0x2029, 0x2060)
 
 
-def require_extra() -> None:
-    """Raise ConfigError naming the `fonts` extra when one of its packages is not installed."""
+def require_extra(what: str = "TextMesh Pro font assets") -> None:
+    """Raise ConfigError naming the `fonts` extra when one of its packages is not installed; `what` names what needs
+    them (an option, or the font assets)."""
     missing = [pkg for mod, pkg in EXTRA_MODULES.items() if importlib.util.find_spec(mod) is None]
     if missing:
-        raise ConfigError(f"--fonts game needs the optional '{EXTRA}' dependencies ({', '.join(missing)} not "
+        raise ConfigError(f"{what}: the optional '{EXTRA}' dependencies are needed ({', '.join(missing)} not "
                           f"installed): pip install 'nnnotes[{EXTRA}]'")
 
 

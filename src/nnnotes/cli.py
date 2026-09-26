@@ -332,7 +332,7 @@ def cmd_story(args, cfg):
     from . import languages, story
     if args.fonts == "game":
         from .tmpfont import require_extra
-        require_extra()
+        require_extra("--fonts game")
     languages.check(cfg.require("catalog", "language"))   # the story UI's language (advui reads the setting)
     md = master_dir(cfg)
     known_row(args, md, "MasterAdv", args.adv_id, "episode")
@@ -346,7 +346,7 @@ def _fonts_extra(fonts: str) -> None:
     """`--fonts game` needs the optional `fonts` dependencies."""
     if fonts == "game":
         from .tmpfont import require_extra
-        require_extra()
+        require_extra("--fonts game")
 
 
 def _live_options(args) -> dict:
@@ -434,7 +434,7 @@ def cmd_web(args, cfg):
                                read_workers=args.read_workers, live_options=live_options))
         if stories:
             from .tmpfont import require_extra
-            require_extra()                          # the font assets of the story text (open and game)
+            require_extra("--story / --all-stories")  # the font assets of the story text (open and game)
             cfg.require_path("paths", "apk")         # the ADV settings and UI are embedded content of the APK
             unknown = storysite.unknown_stories(cfg, args.story, regions) if args.story else []
             if unknown:
