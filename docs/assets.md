@@ -38,7 +38,7 @@ nnnotes store verify [--quick]
 | `--views` | the semantic views to build ([views.md](views.md)): `all`, `none` or names, comma-separated; default `all` when master data is set, else `none` |
 | `--layout` | `original`, `cas` or both (below) |
 | `--store DIR` | the store (`[paths] store`; default `<cache>/store`) |
-| `--workers N` | worker processes (default: the number of CPUs; `0`: every task in this process) |
+| `--workers N` | worker processes (default: the CPUs the process may run on, its affinity mask as `taskset` or a container's cpuset sets it; `0`: every task in this process) |
 | `--memory GiB` | memory budget (default: 80 % of the physical memory where it can be read, else none) |
 | `--fetch-workers N` | parallel downloads of bundles not in the cache (default 8) |
 | `--catalog-version` | an imported catalog version (`catalogs list`) instead of the current catalog |

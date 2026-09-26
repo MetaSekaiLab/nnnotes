@@ -35,7 +35,6 @@ from __future__ import annotations
 
 import json
 import multiprocessing as mp
-import os
 import re
 import shutil
 import tempfile
@@ -45,7 +44,7 @@ from pathlib import Path
 
 from . import advscene, jsonio, languages, live2d, master
 from . import shader as shader_mod
-from .config import Config, use
+from .config import Config, usable_cpus, use
 from .export import Exporter
 from .web import (MODELS_DIR, MODELS_INDEX, SHADER_PLATFORM, SHADER_TYPE, SITE_FORMAT, Store, _dump, _lock_fetches,
                   _log, check_player, collect, entry_assets, text_asset, write_index, write_player)
@@ -362,7 +361,7 @@ def build(out_dir, models: dict[str, str] | None, cfg: Config, player_dir, force
         else:
             todo.append((mid, key))
     if workers is None:
-        workers = max(1, min(4, len(todo), (os.cpu_count() or 2) // 2))
+        workers = max(1, min(4, len(todo), usable_cpus() // 2))
     names = master_names(cfg, region, log)
     if names is not None:
         for mid in skipped:

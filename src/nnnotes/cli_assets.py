@@ -46,7 +46,6 @@ from __future__ import annotations
 import argparse
 import fnmatch
 import json
-import os
 import sys
 import threading
 from collections import Counter
@@ -58,7 +57,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from . import contract
-from .config import ConfigError, describe as describe_setting, use
+from .config import ConfigError, describe as describe_setting, usable_cpus, use
 from .contract import Cost, IncompatibleTask, Input, Task
 from .stages import Env, Pending, Stage, describe, execute
 
@@ -581,7 +580,7 @@ class Workspace:
 
     def workers(self) -> int:
         w = getattr(self.args, "workers", None)
-        return max(0, w) if w is not None else (os.cpu_count() or 1)
+        return max(0, w) if w is not None else usable_cpus()
 
     def memory(self) -> int | None:
         m = getattr(self.args, "memory", None)
@@ -1256,7 +1255,8 @@ def _run_args(c) -> None:
                    help="an imported catalog version (`catalogs list`; default: the current catalog)")
     c.add_argument("--png-level", type=int, metavar="N", help="PNG compression level 0-9 (changes the output)")
     c.add_argument("--only-class", metavar="C,...", help="export only objects of these classes")
-    c.add_argument("--workers", type=int, help="worker processes (default: the CPU count; 0: this process)")
+    c.add_argument("--workers", type=int,
+                   help="worker processes (default: the CPUs this process may use; 0: this process)")
     c.add_argument("--memory", type=_gib, metavar="GiB",
                    help="memory budget of the running tasks and workers (default: 80 %% of the physical memory)")
     c.add_argument("--fetch-workers", type=int, metavar="N", help=f"parallel downloads (default {FETCH_WORKERS})")

@@ -213,6 +213,20 @@ def active() -> Config | None:
     return _active
 
 
+def usable_cpus() -> int:
+    """The CPUs this process may run on, which sizes the default worker counts: its affinity mask (taskset, a
+    container's cpuset), not the machine's CPU count. os.process_cpu_count (Python 3.13), else the affinity mask where
+    the platform reports one, else os.cpu_count; at least 1."""
+    count = getattr(os, "process_cpu_count", None)
+    if count is not None:
+        n = count()
+    elif hasattr(os, "sched_getaffinity"):
+        n = len(os.sched_getaffinity(0))
+    else:
+        n = os.cpu_count()
+    return max(1, n or 1)
+
+
 def tool(name: str, exe: str) -> str:
     """An external program: `[paths] <name>` of the active settings, else `exe` on PATH."""
     p = _active.path("paths", name) if _active is not None else None

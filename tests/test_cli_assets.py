@@ -765,3 +765,27 @@ def test_raw_files_of_the_apk_are_read_from_it(tmp_path, capsys, monkeypatch):
     code, out, _ = nn(capsys, *flags(d), "--apk", apk, "plan", "-o", tmp_path / "o", "--store", tmp_path / "s",
                       "--check")
     assert code == 0, out                                                              # read from the cache now
+
+
+def test_worker_counts_follow_the_cpus_this_process_may_use(monkeypatch):
+    import os
+    from types import SimpleNamespace
+    from nnnotes import config, cri
+    monkeypatch.setattr(os, "cpu_count", lambda: 64)
+    monkeypatch.setattr(os, "process_cpu_count", lambda: 6, raising=False)
+    assert config.usable_cpus() == 6                                   # Python 3.13: the affinity mask
+    monkeypatch.delattr(os, "process_cpu_count", raising=False)
+    monkeypatch.setattr(os, "sched_getaffinity", lambda pid: {3, 4, 5, 6, 7, 8, 9, 10}, raising=False)
+    assert config.usable_cpus() == 8                                   # older Pythons: the mask where there is one
+    monkeypatch.delattr(os, "sched_getaffinity", raising=False)
+    assert config.usable_cpus() == 64                                  # no mask: the machine's count
+    monkeypatch.setattr(os, "cpu_count", lambda: None)
+    assert config.usable_cpus() == 1
+    monkeypatch.setattr(config, "usable_cpus", lambda: 12)
+    monkeypatch.setattr(cli_assets, "usable_cpus", lambda: 12)
+    monkeypatch.setattr(cri, "usable_cpus", lambda: 12)
+    ws = cli_assets.Workspace.__new__(cli_assets.Workspace)
+    ws.args = SimpleNamespace(workers=None)
+    assert ws.workers() == 12 and cri.default_workers() == 3
+    ws.args.workers = 0
+    assert ws.workers() == 0

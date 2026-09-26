@@ -36,7 +36,6 @@ lives or episodes play (note SE, cheers) is decoded once and its files are writt
 from __future__ import annotations
 
 import json
-import os
 import shutil
 import subprocess
 import threading
@@ -48,7 +47,7 @@ import numpy as np
 
 from .addressables import remote_path
 from .catalog import Catalog
-from .config import tool
+from .config import tool, usable_cpus
 from . import cache, crikey
 from .jsonio import dumps, write_json
 
@@ -73,7 +72,7 @@ def hca_key(apk) -> int:
 
 def default_workers() -> int:
     """Parallel stream decodes of one sheet: a quarter of the CPUs, 1 to 4."""
-    return max(1, min(4, (os.cpu_count() or 2) // 4))
+    return max(1, min(4, usable_cpus() // 4))
 
 ACB_SIGNATURE = b"@UTF"
 SPLIT_ACB = "SplitAcbData (chunks joined, XOR-masked)"
