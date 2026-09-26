@@ -1,4 +1,7 @@
 import json
+import os
+import subprocess
+import sys
 import zipfile
 from pathlib import Path
 
@@ -50,6 +53,29 @@ def test_version_and_help(capsys):
     for cmd in ("catalog", "browse", "pull", "master", "adv", "story", "live2d", "spot", "room", "shader", "audio",
                 "crikey", "player", "live", "web"):
         assert cmd in out
+
+
+# the command line, then a module that loads numpy; prints OPENBLAS_NUM_THREADS as numpy starts to load (numpy
+# reads it then)
+NUMPY_IMPORT_ENV = """\
+import os, sys
+class Probe:
+    def find_spec(self, name, path=None, target=None):
+        if name == "numpy":
+            print(os.environ.get("OPENBLAS_NUM_THREADS"))
+sys.meta_path.insert(0, Probe())
+import nnnotes.cli
+import nnnotes.unity
+"""
+
+
+@pytest.mark.parametrize("given, seen", [(None, "1"), ("4", "4")])
+def test_numpy_blas_threads_set_before_numpy_loads(given, seen):
+    env = {k: v for k, v in os.environ.items() if k != "OPENBLAS_NUM_THREADS"}
+    if given is not None:
+        env["OPENBLAS_NUM_THREADS"] = given
+    r = subprocess.run([sys.executable, "-c", NUMPY_IMPORT_ENV], env=env, capture_output=True, text=True, check=True)
+    assert r.stdout.split() == [seen]
 
 
 @pytest.mark.parametrize("argv", [

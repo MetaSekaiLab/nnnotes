@@ -29,9 +29,15 @@ whatever the console encoding.
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import sys
 from pathlib import Path
+
+# numpy's OpenBLAS starts one busy thread per CPU in every process that imports it, and no export uses its
+# parallelism. Set when the command line loads, before a command imports numpy; the worker processes of a build
+# inherit it.
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
 
 from . import __version__
 from .addressables import BundleKey

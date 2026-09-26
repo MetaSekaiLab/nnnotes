@@ -16,6 +16,9 @@ deterministic for a given installation: the same inputs with the same versions o
 and the external tools give byte-identical files. Other versions can encode the same content into other bytes (a
 PNG written by another Pillow version can differ in its bytes while its pixels are equal).
 
+nnnotes sets `OPENBLAS_NUM_THREADS=1` unless the environment sets it: numpy's OpenBLAS otherwise starts one busy
+thread per CPU in every process, and no command uses its parallelism.
+
 A key, id or model the catalog or the master data does not have is a usage error: the command stops with exit
 status 2 and a line naming it (`nnnotes <command>: error: ...`), before any bundle is fetched or file written.
 
