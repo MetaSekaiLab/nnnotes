@@ -67,7 +67,8 @@ Based on all data of the Taiwan server, version 1.0.1 (zh-Hant):
 
 ## Requirements
 
-- Python 3.11+; `pip install -e .` in the repository (not yet on PyPI)
+- Python 3.11+, 3.13 recommended (a `web` build reads and writes a lot of JSON, and the standard library encodes
+  JSON faster on 3.13); `pip install -e .` in the repository (not yet on PyPI)
 - the game's `base.apk`: APK-local bundles, the CRI keycode, boot settings. `player`, `story`, `live` and `web` read
   MonoBehaviours of its boot data with type trees that ship with nnnotes; supported now: game version 1.0.1
   (Unity 6000.3.12f1). With an APK of another version whose classes do not match, these commands stop with an
