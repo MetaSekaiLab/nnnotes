@@ -722,3 +722,46 @@ def test_census_documents_with_binding_scripts_validate():
     assert [e.message for e in v.iter_errors(doc)] == []
     doc["files"][0]["objects"][1]["bindingScripts"] = [{"pathId": 7}]
     assert list(v.iter_errors(doc))
+
+
+class RawCopy(Stage):
+    """The raw files of the selection (the fact the CRI stages read), each stored as its artifact."""
+    name, version = "cri.audio", 1
+
+    def subjects(self, env):
+        return sorted(env.fact("raw"))
+
+    def inputs(self, subject, env):
+        return [env.fact("raw")[subject]]
+
+    def run(self, task, store):
+        content = store.add(store.input_bytes(task.input("raw")), "acb")
+        return Output([contract.artifact(contract.artifact_id(task.id, "sheet.acb"), content,
+                                         contract.provenance(task), {"kind": "toy"})], [])
+
+
+def test_raw_files_of_the_apk_are_read_from_it(tmp_path, capsys, monkeypatch):
+    import zipfile
+    monkeypatch.setattr(cli_assets, "STAGE_SOURCES", FAKE_SOURCES + (
+        cli_assets.StageSource("cri.audio", "test_cli_assets:RawCopy"),))
+    monkeypatch.setattr(cli_assets, "_apk_version", lambda apk: None)
+    name = "cri_assets_embcri/sound/initialse_" + "ab" * 16
+    apk = tmp_path / "base.apk"
+    with zipfile.ZipFile(apk, "w") as z:
+        z.writestr("assets/aa/catalog.bin", synth.CatalogWriter().build([("Cri/Initial/se", synth.local(name), [])]))
+        z.writestr("assets/aa/Android/" + name, b"@UTF sheet")
+        z.writestr("assets/bin/Data/data.unity3d", b"boot")
+    d = setup_data(tmp_path, censuses(broken=False))
+    code, out, err = nn(capsys, *flags(d), "--apk", apk, "plan", "--store", tmp_path / "s", "--json")
+    nodes = {n["id"]: n for n in json.loads(out)["nodes"]}
+    assert nodes["cri.audio:cri_assets_embcri/sound/initialse"]["reasons"] == [{"code": "pending", "task": f"fetch:{name}"}]
+    code, out, err = nn(capsys, *flags(d), "--apk", apk, "export", "-o", tmp_path / "o", "--store", tmp_path / "s",
+                        "--workers", "0")
+    assert code == 0, err
+    assert json.loads(out)["sources"] == {}
+    assert (d["cache"] / "raw" / "Android" / name).read_bytes() == b"@UTF sheet"      # where a CDN file would be
+    run = contract.loads((tmp_path / "o" / cli_assets.REPORTS / "run.json").read_bytes())
+    assert {t["id"]: t["status"] for t in run["tasks"]}["cri.audio:cri_assets_embcri/sound/initialse"] == "ran"
+    code, out, _ = nn(capsys, *flags(d), "--apk", apk, "plan", "-o", tmp_path / "o", "--store", tmp_path / "s",
+                      "--check")
+    assert code == 0, out                                                              # read from the cache now

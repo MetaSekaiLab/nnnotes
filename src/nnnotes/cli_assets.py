@@ -292,10 +292,38 @@ class CatalogFetcher:
         iid = loc["internalId"]
         if loc["kind"] == "bundle":
             return cat.fetch(Bundle(0, iid, file_name(iid), remote_path(iid) is not None))
+        if remote_path(iid) is None:
+            return self._apk_file(iid)
         return cat.fetch_raw({"internal_id": iid})
+
+    def _apk_file(self, internal_id: str) -> Path:
+        """A raw file of the APK as stored, through the cache (raw/<its path below the APK's Addressables
+        directory>, where a CDN file of that path would be); KeyError when the APK does not hold it."""
+        import zipfile
+        from .cache import write_atomic
+        from .catalog import APK_AA_DIR
+        if self.cache is None:
+            raise self.cfg.missing("paths", "cache")
+        apk = self.cfg.path("paths", "apk")
+        if apk is None:
+            raise self.cfg.missing("paths", "apk")
+        rel = apk_rel(internal_id)
+        dst = self.cache / "raw" / rel
+        if not (dst.is_file() and dst.stat().st_size > 0):
+            with zipfile.ZipFile(apk) as z:
+                data = z.read(APK_AA_DIR + rel)
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            write_atomic(dst, data)
+        return dst
 
     def __call__(self, inp: Input, loc: dict) -> Path:
         return self.fetch_location(loc["catalog"], loc["location"])
+
+
+def apk_rel(internal_id: str) -> str:
+    """The path of an APK-local location's file below the APK's Addressables directory (catalog.APK_AA_DIR)."""
+    from .catalog import LOCAL_PREFIX
+    return internal_id[len(LOCAL_PREFIX):].lstrip("/") if internal_id.startswith(LOCAL_PREFIX) else internal_id
 
 
 def _worker_init(store, cfg) -> None:
@@ -586,12 +614,14 @@ class Workspace:
         """Files of the selection that could not be read: {kind, stable, name, code, message}, sorted."""
         return sorted(self._problems, key=lambda p: (p["kind"], p["stable"]))
 
-    def _cache_rel(self, kind: str, entry: dict, loc: dict) -> str | None:
+    def _cache_rel(self, kind: str, entry: dict, loc: dict) -> str:
         from .addressables import remote_path
         if kind == "bundle":
             return f"bundles/{entry['name']}"
         rel = remote_path(loc["internalId"])
-        return None if rel is None else "raw/" + rel.lstrip("/")
+        if rel is None:                                   # a raw file of the APK (CatalogFetcher._apk_file)
+            rel = apk_rel(loc["internalId"])
+        return "raw/" + rel.lstrip("/")
 
     def _inputs(self, kind: str, entries: list[dict], fetch: bool) -> dict:
         from .catalogdb import by_id
@@ -647,7 +677,7 @@ class Workspace:
 
     def _in_apk(self, internal_id: str) -> bool:
         """Whether the APK holds the file of a location (read from its directory, not fetched)."""
-        from .catalog import APK_AA_DIR, LOCAL_PREFIX
+        from .catalog import APK_AA_DIR
         if self._apk_names is None:
             import zipfile
             try:
@@ -655,8 +685,7 @@ class Workspace:
                     self._apk_names = set(z.namelist())
             except (OSError, zipfile.BadZipFile):
                 raise ConfigError(f"setting paths.apk: {self.apk} is not a readable APK") from None
-        rel = internal_id[len(LOCAL_PREFIX):].lstrip("/") if internal_id.startswith(LOCAL_PREFIX) else internal_id
-        return APK_AA_DIR + rel in self._apk_names
+        return APK_AA_DIR + apk_rel(internal_id) in self._apk_names
 
     def _problem(self, kind: str, e: dict, code: str, message: str) -> None:
         self._problems.append({"kind": kind, "stable": e["stable"], "name": e["name"], "code": code,
