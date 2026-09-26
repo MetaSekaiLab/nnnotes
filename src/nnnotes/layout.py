@@ -46,7 +46,7 @@ from pathlib import Path
 
 from . import contract
 from .cache import temp_path
-from .store import write_file
+from .store import write_doc, write_file
 
 MANIFEST = "manifest.json"
 JOURNAL = ".nnnotes-layout-journal.json"
@@ -417,10 +417,9 @@ def materialize(out_dir, name: str, params: dict, entries_: list[dict], source, 
             _place(Path(source(sha)), dst, link, stats)
     for p in remove:
         _remove(out, p)
-    data = contract.encode(doc)
-    write_file(out / MANIFEST, data)
+    sha = write_doc(out / MANIFEST, doc)
     (out / JOURNAL).unlink(missing_ok=True)
-    return {"manifest": doc, "sha256": contract.sha256(data), "write": len(write), "remove": len(remove),
+    return {"manifest": doc, "sha256": sha, "write": len(write), "remove": len(remove),
             "keep": len(files) - len(write), **stats}
 
 

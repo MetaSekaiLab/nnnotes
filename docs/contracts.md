@@ -207,7 +207,8 @@ their objects) are the exception: `original` has the derived documents, `cas` th
 - Failures, `nnnotes.failures/1` ([schema/failures.schema.json](schema/failures.schema.json)): `{task, stage, input,
   object, code, message}` for failed tasks (`object` null) and failed items, sorted by task and object.
 - Cost, `nnnotes.cost/1` ([schema/cost.schema.json](schema/cost.schema.json)): the measured CPU and wall seconds
-  and peak resident memory of a task's last run.
+  and peak resident memory of a task's last run, and the resident memory of its process when it started (a worker
+  keeps memory from its earlier tasks: the task's own need is the difference).
 
 Documents written by particular stages (artifacts of no object: their ids are `<stage>:<subject>#<role>`):
 

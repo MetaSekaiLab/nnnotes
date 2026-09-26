@@ -103,6 +103,11 @@ def test_equal_content_under_two_subjects_is_stored_once(tmp_path):
     assert len(tree(store.root, "cas")) == 3                          # SAME, the two equal counts, the total
 
 
+def test_no_more_workers_start_than_a_stage_has_tasks(tmp_path):
+    _, run, orch = orchestrate(tmp_path, "s", {"a": "x", "b": "y"}, workers=4)
+    assert run.summary()["ran"] == 5 and orch._started == 2
+
+
 def test_workers_are_recycled(tmp_path):
     _, run, orch = orchestrate(tmp_path, "s", {"a": "x", "b": "y"}, workers=1, recycle_tasks=1)
     assert run.summary()["ran"] == 5 and orch._started == 6
@@ -225,3 +230,76 @@ def test_coverage_counts_an_object_of_several_results_once():
     assert doc["classes"]["Sprite"] == {"total": 2, "missing": 0, "exported": 1, "contained": 0, "generic": 0,
                                         "unsupported": 0, "failed": 1}
     assert doc["reasons"] == {"x.bad": {"count": 1, "examples": ["F:2"]}}
+
+
+def _coverage_of_whole_items(results, census=None):
+    """coverage() as a plain reading of every item (the reference for the compact one)."""
+    from collections import Counter
+    order = ("failed", "unsupported", "generic", "exported", "contained")
+    best = {}
+    for _, doc in results:
+        for it in doc["items"]:
+            old = best.get(it["object"])
+            if old is None or order.index(it["status"]) < order.index(old["status"]):
+                best[it["object"]] = it
+    classes, reasons = {}, {}
+    for it in best.values():
+        classes.setdefault(it.get("class", "?"), Counter())[it["status"]] += 1
+        if "reason" in it:
+            reasons.setdefault(it["reason"]["code"], []).append(it["object"])
+    out = {}
+    for cls in sorted(set(classes) | set(census or {})):
+        c = classes.get(cls, Counter())
+        total = (census or {}).get(cls, sum(c.values()))
+        out[cls] = {"total": total, "missing": total - sum(c.values()), **{s: c.get(s, 0) for s in order}}
+    return {"schema": contract.COVERAGE, "classes": out,
+            "reasons": {k: {"count": len(v), "examples": sorted(v)[:5]} for k, v in sorted(reasons.items())}}
+
+
+def test_compact_coverage_equals_a_reading_of_whole_items():
+    why = contract.reason
+    big, neg = (1 << 63) - 1, -(1 << 63)
+    a = {"artifacts": [], "items": [
+        contract.item("F:1", "contained", within="F:9#prefab", cls="Mesh"),
+        contract.item("F:01", "failed", why=why("x.a", "leading zero: another object"), cls="Mesh"),
+        contract.item(f"F:{big}", "generic", artifacts=["F:big#json"], why=why("x.g", "g"), cls="Tex"),
+        contract.item(f"F:{neg}", "unsupported", why=why("x.u", "u"), cls="Tex"),
+        contract.item(f"F:{1 << 64}", "exported", artifacts=["F:huge#png"], cls="Tex"),
+        contract.item("G:1", "exported", artifacts=["G:1#png"], cls="Sprite"),
+        contract.item("odd", "unsupported", why=why("x.u", "no pathId"), cls="Sprite"),
+        contract.item("F:+1", "exported", artifacts=["F:+1#png"])]}
+    b = {"artifacts": [], "items": [
+        contract.item("F:1", "exported", artifacts=["F:1#glb"], cls="Mesh"),               # more severe: replaces
+        contract.item("G:1", "exported", artifacts=["G:1#meta"], cls="Texture2D"),         # a tie: the first stays
+        contract.item(f"F:{neg}", "failed", why=why("x.f", "worse"), cls="Tex"),
+        contract.item(f"F:{big}", "contained", within="F:9#prefab", cls="Tex"),             # less severe: ignored
+        contract.item("G:1", "failed", why=why("x.f", "worst"), cls="Sprite")]}
+    results = [("unity.export:a", a), ("sprite.crop:b", b)]
+    for census in (None, {"Mesh": 5, "Audio": 1}):
+        assert coverage(results, census) == _coverage_of_whole_items(results, census)
+        assert coverage(results[::-1], census) == _coverage_of_whole_items(results[::-1], census)
+
+
+def test_the_reports_read_the_results_once_until_the_tasks_change(tmp_path):
+    store, run, _ = orchestrate(tmp_path, "s", {"a": "x\nFAIL\n?y\n", "b": "z"})
+    reads = []
+    real = store.result
+    store.result = lambda key: reads.append(key) or real(key)
+    first = (run.summary(), run.failures(), run.coverage())
+    n = len(reads)
+    assert n == sum(t["status"] != "failed" for t in run.tasks.values())
+    assert (run.summary(), run.failures(), run.coverage(), run.exit_code) == (*first, 1) and len(reads) == n
+    seen = []
+    run.scan(lambda tid, doc: seen.append(tid))
+    assert seen == sorted(t for t, v in run.tasks.items() if v["status"] != "failed") and len(reads) == 2 * n
+    run.tasks["toy.src:a"] = dict(run.tasks["toy.src:a"], status="failed")
+    assert run.summary()["items"]["failed"] == 0 and len(reads) == 3 * n - 1
+
+
+def test_a_scan_with_the_census_keeps_only_the_coverage_document(tmp_path):
+    _, run, _ = orchestrate(tmp_path, "s", {"a": "x\nFAIL\n?y\n", "b": "CRASH"})
+    want = run.coverage({"Line": 6})
+    run.scan(census=lambda: {"Line": 6})
+    digest = run._scan[1]
+    assert digest.best is None and run.coverage({"Line": 6}) == want
+    assert run.coverage() == coverage(run.results()) and run._scan[1] is not digest    # another census: read again

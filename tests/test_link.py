@@ -246,3 +246,34 @@ def test_artifacts_table_and_stage(tmp_path):
     (rec,) = store.result(t.key)["artifacts"]
     assert rec["id"] == "link.artifacts:all#artifacts"
     assert contract.loads(store.read(rec["content"]["sha256"]))["objects"] == table["objects"]
+
+
+def test_the_artifact_table_is_written_entry_by_entry_with_the_same_bytes():
+    def res(n, oid, aid, *, within=None):
+        c = {"sha256": f"{n:064x}", "size": n, "ext": "png", "mediaType": "image/png"}
+        items = [contract.item(oid, "contained", within=within)] if within else \
+            [contract.item(oid, "exported", artifacts=[aid, aid + "~"])]
+        return (f"unity.export:{n}", {"artifacts": [] if within else [{"id": aid, "content": c},
+                                                                       {"id": aid + "~", "content": c}],
+                                      "items": items})
+    results = [res(3, f"{CAB_A}:3", f"{CAB_A}:3#立ち絵"), res(1, f"{CAB_A}:1", f"{CAB_A}:1#png"),
+               res(2, f"{CAB_A}:2", None, within=f"{CAB_A}:1#png"), res(4, f"{CAB_A}:é", None, within=f"{CAB_A}:1#png")]
+    only_exported = [results[0], results[1]]
+    only_contained = [("unity.export:x", {"artifacts": [], "items": [contract.item(f"{CAB_A}:9", "contained",
+                                                                                  within="a#b")]})]
+    for rs in (results, only_exported, only_contained, []):
+        want = contract.encode(link.artifacts(rs))
+        for chunk in (1, 64, 1 << 20):
+            parts = list(link.encode_artifacts(*link.artifact_table(iter(rs)), chunk=chunk))
+            assert b"".join(parts) == want
+        assert len(list(link.encode_artifacts(*link.artifact_table(rs), chunk=1))) > 1 or not rs
+
+
+def test_store_add_chunks_is_add_of_the_joined_bytes(tmp_path):
+    s = Store(tmp_path / "s")
+    c = s.add_chunks(iter([b"ab", b"", "é".encode()]), ".JSON")
+    assert c == contract.content("abé".encode(), "json") and s.read(c["sha256"]) == "abé".encode()
+    assert s.add_chunks([b"a", "bé".encode()], "json") == c and (s.written, s.reused) == (1, 1)
+    with pytest.raises(RuntimeError):
+        s.add_chunks((b if b else (_ for _ in ()).throw(RuntimeError("stop")) for b in (b"x", b"")), "bin")
+    assert s.verify()["problemCount"] == 0 and s.verify()["contents"] == 1

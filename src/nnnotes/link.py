@@ -31,10 +31,13 @@ sprite.crop) -> where each object went:
     contained  {object id: the artifact it is part of}
     artifacts  {artifact id: {sha256, size, ext}}
 Its context names the results it reads ({"results": {task id: key}}); results are functions of their keys, so the
-table is a function of its key. With a layout manifest (its entries' ids) it gives every object's files.
+table is a function of its key. With a layout manifest (its entries' ids) it gives every object's files. The task
+reads the results one at a time and writes the table's text entry by entry (encode_artifacts), so its memory is the
+table's entries, not the results nor the whole text.
 """
 from __future__ import annotations
 
+import json
 import re
 
 from . import catalogdb, census, contract
@@ -295,7 +298,7 @@ class AddressesStage(Stage):
     def inputs(self, subject: str, env) -> list[Input]:
         tid = contract.task_id(catalogdb.IndexStage.name, subject)
         idx = env.input_of(tid, "index")
-        stables = {b["stable"] for b in contract.loads(env.store.read(idx.sha256))["bundles"]}
+        stables = {b["stable"] for b in env.store.document(idx.sha256)["bundles"]}
         wanted = {contract.task_id(census.CensusStage.name, s) for s in stables}
         pending = [t for t in env.pending(census.CensusStage.name) if t in wanted]
         if pending:
@@ -319,9 +322,11 @@ class AddressesStage(Stage):
         return Output([rec], [])
 
 
-def artifacts(results) -> dict:
-    """The artifact table (nnnotes.artifacts/1) of results [(task id, result)]."""
-    objects, contained, arts = {}, {}, {}
+def artifact_table(results) -> tuple[dict, dict, dict]:
+    """The parts of the artifact table of results [(task id, result)], each result read once and not kept:
+    ({object id: set of artifact ids}, {object id: the artifact it is part of}, {artifact id: {sha256, size, ext}}),
+    unsorted. The ids an object is contained in repeat (every part of a prefab names it): one string each."""
+    objects, contained, arts, same = {}, {}, {}, {}
     for _, doc in results:
         for a in doc["artifacts"]:
             c = a["content"]
@@ -330,9 +335,44 @@ def artifacts(results) -> dict:
             if it.get("artifacts"):
                 objects.setdefault(it["object"], set()).update(it["artifacts"])
             elif "in" in it:
-                contained[it["object"]] = it["in"]
+                contained[it["object"]] = same.setdefault(it["in"], it["in"])
+    return objects, contained, arts
+
+
+def artifacts(results) -> dict:
+    """The artifact table (nnnotes.artifacts/1) of results [(task id, result)]."""
+    objects, contained, arts = artifact_table(results)
     return {"schema": ARTIFACTS, "objects": {o: sorted(v) for o, v in sorted(objects.items())},
             "contained": dict(sorted(contained.items())), "artifacts": dict(sorted(arts.items()))}
+
+
+def encode_artifacts(objects: dict, contained: dict, arts: dict, chunk: int = 1 << 20):
+    """contract.encode(artifacts(...)) of the parts artifact_table gives, as byte strings of about `chunk` bytes:
+    the canonical text (keys sorted, indent 1, non-ASCII as is, one trailing newline) written entry by entry, so the
+    whole document is never built."""
+    def text(v) -> str:
+        return json.dumps(v, indent=1, ensure_ascii=False, sort_keys=True)
+
+    buf, size = ["{"], 0
+    tables = (("artifacts", arts, arts.get), ("contained", contained, contained.get),
+              ("objects", objects, lambda k: sorted(objects[k])))
+    for i, (name, table, value) in enumerate(tables):
+        buf.append(("\n " if i == 0 else ",\n ") + text(name) + ": ")
+        if not table:
+            buf.append("{}")
+            continue
+        sep = "{\n  "
+        for k in sorted(table):
+            s = sep + text(k) + ": " + text(value(k)).replace("\n", "\n  ")
+            buf.append(s)
+            size += len(s)
+            sep = ",\n  "
+            if size >= chunk:
+                yield "".join(buf).encode("utf-8")
+                buf, size = [], 0
+        buf.append("\n }")
+    buf.append(",\n " + text("schema") + ": " + text(ARTIFACTS) + "\n}\n")
+    yield "".join(buf).encode("utf-8")
 
 
 class ArtifactsStage(Stage):
@@ -364,16 +404,15 @@ class ArtifactsStage(Stage):
         return Cost(0.05 + 0.002 * n, (60 << 20) + 200_000 * n)
 
     def run(self, task, store) -> Output:
-        results = []
-        for tid, key in sorted(task.context.get("results", {}).items()):
-            doc = store.result(key)
-            if doc is None:
-                raise FileNotFoundError(f"result of {tid} ({key}) is not in the store")
-            results.append((tid, doc))
-        doc = artifacts(results)
-        content = store.add(contract.encode(doc), "json")
-        facts = {"objects": len(doc["objects"]), "contained": len(doc["contained"]),
-                 "artifacts": len(doc["artifacts"])}
+        def results():
+            for tid, key in sorted(task.context.get("results", {}).items()):
+                doc = store.result(key)
+                if doc is None:
+                    raise FileNotFoundError(f"result of {tid} ({key}) is not in the store")
+                yield tid, doc
+        objects, contained, arts = artifact_table(results())
+        content = store.add_chunks(encode_artifacts(objects, contained, arts), "json")
+        facts = {"objects": len(objects), "contained": len(contained), "artifacts": len(arts)}
         rec = contract.artifact(contract.artifact_id(task.id, "artifacts"), content, contract.provenance(task),
                                 {"kind": "link.artifacts", "format": "json", "facts": facts})
         return Output([rec], [])

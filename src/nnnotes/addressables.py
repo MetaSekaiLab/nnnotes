@@ -118,10 +118,13 @@ FLAG_BITS = (("assetLoadMode", 1), ("chunkedTransfer", 2), ("useCrcForCachedBund
 
 
 class _Buffer:
-    """Typed reads from a binary catalog."""
+    """Typed reads from a binary catalog. Plain strings and type names are read once per offset: the parts of the
+    internal ids (the CDN prefix, directories) and the few type names repeat in every location."""
 
     def __init__(self, data: bytes):
         self.data = data
+        self._plain: dict[int, str] = {}
+        self._types: dict[int, tuple] = {}
 
     def u32(self, offset: int) -> int:
         return struct.unpack_from("<I", self.data, offset)[0]
@@ -136,9 +139,12 @@ class _Buffer:
         return list(struct.unpack_from(f"<{n // 4}I", self.data, offset))
 
     def plain(self, offset: int) -> str:
-        pos = offset & OFFSET_MASK
-        raw = self.data[pos:pos + self.u32(pos - 4)]
-        return raw.decode("utf-16-le" if offset & UNICODE else "ascii")
+        s = self._plain.get(offset)
+        if s is None:
+            pos = offset & OFFSET_MASK
+            raw = self.data[pos:pos + self.u32(pos - 4)]
+            s = self._plain[offset] = raw.decode("utf-16-le" if offset & UNICODE else "ascii")
+        return s
 
     def string(self, offset: int, sep: str) -> str | None:
         """A string read with separator `sep` ("" reads plain strings only); None for null."""
@@ -164,8 +170,11 @@ class _Buffer:
         """TypeSerializer.Data {assembly, class}, both read with '.'; None for null."""
         if offset == NONE:
             return None
-        assembly, cls = struct.unpack_from("<II", self.data, offset)
-        return self.string(assembly, "."), self.string(cls, ".")
+        t = self._types.get(offset)
+        if t is None:
+            assembly, cls = struct.unpack_from("<II", self.data, offset)
+            t = self._types[offset] = (self.string(assembly, "."), self.string(cls, "."))
+        return t
 
     def object_init(self, offset: int) -> dict | None:
         """ObjectInitializationData.Serializer.Data {id, type, data}: id and data plain strings, type a

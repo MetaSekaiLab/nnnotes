@@ -154,3 +154,53 @@ def test_load_downloads_catalog_once(tmp_path):
     assert Catalog.load("xx", tmp_path / "cache").keys("Story/") == ["Story/物語"]
     with pytest.raises(FileNotFoundError):
         Catalog.load("yy", tmp_path / "cache")
+
+
+def test_downloads_keep_one_connection_per_thread(monkeypatch):
+    import http.server
+    import threading
+    from nnnotes import catalog
+    for v in ("http_proxy", "HTTP_PROXY", "all_proxy", "ALL_PROXY"):
+        monkeypatch.delenv(v, raising=False)
+    monkeypatch.setattr(catalog.urllib.request, "getproxies", lambda: {})
+    connections = []
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+
+        def setup(self):
+            super().setup()
+            connections.append(1)
+
+        def do_GET(self):
+            if self.path == "/moved":
+                self.send_response(302)
+                self.send_header("Location", "/a")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+            body = self.path.encode() * 1000
+            self.send_response(200 if self.path != "/missing" else 404)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *a):
+            pass
+
+    srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{srv.server_port}"
+    try:
+        assert [catalog.download(f"{base}/{n}") for n in ("a", "b", "c")] == [f"/{n}".encode() * 1000 for n in "abc"]
+        assert len(connections) == 1
+        assert catalog.download(f"{base}/moved") == b"/a" * 1000              # followed by urllib
+        with pytest.raises(catalog.urllib.error.HTTPError):
+            catalog.download(f"{base}/missing")
+        n = len(connections)
+        assert catalog.download(f"{base}/d") == b"/d" * 1000 and len(connections) == n + 1   # (a 404 is not kept)
+        catalog._KEPT.conns[("http", f"127.0.0.1:{srv.server_port}")].sock.close()          # gone stale
+        assert catalog.download(f"{base}/e") == b"/e" * 1000 and len(connections) == n + 2
+    finally:
+        srv.shutdown()
+        srv.server_close()

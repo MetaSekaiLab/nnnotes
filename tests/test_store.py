@@ -166,3 +166,16 @@ def test_a_store_crosses_processes_as_its_settings(tmp_path):
     s.put(b"x")
     t = pickle.loads(pickle.dumps(s))
     assert (t.root, t.cache, t.written) == (s.root, s.cache, 0)
+
+
+def test_write_doc_writes_the_canonical_bytes_as_it_encodes(tmp_path):
+    from nnnotes.store import write_doc
+    docs = [{"b": [1, 2, {"é": "x\n"}], "a": {}, "c": [], "d": None, "e": 1.5, "f": "立ち絵" * 1000},
+            {"entries": [{"path": f"p/{i}", "sha256": "0" * 64, "size": i} for i in range(5000)]},
+            {"x": float("inf"), "y": [1, -float("inf")]}, [], "text", 3]
+    for i, doc in enumerate(docs):
+        sha = write_doc(tmp_path / "d" / f"{i}.json", doc)
+        data = (tmp_path / "d" / f"{i}.json").read_bytes()
+        assert data == contract.encode(doc) and sha == contract.sha256(data)
+    assert b"".join(contract.encode_chunks(docs[1], size=100)) == contract.encode(docs[1])
+    assert not any(p.name.endswith(".part") for p in (tmp_path / "d").iterdir())

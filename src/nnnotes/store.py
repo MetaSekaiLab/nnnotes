@@ -95,6 +95,31 @@ def write_file(dst, data: bytes) -> None:
     _write(Path(dst), data)
 
 
+def write_doc(dst, doc) -> str:
+    """Write a document's canonical bytes (contract.encode) atomically, encoded as they are written; their sha256."""
+    dst = Path(dst)
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    tmp = temp_path(dst)
+    try:
+        with open(tmp, "xb") as f:
+            h = hashlib.sha256()
+            try:
+                for b in contract.encode_chunks(doc):
+                    h.update(b)
+                    f.write(b)
+            except ValueError:                   # a non-finite number: encode() writes those
+                f.seek(0)
+                f.truncate()
+                data = contract.encode(doc)
+                h = hashlib.sha256(data)
+                f.write(data)
+        _replace(tmp, dst, lambda p: False)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
+    return h.hexdigest()
+
+
 def _append(path: Path, line: str) -> None:
     """Append one line with one write (O_APPEND): lines of concurrent writers do not interleave."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -130,6 +155,7 @@ class Store:
         self._have: set[str] = set()                # content ids this store object wrote or found
         self._memo: dict | None = None              # (path, size, mtime_ns) -> (sha256, size)
         self._names: dict[str, dict] = {}           # kind -> {name: (sha256, size)}
+        self._docs: dict[str, object] = {}          # the documents document() decoded last
         self._lock = threading.Lock()
 
     def __getstate__(self):                         # a store crosses to worker processes as its settings
@@ -212,8 +238,51 @@ class Store:
         self.put(data)
         return c
 
+    def add_chunks(self, chunks, ext: str, media: str | None = None) -> dict:
+        """Store the bytes of a sequence of byte strings, written and hashed as they come (never held whole); the
+        content part of their artifact record, as add() gives it for the joined bytes."""
+        tmp = temp_path(self.root / "cas" / "sha256" / "chunks")         # the content id is known at the end
+        tmp.parent.mkdir(parents=True, exist_ok=True)
+        h, size = hashlib.sha256(), 0
+        try:
+            with open(tmp, "xb") as f:
+                for b in chunks:
+                    h.update(b)
+                    f.write(b)
+                    size += len(b)
+        except BaseException:
+            tmp.unlink(missing_ok=True)
+            raise
+        sha = h.hexdigest()
+        if self.has(sha, size):
+            tmp.unlink(missing_ok=True)
+            self.reused += 1
+        else:
+            dst = self.path(sha)
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            if _replace(tmp, dst, lambda p: p.stat().st_size == size):
+                self.written += 1
+            else:
+                self.reused += 1
+            self._have.add(sha)
+        ext = ext.lower().lstrip(".")
+        return {"sha256": sha, "size": size, "mediaType": media or contract.media_type(ext), "ext": ext}
+
     def read(self, sha: str) -> bytes:
         return self.path(sha).read_bytes()
+
+    def document(self, sha: str):
+        """The JSON document stored as `sha`, decoded; the last two decoded are kept (a catalog index is read at
+        planning and again by the stages it describes) and shared: callers must not change them."""
+        with self._lock:
+            doc = self._docs.get(sha)
+        if doc is None:
+            doc = contract.loads(self.read(sha))
+            with self._lock:
+                self._docs[sha] = doc
+                while len(self._docs) > 2:
+                    del self._docs[next(iter(self._docs))]
+        return doc
 
     # ---------------------------------------------------------------- results (the action cache)
     def result_path(self, key: str) -> Path:
@@ -348,7 +417,8 @@ class Store:
         -> {"contents", "results", "problems": [{path, problem}] (the first `limit`, sorted), "problemCount"}."""
         from concurrent.futures import ThreadPoolExecutor
         problems = []
-        cas = sorted((self.root / "cas" / "sha256").glob("*/*"))
+        top = self.root / "cas" / "sha256"
+        cas = sorted([*top.glob("*/*"), *top.glob("*.part")])       # add_chunks writes its temporary file in top
 
         def content(p: Path):
             name = p.name

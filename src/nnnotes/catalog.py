@@ -6,6 +6,10 @@ what the user points it at into a local cache the user controls.
 """
 from __future__ import annotations
 
+import http.client
+import sys
+import threading
+import urllib.parse
 import urllib.request
 import zipfile
 from dataclasses import dataclass
@@ -74,20 +78,40 @@ class Catalog:
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.apk = Path(apk) if apk else None
-        self.entries = parse(catalog_bytes)
         self._sources = {"remote": catalog_bytes}
         self._locations: list[dict] | None = None
+        self._parsed: tuple | None = None
         if self.apk is not None:
             with zipfile.ZipFile(self.apk) as z:
                 self._sources["apk"] = z.read(APK_CATALOG)
+
+    def _parse(self) -> tuple:
+        """(entries, by offset, by primary key), parsed the first time a lookup needs them (a command that only
+        wants the catalog files, sources(), does not pay for it)."""
+        if self._parsed is None:
+            entries = parse(self._sources["remote"])
+            if "apk" in self._sources:
                 for e in parse(self._sources["apk"]):
                     e["offset"] += APK_OFFSET_BASE
                     e["dependencies"] = [d + APK_OFFSET_BASE for d in e["dependencies"]]
-                    self.entries.append(e)
-        self._by_off = {e["offset"]: e for e in self.entries}
-        self._by_key: dict[str, list[dict]] = {}
-        for e in self.entries:
-            self._by_key.setdefault(e["primary_key"], []).append(e)
+                    entries.append(e)
+            by_key: dict[str, list[dict]] = {}
+            for e in entries:
+                by_key.setdefault(e["primary_key"], []).append(e)
+            self._parsed = (entries, {e["offset"]: e for e in entries}, by_key)
+        return self._parsed
+
+    @property
+    def entries(self) -> list[dict]:
+        return self._parse()[0]
+
+    @property
+    def _by_off(self) -> dict[int, dict]:
+        return self._parse()[1]
+
+    @property
+    def _by_key(self) -> dict[str, list[dict]]:
+        return self._parse()[2]
 
     # --- construction ------------------------------------------------------
     @classmethod
@@ -102,8 +126,7 @@ class Catalog:
             if not cdn:
                 raise FileNotFoundError(f"{cat} not cached and no CDN base given")
             cat.parent.mkdir(parents=True, exist_ok=True)
-            with urllib.request.urlopen(cdn.rstrip("/") + f"/asset/Android/{cat.name}", timeout=120) as r:
-                _write_atomic(cat, r.read())
+            _write_atomic(cat, download(cdn.rstrip("/") + f"/asset/Android/{cat.name}"))
         return cls(cat.read_bytes(), cache_dir, cdn=cdn, bundle_key=bundle_key, apk=apk)
 
     def _setting(self, name: str, needed_by: str):
@@ -236,8 +259,7 @@ class Catalog:
         if b.remote:
             url = self._url(b.internal_id)
             key = self._setting("bundle_key", b.name)   # before the download: a missing key fails first
-            with urllib.request.urlopen(url, timeout=120) as r:
-                data = r.read()
+            data = download(url)
         else:
             if self.apk is None:
                 raise apk_missing(f"bundle {b.name}")
@@ -268,8 +290,7 @@ class Catalog:
         dst = self.cache_dir / "raw" / rel.lstrip("/")
         dst.parent.mkdir(parents=True, exist_ok=True)
         if not (dst.exists() and dst.stat().st_size > 0):
-            with urllib.request.urlopen(self._url(iid), timeout=120) as r:
-                _write_atomic(dst, r.read())
+            _write_atomic(dst, download(self._url(iid)))
         return dst
 
     def apk_bundle(self, name_contains: str) -> Path:
@@ -290,6 +311,56 @@ class Catalog:
                 key = self._setting("bundle_key", name) if data[:7] != b"UnityFS" else None
                 _write_atomic(dst, _unityfs(data, name, key))
         return dst
+
+
+_KEPT = threading.local()                  # per thread: {(scheme, host): an open connection}
+_AGENT = "Python-urllib/%d.%d" % sys.version_info[:2]      # what urllib.request sends
+
+
+def download(url: str, timeout: float = 120) -> bytes:
+    """The body of `url`. HTTP(S) goes over one connection per thread and host, kept open between files (a new
+    connection per file costs more than a small bundle's transfer); a stale kept connection is replaced once. Other
+    schemes, a proxy from the environment, and any answer but a complete 200 (a redirect, an error) go through
+    urllib.request, as before, which follows or raises."""
+    parts = urllib.parse.urlsplit(url)
+    if parts.scheme not in ("http", "https") or _proxied(parts):
+        return _urlopen(url, timeout)
+    conns = _KEPT.__dict__.setdefault("conns", {})
+    key = (parts.scheme, parts.netloc)
+    path = (parts.path or "/") + (f"?{parts.query}" if parts.query else "")
+    for _ in range(2):
+        conn, kept = conns.pop(key, None), True
+        if conn is None:
+            kept = False
+            make = http.client.HTTPSConnection if parts.scheme == "https" else http.client.HTTPConnection
+            conn = make(parts.netloc, timeout=timeout)
+        try:
+            conn.request("GET", path, headers={"User-Agent": _AGENT})
+            r = conn.getresponse()
+            body = r.read()
+        except (http.client.HTTPException, OSError):
+            conn.close()
+            if kept:
+                continue                           # closed by the server while idle: once more, on a new one
+            break
+        if r.status != 200 or r.will_close:
+            conn.close()
+        else:
+            conns[key] = conn
+        if r.status == 200:
+            return body
+        break
+    return _urlopen(url, timeout)
+
+
+def _proxied(parts) -> bool:
+    proxies = urllib.request.getproxies()
+    return parts.scheme in proxies and not urllib.request.proxy_bypass(parts.hostname or "")
+
+
+def _urlopen(url: str, timeout: float) -> bytes:
+    with urllib.request.urlopen(url, timeout=timeout) as r:
+        return r.read()
 
 
 def _setting(v, needed_by: str):

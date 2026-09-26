@@ -65,7 +65,9 @@ GIB = 1 << 30
 LAYOUT_NAMES = ("original", "cas")
 FETCH_WORKERS = 8
 RECYCLE_TASKS = 500
-RECYCLE_RSS = 3 * GIB
+RECYCLE_RSS = 3 * GIB          # a worker whose resident memory after a task is above this is replaced ...
+RECYCLE_SHARE = 0.4            # ... or above this share of its part of the memory budget (budget / workers),
+RECYCLE_RSS_MIN = 256 << 20    # but not below this
 REPORTS = "_reports"
 SELECT_KINDS = ("group", "key", "bundle")
 RAW_STAGES = ("cri.audio", "cri.movie")
@@ -240,6 +242,15 @@ def default_memory() -> int | None:
     return None
 
 
+def recycle_rss(memory: int | None, workers: int) -> int:
+    """The resident memory after a task above which a worker is replaced: RECYCLE_RSS, or with a memory budget
+    RECYCLE_SHARE of each worker's part of it when that is less (not below RECYCLE_RSS_MIN). A worker keeps much of
+    its largest task's memory (freed but not returned to the system), which the budget does not count."""
+    if memory is None:
+        return RECYCLE_RSS
+    return min(RECYCLE_RSS, max(RECYCLE_RSS_MIN, int(RECYCLE_SHARE * memory / max(1, workers))))
+
+
 def _bundle_key(cfg):
     from .addressables import BundleKey
     return BundleKey(cfg.hex("bundle", "key", 16), cfg.hex("bundle", "nonce_seed"))
@@ -377,7 +388,8 @@ def _clamp(x: float) -> float:
 def calibrate(log: list[dict], factors: dict, worker_bytes: int) -> dict:
     """New factors from a run log: per stage with at least MIN_SAMPLES measured tasks, CPU by the ratio of the
     measured (the task's process and its child processes, such as external tools) to the estimated sums, peak memory
-    by the 95th percentile of measured (less a worker's own memory) over estimated. Where the child processes' CPU
+    by the 95th percentile of measured over estimated, the measured peak less the process's memory at the task's
+    start (startRssBytes; in older records a worker's own memory). Where the child processes' CPU
     time cannot be measured (childCpuSeconds null) the CPU factor stays. The logged estimates carry the old factors,
     which the new ones build on."""
     est = {e["task"]: e["estimate"] for e in log if e.get("event") == "start" and e.get("estimate")}
@@ -395,7 +407,8 @@ def calibrate(log: list[dict], factors: dict, worker_bytes: int) -> dict:
             cpu = 1.0                                   # child processes not measured here: keep the CPU factor
         else:
             cpu = sum(c["cpuSeconds"] for _, c in pairs) / sum(a["cpuSeconds"] for a, _ in pairs)
-        ratios = sorted(max(0, (c.get("peakRssBytes") or 0) - worker_bytes) / a["peakBytes"] for a, c in pairs)
+        ratios = sorted(max(0, (c.get("peakRssBytes") or 0) - (c.get("startRssBytes") or worker_bytes))
+                        / a["peakBytes"] for a, c in pairs)
         peak = ratios[min(len(ratios) - 1, int(0.95 * len(ratios)))]
         if not any(c.get("peakRssBytes") for _, c in pairs):
             peak = 1.0                                  # not measurable on this platform
@@ -478,7 +491,7 @@ class Workspace:
             doc = self.store.result(t.key)
             if doc is not None:
                 (rec,) = [a for a in doc["artifacts"] if a["id"] == contract.artifact_id(t.id, "index")]
-                self._index = contract.loads(self.store.read(rec["content"]["sha256"]))
+                self._index = self.store.document(rec["content"]["sha256"])
             else:
                 self._index = catalogdb.index(self.remote, self.apk_catalog)
         return self._index
@@ -585,6 +598,9 @@ class Workspace:
     def memory(self) -> int | None:
         m = getattr(self.args, "memory", None)
         return int(m * GIB) if m is not None else default_memory()
+
+    def recycle_rss(self) -> int:
+        return recycle_rss(self.memory(), self.workers())
 
     # ---------------------------------------------------------------- inputs
     def facts(self, pipeline: list[str], fetch: bool) -> dict:
@@ -734,10 +750,12 @@ class Workspace:
         if out is not None and layouts:
             from . import layout
             self.done({n["id"]: n["key"] for n in p.doc["nodes"] if n["status"] == "hit"})
-            hits = [(n["id"], self.store.result(n["key"])) for n in p.doc["nodes"]
-                    if n["status"] == "hit" and self._output(n["stage"])]
+            hits = [(n["id"], n["key"]) for n in p.doc["nodes"] if n["status"] == "hit" and self._output(n["stage"])]
+            placed = self.layout_input(dict(hits))
+            for tid, key in hits:
+                placed.add(tid, self.store.result(key))
             for name, d in layout_dirs(Path(out), layouts).items():
-                entries, _ = self.layout_entries(name, hits, store_derived=False)
+                entries, _ = self.layout_entries(name, placed, store_derived=False)
                 p.doc["summary"]["layouts"][name] = layout.diff(d, entries)
         return p
 
@@ -746,13 +764,24 @@ class Workspace:
         return bool(src and src.output)
 
     # ---------------------------------------------------------------- layouts
-    def layout_entries(self, name: str, results, *, store_derived: bool = True) -> tuple[list[dict], dict]:
-        """The entries of layout `name` for the results [(task id, result)] of the output stages (derived
-        documents of the stages in `original`) and its report."""
+    def layout_input(self, tasks: dict) -> LayoutInput:
+        """An empty LayoutInput for the output tasks `tasks` ({task id: key}) that knows the objects the derived
+        documents name: the results of the stages that make them are read here (small: the views) and their
+        documents made once with no paths, noting the objects asked for."""
+        stages, asked = self.installed.stages, _Asked()
+        makers = sorted(t for t in tasks if hasattr(stages[contract.parse_task_id(t)[0]], "derived"))
+        for tid in makers:
+            stages[contract.parse_task_id(tid)[0]].derived(tid, self.store.result(tasks[tid]), self.store, asked)
+        return LayoutInput(asked.objects_asked, makers)
+
+    def layout_entries(self, name: str, placed: LayoutInput, *, store_derived: bool = True
+                       ) -> tuple[list[dict], dict]:
+        """The entries of layout `name` for the results of the output stages given to `placed` (derived documents
+        of the stages in `original`) and its report."""
         from . import layout
         stages = self.installed.stages
         sources, named = [], []
-        for tid, doc in results:
+        for tid, doc in placed.results:
             stage_name, subject = contract.parse_task_id(tid)
             stage = stages[stage_name]
             names = self.names(stage_name).get(subject) if name == "original" else None
@@ -771,12 +800,12 @@ class Workspace:
         roots = {}                              # every object of a bundle under its export task's root
         for s in sources:
             if s.task.startswith(EXPORT_STAGE + ":") and s.root is not None:
-                for it in s.result["items"]:
-                    roots.setdefault(contract.parse_object_id(it["object"])[0], s.root)
+                for f in s.result["files"]:
+                    roots.setdefault(f, s.root)
         entries, report = layout.entries(name, [s for s in sources if not derives(s)], case=case,
                                          object_roots=roots)
         report["names"] = named
-        extra = self._derived(sources, entries, store_derived)
+        extra = self._derived(sources, entries, store_derived, placed.objects)
         taken = {e["path"].casefold() for e in entries}
         for e in extra:
             if e["path"].casefold() in taken:
@@ -804,18 +833,13 @@ class Workspace:
             self._names[stage_name] = {k: sorted(v) for k, v in got.items()}
         return self._names[stage_name]
 
-    def _derived(self, sources, entries: list[dict], store_derived: bool) -> list[dict]:
+    def _derived(self, sources, entries: list[dict], store_derived: bool, objects: dict) -> list[dict]:
         from . import layout
         stages = self.installed.stages
         makers = list({s.task: s for s in sources
                        if hasattr(stages[contract.parse_task_id(s.task)[0]], "derived")}.values())
         if not makers:
             return []
-        objects: dict[str, list[str]] = {}
-        for s in sources:
-            for it in s.result["items"]:
-                arts = list(it.get("artifacts", ())) or ([it["in"]] if "in" in it else [])
-                objects.setdefault(it["object"], []).extend(arts)
         paths = LayoutPaths(layout.paths(entries), objects)
         out = []
         for s in makers:
@@ -825,6 +849,56 @@ class Workspace:
                 out.append({"path": layout.escape_path(rel.split("/")), "sha256": sha, "size": len(data),
                             "id": contract.artifact_id(s.task, "derived:" + rel)})
         return out
+
+
+class LayoutInput:
+    """What the layouts read of the output stages' results, given one at a time (add) and not kept whole (the
+    results of a full catalog take GBs as objects): of each result its artifacts with the fields the layouts use
+    (id, content, the object facts) and, for an export task, the serialized files of its objects; the whole result
+    of a stage with derived documents (`makers`: small, the views); the artifacts of the objects those documents
+    name (`asked`: object ids; an object contained in another: the artifact it is part of)."""
+
+    def __init__(self, asked=(), makers=()):
+        self.asked, self.makers = set(asked), set(makers)
+        self.results: list[tuple[str, dict]] = []
+        self.objects: dict[str, set] = {}
+
+    def add(self, tid: str, doc: dict) -> None:
+        if self.asked:
+            for it in doc["items"]:
+                if it["object"] in self.asked:
+                    arts = it.get("artifacts") or ([it["in"]] if "in" in it else [])
+                    self.objects.setdefault(it["object"], set()).update(arts)
+        if tid in self.makers:
+            self.results.append((tid, doc))
+            return
+        arts = []
+        for a in doc["artifacts"]:
+            c = a["content"]
+            slim = {"id": a["id"], "content": {"sha256": c["sha256"], "size": c["size"], "ext": c["ext"]}}
+            obj = a.get("provenance", {}).get("object")
+            if obj:
+                slim["provenance"] = {"object": obj}
+            arts.append(slim)
+        files = {}
+        if tid.startswith(EXPORT_STAGE + ":"):
+            for it in doc["items"]:
+                files.setdefault(contract.parse_object_id(it["object"])[0], None)
+        self.results.append((tid, {"artifacts": arts, "files": list(files)}))
+
+
+class _Asked:
+    """LayoutPaths for a first making of the derived documents: places nothing, notes the objects asked for."""
+
+    def __init__(self):
+        self.objects_asked: set[str] = set()
+
+    def artifact(self, aid: str) -> None:
+        return None
+
+    def objects(self, oid: str) -> list[str]:
+        self.objects_asked.add(oid)
+        return []
 
 
 class Inputs(Mapping):
@@ -889,15 +963,25 @@ def _apk_version(apk: Path | None) -> str | None:
 
 
 # ---------------------------------------------------------------- export
-def census_totals(results, subjects) -> dict[str, int]:
-    """{class: objects} of the censuses of `subjects` (the census artifacts' facts)."""
-    want = {contract.task_id("unity.census", s) for s in subjects}
-    total: Counter = Counter()
-    for tid, doc in results:
-        if tid in want:
+class Totals:
+    """What export reports of the results besides the run's counts, from its one reading of each (Run.scan): the
+    census totals of `subjects` ({class: objects}, the census artifacts' facts) and the results of the view tasks
+    (small; their master data tables and gaps)."""
+
+    def __init__(self, subjects):
+        self.want = {contract.task_id("unity.census", s) for s in subjects}
+        self.classes: Counter = Counter()
+        self.views: list[tuple[str, dict]] = []
+
+    def add(self, tid: str, doc: dict) -> None:
+        if tid in self.want:
             for a in doc["artifacts"]:
-                total.update(a["semantics"].get("facts", {}).get("classes", {}))
-    return dict(sorted(total.items()))
+                self.classes.update(a["semantics"].get("facts", {}).get("classes", {}))
+        if tid.startswith("view."):
+            self.views.append((tid, doc))
+
+    def census(self) -> dict[str, int]:
+        return dict(sorted(self.classes.items()))
 
 
 def view_gaps(results) -> int:
@@ -924,7 +1008,7 @@ def cmd_export(args, cfg, common):
     pipeline = ws.pipeline()
     params = ws.params(pipeline)
     orch = Orchestrator(ws.store, ws.scheduled, workers=ws.workers(), memory=ws.memory(),
-                        recycle_tasks=RECYCLE_TASKS, recycle_rss=RECYCLE_RSS, initializer=_worker_init,
+                        recycle_tasks=RECYCLE_TASKS, recycle_rss=ws.recycle_rss(), initializer=_worker_init,
                         initargs=(cfg,), log=ws.log)
     if args.explain:
         for line in ws.explain(pipeline, params, orch, names):
@@ -954,13 +1038,22 @@ def cmd_export(args, cfg, common):
         if p["code"] == "source.error":
             run.failures_.append(failure(contract.task_id(stage_of[p["kind"]], p["stable"]), stage_of[p["kind"]],
                                          p["code"], p["message"], p["name"]))
-    ws.done({tid: t["key"] for tid, t in run.tasks.items() if t["status"] != "failed"})
-    run.context["master"] = ws.master_context(run.results())
-    results = [(tid, doc) for tid, doc in run.results() if ws._output(contract.parse_task_id(tid)[0])]
+    done = {tid: t["key"] for tid, t in run.tasks.items() if t["status"] != "failed"}
+    ws.done(done)
+    output = {tid for tid in done if ws._output(contract.parse_task_id(tid)[0])}
+    placed = ws.layout_input({tid: done[tid] for tid in output})
+    totals = Totals(sel.selected)
+
+    def visit(tid, doc):
+        totals.add(tid, doc)
+        if tid in output:
+            placed.add(tid, doc)
+    run.scan(visit, census=totals.census)             # the only reading of the results
+    run.context["master"] = ws.master_context(totals.views)
     reports = out / REPORTS
     written, shas = {}, {}
     for name, d in layout_dirs(out, names).items():
-        entries, report = ws.layout_entries(name, results)
+        entries, report = ws.layout_entries(name, placed)
         w = layout.materialize(d, name, {}, entries, layout.from_store(ws.store), link=args.link)
         shas[name] = w["sha256"]
         written[name] = {"dir": str(d), "files": len(w["manifest"]["entries"]), "write": w["write"],
@@ -969,13 +1062,12 @@ def cmd_export(args, cfg, common):
         _write_report(reports, f"layout-{name}.json", report)
     manifest = run.write(shas)
     write_calibration(ws.root, calibrate(run.log, ws.calibration, orch.worker_bytes))
-    all_results = list(run.results())
     _write_report(reports, "run.json", manifest)
-    _write_report(reports, "coverage.json", run.coverage(census_totals(all_results, sel.selected)))
+    _write_report(reports, "coverage.json", run.coverage(totals.census()))
     _write_report(reports, "failures.json", run.failures_doc())
     _write_report(reports, "sources.json", {"problems": ws.problems()})
     s = manifest["summary"]
-    gaps = view_gaps(all_results)
+    gaps = view_gaps(totals.views)
     common.print_json({"run": manifest["id"], "selection": ws.selection, "tasks": {k: s[k] for k in (
         "tasks", "hit", "ran", "failed")}, "items": s["items"], "artifacts": s["artifacts"],
         "failures": len(run.failures()), "sources": dict(sorted(Counter(p["code"] for p in ws.problems()).items())),
@@ -1007,7 +1099,7 @@ def cmd_plan(args, cfg, common):
         ws.run_index()
         facts = ws.facts(["catalog.index", "unity.census"], fetch=True)
         Orchestrator(ws.store, ws.scheduled, workers=ws.workers(), memory=ws.memory(),
-                     recycle_tasks=RECYCLE_TASKS, recycle_rss=RECYCLE_RSS, initializer=_worker_init,
+                     recycle_tasks=RECYCLE_TASKS, recycle_rss=ws.recycle_rss(), initializer=_worker_init,
                      initargs=(cfg,), log=ws.log).run(["catalog.index", "unity.census"], facts=facts)
     p = ws.plan(pipeline, params, since=args.since, out=args.out, layouts=layouts)
     if args.emit_tasks:

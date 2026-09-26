@@ -31,6 +31,14 @@
       "minimum": 0
     },
     "peakRssBytes": {
+      "description": "Peak resident memory of the task's process during the task; null where the platform does not report it.",
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "startRssBytes": {
+      "description": "Resident memory of the task's process when the task started (imports, and what earlier tasks of a worker left); null where the platform does not report it.",
       "type": [
         "integer",
         "null"

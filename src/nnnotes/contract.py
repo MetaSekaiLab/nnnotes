@@ -117,6 +117,22 @@ def encode(obj, *, sort_keys: bool = True) -> bytes:
     return dumps(obj, sort_keys=sort_keys).encode("utf-8")
 
 
+def encode_chunks(obj, size: int = 1 << 20):
+    """encode(obj) as byte strings of about `size` bytes, made as they are written (a large document's text is
+    never whole in memory, nor the encoder's list of its pieces). Raises ValueError, possibly after some chunks,
+    for a document with a non-finite number: encode() writes those."""
+    enc = json.JSONEncoder(indent=1, ensure_ascii=False, sort_keys=True, allow_nan=False)
+    buf, n = [], 0
+    for piece in enc.iterencode(obj):
+        buf.append(piece)
+        n += len(piece)
+        if n >= size:
+            yield "".join(buf).encode("utf-8")
+            buf, n = [], 0
+    buf.append("\n")
+    yield "".join(buf).encode("utf-8")
+
+
 def _untag(d: dict):
     return float("nan") if d == NAN else d
 

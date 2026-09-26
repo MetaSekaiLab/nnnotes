@@ -16,12 +16,11 @@ import struct
 import zipfile
 from pathlib import Path
 
-import UnityPy
-
 DATA_IN_APK = "assets/bin/Data/data.unity3d"
 
 
 def _load_data(src: Path):
+    import UnityPy                    # here, not at import: the modules that import this one seldom call it
     src = Path(src)
     if src.suffix.lower() in (".apk", ".zip"):
         with zipfile.ZipFile(src) as z:

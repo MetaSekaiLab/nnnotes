@@ -475,6 +475,58 @@ def test_the_commands_are_part_of_nnnotes(tmp_path, capsys, fake):
     assert e.value.code == 0
 
 
+class ObjectPaths(Stage):
+    """An output stage with a derived document: the layout files of every object of the selected bundles' censuses
+    and of one unknown object ({object id: {artifact id: path}}), placed at derived/objects.json."""
+    name = "fake.paths"
+    version = 1
+    after = ("unity.census",)
+
+    def subjects(self, env):
+        return ["all"]
+
+    def depends(self, subject, env):
+        return [contract.task_id("unity.census", s) for s in env.fact("selected")]
+
+    def inputs(self, subject, env):
+        return [env.input_of(contract.task_id("unity.census", s), "census", f"census:{s}")
+                for s in env.fact("selected")]
+
+    def estimate(self, subject, env, inputs):
+        return Cost(0.01, 1 << 20)
+
+    def run(self, task, store):
+        oids = ["CAB-none:9"]
+        for inp in task.inputs:
+            for f in contract.loads(store.input_bytes(inp))["files"]:
+                oids += [contract.object_id(f["name"], o["pathId"]) for o in f["objects"]]
+        rec = contract.artifact(contract.artifact_id(task.id, "objects"), store.add(contract.encode(sorted(oids)),
+                                                                                    "json"),
+                                contract.provenance(task), {"kind": "fake.objects"})
+        return Output([rec], [])
+
+    def derived(self, task_id, result, store, paths):
+        oids = contract.loads(store.read(result["artifacts"][0]["content"]["sha256"]))
+        doc = {o: {a: paths.artifact(a) for a in paths.objects(o)} for o in oids}
+        return [("derived/objects.json", contract.encode(doc))]
+
+
+def test_derived_documents_read_the_paths_of_the_objects_they_name(tmp_path, capsys, monkeypatch):
+    monkeypatch.setattr(cli_assets, "STAGE_SOURCES", FAKE_SOURCES + (
+        cli_assets.StageSource("fake.paths", "test_cli_assets:ObjectPaths", output=True),))
+    d = setup_data(tmp_path)
+    code, _, err = export(capsys, tmp_path, d, "s", "o")
+    assert code == 1, err
+    doc = contract.loads((tmp_path / "o" / "derived" / "objects.json").read_bytes())
+    card = f"{CABS['card_1']}:5"
+    assert doc["CAB-none:9"] == {} and doc[f"{CABS['bg_x']}:4"] == {}                 # unknown; failed
+    assert doc[card] == {f"{card}#json": "Assets/Game/Card/1/full.png.json"}
+    assert doc[f"{CABS['card_1']}:1"] == doc[card]                                   # contained in it
+    assert (tmp_path / "o" / "Assets" / "Game" / "Card" / "1" / "full.png.json").is_file()
+    code, out, _ = nn(capsys, *flags(d), "plan", "-o", tmp_path / "o", "--store", tmp_path / "s", "--check")
+    assert code == 0, out
+
+
 # ---------------------------------------------------------------- views and the documents of a run
 def test_views_are_placed_with_paths_and_every_document_validates(tmp_path, capsys, monkeypatch):
     from test_contract import validators
@@ -554,6 +606,27 @@ def test_calibration_scales_estimates_from_measured_costs():
     import pickle
     again = pickle.loads(pickle.dumps(stage))
     assert again.estimate("x", None, []) == Cost(0.03, 1 << 19)
+
+
+def test_calibration_counts_the_memory_a_task_adds_to_its_worker():
+    log = []
+    for i in range(10):
+        t = f"unity.export:b{i}"
+        log.append({"event": "start", "task": t, "estimate": {"cpuSeconds": 1.0, "peakBytes": 100 << 20}})
+        log.append({"event": "end", "task": t, "ok": True, "cost": {
+            "cpuSeconds": 1.0, "wallSeconds": 1.0, "peakRssBytes": (400 << 20) + (25 << 20),
+            "startRssBytes": 400 << 20}})                    # a worker holding 400 MiB from earlier tasks
+    assert cli_assets.calibrate(log, {}, 70 << 20)["unity.export"]["peak"] == 0.25
+
+
+def test_the_worker_recycling_threshold_follows_the_budget():
+    gib = cli_assets.GIB
+    assert cli_assets.recycle_rss(None, 8) == cli_assets.RECYCLE_RSS == 3 * gib
+    assert cli_assets.recycle_rss(100 * gib, 12) == 3 * gib
+    assert cli_assets.recycle_rss(gib, 1) == int(0.4 * gib)
+    assert cli_assets.recycle_rss(16 * gib, 12) == int(0.4 * 16 * gib / 12)
+    assert cli_assets.recycle_rss(gib, 0) == int(0.4 * gib)                           # tasks in this process
+    assert cli_assets.recycle_rss(gib, 64) == 256 << 20
 
 
 def test_export_records_the_calibration_and_plan_uses_it(tmp_path, capsys, fake):

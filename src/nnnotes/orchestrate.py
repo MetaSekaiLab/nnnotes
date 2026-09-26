@@ -4,12 +4,13 @@ Stages run in the order given; a stage's tasks are described once the stages bef
 the caller plus the keys of the tasks already done), so every input is known when a task is described. Per stage:
 a task whose result is in the store is a hit; the others run in parallel, then the next stage starts.
 
-The pool: `workers` spawned processes, long-lived (each imports what its stages need once), one task at a time
-each. Tasks start in order of decreasing estimated CPU (longest first), a task only when the estimated peak memory
-of the running tasks plus its own fits `memory` less `worker_bytes` per worker (what the processes hold before
-any task); a task estimated above that budget runs alone and is reported. A worker is replaced after
-`recycle_tasks` tasks, or when its resident memory after a task is above `recycle_rss`. `workers=0` runs the tasks
-in this process, one after another.
+The pool: up to `workers` spawned processes (no more than a stage has tasks to run), long-lived (each imports
+what its stages need once), one task at a time each. Tasks start in order of decreasing estimated CPU (longest
+first), a task only when the estimated peak memory of the running tasks plus its own fits `memory` less
+`worker_bytes` per worker (what the processes hold before any task); a task estimated above that budget runs alone
+and is reported. A worker is replaced after `recycle_tasks` tasks, or when its resident memory after a task is
+above `recycle_rss`; the workers are stopped together at the end. `workers=0` runs the tasks in this process, one
+after another.
 
 Failures: a failed object is an item of its task's result, cached with it. An exception out of a stage, an input
 that cannot be read, or a worker that dies fails the task: nothing of it is cached, the run records it
@@ -99,7 +100,10 @@ def _error_code(e: BaseException) -> str:
 
 
 def run_one(task: Task, store, stages: dict, force: bool) -> dict:
-    """Execute one task and measure it: the reply a worker sends (status, result status, cost, or error)."""
+    """Execute one task and measure it: the reply a worker sends (status, result status, cost, or error). The
+    cost's peak memory is the process's, with the resident memory at the task's start (what the process held from
+    its imports and earlier tasks) beside it."""
+    start = rss()
     reset_peak()
     try:
         ex = execute(task, store, stages, force=force)
@@ -110,7 +114,7 @@ def run_one(task: Task, store, stages: dict, force: bool) -> dict:
                 "trace": "".join(traceback.format_exception(type(e), e, e.__traceback__))[-4000:], "rss": rss()}
     reply = {"ok": True, "status": ex.status, "resultStatus": ex.result_status, "rss": rss()}
     if ex.cost is not None:
-        cost = dict(ex.cost, peakRssBytes=peak_rss())
+        cost = dict(ex.cost, peakRssBytes=peak_rss(), startRssBytes=start)
         store.write_cost(task.key, cost)
         reply["cost"] = cost
     return reply
@@ -150,16 +154,23 @@ class _Worker:
         self.task = task
         self.conn.send((task.to_json(), force))
 
-    def stop(self, wait_s: float = 10.0) -> None:
+    def ask_stop(self) -> None:
         try:
             self.conn.send(None)
         except OSError:
             pass
-        self.proc.join(wait_s)
+
+    def join(self, deadline: float) -> None:
+        """Wait for the process to end until `deadline` (time.monotonic()), then kill it."""
+        self.proc.join(max(0.0, deadline - time.monotonic()))
         if self.proc.is_alive():
             self.proc.kill()
             self.proc.join()
         self.conn.close()
+
+    def stop(self, wait_s: float = 10.0) -> None:
+        self.ask_stop()
+        self.join(time.monotonic() + wait_s)
 
 
 # ---------------------------------------------------------------- scheduling
@@ -210,7 +221,9 @@ def _peak(t: Task) -> int:
 # ---------------------------------------------------------------- the run
 @dataclass
 class Run:
-    """What an orchestrated run did: per task id its key and status (hit, ran, failed), the failures, the log."""
+    """What an orchestrated run did: per task id its key and status (hit, ran, failed), the failures, the log.
+    The reports (summary, failures, coverage) come from one reading of every result (scan), kept while the tasks
+    stay the same."""
     store: object
     context: dict
     selection: list
@@ -220,6 +233,7 @@ class Run:
     failures_: list = field(default_factory=list)
     log: list = field(default_factory=list)
     oversize: list = field(default_factory=list)
+    _scan: tuple | None = field(default=None, init=False, repr=False, compare=False)
 
     def results(self):
         """(task id, result document) of every task with a result, by task id."""
@@ -228,25 +242,38 @@ class Run:
             if t["status"] != "failed":
                 yield tid, self.store.result(t["key"])
 
+    def scan(self, visit=None, census=None) -> None:
+        """Read every result once, by task id, for the reports; `visit(task id, result)` sees each as well (what
+        else the caller needs of the results, without reading them again). With `census()` (called after the
+        reading: the census totals of the coverage report), the coverage document is made at once and the
+        per-object state it needs (about 0.2 GB for a full catalog) is not kept."""
+        digest = Digest()
+        for tid, doc in self.results():
+            digest.add(tid, doc)
+            if visit is not None:
+                visit(tid, doc)
+        if census is not None:
+            digest.settle(census())
+        self._scan = (self._tasks_now(), digest)
+
+    def _tasks_now(self) -> tuple:
+        return tuple((tid, t["key"], t["status"]) for tid, t in sorted(self.tasks.items()))
+
+    def _digest(self) -> Digest:
+        if self._scan is None or self._scan[0] != self._tasks_now():
+            self.scan()
+        return self._scan[1]
+
     def failures(self) -> list[dict]:
         """Task failures and failed items, sorted (task, object)."""
-        out = list(self.failures_)
-        for tid, doc in self.results():
-            stage = contract.parse_task_id(tid)[0]
-            for it in doc["items"]:
-                if it["status"] == "failed":
-                    out.append(failure(tid, stage, it["reason"]["code"], it["reason"]["message"], obj=it["object"]))
+        out = list(self.failures_) + self._digest().failed
         return sorted(out, key=lambda f: (f["task"], f["object"] or "", f["code"]))
 
     def summary(self) -> dict:
         statuses = Counter(t["status"] for t in self.tasks.values())
-        items: Counter = Counter()
-        artifacts = 0
-        for _, doc in self.results():
-            items.update(i["status"] for i in doc["items"])
-            artifacts += len(doc["artifacts"])
+        d = self._digest()
         return {"tasks": len(self.tasks), **{s: statuses.get(s, 0) for s in contract.RUN_TASK_STATUSES},
-                "items": {s: items.get(s, 0) for s in contract.ITEM_STATUSES}, "artifacts": artifacts}
+                "items": {s: d.items.get(s, 0) for s in contract.ITEM_STATUSES}, "artifacts": d.artifacts}
 
     @property
     def exit_code(self) -> int:
@@ -265,42 +292,108 @@ class Run:
         return doc
 
     def coverage(self, census: dict | None = None) -> dict:
-        return coverage(self.results(), census)
+        d = self._digest()
+        if d.settled is not None and d.settled[0] != census:
+            self.scan(census=lambda: census)
+            d = self._digest()
+        return d.coverage(census)
 
     def failures_doc(self) -> dict:
         return {"schema": contract.FAILURES, "failures": self.failures()}
 
 
 SEVERITY = ("failed", "unsupported", "generic", "exported", "contained")   # most severe first
+_SEVERITY = {s: i for i, s in enumerate(SEVERITY)}
+_PATH_IDS = 1 << 64
+
+
+class Digest:
+    """What the reports need of results, each read once and not kept: item and artifact counts, the failed items,
+    and per object its most severe item (coverage) as one small number, its severity plus 8 times the index of its
+    (class, reason code). A full catalog has about 2 M items; as dicts they take GBs."""
+
+    def __init__(self):
+        self.items: Counter = Counter()
+        self.artifacts = 0
+        self.failed: list[dict] = []
+        self.best: dict = {}               # object key -> severity + 8 * kind
+        self.kinds: dict = {}              # (class, reason code or None) -> kind
+        self.reasoned: dict = {}           # object key -> object id, where the most severe item has a reason
+        self._files: dict = {}             # serialized file -> number (object keys)
+        self.settled: tuple | None = None  # (census, coverage document) once settle() dropped the object state
+
+    def _key(self, oid: str):
+        """An object id as a number (its serialized file's number and its pathId), smaller than the string; the
+        string itself when it is not <file>:<64-bit pathId> as contract.object_id writes it."""
+        file, _, pid = oid.rpartition(":")
+        try:
+            n = int(pid)
+        except ValueError:
+            return oid
+        if not file or not -_PATH_IDS // 2 <= n < _PATH_IDS // 2 or str(n) != pid:
+            return oid
+        return self._files.setdefault(file, len(self._files)) * _PATH_IDS + n % _PATH_IDS
+
+    def add(self, tid: str, doc: dict) -> None:
+        self.artifacts += len(doc.get("artifacts", ()))
+        best, kinds = self.best, self.kinds
+        for it in doc["items"]:
+            status = it["status"]
+            self.items[status] += 1
+            reason = it.get("reason")
+            if status == "failed":
+                self.failed.append(failure(tid, contract.parse_task_id(tid)[0], reason["code"], reason["message"],
+                                           obj=it["object"]))
+            sev, k = _SEVERITY[status], self._key(it["object"])
+            old = best.get(k)
+            if old is None or sev < old % 8:
+                code = reason["code"] if reason is not None else None
+                best[k] = sev + 8 * kinds.setdefault((it.get("class", "?"), code), len(kinds))
+                if code is None:
+                    self.reasoned.pop(k, None)
+                else:
+                    self.reasoned[k] = it["object"]
+
+    def settle(self, census: dict | None) -> None:
+        """Make the coverage document for `census` now and drop the per-object state (no object can be added)."""
+        self.settled = (census, self.coverage(census))
+        self.best = self.kinds = self.reasoned = self._files = None
+
+    def coverage(self, census: dict | None = None) -> dict:
+        """The coverage document (nnnotes.coverage/1): per class the count of every item status and the census
+        total (`census`: {class: objects}; default: the item count; `missing` = total - objects with an item); per
+        reason code its count and the first five object ids (sorted). An object with items in several results (a
+        sprite whose image sprite.crop makes) counts once, with the most severe of its statuses (SEVERITY) and
+        that item's reason (of the first such item)."""
+        if self.settled is not None:
+            if self.settled[0] != census:
+                raise ValueError("coverage of another census after settle()")
+            return self.settled[1]
+        kinds = list(self.kinds)
+        classes: dict[str, Counter] = {}
+        for v, n in Counter(self.best.values()).items():
+            classes.setdefault(kinds[v // 8][0], Counter())[SEVERITY[v % 8]] += n
+        reasons: dict[str, list] = {}
+        for k, oid in self.reasoned.items():
+            reasons.setdefault(kinds[self.best[k] // 8][1], []).append(oid)
+        out_classes = {}
+        for cls in sorted(set(classes) | set(census or {})):
+            c = classes.get(cls, Counter())
+            n = sum(c.values())
+            total = (census or {}).get(cls, n)
+            out_classes[cls] = {"total": total, "missing": total - n,
+                                **{s: c.get(s, 0) for s in contract.ITEM_STATUSES}}
+        return {"schema": contract.COVERAGE, "classes": out_classes,
+                "reasons": {code: {"count": len(ids), "examples": sorted(ids)[:5]}
+                            for code, ids in sorted(reasons.items())}}
 
 
 def coverage(results, census: dict | None = None) -> dict:
-    """The coverage document (nnnotes.coverage/1) of results [(task id, result)]: per class the count of every item
-    status and the census total (`census`: {class: objects}; default: the item count; `missing` = total - objects
-    with an item); per reason code its count and the first five object ids (sorted). An object with items in several
-    results (a sprite whose image sprite.crop makes) counts once, with the most severe of its statuses (SEVERITY)
-    and that item's reason."""
-    best: dict[str, dict] = {}
-    for _, doc in results:
-        for it in doc["items"]:
-            old = best.get(it["object"])
-            if old is None or SEVERITY.index(it["status"]) < SEVERITY.index(old["status"]):
-                best[it["object"]] = it
-    classes: dict[str, Counter] = {}
-    reasons: dict[str, list] = {}
-    for it in best.values():
-        classes.setdefault(it.get("class", "?"), Counter())[it["status"]] += 1
-        if "reason" in it:
-            reasons.setdefault(it["reason"]["code"], []).append(it["object"])
-    out_classes = {}
-    for cls in sorted(set(classes) | set(census or {})):
-        c = classes.get(cls, Counter())
-        n = sum(c.values())
-        total = (census or {}).get(cls, n)
-        out_classes[cls] = {"total": total, "missing": total - n, **{s: c.get(s, 0) for s in contract.ITEM_STATUSES}}
-    return {"schema": contract.COVERAGE, "classes": out_classes,
-            "reasons": {code: {"count": len(ids), "examples": sorted(ids)[:5]}
-                        for code, ids in sorted(reasons.items())}}
+    """The coverage document (Digest.coverage) of results [(task id, result)]."""
+    d = Digest()
+    for tid, doc in results:
+        d.add(tid, doc)
+    return d.coverage(census)
 
 
 class Orchestrator:
@@ -442,7 +535,7 @@ class Orchestrator:
                        self.initargs)
 
     def _pool_run(self, sched: Scheduler, force, replies: dict, run: Run) -> None:
-        while len(self._pool) < self.workers:
+        while len(self._pool) < min(self.workers, len(sched.queue)):     # no more processes than tasks
             self._pool.append(self._spawn())
         try:
             while sched.queue or sched.running:
@@ -516,15 +609,17 @@ class Orchestrator:
         run.log.append(e)
 
     def close(self, kill: bool = False) -> None:
-        """Stop the worker processes."""
+        """Stop the worker processes (all asked first, then waited for: they end in parallel)."""
         pool, self._pool = self._pool, []
-        for w in pool:
-            if kill:
+        if kill:
+            for w in pool:
                 w.proc.kill()
-                w.proc.join()
-                w.conn.close()
-            else:
-                w.stop()
+        else:
+            for w in pool:
+                w.ask_stop()
+        deadline = time.monotonic() + 10.0
+        for w in pool:
+            w.join(deadline)
 
 
 def _input_name(t: Task) -> str | None:
