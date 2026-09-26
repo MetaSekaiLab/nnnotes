@@ -132,7 +132,7 @@ row of a Movie / Clip row's video id.
 ## story
 
 ```
-nnnotes story ADV_ID -o OUT [--format flac|ogg|wav] [--no-audio] [--fonts open|game]
+nnnotes story ADV_ID -o OUT [--format flac|ogg|wav] [--flac-level N] [--no-audio] [--fonts open|game]
 ```
 
 One ADV episode as a self-contained directory:
@@ -156,7 +156,8 @@ OUT/ui/                   ADV UI: ui.json (front canvas, still / frame / video c
 OUT/story.json            index of the above (a file the episode does not need is null and not written)
 ```
 
-`--format` (default `flac`) is the audio format; `--no-audio` leaves the cue sheets undecoded (no `audio/`, `audio`
+`--format` (default `flac`) is the audio format and `--flac-level` its FLAC compression level (as for `audio`);
+`--no-audio` leaves the cue sheets undecoded (no `audio/`, `audio`
 in story.json is empty). Videos keep the VP9 stream of the game's USM file and carry its ADX audio as Opus (FFmpeg,
 `[paths] ffmpeg`); the USM streams are unmasked with the CRI key read from `[paths] apk`. TextMesh Pro text in
 frames, talk windows and chat keeps its layout and style; with `--fonts open` its font and sprite assets and text
@@ -302,12 +303,13 @@ OUT/shaders.json                                   index with the keywords of ev
 ## audio
 
 ```
-nnnotes audio CUE_SHEET -o OUT [--format flac|ogg|wav]
+nnnotes audio CUE_SHEET -o OUT [--format flac|ogg|wav] [--flac-level N]
 ```
 
 Decodes the CRI cue sheet of the key `Cri/Sound/<CUE_SHEET>`: one file per stream (a name repeated within the
 sheet gets `<name>_<stream>`), `cues.json` (first stream per name: file, sample rate, channels, samples, loop
 points) and `streams.json` (every stream in order). `flac` (default) keeps the decoded PCM bit-exact; `ogg` is lossy.
+`--flac-level` (0 to 12, default 8) is ffmpeg's FLAC compression level; every level decodes to the same samples.
 The HCA keycode is read from `[paths] apk`.
 
 ## crikey
@@ -335,7 +337,7 @@ status 2 and a line naming the class, the game version and the Unity version (as
 
 ```
 nnnotes live MUSIC_ID -o OUT [--difficulty easy|normal|hard|expert] [--format flac|ogg|wav]
-                             [--fonts open|game] [--band BAND | --leader-card CARD_ID]
+                             [--flac-level N] [--fonts open|game] [--band BAND | --leader-card CARD_ID]
                              [--live-option OPTION[=VALUES] ...]
 ```
 
@@ -353,6 +355,9 @@ OUT/livenotes/               note, line and effect prefabs, skins, clips, partic
 OUT/liveui/                  the start canvas in [catalog] language: strings, text records or fonts, sprites
 OUT/live.json                index of the above
 ```
+
+`--format` (default `flac`) is the format of every decoded cue sheet and `--flac-level` its FLAC compression level
+(as for `audio`).
 
 The start canvas follows the client language `[catalog] language` (`ja`, `en`, `zh-Hant`, `zh-Hans` or `ko`): its
 text table column, fonts and line spacing. `--fonts open` (default) writes each text's layout and style (size,

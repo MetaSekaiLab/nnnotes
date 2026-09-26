@@ -305,11 +305,11 @@ def note_se_settings(master: Path, preset: int = 1, groups: tuple = ()) -> dict:
 
 
 # --------------------------------------------------------------------------- extraction
-def _decode(cat: Catalog, sheet: str, out_dir: Path, fmt: str) -> list[dict]:
+def _decode(cat: Catalog, sheet: str, out_dir: Path, fmt: str, flac_level: int) -> list[dict]:
     """Decode a cue sheet into <out>/audio/<sheet>/ (reusing an existing decode) and return its stream list."""
     d = out_dir / "audio" / sheet
     if not (d / "streams.json").exists():
-        cri.decode(cat, sheet, d, fmt=fmt)
+        cri.decode(cat, sheet, d, fmt=fmt, flac_level=flac_level)
     import json
     return json.loads((d / "streams.json").read_text(encoding="utf-8"))
 
@@ -331,11 +331,12 @@ def _sound_entry(row: dict, sheet: str, cue: dict, streams: list[dict], cue_name
 
 
 def extract(cat: Catalog, master: Path, player: PlayerData, music_id: int, out_dir: Path,
-            fmt: str = "flac", voice_character: int | None = None, options: LiveOptions = LiveOptions()) -> dict:
+            fmt: str = "flac", voice_character: int | None = None, options: LiveOptions = LiveOptions(), *,
+            flac_level: int = cri.FLAC_LEVEL) -> dict:
     """Decode the live's sound cue sheets and write <out>/audio/live-audio.json. Returns a summary.
     voice_character: None = no character voice (the game picks the voice from the player's deck; there is no rule
     without a deck). `options`: the note sound sets it offers are written as noteSe.groups, their sounds decoded
-    after the default ones."""
+    after the default ones. `flac_level`: ffmpeg's compression level of the FLAC files (cri.decode)."""
     out_dir = Path(out_dir)
     if cat.apk is None:
         raise RuntimeError("liveaudio needs the Catalog opened with apk= (ACF, HCA key)")
@@ -369,7 +370,7 @@ def extract(cat: Catalog, master: Path, player: PlayerData, music_id: int, out_d
     for sheet, ids in by_sheet.items():
         acb, layout = cri.acb_data(cat, sheet)
         cues = acb_cues(acb["acb"])
-        streams = _decode(cat, sheet, out_dir, fmt)
+        streams = _decode(cat, sheet, out_dir, fmt, flac_level)
         decoded[sheet] = {"layout": layout, "cues": len(cues), "streams": len(streams)}
         for sid in ids:
             r = sounds[str(sid)]

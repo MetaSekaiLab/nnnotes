@@ -54,7 +54,8 @@ nnnotes store verify [--quick]
 A run resolves the context (region, language, catalog version) and indexes the catalog, identifies the selected
 bundles (the sha256 of each decrypted bundle, remembered by path, size and modification time; bundles not in the
 cache are fetched), takes the census of each bundle, links the scripts and addresses, exports the bundles, runs the
-stages that need those results (atlas sprites, views), writes the layouts and the reports. The census also covers
+stages that need those results (atlas sprites, views), writes the layouts and the reports. The selected raw files
+(CRI audio and movies) not in the cache are fetched while the bundle stages run. The census also covers
 the bundles the selected ones depend on, so script classes and atlas textures in other bundles resolve.
 
 Tasks run in spawned worker processes that stay alive between tasks (no more of them start than a stage has tasks to

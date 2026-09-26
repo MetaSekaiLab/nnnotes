@@ -155,41 +155,61 @@ OpenBLAS's default on this machine) instead of one, the outputs are the same and
 ## Asset export
 
 `nnnotes export` of a whole catalog ([assets.md](assets.md)), measured the same way (wall time and CPU time of all
-processes; resident memory sampled every second over the process tree).
+processes); memory is the proportional set size of the process tree, summed, sampled every 10 ms.
 
 | | |
 |---|---|
-| Data | the Taiwan server's zh-Hant catalog of version 1.0.1 with the APK's catalog: 14 694 bundles (14 692 present; two APK entries have no file), 1 805 921 objects |
-| Command | `nnnotes export -o <out> --store <new store> --link hard` with the default pipeline (catalog index, census, script and address tables, bundle export, atlas sprites, artifact table, 27 views of the embedded master data) |
-| Bundle cache | every bundle already downloaded and decrypted |
-| Software | Python 3.13.15; UnityPy 1.25.3, Pillow 12.3.0, numpy 2.4.6 |
-| Machine | as above; the runs were pinned to 32 of the 64 CPUs while other jobs used the rest |
+| Data | the Taiwan server's zh-Hant catalog of version 1.0.1 with the APK's catalog: 14 694 bundles (14 692 present; two APK entries have no file) and 944 raw files, 1 805 921 objects |
+| Command | `nnnotes export -o <out> --store <new store> --workers 12` with the default pipeline (catalog index, census, script and address tables, bundle export, atlas sprites, CRI audio and movies, Live2D models, Spine skeletons, artifact table, 27 views of the embedded master data) |
+| Bundle cache | every bundle and raw file already downloaded and decrypted |
+| Software | Python 3.13.15; UnityPy 1.25.3, Pillow 12.3.0, numpy 2.4.6; FFmpeg 5.1.9; vgmstream r2117 |
+| Machine | as above; the run was pinned to 16 of the 64 CPUs while other jobs used the rest |
 
-| | 32 workers | 12 workers |
-|---|---|---|
-| Wall time, new store | 166 s | 286 s |
-| CPU time of all processes | 2 700 s | 2 450 s |
-| Resident memory of all processes, summed, at the peak | 12.9 GB | 5.7 GB |
-| Largest process (the main process: catalog index, results, layout) | 4.4 GB | 4.4 GB |
+| | 12 workers |
+|---|---|
+| Wall time, new store | 506 s |
+| CPU time of all processes | 5 734 s |
+| Memory of all processes, summed, at the peak | 6.3 GiB |
+| Largest process | 811 MiB resident (a worker; the main process 802 MiB) |
 
-Both runs, and a third made of `plan --emit-tasks` rounds and `run-stage` batches (12 processes of 50 tasks at a
-time, 402 s wall, 3 280 s CPU: every `run-stage` process loads its libraries, every round plans again), wrote the
-same store (84 473 contents, 11.2 GB; 29 445 results) and the same layout (79 655 files).
+The run wrote 126 866 contents (23.7 GiB) and 31 163 results; the layout has 133 733 files. The store and the
+layout do not depend on the number of workers, nor on whether the tasks run in `export` or in `plan --emit-tasks`
+rounds and `run-stage` batches.
 
-Where the CPU time of the 32-worker run goes:
+Where the CPU time goes:
 
 | Stage | Tasks | CPU time | Largest task |
 |---|---|---|---|
-| `unity.export` | 14 692 | 2 460 s | 8.9 s, 0.74 GB resident |
-| `unity.census` | 14 692 | 120 s | 1.3 s |
-| `link.addresses`, `link.artifacts`, `link.scripts` | 3 | 14 s | `link.artifacts`: 2.2 GB resident |
+| `cri.audio` | 1 031 | 2 617 s, 2 555 s of it in vgmstream and FFmpeg | 21.5 s, 271 MiB resident |
+| `unity.export` | 14 692 | 2 266 s | 9.1 s, 653 MiB resident |
+| `live2d.model` | 239 | 438 s | 3.9 s, 719 MiB resident |
+| `spine.skeleton` | 246 | 120 s | 1.1 s, 557 MiB resident |
+| `unity.census` | 14 692 | 85 s | 1.1 s |
+| `cri.movie` | 202 | 75 s, 40 s of it in FFmpeg | 3.1 s, 551 MiB resident |
+| `link.addresses`, `link.artifacts`, `link.scripts` | 3 | 13 s | `link.artifacts`: 7.3 s, 810 MiB resident |
 | `sprite.crop` | 30 | 4 s | |
 | the 27 views | 27 | under 1 s | |
-| outside the tasks (planning, scheduling, layout, reports) | | 107 s (4 %) | |
+| outside the tasks (planning, scheduling, layout, reports) | | 116 s (2 %) | |
 
-The median worker process peaked at 0.38 GB resident. A second run over the same store is a no-op: `plan -o <out>
---check` takes 24 s (1.9 GB) and `export` 43 s (4.3 GB), each in one process (every task is a hit, so no worker
-starts).
+A second run over the same store is a no-op: `export` takes 40 s (633 MiB) and `plan -o <out>` 36-39 s (741-749
+MiB), each in one process (every task is a hit, so no worker starts).
+
+### Memory
+
+Runs under a memory limit (`export` with `--workers 1` and `--memory` at the limit); a run is stopped when the
+summed memory of its processes reaches the limit:
+
+| Run | Limit | Result | Memory at the peak |
+|---|---|---|---|
+| `export`, new store | 1 GiB | stopped in `unity.export` after 136 s | main process 372 MiB, worker 685 MiB |
+| `export`, new store | 2 GiB | completed | 1 333 MiB, in `unity.export`: main process 394 MiB, worker 920 MiB |
+| `export --select group:membercard`, new store | 1 GiB | 347 s | 414 MiB |
+| `export --select key:Character/Live2D/`, new store | 1 GiB | stopped in `live2d.model` after 290 s | main process 301 MiB, worker 713 MiB |
+| `export --select key:Character/Live2D/`, new store | 2 GiB | 676 s | 1 131 MiB: main process 301 MiB, worker 810 MiB |
+| `plan -o <out>`, every task a hit | 512 MiB | stopped after 31 s | 513 MiB |
+| `plan -o <out>`, every task a hit | 768 MiB | 39 s | 741 MiB |
+
+`link.artifacts` alone (`run-stage`, one process) needs 423 MiB (18 s).
 
 ### PNG level
 

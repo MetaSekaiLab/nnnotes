@@ -23,7 +23,8 @@ Facts the stages read while their tasks are described (stages.Env):
     bundles    {stable bundle name: Input "bundle"} of the selected bundles and their dependencies (a bundle whose
                bytes are not known yet: a Pending "fetch:<file name>")
     selected   the selected bundles' stable names, sorted (the subjects of the export stages)
-    raw        {stable raw file name: Input "raw"} of the selected raw files (only with a stage that reads them)
+    raw        {stable raw file name: Input "raw"} of the selected raw files (only with a stage that reads them;
+               export fetches them while the stages before run, and reading the fact waits for that)
     boot       the Input of the game's boot data (with a CRI stage: cristages.boot_input; None without an APK)
     master     the decoded master data directory, or None
     views      the names of the selected views, sorted
@@ -449,6 +450,8 @@ class Workspace:
         self._problems: list = []
         self._apk_names: set | None = None
         self._facts: dict = {}
+        self._later = None                                # the background fetch of the raw files
+        self._cancel = threading.Event()                  # set: start no more fetches
         self._names: dict = {}
         self._done: dict = {}                             # task id -> key of the tasks with a result
 
@@ -612,9 +615,10 @@ class Workspace:
         return recycle_rss(self.memory(), self.workers())
 
     # ---------------------------------------------------------------- inputs
-    def facts(self, pipeline: list[str], fetch: bool) -> dict:
+    def facts(self, pipeline: list[str], fetch: bool, background: bool = False) -> dict:
         """The planning facts (module documentation). `fetch`: fetch the files whose content is not known yet
-        (else they are Pending); what cannot be read is in problems()."""
+        (else they are Pending); what cannot be read is in problems() (after wait()). `background`: the raw files
+        are fetched while the caller goes on (the fact waits for them when it is read)."""
         index = self.index()
         sel = select(index, self.selection)
         self._problems = []
@@ -628,11 +632,27 @@ class Workspace:
         if any(n in pipeline for n in RAW_STAGES):
             from .cristages import boot_input
             raws = {r["stable"]: r for r in index["rawFiles"]}
-            facts["raw"] = self._inputs("raw", [raws[s] for s in sel.raw], fetch)
+            job = (self._inputs, "raw", [raws[s] for s in sel.raw], fetch)
+            if background and fetch:
+                pool = ThreadPoolExecutor(1, thread_name_prefix="nnnotes-raw")
+                self._later = pool.submit(*job)
+                pool.shutdown(wait=False)
+                facts["raw"] = Later(self._later)
+            else:
+                facts["raw"] = job[0](*job[1:])
             facts["boot"] = boot_input(self.store, self.apk)
         self.selected = sel
         self._facts, self._names = facts, {}
         return facts
+
+    def wait(self) -> None:
+        """Wait for the background fetch of facts(background=True), if any (its errors are raised here)."""
+        if self._later is not None:
+            self._later.result()
+
+    def cancel(self) -> None:
+        """Start no more fetches: a background fetch ends once the downloads under way are done."""
+        self._cancel.set()
 
     def problems(self) -> list[dict]:
         """Files of the selection that could not be read: {kind, stable, name, code, message}, sorted."""
@@ -675,6 +695,8 @@ class Workspace:
 
         def one(job):
             e, locators, path = job
+            if self._cancel.is_set():
+                return None
             try:
                 if path is None:
                     path = self.fetcher.fetch_location(self.version["id"], e["location"])
@@ -938,6 +960,28 @@ class Inputs(Mapping):
         return [k for k, v in self._items.items() if isinstance(v, Pending)]
 
 
+class Later(Mapping):
+    """A mapping a background job makes (Future): reading it waits for the job."""
+
+    def __init__(self, future):
+        self._future = future
+
+    def __getitem__(self, key):
+        return self._future.result()[key]
+
+    def __contains__(self, key) -> bool:
+        return key in self._future.result()
+
+    def __iter__(self):
+        return iter(self._future.result())
+
+    def __len__(self) -> int:
+        return len(self._future.result())
+
+    def waiting(self) -> list[str]:
+        return self._future.result().waiting()
+
+
 class LayoutPaths:
     """What a stage's derived documents may read of the `original` layout: the path of an artifact, the artifacts
     of an object (a contained object: the artifact it is part of)."""
@@ -1034,22 +1078,32 @@ def cmd_export(args, cfg, common):
         sys.stdout.write(ws.plan(pipeline, params, out=out, layouts=names).text())
         return
     ws.run_index()
-    facts = ws.facts(pipeline, fetch=True)
+    facts = ws.facts(pipeline, fetch=True, background=True)
     sel = ws.selected
     ws.log(f"{len(sel.selected)} bundles selected ({len(sel.census)} with their dependencies), "
-           f"{len(facts['raw'])} raw files; {len(ws.problems())} files not readable")
+           f"{len(sel.raw)} raw files" + (" (fetched while the bundle stages run)" if isinstance(facts["raw"], Later)
+                                          else "")
+           + f"; {sum(p['kind'] == 'bundle' for p in ws.problems())} bundles not readable")
     aborted = None
     try:
         run = orch.run(pipeline, params=params, facts=facts, context=ws.context(), selection=ws.selection)
     except ConfigError as e:
         run = getattr(e, "run", None)
         if run is None:
+            ws.cancel()
             raise
         aborted = str(e)
     except KeyboardInterrupt:
+        ws.cancel()
         print("nnnotes: interrupted (results written so far stay valid)", file=sys.stderr)
         sys.exit(EXIT_ABORTED)
-    stage_of = {"bundle": "unity.census", "raw": next((n for n in RAW_STAGES if n in pipeline), "cri.audio")}
+    try:
+        ws.wait()
+    except ConfigError as e:                          # the raw files' fetch stopped (the run stopped with it)
+        aborted = aborted or str(e)
+    if isinstance(facts["raw"], Later) and aborted is None:
+        ws.log(f"{sum(p['kind'] == 'raw' for p in ws.problems())} raw files not readable")
+    stage_of ={"bundle": "unity.census", "raw": next((n for n in RAW_STAGES if n in pipeline), "cri.audio")}
     for p in ws.problems():
         if p["code"] == "source.error":
             run.failures_.append(failure(contract.task_id(stage_of[p["kind"]], p["stable"]), stage_of[p["kind"]],

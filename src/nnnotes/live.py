@@ -27,6 +27,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from .catalog import Catalog
+from .cristages import FLAC_LEVEL
 from .jsonio import write_json
 from .liveoptions import LiveOptions
 from .player import PlayerData
@@ -91,17 +92,17 @@ def index_doc(music_id: int, difficulty: str, score_summary: dict, audio: dict, 
 def build(cat: Catalog, master: Path, player: PlayerData, music_id: int, difficulty: str,
           out_dir: Path, audio_format: str = "flac", band: int | None = None,
           leader_card: int | None = None, *, language: str, fonts: str = "open",
-          options: LiveOptions = LiveOptions()) -> dict:
+          options: LiveOptions = LiveOptions(), flac_level: int = FLAC_LEVEL) -> dict:
     """One live directory. `language`: the client language of the start canvas (a languages.LANGUAGES code);
     `fonts`: "open" or "game" (liveui.extract); `options`: the option variants whose files it carries as well
-    (liveoptions.resolve)."""
+    (liveoptions.resolve); `flac_level`: ffmpeg's compression level of the FLAC audio (cri.decode)."""
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     choice = resolve_band(cat, Path(master), music_id, band=band, leader_card=leader_card)
     s = score.extract(cat, master, music_id, difficulty, out_dir, audio=True, audio_fmt=audio_format,
-                      mirror=options.mirror)
+                      flac_level=flac_level, mirror=options.mirror)
     la = liveaudio.extract(cat, Path(master), player, music_id, out_dir, fmt=audio_format,   # reuses the BGM decode
-                           options=options)
+                           options=options, flac_level=flac_level)
     sc = livescene.extract(cat, player, out_dir, master=Path(master), music_id=music_id, band=choice["band"],
                            band_choice=choice)
     lu = liveui.extract(cat, player, out_dir, master=Path(master), music_id=music_id,   # reads livescene's shaders

@@ -872,7 +872,8 @@ class RawCopy(Stage):
                                          contract.provenance(task), {"kind": "toy"})], [])
 
 
-def test_raw_files_of_the_apk_are_read_from_it(tmp_path, capsys, monkeypatch):
+def raw_apk(tmp_path, monkeypatch):
+    """An APK with one raw file (a CRI sheet of the APK's catalog) and the CRI stage stand-in; -> (apk, name)."""
     import zipfile
     monkeypatch.setattr(cli_assets, "STAGE_SOURCES", FAKE_SOURCES + (
         cli_assets.StageSource("cri.audio", "test_cli_assets:RawCopy"),))
@@ -883,6 +884,16 @@ def test_raw_files_of_the_apk_are_read_from_it(tmp_path, capsys, monkeypatch):
         z.writestr("assets/aa/catalog.bin", synth.CatalogWriter().build([("Cri/Initial/se", synth.local(name), [])]))
         z.writestr("assets/aa/Android/" + name, b"@UTF sheet")
         z.writestr("assets/bin/Data/data.unity3d", b"boot")
+    return apk, name
+
+
+def raw_export(capsys, tmp_path, d, apk):
+    return nn(capsys, *flags(d), "--apk", apk, "export", "-o", tmp_path / "o", "--store", tmp_path / "s",
+              "--workers", "0")
+
+
+def test_raw_files_of_the_apk_are_read_from_it(tmp_path, capsys, monkeypatch):
+    apk, name = raw_apk(tmp_path, monkeypatch)
     d = setup_data(tmp_path, censuses(broken=False))
     code, out, err = nn(capsys, *flags(d), "--apk", apk, "plan", "--store", tmp_path / "s", "--json")
     nodes = {n["id"]: n for n in json.loads(out)["nodes"]}
@@ -897,6 +908,79 @@ def test_raw_files_of_the_apk_are_read_from_it(tmp_path, capsys, monkeypatch):
     code, out, _ = nn(capsys, *flags(d), "--apk", apk, "plan", "-o", tmp_path / "o", "--store", tmp_path / "s",
                       "--check")
     assert code == 0, out                                                              # read from the cache now
+
+
+def test_the_raw_files_are_fetched_while_the_bundle_stages_run(tmp_path, capsys, monkeypatch):
+    import threading
+    apk, name = raw_apk(tmp_path, monkeypatch)
+    order, exported = [], threading.Event()
+    real_inputs, real_run = cli_assets.Workspace._inputs, FakeExport.run
+
+    def inputs(self, kind, entries, fetch):
+        if kind == "raw":
+            exported.wait(10)                                           # until a bundle stage has run
+            order.append(("raw fetch", threading.current_thread() is threading.main_thread()))
+        return real_inputs(self, kind, entries, fetch)
+
+    def run(self, task, store):
+        if not exported.is_set():
+            order.append("unity.export")
+            exported.set()
+        return real_run(self, task, store)
+    monkeypatch.setattr(cli_assets.Workspace, "_inputs", inputs)
+    monkeypatch.setattr(FakeExport, "run", run)
+    d = setup_data(tmp_path, censuses(broken=False))
+    code, out, err = raw_export(capsys, tmp_path, d, apk)
+    assert code == 0, err
+    assert order == ["unity.export", ("raw fetch", False)]              # in the background, while the stages run
+    assert "fetched while the bundle stages run" in err and "0 raw files not readable" in err
+    run_doc = contract.loads((tmp_path / "o" / cli_assets.REPORTS / "run.json").read_bytes())
+    assert {t["id"]: t["status"] for t in run_doc["tasks"]}["cri.audio:cri_assets_embcri/sound/initialse"] == "ran"
+    assert (d["cache"] / "raw" / "Android" / name).read_bytes() == b"@UTF sheet"
+
+
+def test_a_setting_the_raw_fetch_lacks_aborts_the_run(tmp_path, capsys, monkeypatch):
+    apk, _ = raw_apk(tmp_path, monkeypatch)
+    real = cli_assets.Workspace._inputs
+
+    def inputs(self, kind, entries, fetch):
+        if kind == "raw":
+            raise ConfigError("setting servers.zz.cdn is not set")
+        return real(self, kind, entries, fetch)
+    monkeypatch.setattr(cli_assets.Workspace, "_inputs", inputs)
+    d = setup_data(tmp_path, censuses(broken=False))
+    code, out, err = raw_export(capsys, tmp_path, d, apk)
+    assert code == 3 and "aborted: setting servers.zz.cdn is not set" in err, err
+    run_doc = contract.loads((tmp_path / "o" / cli_assets.REPORTS / "run.json").read_bytes())
+    st = {t["id"]: t["status"] for t in run_doc["tasks"]}
+    assert st[f"unity.census:{contract.stable_bundle_name(NAMES['bg_x'])}"] == "ran"      # kept
+
+
+def test_an_interrupt_starts_no_more_raw_fetches(tmp_path, capsys, monkeypatch):
+    import threading
+    from nnnotes import orchestrate
+    apk, name = raw_apk(tmp_path, monkeypatch)
+    ended = threading.Event()
+    real = cli_assets.Workspace._inputs
+
+    def inputs(self, kind, entries, fetch):
+        if kind != "raw":
+            return real(self, kind, entries, fetch)
+        self._cancel.wait(10)                                           # until the interrupt
+        try:
+            return real(self, kind, entries, fetch)
+        finally:
+            ended.set()
+
+    def interrupted(*a, **kw):
+        raise KeyboardInterrupt
+    monkeypatch.setattr(cli_assets.Workspace, "_inputs", inputs)
+    monkeypatch.setattr(orchestrate.Orchestrator, "run", interrupted)
+    d = setup_data(tmp_path, censuses(broken=False))
+    code, _, err = raw_export(capsys, tmp_path, d, apk)
+    assert code == 3 and "interrupted" in err
+    assert ended.wait(10)
+    assert not (d["cache"] / "raw" / "Android" / name).exists()          # not fetched after the interrupt
 
 
 def test_worker_counts_follow_the_cpus_this_process_may_use(monkeypatch):

@@ -50,6 +50,7 @@ from .addressables import BundleKey
 from .catalog import Catalog
 from .config import Config, ConfigError, use
 from .jsonio import dumps, write_json
+from .webaudio import DEFAULT_AUDIO_FORMAT, WEB_AUDIO
 
 DIFFICULTY_CHOICES = ("easy", "normal", "hard", "expert")
 AUDIO_CHOICES = ("flac", "ogg", "wav")
@@ -299,12 +300,13 @@ def cmd_shader(args, cfg):
 
 def cmd_audio(args, cfg):
     from . import cri
+    flac = _flac_options(args)
     cfg.require_path("paths", "apk")                 # the HCA keycode is read from the APK
     cat = open_catalog(cfg)
     if not cat.has(f"Cri/Sound/{args.cue_sheet}"):
         args.usage(f"cue sheet {args.cue_sheet}: no key Cri/Sound/{args.cue_sheet} in the catalog")
     out = Path(args.out)
-    r = cri.decode(cat, args.cue_sheet, out, fmt=args.format)
+    r = cri.decode(cat, args.cue_sheet, out, fmt=args.format, **flac)
     print(f"{out}  ({len(r)} cues)")
 
 
@@ -333,13 +335,29 @@ def cmd_story(args, cfg):
     if args.fonts == "game":
         from .tmpfont import require_extra
         require_extra("--fonts game")
+    flac = _flac_options(args)
     languages.check(cfg.require("catalog", "language"))   # the story UI's language (advui reads the setting)
     md = master_dir(cfg)
     known_row(args, md, "MasterAdv", args.adv_id, "episode")
     cat = open_catalog(cfg)
     r = story.build(cat, md, player_data(cfg), args.adv_id, Path(args.out),
-                    audio_format=args.format, audio=not args.no_audio, fonts=args.fonts)
+                    audio_format=args.format, audio=not args.no_audio, fonts=args.fonts, audio_options=flac)
     _print_json(r)
+
+
+def _flac_options(args) -> dict:
+    """The cri.decode options of --flac-level ({} without it); a level out of range, or the flag where no FLAC is
+    written, is a usage error."""
+    level = args.flac_level
+    if level is None:
+        return {}
+    if not 0 <= level <= 12:
+        args.usage(f"--flac-level {level}: expected 0 to 12")
+    if args.format != "flac":
+        args.usage(f"--flac-level: --format {args.format} writes no FLAC")
+    if getattr(args, "no_audio", False):
+        args.usage("--flac-level: --no-audio decodes no audio")
+    return {"flac_level": level}
 
 
 def _fonts_extra(fonts: str) -> None:
@@ -363,6 +381,7 @@ def cmd_live(args, cfg):
     from .web import all_pairs
     _fonts_extra(args.fonts)
     request = _live_options(args)
+    flac = _flac_options(args)
     language = languages.check(cfg.require("catalog", "language"))
     md = master_dir(cfg)
     known_row(args, md, "MasterLiveMusic", args.music_id, "music")
@@ -379,7 +398,7 @@ def cmd_live(args, cfg):
         args.usage(e.args[0] if e.args else type(e).__name__)
     r = live.build(cat, md, player_data(cfg), args.music_id, args.difficulty, Path(args.out),
                    audio_format=args.format, band=args.band, leader_card=args.leader_card, language=language,
-                   fonts=args.fonts, options=options)
+                   fonts=args.fonts, options=options, **flac)
     _print_json(r)
 
 
@@ -495,12 +514,19 @@ def _fonts_arg(c) -> None:
                         "game's TMP fonts (needs the 'fonts' extra)")
 
 
+def _audio_args(c) -> None:
+    """--format and --flac-level of a command that decodes cue sheets."""
+    c.add_argument("--format", default="flac", choices=AUDIO_CHOICES)
+    c.add_argument("--flac-level", type=int, metavar="N",
+                   help="FLAC compression level 0-12 of --format flac (default 8; every level decodes to the same "
+                        "samples)")
+
+
 def _out(c, what: str, required: bool = True) -> None:
     c.add_argument("-o", "--out", required=required, help=what)
 
 
 def build_parser() -> argparse.ArgumentParser:
-    from .web import WEB_AUDIO, DEFAULT_AUDIO_FORMAT
     p = argparse.ArgumentParser(prog="nnnotes", description="BanG Dream! Our Notes data toolkit")
     p.add_argument("--version", action="version", version=f"nnnotes {__version__}")
     p.add_argument("--config", help="TOML config file (else NNNOTES_CONFIG, else ./nnnotes.toml)")
@@ -559,7 +585,7 @@ def build_parser() -> argparse.ArgumentParser:
     c = sub.add_parser("story", help="ADV episode -> story dir (episode, models, audio, scene, UI, media, videos)")
     c.add_argument("adv_id", type=int)
     _out(c, "output directory")
-    c.add_argument("--format", default="flac", choices=AUDIO_CHOICES)
+    _audio_args(c)
     c.add_argument("--no-audio", action="store_true", help="do not decode the cue sheets")
     c.add_argument("--fonts", default="open", choices=("open", "game"),
                    help="open: text layout and style only, no font data (default); game: also the game's TMP fonts "
@@ -591,7 +617,7 @@ def build_parser() -> argparse.ArgumentParser:
     c = sub.add_parser("audio", help="decode a CRI cue sheet")
     c.add_argument("cue_sheet")
     _out(c, "output directory")
-    c.add_argument("--format", default="flac", choices=AUDIO_CHOICES)
+    _audio_args(c)
     c.set_defaults(func=cmd_audio, usage=c.error)
 
     c = sub.add_parser("crikey", help="find the HCA keycode in base.apk")
@@ -605,7 +631,7 @@ def build_parser() -> argparse.ArgumentParser:
     c = sub.add_parser("live", help="live (music + difficulty) -> self-contained live dir")
     c.add_argument("music_id", type=int)
     c.add_argument("--difficulty", default="expert", choices=DIFFICULTY_CHOICES)
-    c.add_argument("--format", default="flac", choices=AUDIO_CHOICES)
+    _audio_args(c)
     _fonts_arg(c)
     _band_args(c)
     _live_option_arg(c)

@@ -80,19 +80,10 @@ from types import SimpleNamespace
 from . import cache, cri, jsonio, languages, live, liveoptions, livenotes, livescene
 from .config import Config, ConfigError, tool, usable_cpus, use
 from .score import DIFFICULTIES, master_table
+from .webaudio import DEFAULT_AUDIO_FORMAT, WEB_AUDIO
 
 SITE_FORMAT = 2
 AUDIO_EXT = {".flac", ".ogg", ".opus", ".wav", ".m4a", ".mp3"}
-# BGM encodings for the web (ffmpeg). Chromium's decodeAudioData decodes each sample-aligned with the FLAC (encoder
-# delay / pre-skip removed). Default AAC-LC 160 kbit/s in MP4: decodes in Safari / iOS as well.
-WEB_AUDIO = {
-    "aac": (".m4a", ["-c:a", "aac", "-b:a", "160k"]),
-    "opus": (".opus", ["-c:a", "libopus", "-b:a", "128k"]),
-    "vorbis": (".ogg", ["-c:a", "libvorbis", "-q:a", "5"]),
-    "mp3": (".mp3", ["-c:a", "libmp3lame", "-b:a", "192k"]),
-    "flac": (".flac", None),
-}
-DEFAULT_AUDIO_FORMAT = "aac"
 SPLIT_MIN_BYTES = 512 * 1024
 # the live directories of a web build: no liveui/ (the player reads none of it), the BGM decoded once for the read
 # set (FLAC) and, from the same samples, into the site format (bgm_options)

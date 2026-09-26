@@ -307,3 +307,66 @@ def test_story_needs_the_language(data, capsys):
     i = data.index("--language")
     code, _, err = run(data[:i] + data[i + 2:] + ["story", "1", "-o", "s"], capsys)
     assert code == 2 and "catalog.language" in err and "NNNOTES_CATALOG_LANGUAGE" in err
+
+
+def test_the_command_line_starts_without_the_exporters():
+    probe = ("import sys, nnnotes.cli as c; c.build_parser(); "
+             "print([m for m in ('UnityPy', 'nnnotes.web') if m in sys.modules])")
+    r = subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True, check=True)
+    assert r.stdout.split() == ["[]"]
+
+
+@pytest.mark.parametrize("argv, message", [
+    (["audio", "s", "--flac-level", "13"], "--flac-level 13: expected 0 to 12"),
+    (["live", "7", "--flac-level", "-1"], "--flac-level -1: expected 0 to 12"),
+    (["audio", "s", "--format", "ogg", "--flac-level", "5"], "--flac-level: --format ogg writes no FLAC"),
+    (["live", "7", "--format", "wav", "--flac-level", "5"], "--flac-level: --format wav writes no FLAC"),
+    (["story", "1", "--no-audio", "--flac-level", "5"], "--flac-level: --no-audio decodes no audio"),
+])
+def test_flac_level_is_checked(data, argv, message, capsys):
+    code, out, err = run(data + argv + ["-o", "o"], capsys)
+    assert code == 2 and out == "", err
+    assert f"nnnotes {argv[0]}: error: {message}" in err
+
+
+def test_flac_level_reaches_the_decode(data, tmp_path, capsys, monkeypatch):
+    from types import SimpleNamespace
+    from nnnotes import cri, live, story
+    seen = []
+    monkeypatch.setattr(cli, "open_catalog", lambda cfg: SimpleNamespace(has=lambda key: True))
+    monkeypatch.setattr(cli, "player_data", lambda cfg: None)
+    monkeypatch.setattr(cri, "decode", lambda *a, **kw: seen.append(kw.get("flac_level")) or [])
+    monkeypatch.setattr(story, "build", lambda *a, **kw: seen.append(kw["audio_options"].get("flac_level")) or {})
+    monkeypatch.setattr(live, "resolve_band", lambda *a, **kw: None)
+    monkeypatch.setattr(live, "build", lambda *a, **kw: seen.append(kw.get("flac_level")) or {})
+    for argv in (["audio", "s"], ["story", "1"], ["live", "7"]):
+        for flag, level in (([], None), (["--flac-level", "5"], 5)):
+            seen.clear()
+            code, _, err = run(data + argv + flag + ["-o", str(tmp_path / "o")], capsys)
+            assert code == 0 and seen == [level], (argv, err)
+
+
+def test_live_passes_the_flac_level_to_its_decodes(tmp_path, monkeypatch):
+    from nnnotes import cri, live, liveaudio
+
+    class Stop(Exception):
+        pass
+    seen = {}
+    monkeypatch.setattr(live, "resolve_band", lambda *a, **kw: {"band": 1})
+    monkeypatch.setattr(live.score, "extract", lambda *a, **kw: seen.update(score=kw["flac_level"]) or {})
+
+    def sounds(*a, **kw):
+        seen["liveaudio"] = kw["flac_level"]
+        raise Stop
+    monkeypatch.setattr(live.liveaudio, "extract", sounds)
+    with pytest.raises(Stop):
+        live.build(None, tmp_path, None, 7, "expert", tmp_path / "o", language="ja", flac_level=3)
+    assert seen == {"score": 3, "liveaudio": 3}
+
+    def decode(cat, sheet, d, **kw):
+        seen["decode"] = kw
+        d.mkdir(parents=True)
+        (d / "streams.json").write_text("[]", encoding="utf-8")
+    monkeypatch.setattr(cri, "decode", decode)
+    assert liveaudio._decode(None, "s", tmp_path, "flac", 3) == []
+    assert seen["decode"] == {"fmt": "flac", "flac_level": 3}
