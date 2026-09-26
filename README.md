@@ -124,6 +124,8 @@ nnnotes web out/site --live2d adv_live2d_rana_003_casual_spring_01 --player <our
 
 所有 JSON 由同一个写出器生成（`jsonio`），保证编码、换行与数值格式一致。
 
+`web` 构建的耗时分布，以及其中哪些部分已由编译代码执行，见 [docs/performance.md](docs/performance.md)。
+
 ## License
 
 MIT，见 [LICENSE](LICENSE)。

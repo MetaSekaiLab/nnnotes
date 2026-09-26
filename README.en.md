@@ -161,6 +161,9 @@ settings (TOML / environment / flags)
 Every JSON file is written by one writer (`jsonio`), so encoding, line endings and number formatting are the same
 everywhere.
 
+See [docs/performance.md](https://github.com/MetaSekaiLab/nnnotes/blob/main/docs/performance.md) for where a
+`web` build spends its time and which parts of it run in compiled code.
+
 ## License
 
 MIT, see [LICENSE](https://github.com/MetaSekaiLab/nnnotes/blob/main/LICENSE).
