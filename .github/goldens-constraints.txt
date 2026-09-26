@@ -1,0 +1,5 @@
+UnityPy==1.25.3
+Pillow==12.3.0
+numpy==2.4.6
+texture2ddecoder==1.0.6
+astc-encoder-py==0.1.12

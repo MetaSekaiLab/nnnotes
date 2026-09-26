@@ -36,3 +36,25 @@ jobs:
         run: python -m nnnotes --help
       - name: Test
         run: python -m pytest
+
+  goldens:
+    # The golden records of the stages (tests/golden/*.json) were made with these library versions; with the same
+    # versions installed an output change without a stage or converter version bump fails instead of being skipped.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: |
+            pyproject.toml
+            .github/goldens-constraints.txt
+      - name: Install (pinned)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -c .github/goldens-constraints.txt -e ".[test]"
+      - name: Golden records
+        env:
+          GOLDENS_STRICT: "1"
+        run: python -m pytest tests/test_goldens.py tests/test_objexport.py
