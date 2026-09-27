@@ -2,9 +2,21 @@
 
 [简体中文](README.md) | [English](README.en.md)
 
-nnnotes 是 BanG Dream! Our Notes 游戏文件的离线数据工具包：读取 Addressables catalog、下载并解密资源包、下载与解码 masterdata，再把剧情、Live2D、据点场景、着色器、CRI 音频和谱面导出成结构化的 JSON 与通用格式文件。谱面导出结果就是 [ournotes-player](https://github.com/empty-sekai/ournotes-player) 读取的数据。命名灵感来自 [mos9527/sssekai](https://github.com/mos9527/sssekai)。
+nnnotes 是 BanG Dream! Our Notes 游戏文件的离线数据工具包：读取 Addressables catalog、下载并解密资源包、下载与解码 masterdata，再把剧情、Live2D、据点场景、着色器、CRI 音频和谱面导出成结构化的 JSON 与通用格式文件。`web` 导出的谱面、Live2D 模型与剧情站点就是 [ournotes-player](https://github.com/empty-sekai/ournotes-player) 读取的数据。命名灵感来自 [mos9527/sssekai](https://github.com/mos9527/sssekai)。
 
 本项目为非官方爱好者项目，与游戏的开发和运营方无关。仓库不包含任何游戏资源、密钥或服务器地址：游戏文件、解密所需的密钥和服务器地址都由使用者在配置中自行提供，导出结果只保存在使用者指定的本地目录。
+
+## 安装与初始化
+
+```sh
+pip install nnnotes              # Python 3.11+，推荐 3.13
+nnnotes config init --user       # 在终端里逐项填写设置（密钥不回显），写入用户配置文件，在任何目录下都会读取
+nnnotes config check             # 每项设置的来源和格式是否有效，不显示设置值
+```
+
+- 设置值（密钥、区服的 CDN 与 API 地址、本地数据与工具的路径）都来自使用者自己的游戏客户端，见[配置](#配置)。
+- 在脚本或 AI 代理中不会有交互提问：`nnnotes config init --user --no-input --set 段.键=值 ...` 一次写好，之后用 `nnnotes config set 段.键 值` 修改单项（值写 `-` 时从标准输入读取，密钥不必出现在命令行里），`nnnotes config check --json` 给出机器可读的状态。
+- `--fonts game` 另需 `pip install 'nnnotes[fonts]'`；APK、masterdata 与外部工具见[需要准备](#需要准备)。
 
 ## 功能
 
@@ -57,7 +69,7 @@ nnnotes 是 BanG Dream! Our Notes 游戏文件的离线数据工具包：读取 
 
 ## 需要准备
 
-- Python 3.11+，推荐 3.13（`web` 构建读写大量 JSON，3.13 的标准库 JSON 编码更快），`pip install nnnotes`（开发时在仓库内 `pip install -e .`）
+- Python 3.11+，推荐 3.13（`web` 构建读写大量 JSON，3.13 的标准库 JSON 编码更快）；开发时在仓库内 `pip install -e .`
 - 游戏安装包 `base.apk`：APK 内置资源包、CRI 解码密钥、启动设置。`player`、`story`、`live`、`web` 用 nnnotes 自带的类型树读取 APK 启动数据中的 MonoBehaviour，目前支持游戏版本 1.0.1（Unity 6000.3.12f1）；其他版本的 APK 若类型不符，这些命令会报错并给出类名、游戏版本和 Unity 版本
 - 解码后的 masterdata 目录（可用 `master download` + `master decode` 生成）：`adv`、`story`、`spot`、`live` 和 `web` 的谱面需要；`web` 的 Live2D 模型只用它取角色名（可选）
 - 外部工具：[vgmstream](https://vgmstream.org/)（CRI HCA 解码）、[FFmpeg](https://ffmpeg.org/)（转码，含剧情视频的 WebM 封装与 Opus 音频）；`web` 另需 Node.js 20+ 与构建好的 ournotes-player
@@ -66,11 +78,11 @@ nnnotes 是 BanG Dream! Our Notes 游戏文件的离线数据工具包：读取 
 
 代码中没有任何密钥、服务器地址和默认路径。所有设置按以下顺序读取，后者覆盖前者：
 
-1. 配置文件：`--config <文件>`，否则 `NNNOTES_CONFIG`，否则当前目录的 `nnnotes.toml`
+1. 配置文件：`--config <文件>`，否则 `NNNOTES_CONFIG`，否则当前目录的 `nnnotes.toml`，否则用户配置文件（Windows 为 `%APPDATA%\nnnotes\nnnotes.toml`，其他系统为 `~/.config/nnnotes/nnnotes.toml`；`nnnotes config path` 列出查找顺序与实际读取的文件）
 2. 环境变量：`NNNOTES_<节>_<键>`（如 `NNNOTES_BUNDLE_KEY`、`NNNOTES_SERVERS_TW_CDN`）
 3. 命令行参数：`--region`、`--language`、`--catalog`、`--cache`、`--master`、`--apk`、`--ffmpeg`、`--vgmstream`、`--node` 写在命令名之前；`--player` 是 `web` 的参数
 
-复制 [`nnnotes.example.toml`](nnnotes.example.toml) 为 `nnnotes.toml` 后填写。需要的设置包括：资源包解密密钥与 nonce 种子、masterdata 的密钥与 IV、使用的区服 `[catalog] region` 与 catalog 语言 `[catalog] language`、每个区服的 CDN 地址与 API 根地址（`[servers.<区服>]` 的 `cdn`、`api`）、客户端版本 `[client] version`（未设置时读取 APK 的 versionName）、可选的引导 API 根地址 `[bootstrap] api`（`servers` 使用），以及缓存目录、APK、masterdata 目录、ournotes-player 和 vgmstream / FFmpeg / Node.js 的路径（三个工具未设置时在 `PATH` 中查找）。这些值都来自使用者自己的游戏客户端。
+`nnnotes config init` 写出配置模板（每项设置为空，模板随包安装，仓库中为 [`src/nnnotes/nnnotes.example.toml`](src/nnnotes/nnnotes.example.toml)），在终端中会逐项询问；`config set` / `config unset` 修改单项并保留文件中的注释。需要的设置包括：资源包解密密钥与 nonce 种子、masterdata 的密钥与 IV、使用的区服 `[catalog] region` 与 catalog 语言 `[catalog] language`、每个区服的 CDN 地址与 API 根地址（`[servers.<区服>]` 的 `cdn`、`api`）、客户端版本 `[client] version`（未设置时读取 APK 的 versionName）、可选的引导 API 根地址 `[bootstrap] api`（`servers` 使用），以及缓存目录、APK、masterdata 目录、ournotes-player 和 vgmstream / FFmpeg / Node.js 的路径（三个工具未设置时在 `PATH` 中查找）。这些值都来自使用者自己的游戏客户端。
 
 缺少或格式错误的设置会让命令以退出码 2 结束，并用一行说明对应的配置键、环境变量和命令行参数，不会输出任何设置值。`nnnotes.toml` 已在 `.gitignore` 中，请勿提交。
 

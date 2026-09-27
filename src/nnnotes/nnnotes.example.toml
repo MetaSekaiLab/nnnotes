@@ -1,4 +1,5 @@
-# nnnotes configuration. Copy to nnnotes.toml (or point --config / NNNOTES_CONFIG at your copy) and fill in.
+# nnnotes configuration. `nnnotes config init` writes this template to ./nnnotes.toml (`--user`: the per-user file,
+# read from any directory; `nnnotes config path` shows where the commands look). Fill in the values.
 # Every value is empty here: nnnotes has no built-in keys, server addresses or data paths, and an empty value
 # counts as unset. Each setting can also be given as an environment variable NNNOTES_<SECTION>_<KEY>
 # (e.g. NNNOTES_BUNDLE_KEY, NNNOTES_SERVERS_TW_CDN); command-line flags override both.

@@ -23,6 +23,20 @@ thread per CPU in every process, and no command uses its parallelism.
 A key, id or model the catalog or the master data does not have is a usage error: the command stops with exit
 status 2 and a line naming it (`nnnotes <command>: error: ...`), before any bundle is fetched or file written.
 
+## config
+
+```
+nnnotes config init [--user | --file F] [--set SECTION.KEY=VALUE ...] [--no-input] [--force]
+nnnotes config set SECTION.KEY VALUE [--user | --file F]
+nnnotes config unset SECTION.KEY [--user | --file F]
+nnnotes config check [--json]
+nnnotes config path [--json]
+```
+
+Write the config file from the template (asking in a terminal, else from `--set`), set or empty one value in place,
+check every setting's origin and format, and list where the config file is looked up. No `config` command prints a
+setting's value. Details in [configuration.md](configuration.md#writing-the-config-file).
+
 ## Cache
 
 `pull` and every extractor read bundles through the cache (`[paths] cache`):

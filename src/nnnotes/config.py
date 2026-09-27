@@ -2,7 +2,8 @@
 
 Sources, lowest to highest precedence:
 
-1. the TOML file: `--config <file>`, else the file named by `NNNOTES_CONFIG`, else `./nnnotes.toml` when present;
+1. the TOML file: `--config <file>`, else the file named by `NNNOTES_CONFIG`, else `./nnnotes.toml` when present,
+   else the per-user file (`user_file`) when present;
 2. environment variables `NNNOTES_<SECTION>_<KEY>`: the setting's dotted name upper-cased, dots and dashes as
    underscores (`servers.tw.cdn` -> `NNNOTES_SERVERS_TW_CDN`, `bundle.nonce_seed` -> `NNNOTES_BUNDLE_NONCE_SEED`);
 3. command-line flags.
@@ -23,10 +24,55 @@ from pathlib import Path
 ENV_PREFIX = "NNNOTES_"
 ENV_CONFIG = "NNNOTES_CONFIG"
 DEFAULT_FILE = "nnnotes.toml"
+TEMPLATE = "nnnotes.example.toml"         # package data: every setting with an empty value
 
 
 class ConfigError(Exception):
     """A setting is missing or malformed (the message names the setting, never its value)."""
+
+
+def user_file(environ: dict[str, str] | None = None) -> Path | None:
+    """The per-user config file: `%APPDATA%\\nnnotes\\nnnotes.toml` on Windows, else
+    `$XDG_CONFIG_HOME/nnnotes/nnnotes.toml` (`~/.config` when XDG_CONFIG_HOME is unset); None when the environment
+    names no such directory."""
+    env = os.environ if environ is None else environ
+    if os.name == "nt":
+        base = env.get("APPDATA")
+    else:
+        base = env.get("XDG_CONFIG_HOME") or (str(Path(env["HOME"]) / ".config") if env.get("HOME") else None)
+    return Path(base) / "nnnotes" / DEFAULT_FILE if base else None
+
+
+def config_files(path: str | Path | None = None,
+                 environ: dict[str, str] | None = None) -> list[tuple[str, Path | None]]:
+    """The config file candidates in lookup order, (how it is named, path or None): `--config`, NNNOTES_CONFIG, the
+    working directory's nnnotes.toml, the per-user file. The first two are used when they are given (and must
+    exist), the last two when they exist."""
+    env = os.environ if environ is None else environ
+    return [("--config", Path(path) if path else None),
+            (ENV_CONFIG, Path(env[ENV_CONFIG]) if env.get(ENV_CONFIG) else None),
+            ("working directory", Path(DEFAULT_FILE)),
+            ("user", user_file(env))]
+
+
+def find_file(path: str | Path | None = None, environ: dict[str, str] | None = None) -> Path | None:
+    """The config file that is read (config_files), or None when there is none."""
+    for name, file in config_files(path, environ):
+        if file is None:
+            continue
+        if name in ("--config", ENV_CONFIG):
+            if not file.is_file():
+                raise ConfigError(f"config file {file} ({name}) not found")
+            return file
+        if file.is_file():
+            return file
+    return None
+
+
+def template() -> bytes:
+    """The config template shipped with the package (`nnnotes config init` writes it)."""
+    from importlib import resources
+    return resources.files(__package__).joinpath(TEMPLATE).read_bytes()
 
 
 def env_name(section: str, key: str) -> str:
@@ -65,18 +111,9 @@ class Config:
     def load(cls, path: str | Path | None = None, *, environ: dict[str, str] | None = None,
              overrides: dict | None = None, flags: dict | None = None) -> "Config":
         env = os.environ if environ is None else environ
-        if path:
-            file = Path(path)
-            if not file.is_file():
-                raise ConfigError(f"config file {file} (--config) not found")
-        elif env.get(ENV_CONFIG):
-            file = Path(env[ENV_CONFIG])
-            if not file.is_file():
-                raise ConfigError(f"config file {file} ({ENV_CONFIG}) not found")
-        else:
-            file = Path(DEFAULT_FILE)
-            if not file.is_file():
-                return cls(environ=env, overrides=overrides, flags=flags)
+        file = find_file(path, env)
+        if file is None:
+            return cls(environ=env, overrides=overrides, flags=flags)
         try:
             data = tomllib.loads(file.read_text(encoding="utf-8"))
         except tomllib.TOMLDecodeError as e:
@@ -110,9 +147,31 @@ class Config:
         """Where a setting comes from: 'flag', 'env', 'file', or None when it is unset."""
         return self._raw(section, key)[1]
 
+    def flag(self, section: str, key: str) -> str | None:
+        """The command-line flag of a setting, when it has one."""
+        return self._flags.get((section, key))
+
+    def file_keys(self) -> list[tuple[str, str]]:
+        """(section, key) of every value of the TOML file, a nested table as a dotted section ('' at the top)."""
+        out = []
+
+        def walk(table: dict, section: str) -> None:
+            for k, v in table.items():
+                if isinstance(v, dict):
+                    walk(v, f"{section}.{k}" if section else k)
+                else:
+                    out.append((section, k))
+        walk(self._data, "")
+        return out
+
+    def env_names(self) -> list[str]:
+        """The names of the NNNOTES_ environment variables that set something (never their values)."""
+        return sorted(k for k, v in self._env.items() if v)
+
     def missing(self, section: str, key: str) -> ConfigError:
+        hint = "" if self.source else " (no config file was found: `nnnotes config init` writes one to fill in)"
         return ConfigError(f"setting {section}.{key} is not set: give it as "
-                           f"{describe(section, key, self._flags.get((section, key)))}")
+                           f"{describe(section, key, self._flags.get((section, key)))}{hint}")
 
     def _bad(self, section: str, key: str, what: str) -> ConfigError:
         return ConfigError(f"setting {section}.{key}: {what}")
