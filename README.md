@@ -30,7 +30,7 @@ nnnotes config check             # 每项设置的来源和格式是否有效，
 | `master download` | masterdata 版本号，或 `--latest`（区服当前版本） | 该版本的 `MasterManifest.json` 与全部 `.bin` 文件（SHA-256 校验） |
 | `master decode` | masterdata `.bin` 文件或目录 | 每张表一个 JSON（Rijndael-256 CBC 解密 + gzip 解压） |
 | `adv` | 剧情 ID | `episode.json`：命令表、五语台词、语音 / 音效 / 视频索引 |
-| `story` | 剧情 ID | 完整剧情目录：episode、全部 Live2D 模型、音频、舞台场景与着色器、剧情 UI、Frame / 粒子特效 / 后处理 / 静帧 / 对话框 / 聊天资源、视频（WebM） |
+| `story` | 剧情 ID | 剧情目录：episode、音频、舞台场景与着色器、剧情 UI、Frame / 粒子特效 / 后处理 / 静帧 / 对话框 / 聊天资源、视频（WebM）；用到的 Live2D 模型导出到模型目录（`--models`，默认为剧情目录旁的 `live2d/`），已导出的模型供其他剧情复用 |
 | `live2d` | 模型资源键或模型 ID | Live2D（Cubism）运行时目录：moc3、贴图、motion3、物理、表情、预制体参数 |
 | `spot` | 据点 ID | `spot.json` + Spine 角色 + 房间 `room.glb` + 着色器 |
 | `room` | 背景预制体键 | 房间模型（binary glTF） |
@@ -39,7 +39,7 @@ nnnotes config check             # 每项设置的来源和格式是否有效，
 | `crikey` | APK | 读出游戏启动数据中的 CRI HCA 解码密钥（只显示是否找到，可写成 `.hcakey`） |
 | `player` | APK | 渲染相关的全局设置（色彩空间、画质等级、渲染器）JSON |
 | `live` | 曲目 ID + 难度 | 完整谱面目录：谱面与运行时音符、3D 场景、音符与特效资源、BGM 与音效、声音路由 |
-| `web` | `--pair 曲目:难度`（可重复）或 `--all`；`--live2d 模型`（可重复）或 `--all-live2d`；`--story 剧情 ID`（可重复）或 `--all-stories`；`--region 区服`（可重复）或 `--all-regions` | ournotes-player 静态站点：共享播放器 + 每谱 / 每模型 / 每集剧情清单 + 内容寻址资源；一个站点可服务多个区服，列表文本含五种语言；剧情的界面文字按语言分组，字形由开源字体生成 TextMeshPro 字体资源（`--fonts game` 时用游戏字体） |
+| `web` | `--pair 曲目:难度`（可重复）或 `--all`；`--live2d 模型`（可重复）或 `--all-live2d`；`--story 剧情 ID`（可重复）或 `--all-stories`；`--region 区服`（可重复）或 `--all-regions` | ournotes-player 静态站点：共享播放器 + 每谱 / 每模型 / 每集剧情清单 + 内容寻址资源；剧情用到的 Live2D 模型先按模型构建并列入 `models.json`，剧情清单引用它们；一个站点可服务多个区服，列表文本含五种语言；剧情的界面文字按语言分组，字形由开源字体生成 TextMeshPro 字体资源（`--fonts game` 时用游戏字体）；可压缩的资源（JSON、着色器、moc3 等）默认以 gzip 存储，`--compress br` / `none` 可改 |
 | `deck-data` | masterdata 文件（`--master-files` 目录或 `--apk-master`） | 供组卡工具读取的单个 JSON：每张谱面的运行时音符、技能事件与 fever 区间，以及卡牌、技能、加成、分数与活动相关的 masterdata 表（[格式](docs/deck-data.md)） |
 
 导出约定：

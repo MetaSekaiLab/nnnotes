@@ -16,7 +16,7 @@ summaries are printed as UTF-8 whatever the console encoding.
     nnnotes master decode <dir or .bin files> -o <out dir>
     nnnotes master download --version <master version> | --latest -o <dir>
     nnnotes adv 10462 -o out/adv_10462.json
-    nnnotes story 10462 -o out/story_10462
+    nnnotes story 10462 -o out/story_10462 [--models out/live2d] [--force]
     nnnotes live2d <Character/Live2D/.../model/... | model id> -o out/live2d/x
     nnnotes spot 10001 -o out/spot_10001
     nnnotes room <Spot/.../Background/...> -o out/room.glb
@@ -487,18 +487,26 @@ def cmd_player(args, cfg):
 
 
 def cmd_story(args, cfg):
-    from . import languages, story
+    from . import languages, story, webmodel
     if args.fonts == "game":
         from .tmpfont import require_extra
         require_extra("--fonts game")
     flac = _flac_options(args)
+    out = Path(os.path.abspath(args.out))
+    models = Path(os.path.abspath(args.models or Path(args.out) / os.pardir / "live2d"))
+    try:
+        os.path.relpath(models, out)
+    except ValueError:
+        args.usage(f"--models {models}: not on the drive of {out} (story.json names it relative to the story)")
     languages.check(cfg.require("catalog", "language"))   # the story UI's language (advui reads the setting)
     md = master_dir(cfg)
     known_row(args, md, "MasterAdv", args.adv_id, "episode")
     cat = open_catalog(cfg)
-    r = story.build(cat, md, player_data(cfg), args.adv_id, Path(args.out),
-                    audio_format=args.format, audio=not args.no_audio, fonts=args.fonts, audio_options=flac)
-    _print_json(r)
+    player = player_data(cfg)
+    source = webmodel.ModelDir(cat, player, models, force=args.force)
+    r = story.build(cat, md, player, args.adv_id, out, audio_format=args.format, audio=not args.no_audio,
+                    fonts=args.fonts, models=source, audio_options=flac)
+    _print_json({**r, "modelsBuilt": source.built, "modelsSkipped": source.skipped})
 
 
 def _flac_options(args) -> dict:
@@ -593,6 +601,7 @@ def cmd_web(args, cfg):
             except liveoptions.OptionSpecError as e:
                 args.usage(str(e))
         r = {}
+        encoding = args.compress
         if models:
             cfg.require_path("paths", "apk")         # the Cubism component classes and mask materials: the APK
             try:
@@ -600,7 +609,7 @@ def cmd_web(args, cfg):
             except ValueError as e:
                 args.usage(str(e))
             r.update(webmodel.build(out, selected, cfg, player, force=args.force, tmp_dir=args.tmp,
-                                    workers=args.workers, **base))
+                                    workers=args.workers, encoding=encoding, **base))
         if charts:
             _fonts_extra(args.fonts)
             r.update(web.build(out, None if args.all else args.pair, cfg, player, args.format,
@@ -620,9 +629,10 @@ def cmd_web(args, cfg):
             r.update(storysite.build(out, args.story, cfg, player, args.format, audio=not args.no_audio,
                                      force=args.force, tmp_dir=args.tmp, workers=args.workers, regions=regions,
                                      story_languages=args.story_languages, fonts=args.fonts,
-                                     fonts_flags=dict(args.font or [])))
+                                     fonts_flags=dict(args.font or []), encoding=encoding))
     _print_json(r)
-    if r.get("failed") or r.get("modelsFailed") or r.get("storiesFailed"):
+    if (r.get("failed") or r.get("modelsFailed") or r.get("storiesFailed")
+            or (r.get("storyModels") or {}).get("modelsFailed")):
         sys.exit(1)
 
 
@@ -800,9 +810,13 @@ def build_parser() -> argparse.ArgumentParser:
     _out(c, "output .json file")
     c.set_defaults(func=cmd_adv, usage=c.error)
 
-    c = sub.add_parser("story", help="ADV episode -> story dir (episode, models, audio, scene, UI, media, videos)")
+    c = sub.add_parser("story", help="ADV episode -> story dir (episode, audio, scene, UI, media, videos) + its Live2D "
+                                     "models")
     c.add_argument("adv_id", type=int, help="MasterAdv id of the episode")
     _out(c, "output directory")
+    c.add_argument("--models", metavar="DIR",
+                   help="directory of the Live2D models, one <model id>/ each (default: OUT/../live2d)")
+    c.add_argument("--force", action="store_true", help="export the models again whose directory exists")
     _audio_args(c)
     c.add_argument("--no-audio", action="store_true", help="do not decode the cue sheets")
     c.add_argument("--fonts", default="open", choices=("open", "game"),
@@ -876,7 +890,8 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--compress", default=DEFAULT_ENCODING, choices=ENCODINGS,
                    help="encoding of the compressible assets (JSON, shaders, moc3, ...) where it makes them "
                         "smaller: gzip (default), br (brotli) or none")
-    c.add_argument("--force", action="store_true", help="rebuild charts and models whose manifest exists")
+    c.add_argument("--force", action="store_true",
+                   help="rebuild charts, models and stories whose manifest exists (stories: also their models)")
     c.add_argument("--tmp", help="directory for the temporary live and model builds (default <site>.tmp)")
     c.add_argument("--workers", type=int,
                    help="parallel music / model processes (default a quarter of the CPUs, up to 8 / up to 4; "

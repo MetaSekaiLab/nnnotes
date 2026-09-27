@@ -1,7 +1,8 @@
 """ADV presentation data -> scene.json + textures + shaders.
 
 Everything the game uses to present an ADV episode besides the episode script,
-the Live2D models and the audio:
+the Live2D models (with the materials of their mask pass: webmodel.py) and the
+audio:
 
   player          colour space, quality levels, URP pipelines, renderer data and
                   features, post-process data (APK boot data, see player.py)
@@ -13,8 +14,6 @@ the Live2D models and the audio:
   settings        AdvPlayerSettings (+ focus data), AdvMasterIdSettings
   stages          every stage prefab the episode uses (AdvStage, lights,
                   background sprite, volume profiles)
-  resources       Resources.Load materials the runtime draws with (Cubism mask
-                  pass: Mask / MaskCulling)
   postTextures    per camera renderer: post-process data textures used by the
                   URP chain (film grain textures, indexed by FilmGrain.type)
 
@@ -47,13 +46,6 @@ SETTINGS_KEYS = {
 STAGE_PREFIX = "Adv/Stage/"
 
 
-# Resources.Load paths used by the ADV runtime (Cubism mask pass materials)
-RESOURCES = {
-    "cubismMask": "Live2D/Cubism/Materials/Mask",
-    "cubismMaskCulling": "Live2D/Cubism/Materials/MaskCulling",
-}
-
-
 def camera_renderer(player_graphics: dict, pipeline: str, renderer_index: int) -> str:
     rl = player_graphics["pipelines"][pipeline]["m_RendererDataList"]
     i = player_graphics["pipelines"][pipeline]["m_DefaultRendererIndex"] if renderer_index < 0 else renderer_index
@@ -71,7 +63,6 @@ def extract(cat: Catalog, player: PlayerData, episode: dict, out_dir: Path, shad
     for name, key in ADV_KEYS.items():
         doc[name] = ex.prefab(key)
     doc["settings"] = {name: ex.asset(key) for name, key in SETTINGS_KEYS.items()}
-    doc["resources"] = {name: ex.material(player.resource(path)) for name, path in RESOURCES.items()}
 
     stages = {}
     for c in episode["commands"]:
@@ -82,10 +73,7 @@ def extract(cat: Catalog, player: PlayerData, episode: dict, out_dir: Path, shad
                 stages[c["TargetAssetName"]] = ex.prefab(key)
     doc["stages"] = stages
 
-    # shaders: model closures, everything referenced above, the ADV camera renderer
-    for r in episode["resources"]:
-        if r["kind"] == "live2d":
-            ex.closure_shaders(r["address"])
+    # shaders: everything referenced above, the ADV camera renderer
     renderers = set()
     for node in doc["cameraManager"]["nodes"]:
         for comp in node["components"]:

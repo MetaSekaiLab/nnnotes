@@ -3,7 +3,9 @@ same site). The format is the player's docs/story-data-format.md.
 
     <site>/stories.json                 story index: per manifest the story facts (titles and story groups in every
                                         language, commands, languages), manifest path, sizes, regions
-    <site>/stories/<advId>.json         story manifest: `files` (the common files) and `languages` (per language
+    <site>/stories/<advId>.json         story manifest (MANIFEST_FORMAT): `root` (the path from the manifest to the
+                                        site root), `models` ({model id: its manifest models/<id>.json, relative to
+                                        the site root}), `files` (the common files) and `languages` (per language
                                         its own files), every path -> {asset, size} or, for a split JSON object,
                                         {parts: [[key, asset, size], ...], size} (as a chart manifest)
     <site>/stories/<region>/<advId>.json
@@ -11,6 +13,11 @@ same site). The format is the player's docs/story-data-format.md.
                                         (only where its files differ)
     <site>/story/                       the player's story page and bundle (web.write_player)
     <site>/assets/<sha256>.<ext>        content-addressed files, shared with the charts and models
+
+The Live2D models of the stories are the site's models (webmodel.py): a pre-pass reads the episodes of the stories to
+build and collects the models they load, webmodel.build adds those to the site (a model whose manifest exists and is
+current is skipped unless `force`, an outdated one built again), and each story takes them from the site
+(webmodel.SiteModels), so its manifest names them and its files hold none.
 
 Per story: the story directory of story.build without its UI (audio: FLAC, and with a web format other than FLAC the
 same samples encoded into it by the decode, web.WEB_AUDIO; the site stores the web format and cues.json names it
@@ -41,14 +48,14 @@ import traceback
 import uuid
 from pathlib import Path
 
-from . import adv, advui, jsonio, languages, master, story, storyfonts, storyhost
+from . import adv, advui, jsonio, languages, master, story, storyfonts, storyhost, webmodel
 from .config import Config, ConfigError, usable_cpus, use
-from .web import (SPLIT_KEY, STORIES_DIR, STORIES_INDEX, WEB_AUDIO, Store, _dump, _lock_fetches, _log, _minify,
-                  check_player, collect, configure_caches, entry_assets, join_parts, merge_regions, mp4_priming,
-                  open_data, region_masters, region_meta, site_regions, text_asset)
+from .web import (MODELS_DIR, SPLIT_KEY, STORIES_DIR, STORIES_INDEX, WEB_AUDIO, Store, _dump, _lock_fetches, _log,
+                  _minify, check_player, collect, configure_caches, entry_assets, join_parts, merge_regions,
+                  mp4_priming, open_data, region_masters, region_meta, site_regions, site_store, text_asset)
 
 STORIES_FORMAT = "ournotes.stories/1"
-MANIFEST_FORMAT = "ournotes.story-manifest/1"
+MANIFEST_FORMAT = "ournotes.story-manifest/2"
 FONT_SOURCES = storyfonts.SOURCES
 EMOJI_FONT = "emoji"                        # the emoji font's key in --font / [paths] fonts
 # master tables a story build reads (adv, advmedia, the story groups): a region's story inputs
@@ -62,6 +69,9 @@ LANGUAGE_FILES = (f"ui/{storyfonts.FONTS_DOC}", f"ui/{storyfonts.LANGUAGE_DOC}",
                   f"ui/{storyhost.SIMPLE_DIR}/{storyfonts.FONTS_DOC}")
 LANGUAGE_DIRS = (f"ui/{storyfonts.PAGES_DIR}/", f"ui/{storyhost.SIMPLE_DIR}/{storyfonts.PAGES_DIR}/")
 STREAMS_DOC = "streams.json"                      # the cue sheets' every-stream list: not read by the player
+# the keys of the stories' model build (webmodel.build) in the summary's storyModels
+STORY_MODEL_KEYS = ("modelsBuilt", "modelsFailed", "modelsSkipped", "modelsRebuilt", "modelSeconds", "modelWorkers",
+                    "modelNames")
 
 
 # ---------------------------------------------------------------- master data
@@ -166,6 +176,12 @@ def run_commands(episode: dict, scene: dict) -> list[str]:
     return sorted(names)
 
 
+def episode_models(cat, master_dir: Path, adv_id: int) -> list[str]:
+    """The keys of the Live2D models the episode loads that the catalog has (its live2d resources, adv.closure)."""
+    return sorted(r["address"] for r in adv.extract(cat, master_dir, adv_id).resources
+                  if r["kind"] == "live2d" and r["present"])
+
+
 def needs_motion_sync(episode: dict) -> bool:
     """A Talk row (without IgnoreData) that maps a voice onto a character's lip sync: TargetName and VoiceIDs,
     IgnoreLipSync not set."""
@@ -218,7 +234,7 @@ def build_dirs(cat, master_dir: Path, player, adv_id: int, work: Path, job: dict
     if job["audio"] and WEB_AUDIO[fmt][1] is not None:
         opts = {"flac_level": 0, "also": (WEB_AUDIO[fmt][0], WEB_AUDIO[fmt][1])}
     story.build(cat, master_dir, player, adv_id, sdir, audio_format="flac", audio=job["audio"], fonts="open",
-                ui=False, audio_options=opts)
+                models=webmodel.SiteModels(job["site"]), ui=False, audio_options=opts)
     episode = json.loads((sdir / "episode.json").read_text(encoding="utf-8"))
     scene = json.loads((sdir / "scene.json").read_text(encoding="utf-8"))
     dirs = {}
@@ -346,12 +362,17 @@ def put_file(store: Store, path: str, data) -> dict:
     parts = split_always(b) if path in SPLIT_ALWAYS else None
     if parts is None:
         return store.put_file(path, b)
-    return {"size": len(b), "parts": [[k, store.put(f"{path}#{k}.json", t)["asset"], len(t)] for k, t in parts]}
+    return store.put_parts(path, parts, len(b))
 
 
 def manifest_file(site: Path, adv_id: int, prefix: str = "") -> Path:
     """stories/<prefix><advId>.json (`prefix`: "" or "<region>/")."""
     return Path(site) / STORIES_DIR / f"{prefix}{adv_id}.json"
+
+
+def manifest_root(prefix: str = "") -> str:
+    """The relative path from stories/<prefix><advId>.json to the site root."""
+    return "../" * (1 + prefix.count("/"))
 
 
 def story_manifests(site: Path) -> list[Path]:
@@ -371,14 +392,18 @@ def manifest_assets(man: dict) -> set[str]:
 
 def ingest(store: Store, site: Path, adv_id: int, dirs: dict, job: dict, groups: list[dict]) -> dict:
     """One story's files into the store + its manifest stories/<prefix><advId>.json, serving job `regions` (added
-    to the regions of the manifest it replaces)."""
+    to the regions of the manifest it replaces); the manifest's `models` are those of story.json."""
     common, per = collect_story(dirs, job["audio"], job["audioFormat"])
     episode, scene = dirs["episode"], dirs["scene"]
     facts = story_facts(episode, scene, groups, job["languages"], job["language"])
     files = {p: put_file(store, p, d) for p, d in sorted(common.items())}
     langs = {lang: {"files": {p: put_file(store, p, d) for p, d in sorted(per[lang].items())}}
              for lang in job["languages"]}
-    manifest = {"format": MANIFEST_FORMAT, "advId": adv_id, "story": facts, "language": job["language"],
+    ids = json.loads((Path(dirs["story"]) / "story.json").read_text(encoding="utf-8"))["models"].values()
+    prefix = job.get("prefix", "")
+    manifest = {"format": MANIFEST_FORMAT, "root": manifest_root(prefix),
+                "models": {i: f"{MODELS_DIR}/{i}.json" for i in sorted(set(ids))},
+                "advId": adv_id, "story": facts, "language": job["language"],
                 "audio": bool(job["audio"]), "audioFormat": job["audioFormat"] if job["audio"] else None,
                 "fonts": job["fonts"],
                 "requires": {"commands": facts["commands"], "cubismCore": True,
@@ -386,7 +411,7 @@ def ingest(store: Store, site: Path, adv_id: int, dirs: dict, job: dict, groups:
                 "files": files, "languages": langs}
     if dirs.get("host"):                      # Overlay stories: storyhost.build's entry (host/host.json, ui/simple/)
         manifest["host"] = dirs["host"]
-    path = manifest_file(site, adv_id, job.get("prefix", ""))
+    path = manifest_file(site, adv_id, prefix)
     old = json.loads(path.read_text(encoding="utf-8")).get("regions") if path.is_file() else None
     if old or job.get("regions"):
         manifest["regions"] = merge_regions(old, job.get("regions") or [])
@@ -429,7 +454,7 @@ def story_task(adv_id: int, job: dict | None = None, data=None, groups: dict | N
                 fonts="open", font_files={lang: font_file(job, lang) for lang in job["languages"]},
                 font_of=lambda code: font_file(job, code))
         stage = "ingest"
-        r = ingest(Store(site), site, adv_id, dirs, job, groups.get(adv_id, []))
+        r = ingest(site_store(site, job["encoding"]), site, adv_id, dirs, job, groups.get(adv_id, []))
         return {**r, "id": job.get("prefix", "") + r["id"], "seconds": round(time.time() - t0, 1)}
     except ConfigError:
         raise
@@ -442,8 +467,21 @@ def story_task(adv_id: int, job: dict | None = None, data=None, groups: dict | N
         shutil.rmtree(work, ignore_errors=True)
 
 
-def _pool_task(adv_id: int) -> dict:
-    return story_task(adv_id)
+def models_task(adv_id: int, data=None) -> dict:
+    """The pre-pass of one story: {"id", "models": episode_models}; an episode that cannot be read gives no models
+    and its `error` (the story build then reports the failure). `data`: as for story_task."""
+    cat, master_dir, _ = data or (_W["cat"], _W["master"], _W["player"])
+    try:
+        return {"id": adv_id, "models": episode_models(cat, master_dir, adv_id)}
+    except ConfigError:
+        raise
+    except Exception as e:
+        return {"id": adv_id, "models": [], "error": f"{type(e).__name__}: {e}"[:300]}
+
+
+def _pool_task(args: tuple[str, int]) -> dict:
+    kind, adv_id = args
+    return models_task(adv_id) if kind == "models" else story_task(adv_id)
 
 
 def fold_variant(site: Path, adv_id: int, prefix: str) -> bool:
@@ -478,8 +516,10 @@ def add_regions(path: Path, regions: list[str]) -> bool:
 # ---------------------------------------------------------------- index
 def write_stories_index(site: Path, language: str | None = None, regions: list[dict] | None = None) -> tuple[int, set]:
     """site/stories.json from every story manifest present (no stories directory: no stories.json): entries in
-    advId, manifest order; `language` (default listing language) and `regions` of this build, else those of the
-    existing index. Returns the number of stories and the assets their manifests reference."""
+    advId, manifest order, `size` the decoded bytes of the common files, of each language group and of the files of
+    the referenced models (`models`; a model manifest not present counts none); `language` (default listing
+    language) and `regions` of this build, else those of the existing index. Returns the number of stories and the
+    assets they reference (in their manifests and in the model manifests they name)."""
     site = Path(site)
     index = site / STORIES_INDEX
     if not (site / STORIES_DIR).is_dir():
@@ -491,13 +531,25 @@ def write_stories_index(site: Path, language: str | None = None, regions: list[d
             old = json.loads(index.read_text(encoding="utf-8"))
         except ValueError:
             old = {}
+    models: dict[str, tuple[int, set]] = {}          # model manifest path -> (decoded bytes, assets)
+
+    def model(rel: str) -> tuple[int, set]:
+        if rel not in models:
+            f = site / rel
+            files = json.loads(f.read_text(encoding="utf-8"))["files"].values() if f.is_file() else []
+            models[rel] = (sum(e["size"] for e in files), {a for e in files for a in entry_assets(e)})
+        return models[rel]
     entries, used = [], set()
     for p in story_manifests(site):
         man = json.loads(p.read_text(encoding="utf-8"))
         used |= manifest_assets(man)
+        refs = [model(rel) for rel in (man.get("models") or {}).values()]
+        for _, assets in refs:
+            used |= assets
         size = {"common": sum(e["size"] for e in man["files"].values()),
                 "languages": {lang: sum(e["size"] for e in g["files"].values())
-                              for lang, g in man["languages"].items()}}
+                              for lang, g in man["languages"].items()},
+                "models": sum(n for n, _ in refs)}
         e = {"id": str(man["advId"]), "manifest": p.relative_to(site).as_posix(), "size": size,
              "audio": man["audio"], "audioFormat": man["audioFormat"], "fonts": man["fonts"], **man["story"]}
         if man.get("regions"):
@@ -560,29 +612,33 @@ def check_languages(codes) -> list[str]:
     return [c for c in languages.LANGUAGES if c in set(codes)]
 
 
-def _run_group(site: Path, ids: list[int], cfg: Config, job: dict, workers: int, log) -> list[dict]:
-    """The stories `ids` of one region group (job region / prefix / regions) -> one result per story."""
+def _run_group(site: Path, ids: list[int], cfg: Config, job: dict, workers: int, log,
+               kind: str = "story") -> list[dict]:
+    """The stories `ids` of one region group (job region / prefix / regions) -> one result per story: its build, or
+    with `kind` "models" its pre-pass (models_task)."""
     results = []
     if workers <= 1 or len(ids) <= 1:
         data = open_data(cfg, job["region"])
-        groups = story_groups(data[1])
+        groups = story_groups(data[1]) if kind == "story" else None
         _W.update(job=job)
         for i in ids:
-            results.append(story_task(i, job, data=data, groups=groups))
+            results.append(story_task(i, job, data=data, groups=groups) if kind == "story" else
+                           models_task(i, data=data))
         return results
     ctx = mp.get_context("spawn")
     with ctx.Manager() as mgr:
         with ctx.Pool(workers, initializer=_worker_init, initargs=(cfg, mgr.Lock(), job)) as pool:
-            for r in pool.imap_unordered(_pool_task, ids):
+            for r in pool.imap_unordered(_pool_task, [(kind, i) for i in ids]):
                 results.append(r)
                 if len(results) % 20 == 0:
-                    log(f"{len(results)}/{len(ids)} stories")
+                    log(f"{len(results)}/{len(ids)} {'stories' if kind == 'story' else 'episodes read'}")
     return results
 
 
 def build(out_dir, adv_ids, cfg: Config, player_dir, audio_format: str = "aac", audio: bool = True,
           force: bool = False, *, tmp_dir=None, log=None, workers: int | None = None, regions: list[str] | None = None,
-          story_languages=None, fonts: str = "open", fonts_flags: dict[str, str] | None = None) -> dict:
+          story_languages=None, fonts: str = "open", fonts_flags: dict[str, str] | None = None,
+          encoding: str = "gzip") -> dict:
     """Add the stories `adv_ids` (MasterAdv ids; None: every story of every region's master data) to the site at
     `out_dir`, with the player of the ournotes-player checkout or package at `player_dir` (its page files are
     written, the indexes rebuilt). The data comes from the settings `cfg` (each worker process opens its own).
@@ -590,7 +646,10 @@ def build(out_dir, adv_ids, cfg: Config, player_dir, audio_format: str = "aac", 
     groups (default every language); `fonts`: "open" (glyphs from the font file of each language: `fonts_flags`
     {language: path}, else `[paths] fonts.<language>`; the emoji sprites from `fonts_flags` ["emoji"], else
     `[paths] fonts.emoji`, when given) or "game"; `regions`: as for web.build (module docstring);
-    `workers`: parallel story processes (default a quarter of the CPUs, up to 8)."""
+    `workers`: parallel story processes (default a quarter of the CPUs, up to 8) and model processes (webmodel.build);
+    `encoding`: the stored encoding of the assets (web.site_store). The models the stories to build load are built
+    first (module docstring; bundles from the CDN of the first region, names as webmodel.build gives them); the
+    summary's `storyModels` holds that build's model lists."""
     from .web import write_index, write_player
     from .tmpfont import require_extra
     player_dir = check_player(player_dir)
@@ -609,17 +668,18 @@ def build(out_dir, adv_ids, cfg: Config, player_dir, audio_format: str = "aac", 
     groups = region_groups(masters)
     site = Path(out_dir).resolve()
     (site / STORIES_DIR).mkdir(parents=True, exist_ok=True)
-    Store(site)
+    site_store(site, encoding)
     tmp_root = Path(tmp_dir).resolve() if tmp_dir else site.parent / f"{site.name}.tmp"
     tmp_root.mkdir(parents=True, exist_ok=True)
     log = log or _log
     t0 = time.time()
     job0 = {"site": str(site), "tmp": str(tmp_root), "audioFormat": audio_format, "audio": bool(audio),
             "languages": langs, "language": default, "fonts": fonts, "fontFiles": files, "emojiFile": emoji,
-            "cache": str(tmp_root / "cache"), "build": uuid.uuid4().hex}
+            "cache": str(tmp_root / "cache"), "build": uuid.uuid4().hex, "encoding": encoding}
     configure_caches(job0)
     ids = None if adv_ids is None else list(dict.fromkeys(int(i) for i in adv_ids))
     results, skipped, folded, offered, used_workers = [], [], [], set(), 1
+    runs = []                                       # (job, todo, workers) per region group with stories to build
     for gi, group in enumerate(groups):
         rep = group[0]
         prefix = "" if gi == 0 else f"{rep}/"
@@ -633,11 +693,21 @@ def build(out_dir, adv_ids, cfg: Config, player_dir, audio_format: str = "aac", 
                 skipped.append(prefix + str(i))
             else:
                 todo.append(i)
-        if not todo:
-            continue
-        w = workers if workers is not None else max(1, min(8, len(todo), usable_cpus() // 4))
+        if todo:
+            w = workers if workers is not None else max(1, min(8, len(todo), usable_cpus() // 4))
+            runs.append(({**job0, "region": rep, "prefix": prefix, "regions": group}, todo, w))
+    keys: set[str] = set()
+    for job, todo, w in runs:
+        where = f" for {job['region']}" if job["prefix"] else ""
+        log(f"{len(todo)} episodes{where}: the Live2D models they load")
+        keys.update(k for r in _run_group(site, todo, cfg, job, w, log, kind="models") for k in r["models"])
+    model_build = None
+    if keys:
+        model_build = webmodel.build(site, webmodel.model_keys(keys), cfg, player_dir, force, tmp_dir=tmp_root,
+                                     log=log, workers=workers, region=regions[0], encoding=encoding)
+    for job, todo, w in runs:
+        rep, prefix = job["region"], job["prefix"]
         used_workers = max(used_workers, w)
-        job = {**job0, "region": rep, "prefix": prefix, "regions": group}
         log(f"{len(todo)} stories{f' for {rep}' if prefix else ''}, {w} worker(s), languages {', '.join(langs)}, "
             f"fonts {fonts}, audio {audio_format if audio else 'none'}")
         results += _run_group(site, todo, cfg, job, w, log)
@@ -658,5 +728,6 @@ def build(out_dir, adv_ids, cfg: Config, player_dir, audio_format: str = "aac", 
             "storiesBuilt": [{k: r[k] for k in ("id", "files", "bytes", "size")} for r in results if r["ok"]],
             "storiesFailed": [{k: r.get(k) for k in ("id", "stage", "error")} for r in failed],
             "storiesSkipped": skipped, "storyRegionGroups": groups, "foldedStoryManifests": folded,
+            "storyModels": None if model_build is None else {k: model_build[k] for k in STORY_MODEL_KEYS},
             "storyLanguages": langs, "storySeconds": round(time.time() - t0, 1), "storyWorkers": used_workers,
             **v, **idx}

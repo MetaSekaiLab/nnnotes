@@ -168,10 +168,11 @@ def _prefab(*classes):
 
 
 def test_has_motion_sync_needs_both_components_on_the_root():
-    from nnnotes import story
-    assert story.has_motion_sync(_prefab("CubismModel", "CubismMotionSyncController", "Live2DMotionSyncCriAudioInput"))
-    assert not story.has_motion_sync(_prefab("CubismModel", "CubismMotionSyncController"))
-    assert not story.has_motion_sync(_prefab("CubismModel"))          # a child's controller does not count
+    from nnnotes import webmodel
+    assert webmodel.has_motion_sync(_prefab("CubismModel", "CubismMotionSyncController",
+                                            "Live2DMotionSyncCriAudioInput"))
+    assert not webmodel.has_motion_sync(_prefab("CubismModel", "CubismMotionSyncController"))
+    assert not webmodel.has_motion_sync(_prefab("CubismModel"))       # a child's controller does not count
 
 
 def _talk(names, voices, **kw):
