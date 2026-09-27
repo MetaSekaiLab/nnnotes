@@ -1455,8 +1455,3 @@ class Exporter:
             shader_mod.dump_objects([objects[name]], out_dir, objects[name].assets_file.name, index)
         return index, shader_mod.write_index(index, out_dir)
 
-    def closure_shaders(self, key: str):
-        env = load_closure(self.cat.fetch_key(key))
-        for o in env.objects:
-            if o.type.name == "Shader":
-                self._shader(o)

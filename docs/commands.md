@@ -146,14 +146,17 @@ row of a Movie / Clip row's video id.
 ## story
 
 ```
-nnnotes story ADV_ID -o OUT [--format flac|ogg|wav] [--flac-level N] [--no-audio] [--fonts open|game]
+nnnotes story ADV_ID -o OUT [--models MODELS] [--force] [--format flac|ogg|wav] [--flac-level N] [--no-audio]
+              [--fonts open|game]
 ```
 
-One ADV episode as a self-contained directory:
+One ADV episode as a directory, and its Live2D models in a models directory:
 
 ```
+MODELS/<id>/              every Live2D model of the episode (MODELS: `--models`, default OUT/../live2d), the files
+                          of a site's model manifest (see `web`): model.json, moc3, prefab, the atlas pages and the
+                          shader programs its drawables use
 OUT/episode.json          as `adv`
-OUT/live2d/<model>/       every Live2D model of the episode: moc3, atlas pages, full prefab
 OUT/audio/<cueSheet>/     every cue sheet of the episode, one file per cue + cues.json, streams.json
 OUT/scene.json            player graphics, cameras, ADV fields, volumes, settings and stages
 OUT/frames.json           Frame prefabs by asset name: uGUI, Animator controllers and clips, UI particle systems
@@ -171,12 +174,18 @@ OUT/crilips/              crilips.json + crilips.bin: the CRI Lips analysis data
 OUT/story.json            index of the above (a file the episode does not need is null and not written)
 ```
 
+story.json `models` maps the key of each model to its id (`<name>` of `Character/Live2D/<group>/<name>/model/<name>`)
+and `modelsDir` is the path from OUT to MODELS. A model directory that exists is used as it is, so the stories of one
+models directory export each model once; `--force` exports the episode's models again. The printed summary lists
+the models exported (`modelsBuilt`) and those used as they were (`modelsSkipped`).
+
 `--format` (default `flac`) is the audio format and `--flac-level` its FLAC compression level (as for `audio`);
 `--no-audio` leaves the cue sheets undecoded (no `audio/`, `audio`
 in story.json is empty). With audio, `crilips/` holds the weights of the game's CRI Lips mouth analysis, read from the
 CRI Lips library in `[paths] apk` (or in the arm64-v8a split next to it, `split_config.arm64_v8a.apk`), when a voice
-reaches that analysis: a lip-synced voice while a model has no MotionSync controller, or a voice that other speakers
-follow (story.json `crilips`; ournotes-player docs/crilips.md). Videos keep the VP9 stream of the game's USM file and carry its ADX audio as Opus (FFmpeg,
+reaches that analysis: a lip-synced voice while a model has no MotionSync controller (model.json `motionSync`), or a
+voice that other speakers follow (story.json `crilips`; ournotes-player docs/crilips.md). Videos keep the VP9 stream
+of the game's USM file and carry its ADX audio as Opus (FFmpeg,
 `[paths] ffmpeg`); the USM streams are unmasked with the CRI key read from `[paths] apk`. TextMesh Pro text in
 frames, talk windows and chat keeps its layout and style; with `--fonts open` its font and sprite assets and text
 materials are only named (no atlas is written), with `--fonts game` they are exported. The command stops before
@@ -487,7 +496,8 @@ SITE/live2d/                              the player's Live2D model page and its
 SITE/stories.json                         story index: titles and story groups in every language, commands,
                                           languages, manifest path, sizes, regions
 SITE/stories/<advId>.json                 story manifest: the common files and one file group per language, the
-                                          same entry forms as a chart manifest
+                                          same entry forms as a chart manifest; the model manifests of its models
+                                          and the path to the site root
 SITE/stories/<region>/<advId>.json        the manifest of a region whose story files differ (see Regions)
 SITE/story/                               the player's story page and its bundle (when the player has them)
 SITE/assets/<sha256>.<ext>[.gz|.br]       content-addressed files shared by all charts, models and stories
@@ -499,15 +509,20 @@ SITE/assets/<sha256>.<ext>[.gz|.br]       content-addressed files shared by all 
   difficulty that has a `MasterLiveMusicScore` row (in the master data of any of the site's regions).
 - `--live2d` (repeatable; a model id `<name>` or key `Character/Live2D/<group>/<name>/model/<name>`) adds the given
   Live2D models; `--all-live2d` adds every model key of the catalog. A model's id is its `<name>`. Its manifest lists
-  the files the player's Live2D viewer reads: `model.json` (index: moc3, prefab, textures, shader index and the Cubism
-  mask materials), the moc3 and prefab as `live2d` writes them, the atlas pages the drawables use, and the GLSL ES 3.00
-  programs of the Live2D shaders that the drawables' materials select (the mask shader only for a model with masked
-  drawables). Charts and models can be added in one run; models are built first.
+  the files the player's Live2D viewer and story page read: `model.json` (index: moc3, prefab, textures, shader index,
+  the Cubism mask materials and `motionSync`, whether the prefab's root has the MotionSync controller with its CRI
+  audio input), the moc3 and prefab as `live2d` writes them, the atlas pages the drawables use, and the GLSL ES 3.00
+  programs of the Live2D shaders that the drawables' materials select, each keyword set also with
+  `_ADDITIONAL_LIGHTS_VERTEX` (the story player adds it at quality 4), and the mask shader's for a model with masked
+  drawables. Charts and models can be added in one run; models are built first.
 - `--story` (repeatable; a `MasterAdv` id) adds the given story episodes (an id no region of the site has is a usage
   error); `--all-stories` adds every `MasterAdv` episode. See [Stories](#stories) below. Stories are built after
-  models and charts.
-- A chart, model or story whose manifest exists is skipped unless `--force`. Assets no chart, no model and no story
-  (common or language file) references are removed.
+  models and charts; the Live2D models the stories to build use are built before them, as with `--live2d` (listed in
+  `models.json`, names from the master data as for `--live2d`).
+- A chart, model or story whose manifest exists is skipped unless `--force` (with stories, their models too). A
+  model manifest whose `model.json` is of an older format (without `motionSync`) is outdated and built again; the
+  summary lists such models in `modelsRebuilt` (`storyModels.modelsRebuilt` for the models of stories). Assets no
+  chart, no model and no story (common or language file, or model manifest it names) references are removed.
 - `--player-only` rewrites the player files, `charts.json`, `models.json` and `stories.json` only; `--reingest-json`
   stores every chart's and model's JSON files again from the site's own assets (then rewrites the player files and
   the indexes; story manifests are left as they are).
@@ -568,13 +583,16 @@ SITE/assets/<sha256>.<ext>[.gz|.br]       content-addressed files shared by all 
 ### Stories
 
 A story's manifest lists what the player's story page reads, in the layout of `story` (below the site's `assets/`):
-`story.json`, `episode.json`, `scene.json`, the scene and model shaders (GLSL ES 3.00 programs only), textures, the
-Live2D models, per cue sheet `cues.json` and the file of each cue in the `--format` (an AAC file's encoder delay in
+`story.json`, `episode.json`, `scene.json`, the scene shaders (GLSL ES 3.00 programs only), textures, per cue sheet
+`cues.json` and the file of each cue in the `--format` (an AAC file's encoder delay in
 `cues.json` as `encoderDelay`), the media files the episode uses and its videos; per language (`--story-languages`,
 default `ja,en,zh-Hant,zh-Hans,ko`) the story UI in that language (`ui/ui.json`), its font data (`ui/fonts.json` with
 glyph pages under `ui/fonts/`) and `ui/languages.json`. UI files that are equal in every language are common files.
 `scene.json` and `ui/ui.json` are stored split per top-level key, so the parts stories and languages share are stored
-once. The format is described in the player's `docs/story-data-format.md`.
+once. The Live2D models are the site's: the manifest names the model manifest of each model the story uses
+(`models`, `{id: "models/<id>.json"}`, relative to the site root; `root` is the path from the manifest to the site
+root), and `stories.json` counts their files in `size.models`. The format is described in the player's
+`docs/story-data-format.md`.
 
 - Story text is laid out with TextMeshPro's rules from TextMeshPro font assets holding exactly the characters the
   episode shows in the language (its text table, title and UI labels). `--fonts open` (default) generates them from

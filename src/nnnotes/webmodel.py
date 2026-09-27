@@ -1,40 +1,50 @@
 """Live2D models -> the model part of an ournotes-player site (web.py builds the charts of the same site).
 
     <site>/models.json             model index: id, manifest path, key, listing facts, sizes
-    <site>/models/<id>.json        model manifest: every path of the model's files -> {asset, size}, or, for a large
-                                   JSON object, {parts: [[key, asset, size], ...], size} (as a chart manifest)
+    <site>/models/<id>.json        model manifest (format web.MANIFEST_FORMAT): every path of the model's files ->
+                                   {asset, size}, or, for a large JSON object, {parts: [[key, asset, size], ...], size}
+                                   (as a chart manifest)
     <site>/assets/<sha256>.<ext>   content-addressed files, shared with the charts (the models share their shaders)
 
 The files of one model (the paths in its manifest), only those the player reads (read_files):
 
     model.json                     index: format (MODEL_FORMAT), name, key, moc3, prefab, textures, canvas, shaders,
-                                   resources
+                                   resources, motionSync
     <name>.moc3                    the moc3 (as live2d.extract_runtime writes it)
     <name>.prefab.json             the whole prefab, clips, expressions and controllers inlined (the same)
     textures/*.png                 the atlas pages the drawables draw with (the same)
     shaders/shaders.json           the shader index (shader.py layout, filtered as in the chart sites: web.collect),
     shaders/<shader>.json          the parsed forms and the GLES3 programs (GLSL ES 3.00) the drawables' materials
-    shaders/<shader>/gles3/*.glsl  select by their keywords; the mask shader's only when a drawable is masked
+    shaders/<shader>/gles3/*.glsl  select by their keywords, each also with STORY_KEYWORDS (the keywords the story
+                                   renderer adds to a character draw); the mask shader's only when a drawable is masked
 
-`resources` in model.json: the materials the Cubism mask pass draws with (the Resources.Load paths of
-advscene.RESOURCES, read from the APK's boot data), exported as the story scene exports them.
+`resources` in model.json: the materials the Cubism mask pass draws with (the Resources.Load paths of RESOURCES, read
+from the APK's boot data). `motionSync`: the prefab's root has the MotionSync controller with its CRI audio input
+(has_motion_sync); a model without it takes its mouth in a story from the voice's CRI Lips analysis.
 
 Models are the catalog keys Character/Live2D/<group>/<name>/model/<name>; a model's id is <name> (unique in the
 catalog, URL-safe). Each model is exported into a temporary directory, stored, and the directory deleted; models run in
-parallel worker processes (catalog cache writes serialized by a lock). A model whose manifest exists is skipped unless
-`force`. Same inputs and library versions give byte-identical outputs. A model's files read no master data and the
-regions serve the same catalog, so one build serves every region of a site (the bundles are fetched from the CDN of
-`region`).
+parallel worker processes (catalog cache writes serialized by a lock). A model whose manifest exists and is current
+is skipped unless `force`; an outdated one (`outdated`: its model.json older than MODEL_FORMAT or without
+motionSync, or unreadable) is built again. Same inputs and library versions give byte-identical outputs. A model's
+files read no master data and the regions serve the same catalog, so one build serves every region of a site (the
+bundles are fetched from the CDN of `region`).
 
 Names (optional): when master data is configured for `region`, the listing of each model the master data maps to a
 character (model_names: MasterCharacterCostume -> MasterCharacter -> MasterText) gets `character`, `names` and
 `label`; the manifests of skipped models get the same fields of this build. Without master data the fields are not
 written (and skipped manifests keep theirs).
+
+Model sources: story.build takes the models of an episode from a source, `ensure(address) -> {"id", "motionSync"}`
+plus `story_fields(story_dir)` (what story.json gets besides `models`). ModelDir exports each model into <dir>/<id>/
+(the files above; `nnnotes story`), SiteModels reads model.json from the model manifests of a site (the site's
+stories).
 """
 from __future__ import annotations
 
 import json
 import multiprocessing as mp
+import os
 import re
 import shutil
 import tempfile
@@ -42,20 +52,31 @@ import time
 import traceback
 from pathlib import Path
 
-from . import advscene, jsonio, languages, live2d, master
+from . import jsonio, languages, live2d, master
 from . import shader as shader_mod
 from .config import Config, usable_cpus, use
 from .export import Exporter
-from .web import (MODELS_DIR, MODELS_INDEX, SHADER_PLATFORM, SHADER_TYPE, SITE_FORMAT, Store, _dump, _lock_fetches,
-                  _log, check_player, collect, entry_assets, text_asset, write_index, write_player)
+from .web import (MANIFEST_FORMAT, MODELS_DIR, MODELS_INDEX, SHADER_PLATFORM, SHADER_TYPE, SITE_FORMAT, Store, _dump,
+                  _lock_fetches, _log, check_player, collect, entry_assets, entry_text, site_store, text_asset,
+                  write_index, write_player)
 
 LIVE2D_PREFIX = "Character/Live2D/"
 MODEL_KEY = re.compile(r"Character/Live2D/(?P<group>[^/]+)/(?P<name>[^/]+)/model/(?P=name)")
 MODEL_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*")
 MODEL_INDEX = "model.json"
-MODEL_FORMAT = 1                                   # model.json "format"
+MODEL_FORMAT = 2                                   # model.json "format"
 SHADER_DIR = "shaders"
 MASK_KEYWORD = "CUBISM_MASK_ON"                    # a drawable material's keyword: the drawable is masked
+# keywords the story renderer adds to a character draw (_ADDITIONAL_LIGHTS_VERTEX: at quality 4); the mask pass draws
+# with none
+STORY_KEYWORDS = ("_ADDITIONAL_LIGHTS_VERTEX",)
+# Resources.Load paths of the materials the Cubism mask pass draws with
+RESOURCES = {
+    "cubismMask": "Live2D/Cubism/Materials/Mask",
+    "cubismMaskCulling": "Live2D/Cubism/Materials/MaskCulling",
+}
+# a model's MotionSync path (the player's CubismMotionSyncController.fromPrefab): both components on the prefab's root
+MOTION_SYNC_COMPONENTS = ("CubismMotionSyncController", "Live2DMotionSyncCriAudioInput")
 COSTUME_TABLE = "MasterCharacterCostume"           # _live2dPath (the key after LIVE2D_PREFIX) -> _characterID
 NAME_FIELDS = ("character", "names", "label")      # listing fields from the master data (model_names)
 
@@ -187,20 +208,32 @@ def drawable_materials(prefab: dict) -> list[dict]:
             if c.get("type") == "MeshRenderer" and c.get("m_Materials") and c["m_Materials"][0]]
 
 
+def has_motion_sync(prefab: dict) -> bool:
+    """The exported prefab (live2d.extract_runtime) has a MotionSync controller with its CRI audio input on its root
+    node; a model without one takes its mouth in a story from the voice's CRI Lips analysis."""
+    classes = {c.get("class") or c.get("type") for n in prefab["nodes"] if "/" not in n["path"]
+               for c in n["components"]}
+    return all(k in classes for k in MOTION_SYNC_COMPONENTS)
+
+
 def drawable_textures(prefab: dict) -> list[str]:
     """The atlas pages the drawables draw with (every distinct CubismRenderer._mainTexture), sorted."""
     return sorted({c["_mainTexture"]["texture"] for n in prefab["nodes"] for c in n["components"]
                    if c.get("class") == "CubismRenderer" and c.get("_mainTexture")})
 
 
-def shader_files(index: list, materials: list[dict]) -> list[str]:
+def shader_files(index: list, materials: list[dict], extra: tuple[str, ...] = ()) -> list[str]:
     """The files of a shader directory (paths relative to it) that `materials` draw with: per shader its parsed file
     and, for each distinct keyword set of its materials, the GLES3 program of subshader 0 pass 0 whose keywords are
-    exactly the material's keywords among those the shader's programs there use (a global keyword such as
-    _ADDITIONAL_LIGHTS is never in a material's set, so its variants are never picked)."""
+    exactly the material's keywords among those the shader's programs there use; with `extra`, also the program of
+    the set plus `extra` (the same program when the shader's programs use none of them). A global keyword such as
+    _ADDITIONAL_LIGHTS is never in a material's set, so its variants are picked only through `extra`."""
     recs = {r["name"]: r for r in index}
+    sets = {(m["shader"]["shader"], tuple(m["keywords"])) for m in materials}
+    if extra:
+        sets |= {(name, (*kws, *extra)) for name, kws in sets}
     files = set()
-    for name, kws in sorted({(m["shader"]["shader"], tuple(m["keywords"])) for m in materials}):
+    for name, kws in sorted(sets):
         if name not in recs:
             raise RuntimeError(f"shader {name}: not in the shader index")
         variants = [v for v in recs[name]["variants"] if v["platform"] == SHADER_PLATFORM and v["type"] == SHADER_TYPE
@@ -215,14 +248,16 @@ def shader_files(index: list, materials: list[dict]) -> list[str]:
 
 def read_files(doc: dict, prefab: dict, index: list) -> list[str]:
     """The files of a model the player reads (model.json `doc`, its prefab, its shader index): model.json, the moc3,
-    the prefab, the drawables' atlas pages, the shader index and the shader files of the drawables' materials, plus
-    those of the mask materials when a drawable is masked (MASK_KEYWORD)."""
+    the prefab, the drawables' atlas pages, the shader index and the shader files of the drawables' materials (each
+    keyword set alone and with STORY_KEYWORDS), plus those of the mask materials when a drawable is masked
+    (MASK_KEYWORD)."""
     materials = drawable_materials(prefab)
+    files = set(shader_files(index, materials, STORY_KEYWORDS))
     if any(MASK_KEYWORD in m["keywords"] for m in materials):
-        materials += list(doc["resources"].values())
+        files |= set(shader_files(index, list(doc["resources"].values())))
     sdir = doc["shaders"].rpartition("/")[0]
     return sorted({MODEL_INDEX, doc["moc3"], doc["prefab"], *doc["textures"], doc["shaders"],
-                   *(f"{sdir}/{f}" if sdir else f for f in shader_files(index, materials))})
+                   *(f"{sdir}/{f}" if sdir else f for f in files)})
 
 
 def export_model(cat, player, key: str, out_dir: Path) -> dict:
@@ -233,7 +268,7 @@ def export_model(cat, player, key: str, out_dir: Path) -> dict:
     res, ex = rt.summary, rt.exporter
     prefab = json.loads((out_dir / res["prefab"]).read_text(encoding="utf-8"))
     rex = Exporter(cat, out_dir, player=player)
-    resources = {name: rex.material(player.resource(path)) for name, path in advscene.RESOURCES.items()}
+    resources = {name: rex.material(player.resource(path)) for name, path in RESOURCES.items()}
     objs = {**rex.shaders, **ex.shaders}
     names = sorted(shader_names(prefab) | shader_names(resources))
     missing = [n for n in names if n not in objs]
@@ -245,7 +280,7 @@ def export_model(cat, player, key: str, out_dir: Path) -> dict:
     shader_mod.write_index(index, out_dir / SHADER_DIR)
     doc = {"format": MODEL_FORMAT, "name": res["name"], "key": key, "moc3": res["moc3"], "prefab": res["prefab"],
            "textures": drawable_textures(prefab), "canvas": prefab["canvas"], "shaders": f"{SHADER_DIR}/shaders.json",
-           "resources": resources}
+           "resources": resources, "motionSync": has_motion_sync(prefab)}
     jsonio.write_json(out_dir / MODEL_INDEX, doc)
     return {**res, "textures": doc["textures"], "canvas": prefab["canvas"], "shaders": names,
             "files": read_files(doc, prefab, index)}
@@ -266,10 +301,104 @@ def ingest(store: Store, site: Path, mid: str, key: str, model_dir: Path, summar
     text, binary = collect(Path(model_dir), summary["files"])
     entries = {p: store.put_file(p, text_asset(p, s)) for p, s in text.items()}
     entries.update({p: store.put(p, b) for p, b in binary.items()})
-    manifest = {"format": SITE_FORMAT, "id": mid, "key": key, "model": model_facts(key, summary, names),
+    manifest = {"format": MANIFEST_FORMAT, "id": mid, "key": key, "model": model_facts(key, summary, names),
                 "files": dict(sorted(entries.items()))}
     (Path(site) / MODELS_DIR / f"{mid}.json").write_bytes(_dump(manifest))
     return {"id": mid, "ok": True, "files": len(entries), "bytes": sum(e["size"] for e in entries.values())}
+
+
+# ---------------------------------------------------------------- model sources of story.build
+def source_entry(address: str, doc: dict, where: str) -> dict:
+    """ensure's answer from the model.json `doc` of the model `address` (read from `where`)."""
+    if doc.get("key") != address:
+        raise RuntimeError(f"{where}: model.json of {doc.get('key')}, not of {address}")
+    if not isinstance(doc.get("motionSync"), bool):
+        raise RuntimeError(f"{where}: model.json of format {doc.get('format')} has no motionSync; export the model "
+                           f"again (--force)")
+    return {"id": model_id(address), "motionSync": doc["motionSync"]}
+
+
+class ModelDir:
+    """The models of `root`: each model in <root>/<id>/, the files of a model manifest (read_files; the shader index
+    reduced to the listed GLES3 programs as web.collect reduces it) in the layout export_model writes. ensure exports
+    a model whose directory does not exist, or every model once when `force`; `built` / `skipped`: the ids."""
+
+    def __init__(self, cat, player, root: Path, force: bool = False):
+        self.cat, self.player, self.root, self.force = cat, player, Path(root), force
+        self.built: list[str] = []
+        self.skipped: list[str] = []
+        self._done: dict[str, dict] = {}
+
+    def ensure(self, address: str) -> dict:
+        mid = model_id(address)
+        if mid not in self._done:
+            d = self.root / mid
+            if self.force or not d.exists():
+                self._export(address, d)
+                self.built.append(mid)
+            else:
+                self.skipped.append(mid)
+            index = d / MODEL_INDEX
+            if not index.is_file():
+                raise RuntimeError(f"{d}: no {MODEL_INDEX} (not a model directory); remove it or export again "
+                                   f"(--force)")
+            self._done[mid] = source_entry(address, json.loads(index.read_text(encoding="utf-8")), str(index))
+        return self._done[mid]
+
+    def _export(self, address: str, d: Path) -> None:
+        """The model into a temporary directory next to `d`, then renamed to `d` (a previous `d` removed)."""
+        self.root.mkdir(parents=True, exist_ok=True)
+        work = Path(tempfile.mkdtemp(prefix=f".{d.name}-", dir=self.root))
+        try:
+            summary = export_model(self.cat, self.player, address, work / "export")
+            text, binary = collect(work / "export", summary["files"])
+            files = {**{p: t.encode("utf-8") for p, t in text.items()}, **binary}
+            for rel, data in sorted(files.items()):
+                (work / "model" / rel).parent.mkdir(parents=True, exist_ok=True)
+                (work / "model" / rel).write_bytes(data)
+            if d.exists():
+                shutil.rmtree(d)
+            (work / "model").rename(d)
+        finally:
+            shutil.rmtree(work, ignore_errors=True)
+
+    def story_fields(self, story_dir: Path) -> dict:
+        """`modelsDir`: the relative path from the story directory to `root` (posix)."""
+        return {"modelsDir": Path(os.path.relpath(os.path.abspath(self.root), os.path.abspath(story_dir))).as_posix()}
+
+
+class SiteModels:
+    """The models of the site at `site`: ensure reads model.json from the model manifest models/<id>.json (the models
+    are built before the stories: storysite.build)."""
+
+    def __init__(self, site: Path):
+        self.site = Path(site)
+
+    def ensure(self, address: str) -> dict:
+        where = f"{MODELS_DIR}/{model_id(address)}.json"
+        p = self.site / where
+        if not p.is_file():
+            raise RuntimeError(f"{address}: no model manifest {where} in the site")
+        man = json.loads(p.read_text(encoding="utf-8"))
+        return source_entry(address, json.loads(entry_text(self.site, man["files"][MODEL_INDEX])), where)
+
+    def story_fields(self, story_dir: Path) -> dict:
+        return {}
+
+
+def outdated(site: Path, mid: str) -> str | None:
+    """Why the existing model manifest of `mid` is built again: "outdated" (its model.json has a format older than
+    MODEL_FORMAT or no motionSync), "unreadable" (the manifest or its model.json cannot be read); None when it is
+    current."""
+    try:
+        man = json.loads((Path(site) / MODELS_DIR / f"{mid}.json").read_text(encoding="utf-8"))
+        doc = json.loads(entry_text(Path(site), man["files"][MODEL_INDEX]))
+        fmt, ms = doc.get("format"), doc.get("motionSync")
+    except Exception:
+        return "unreadable"
+    if not isinstance(fmt, int) or fmt < MODEL_FORMAT or not isinstance(ms, bool):
+        return "outdated"
+    return None
 
 
 # ---------------------------------------------------------------- index
@@ -319,7 +448,8 @@ def model_task(mid: str, key: str, job: dict | None = None, data=None) -> dict:
     try:
         summary = export_model(cat, player, key, work)
         stage = "ingest"
-        r = ingest(Store(site), site, mid, key, work, summary, (job.get("names") or {}).get(key))
+        r = ingest(site_store(site, job["encoding"]), site, mid, key, work, summary,
+                   (job.get("names") or {}).get(key))
         return {**r, "seconds": round(time.time() - t0, 1)}
     except Exception as e:
         cause = f"{type(e).__name__}: {e}"
@@ -335,16 +465,18 @@ def _pool_task(args):
 
 # ---------------------------------------------------------------- build
 def build(out_dir, models: dict[str, str] | None, cfg: Config, player_dir, force: bool = False, *, tmp_dir=None,
-          log=None, workers: int | None = None, region: str | None = None) -> dict:
+          log=None, workers: int | None = None, region: str | None = None, encoding: str = "gzip") -> dict:
     """Add the Live2D models `models` ({id: key}, see `catalog_models`; None: every model of the catalog) to the site
     at `out_dir`, with the player of the ournotes-player checkout or package at `player_dir` (its page files are
     written, models.json and charts.json rebuilt). The data comes from the settings `cfg` (each worker process opens
     its own), bundles from the CDN of `region` (default: [catalog] region), names from the master data of `region`
-    when it is configured (master_names). `workers`: parallel model processes (default up to 4)."""
+    when it is configured (master_names). `workers`: parallel model processes (default up to 4); `encoding`: the
+    stored encoding of the assets (web.site_store). Without `force`, an existing manifest that is not current
+    (`outdated`) is built again and listed in modelsRebuilt with the reason."""
     player_dir = check_player(player_dir)
     site = Path(out_dir).resolve()
     (site / MODELS_DIR).mkdir(parents=True, exist_ok=True)
-    Store(site)
+    site_store(site, encoding)
     tmp_root = Path(tmp_dir).resolve() if tmp_dir else site.parent / f"{site.name}.tmp"
     tmp_root.mkdir(parents=True, exist_ok=True)
     log = log or _log
@@ -352,21 +484,24 @@ def build(out_dir, models: dict[str, str] | None, cfg: Config, player_dir, force
     if models is None:
         from .cli import open_catalog
         models = catalog_models(open_catalog(cfg, bundles=False, region=region))
-    todo, skipped = [], []
+    todo, skipped, rebuilt = [], [], []
     for mid, key in sorted(models.items()):
         if model_id(key) != mid:
             raise ValueError(f"model {mid}: key {key} has the id {model_id(key)}")
         if (site / MODELS_DIR / f"{mid}.json").exists() and not force:
-            skipped.append(mid)
-        else:
-            todo.append((mid, key))
+            why = outdated(site, mid)
+            if why is None:
+                skipped.append(mid)
+                continue
+            rebuilt.append({"id": mid, "reason": why})
+        todo.append((mid, key))
     if workers is None:
         workers = max(1, min(4, len(todo), usable_cpus() // 2))
     names = master_names(cfg, region, log)
     if names is not None:
         for mid in skipped:
             refresh_names(site, mid, names.get(models[mid]))
-    job = {"site": str(site), "tmp": str(tmp_root), "region": region, "names": names or {}}
+    job = {"site": str(site), "tmp": str(tmp_root), "region": region, "names": names or {}, "encoding": encoding}
     results = []
     if todo:
         log(f"{len(todo)} models, {workers} worker(s)")
@@ -392,6 +527,7 @@ def build(out_dir, models: dict[str, str] | None, cfg: Config, player_dir, force
     return {"site": str(site),
             "modelsBuilt": [{k: r[k] for k in ("id", "files", "bytes")} for r in results if r["ok"]],
             "modelsFailed": [{k: r.get(k) for k in ("id", "stage", "error")} for r in failed],
-            "modelsSkipped": skipped, "modelSeconds": round(time.time() - t0, 1), "modelWorkers": workers,
+            "modelsSkipped": skipped, "modelsRebuilt": rebuilt, "modelSeconds": round(time.time() - t0, 1),
+            "modelWorkers": workers,
             "modelNames": None if names is None else sum(1 for k in models.values() if k in names),
             **v, **idx}

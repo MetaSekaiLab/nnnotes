@@ -3,10 +3,11 @@ data; nothing here comes from game data."""
 import hashlib
 import json
 import struct
+from pathlib import Path
 
 import pytest
 
-from nnnotes import jsonio, storysite, tmpfont, web
+from nnnotes import jsonio, storysite, tmpfont, web, webmodel
 from nnnotes.config import Config, ConfigError
 
 
@@ -62,19 +63,21 @@ def scene():
         "masterIdSettings": {}}, "stages": {}}
 
 
-def story_dirs(root, adv_id=5, mode=1, ui_variant=""):
-    """A story directory and two language UI directories as storysite.build_dirs leaves them."""
+MODEL_M = "Character/Live2D/g/m/model/m"
+
+
+def story_dirs(root, adv_id=5, mode=1, ui_variant="", models=None):
+    """A story directory and two language UI directories as storysite.build_dirs leaves them (`models`: story.json
+    models, default the model m)."""
     s = root / "story"
     ep, sc = episode(adv_id, mode), scene()
     write(s / "story.json", {"advId": adv_id, "episode": "episode.json", "scene": "scene.json", "ui": "ui/ui.json",
-                             "models": {}, "audio": {"sheet": "audio/sheet"}, "frames": None, "effects": None,
-                             "postEffects": None, "stills": None, "talkWindows": None, "chat": None,
-                             "videos": "videos/videos.json"})
+                             "models": {MODEL_M: "m"} if models is None else models, "audio": {"sheet": "audio/sheet"},
+                             "frames": None, "effects": None, "postEffects": None, "stills": None,
+                             "talkWindows": None, "chat": None, "videos": "videos/videos.json"})
     write(s / "episode.json", ep)
     write(s / "scene.json", sc)
     write(s / "textures/t.png", b"\x89PNG-t")
-    write(s / "live2d/m/m.moc3", b"MOC3")
-    write(s / "live2d/m/m.prefab.json", {"nodes": []})
     shader_dir(s / "shaders")
     write(s / "audio/sheet/cues.json", {"cue": {"file": "cue.flac", "sampleRate": 48000, "channels": 1,
                                                 "samples": 100}})
@@ -98,7 +101,7 @@ def story_dirs(root, adv_id=5, mode=1, ui_variant=""):
 
 
 JOB = {"audio": True, "audioFormat": "aac", "languages": ["ja", "en"], "language": "en", "fonts": "open",
-       "prefix": "", "regions": ["r1"]}
+       "prefix": "", "regions": ["r1"], "encoding": "gzip"}
 
 
 def test_collect_story(tmp_path):
@@ -111,7 +114,8 @@ def test_collect_story(tmp_path):
     assert "shaders/S/gles3/a.glsl" in common
     assert not any(p.endswith((".vkprog", "b.glsl")) for p in [*common, *per["ja"]])
     assert json.loads(common["shaders/shaders.json"])[0]["variants"] == [SHADERS[0]["variants"][0]]
-    assert {"videos/videos.json", "videos/v.webm", "live2d/m/m.moc3", "textures/t.png"} <= set(common)
+    assert {"videos/videos.json", "videos/v.webm", "textures/t.png"} <= set(common)
+    assert not any(p.startswith("live2d/") for p in common)          # the models are the site's
     assert {"ui/textures/sprites.png", "ui/shaders/shaders.json", "ui/shaders/S/gles3/a.glsl"} <= set(common)
     assert set(per["ja"]) == {"ui/ui.json", "ui/fonts.json", "ui/languages.json", "ui/fonts/font_A_0.png"}
     assert set(per["en"]) == {"ui/ui.json", "ui/fonts.json", "ui/languages.json", "ui/fonts/font_B_0.png"}
@@ -253,7 +257,9 @@ def ingest(tmp_path, site_name="site", adv_id=5, mode=1, job=None, ui_variant=""
 def test_ingest_manifest(tmp_path):
     site, r = ingest(tmp_path)
     man = json.loads((site / "stories" / "5.json").read_text(encoding="utf-8"))
-    assert man["format"] == storysite.MANIFEST_FORMAT and man["advId"] == 5 and man["regions"] == ["r1"]
+    assert man["format"] == storysite.MANIFEST_FORMAT == "ournotes.story-manifest/2"
+    assert man["advId"] == 5 and man["regions"] == ["r1"]
+    assert man["root"] == "../" and man["models"] == {"m": "models/m.json"}
     assert (man["language"], man["audio"], man["audioFormat"], man["fonts"]) == ("en", True, "aac", "open")
     assert man["requires"] == {"commands": ["Bgm", "FadeOut", "Talk"], "cubismCore": True, "motionSync": True}
     assert "substitute" not in man
@@ -270,8 +276,7 @@ def test_ingest_manifest(tmp_path):
     assert {k for k, _ in shared} == {"sprites"}                    # the equal part stored once
     for e in [*man["files"].values(), *(e for g in man["languages"].values() for e in g["files"].values())]:
         for a in web.entry_assets(e):
-            data = (site / a).read_bytes()
-            assert a == f"assets/{hashlib.sha256(data).hexdigest()}{a[a.rindex('.'):]}"
+            assert a.split("/")[1].split(".")[0] == hashlib.sha256(web.read_asset(site, a)).hexdigest()
     assert r["size"]["common"] == sum(e["size"] for e in man["files"].values())
     raw = (site / "stories" / "5.json").read_bytes()
     assert raw.endswith(b"}\n") and raw == web._dump(man)            # canonical: sorted keys, indent 1
@@ -298,10 +303,11 @@ def chart_and_model(site):
     chart = {"musicId": 1, "difficulty": "easy", "audio": True, "audioFormat": "aac", "flows": ["direct"],
              "files": {"live.json": store.put("live.json", b'{"c":1}')}, "chart": {"title": "t"}}
     (site / "charts" / "1_easy.json").write_text(json.dumps(chart), encoding="utf-8")
-    model = {"format": 2, "id": "m", "key": "Character/Live2D/g/m/model/m", "model": {},
-             "files": {"model.json": store.put("model.json", b'{"m":1}')}}
+    model = {"format": 3, "id": "m", "key": MODEL_M, "model": {},
+             "files": {"model.json": store.put("model.json", b'{"m":1}'), "m.moc3": store.put("m.moc3", b"MOC3-m")}}
     (site / "models" / "m.json").write_text(json.dumps(model), encoding="utf-8")
-    return web.entry_assets(chart["files"]["live.json"]) + web.entry_assets(model["files"]["model.json"])
+    return web.entry_assets(chart["files"]["live.json"]) + [a for e in model["files"].values()
+                                                             for a in web.entry_assets(e)]
 
 
 def referenced(site) -> set:
@@ -334,6 +340,22 @@ def test_write_index_keeps_every_kind(tmp_path):
     assert index["format"] == storysite.STORIES_FORMAT and index["languages"] == ["ja", "en", "ko"]
     assert (entry["id"], entry["manifest"], entry["advId"], entry["regions"]) == ("5", "stories/5.json", 5, ["r1"])
     assert entry["size"]["languages"].keys() == {"ja", "en"} and entry["fonts"] == "open"
+    assert entry["size"]["models"] == len(b'{"m":1}') + len(b"MOC3-m")       # the referenced model's files
+
+
+def test_stories_reference_their_model_manifests(tmp_path):
+    """The assets of the model manifests a story names count as referenced by the stories (write_index keeps
+    them whatever models.json lists); a model manifest that is not there counts no bytes."""
+    site, _ = ingest(tmp_path)
+    model_assets = set(chart_and_model(site)[1:])
+    n, used = storysite.write_stories_index(site)
+    assert n == 1 and model_assets <= used
+    assert model_assets.isdisjoint(storysite.manifest_assets(json.loads((site / "stories/5.json").read_text(
+        encoding="utf-8"))))
+    (site / "models/m.json").unlink()
+    storysite.write_stories_index(site)
+    (entry,) = json.loads((site / "stories.json").read_text(encoding="utf-8"))["stories"]
+    assert entry["size"]["models"] == 0
 
 
 def test_story_only_site_and_sites_without_stories(tmp_path):
@@ -365,6 +387,8 @@ def test_fold_variant(tmp_path):
     dirs = story_dirs(tmp_path / "w3", ui_variant="x")
     storysite.ingest(web.Store(site), site, 5, dirs, {**JOB, "prefix": "r3/", "regions": ["r3"]}, [])
     assert not storysite.fold_variant(site, 5, "r3/") and (site / "stories/r3/5.json").exists()
+    man = json.loads((site / "stories/r3/5.json").read_text(encoding="utf-8"))
+    assert man["root"] == "../../" and man["models"] == {"m": "models/m.json"}
 
 
 def test_story_groups(tmp_path):
@@ -465,6 +489,135 @@ def test_write_player_story_page(tmp_path):
         web.write_player(site2, fake_player(tmp_path / "q", story_bundle=False), stories=True)
 
 
+# ---------------------------------------------------------------- the models of the stories
+MODEL_A, MODEL_B = "Character/Live2D/g/a/model/a", "Character/Live2D/g/b/model/b"
+
+
+def put_model(site, key, motion_sync=False):
+    """A model manifest as webmodel.ingest writes it (made-up model.json and moc3)."""
+    mid = webmodel.model_id(key)
+    store = web.Store(site)
+    doc = {"format": webmodel.MODEL_FORMAT, "key": key, "motionSync": motion_sync}
+    man = {"format": web.MANIFEST_FORMAT, "id": mid, "key": key, "model": {},
+           "files": {"model.json": store.put("model.json", json.dumps(doc).encode()),
+                     f"{mid}.moc3": store.put(f"{mid}.moc3", b"MOC3-" + mid.encode())}}
+    write(site / "models" / f"{mid}.json", web._dump(man))
+    return {"id": mid, "ok": True, "files": 2, "bytes": sum(e["size"] for e in man["files"].values())}
+
+
+@pytest.fixture
+def story_build(tmp_path, monkeypatch):
+    """storysite.build over synthetic master data (MasterAdv 5, 6, 7, 8) and episodes: episode_models gives the
+    models each episode loads, build_dirs writes the story directory with the models it takes from the site
+    (webmodel.SiteModels, as story.build does), webmodel's model task writes a model manifest. -> run(ids, **kw),
+    with the calls in run.episodes (pre-pass) and run.models (model builds)."""
+    uses = {5: [MODEL_A], 6: [MODEL_B, MODEL_A], 7: [], 8: [MODEL_A]}
+    md = tmp_path / "master"
+    write(md / "MasterAdv.json", {"_allData": [{"_id": i} for i in uses]})
+    font = tmp_path / "f.otf"
+    font.write_bytes(b"font")
+    cfg = Config({"catalog": {"region": "zz", "language": "en"}, "servers": {"zz": {"cdn": "https://cdn.invalid"}},
+                  "paths": {"master": str(md), "fonts": {"ja": str(font), "en": str(font)}}}, environ={})
+    site = tmp_path / "site"
+    episodes, models = [], []
+
+    def episode_models(cat, master_dir, adv_id):
+        episodes.append(adv_id)
+        return sorted(uses[adv_id])
+
+    def build_dirs(cat, master_dir, player, adv_id, work, job):
+        src = webmodel.SiteModels(job["site"])
+        return story_dirs(work, adv_id, mode=0, models={k: src.ensure(k)["id"] for k in uses[adv_id]})
+
+    def model_task(mid, key, job, data=None):
+        models.append(mid)
+        return put_model(Path(job["site"]), key)
+    monkeypatch.setattr(tmpfont, "require_extra", lambda what=None: None)
+    monkeypatch.setattr(storysite, "open_data", lambda cfg, region=None: (None, md, None))
+    monkeypatch.setattr(storysite, "episode_models", episode_models)
+    monkeypatch.setattr(storysite, "build_dirs", build_dirs)
+    monkeypatch.setattr(storysite.storyhost, "build", lambda *a, **kw: None)
+    monkeypatch.setattr(storysite, "font_file", lambda job, lang: None)
+    monkeypatch.setattr(webmodel, "model_task", model_task)
+    monkeypatch.setattr(webmodel, "_open", lambda cfg, region=None: (None, None))
+    player = fake_player(tmp_path / "p")
+
+    def run(ids, **kw):
+        return storysite.build(site, ids, cfg, player, audio=False, workers=1, story_languages=["ja", "en"], **kw)
+    run.site, run.episodes, run.models = site, episodes, models
+    return run
+
+
+def manifest(site, adv_id):
+    return json.loads((site / "stories" / f"{adv_id}.json").read_text(encoding="utf-8"))
+
+
+def test_story_build_builds_the_models_of_its_stories_first(story_build):
+    site = story_build.site
+    r = story_build([5, 6, 7])
+    assert r["storiesFailed"] == [] and [s["id"] for s in r["storiesBuilt"]] == ["5", "6", "7"]
+    assert sorted(story_build.episodes) == [5, 6, 7]
+    assert story_build.models == ["a", "b"]                       # each model once, whatever the stories using it
+    assert [m["id"] for m in r["storyModels"]["modelsBuilt"]] == ["a", "b"] and r["models"] == 2
+    index = json.loads((site / "models.json").read_text(encoding="utf-8"))
+    assert [m["id"] for m in index["models"]] == ["a", "b"]
+    assert manifest(site, 5)["models"] == {"a": "models/a.json"}
+    assert manifest(site, 6)["models"] == {"a": "models/a.json", "b": "models/b.json"}
+    assert manifest(site, 7)["models"] == {} and manifest(site, 7)["root"] == "../"
+    assert json.loads(web.entry_text(site, manifest(site, 6)["files"]["story.json"]))["models"] == {
+        MODEL_B: "b", MODEL_A: "a"}
+    stories = {e["id"]: e for e in json.loads((site / "stories.json").read_text(encoding="utf-8"))["stories"]}
+    size = {m: sum(e["size"] for e in json.loads((site / f"models/{m}.json").read_text(encoding="utf-8"))
+                   ["files"].values()) for m in ("a", "b")}
+    assert (stories["5"]["size"]["models"], stories["6"]["size"]["models"], stories["7"]["size"]["models"]) == (
+        size["a"], size["a"] + size["b"], 0)
+    for mf in (site / "models").glob("*.json"):                   # write_index kept the models' assets
+        for e in json.loads(mf.read_text(encoding="utf-8"))["files"].values():
+            assert all((site / a).is_file() for a in web.entry_assets(e))
+
+
+def test_story_build_skips_existing_models_unless_forced(story_build):
+    story_build([5])
+    assert story_build.models == ["a"]
+    # stories whose manifest exists: no pre-pass, no model build
+    r = story_build([5])
+    assert r["storiesSkipped"] == ["5"] and r["storyModels"] is None and story_build.episodes == [5]
+    # a new story whose model exists: the model manifest is skipped
+    r = story_build([8])
+    assert story_build.models == ["a"] and r["storyModels"]["modelsSkipped"] == ["a"]
+    assert manifest(story_build.site, 8)["models"] == {"a": "models/a.json"}
+    # force: the stories and their models built again, each model once
+    r = story_build([5, 8, 6], force=True)
+    assert story_build.models == ["a", "a", "b"] and r["storyModels"]["modelsSkipped"] == []
+    assert sorted(s["id"] for s in r["storiesBuilt"]) == ["5", "6", "8"]
+
+
+def test_story_build_rebuilds_outdated_models(story_build):
+    """A model manifest whose model.json is older than MODEL_FORMAT (no motionSync) is built again by the stories'
+    model build without force; a current one is skipped."""
+    site = story_build.site
+    put_model(site, MODEL_B)                                            # current
+    put_model(site, MODEL_A)
+    man = json.loads((site / "models/a.json").read_text(encoding="utf-8"))
+    man["files"]["model.json"] = web.Store(site).put("model.json", json.dumps({"format": 1, "key": MODEL_A}).encode())
+    write(site / "models/a.json", web._dump(man))
+    r = story_build([6])
+    assert story_build.models == ["a"]
+    assert r["storyModels"]["modelsRebuilt"] == [{"id": "a", "reason": "outdated"}]
+    assert r["storyModels"]["modelsSkipped"] == ["b"] and [m["id"] for m in r["storyModels"]["modelsBuilt"]] == ["a"]
+    assert r["storiesFailed"] == [] and webmodel.outdated(site, "a") is None
+    assert manifest(site, 6)["models"] == {"a": "models/a.json", "b": "models/b.json"}
+
+def test_a_story_without_its_model_fails(story_build, monkeypatch):
+    monkeypatch.setattr(webmodel, "model_task", lambda mid, key, job, data=None: {
+        "id": mid, "ok": False, "stage": "export", "error": "x"})
+    r = story_build([5, 7])
+    assert r["storyModels"]["modelsFailed"] == [{"id": "a", "stage": "export", "error": "x"}]
+    assert [(f["id"], f["stage"]) for f in r["storiesFailed"]] == [("5", "export")]
+    assert "no model manifest models/a.json" in r["storiesFailed"][0]["error"]
+    assert [s["id"] for s in r["storiesBuilt"]] == ["7"]
+
+
 def test_cli_web_stories(tmp_path, capsys, monkeypatch):
     from nnnotes import cli
     calls = []
@@ -483,7 +636,7 @@ def test_cli_web_stories(tmp_path, capsys, monkeypatch):
     assert kw["story_languages"] == ["en", "ja"]
     assert kw["fonts_flags"] == {"en": "a.otf", "ja": "b.otf", "emoji": "e.ttf"}
     assert cli.EMOJI_FONT == storysite.EMOJI_FONT
-    assert kw["fonts"] == "open"
+    assert kw["fonts"] == "open" and kw["encoding"] == "gzip"
     assert json.loads(capsys.readouterr().out)["storiesFailed"] == []
 
 

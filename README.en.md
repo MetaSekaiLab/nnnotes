@@ -39,7 +39,7 @@ nnnotes config check             # each setting's origin and whether it is valid
 | `master download` | master data version, or `--latest` (the region's current one) | that version's `MasterManifest.json` and every `.bin` file (SHA-256 checked) |
 | `master decode` | master data `.bin` files or directories | one JSON per table (Rijndael-256 CBC decryption + gzip) |
 | `adv` | episode ID | `episode.json`: command list, lines in five languages, voice / sound / video index |
-| `story` | episode ID | a full story directory: episode, every Live2D model, audio, stage scene and shaders, story UI, frames / particle effects / post effects / stills / talk windows / chat assets, videos (WebM) |
+| `story` | episode ID | a story directory: episode, audio, stage scene and shaders, story UI, frames / particle effects / post effects / stills / talk windows / chat assets, videos (WebM); the Live2D models it uses are exported into a models directory (`--models`, default `live2d/` next to the story directory), where other stories reuse them |
 | `live2d` | model key or model id | a Live2D (Cubism) runtime directory: moc3, textures, motion3, physics, expressions, prefab parameters |
 | `spot` | spot ID | `spot.json` + Spine characters + the room as `room.glb` + shaders |
 | `room` | background prefab key | the room model (binary glTF) |
@@ -48,7 +48,7 @@ nnnotes config check             # each setting's origin and whether it is valid
 | `crikey` | APK | the CRI HCA keycode from the game's boot data (shows whether it was found; can write a `.hcakey`) |
 | `player` | APK | render-related global settings (color space, quality levels, renderers) as JSON |
 | `live` | music ID + difficulty | a full chart directory: chart and runtime notes, 3D scene, note and effect assets, BGM and sounds, sound routing |
-| `web` | `--pair music:difficulty` (repeatable) or `--all`; `--live2d model` (repeatable) or `--all-live2d`; `--story episode` (repeatable) or `--all-stories`; `--region region` (repeatable) or `--all-regions` | an ournotes-player static site: shared player + per-chart / per-model / per-episode manifests + content-addressed assets; one site can serve several regions, with listing texts in five languages; a story's interface texts are grouped by language, with TextMeshPro font assets generated from open fonts (the game's fonts with `--fonts game`) |
+| `web` | `--pair music:difficulty` (repeatable) or `--all`; `--live2d model` (repeatable) or `--all-live2d`; `--story episode` (repeatable) or `--all-stories`; `--region region` (repeatable) or `--all-regions` | an ournotes-player static site: shared player + per-chart / per-model / per-episode manifests + content-addressed assets; the Live2D models of the stories are built first as models, listed in `models.json`, and the story manifests reference them; one site can serve several regions, with listing texts in five languages; a story's interface texts are grouped by language, with TextMeshPro font assets generated from open fonts (the game's fonts with `--fonts game`); compressible assets (JSON, shaders, moc3, ...) are stored gzip encoded by default (`--compress br` / `none`) |
 | `deck-data` | master data files (`--master-files` directory or `--apk-master`) | one JSON file for deck-building tools: every chart's runtime notes, skill events and fever ranges, and the master data tables about cards, skills, bonuses, scores and events ([format](https://github.com/MetaSekaiLab/nnnotes/blob/main/docs/deck-data.md)) |
 
 Export conventions:
