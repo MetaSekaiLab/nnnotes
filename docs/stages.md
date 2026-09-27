@@ -28,6 +28,11 @@ Every stage is at version 1, except `unity.census` (version 2: it lists the scri
 | `link.addresses` | global | catalog index, censuses | key -> objects, serialized file -> bundle, bundle -> keys |
 | `link.artifacts` | global | the above, the results | object id -> artifact ids |
 | `view.<name>` | a catalog (`main`) | `master:<Table>` per master table it reads, `rules` (the view's rule and the resolvers it uses), `addresses` (the part of the address table it read: the keys looked up and the prefixes listed); no parameters, atoms or context | `view.<name>:<subject>#view` (facts: rows, entries, gaps, unreferenced) |
+| `view.voices` | a catalog (`main`) | `master:<Table>` per master table its rules read, `rules`, `addresses`, `sheets` (each cue sheet the `cri.audio` results are known by that a voice names or the rules' prefixes list: its task and ACB content id), `acb:<sha256>` (the ACB of each decoded one); context `audio` (the keys of those `cri.audio` results); runs after `cri.audio` | `view.voices:<subject>#view` (facts: rows, entries, gaps, unreferenced streams) |
+
+`view.voices` is a stage of its own (`nnnotes.voices:VoiceStage`), not one of the master-only views of
+`nnnotes.views:stages`: besides master tables and the address table it reads `cri.audio` results and ACB tables
+([views.md](views.md#voices)).
 
 ## Converters (`unity.export`)
 

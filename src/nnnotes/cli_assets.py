@@ -105,6 +105,7 @@ STAGE_SOURCES = (
     StageSource("spine.skeleton", "nnnotes.modelstages:SpineStage", output=True),
     StageSource("link.artifacts", "nnnotes.link:ArtifactsStage"),
     StageSource("view.", "nnnotes.views:stages", output=True),
+    StageSource("view.voices", "nnnotes.voices:VoiceStage", output=True),
 )
 
 

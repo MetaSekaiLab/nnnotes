@@ -6,7 +6,7 @@ and writes `<out>/audio/live-audio.json`:
 
   sounds        MasterSound id -> {row, sheet, cue, categories, volume, busSends, layers[{file, sampleRate, samples,
                 loopStart, loopEnd, loopFlag, volume, busSends}], lengthMs}; the cue structure (sequence -> tracks ->
-                synth -> waveform) is read from the ACB (@UTF tables; command 65 categories, 146 volume, 111 bus send)
+                synth -> waveform) is read from the ACB (nnnotes.acb; command 65 categories, 146 volume, 111 bus send)
   categories    CRI category volumes for a fresh profile (SoundVolumeSettings x AppConfigDefaultData)
   react         the ACF's REACT (ducking) entries between live categories
   music         the BGM sound id and PlayMusic volume
@@ -28,6 +28,7 @@ import struct
 import zipfile
 from pathlib import Path
 
+from .acb import commands as _commands, tables as _tables, u16s as _u16s
 from .catalog import Catalog
 from .jsonio import write_json
 from .liveoptions import LiveOptions
@@ -58,75 +59,6 @@ NOTE_SE_ID_ITEM = {1: 430, 2: 432, 3: 432, 4: 432, 8: 432, 5: 434, 6: 436, 7: 43
 # AllPerfectDirection, else 14 FullComboDirection, else 15 AssistFullComboDirection, else 13 LiveClearDirection; none
 # when the life is below 1), in type order
 LIVE_SE_SOUNDS = (9, 10, 13, 14, 15, 16)
-
-
-# --------------------------------------------------------------------------- CRI @UTF tables
-def utf_table(buf: bytes) -> list[dict]:
-    """Rows of a CRI @UTF table (big endian; column storage 0x10 name flag, 0x30 constant, 0x50 per row)."""
-    if buf[:4] != b"@UTF":
-        raise ValueError("not an @UTF table")
-    size, = struct.unpack_from(">I", buf, 4)
-    t = buf[8:8 + size]
-    rows_off, = struct.unpack_from(">H", t, 2)
-    str_off, data_off = struct.unpack_from(">II", t, 4)
-    ncol, row_w, nrow = struct.unpack_from(">HHI", t, 16)
-
-    def cstr(o):
-        return t[str_off + o:t.index(b"\0", str_off + o)].decode("utf-8")
-
-    def value(p, typ):
-        f = {0: ">B", 1: ">b", 2: ">H", 3: ">h", 4: ">I", 5: ">i", 6: ">Q", 7: ">q", 8: ">f"}.get(typ)
-        if f:
-            return struct.unpack_from(f, t, p)[0], p + struct.calcsize(f)
-        if typ == 0xA:
-            return cstr(struct.unpack_from(">I", t, p)[0]), p + 4
-        if typ == 0xB:
-            o, n = struct.unpack_from(">II", t, p)
-            return bytes(t[data_off + o:data_off + o + n]), p + 8
-        raise ValueError(f"@UTF column type {typ}")
-
-    cols, p = [], 24
-    for _ in range(ncol):
-        flag = t[p]
-        p += 1
-        name = None
-        if flag & 0x10:
-            name = cstr(struct.unpack_from(">I", t, p)[0])
-            p += 4
-        const = None
-        if flag & 0xF0 == 0x30:
-            const, p = value(p, flag & 0x0F)
-        cols.append((name, flag & 0xF0, flag & 0x0F, const))
-    rows = []
-    for r in range(nrow):
-        q, row = rows_off + r * row_w, {}
-        for name, storage, typ, const in cols:
-            if storage == 0x50:
-                row[name], q = value(q, typ)
-            else:
-                row[name] = const
-        rows.append(row)
-    return rows
-
-
-def _tables(buf: bytes) -> tuple[dict, dict[str, list[dict]]]:
-    top = utf_table(buf)[0]
-    return top, {k: utf_table(v) for k, v in top.items() if isinstance(v, bytes) and v[:4] == b"@UTF"}
-
-
-def _commands(b: bytes) -> list[tuple[int, bytes]]:
-    """ACB command list: repeated (u16 code, u8 size, payload)."""
-    out, p = [], 0
-    while p + 3 <= len(b):
-        code, = struct.unpack_from(">H", b, p)
-        n = b[p + 2]
-        out.append((code, b[p + 3:p + 3 + n]))
-        p += 3 + n
-    return out
-
-
-def _u16s(b: bytes) -> list[int]:
-    return [struct.unpack_from(">H", b, i)[0] for i in range(0, len(b), 2)]
 
 
 def _params(cmds, categories: dict[int, str], buses: list[str]) -> dict:

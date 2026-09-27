@@ -471,3 +471,136 @@ icon: `not-applicable`):
 | 1001 | BiliChatTheme | `MasterBiliChatTheme` | `{_iconAssetPath}` | Sprite |
 | 1002 | BiliChatBubble | `MasterBiliChatBubble` | `{_iconAssetPath}` | Sprite |
 | 1003 | BiliChatFrame | `MasterBiliChatFrame` | `{_iconAssetPath}` | Sprite |
+
+## Voices
+
+`view.voices` (`nnnotes.voices`) indexes the character voices the master data names: per voice its source row,
+characters, category, text in the five languages and conditions, its cue sheet and cue, and the decoded streams of
+the export that play it. It is a stage of its own rather than a view of the rules above: besides master tables and
+the address table it reads the results of `cri.audio` and the ACB of every decoded cue sheet. Its rules are the
+`voices` entry of `viewrules.json` (`nnnotes voices` queries its document, docs/commands.md).
+
+### Sources
+
+| Source | Table | Characters, sound, text | Category |
+|---|---|---|---|
+| `Talk` | `MasterTalk` | `_characterId`, `_voiceSoundId`, `_textId` | `_category` (TalkCategory) |
+| `CharacterVoice` | `MasterCharacterVoice` | `_characterId`, `_soundId`, `_textId` | `_type` (CharacterVoiceType) |
+| `MemberCard` | `MasterMemberCard` | `_characterID`, `_gachaVoiceSoundId`, `_gachaVoiceTextId` | |
+| `LiveCharacter` | `MasterLiveCharacter` | `_characterID`, `_liveSkillVoiceSoundID`, `_liveSkillVoiceTextID` | |
+| `LiveGekisouVoice` | `MasterLiveGekisouVoice` | `_characterID`, `_voiceID`, `_voiceTextID` | `_gekisouVoiceType` (GekisouVoiceType) |
+| `LiveDialogueCommon` | `MasterLiveDialogueCommon` | `_characterID`, `_comboVoiceSoundID`, `_comboVoiceTextID` | |
+| `LiveDialogueFixedPair` | `MasterLiveDialogueFixedPair` | slot 1: `_characterID01`, `_character01ComboVoiceSoundID`, `_character01ComboVoiceTextID`; slot 2: the same with `02` | |
+| `LiveStartCharacterVoice` | `MasterLiveStartCharacterVoice` | `_characterId`, `_voiceSoundId`, `_voiceTextId` | |
+| `HomeSpot` | `MasterHomeSpot` | `_characterIds`, `_introSoundId` | |
+| `Title` | `MasterTitle` | `_voiceCharacterIds`; cue names built per character (below) | the cue's name |
+| `Sound` | `MasterSound` | the rows of category Voice that no other source names | |
+
+- The first eight are the tables of the game's voice collection; `source.type` gives their CharacterVoiceMasterType
+  value. A row whose sound column is empty or 0 names no voice (counted as `empty`). Conditions are the listed
+  columns with a value: `_costumeId`, `_year`, `_seasonStartAt`, `_seasonEndAt`, `_startAt`, `_birthdayCharacterId`,
+  `_unlockCharacterRank` (Talk), `_scoreRank`, `_startAt` (CharacterVoice), `_startAt` (MemberCard, HomeSpot),
+  `_dialogueType`, `_dialogueCallType` (LiveDialogueCommon), `_dialogueType`, `_unlockFriendshipRank`
+  (LiveDialogueFixedPair), `_unlockCharacterRank` (LiveStartCharacterVoice).
+- A category without an enum is named after the source. TalkCategory: None 0, CharacterRankUp 1, Season 2,
+  Birthday 3, LoginBonus 4, Exchange 5, Live 6, OfflineBonus 7. CharacterVoiceType: LevelUp 0, Awaken 1,
+  SkillLevelUp 2, RankUp 3, LiveClear 4, LiveFullCombo 5, LiveAllPerfect 6, LiveResult 7, LiveBattleResultFirst 8,
+  LiveBattleResultHigh 9, LiveBattleResultLow 10. GekisouVoiceType: StartCombo 0, StartJustCount 1, StartLuck 2,
+  TopRank 3. MasterSound `_category`: Bgm 0, Se 1, Voice 2, NotesSe 3.
+- `Title`: every character in some row's `_voiceCharacterIds` (`source.rows`: those rows), with the cue names the
+  client builds from the character id in cue sheet `InitialVoice`: `Title_{character}_App_ON_01` (`TitleCall`),
+  `Title_{character}_Company_BR_01` (`SplashCompanyBR`), `Title_{character}_Company_FT_01` (`SplashCompanyFT`),
+  `Title_{character}_Company_bili_01` (`SplashCompanyBilibili`).
+- `Sound` rows have no characters, category or text in the master data. What their names suggest is in `inferred`,
+  apart from the master facts: `situation`, the first of these patterns the cue name matches in full:
+
+  | Situation | Cue |
+  |---|---|
+  | `SpotTap` | `spot_<n>_<n>_<n>_<name>_<n>[_<n>]_tap[_<n>]` |
+  | `SpotAfter` | `spot_<n>_<n>_<n>_<name>_<n>[_<n>]_after[_<n>]` |
+  | `SpotIntro` | `spot_<n>_<n>_<n>_<name>_<n>[_nasi]` |
+  | `ResultPairTalk` | `Result_<A>_Talk_CP_<B>_Call_<n>`, `..._Res_<n>` |
+  | `ResultTalk` | `Result_<A>_Talk_Common_<n>` |
+  | `TitleCall` | `Title_<A>_App_<n>` |
+  | `SplashCompany` | `Title_<A>_Company_<X>_<n>` |
+  | `Location` | `vox_pt<n>_<a>[_<b>]` |
+
+  `characters`, the characters whose name token (the last `_` part of `_nameTextID`) is a word of the cue name, in
+  the order they appear; `rows`, the `HomeSpot` rows whose voice is in the same sheet.
+
+### Cues and streams
+
+The sound's `_soundCueSheetID` names the cue sheet (MasterSoundCueSheet `_cueSheetName`, catalog key
+`Cri/Sound/<sheet>`) and `_cueName` the cue. The cue's streams come from the sheet's ACB tables (`nnnotes.acb`): a
+cue references a waveform, a synth, a sequence or a block sequence; synths reference waveforms, synths and
+sequences; the tracks of sequences and blocks note on synths and sequences. A waveform of the memory AWB is the
+stream at its position in the AWB, the numbering of the sheet's `streams.json`. A cue may play several streams (a
+random or layered cue) and several cues one stream. The same cue name in two sheets is two cues. The waveform's
+sample count, rate and channels are compared with the decoded stream; a difference is noted in `detail`.
+
+### Statuses
+
+`status` is the first of these that holds; `availability` keeps the facts apart: `master` (the master data
+resolves the sound to a sheet and a cue), `catalog` (the sheet's key is a catalog key; `null` when not looked up)
+and `exported` (the cue's streams are decoded).
+
+| Status | Meaning |
+|---|---|
+| `no-value` | no MasterSound row for the sound, or no MasterSoundCueSheet row for its sheet (`detail`) |
+| `missing-key` | the catalog has no key `Cri/Sound/<sheet>` |
+| `not-exported` | the key exists; the export has no `cri.audio` result for its content |
+| `unsupported` | the sheet's `cri.audio` task did not decode it (`detail`: the reason code) |
+| `missing-cue` | the sheet is decoded; its ACB has no such cue, or the cue plays none of its streams |
+| `ok` | the cue's streams are in `audio` |
+
+Gaps are the rows that are `missing-key` or `missing-cue`, whatever their source. Whether a site shows a voice is
+not recorded: sites are built separately.
+
+### Documents
+
+`nnnotes.voices/1`, canonical JSON:
+
+```json
+{"schema": "nnnotes.voices/1", "view": "voices", "version": 1, "rules": "<digest>", "tables": ["MasterCharacter", "..."],
+ "characters": [{"id": 1, "token": "Alpha", "names": {"name": {"ja": "...", "en": "..."}, "short": {}, "en": {}}}],
+ "rows": [{"id": "MasterTalk:561",
+           "source": {"name": "Talk", "table": "MasterTalk", "row": 561, "column": "_voiceSoundId",
+                      "type": {"enum": "CharacterVoiceMasterType", "value": 0, "name": "Talk"}},
+           "characters": [1], "category": {"name": "CharacterRankUp", "enum": "TalkCategory", "value": 1},
+           "sound": {"id": 100000001, "category": 2, "sheet": "VoiceSystem_01", "cue": "Growth_Alpha_RankUp_01"},
+           "text": {"id": "Talk_Text_561", "texts": {"ja": "...", "en": "...", "zh-Hant": "...", "zh-Hans": "...", "ko": "..."}},
+           "conditions": {"_costumeId": 1, "_unlockCharacterRank": 1},
+           "availability": {"master": true, "catalog": true, "exported": true}, "status": "ok",
+           "audio": {"cueId": 1, "lengthMs": 1000,
+                     "streams": [{"stream": 0, "file": "Growth_Alpha_RankUp_01.flac",
+                                  "artifact": "cri.audio:<sha256>#Growth_Alpha_RankUp_01.flac",
+                                  "sha256": "...", "size": 1, "sampleRate": 48000, "channels": 1,
+                                  "samples": 48000, "seconds": 1.0}]}}],
+ "snapshot": {"tables": {"MasterTalk": "<sha256>"}, "sheets": {"VoiceSystem_01": {"task": "cri.audio:<sha256>",
+                                                                                 "acb": "<sha256>", "status": "exported"}}},
+ "coverage": {"rows": 1, "sources": {"Talk": {"rows": 1, "empty": 0, "counts": {"ok": 1}, "gaps": []}},
+              "reverse": {"prefixes": ["Cri/Sound/Voice"], "keys": 1, "unreferencedKeys": [], "streams": 1,
+                          "unreferencedStreams": {}}}}
+```
+
+- Row ids: `<Table>:<row id>` (`:<slot>` for a row with two voices), `Title:<character>:<category>`,
+  `MasterSound:<id>`. Rows are in the order of the sources, then by id; a row of `Title` has `source.rows` and
+  `source.cue` (the template) and no sound id; a `HomeSpot` row has `names.spot`, a `MemberCard` row `names.card`.
+- `snapshot`: the content id of every master table read and, per decoded sheet, its `cri.audio` task and ACB.
+- Coverage. Forward, per source: rows, rows per status, `empty` and `gaps`. Reverse: the catalog keys under the
+  prefixes (`Cri/Sound/Voice`, `Cri/Sound/spot_`, `Cri/Sound/InitialVoice`, `Cri/Sound/adv_voice_`), the ones whose
+  sheet no row names (`unreferencedKeys`), and per decoded sheet the streams no row reaches
+  (`unreferencedStreams`: `[stream, name]`).
+
+### Stage
+
+- Subjects: the catalog subjects of `link.addresses`, when master data is set and `voices` is selected.
+- Inputs: `master:<Table>` for every table the rules read, `rules` (the format and the `voices` rules), `addresses`
+  (the keys it looks up and the prefixes it lists, as `views.Recorder` records them), `sheets` (each sheet the
+  `cri.audio` results are known by, as `cristages.AudioStage` names them: its task and ACB content id) and
+  `acb:<sha256>` for the ACB of every decoded sheet; context `audio`, the keys of the `cri.audio` results. It runs
+  after `cri.audio` and waits for its tasks; without them every present key is `not-exported`.
+- Artifact `view.voices:<subject>#view`; facts `rows`, `entries` (rows per status), `gaps` (`export --strict`
+  exits 1 when there are any) and `unreferenced` (the streams of the decoded sheets that no row reaches).
+- Derived document of the `original` layout: `views/voices.json`, with `"layout": "original"` and the `path` of
+  every stream (`null` when the layout places none).

@@ -47,7 +47,7 @@ nnnotes store verify [--quick]
 | `--flac-level N` | FLAC compression level 0-12 of the CRI audio and the movies' audio (default 8; every level decodes to the same samples; 12 writes files 0.2-1.3 % smaller in about five times the encoding time); part of the task keys |
 | `--only-class C,...` | export only objects of these Unity classes; part of the task keys |
 | `--link` | how the layout files are made from the store (below): `auto` (default; `[export] link`), `clone`, `hard` or `copy` |
-| `--strict` | exit 1 when a view has gaps: a required role whose address names no catalog key or no fitting sub-object (empty values and roles that do not apply are not gaps) |
+| `--strict` | exit 1 when a view has gaps: a required role whose address names no catalog key or no fitting sub-object (empty values and roles that do not apply are not gaps); in `voices`, a voice whose cue sheet has no catalog key or whose decoded sheet lacks its cue |
 | `--dry-run` | print the plan and stop |
 | `--explain` | print every setting of the run first: store, context, selection, pipeline, stages not installed, parameters, workers, memory budget, recycling, layouts |
 
@@ -139,7 +139,8 @@ no longer wanted, never touches other files, and continues an interrupted write 
 - the outputs of the CRI stages at the catalog names of their content: `Cri/Sound/<sheet>/<stream>.flac` with
   `cues.json` and `streams.json`, `Cri/Video/<name>/…`; a content several names refer to is placed under each
   name and listed in the layout report;
-- the views: `views/<view>.json`, each object entry with the `path` of its file in this layout.
+- the views: `views/<view>.json`, each object entry with the `path` of its file in this layout (`views/voices.json`:
+  each stream of a voice).
 
 How the files are made (`--link`, or `[export] link`). Every method writes the same files and the same layout
 manifest; the run manifest and the printed summary name the method and why it was chosen.

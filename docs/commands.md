@@ -320,6 +320,39 @@ points) and `streams.json` (every stream in order). `flac` (default) keeps the d
 `--flac-level` (0 to 12, default 8) is ffmpeg's FLAC compression level; every level decodes to the same samples.
 The HCA keycode is read from `[paths] apk`.
 
+## voices
+
+```
+nnnotes voices list [--from OUT] [--character C] [--category C] [--source S] [--status S] [--limit N] [--json]
+                    [--language L]
+nnnotes voices search TEXT [--from OUT] [--language L] [--character C] [--category C] [--source S] [--status S]
+                           [--limit N] [--json]
+nnnotes voices summary [--from OUT] [--json]
+nnnotes voices get ID -o DIR [--from OUT] [--format flac|ogg|wav]
+```
+
+Queries the voices index ([views.md](views.md#voices)): the character voices the master data names, with their
+source row, characters, category, five-language text, cue sheet and cue. `--from OUT` reads `OUT/views/voices.json`,
+written by `nnnotes export --views voices` (or `all`) with the exported audio: then every voice also has its status
+and the files of its streams. Without `--from` the index is built from the configured master data and catalog:
+content and catalog keys only, every present voice `not-exported`.
+
+- `--character`: a MasterCharacter id, or a part of a character's name in any language (full, short or English
+  display name, case ignored). `--category`: a category (`CharacterRankUp`; case, `-` and `_` ignored, so
+  `character-rank-up` works), `Source.Category` or a source (`Talk`). `--source`: `Talk`, `CharacterVoice`,
+  `MemberCard`, `LiveCharacter`, `LiveGekisouVoice`, `LiveDialogueCommon`, `LiveDialogueFixedPair`,
+  `LiveStartCharacterVoice`, `HomeSpot`, `Title` or `Sound`. `--status`: a status of the index.
+- `list` and `search` print one line per voice: id, characters, `Source.Category`, `sheet/cue`, status and the text
+  in `--language` (default `[catalog] language`); `--json` prints the rows. `search TEXT` matches a part of the text
+  in `--language` (every language when not given) or of the cue name, case ignored.
+- `summary`: rows per status, per source and category and per character, the gaps (voices whose sheet has no key
+  or whose decoded sheet lacks the cue) and the unreferenced keys and streams.
+- `get ID`: `ID` is a row id (`MasterTalk:561`) or a MasterSound id. Writes the files of the voice's streams into
+  `DIR`, named as the export names them, and `voice.json` (its rows and files). With `--from` and the files
+  exported, they are copied; otherwise the voice's cue sheet alone is decoded as `nnnotes audio` does (`--format`,
+  FLAC level 8) and the cue's streams are picked by the ACB's cue table. Exit status 1 when the voice has no file
+  (its status says why).
+
 ## crikey
 
 ```

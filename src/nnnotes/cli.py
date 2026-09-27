@@ -18,6 +18,10 @@ whatever the console encoding.
     nnnotes room <Spot/.../Background/...> -o out/room.glb
     nnnotes shader --key <key> | --apk-bundle <substring> -o out/shaders
     nnnotes audio <cueSheet> -o out/audio
+    nnnotes voices list [--from out/assets] [--character <id | name>] [--category <category>] [--source <source>]
+    nnnotes voices search <text> [--from out/assets] [--language ja] [--character ...] [--category ...]
+    nnnotes voices summary [--from out/assets]
+    nnnotes voices get <row id | MasterSound id> -o out/voice [--from out/assets] [--format flac]
     nnnotes crikey [--write <dir>]
     nnnotes player -o out/player.json
     nnnotes live 100001 --difficulty expert [--band 1 | --leader-card <MasterMemberCard id>] [--fonts game]
@@ -47,7 +51,7 @@ from pathlib import Path
 # inherit it.
 os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
 
-from . import __version__, cli_assets
+from . import __version__, cli_assets, voices
 from .addressables import BundleKey
 from .catalog import Catalog
 from .config import Config, ConfigError, use
@@ -719,6 +723,7 @@ def build_parser() -> argparse.ArgumentParser:
     c.set_defaults(func=cmd_deck_data, usage=c.error)
 
     cli_assets.register(sub, argparse.Namespace(open_catalog=open_catalog, print_json=_print_json))
+    voices.register(sub, argparse.Namespace(open_catalog=open_catalog, master_dir=master_dir))
     return p
 
 
