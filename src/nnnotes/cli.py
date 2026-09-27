@@ -546,7 +546,7 @@ def _fonts_arg(c) -> None:
 
 def _audio_args(c) -> None:
     """--format and --flac-level of a command that decodes cue sheets."""
-    c.add_argument("--format", default="flac", choices=AUDIO_CHOICES)
+    c.add_argument("--format", default="flac", choices=AUDIO_CHOICES, help="audio file format (default flac)")
     c.add_argument("--flac-level", type=int, metavar="N",
                    help="FLAC compression level 0-12 of --format flac (default 8; every level decodes to the same "
                         "samples)")
@@ -573,17 +573,18 @@ def build_parser() -> argparse.ArgumentParser:
     sub = p.add_subparsers(dest="cmd", required=True, metavar="<command>")
 
     c = sub.add_parser("catalog", help="list addressable keys")
-    c.add_argument("--prefix", default="")
-    c.add_argument("--limit", type=int, default=200)
+    c.add_argument("--prefix", default="", help="only the keys that start with this prefix")
+    c.add_argument("--limit", type=int, default=200, help="print at most N keys (default 200; the total goes "
+                                                          "to stderr)")
     c.set_defaults(func=cmd_catalog)
 
     c = sub.add_parser("browse", help="browse the configured regions' catalogs and bundles in a local web page")
-    c.add_argument("--port", type=int, default=8000)
-    c.add_argument("--host", default="127.0.0.1")
+    c.add_argument("--port", type=int, default=8000, help="port (default 8000)")
+    c.add_argument("--host", default="127.0.0.1", help="address to listen on (default 127.0.0.1)")
     c.set_defaults(func=cmd_browse)
 
     c = sub.add_parser("pull", help="fetch the bundle closure of keys into the cache")
-    c.add_argument("keys", nargs="+")
+    c.add_argument("keys", nargs="+", metavar="KEY", help="addressable keys (`catalog` lists them)")
     c.set_defaults(func=cmd_pull, usage=c.error)
 
     c = sub.add_parser("servers", help="the server list of the bootstrap API root: regions, their CDN and API roots")
@@ -608,12 +609,12 @@ def build_parser() -> argparse.ArgumentParser:
     m.set_defaults(func=cmd_master_download)
 
     c = sub.add_parser("adv", help="ADV episode -> JSON")
-    c.add_argument("adv_id", type=int)
+    c.add_argument("adv_id", type=int, help="MasterAdv id of the episode")
     _out(c, "output .json file")
     c.set_defaults(func=cmd_adv, usage=c.error)
 
     c = sub.add_parser("story", help="ADV episode -> story dir (episode, models, audio, scene, UI, media, videos)")
-    c.add_argument("adv_id", type=int)
+    c.add_argument("adv_id", type=int, help="MasterAdv id of the episode")
     _out(c, "output directory")
     _audio_args(c)
     c.add_argument("--no-audio", action="store_true", help="do not decode the cue sheets")
@@ -628,24 +629,24 @@ def build_parser() -> argparse.ArgumentParser:
     c.set_defaults(func=cmd_live2d, usage=c.error)
 
     c = sub.add_parser("spot", help="spot -> spot.json + Spine + room.glb + shaders")
-    c.add_argument("spot_id", type=int)
+    c.add_argument("spot_id", type=int, help="MasterSpot id")
     _out(c, "output directory")
     c.set_defaults(func=cmd_spot, usage=c.error)
 
     c = sub.add_parser("room", help="background prefab -> glb")
-    c.add_argument("key")
+    c.add_argument("key", help="addressable key of the prefab")
     _out(c, "output .glb file")
     c.set_defaults(func=cmd_room, usage=c.error)
 
     c = sub.add_parser("shader", help="dump shaders of a key's closure or of APK bundles")
     g = c.add_mutually_exclusive_group(required=True)
-    g.add_argument("--key")
+    g.add_argument("--key", help="addressable key: the shaders of its bundle closure")
     g.add_argument("--apk-bundle", nargs="+", help="substring(s) of APK bundle file names")
     _out(c, "output directory")
     c.set_defaults(func=cmd_shader, usage=c.error)
 
     c = sub.add_parser("audio", help="decode a CRI cue sheet")
-    c.add_argument("cue_sheet")
+    c.add_argument("cue_sheet", help="cue sheet name: the key Cri/Sound/<cue_sheet> of the catalog")
     _out(c, "output directory")
     _audio_args(c)
     c.set_defaults(func=cmd_audio, usage=c.error)
@@ -659,8 +660,9 @@ def build_parser() -> argparse.ArgumentParser:
     c.set_defaults(func=cmd_player)
 
     c = sub.add_parser("live", help="live (music + difficulty) -> self-contained live dir")
-    c.add_argument("music_id", type=int)
-    c.add_argument("--difficulty", default="expert", choices=DIFFICULTY_CHOICES)
+    c.add_argument("music_id", type=int, help="MasterLiveMusic id")
+    c.add_argument("--difficulty", default="expert", choices=DIFFICULTY_CHOICES,
+                   help="chart difficulty (default expert)")
     _audio_args(c)
     _fonts_arg(c)
     _band_args(c)
