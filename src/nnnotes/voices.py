@@ -1333,7 +1333,7 @@ def register(sub, common) -> None:
             p.add_argument("--source", help="a source (Talk, CharacterVoice, ..., HomeSpot, Title, Sound, Story)")
             p.add_argument("--episode", metavar="ADV", help="the Story voices of one episode: a MasterAdv id or an "
                                                             "episode asset (without --from: read from the catalog)")
-            p.add_argument("--status", choices=STATUSES)
+            p.add_argument("--status", choices=STATUSES, help="only the rows with this status")
             p.add_argument("--limit", type=int, default=0, help="at most N rows (0: all)")
             p.add_argument("--json", action="store_true", help="the rows as JSON")
 
@@ -1345,17 +1345,17 @@ def register(sub, common) -> None:
     p.add_argument("--language", choices=LANGUAGES, help="the language of the text column ([catalog] language)")
     done(p, cmd_list)
     p = vs.add_parser("search", help="the voices whose text (or cue name) contains TEXT")
-    p.add_argument("text")
+    p.add_argument("text", help="text to look for")
     base(p)
     p.add_argument("--language", choices=LANGUAGES, help="search this language only (default: all five)")
     done(p, cmd_search)
     p = vs.add_parser("summary", help="rows per status, category and character; gaps both ways")
     base(p, text=False)
-    p.add_argument("--json", action="store_true")
+    p.add_argument("--json", action="store_true", help="the summary as JSON")
     done(p, cmd_summary)
     p = vs.add_parser("get", help="the files of one voice: a row id (MasterTalk:561, MasterAdv:<id>:<command>) or a "
                                   "sound id")
-    p.add_argument("id")
+    p.add_argument("id", help="row id or sound id")
     p.add_argument("-o", "--out", required=True, help="output directory")
     base(p, text=False)
     p.add_argument("--format", choices=("flac", "ogg", "wav"), default="flac",

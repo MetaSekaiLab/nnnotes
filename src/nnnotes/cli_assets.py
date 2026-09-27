@@ -1487,7 +1487,7 @@ def register(sub, common=None) -> None:
     c = sub.add_parser("catalogs", help="catalog versions of the store")
     csub = c.add_subparsers(dest="catalogs_cmd", required=True, metavar="<catalogs command>")
     m = csub.add_parser("list", help="the imported catalog versions")
-    m.add_argument("--json", action="store_true")
+    m.add_argument("--json", action="store_true", help="the versions as JSON")
     _store_arg(m)
     m.set_defaults(func=bind(cmd_catalogs_list), usage=m.error)
     m = csub.add_parser("import", help="import a catalog file (with the APK's catalog when [paths] apk is set)")
