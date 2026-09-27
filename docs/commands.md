@@ -153,12 +153,16 @@ OUT/textures/, shaders/   textures and shaders of the scene and of the files abo
 OUT/videos/               Movie / Clip videos as WebM + videos.json (video id -> file, video row, size, frame rate)
 OUT/ui/                   ADV UI: ui.json (front canvas, still / frame / video canvases and their camera, letterbox),
                           packed textures, UI shaders, rule transitions
+OUT/crilips/              crilips.json + crilips.bin: the CRI Lips analysis data, when a voice reaches the analysis
 OUT/story.json            index of the above (a file the episode does not need is null and not written)
 ```
 
 `--format` (default `flac`) is the audio format and `--flac-level` its FLAC compression level (as for `audio`);
 `--no-audio` leaves the cue sheets undecoded (no `audio/`, `audio`
-in story.json is empty). Videos keep the VP9 stream of the game's USM file and carry its ADX audio as Opus (FFmpeg,
+in story.json is empty). With audio, `crilips/` holds the weights of the game's CRI Lips mouth analysis, read from the
+CRI Lips library in `[paths] apk` (or in the arm64-v8a split next to it, `split_config.arm64_v8a.apk`), when a voice
+reaches that analysis: a lip-synced voice while a model has no MotionSync controller, or a voice that other speakers
+follow (story.json `crilips`; ournotes-player docs/crilips.md). Videos keep the VP9 stream of the game's USM file and carry its ADX audio as Opus (FFmpeg,
 `[paths] ffmpeg`); the USM streams are unmasked with the CRI key read from `[paths] apk`. TextMesh Pro text in
 frames, talk windows and chat keeps its layout and style; with `--fonts open` its font and sprite assets and text
 materials are only named (no atlas is written), with `--fonts game` they are exported. The command stops before
@@ -174,13 +178,17 @@ are. Every cue sheet of the episodes' own `-SoundCueSheet` shards has its `Cri/S
 `ui/ui.json` holds the parts of the game's ADV widget the story draws: the front canvas (talk window, speaker plate,
 location caption, title, rule transition, curtains, flash, subtitles caption, next indicator, menu entry button, menu
 panel and video buttons, backlog, choices, tap areas), the canvases of stills, frames and videos with the screen
-image and the camera they render with (`videoAndStillCamera`), and the letterbox bands; per node its transform, rect
+image and the camera they render with (`videoAndStillCamera`), the UI camera that renders the frame canvas
+(`uiCamera`), and the letterbox bands; per node its transform, rect
 and uGUI components, the views' serialized references as node paths (the menu view with its fast-forward sprites),
 the other game components' serialized fields (`behaviours`), the widget's canvas sort orders (`widget`), the ADV
 screen's dialogs (`dialogs`: the skip confirm and common dialog prefabs) and their texts of the language
 (`masterIdTexts`), the chat phone (`chatWidget`), the text
-records of the episode's chat windows (`chatTexts`) with their status texts (`chatStatusTexts`), and the emoji
-sprite asset's sequence table and characters (`emoji`).
+records of the episode's chat windows (`chatTexts`) with their status texts (`chatStatusTexts`). The talk windows
+sit under `TalkView`: the default window,
+then each other window the episode's TalkWindow rows attach; when one of them dims and blurs the screen behind its
+talk (`UICenterTalkWindow`), the front canvas' `CenterTalkBackdrop` node, the renderer's blur settings (`blur`) and
+the blur shader come with it.
 
 `ui/` follows the client language `[catalog] language` (`ja`, `en`, `zh-Hant`, `zh-Hans` or `ko`): the localized
 fonts and materials, the line spacing LocalizeText applies, and, with `--fonts game`, the characters of the lines
@@ -508,6 +516,15 @@ once. The format is described in the player's `docs/story-data-format.md`.
   at up to 8x). The asset records the font's family, version, license and SHA-256. `--fonts game` uses the game's
   font assets instead (the `fonts` extra); the format is the same. No font file is stored in the site other than as
   the generated glyph pages.
+- Emoji are laid out as the game lays them out: its UI texts (the talk and chat texts) draw a character their font
+  assets lack from the game's emoji sprite asset, and emoji sequences (several code points with U+200D or U+FE0F)
+  become sprite tags through the game's emoji search. The layout keeps the game's sprite metrics; the images come
+  from a colour emoji font of your own: `--font emoji=PATH` or `fonts.emoji` in the `[paths]` table
+  (`NNNOTES_PATHS_FONTS_EMOJI`), a font with PNG bitmap glyphs (CBDT or sbix tables). Noto Color Emoji (SIL Open Font
+  License 1.1) is the tested font. Only the sprites an episode's texts can draw are generated, each at the game's
+  sprite size, into one page under `ui/fonts/`; `ui/fonts.json` records the emoji font as it records a text font.
+  Without an emoji font the sprites keep their layout with empty glyphs, and `ui/fonts.json`
+  `coverage.sprites.missing` lists them. `--fonts game` uses the game's sprite asset.
 - Stories need `[paths] apk` and the optional `fonts` dependencies (`pip install 'nnnotes[fonts]'`) in both modes.
 - The story index's groups come from the story tables of the master data (`MasterStoryEpisode` and its chapter,
   `MasterStoryFriendshipEpisode`, `MasterStoryHomeSpotTapTalkEpisode`, `MasterStoryLiveResultEpisode`,

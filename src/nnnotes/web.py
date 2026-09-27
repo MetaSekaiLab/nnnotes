@@ -117,7 +117,7 @@ SITE_DATA = ("assets", "charts", MODELS_DIR, "charts.json", MODELS_INDEX, STORIE
 PLAYER_VERSION_MARKER = "@PLAYER_VERSION@"         # replaced in the page's files by the bundles' short hash
 # collected files: text as UTF-8, binary as is; shader programs of the WebGL2 tier only
 TEXT_EXT = {".json", ".glsl"}
-BINARY_EXT = {".png", ".flac", ".ogg", ".wav", ".moc3", ".glb", ".atlas", ".skel"}   # .glb / .atlas / .skel: an Overlay story's home spot
+BINARY_EXT = {".png", ".flac", ".ogg", ".wav", ".moc3", ".glb", ".atlas", ".skel", ".bin"}   # .glb / .atlas / .skel: an Overlay story's home spot; .bin: a story's CRI Lips data (crilips.py)
 SHADER_PLATFORM = "gles3"
 SHADER_TYPE = "GLES3"
 # master tables the chart build reads (score, live, liveaudio, livescene, livenotes, liveui): a region's chart inputs

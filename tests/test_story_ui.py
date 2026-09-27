@@ -87,6 +87,59 @@ def test_camera_record():
         advui._camera(widget, "W/Other")
 
 
+class _Obj:
+    def __init__(self, pid, type_name, tt, cls=None):
+        self.path_id, self.tt, self.cls = pid, tt, cls
+        self.type = type("T", (), {"name": type_name})
+
+    def read_typetree(self):
+        return self.tt
+
+
+def _ui_manager(data_go=3):
+    ptr = lambda pid: {"m_FileID": 0, "m_PathID": pid}  # noqa: E731
+    objs = {
+        1: _Obj(1, "GameObject", {"m_Component": [{"component": ptr(10)}, {"component": ptr(11)}]}),
+        11: _Obj(11, "MonoBehaviour", {"m_GameObject": ptr(1), "_cameraController": ptr(20)}, "UIManager"),
+        20: _Obj(20, "MonoBehaviour", {"m_GameObject": ptr(2), "_uiCamera": ptr(30), "_uiCameraData": ptr(31)},
+                 "UICameraController"),
+        30: _Obj(30, "Camera", {"m_GameObject": ptr(3), **{k: 0 for k in advui.CAMERA_FIELDS}, "orthographic": 1,
+                                "orthographic size": 5.0, "far clip plane": 1000.0, "m_Iso": 200}),
+        31: _Obj(31, "MonoBehaviour", {"m_GameObject": ptr(data_go), **{k: 1 for k in advui.CAMERA_DATA_FIELDS}},
+                 "UniversalAdditionalCameraData"),
+        10: _Obj(10, "RectTransform", {}),
+    }
+    graph = type("G", (), {"go": {1: {"m_IsActive": 1}, 2: {"m_IsActive": 1}, 3: {"m_IsActive": 1}},
+                           "tf_of_go": {1: 101, 2: 102, 3: 103},
+                           "path": staticmethod(lambda tf: {101: "UIManager", 102: "UIManager/Cameras",
+                                                            103: "UIManager/Cameras/UICamera"}[tf])})()
+
+    class Ex:
+        def key_object(self, key):
+            assert key == advui.UI_MANAGER_KEY
+            return objs[1]
+
+        def load(self, key):
+            return None, graph
+
+        def deref(self, owner, pptr):
+            return objs.get(pptr["m_PathID"])
+
+        def script_class(self, o):
+            return o.cls
+    return Ex()
+
+
+def test_ui_camera_record_follows_the_ui_manager_references():
+    cam = advui.ui_camera(_ui_manager())
+    assert cam["path"] == "UIManager/Cameras/UICamera" and cam["active"] is True
+    assert set(cam["camera"]) == set(advui.CAMERA_FIELDS) and "m_Iso" not in cam["camera"]
+    assert cam["camera"]["orthographic"] == 1 and cam["camera"]["orthographic size"] == 5.0
+    assert set(cam["additionalCameraData"]) == set(advui.CAMERA_DATA_FIELDS)
+    with pytest.raises(RuntimeError, match="different GameObjects"):
+        advui.ui_camera(_ui_manager(data_go=2))
+
+
 def test_shown_texts_keep_subtitles_and_ruby_readings():
     lines = lambda s: {"japanese": s, "english": s}  # noqa: E731
     episode = {"commands": [{"cmd": "Talk", "lines": lines("<r=よみ>読</r>み"), "TargetName": "a", "AdvTextID": "t",
@@ -170,23 +223,64 @@ class FakeObj:
         return self.tree
 
 
-def test_emoji_sprites():
-    tree = {"m_Name": "Emoji", "fallbackSpriteAssets": [],
+def test_sprite_asset_record():
+    """The emoji sprite asset as the layout reads it: face info, the character table in order, the glyphs, the
+    sequence entries of the legacy sprite list, the sheet and the material."""
+    metrics = {"m_Width": 32.0, "m_Height": 32.0}
+    tree = {"m_Name": "Emoji", "fallbackSpriteAssets": [], "m_FaceInfo": {"m_PointSize": 0.0},
+            "spriteSheet": "sheet", "m_Material": "mat",
             "spriteInfoList": [{"name": "1f600", "unicode": 0x1F600}, {"name": "2764-fe0f", "unicode": 0x2764},
-                               {"name": "2764-FE0F", "unicode": 0x2764}, {"name": "", "unicode": 0}],
-            "m_SpriteCharacterTable": [{"m_Unicode": 0x2764}, {"m_Unicode": 0x1F600}, {"m_Unicode": 0x2764}]}
+                               {"name": "", "unicode": 0}],
+            "m_SpriteCharacterTable": [{"m_Unicode": 0x1F600, "m_Name": "1f600", "m_GlyphIndex": 0, "m_Scale": 1.0},
+                                       {"m_Unicode": 0x2764, "m_Name": "2764-fe0f", "m_GlyphIndex": 1, "m_Scale": 1.0}],
+            "m_GlyphTable": [{"m_Index": i, "m_Metrics": metrics, "m_GlyphRect": {"m_X": 32 * i}, "m_Scale": 1.0,
+                              "m_AtlasIndex": 0} for i in (0, 1)]}
+    sheet = {"m_Name": "Sheet", "m_Width": 64, "m_Height": 32, "m_MipCount": 1,
+             "m_TextureSettings": {"m_FilterMode": 1}}
 
     class Ex:
         def key_object(self, key):
             assert key == advui.EMOJI_SPRITE_ASSET_KEY
             return FakeObj(tree)
-    nodes = [{"components": [{"class": "RubyEmojiTextMeshProUGUI", "m_spriteAsset": None}]}]
-    assert advui.emoji_sprites(Ex(), nodes) == {"spriteAsset": "Emoji", "address": advui.EMOJI_SPRITE_ASSET_KEY,
-                                                "sequences": {"\u2764\uFE0F": "2764-fe0f"},
-                                                "characters": [0x2764, 0x1F600]}
-    own = [{"components": [{"class": "RubyEmojiTextMeshProUGUI", "m_spriteAsset": {"name": "Own"}}]}]
-    with pytest.raises(NotImplementedError, match="own sprite asset"):
-        advui.emoji_sprites(Ex(), own)
+
+        def deref(self, o, ref):
+            return FakeObj(sheet) if ref == "sheet" else ref
+
+        def material(self, o):
+            return {"material": f"{o} record"}
+    rec = advui.sprite_asset_record(Ex())
+    assert rec["characters"] == [{"index": 0, "unicode": 0x1F600, "name": "1f600", "glyph": 0, "scale": 1.0},
+                                 {"index": 1, "unicode": 0x2764, "name": "2764-fe0f", "glyph": 1, "scale": 1.0}]
+    assert rec["glyphs"]["1"] == {"metrics": metrics, "rect": {"m_X": 32}, "scale": 1.0, "atlasIndex": 0}
+    assert rec["sequences"] == [{"name": "2764-fe0f", "unicode": 0x2764}]
+    assert rec["sheet"] == {"name": "Sheet", "width": 64, "height": 32, "mipCount": 1, "settings": {"m_FilterMode": 1}}
+    assert rec["material"] == {"material": "mat record"} and rec["faceInfo"] == {"m_PointSize": 0.0}
+    tree["fallbackSpriteAssets"] = [{"m_PathID": 1}]
+    with pytest.raises(NotImplementedError, match="fallback sprite assets"):
+        advui.sprite_asset_record(Ex())
+
+
+def test_emoji_sequence_parse():
+    """TMP_EmojiSearchEngine: the table (the first entry of a key wins) and the names a parse writes: the longest run
+    of UTF-16 units whose prefixes are all in the fast set, no backtracking, the scan going on after a failed run."""
+    seqs = [{"name": "2764-fe0f", "unicode": 0x2764}, {"name": "2764-FE0F", "unicode": 0x2764},
+            {"name": "1f647-200d-2640-fe0f", "unicode": 0x1F647}, {"name": "2764-fe0f-200d-1f525", "unicode": 0x2764}]
+    table, fast = advui.emoji_sequence_table(seqs)
+    assert table[advui._utf16("\u2764\uFE0F")] == "2764-fe0f" and len(table) == 3
+    assert (0xD83D,) in fast                                               # a half of a surrogate pair
+    names = advui.emoji_sequence_names
+    assert names(table, fast, "a\u2764\ufe0fb\U0001F647\u200d\u2640\ufe0f") == ["2764-fe0f", "1f647-200d-2640-fe0f"]
+    assert names(table, fast, "\u2764\ufe0f\u200dx") == [], "the run's prefix is no key: no shorter key is tried"
+    assert names(table, fast, "\u2764\ufe0f\u200d\U0001F525") == ["2764-fe0f-200d-1f525"]
+    assert names(table, fast, "\u2764\u2764\ufe0f") == ["2764-fe0f"]
+    assert names({}, set(), "\u2764\ufe0f") == []
+
+
+def test_tmp_hash():
+    """TMP_TextUtilities.GetHashCode: case-insensitive for ASCII letters, 32 bits."""
+    assert advui.tmp_hash("abc") == ((((65 * 33) ^ 66) * 33) ^ 67)
+    assert advui.tmp_hash("1f600") == advui.tmp_hash("1F600") != advui.tmp_hash("1f601")
+    assert 0 <= advui.tmp_hash("x" * 40) < 2 ** 32
 
 
 LANG = {"languages": {0: {"fontNames": ["JA-R", "JA-N"], "additionalFontNames": ["CHAT"]},
@@ -363,3 +457,95 @@ def test_full_views_and_pictograms():
     assert (recs[1]["sprite"], recs[1]["_defaultRef"]) == (None, "cab:1")
     with pytest.raises(RuntimeError, match="not exported"):
         advui.resolve_pictograms({"path": "x", **advui._layout_components(nodes[1])}, {})
+
+
+def test_talk_windows_and_their_nodes():
+    """The default talk window first, then the episode's other talk windows by name; each window's prefab nodes under
+    TalkView, the default from WINDOW_KEY and the others from the TalkWindow address as adv.closure resolves it."""
+    res = [{"kind": "talkwindow", "address": "EmbUI/Prefab/Parts/Adv/Talk/UIDefaultTalkWindow"},
+           {"kind": "talkwindow", "address": "EmbUI/Prefab/Parts/Adv/Talk/UICenterTalkWindow"},
+           {"kind": "chatwindow", "address": "Adv/Chat/Prefabs/Zed"},
+           {"kind": "talkwindow", "address": "UI/Prefab/Parts/Adv/Talk/UIBTalkWindow"}]
+    assert advui.talk_windows({"resources": res}) == ["UIDefaultTalkWindow", "UIBTalkWindow", "UICenterTalkWindow"]
+    assert advui.talk_windows({"resources": []}) == ["UIDefaultTalkWindow"]
+
+    class Cat:
+        def has(self, address):
+            return address == "UI/Prefab/Parts/Adv/Talk/UIBTalkWindow"
+
+    class Ex:
+        cat = Cat()
+
+        def __init__(self):
+            self.keys = []
+
+        def prefab(self, key):
+            self.keys.append(key)
+            name = key.rsplit("/", 1)[1]
+            return {"nodes": [{"path": name, "components": []}, {"path": f"{name}/TalkArea", "components": []}]}
+    assert advui.window_key(Cat(), "UIDefaultTalkWindow") == advui.WINDOW_KEY
+    assert advui.window_key(Cat(), "UIBTalkWindow") == "UI/Prefab/Parts/Adv/Talk/UIBTalkWindow"
+    assert advui.window_key(Cat(), "UICenterTalkWindow") == "EmbUI/Prefab/Parts/Adv/Talk/UICenterTalkWindow"
+    ex = Ex()
+    got = advui.window_nodes(ex, ["UIDefaultTalkWindow", "UICenterTalkWindow"])
+    assert [n["path"] for n in got] == [f"{advui.WINDOW_PARENT}/{p}" for p in (
+        "UIDefaultTalkWindow", "UIDefaultTalkWindow/TalkArea", "UICenterTalkWindow", "UICenterTalkWindow/TalkArea")]
+    assert ex.keys == [advui.WINDOW_KEY, "EmbUI/Prefab/Parts/Adv/Talk/UICenterTalkWindow"]
+
+    class Wrong(Ex):
+        def prefab(self, key):
+            return {"nodes": [{"path": "Other", "components": []}]}
+    with pytest.raises(RuntimeError, match="prefab root"):
+        advui.window_nodes(Wrong(), ["UICenterTalkWindow"])
+    assert advui.about("en", ["UIDefaultTalkWindow", "UICenterTalkWindow"]) == \
+        "ADV front canvas UI data (UIAdvWidget + UIDefaultTalkWindow, UICenterTalkWindow), en"
+
+
+def test_backdrop_filter_and_the_backdrop_node():
+    """The centre-talk backdrop is kept when a talk window uses the backdrop filter: the node UIAdvWidget's backdrop
+    CanvasGroup and Image references name (one node with both components)."""
+    win = lambda on: [{"path": "W", "components": [{"class": "UIAdvTalkWindow", "_useBackdropFilter": on}]},
+                      {"path": "W/TalkArea", "components": [image()]}]
+    assert advui.uses_backdrop_filter(win(0) + win(1)) and not advui.uses_backdrop_filter(win(0))
+    path = "UIAdvWidget/FrontCanvas/CenterTalkBackdrop"
+    widget = [{"path": "UIAdvWidget", "components": []},
+              {"path": path, "components": [{"type": "CanvasGroup", "m_Alpha": 0.0}, image()]},
+              {"path": "UIAdvWidget/FrontCanvas/Plain", "components": [image()]}]
+    comp = {"_centerTalkBackdropCanvasGroup": ref(path, "CanvasGroup", None),
+            "_centerTalkBackdropImage": ref(path)}
+    assert advui.backdrop_path(widget, comp) == path
+    with pytest.raises(RuntimeError, match="BACKDROP|_centerTalkBackdrop"):
+        advui.backdrop_path(widget, {**comp, "_centerTalkBackdropImage": ref("UIAdvWidget/FrontCanvas/Plain")})
+    with pytest.raises(RuntimeError, match="no CanvasGroup"):
+        advui.backdrop_path(widget, {k: ref("UIAdvWidget/FrontCanvas/Plain") for k in comp})
+
+
+def test_blur_settings():
+    """The blur of a backdrop-filter talk window: renderer 0's UIRendererFeature record and its shader object."""
+    feature = {"class": "Fwk.UI.Rendering.UIRendererFeature", "m_Active": 1, "_blurIterations": 3, "_blurOffset": 1.0,
+               "_blurDownsample": 1, "_blurBlendRateMax": 0.3, "_dualKawaseBlurShader": "Hidden/UI/DualKawaseBlur"}
+
+    class Shader:
+        def __init__(self, name):
+            self.m_ParsedForm = type("P", (), {"m_Name": name})
+
+        def read(self):
+            return self
+
+    class Player:
+        def __init__(self, active=1):
+            self.active = active
+
+        def graphics(self):
+            return {"defaultPipeline": "P", "pipelines": {"P": {"m_RendererDataList": ["R0"], "m_DefaultRendererIndex": 0}},
+                    "renderers": {"R0": {"m_RendererFeatures": [{**feature, "m_Active": self.active}]}}}
+
+        def renderer_shaders(self, name):
+            assert name == "R0"
+            return [Shader("Hidden/Other"), Shader("Hidden/UI/DualKawaseBlur")]
+    blur, shader = advui.blur_settings(Player())
+    assert blur == {"renderer": "R0", "active": True, "iterations": 3, "offset": 1.0, "downsample": 1,
+                    "blendRateMax": 0.3, "shader": "Hidden/UI/DualKawaseBlur"}
+    assert shader.m_ParsedForm.m_Name == "Hidden/UI/DualKawaseBlur"
+    with pytest.raises(NotImplementedError, match="not active"):
+        advui.blur_settings(Player(0))

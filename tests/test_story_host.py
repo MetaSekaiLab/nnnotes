@@ -294,6 +294,43 @@ def write_table(d, name, rows):
     (d / f"{name}.json").write_text(json.dumps({"_allData": rows}), encoding="utf-8")
 
 
+def test_render_settings_keeps_the_lighting_environment(monkeypatch):
+    null = {"m_FileID": 0, "m_PathID": 0}
+    white = {"r": 1.0, "g": 1.0, "b": 1.0, "a": 1.0}
+    rs = {"m_Fog": 0, "m_AmbientMode": 3, "m_AmbientSkyColor": white, "m_AmbientIntensity": 1.0,
+          "m_DefaultReflectionMode": 0, "m_ReflectionIntensity": 1.0, "m_SkyboxMaterial": null,
+          "m_CustomReflection": null, "m_Sun": {"m_FileID": 0, "m_PathID": 7}, "m_HaloStrength": 0.5}
+    env = SimpleNamespace(objects=[obj("RenderSettings", 1, rs), obj("LightmapSettings", 2, {"m_Lightmaps": [{}, {}]})])
+    monkeypatch.setattr(storyhost, "deref", lambda owner, p: obj("Light", p["m_PathID"], {"m_Enabled": 1}))
+    assert storyhost.render_settings(env) == {
+        "m_Fog": 0, "m_AmbientMode": 3, "m_AmbientSkyColor": white, "m_AmbientIntensity": 1.0,
+        "m_DefaultReflectionMode": 0, "m_ReflectionIntensity": 1.0, "m_SkyboxMaterial": None,
+        "m_CustomReflection": None, "m_Sun": {"name": None}, "lightmaps": 2}
+    with pytest.raises(RuntimeError, match="1 RenderSettings and 0 LightmapSettings"):
+        storyhost.render_settings(SimpleNamespace(objects=env.objects[:1]))
+
+
+def test_lighting_components_list_the_lights_under_the_placed_root():
+    g, ids = graph(BACKGROUND, inactive=("chair",))
+
+    def comp(kind, pid, go, **kw):
+        return obj(kind, pid, {"m_GameObject": {"m_FileID": 0, "m_PathID": 1000 + ids[go]}, "m_Enabled": 1, **kw})
+    env = SimpleNamespace(objects=[comp("Light", 501, "chair", m_Type=2), comp("Light", 502, "table", m_Enabled=0, m_Type=1),
+                                   comp("ReflectionProbe", 503, "light"), comp("Light", 504, "table#m", m_Type=1),
+                                   comp("MeshRenderer", 505, "mesh_a")])
+    got = storyhost.lighting_components(env, g, ids["bg"], lambda tf: storyhost.active_in_hierarchy(g, tf, {}))
+    assert got == [{"path": "bg/light", "type": "ReflectionProbe", "m_Enabled": 1, "active": True},
+                   {"path": "bg/light/chair", "type": "Light", "m_Enabled": 1, "active": False, "m_Type": 2},
+                   {"path": "bg/light/table", "type": "Light", "m_Enabled": 0, "active": True, "m_Type": 1}]
+
+
+def test_active_path_needs_the_node_and_its_ancestors_active():
+    nodes = [{"path": "A", "active": True}, {"path": "A/B", "active": False}, {"path": "A/B/C", "active": True},
+             {"path": "A/BC", "active": True}]
+    assert not storyhost._active_path(nodes, "A/B/C")
+    assert storyhost._active_path(nodes, "A/BC") and storyhost._active_path(nodes, "A")
+
+
 def test_ambient_record(tmp_path):
     write_table(tmp_path, "MasterSound", [{"_id": 31, "_soundCueSheetID": 4, "_cueName": "amb_cafe"}])
     write_table(tmp_path, "MasterSoundCueSheet", [{"_id": 4, "_cueSheetName": "se_amb"}])

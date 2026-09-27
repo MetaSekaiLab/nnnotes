@@ -61,11 +61,13 @@ exist when they are given.
 | `[paths] cache` | `NNNOTES_PATHS_CACHE` | `--cache` | cache directory (created when missing) |
 | `[paths] store` | `NNNOTES_PATHS_STORE` | `--store` (of `export`, `plan`, `run-stage`, `catalogs`, `store`) | store directory of the asset export ([assets.md](assets.md)); unset: `<[paths] cache>/store` |
 | `[paths] master` | `NNNOTES_PATHS_MASTER` | `--master` | decoded master data directory, one `<Table>.json` per table; the flag overrides `[servers.<region>] master` |
-| `[paths] apk` | `NNNOTES_PATHS_APK` | `--apk` | the game's `base.apk` |
+| `[paths] apk` | `NNNOTES_PATHS_APK` | `--apk` | the game's `base.apk` (the story export reads the CRI Lips library from it, or from `split_config.arm64_v8a.apk` next to it) |
 | `[paths] ffmpeg` | `NNNOTES_PATHS_FFMPEG` | `--ffmpeg` | `ffmpeg` executable; unset: `ffmpeg` on `PATH` |
 | `[paths] vgmstream` | `NNNOTES_PATHS_VGMSTREAM` | `--vgmstream` | `vgmstream-cli` executable; unset: `vgmstream-cli` on `PATH` |
 | `[paths] node` | `NNNOTES_PATHS_NODE` | `--node` | Node.js executable; unset: `node` on `PATH` |
 | `[paths] player` | `NNNOTES_PATHS_PLAYER` | `--player` (of `web`) | ournotes-player checkout (built) or installed package |
+| `[paths] fonts.<language>` | `NNNOTES_PATHS_FONTS_<LANGUAGE>` (e.g. `NNNOTES_PATHS_FONTS_ZH_HANT`) | `--font <language>=PATH` (of `web`) | font file (OpenType or TrueType) the story text of a language is drawn with (`--fonts open`) |
+| `[paths] fonts.emoji` | `NNNOTES_PATHS_FONTS_EMOJI` | `--font emoji=PATH` (of `web`) | colour emoji font (PNG bitmap glyphs: CBDT or sbix) the stories' emoji sprites are drawn from (`--fonts open`); Noto Color Emoji (SIL Open Font License 1.1) is the tested font. Optional: without it the sprites keep their layout with empty glyphs, listed in `ui/fonts.json` `coverage.sprites.missing` |
 | `[export] link` | `NNNOTES_EXPORT_LINK` | `--link` (of `export`) | how `export` makes the layout files from the store: `auto` (unset), `clone`, `hard` or `copy` ([assets.md](assets.md)) |
 
 Hex values are case-insensitive; a `0x` prefix and surrounding whitespace are ignored. All values are TOML strings

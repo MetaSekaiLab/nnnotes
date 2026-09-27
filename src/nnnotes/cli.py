@@ -25,6 +25,7 @@ whatever the console encoding.
     nnnotes web out/site --player <ournotes-player> [--pair 100001:expert [--pair ...] | --all] [--format aac]
                          [--live2d <model id | key> [--live2d ...] | --all-live2d]
                          [--story 10462 [--story ...] | --all-stories] [--story-languages en,ja] [--font en=<file>]
+                         [--font emoji=<file>]
                          [--region <region> [--region ...] | --all-regions]
     nnnotes export -o out/assets [--select group:<group> | key:<prefix> | bundle:<glob> ...] [--layout original,cas]
     nnnotes plan [--select ...] [--json] [--check] [--emit-tasks <dir>]
@@ -485,12 +486,15 @@ def parse_languages(s: str) -> list[str]:
     return codes
 
 
+EMOJI_FONT = "emoji"                        # --font emoji=<file>, as storysite.EMOJI_FONT
+
+
 def parse_font(s: str) -> tuple[str, str]:
     from .languages import LANGUAGES
     lang, sep, path = s.partition("=")
-    if not sep or lang not in LANGUAGES or not path:
-        raise argparse.ArgumentTypeError(f"{s}: expected <language>=<font file>, language one of "
-                                         f"{', '.join(LANGUAGES)}")
+    if not sep or (lang not in LANGUAGES and lang != EMOJI_FONT) or not path:
+        raise argparse.ArgumentTypeError(f"{s}: expected <language>=<font file> or {EMOJI_FONT}=<emoji font file>, "
+                                         f"language one of {', '.join(LANGUAGES)}")
     return lang, path
 
 
@@ -668,7 +672,8 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--story-languages", type=parse_languages, metavar="LANGS",
                    help="languages of the stories' text, comma-separated (default: ja,en,zh-Hant,zh-Hans,ko)")
     c.add_argument("--font", type=parse_font, action="append", metavar="LANG=PATH",
-                   help="font file the story text of a language is drawn with (repeatable; [paths] fonts.<lang>)")
+                   help="font file the story text of a language is drawn with (repeatable; [paths] fonts.<lang>); "
+                        "emoji=PATH: the colour emoji font the emoji sprites are drawn from ([paths] fonts.emoji)")
     r = c.add_mutually_exclusive_group()
     r.add_argument("--region", dest="web_regions", action="append", metavar="REGION",
                    help="a region the site serves: a [servers.<region>] table (repeatable; the first is the base; "

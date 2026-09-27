@@ -8,8 +8,11 @@ frames and videos, the letterbox bands and the dialogs of the ADV screen,
 taken from the game data:
 
   nodes        RectTransform hierarchy of the drawn parts of UIAdvWidget
-               (DRAWN) with the default talk window (UIDefaultTalkWindow)
-               attached under UIContainer/TalkView (AdvTalkView.SetWindow); per
+               (DRAWN) with the talk windows under UIContainer/TalkView
+               (AdvTalkView.SetWindow): the default UIDefaultTalkWindow, then
+               the other windows the episode's TalkWindow rows attach, and the
+               front canvas' CenterTalkBackdrop when one of them uses the
+               backdrop filter (UIAdvTalkWindow._useBackdropFilter); per
                node the uGUI components the runtime needs (Canvas and scaler,
                Image, RawImage, CanvasGroup, UIGradientImage, layout groups,
                DOTweenSequence durations, the views' serialized references as
@@ -21,6 +24,9 @@ taken from the game data:
   videoAndStillCamera  the camera the still and video canvases render with
                (UIAdvWidget._videoAndStillCamera) and the screen image showing
                its output (_videoAndStillScreenImage)
+  uiCamera     the UI camera of the UIManager prefab, which renders the frame
+               canvas (its canvas camera is assigned at run time), in the form
+               of videoAndStillCamera
   masterIdTexts  the AdvMasterIdSettings texts of the skip and video skip
                dialogs and the interruption dialog in the language (with the
                master data)
@@ -33,6 +39,9 @@ taken from the game data:
   chatTexts    per chat window of the episode (AdvChatWindow prefab), the text
                record of each TMP text in the language, and chatStatusTexts:
                the incoming call / lock screen status texts the windows set
+  blur         with a backdrop-filter talk window: the UI blur pass settings
+               (the UIRendererFeature of renderer 0: Dual Kawase iterations,
+               offset, downsample, blend rate maximum, shader)
   sprites      sprite geometry (rect, border, pivot, pixels per unit, texture
                rect/offset) remapped into packed textures
   materials    UI-Transition, the built-in Default UI Material, the materials
@@ -40,7 +49,7 @@ taken from the game data:
   clips        Animator clips (NextIndicator, AutoNext, AdvLocation/AdvTitle Play)
   transitions  RuleTransitionSettings of every transition the episode or the
                player settings reference
-  shaders      UI/Default, UI/Transition
+  shaders      UI/Default, UI/Transition, the blur shader with `blur`
 
 Language (`language`, a catalog language code; default `[catalog] language`):
 the LanguageMode of the localized fonts, materials and line spacing
@@ -78,8 +87,12 @@ from . import adv, languages, textstyle
 from .textstyle import LANGUAGE_LINE_SPACING
 
 WIDGET_KEY = "EmbUI/Prefab/UIAdvWidget"
+# UIManager: UIManager._cameraController -> UICameraController._uiCamera / _uiCameraData
+UI_MANAGER_KEY = "EmbCommon/Prefab/UIManager"
 WINDOW_KEY = "EmbUI/Prefab/Parts/Adv/Talk/UIDefaultTalkWindow"
 WINDOW_PARENT = "UIAdvWidget/FrontCanvas/UISafeArea/UIContainer/TalkView"
+# UIAdvWidget._centerTalkBackdropCanvasGroup / _centerTalkBackdropImage: the backdrop of a backdrop-filter talk window
+BACKDROP_REFS = ("_centerTalkBackdropCanvasGroup", "_centerTalkBackdropImage")
 LETTERBOX_KEY = "Textures/letterbox-image"
 TRANSITION_PREFIX = "Adv/Transition/"
 PLAYER_SETTINGS_KEY = "EmbCommon/Adv/Settings/AdvPlayerSettings"
@@ -385,13 +398,16 @@ def extract(cat: Catalog, player: PlayerData, episode: dict, out_dir: Path, font
 
     # -- prefabs -------------------------------------------------------------
     widget = ex.prefab(WIDGET_KEY)["nodes"]
-    window = ex.prefab(WINDOW_KEY)["nodes"]
+    windows = talk_windows(episode)
+    window = window_nodes(ex, windows)
     paths = {n["path"] for n in widget}
     if WINDOW_PARENT not in paths:
         raise RuntimeError(f"{WINDOW_PARENT} not in {WIDGET_KEY}")
+    widget_comp = next(c for c in widget[0]["components"] if c.get("class") == "UIAdvWidget")
+    drawn = DRAWN + ((backdrop_path(widget, widget_comp),) if uses_backdrop_filter(window) else ())
 
     def kept(p: str) -> bool:
-        return any(p == d or p.startswith(d + "/") or d.startswith(p + "/") for d in DRAWN)
+        return any(p == d or p.startswith(d + "/") or d.startswith(p + "/") for d in drawn)
 
     nodes = []
     for n in widget:
@@ -399,10 +415,8 @@ def extract(cat: Catalog, player: PlayerData, episode: dict, out_dir: Path, font
             continue
         nodes.append(n)
         if n["path"] == WINDOW_PARENT:
-            # AdvTalkView.SetWindow: parented under TalkView, localPosition 0, last sibling
-            for w in window:
-                nodes.append({**w, "path": f"{WINDOW_PARENT}/{w['path']}"})
-    for d in DRAWN:
+            nodes += window
+    for d in drawn:
         if d not in {n["path"] for n in nodes}:
             raise RuntimeError(f"{d} missing from the prefabs")
     styles = textstyle.TextStyles(ex, player, mode)
@@ -427,9 +441,7 @@ def extract(cat: Catalog, player: PlayerData, episode: dict, out_dir: Path, font
     dialogs = {name: {"key": DIALOG_KEYS[name], "nodes": records(dn, False)} for name, dn in dialog_nodes.items()}
     front = [n for n in widget if n["path"].startswith("UIAdvWidget/FrontCanvas/") and n["path"].count("/") == 2]
     front_order = [n["name"] for n in front]
-    widget_comp = next(c for c in widget[0]["components"] if c.get("class") == "UIAdvWidget")
     widget_rec = widget_canvases(widget, widget_comp)
-    emoji = emoji_sprites(ex, nodes)
     camera = _camera(widget, _ref_path(widget_comp["_videoAndStillCamera"]))
     screen_image = _ref_path(widget_comp["_videoAndStillScreenImage"])
     if screen_image not in {n["path"] for n in out_nodes}:
@@ -558,7 +570,16 @@ def extract(cat: Catalog, player: PlayerData, episode: dict, out_dir: Path, font
             needed[name] = ex.shaders[name]
         else:
             raise RuntimeError(f"shader {name} not in the loaded bundles")
+    blur = None
+    if uses_backdrop_filter(window):
+        blur, blur_shader = blur_settings(player)
+        needed[blur["shader"]] = blur_shader
     index, shader_summary = ex.dump_shaders(ui_dir / "shaders", needed)
+    if blur is not None:
+        gles = [v for r in index if r["name"] == blur["shader"] for v in r["variants"]
+                if v["platform"] == "gles3" and v["type"] == "GLES3"]
+        if not any(v["keywords"] == [] and v["stage"] == "vertex" for v in gles):
+            raise RuntimeError(f"{blur['shader']}: no GLES3 variant without keywords (the blur pass)")
     variants_needed = {}
     for m in materials.values():
         sh = m["shader"]["shader"]
@@ -570,23 +591,27 @@ def extract(cat: Catalog, player: PlayerData, episode: dict, out_dir: Path, font
         if not ok:
             raise RuntimeError(f"{sh}: no GLES3 variant for material {m['material']} keywords {want}")
         variants_needed[m["material"]] = want
+    # read last: loading the UIManager bundles registers their shaders
+    ui_cam = ui_camera(ex)
 
     doc = {
-        "about": about(language),
+        "about": about(language, windows),
         "language": language_doc(language, styles if game else None),
         "frontCanvasOrder": front_order,
         "widget": widget_rec,
         "nodes": out_nodes,
         "videoAndStillCamera": camera,
+        "uiCamera": ui_cam,
         "videoAndStillScreenImage": screen_image,
         "chatWidget": chat_widget,
-        "emoji": emoji,
         "sprites": sprites_out,
         "letterBoxSprite": lb_sprite["name"],
         "textures": textures,
         "materials": materials,
         "materialKeywords": variants_needed,
     }
+    if blur is not None:
+        doc["blur"] = blur
     if game:
         tmp_settings = player.names_in(player.resource("TMP Settings"), player.mono(player.resource("TMP Settings")))
         doc["fonts"] = font_out
@@ -625,6 +650,69 @@ def extract(cat: Catalog, player: PlayerData, episode: dict, out_dir: Path, font
                                   "validation": {kk: v["runtimeGlyphs"]["validation"][kk] for kk in
                                                  ("glyphs", "maxAbsError", "meanAbsError", "exactGlyphs")}}
                               for k, v in font_out.items() if v["runtimeGlyphs"]}}
+
+
+def talk_windows(episode: dict) -> list[str]:
+    """The talk windows the story attaches, in the order of their nodes under TalkView: UIDefaultTalkWindow (AdvPlayer
+    PlayInitialCommands attaches it), then by name the other talk windows of the episode's resources (the TalkWindow
+    rows, adv.closure kind "talkwindow")."""
+    names = {r["address"][r["address"].rindex("/") + 1:] for r in episode["resources"] if r["kind"] == "talkwindow"}
+    return [adv.DEFAULT_TALK_WINDOW] + sorted(names - {adv.DEFAULT_TALK_WINDOW})
+
+
+def window_key(cat, name: str) -> str:
+    """The prefab key of the talk window `name`: WINDOW_KEY for the default window, else the TalkWindow address
+    ("UI/Prefab/Parts/Adv/Talk/" + name) resolved as adv.closure resolves it (embedded content: the "Emb" key when
+    the catalog lacks the plain one)."""
+    if name == adv.DEFAULT_TALK_WINDOW:
+        return WINDOW_KEY
+    address = adv.TALK_WINDOW_PREFIX + name
+    return address if cat.has(address) else adv.EMBEDDED_PREFIX + address
+
+
+def window_nodes(ex: Exporter, names: list[str]) -> list[dict]:
+    """The prefab nodes of the talk windows `names`, in that order, with their paths under TalkView
+    (AdvTalkView.SetWindow parents the attached window there at localPosition 0)."""
+    out = []
+    for name in names:
+        nodes = ex.prefab(window_key(ex.cat, name))["nodes"]
+        if not nodes or nodes[0]["path"] != name:
+            raise RuntimeError(f"talk window {name}: the prefab root is not {name}")
+        out += [{**w, "path": f"{WINDOW_PARENT}/{w['path']}"} for w in nodes]
+    return out
+
+
+def uses_backdrop_filter(window: list[dict]) -> bool:
+    """Whether a talk window of the nodes (window_nodes) has UIAdvTalkWindow._useBackdropFilter set."""
+    return any(c.get("class") == "UIAdvTalkWindow" and c["_useBackdropFilter"] for n in window for c in n["components"])
+
+
+def backdrop_path(widget: list[dict], comp: dict) -> str:
+    """The node of the centre-talk backdrop (UIAdvWidget BACKDROP_REFS: its CanvasGroup and Image, on one node)."""
+    paths = {_ref_path(comp[k]) for k in BACKDROP_REFS}
+    if len(paths) != 1 or None in paths:
+        raise RuntimeError(f"UIAdvWidget {BACKDROP_REFS}: {sorted(map(str, paths))}")
+    path = paths.pop()
+    node = next((n for n in widget if n["path"] == path), None)
+    if node is None:
+        raise RuntimeError(f"{path}: not a widget node")
+    if not any(c["type"] == "CanvasGroup" for c in node["components"]) or _component(node, ("Image",)) is None:
+        raise RuntimeError(f"{path}: no CanvasGroup or Image")
+    return path
+
+
+def blur_settings(player: PlayerData) -> tuple[dict, object]:
+    """ui.json `blur` and its Shader object, for a backdrop-filter talk window (UIAdvWidget.UpdateAdvBlurAndBackdrop ->
+    UIManager.UseBlur): the UIRendererFeature of renderer 0 (storyhost.blur_record; CameraManager and
+    UICameraController set renderer 0 on the main, sub and UI cameras, and the UI overlay camera runs the pass)."""
+    from . import storyhost  # storyhost imports this module: resolved at call time
+    blur = storyhost.blur_record(player.graphics())
+    if not blur["active"]:
+        raise NotImplementedError(f"renderer {blur['renderer']}: the UIRendererFeature is not active")
+    objs = [o for o in player.renderer_shaders(blur["renderer"]) if o.read().m_ParsedForm.m_Name == blur["shader"]]
+    if len(objs) != 1:
+        raise RuntimeError(f"renderer {blur['renderer']}: {len(objs)} shaders {blur['shader']}")
+    return blur, objs[0]
 
 
 def pictogram_catalogs(nodes: list) -> dict:
@@ -692,41 +780,138 @@ def emoji_sequence_key(name: str, unicode: int) -> str | None:
     return "".join(out)
 
 
-def emoji_sprites(ex: Exporter, nodes: list) -> dict:
-    """emoji: the sprite asset the emoji texts (EMOJI_CLASSES) of the drawn nodes use (their m_spriteAsset, else
-    LocalizeManager.EmojiSpriteAsset, TmpTextHelper.CombineEmojiSequences), its sequence lookup table
-    ({key: sprite name}, TMP_EmojiSearchEngine; the first sprite of a key wins) and the code points of its sprite
-    characters (m_SpriteCharacterTable)."""
-    own = {c["m_spriteAsset"]["name"] if c.get("m_spriteAsset") else None
-           for n in nodes for c in n["components"] if c.get("class") in EMOJI_CLASSES}
-    if own - {None}:
-        raise NotImplementedError(f"emoji texts with their own sprite asset: {sorted(own - {None})}")
-    o = ex.key_object(EMOJI_SPRITE_ASSET_KEY)
+def sprite_asset_record(ex: Exporter, key: str = EMOJI_SPRITE_ASSET_KEY) -> dict:
+    """The TMP sprite asset at `key` (LocalizeManager's emoji sprite asset by default) as the text layout reads it:
+    `name`, `faceInfo` (m_FaceInfo), `characters` (m_SpriteCharacterTable in order: `index`, `unicode`, `name`,
+    `glyph`, `scale`), `glyphs` ({glyph index: metrics, rect (in the sprite sheet), scale, atlasIndex}),
+    `sequences` (the entries of the legacy sprite list, spriteInfoList, whose name holds a '-', in order: `name`,
+    `unicode`; TMP_EmojiSearchEngine builds its sequence table from them), `sheet` (the sprite sheet's name, width,
+    height, mip count and texture settings) and `material` (its material record). Fallback sprite assets are not
+    implemented."""
+    o = ex.key_object(key)
     tt = o.read_typetree()
     if tt.get("fallbackSpriteAssets"):
-        raise NotImplementedError(f"{EMOJI_SPRITE_ASSET_KEY}: fallback sprite assets")
-    sequences = {}
-    for s in tt["spriteInfoList"]:
-        if s.get("name") and "-" in s["name"]:
-            key = emoji_sequence_key(s["name"], s["unicode"])
-            if key and key not in sequences:
-                sequences[key] = s["name"]
-    return {"spriteAsset": tt["m_Name"], "address": EMOJI_SPRITE_ASSET_KEY, "sequences": sequences,
-            "characters": sorted({c["m_Unicode"] for c in tt["m_SpriteCharacterTable"]})}
+        raise NotImplementedError(f"{key}: fallback sprite assets")
+    sheet = ex.deref(o, tt["spriteSheet"]).read_typetree()
+    chars = [{"index": i, "unicode": c["m_Unicode"], "name": c["m_Name"], "glyph": c["m_GlyphIndex"],
+              "scale": c["m_Scale"]} for i, c in enumerate(tt["m_SpriteCharacterTable"])]
+    glyphs = {str(g["m_Index"]): {"metrics": g["m_Metrics"], "rect": g["m_GlyphRect"], "scale": g["m_Scale"],
+                                  "atlasIndex": g["m_AtlasIndex"]} for g in tt["m_GlyphTable"]}
+    sequences = [{"name": e["name"], "unicode": e["unicode"]} for e in tt.get("spriteInfoList") or []
+                 if e.get("name") and "-" in e["name"]]
+    for e in sequences:
+        emoji_sequence_key(e["name"], e["unicode"])          # raises on a name the port does not read
+    return {"name": tt["m_Name"], "faceInfo": tt["m_FaceInfo"], "characters": chars, "glyphs": glyphs,
+            "sequences": sequences,
+            "sheet": {"name": sheet["m_Name"], "width": sheet["m_Width"], "height": sheet["m_Height"],
+                      "mipCount": sheet.get("m_MipCount", 1), "settings": sheet.get("m_TextureSettings")},
+            "material": ex.material(ex.deref(o, tt["m_Material"]))}
 
 
-def _camera(widget: list, path: str | None) -> dict:
+def _utf16(s: str) -> tuple[int, ...]:
+    b = s.encode("utf-16-le")
+    return tuple(int.from_bytes(b[i:i + 2], "little") for i in range(0, len(b), 2))
+
+
+# TMP_TextUtilities.ToUpperFast's table (k_lookupStringU) for the units below U+0080
+TMP_UPPER = ("-------------------------------- !-#$%&-()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[-]^_`"
+             "ABCDEFGHIJKLMNOPQRSTUVWXYZ{|}~-")
+
+
+def tmp_hash(s: str) -> int:
+    """TMP_TextUtilities.GetHashCode: h = ((h << 5) + h) ^ ToUpperFast(unit) over the UTF-16 units, as an unsigned
+    32-bit value (the game's int32 bits); sprite names and tag values are matched by it."""
+    h = 0
+    for u in _utf16(s):
+        h = ((((h << 5) + h) & 0xFFFFFFFF) ^ (ord(TMP_UPPER[u]) if u < len(TMP_UPPER) else u)) & 0xFFFFFFFF
+    return h
+
+
+def emoji_sequence_table(sequences: list[dict]) -> tuple[dict[tuple, str], set[tuple]]:
+    """TMP_EmojiSearchEngine.TryUpdateSequenceLookupTable over a sprite asset record's `sequences`: ({key: sprite
+    name}, the fast lookup set of every key's prefixes), keys as tuples of UTF-16 code units; the first entry of a key
+    wins."""
+    table: dict[tuple, str] = {}
+    fast: set[tuple] = set()
+    for e in sequences:
+        key = emoji_sequence_key(e["name"], e["unicode"])
+        if not key:
+            continue
+        units = _utf16(key)
+        fast.update(units[:k] for k in range(1, len(units) + 1))
+        table.setdefault(units, e["name"])
+    return table, fast
+
+
+def emoji_sequence_names(table: dict[tuple, str], fast: set[tuple], text: str) -> list[str]:
+    """The sprite names TMP_EmojiSearchEngine.ParseEmojiCharSequence writes as <sprite name="..."> tags into `text`
+    (emoji_sequence_table): from each position the longest run of UTF-16 units whose every prefix is in the fast
+    set, no backtracking; a run that is a whole key is consumed, else the scan goes on at the next unit."""
+    if not table or not text:
+        return []
+    u, out, i = _utf16(text), [], 0
+    while i < len(u):
+        j = i
+        while j < len(u) and (j == i or u[i:j] in fast):
+            j += 1
+        seq = u[i:j]
+        if seq and seq not in fast:
+            seq, j = seq[:-1], j - 1
+        if seq in table:
+            out.append(table[seq])
+            i = j - 1 if j > i + 1 else i
+        i += 1
+    return out
+
+
+def _camera(widget: list, path: str | None, field: str = "_videoAndStillCamera") -> dict:
     """videoAndStillCamera: the Camera (CAMERA_FIELDS) and UniversalAdditionalCameraData (CAMERA_DATA_FIELDS) of the
-    node at `path` (UIAdvWidget._videoAndStillCamera)."""
+    node at `path` (UIAdvWidget._videoAndStillCamera; `field` names the reference in errors)."""
     node = next((n for n in widget if n["path"] == path), None)
     if node is None:
-        raise RuntimeError(f"_videoAndStillCamera: no node {path}")
+        raise RuntimeError(f"{field}: no node {path}")
     cam = [c for c in node["components"] if c["type"] == "Camera"]
     data = [c for c in node["components"] if c.get("class") == "UniversalAdditionalCameraData"]
     if len(cam) != 1 or len(data) != 1:
         raise RuntimeError(f"{path}: {len(cam)} Camera, {len(data)} UniversalAdditionalCameraData")
     return {"path": path, "active": node["active"], "camera": {k: cam[0][k] for k in CAMERA_FIELDS},
             "additionalCameraData": {k: data[0][k] for k in CAMERA_DATA_FIELDS}}
+
+
+def ui_camera(ex: Exporter) -> dict:
+    """uiCamera: the camera UICameraController._uiCamera of the UIManager prefab (UIManager._cameraController), with
+    its UniversalAdditionalCameraData (_uiCameraData, on the same node), as _camera's record. The components are read
+    from their typetrees, so nothing they reference is exported."""
+    go = ex.key_object(UI_MANAGER_KEY)
+    if go is None or go.type.name != "GameObject":
+        raise RuntimeError(f"{UI_MANAGER_KEY}: container asset is {go and go.type.name}")
+    _, graph = ex.load(UI_MANAGER_KEY)
+
+    def mono(owner, pptr, cls: str, what: str):
+        o = ex.deref(owner, pptr) if pptr else None
+        if o is None or o.type.name != "MonoBehaviour" or ex.script_class(o) != cls:
+            raise RuntimeError(f"{UI_MANAGER_KEY}: {what} is not a {cls}")
+        return o
+
+    comps = [ex.deref(go, c["component"]) for c in go.read_typetree()["m_Component"]]
+    managers = [c for c in comps if c is not None and c.type.name == "MonoBehaviour" and ex.script_class(c) == "UIManager"]
+    if len(managers) != 1:
+        raise RuntimeError(f"{UI_MANAGER_KEY}: {len(managers)} UIManager on the prefab root")
+    ctrl = mono(managers[0], managers[0].read_typetree()["_cameraController"], "UICameraController",
+                "UIManager._cameraController")
+    ctrl_tt = ctrl.read_typetree()
+    cam = ex.deref(ctrl, ctrl_tt["_uiCamera"]) if ctrl_tt["_uiCamera"] else None
+    if cam is None or cam.type.name != "Camera":
+        raise RuntimeError(f"{UI_MANAGER_KEY}: UICameraController._uiCamera is not a Camera")
+    data = mono(ctrl, ctrl_tt["_uiCameraData"], "UniversalAdditionalCameraData", "UICameraController._uiCameraData")
+    cam_tt, data_tt = cam.read_typetree(), data.read_typetree()
+    go_pid = cam_tt["m_GameObject"]["m_PathID"]
+    if data_tt["m_GameObject"]["m_PathID"] != go_pid:
+        raise RuntimeError(f"{UI_MANAGER_KEY}: _uiCamera and _uiCameraData are on different GameObjects")
+    path = graph.path(graph.tf_of_go[go_pid])
+    node = {"path": path, "active": bool(graph.go[go_pid]["m_IsActive"]), "components": [
+        {"type": "Camera", **cam_tt}, {"type": "MonoBehaviour", "class": "UniversalAdditionalCameraData", **data_tt}]}
+    return _camera([node], path, "_uiCamera")
 
 
 def master_texts(master: Path, ids, field: str) -> dict[str, str]:
@@ -855,9 +1040,9 @@ def chat_runtime_texts(episode: dict) -> list[str]:
     return out
 
 
-def about(language: str) -> str:
-    """ui.json `about`: what the file holds, in which client language."""
-    return f"ADV front canvas UI data (UIAdvWidget + UIDefaultTalkWindow), {language}"
+def about(language: str, windows: list[str] = (adv.DEFAULT_TALK_WINDOW,)) -> str:
+    """ui.json `about`: what the file holds (the widget and its talk windows), in which client language."""
+    return f"ADV front canvas UI data (UIAdvWidget + {', '.join(windows)}), {language}"
 
 
 def language_doc(language: str, styles: textstyle.TextStyles | None = None) -> dict:

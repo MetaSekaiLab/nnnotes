@@ -317,10 +317,19 @@ def test_game_fonts_moves_the_records(tmp_path, monkeypatch):
         def material(self, o):
             return {}
     ruby = {"class": "RubyTextMeshProUGUI", "_rubyVerticalOffset": "1em", "_rubyScale": 0.5, "_rubyLineHeight": "",
-            "_rubyShowType": 0, "_rubyMargin": 10.0}
+            "_rubyShowType": 0, "_rubyMargin": 10.0, "m_tintAllSprites": 0}
+    sprite = {"asset_name": "Emoji", "asset": {"characters": [], "glyphs": {}, "material": "Emoji Material"},
+              "textures": {"sprite_Emoji": {"texture": "fonts/sprite_Emoji.png"}},
+              "material": {"material": "Emoji Material"}}
     monkeypatch.setattr(storyfonts, "_exporter", lambda cat, player, work: Ex())
     monkeypatch.setattr(storyfonts, "text_components",
                         lambda ex, ui_doc: {"t": [ruby, {"class": "UIRubyText", "_rubyMarginTop": -22.0}]})
+    monkeypatch.setattr(storyfonts, "story_ui_text_targets", lambda ex, ui_doc: {"t"})
+    monkeypatch.setattr(storyfonts.advui, "sprite_asset_record", lambda ex: "rec")
+    monkeypatch.setattr(storyfonts, "shown_texts", lambda episode, ui_doc, master_dir, field: ["?\U0001F600"])
+    monkeypatch.setattr(storyfonts, "drawn_by_sprites", lambda ex, rec, bindings, chars: {"G SDF": {ord("?")}})
+    monkeypatch.setattr(storyfonts, "sprite_needs", lambda rec, texts, drawn: [0] if drawn == {ord("?")} else [])
+    monkeypatch.setattr(storyfonts, "game_sprite_asset", lambda ex, ui_dir, rec: sprite)
     monkeypatch.setattr(storyfonts, "text_shaders", lambda ex, ui_dir, mats: {n: [] for n in mats})
     monkeypatch.setattr(storyfonts, "fallback_chains", lambda ex, primaries, exported: (
         {n: [] for n in exported} if primaries == {"G SDF"} else pytest.fail(f"primaries {primaries}")))
@@ -328,14 +337,22 @@ def test_game_fonts_moves_the_records(tmp_path, monkeypatch):
                                                                      "useModernHangulLineBreakingRules": False})
     monkeypatch.setattr(storyfonts.textstyle, "language_fonts",
                         lambda player: {"languages": {0: {"fontNames": ["G"]}}, "materialTypes": ["Default"]})
-    r = storyfonts.game_fonts(None, None, game_ui, ui, "ja")
+    r = storyfonts.game_fonts(None, None, game_ui, ui, "ja", {"text": {}})
     out = json.loads((ui / "fonts.json").read_text(encoding="utf-8"))
-    assert r["pages"] == 1 and (ui / "fonts" / "font_G_SDF.png").read_bytes() == b"png"
+    assert r["pages"] == 2 and (ui / "fonts" / "font_G_SDF.png").read_bytes() == b"png"
     assert out["source"] == "game" and out["fonts"] == {"G SDF": {**font, "fallbacks": []}}
-    assert out["texts"] == {"t": {**text, "ruby": {k: v for k, v in ruby.items() if k != "class"},
-                                  "uiRubyText": {"_rubyMarginTop": -22.0}}}
-    assert out["textures"] == {"font_G SDF": {**doc["textures"]["font_G SDF"], "texture": "fonts/font_G_SDF.png"}}
-    assert set(out["materials"]) == {"G - Default", "G SDF Material"} and out["tmpSettings"] == doc["tmpSettings"]
+    assert out["texts"] == {"t": {**text, "ruby": {k: ruby[k] for k in storyfonts.RUBY_FIELDS},
+                                  "uiRubyText": {"_rubyMarginTop": -22.0}, "spriteAsset": "Emoji",
+                                  "m_tintAllSprites": 0}}
+    assert out["textures"] == {"font_G SDF": {**doc["textures"]["font_G SDF"], "texture": "fonts/font_G_SDF.png"},
+                               **sprite["textures"]}
+    assert set(out["materials"]) == {"G - Default", "G SDF Material", "Emoji Material"}
+    assert out["tmpSettings"] == doc["tmpSettings"]
+    assert out["spriteAssets"] == {"Emoji": sprite["asset"]} and out["emojiSpriteAsset"] == "Emoji"
+    assert out["coverage"] == {"characters": 2, "missing": [], "sprites": {"characters": 0, "missing": []}}
+    storyfonts.game_fonts(None, None, game_ui, ui, "ja")          # without the episode: no sprite asset
+    out = json.loads((ui / "fonts.json").read_text(encoding="utf-8"))
+    assert "spriteAssets" not in out and "spriteAsset" not in out["texts"]["t"] and out["coverage"]["missing"] == ["?"]
     lang = json.loads((ui / "languages.json").read_text(encoding="utf-8"))
     assert lang["roles"]["primary"]["fontAsset"] == "G SDF" and lang["mode"] == 0
 
@@ -384,6 +401,7 @@ def test_chat_bindings(monkeypatch):
     nodes = [("Line", {"path": "Line/Name", "components": [name, loc]}, name, loc),
              ("Line", {"path": "Line/Pct", "components": [pct]}, pct, None)]
     monkeypatch.setattr(storyfonts.advui, "chat_text_nodes", lambda ex, episode: (nodes, []))
+    monkeypatch.setattr(storyfonts.advui, "chat_windows", lambda episode: {})
     lang = {"languages": {0: {"fontNames": ["J"], "additionalFontNames": ["CHAT"]},
                           1: {"fontNames": ["E"], "additionalFontNames": ["EC"]}}, "materialTypes": ["Default"]}
     got = storyfonts.chat_bindings(None, {}, lang, 1)
@@ -406,12 +424,18 @@ def test_dialog_bindings():
         def prefab(self, key):
             assert key == "EmbUI/Prefab/D"
             return {"nodes": [{"path": "D/Title", "components": [text, {"class": "LocalizeText", "m_Enabled": 1}]},
+                              {"path": "D/Body",
+                               "components": [{**text, "m_tintAllSprites": 0},
+                                              {"class": "UIText", "_targetText": {"gameObject": "D/Body"}}]},
                               {"path": "D/Image", "components": [{"class": "Image"}]}]}
     ui = {"dialogs": {"D": {"key": "EmbUI/Prefab/D",
-                            "nodes": [{"path": "D/Title", "textStyle": {"textKey": "ui_ok"}}, {"path": "D/Image"}]}}}
+                            "nodes": [{"path": "D/Title", "textStyle": {"textKey": "ui_ok"}},
+                                      {"path": "D/Body", "textStyle": {}}, {"path": "D/Image"}]}}}
     lang = {"languages": {0: {"fontNames": ["J"]}, 1: {"fontNames": ["E"]}}, "materialTypes": ["Default"]}
-    got = storyfonts.dialog_bindings(Ex(), ui, lang, 1)
-    assert set(got) == {"D"} and set(got["D"]) == {"D/Title"}
+    got = storyfonts.dialog_bindings(Ex(), ui, lang, 1, "Emoji")
+    assert set(got) == {"D"} and set(got["D"]) == {"D/Title", "D/Body"}
+    assert "spriteAsset" not in got["D"]["D/Title"]
+    assert (got["D"]["D/Body"]["spriteAsset"], got["D"]["D/Body"]["m_tintAllSprites"]) == ("Emoji", 0)
     t = got["D"]["D/Title"]
     assert (t["class"], t["fontAsset"], t["material"]) == ("TextMeshProUGUI", "J SDF", "J - Default")
     assert t["m_fontSize"] == 30.0
@@ -421,3 +445,161 @@ def test_dialog_bindings():
     episode = {"text": {}, "title": {"english": ""}, "commands": []}
     with pytest.raises(RuntimeError, match="master data"):
         storyfonts.shown_characters(episode, {"nodes": [], **ui}, None, "english")
+
+
+def test_text_components_of_every_talk_window():
+    """The components of each text node of ui.json from the widget prefab or from the prefab of its talk window (the
+    TalkView children of ui.json, advui.window_nodes); a text node found in neither raises."""
+    text = {"class": "TextMeshProUGUI", "m_Enabled": 1}
+    view = advui.WINDOW_PARENT
+
+    class Cat:
+        def has(self, address):
+            return False
+
+    class Ex:
+        cat = Cat()
+
+        def prefab(self, key):
+            if key == advui.WIDGET_KEY:
+                return {"nodes": [{"path": "UIAdvWidget/FrontCanvas/Title", "components": [text, {"id": "title"}]}]}
+            name = key.rsplit("/", 1)[1]
+            return {"nodes": [{"path": name, "components": []},
+                              {"path": f"{name}/TalkText", "components": [text, {"id": name}]}]}
+    nodes = [{"path": "UIAdvWidget/FrontCanvas/Title", "name": "Title", "textStyle": {}},
+             {"path": view, "name": "TalkView"},
+             {"path": f"{view}/UIDefaultTalkWindow", "name": "UIDefaultTalkWindow"},
+             {"path": f"{view}/UIDefaultTalkWindow/TalkText", "name": "TalkText", "textStyle": {}},
+             {"path": f"{view}/UICenterTalkWindow", "name": "UICenterTalkWindow"},
+             {"path": f"{view}/UICenterTalkWindow/TalkText", "name": "TalkText", "textStyle": {}}]
+    got = storyfonts.text_components(Ex(), {"nodes": nodes})
+    assert {p: c[1]["id"] for p, c in got.items()} == {
+        "UIAdvWidget/FrontCanvas/Title": "title", f"{view}/UIDefaultTalkWindow/TalkText": "UIDefaultTalkWindow",
+        f"{view}/UICenterTalkWindow/TalkText": "UICenterTalkWindow"}
+    lone = [n for n in nodes if "UICenterTalkWindow" not in n["path"]] + [
+        {"path": f"{view}/UICenterTalkWindow/TalkText", "name": "TalkText", "textStyle": {}}]
+    with pytest.raises(RuntimeError, match="0 prefab nodes"):
+        storyfonts.text_components(Ex(), {"nodes": lone})
+
+
+def test_ui_text_targets_and_sprite_binding():
+    """A text a UIText (or UIRubyText) drives, on its node or another, gets the emoji sprite asset; any other text
+    keeps its serialized sprite asset (only none is)."""
+    text = {"class": "TextMeshProUGUI", "m_tintAllSprites": 0, "m_spriteAsset": None}
+    nodes = [{"path": "W/A", "components": [text, {"class": "UIText", "_targetText": {"gameObject": "W/A"}}]},
+             {"path": "W/B", "components": [text]}]
+    assert storyfonts.ui_text_targets(nodes) == {"W/A"}
+    rerooted = [{"path": "P/W/A", "components": [text, {"class": "UIRubyText", "_targetText": {"gameObject": "W/A"}}]}]
+    assert storyfonts.ui_text_targets(rerooted, "P/") == {"P/W/A"}
+    other = [{"path": "W", "components": [{"class": "UIText", "_targetText": {"gameObject": "W/B"}},
+                                          {"class": "UIText", "_targetText": None}]}]
+    assert storyfonts.ui_text_targets(other) == {"W/B"}, "the text of another node; none without a target"
+    assert storyfonts.sprite_binding("W/A", [text], True, "Emoji") == {"spriteAsset": "Emoji", "m_tintAllSprites": 0}
+    assert storyfonts.sprite_binding("W/B", [text], False, "Emoji") == {}
+    with pytest.raises(NotImplementedError, match="own sprite asset"):
+        storyfonts.sprite_binding("W/B", [{**text, "m_spriteAsset": {"name": "Own"}}], False, "Emoji")
+
+
+def sprite_record():
+    """A sprite asset record as advui.sprite_asset_record gives it: 32 x 32 glyphs in a 128 x 128 sheet."""
+    names = [("1f60a", 0x1F60A), ("1f60a", 0x1F60A), ("2764-fe0f", 0x2764), ("1f647-200d-2640-fe0f", 0x1F647),
+             ("1f647", 0x1F647), ("0", 0), ("1f600", 0x1F600)]
+    chars = [{"index": i, "unicode": u, "name": n, "glyph": i, "scale": 1.0} for i, (n, u) in enumerate(names)]
+    metrics = {"m_Width": 32.0, "m_Height": 32.0, "m_HorizontalBearingX": 0.0, "m_HorizontalBearingY": 28.8,
+               "m_HorizontalAdvance": 32.0}
+    glyphs = {str(i): {"metrics": metrics, "scale": 1.0, "atlasIndex": 0,
+                       "rect": {"m_X": 32 * (i % 4), "m_Y": 32 * (i // 4), "m_Width": 32, "m_Height": 32}}
+              for i in range(len(names)) if i != 6}
+    mat = {"material": "Emoji Material", "shader": {"shader": "TextMeshPro/Sprite"}, "keywords": [],
+           "textures": {"_MainTex": {"texture": {"name": "Sheet", "width": 128, "height": 128, "format": 48},
+                                     "scale": {"x": 1.0, "y": 1.0}, "offset": {"x": 0.0, "y": 0.0}}},
+           "ints": {}, "floats": {}, "colors": {"_Color": {"r": 1.0, "g": 1.0, "b": 1.0, "a": 1.0}}}
+    return {"name": "Emoji", "faceInfo": {"m_PointSize": 0.0}, "characters": chars, "glyphs": glyphs,
+            "sequences": [{"name": "2764-fe0f", "unicode": 0x2764},
+                          {"name": "1f647-200d-2640-fe0f", "unicode": 0x1F647}],
+            "sheet": {"name": "Sheet", "width": 128, "height": 128, "mipCount": 1, "settings": {}}, "material": mat}
+
+
+def test_sprite_needs():
+    """The sprites of the sequences the texts hold (by name hash, the first character of a name) and of the code
+    points drawn by the sprite asset (the first character of a code point); a character without its glyph is left
+    out; a sequence that does not match stays text."""
+    rec = sprite_record()
+    got = storyfonts.sprite_needs(rec, ["a\u2764\ufe0f", "\U0001F647\u200d\u2640\ufe0f", "\u2764x"],
+                                  {0x1F60A, 0x1F600, 0x41})
+    assert got == [0, 2, 3]
+    assert storyfonts.sprite_needs(rec, ["\u2764\u200d"], set()) == []
+
+
+def make_emoji_font(path):
+    """A colour bitmap font (sbix, PNG glyphs of 40 x 36 pixels with a 4-pixel transparent border): U+1F60A, U+1F647,
+    U+2764 and the ligature U+1F647 U+200D U+2640; U+200D, U+2640, U+FE0F without images."""
+    from fontTools.feaLib.builder import addOpenTypeFeaturesFromString
+    from fontTools.fontBuilder import FontBuilder
+    from fontTools.pens.ttGlyphPen import TTGlyphPen
+    from fontTools.ttLib.tables._s_b_i_x import table__s_b_i_x
+    from fontTools.ttLib.tables.sbixGlyph import Glyph
+    from fontTools.ttLib.tables.sbixStrike import Strike
+    from PIL import Image
+
+    def png(color, w=40, h=36):
+        a = np.zeros((h, w, 4), np.uint8)
+        a[4:h - 4, 4:w - 4] = color
+        b = io.BytesIO()
+        Image.fromarray(a, "RGBA").save(b, format="PNG")
+        return b.getvalue()
+    order = [".notdef", "space", "u1F60A", "u1F647", "u2764", "u200D", "u2640", "uFE0F", "u1F647_u200D_u2640"]
+    fb = FontBuilder(1000, isTTF=True)
+    fb.setupGlyphOrder(order)
+    fb.setupCharacterMap({0x20: "space", 0x1F60A: "u1F60A", 0x1F647: "u1F647", 0x2764: "u2764", 0x200D: "u200D",
+                          0x2640: "u2640", 0xFE0F: "uFE0F"})
+    empty = TTGlyphPen(None).glyph()
+    fb.setupGlyf({n: empty for n in order})
+    fb.setupHorizontalMetrics({n: (1000, 0) for n in order})
+    fb.setupHorizontalHeader(ascent=900, descent=-100)
+    fb.setupNameTable({"familyName": "Test Emoji", "styleName": "Regular"})
+    fb.setupOS2()
+    fb.setupPost()
+    addOpenTypeFeaturesFromString(fb.font, "feature ccmp { sub u1F647 u200D u2640 by u1F647_u200D_u2640; } ccmp;")
+    sbix = table__s_b_i_x()
+    st = Strike(ppem=36, resolution=72)
+    for n, c in (("u1F60A", (255, 200, 0, 255)), ("u1F647", (0, 0, 255, 255)), ("u2764", (255, 0, 0, 255)),
+                 ("u1F647_u200D_u2640", (255, 0, 255, 255))):
+        st.glyphs[n] = Glyph(glyphName=n, graphicType="png ", imageData=png(c), originOffsetX=0, originOffsetY=0)
+    sbix.strikes[36] = st
+    fb.font["sbix"] = sbix
+    fb.font.save(str(path))
+    return path
+
+
+def test_emoji_font_and_open_sprite_asset(tmp_path):
+    """Images of an emoji font of one's own at the game glyph size: a sequence through the font's ligature, U+FE0F
+    dropped when the full sequence has none; one page with transparent margins; glyphs without an image keep their
+    metrics; the game's face info, characters, sequence list and material settings."""
+    emoji = storyfonts.EmojiFont(make_emoji_font(tmp_path / "TestEmoji.ttf"))
+    assert (emoji.ppem, emoji.asset_name) == (36, "Test Emoji Regular Sprites")
+    assert emoji.glyph("\U0001F647\u200d\u2640\ufe0f") == "u1F647_u200D_u2640"
+    assert emoji.glyph("\u2764\ufe0f") == "u2764" and emoji.glyph("\U0001F600") is None
+    a = emoji.image("\U0001F60A", 32, 32)
+    assert a.shape == (32, 32, 4) and a[16, 16].tolist() == [255, 200, 0, 255] and a[0, 0, 3] == 0
+    rec = sprite_record()
+    got = storyfonts.open_sprite_asset(emoji, rec, [3, 2, 0, 6], "Test Emoji Regular Sprites")
+    asset = got["asset"]
+    assert [c["index"] for c in asset["characters"]] == [0, 2, 3], "character 6 has no glyph in the record"
+    assert asset["faceInfo"] == rec["faceInfo"] and asset["sequences"] == rec["sequences"]
+    assert got["missing"] == [] and set(asset["glyphs"]) == {"0", "2", "3"}
+    (page, px), = got["pages"]
+    g = asset["glyphs"]["3"]
+    r = g["rect"]
+    assert g["packed"] == {"texture": page, "dx": 0, "dy": 0} and (r["m_Width"], r["m_Height"]) == (32, 32)
+    assert px[r["m_Y"] + 16, r["m_X"] + 16].tolist() == [255, 0, 255, 255], "the ligature's image"
+    assert px[r["m_Y"] - 1, r["m_X"] + 16, 3] == 0, "a transparent margin"
+    assert got["textures"][page]["width"] == px.shape[1]
+    assert got["material"]["textures"]["_MainTex"]["texture"]["name"] == page
+    assert got["material"]["material"] == "Test Emoji Regular Sprites Material"
+    assert asset["source"]["family"] == "Test Emoji"
+    bare = storyfonts.open_sprite_asset(None, rec, [0, 2], storyfonts.NO_EMOJI_FONT)
+    assert bare["pages"] == [] and bare["textures"] == {} and bare["missing"] == ["1f60a", "2764-fe0f"]
+    g0 = bare["asset"]["glyphs"]["0"]
+    assert "packed" not in g0 and g0["metrics"] == rec["glyphs"]["0"]["metrics"]
+    assert bare["material"]["textures"]["_MainTex"]["texture"] is None

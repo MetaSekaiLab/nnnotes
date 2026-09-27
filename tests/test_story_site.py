@@ -6,7 +6,7 @@ import struct
 
 import pytest
 
-from nnnotes import storysite, tmpfont, web
+from nnnotes import jsonio, storysite, tmpfont, web
 from nnnotes.config import Config, ConfigError
 
 
@@ -130,6 +130,47 @@ def test_collect_story_refuses_a_ui_file_of_some_languages(tmp_path):
     write(dirs["languages"]["ja"] / "ui/textures/extra.png", b"x")
     with pytest.raises(RuntimeError, match="some languages only"):
         storysite.collect_story(dirs, True, "aac")
+
+
+def sprite_shader(d):
+    """A second UI shader in the directory `d` as text_shaders adds the sprite shader (index in name order, written as
+    shader.write_index writes it)."""
+    rec = {"name": "TextMeshPro/Sprite", "parsed": "TextMeshPro_Sprite.json", "variants": [
+        {"file": "TextMeshPro_Sprite/gles3/v.glsl", "platform": "gles3", "type": "GLES3", "subShader": 0, "pass": 0,
+         "stage": "vertex", "keywords": []}]}
+    jsonio.write_json(d / "shaders.json", sorted([*json.loads((d / "shaders.json").read_text(encoding="utf-8")), rec],
+                                                 key=lambda r: r["name"]))
+    write(d / "TextMeshPro_Sprite.json", {"properties": []})
+    write(d / "TextMeshPro_Sprite/gles3/v.glsl", GLSL)
+
+
+def test_share_ui_shaders_gives_every_language_a_shader_one_language_needs(tmp_path):
+    dirs = story_dirs(tmp_path)
+    ja, en = (dirs["languages"][k] / "ui/shaders" for k in ("ja", "en"))
+    sprite_shader(en)                                   # only the English texts draw sprites
+    with pytest.raises(RuntimeError, match="some languages only"):
+        storysite.collect_story(dirs, True, "aac")
+    storysite.share_ui_shaders(dirs["languages"])
+    for f in ("shaders.json", "TextMeshPro_Sprite.json", "TextMeshPro_Sprite/gles3/v.glsl"):
+        assert (ja / f).read_bytes() == (en / f).read_bytes()
+    names = [r["name"] for r in json.loads((ja / "shaders.json").read_text(encoding="utf-8"))]
+    assert names == ["S", "TextMeshPro/Sprite"]
+    common, per = storysite.collect_story(dirs, True, "aac")
+    assert {"ui/shaders/shaders.json", "ui/shaders/TextMeshPro_Sprite.json",
+            "ui/shaders/TextMeshPro_Sprite/gles3/v.glsl"} <= set(common)
+    assert not any(p.startswith("ui/shaders/") for g in per.values() for p in g)
+
+
+def test_share_ui_shaders_leaves_one_language_and_equal_languages_alone(tmp_path):
+    dirs = story_dirs(tmp_path)
+    en = dirs["languages"]["en"] / "ui/shaders"
+    sprite_shader(en)
+    before = {p: p.read_bytes() for p in en.rglob("*") if p.is_file()}
+    storysite.share_ui_shaders({"en": dirs["languages"]["en"]})
+    assert {p: p.read_bytes() for p in en.rglob("*") if p.is_file()} == before
+    sprite_shader(dirs["languages"]["ja"] / "ui/shaders")
+    storysite.share_ui_shaders(dirs["languages"])
+    assert {p: p.read_bytes() for p in en.rglob("*") if p.is_file()} == before
 
 
 def host_files(dirs, kind="home"):
@@ -379,6 +420,12 @@ def test_font_files(tmp_path, monkeypatch):
     assert storysite.font_files(cfg, ["en"], {"en": "f.otf"}) == {"en": str(f.resolve())}
     with pytest.raises(ConfigError, match="not found"):
         storysite.font_files(cfg, ["ko"], {"ko": "missing.otf"})
+    assert storysite.emoji_file(cfg) is None                       # optional: the sprites then have no images
+    assert storysite.emoji_file(cfg, {"emoji": "f.otf", "en": "x.otf"}) == str(f.resolve())
+    assert storysite.emoji_file(Config({"paths": {"fonts": {"emoji": str(f)}}}, environ={})) == str(f.resolve())
+    with pytest.raises(ConfigError, match="emoji font file not found"):
+        storysite.emoji_file(cfg, {"emoji": "missing.ttf"})
+    assert storysite.font_files(cfg, ["en"], {"en": "f.otf", "emoji": "missing.ttf"}) == {"en": str(f.resolve())}
     assert storysite.check_languages(None) == ["ja", "en", "zh-Hant", "zh-Hans", "ko"]
     assert storysite.check_languages(["ko", "ja"]) == ["ja", "ko"]
     with pytest.raises(ValueError):
@@ -425,10 +472,12 @@ def test_cli_web_stories(tmp_path, capsys, monkeypatch):
     monkeypatch.setattr(tmpfont, "require_extra", lambda what=None: None)      # the fonts extra is optional
     cli.main(["--apk", str(tmp_path / "base.apk"), "web", str(tmp_path / "s"), "--player",
               str(fake_player(tmp_path / "p")), "--story", "10462", "--story", "7", "--story-languages", "en,ja",
-              "--font", "en=a.otf", "--font", "ja=b.otf", "--no-audio", "--workers", "2"])
+              "--font", "en=a.otf", "--font", "ja=b.otf", "--font", "emoji=e.ttf", "--no-audio", "--workers", "2"])
     ((ids, fmt, kw),) = calls
     assert ids == [10462, 7] and fmt == "aac" and kw["audio"] is False and kw["workers"] == 2
-    assert kw["story_languages"] == ["en", "ja"] and kw["fonts_flags"] == {"en": "a.otf", "ja": "b.otf"}
+    assert kw["story_languages"] == ["en", "ja"]
+    assert kw["fonts_flags"] == {"en": "a.otf", "ja": "b.otf", "emoji": "e.ttf"}
+    assert cli.EMOJI_FONT == storysite.EMOJI_FONT
     assert kw["fonts"] == "open"
     assert json.loads(capsys.readouterr().out)["storiesFailed"] == []
 

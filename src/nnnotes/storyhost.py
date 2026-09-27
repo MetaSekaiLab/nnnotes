@@ -12,9 +12,10 @@ spot (SpotManager), or the reward phase of a live result (LiveResultDisplayPrese
                          home       spot.json + Spine files (spot.extract) and room.glb + room.json
                                     (room.extract_room) under host/spot/; per placed glb node its object path, its
                                     state after SpotBackground.Prepare and the SpotSceneRoot.SetObject "floor" render
-                                    queue; the room materials as saved; the "Spot" scene's object root, lights and
-                                    volumes; the background Volume; the Spine materials; the blur of renderer 0's
-                                    UIRendererFeature; the situation's ambient sound; shaders in host/shaders/
+                                    queue; the room materials as saved; the "Spot" scene's object root, lights,
+                                    volumes and RenderSettings; the lights of the placed prefabs; the background
+                                    Volume; the Spine materials; the blur of renderer 0's UIRendererFeature; the
+                                    situation's ambient sound; shaders in host/shaders/
                          afterlive  the result background node and sprite, the reward panel, the substitutes
   host/ui/ui.json      the host UI in the advui record format (no text nodes)
   ui/simple/ui.json    per language: UISimpleAdvTalkWindow (and UISystemMessageWidget for an area talk) in the
@@ -73,6 +74,14 @@ COMPONENT_HEADER = ("type", "class", "m_Name")
 NO_EPISODE = {"text": {}, "commands": []}    # the episode argument of storyfonts.shown_characters for a UI alone
 DOTWEEN_FIELDS = ("defaultEaseType", "defaultUpdateType", "defaultTimeScaleIndependent", "timeScale",
                   "defaultEaseOvershootOrAmplitude", "defaultEasePeriod")
+# components that light the renderers of a scene (lighting_components)
+LIGHTING_TYPES = ("Light", "ReflectionProbe")
+# RenderSettings values of the active scene the renderers' lighting depends on; object references by name (render_settings)
+RENDER_SETTINGS_FIELDS = ("m_Fog", "m_AmbientMode", "m_AmbientSkyColor", "m_AmbientEquatorColor", "m_AmbientGroundColor",
+                          "m_AmbientIntensity", "m_SubtractiveShadowColor", "m_DefaultReflectionMode",
+                          "m_DefaultReflectionResolution", "m_ReflectionBounces", "m_ReflectionIntensity",
+                          "m_UseRadianceAmbientProbe", "m_IndirectSpecularColor")
+RENDER_SETTINGS_REFS = ("m_SkyboxMaterial", "m_CustomReflection", "m_Sun")
 
 
 # ---------------------------------------------------------------- host, keys
@@ -563,6 +572,8 @@ def background(cat, key: str, situation_name: str, ex: Exporter) -> dict:
         "floor": {"object": graph.path(floor) if floor is not None else None,
                   "renderer": graph.path(renderer) if renderer is not None else None, "renderQueue": FLOOR_QUEUE},
         "volume": volume,
+        "lights": [{"prefab": "background", **r} for r in lighting_components(
+            env, graph, root, lambda tf: active_in_hierarchy(graph, tf, shown))],
         "shaders": {name: sh for _, name, sh in reversed(rows)},          # the first material's object
         "check": {"nodes": [n for _, n in nodes], "textures": len(tex_index),
                   "mirrored": sum(1 for tf, _ in nodes if under(graph, tf, root)
@@ -626,22 +637,70 @@ def spine_records(env, ex: Exporter) -> tuple[dict, list, dict]:
     return {k: materials[k] for k in sorted(materials)}, chars, shaders
 
 
+def render_settings(env) -> dict:
+    """renderSettings: the scene's RenderSettings (RENDER_SETTINGS_FIELDS; RENDER_SETTINGS_REFS as {"name"} or null) and
+    `lightmaps`, the lightmap count of its LightmapSettings. SpotManager.ActiveSpotScene makes the "Spot" scene the
+    active one, whose settings light the spot."""
+    rs = [o for o in env.objects if o.type.name == "RenderSettings"]
+    lm = [o for o in env.objects if o.type.name == "LightmapSettings"]
+    if len(rs) != 1 or len(lm) != 1:
+        raise RuntimeError(f"scene: {len(rs)} RenderSettings and {len(lm)} LightmapSettings")
+    tt = rs[0].read_typetree()
+    out = {k: _plain(tt[k]) for k in RENDER_SETTINGS_FIELDS if k in tt}
+    for k in RENDER_SETTINGS_REFS:
+        ref = tt.get(k)
+        if not ref or not ref["m_PathID"]:
+            out[k] = None
+            continue
+        target = deref(rs[0], ref)
+        out[k] = {"name": target.read_typetree().get("m_Name") if target is not None else None}
+    out["lightmaps"] = len(lm[0].read_typetree().get("m_Lightmaps") or [])
+    return out
+
+
+def lighting_components(env, graph, root_tf: int, active) -> list[dict]:
+    """The Light / ReflectionProbe components under `root_tf` in path order: path, type, m_Enabled, `active(tf)`
+    (activeInHierarchy as placed) and a Light's m_Type."""
+    out = []
+    for o in env.objects:
+        if o.type.name not in LIGHTING_TYPES:
+            continue
+        tt = o.read_typetree()
+        tf = graph.tf_of_go.get(tt["m_GameObject"]["m_PathID"])
+        if tf is None or not under(graph, tf, root_tf):
+            continue
+        rec = {"path": graph.path(tf), "type": o.type.name, "m_Enabled": int(tt.get("m_Enabled", 1)),
+               "active": bool(active(tf))}
+        if o.type.name == "Light":
+            rec["m_Type"] = tt.get("m_Type")
+        out.append(rec)
+    return sorted(out, key=lambda r: (r["path"], r["type"]))
+
+
+def _active_path(nodes: list[dict], path: str) -> bool:
+    """activeInHierarchy of the node at `path` in a node list (it and its ancestors active)."""
+    return all(n["active"] for n in nodes if n["path"] == path or path.startswith(n["path"] + "/"))
+
+
 def scene_root(ex: Exporter, key: str | None) -> dict:
     """sceneRoot: the "Spot" scene's SpotSceneRoot: world TRS of `_objRoot` (the parent SetObject puts the
-    background and the situation under), its Light components, its Volumes and the scene camera
-    (`_sceneCamera`, advui camera record); null / [] when the scene or the component is not there."""
-    out = {"key": key, "objRoot": None, "lights": [], "volumes": [], "sceneCamera": None}
+    background and the situation under), its Light / ReflectionProbe components (with `active`, the object's
+    activeInHierarchy), its Volumes, the scene camera (`_sceneCamera`, advui camera record) and the scene's
+    RenderSettings (render_settings); null / [] when the scene or the component is not there."""
+    out = {"key": key, "objRoot": None, "lights": [], "volumes": [], "sceneCamera": None, "renderSettings": None}
     if key is None:
         return out
     nodes = ex.prefab(key)["nodes"]
+    out["renderSettings"] = render_settings(ex.load(key)[0])
     roots = [(n, c) for n in nodes for c in n["components"] if c.get("class") == "SpotSceneRoot"]
     if len(roots) != 1:
         return out
     c = roots[0][1]
     obj, cam = advui._ref_path(c.get("_objRoot")), advui._ref_path(c.get("_sceneCamera"))
     out["objRoot"] = {"path": obj, **world_trs(nodes, obj)} if obj else None
-    out["lights"] = [{"path": n["path"], **{k: _plain(v) for k, v in x.items() if k != "type"}}
-                     for n in nodes for x in n["components"] if x["type"] == "Light"]
+    out["lights"] = [{"path": n["path"], "type": x["type"], "active": _active_path(nodes, n["path"]),
+                      **{k: _plain(v) for k, v in x.items() if k != "type"}}
+                     for n in nodes for x in n["components"] if x["type"] in LIGHTING_TYPES]
     out["volumes"] = [{"path": n["path"], **volume_record(x, n["layer"])}
                       for n in nodes for x in n["components"] if x.get("class") == "Volume"]
     out["sceneCamera"] = advui._camera(nodes, cam) if cam else None
@@ -662,7 +721,12 @@ def home_host(cat, master_dir, player, host: dict, hdir: Path, keys: dict) -> di
     room_doc = room.extract_room(cat, bg_key, sdir / "room.glb")
     ex = Exporter(cat, hdir, player=player, textures="deferred", inline_meshes=False)
     sit_env = UnityPy.load(*[str(p) for p in cat.fetch_key(sit_key)])
-    sit_name = container_go(sit_env, cat._entry(sit_key)["internal_id"]).read_typetree()["m_Name"]
+    sit_go = container_go(sit_env, cat._entry(sit_key)["internal_id"])
+    sit_name = sit_go.read_typetree()["m_Name"]
+    sit_graph = SceneGraph(sit_env)
+    sit_lights = [{"prefab": "situation", **r} for r in lighting_components(
+        sit_env, sit_graph, sit_graph.tf_of_go[sit_go.path_id],
+        lambda tf: active_in_hierarchy(sit_graph, tf, {sit_go.path_id: True}))]
     bg = background(cat, bg_key, sit_name + CLONE, ex)
     glb = glb_json(sdir / "room.glb")
     if ([n["name"] for n in glb["nodes"]] != bg["check"]["nodes"] or room_doc["meshCount"] != len(bg["roomNodes"])
@@ -690,7 +754,8 @@ def home_host(cat, master_dir, player, host: dict, hdir: Path, keys: dict) -> di
             "spot": f"{HOST_DIR}/spot/spot.json", "room": f"{HOST_DIR}/spot/room.glb",
             "roomRoot": bg["roomRoot"], "roomNodes": bg["roomNodes"], "roomMaterials": bg["roomMaterials"],
             "situation": bg["situation"], "floor": bg["floor"], "sceneRoot": scene_root(ex, keys.get("spotScene")),
-            "volume": bg["volume"], "spineMaterials": spine_mats, "spineCharacters": spine_chars,
+            "volume": bg["volume"], "lights": bg["lights"] + sit_lights,
+            "spineMaterials": spine_mats, "spineCharacters": spine_chars,
             "shaders": {"index": f"{HOST_DIR}/shaders/shaders.json", "names": summary["names"]},
             "materialKeywords": keywords, "blur": blur,
             "ambient": ambient_record(doc["situationSettings"], master_dir)}

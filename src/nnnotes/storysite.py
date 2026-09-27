@@ -50,6 +50,7 @@ from .web import (SPLIT_KEY, STORIES_DIR, STORIES_INDEX, WEB_AUDIO, Store, _dump
 STORIES_FORMAT = "ournotes.stories/1"
 MANIFEST_FORMAT = "ournotes.story-manifest/1"
 FONT_SOURCES = storyfonts.SOURCES
+EMOJI_FONT = "emoji"                        # the emoji font's key in --font / [paths] fonts
 # master tables a story build reads (adv, advmedia, the story groups): a region's story inputs
 STORY_TABLES = ("MasterAdv", "MasterAdvChat", "MasterCharacter", "MasterCharacterFriendship", "MasterHomeSpot",
                 "MasterStoryChapter", "MasterStoryEpisode", "MasterStoryFriendshipEpisode",
@@ -194,6 +195,17 @@ def font_file(job: dict, language: str) -> storyfonts.FontFile:
     return fonts[path]
 
 
+def emoji_font(job: dict) -> storyfonts.EmojiFont | None:
+    """The EmojiFont of the job (emojiFile), read once per process; None without one."""
+    path = job.get("emojiFile")
+    if path is None:
+        return None
+    fonts = _W.setdefault("emojiFonts", {})
+    if path not in fonts:
+        fonts[path] = storyfonts.EmojiFont(path)
+    return fonts[path]
+
+
 def build_dirs(cat, master_dir: Path, player, adv_id: int, work: Path, job: dict) -> dict:
     """The story directory (work/story, no ui/) and per language its ui/ with the fonts (work/lang/<language>/ui).
     -> {story, languages {language: dir}, episode, scene}."""
@@ -213,12 +225,47 @@ def build_dirs(cat, master_dir: Path, player, adv_id: int, work: Path, job: dict
         if job["fonts"] == "game":
             gdir = Path(work) / "game" / lang
             advui.extract(cat, player, episode, gdir, fonts="game", language=lang, master=master_dir)
-            storyfonts.game_fonts(cat, player, gdir / "ui", ldir / "ui", lang)
+            storyfonts.game_fonts(cat, player, gdir / "ui", ldir / "ui", lang, episode, master_dir)
             shutil.rmtree(gdir)
         else:
-            storyfonts.open_fonts(cat, player, episode, ldir / "ui", lang, font_file(job, lang), master_dir)
+            storyfonts.open_fonts(cat, player, episode, ldir / "ui", lang, font_file(job, lang), master_dir,
+                                  emoji=emoji_font(job))
         dirs[lang] = ldir
+    share_ui_shaders(dirs)
     return {"story": sdir, "languages": dirs, "episode": episode, "scene": scene}
+
+
+def share_ui_shaders(dirs: dict[str, Path]) -> None:
+    """Give every language of a build the UI shaders any of them has: a text shader only some languages need (the
+    sprite shader of a language whose texts draw emoji sprites) is written for all of them, so that the UI shader
+    directories stay common to the languages (collect_story). A shader is copied from a language that has it (the
+    same dump); the index stays in name order when it is. A build of one language is left as it is."""
+    if len(dirs) < 2:
+        return
+    subs = sorted({p.parent.relative_to(d).as_posix() for d in dirs.values()
+                   for p in Path(d).glob("ui/**/shaders/shaders.json")})
+    for sub in subs:
+        have = {lang: Path(d) / sub for lang, d in dirs.items() if (Path(d) / sub / "shaders.json").is_file()}
+        index = {lang: json.loads((sd / "shaders.json").read_text(encoding="utf-8")) for lang, sd in have.items()}
+        source = {}                                     # shader name -> (language directory, index record)
+        for lang, recs in index.items():
+            for r in recs:
+                source.setdefault(r["name"], (have[lang], r))
+        for lang, sd in have.items():
+            recs = index[lang]
+            names = [r["name"] for r in recs]
+            add = [n for n in sorted(source) if n not in names]
+            if not add:
+                continue
+            for n in add:
+                src_dir, rec = source[n]
+                for rel in [rec["parsed"], *(v["file"] for v in rec["variants"])]:
+                    (sd / rel).parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copyfile(src_dir / rel, sd / rel)
+                recs.append(rec)
+            if names == sorted(names):
+                recs.sort(key=lambda r: r["name"])
+            jsonio.write_json(sd / "shaders.json", recs)
 
 
 def _files(root: Path, sub: str = "") -> list[str]:
@@ -482,6 +529,19 @@ def font_files(cfg: Config, story_languages: list[str], flags: dict[str, str] | 
     return out
 
 
+def emoji_file(cfg: Config, flags: dict[str, str] | None = None) -> str | None:
+    """The colour emoji font the emoji sprites are drawn from: `flags` ["emoji"] (--font emoji=PATH), else
+    `[paths] fonts.emoji`; None when neither is set (the sprites then keep their layout without images). A given
+    file that does not exist is a ConfigError."""
+    flags = dict(flags or {})
+    p = Path(flags[EMOJI_FONT]) if EMOJI_FONT in flags else cfg.path("paths.fonts", EMOJI_FONT)
+    if p is None:
+        return None
+    if not p.is_file():
+        raise ConfigError(f"emoji font file not found (--font {EMOJI_FONT} / paths.fonts.{EMOJI_FONT})")
+    return str(p.resolve())
+
+
 def check_languages(codes) -> list[str]:
     """The story languages `codes` (None: every language) in the order of languages.LANGUAGES, checked."""
     if not codes:
@@ -520,7 +580,8 @@ def build(out_dir, adv_ids, cfg: Config, player_dir, audio_format: str = "aac", 
     written, the indexes rebuilt). The data comes from the settings `cfg` (each worker process opens its own).
     `audio_format`: web.WEB_AUDIO format of every waveform (`audio` False: none); `story_languages`: the language
     groups (default every language); `fonts`: "open" (glyphs from the font file of each language: `fonts_flags`
-    {language: path}, else `[paths] fonts.<language>`) or "game"; `regions`: as for web.build (module docstring);
+    {language: path}, else `[paths] fonts.<language>`; the emoji sprites from `fonts_flags` ["emoji"], else
+    `[paths] fonts.emoji`, when given) or "game"; `regions`: as for web.build (module docstring);
     `workers`: parallel story processes (default a quarter of the CPUs, up to 8)."""
     from .web import write_index, write_player
     from .tmpfont import require_extra
@@ -534,6 +595,7 @@ def build(out_dir, adv_ids, cfg: Config, player_dir, audio_format: str = "aac", 
     base = languages.check(cfg.require("catalog", "language"))
     default = base if base in langs else langs[0]
     files = font_files(cfg, langs, fonts_flags) if fonts == "open" else {}
+    emoji = emoji_file(cfg, fonts_flags) if fonts == "open" else None
     regions = site_regions(cfg, regions)
     masters = region_masters(cfg, regions)
     groups = region_groups(masters)
@@ -545,7 +607,7 @@ def build(out_dir, adv_ids, cfg: Config, player_dir, audio_format: str = "aac", 
     log = log or _log
     t0 = time.time()
     job0 = {"site": str(site), "tmp": str(tmp_root), "audioFormat": audio_format, "audio": bool(audio),
-            "languages": langs, "language": default, "fonts": fonts, "fontFiles": files,
+            "languages": langs, "language": default, "fonts": fonts, "fontFiles": files, "emojiFile": emoji,
             "cache": str(tmp_root / "cache"), "build": uuid.uuid4().hex}
     configure_caches(job0)
     ids = None if adv_ids is None else list(dict.fromkeys(int(i) for i in adv_ids))
