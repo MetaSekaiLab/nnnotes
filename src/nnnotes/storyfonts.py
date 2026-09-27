@@ -46,11 +46,12 @@ import hashlib
 import json
 import math
 import shutil
+import unicodedata
 from pathlib import Path
 
 import numpy as np
 
-from . import advui, cache, jsonio, languages, master, textstyle, tmpfont
+from . import adv, advui, cache, jsonio, languages, master, textstyle, tmpfont
 from . import shader as shader_mod
 from .export import Exporter, _safe, packed_png, texture_png
 
@@ -365,6 +366,69 @@ def chat_bindings(ex: Exporter, episode: dict, lang: dict, mode: int,
     return out
 
 
+# the IAdvFrameTextReceiver implementations (AdvSystem.Asset.UI): a frame with one gets its texts at run time
+FRAME_TEXT_RECEIVERS = ("AdvSlanderCommentFrame",)
+FRAME_PREFIX = adv.RESOURCE_PREFIX["Frame"][1]
+
+
+def frame_prefabs(ex: Exporter, episode: dict) -> dict[str, list[dict]]:
+    """{frame name (its address without the Frame prefix, the key of story/frames.json): its prefab node list} of the
+    episode's Frame resources in the catalog."""
+    return {r["address"][len(FRAME_PREFIX):]: ex.prefab(r["address"])["nodes"] for r in episode["resources"]
+            if r["kind"] == "frame" and r.get("present", True)}
+
+
+def frame_bindings(frames: dict[str, list[dict]], lang: dict, mode: int,
+                   sprite: str | None = None) -> dict[str, dict[str, dict]]:
+    """{frame name: {node path: text binding}} of the TMP texts of the episode's frames (`frames`: frame_prefabs), as
+    chat_bindings: `localized` from LocalizeText (advui.chat_localize) when it is enabled, else the serialized font
+    asset, material and line spacing; `sprite` as text_bindings (the texts a UIText drives)."""
+    out: dict[str, dict[str, dict]] = {}
+    for name, nodes in frames.items():
+        driven = ui_text_targets(nodes)
+        for node in nodes:
+            comps = [c for c in node["components"] if c.get("class") in advui.TMP_CLASSES]
+            if not comps:
+                continue
+            c = comps[0]
+            loc = next((x for x in node["components"] if x.get("class") == "LocalizeText"), None)
+            t = {k: c[k] for k in advui.TMP_FIELDS if k in c}
+            t.update({"class": c["class"], "enabled": c["m_Enabled"], "fontAsset": c["m_fontAsset"]["name"],
+                      "material": c["m_sharedMaterial"]["material"]})
+            t.update(text_extras(node["path"], node["components"]))
+            if loc and loc["m_Enabled"] and loc["_localizeEnabled"]:
+                t["localized"] = advui.chat_localize(t["fontAsset"], t["material"], lang, mode)
+            else:
+                t["localized"] = {"fontAsset": t["fontAsset"], "material": t["material"],
+                                  "lineSpacing": c["m_lineSpacing"]}
+            t.update(sprite_binding(node["path"], node["components"], node["path"] in driven, sprite))
+            out.setdefault(name, {})[node["path"]] = t
+    return out
+
+
+def frame_texts(frames: dict[str, list[dict]], episode: dict, field: str) -> list[str]:
+    """The texts the episode's frames (`frames`: frame_prefabs) show: the serialized texts of their text nodes, and
+    the texts AdvFrameCommand.SetFrameTexts gives the frames with an IAdvFrameTextReceiver (FRAME_TEXT_RECEIVERS): per
+    Frame row with TargetTextIDs, the localized text of each id (the episode's text table in the text field `field`;
+    an unknown id gives ""), in the form AdvSlanderCommentTextHelper shows it (NFC; "@" before the user id, line
+    feeds), plus "@" and a line feed when there is any."""
+    receivers = {name for name, nodes in frames.items()
+                 if any(c.get("class") in FRAME_TEXT_RECEIVERS for n in nodes for c in n["components"])}
+    serialized = [c["m_text"] for nodes in frames.values() for n in nodes for c in n["components"]
+                  if c.get("class") in advui.TMP_CLASSES and isinstance(c.get("m_text"), str) and c["m_text"]]
+    out = []
+    for c in episode["commands"]:
+        if c["cmd"] != "Frame" or c.get("IgnoreData") or not c.get("TargetTextIDs"):
+            continue
+        if (c.get("TargetAssetName") or "").strip() not in receivers:
+            continue
+        for i in c["TargetTextIDs"]:
+            row = episode["text"].get(i)
+            if row is not None and isinstance(row.get(field), str):
+                out.append(unicodedata.normalize("NFC", row[field]))
+    return serialized + (out + ["@\n"] if out else out)
+
+
 def shown_texts(episode: dict, ui_doc: dict, master_dir: Path | None, field: str) -> list[str]:
     """The texts the episode shows in the text field `field`: every text of its text table (lines, speaker names,
     frame and choice texts), its title, the static labels of the UI (the MasterText rows of the text keys of the text
@@ -479,10 +543,12 @@ def _own_material(m: dict, name: str, page: str, width: int, height: int) -> dic
     return m
 
 
-def open_asset(font: FontFile, name: str, chars, game: dict, text_materials: dict[str, dict]) -> dict:
+def open_asset(font: FontFile, name: str, chars, game: dict, text_materials: dict[str, dict],
+               underline: bool = True) -> dict:
     """An open font asset of `font` named `name` for the code points `chars`, in place of the game font asset
     `game` = {pointSize, padding, renderMode, style {STYLE_KEYS}, material (its default material record)} whose texts
-    use `text_materials` ({name: game material record}). -> {font (the asset record), textures {page: descriptor},
+    use `text_materials` ({name: game material record}); with `underline` (the game asset itself has U+005F: its
+    underline and highlight glyph) also U+005F. -> {font (the asset record), textures {page: descriptor},
     pages [(page, RGBA array bottom row first)], materials {name: record}, renames {game material: open material},
     missing (code points the font does not map)}."""
     pad, point = game["padding"], game["pointSize"]
@@ -497,7 +563,7 @@ def open_asset(font: FontFile, name: str, chars, game: dict, text_materials: dic
 
     # characters -> glyphs (a synthesized control character the font lacks: TMP's zero glyph 0)
     characters, glyph_of, missing = {}, {}, set()
-    for u in sorted(set(chars) | set(tmpfont.TMP_SYNTHESIZED) | {UNDERLINE_CHARACTER}):
+    for u in sorted(set(chars) | set(tmpfont.TMP_SYNTHESIZED) | ({UNDERLINE_CHARACTER} if underline else set())):
         gi = gen.glyph_index(u)
         if gi == 0 and u not in tmpfont.TMP_SYNTHESIZED:
             if u in chars:                           # a font without '_' has no underline glyph, nothing is shown
@@ -617,10 +683,13 @@ def open_fonts(cat, player, episode: dict, ui_dir: Path, language: str, font: Fo
     texts = text_bindings(ex, ui_doc, lang, mode, sprite_name)
     dialogs = dialog_bindings(ex, ui_doc, lang, mode, sprite_name)
     chat = chat_bindings(ex, episode, lang, mode, sprite_name) if ui_doc.get("chatTexts") else {}
-    shown = shown_texts(episode, ui_doc, master_dir, field)
+    frames = frame_prefabs(ex, episode)
+    frame = frame_bindings(frames, lang, mode, sprite_name)
+    shown = shown_texts(episode, ui_doc, master_dir, field) + frame_texts(frames, episode, field)
     chars = sorted({ord(ch) for s in shown for ch in s})
 
-    bindings = list(texts.values()) + [t for group in (dialogs, chat) for w in group.values() for t in w.values()]
+    bindings = list(texts.values()) + [t for group in (dialogs, chat, frame) for w in group.values()
+                                       for t in w.values()]
     by_game: dict[str, list[dict]] = {}           # localized game font asset -> the bindings of its texts
     for t in bindings:
         by_game.setdefault(t["localized"]["fontAsset"], []).append(t)
@@ -631,8 +700,22 @@ def open_fonts(cat, player, episode: dict, ui_dir: Path, language: str, font: Fo
     if any("spriteAsset" in t for t in bindings):
         rec = advui.sprite_asset_record(ex)
         sprite_drawn = drawn_by_sprites(ex, rec, [t for t in bindings if "spriteAsset" in t], chars)
-    fonts, textures, materials, missing = {}, {}, {}, set()
+    # the game's missing glyph per game font asset (tmpfont.missing_glyph): the code points its texts draw as the
+    # substitute; the open font asset holds the substitute instead of them
+    fs = tmpfont.FontSet(ex)
+    missing_char = tmpfont.missing_glyph_character(player)
+    fonts, textures, materials, missing, substituted = {}, {}, {}, set(), set()
     for game_name in sorted(by_game):
+        gfont = fs.by_key(advui.font_key(cat, game_name, game_name))
+        tmpfont.check_glyph_variants(fs, gfont, shown)
+        mg = tmpfont.missing_glyph(fs, gfont, chars, missing_char)
+        gone = set(mg["characters"]) if mg else set()
+        substituted |= gone
+        # GetUnderlineSpecialCharacter: '_' of the game asset itself (no fallback); a '_' its fallback draws for the
+        # text would be the underline glyph too in one open asset
+        underline = tmpfont.underline_character(fs, gfont)
+        if not underline and UNDERLINE_CHARACTER in chars and UNDERLINE_CHARACTER not in gone:
+            raise NotImplementedError(f"{game_name}: U+005F from a fallback without the asset's own underline glyph")
         gobj = ex.key_object(advui.font_key(cat, game_name, game_name))
         gtt = gobj.read_typetree()
         text_mats = {}
@@ -647,7 +730,11 @@ def open_fonts(cat, player, episode: dict, ui_dir: Path, language: str, font: Fo
                 "renderMode": gtt["m_AtlasRenderMode"], "style": {kk: gtt[kk] for kk in STYLE_KEYS},
                 "material": ex.material(ex.deref(gobj, gtt["m_Material"]))}
         name = font.asset_name if len(by_game) == 1 else f"{font.asset_name} ({game_name})"
-        a = open_asset(font, name, [u for u in chars if u not in sprite_drawn.get(game_name, ())], game, text_mats)
+        own = sorted({u for u in chars if u not in gone and u not in sprite_drawn.get(game_name, ())}
+                     | ({mg["unicode"]} if mg else set()))
+        a = open_asset(font, name, own, game, text_mats, underline)
+        if mg:
+            a["font"]["missingGlyph"] = mg
         fonts[name] = a["font"]
         textures.update(a["textures"])
         materials.update(a["materials"])
@@ -659,6 +746,8 @@ def open_fonts(cat, player, episode: dict, ui_dir: Path, language: str, font: Fo
             loc = t["localized"]
             t["localized"] = {**loc, "fontAsset": name, "material": a["renames"][loc["material"]]}
     coverage = {"characters": len(chars), "missing": [chr(u) for u in sorted(missing)]}
+    if substituted:
+        coverage["missingGlyph"] = [chr(u) for u in sorted(substituted)]
     sprites = None
     indices = sprite_needs(rec, shown, set().union(*sprite_drawn.values())) if rec is not None else []
     if not indices:                                 # no sprite to draw: the data holds no sprite asset
@@ -684,6 +773,8 @@ def open_fonts(cat, player, episode: dict, ui_dir: Path, language: str, font: Fo
         fonts_doc["dialogTexts"] = dialogs
     if chat:
         fonts_doc["chatTexts"] = chat
+    if frame:
+        fonts_doc["frameTexts"] = frame
     _write(ui_dir, fonts_doc, language_doc(language, "open", fonts, texts, lang))
     shutil.rmtree(ui_dir / "_fonts", ignore_errors=True)
     return {"fonts": sorted(fonts), "characters": len(chars), "missing": len(missing),

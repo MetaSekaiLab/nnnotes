@@ -373,6 +373,61 @@ def test_text_extras():
         storyfonts.text_extras("p", [{"class": "RubyTextMeshProUGUI", "_rubyScale": 0.5}])
 
 
+def test_missing_glyph():
+    """The game's missing glyph: the code points no font of the chain has, the substitute U+25A1, else space, else
+    U+0003; the TMP settings it needs; glyph variants of a variation selector raise."""
+    class F:
+        def __init__(self, name, variants=()):
+            self.name, self.variants = name, dict.fromkeys(variants, "v")
+
+    class Fonts:
+        def __init__(self, have):
+            self.have = have
+
+        def lookup(self, font, u):
+            return ("baked", self.have[u]) if u in self.have else None
+    p, fb = F("P"), F("FB", [(0x2661, 0xFE0F)])
+    fonts = Fonts({0x41: p, 0x25A1: fb, 0x20: p, 0x2661: fb, 0x03: p})
+    assert tmpfont.missing_glyph(fonts, p, [0x41, 0x20]) is None
+    assert tmpfont.missing_glyph(fonts, p, [0x41, 0xFE0F, 0x26A1]) == {"unicode": 0x25A1,
+                                                                       "characters": [0x26A1, 0xFE0F]}
+    no_box = Fonts({0x41: p, 0x20: p, 0x03: p})
+    assert tmpfont.missing_glyph(no_box, p, [0x42])["unicode"] == 0x20
+    assert tmpfont.missing_glyph(Fonts({0x03: p}), p, [0x42])["unicode"] == 0x03
+    assert tmpfont.missing_glyph(fonts, p, [0x42], 0x3F)["unicode"] == 0x20      # a set missingGlyphCharacter
+    assert [u for u in (0xFDFF, 0xFE00, 0xFE0F, 0xFE10, 0xE0100, 0xE01EF, 0xE01F0)
+            if tmpfont.is_variation_selector(u)] \
+        == [0xFE00, 0xFE0F, 0xE0100, 0xE01EF]
+    tmpfont.check_glyph_variants(fonts, p, ["A\ufe0f", "\u2661", "\u26a1\ufe0f"])
+    with pytest.raises(NotImplementedError, match="glyph variant of U\\+2661 U\\+FE0F"):
+        tmpfont.check_glyph_variants(fonts, p, ["x\u2661\ufe0f"])
+
+    class Own:
+        def __init__(self, r):
+            self.r = r
+
+        def _in_font(self, font, u):
+            assert u == 0x5F
+            return self.r
+    assert [tmpfont.underline_character(Own(r), p) for r in (("baked", p), ("runtime", p), None)] == [True, True, False]
+
+    class Player:
+        def __init__(self, **tt):
+            self.tt = {"m_fallbackFontAssets": [], "m_defaultFontAsset": {"m_FileID": 0, "m_PathID": 0},
+                       "m_missingGlyphCharacter": 0, **tt}
+
+        def resource(self, path):
+            assert path == "TMP Settings"
+            return "settings"
+
+        def mono(self, o):
+            return self.tt
+    assert tmpfont.missing_glyph_character(Player()) == 0x25A1
+    assert tmpfont.missing_glyph_character(Player(m_missingGlyphCharacter=0x3F)) == 0x3F
+    with pytest.raises(NotImplementedError, match="fallback font assets"):
+        tmpfont.missing_glyph_character(Player(m_fallbackFontAssets=[{"m_PathID": 5}]))
+
+
 def test_search_order():
     """TMP's depth-first fallback search, every asset once, reduced to the exported assets."""
     class F:
@@ -412,6 +467,35 @@ def test_chat_bindings(monkeypatch):
     assert p["localized"] == {"fontAsset": "CHAT SDF", "material": "CHAT - Default", "lineSpacing": 2.0}
     assert p["ruby"]["_rubyScale"] == 0.5 and "m_lineSpacing" in p
     assert "m_monospaceDistEm" in advui.TMP_FIELDS
+
+
+def test_frame_bindings_and_texts():
+    """A binding per TMP text of each frame (as chat_bindings, a UIText's text with the sprite asset); the serialized
+    frame texts and the texts a frame with an IAdvFrameTextReceiver gets at run time from its Frame rows'
+    TargetTextIDs (NFC, then "@" and a line feed)."""
+    body = {"class": "TextMeshProUGUI", "m_Enabled": 1, "m_fontAsset": {"name": "J SDF"},
+            "m_sharedMaterial": {"material": "J - Default"}, "m_fontSize": 52.0, "m_text": "", "m_lineSpacing": 0.0,
+            "m_tintAllSprites": 0}
+    loc = {"class": "LocalizeText", "m_Enabled": 1, "_localizeEnabled": 1}
+    ui = {"class": "UIText", "_targetText": {"gameObject": "Card/Body"}}
+    frames = {"slander": [{"path": "Card", "components": [{"class": "AdvSlanderCommentFrame"}]},
+                          {"path": "Card/Body", "components": [body, loc, ui]}],
+              "plain": [{"path": "Img", "components": [{"class": "Image"}]},
+                        {"path": "Label", "components": [{**body, "m_text": "Fixed"}]}]}
+    lang = {"languages": {0: {"fontNames": ["J"], "additionalFontNames": []},
+                          1: {"fontNames": ["E"], "additionalFontNames": []}}, "materialTypes": ["Default"]}
+    got = storyfonts.frame_bindings(frames, lang, 1, "Emoji")
+    assert set(got) == {"slander", "plain"} and set(got["slander"]) == {"Card/Body"} and set(got["plain"]) == {"Label"}
+    b = got["slander"]["Card/Body"]
+    assert b["localized"] == {"fontAsset": "E SDF", "material": "E - Default", "lineSpacing": -100.0}
+    assert (b["spriteAsset"], b["m_tintAllSprites"], b["m_fontSize"]) == ("Emoji", 0, 52.0)
+    episode = {"text": {"t1": {"english": "Ame\u0301lie"}, "t2": {"english": "id"}, "t3": {"english": 5}},
+               "commands": [{"cmd": "Frame", "TargetAssetName": "slander", "TargetTextIDs": ["t1", "t2", "t3", "nope"]},
+                            {"cmd": "Frame", "TargetAssetName": "plain", "TargetTextIDs": ["t2"]},
+                            {"cmd": "Frame", "TargetAssetName": "slander", "TargetTextIDs": ["t2"], "IgnoreData": 1},
+                            {"cmd": "Talk", "TargetTextIDs": ["t2"]}]}
+    assert storyfonts.frame_texts(frames, episode, "english") == ["Fixed", "Am\u00e9lie", "id", "@\n"]
+    assert storyfonts.frame_texts({"plain": frames["plain"]}, episode, "english") == ["Fixed"]
 
 
 def test_dialog_bindings():

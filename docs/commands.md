@@ -548,7 +548,9 @@ once. The format is described in the player's `docs/story-data-format.md`.
   a font file per language: `--font LANG=PATH` (repeatable) or `fonts.<lang>` in the `[paths]` table of the config
   file (`NNNOTES_PATHS_FONTS_<LANG>`, e.g. `NNNOTES_PATHS_FONTS_ZH_HANT`); every language of `--story-languages`
   needs one. Any OpenType or TrueType font (the first face of a collection) with the characters of the language
-  works; characters the font lacks are listed in `ui/fonts.json` `coverage.missing`. Each generated asset takes the
+  works; characters the font lacks are listed in `ui/fonts.json` `coverage.missing`. Characters the game's own font
+  assets lack are drawn as the game draws them, as its missing glyph (U+25A1 where the game's font has it), not from
+  the font file (`coverage.missingGlyph`). Each generated asset takes the
   point size, padding, style settings and render mode of the game font asset the texts use in that language, so the
   game's text materials apply unchanged; its face info and glyph metrics come from the font file (FreeType, no
   hinting), its distance field from the generator `--fonts game` uses for runtime glyphs (supersampled render modes
@@ -575,6 +577,8 @@ once. The format is described in the player's `docs/story-data-format.md`.
   no game-font variant: with `--fonts game` an Overlay story has neither.
 - With `--fonts open` the chat window texts of an episode with chat rows get their bindings in `ui/fonts.json`
   `chatTexts`, and the font assets also hold the chat windows' status texts and the texts they format at run time.
+  The text nodes of the episode's frames get theirs in `frameTexts`, and the font assets also hold the texts a frame
+  that receives texts is given at run time (the texts of its Frame rows' `TargetTextIDs`, as the frame formats them).
 - Stories that fail are listed in the printed summary and in `SITE.story-failures.json`; the exit status is then 1.
 
 ### Regions and languages

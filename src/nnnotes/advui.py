@@ -485,6 +485,8 @@ def extract(cat: Catalog, player: PlayerData, episode: dict, out_dir: Path, font
                                         font_doc["runtime"], font_doc["textMaterials"], packer,
                                         "characters shown by this episode (plus baked control characters); runtime "
                                         "characters generated from the source font (runtimeGlyphs)")
+        for name, mg in font_doc["missingGlyph"].items():
+            font_out[name]["missingGlyph"] = mg
 
     # -- sprites -------------------------------------------------------------------
     sprite_refs = set()
@@ -1135,9 +1137,18 @@ def _game_fonts(ex: Exporter, styles: textstyle.TextStyles, episode: dict, out_n
     if in_asset:
         (needed if hit[0] == "baked" else runtime_units).setdefault(primary.name, set()).add(UNDERLINE_CHARACTER)
     coverage["underline"] = {"font": primary.name, "character": chr(UNDERLINE_CHARACTER), "inAsset": in_asset}
+    # the missing glyph (tmpfont.missing_glyph): its substitute from the asset that has it
+    tmpfont.check_glyph_variants(fonts, primary, shown)
+    mg = tmpfont.missing_glyph(fonts, primary, chars, tmpfont.missing_glyph_character(ex.player))
+    if mg:
+        kind, f = fonts.lookup(primary, mg["unicode"])
+        if kind != "synthesized":
+            (needed if kind == "baked" else runtime_units).setdefault(f.name, set()).add(mg["unicode"])
+        coverage["missingGlyph"] = [chr(u) for u in mg["characters"]]
 
     # -- materials ---------------------------------------------------------------
     materials, text_materials = tmpfont.text_materials(ex, fonts, [n["text"]["localized"] for n in used_text_nodes],
                                                        {primary.name}, needed, runtime_units)
     return materials, {"fonts": fonts, "primaries": {primary.name}, "needed": needed, "runtime": runtime_units,
-                       "textMaterials": text_materials, "coverage": coverage}
+                       "textMaterials": text_materials, "coverage": coverage,
+                       "missingGlyph": {primary.name: mg} if mg else {}}

@@ -58,13 +58,21 @@ class Font:
         if any(p["regularTypeface"]["m_PathID"] or p["italicTypeface"]["m_PathID"] for p in tt["m_FontWeightTable"]):
             raise NotImplementedError(f"{self.name}: font weight table typefaces")
         self.cmap: set[int] = set()
+        self.variants: dict[tuple[int, int], str] = {}   # (base, selector) -> a variant glyph other than the base's
         self.font_data: bytes | None = None
         src = ex.deref(obj, tt["m_SourceFontFile"]) if tt["m_SourceFontFile"]["m_PathID"] else None
         if src is not None:
             from fontTools.ttLib import TTFont
             data = bytes(src.read_typetree()["m_FontData"])
             ft = TTFont(io.BytesIO(data), fontNumber=tt["m_FaceInfo"]["m_FaceIndex"], lazy=True)
-            self.cmap = set(ft.getBestCmap() or {})
+            best = ft.getBestCmap() or {}
+            self.cmap = set(best)
+            for t in ft["cmap"].tables:                  # variation sequences (cmap format 14), non-default ones
+                if t.format == 14:
+                    for vs, entries in t.uvsDict.items():
+                        for base, glyph in entries:
+                            if glyph is not None and glyph != best.get(base):
+                                self.variants[(base, vs)] = glyph
             self.font_data = data
             self.source_font = {"name": src.read_typetree()["m_Name"], "bytes": len(data),
                                 "sha256": hashlib.sha256(data).hexdigest()}
@@ -139,6 +147,61 @@ class FontSet:
 
     def baked_anywhere(self, u: int) -> list[str]:
         return sorted(f.name for f in self.fonts.values() if u in f.chars)
+
+
+# --------------------------------------------------------------------------
+# missing glyph
+# --------------------------------------------------------------------------
+MISSING_GLYPH_CHARACTER = 0x25A1     # TMP_Settings.missingGlyphCharacter 0: U+25A1 (TMP_Text.SetArraySizes)
+SPACE, END_OF_TEXT = 0x20, 0x03
+
+
+def is_variation_selector(u: int) -> bool:
+    """U+FE00..U+FE0F, U+E0100..U+E01EF (SetArraySizes: next >> 4 == 0xFE0 or next - 0xE0100 < 0xF0)."""
+    return u >> 4 == 0xFE0 or 0xE0100 <= u < 0xE01F0
+
+
+def missing_glyph_character(player) -> int:
+    """TMP_Settings.missingGlyphCharacter of the game's TMP Settings (0: U+25A1). FontSet.lookup searches no global
+    fallback: the settings' fallback font assets and default font asset must be unset."""
+    o = player.resource("TMP Settings")
+    tt = player.mono(o)
+    if tt["m_fallbackFontAssets"] or tt["m_defaultFontAsset"]["m_PathID"]:
+        raise NotImplementedError("TMP Settings fallback font assets / default font asset")
+    return tt["m_missingGlyphCharacter"] or MISSING_GLYPH_CHARACTER
+
+
+def missing_glyph(fonts: FontSet, font: Font, chars, character: int = MISSING_GLYPH_CHARACTER) -> dict | None:
+    """The missing glyph of a text of `font` (TMP_Text.SetArraySizes, a character GetTextElement finds in no font asset
+    and no sprite asset): {unicode: the substitute, characters: the code points of `chars` that `font` and its
+    fallbacks lack}, or None when they have every one. The substitute is `character` (missing_glyph_character) when
+    the font or its fallbacks have it, else U+0020, else U+0003 (synthesized). A text with a sprite asset draws the
+    code points the sprite asset has from it instead."""
+    miss = sorted(u for u in chars if fonts.lookup(font, u) is None)
+    if not miss:
+        return None
+    sub = next(u for u in (character, SPACE, END_OF_TEXT) if fonts.lookup(font, u) is not None)
+    return {"unicode": sub, "characters": miss}
+
+
+def underline_character(fonts: FontSet, font: Font) -> bool:
+    """Whether `font` itself has U+005F (TMP_Text.GetUnderlineSpecialCharacter: GetCharacterFromFontAsset without
+    fallbacks; a dynamic asset adds it from its source font): the glyph its texts' underline and highlight draw with."""
+    r = fonts._in_font(font, 0x5F)
+    return r is not None and r[0] in ("baked", "runtime")
+
+
+def check_glyph_variants(fonts: FontSet, font: Font, texts) -> None:
+    """Raise NotImplementedError when a character of `texts` that `font` (or a fallback) has is followed by a variation
+    selector its source font maps to a variant glyph (SetArraySizes: GetGlyphVariantIndex -> the alternative glyph);
+    any other selector after a font character is dropped (rewritten to U+001A)."""
+    for s in texts:
+        cps = [ord(c) for c in s]
+        for base, vs in zip(cps, cps[1:]):
+            if is_variation_selector(vs):
+                r = fonts.lookup(font, base)
+                if r is not None and (base, vs) in r[1].variants:
+                    raise NotImplementedError(f"{r[1].name}: glyph variant of U+{base:04X} U+{vs:04X}")
 
 
 # --------------------------------------------------------------------------
