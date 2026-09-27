@@ -566,3 +566,20 @@ The same inputs with the same versions of nnnotes, its libraries and tools (and 
 byte-identical outputs. Charts that fail are listed in the printed summary and in `SITE.failures.json`, models that
 fail in the summary and in `SITE.model-failures.json`, stories in `SITE.story-failures.json`; the exit status is then
 1.
+
+## deck-data
+
+```
+nnnotes deck-data (--master-files DIR | --apk-master) -o FILE
+```
+
+Writes one JSON file for deck-building tools, for one master data version: every `MasterLiveMusicScore` row's chart
+as the client builds it at runtime (notes, skill events, fever ranges) and the master data tables about cards,
+skills, bonuses, scores and events, with their provenance. The master data is decoded from the files as served:
+`--master-files DIR` reads `DIR/MasterManifest.json` and the `.bin` files it lists (`master download`; the file's
+region is `[catalog] region`), `--apk-master` the same files inside `[paths] apk` (region `embedded`); each file is
+checked against the manifest's SHA-256. `FILE` ending in `.gz` is written gzip-compressed. The file is canonical: the
+same inputs give the same bytes. Prints `{out, format, region, masterSource, masterVersion, tables, rows, charts,
+notes, bytes, fileBytes, sha256}`. A missing or mismatching input (a master data file, a column, a chart asset)
+stops the command with exit status 1 before the file is written. The format is described in
+[deck-data.md](deck-data.md).

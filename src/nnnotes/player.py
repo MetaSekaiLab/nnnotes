@@ -82,8 +82,9 @@ def dump_typetrees(doc: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
-def manifest_version_name(data: bytes) -> str | None:
-    """`android:versionName` of a binary AndroidManifest.xml (None when absent or unreadable)."""
+def _manifest_attribute(data: bytes, attribute: str) -> tuple[str | None, int | None, int | None] | None:
+    """An attribute of the <manifest> element of a binary AndroidManifest.xml: (its string, None when it has no
+    string value; the Res_value data type; the Res_value data). None when absent or unreadable."""
     try:
         pos, strings = 8, []
         while pos + 8 <= len(data):
@@ -111,9 +112,14 @@ def manifest_version_name(data: bytes) -> str | None:
                 _ns, name, astart, asize, acount = struct.unpack_from("<IIHHH", data, pos + 16)
                 if strings[name] == "manifest":
                     for i in range(acount):
-                        _ans, aname, raw = struct.unpack_from("<III", data, pos + 16 + astart + i * asize)
-                        if strings[aname] == "versionName" and raw != 0xFFFFFFFF:
-                            return strings[raw]
+                        a = pos + 16 + astart + i * asize
+                        _ans, aname, raw = struct.unpack_from("<III", data, a)
+                        if strings[aname] == attribute:
+                            text = strings[raw] if raw != 0xFFFFFFFF else None
+                            if a + 20 > len(data):                  # no typed value
+                                return text, None, None
+                            _vsize, _res0, vtype, value = struct.unpack_from("<HBBI", data, a + 12)
+                            return text, vtype, value
                     return None
             if size < 8:
                 return None
@@ -121,6 +127,24 @@ def manifest_version_name(data: bytes) -> str | None:
     except (IndexError, struct.error, UnicodeDecodeError):
         return None
     return None
+
+
+def manifest_version_name(data: bytes) -> str | None:
+    """`android:versionName` of a binary AndroidManifest.xml (None when absent or unreadable)."""
+    a = _manifest_attribute(data, "versionName")
+    return a[0] if a is not None else None
+
+
+def manifest_version_code(data: bytes) -> int | None:
+    """`android:versionCode` of a binary AndroidManifest.xml: an integer (decimal or hex type), or a string of
+    digits (None when absent or unreadable)."""
+    a = _manifest_attribute(data, "versionCode")
+    if a is None:
+        return None
+    text, vtype, value = a
+    if vtype in (0x10, 0x11):                                   # TYPE_INT_DEC, TYPE_INT_HEX
+        return value
+    return int(text) if text is not None and text.isdecimal() else None
 
 
 class PlayerData:

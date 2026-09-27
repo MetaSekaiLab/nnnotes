@@ -226,6 +226,10 @@ The catalog versions of a store, `nnnotes.catalogs/1` ([schema/catalogs.schema.j
 ([schema/catalog-diff.schema.json](schema/catalog-diff.schema.json), `nnnotes catalogs diff --json`), are written
 by the commands.
 
+The deck data file of `nnnotes deck-data`, `nnnotes.deck-data/1`
+([schema/deck-data.schema.json](schema/deck-data.schema.json)), names its format in a `format` field; it is
+described in [deck-data.md](deck-data.md).
+
 ## Store
 
 The store is a directory, and the cache of all stage work:

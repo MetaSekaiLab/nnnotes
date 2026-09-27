@@ -28,6 +28,7 @@ nnnotes 是 BanG Dream! Our Notes 游戏文件的离线数据工具包：读取 
 | `player` | APK | 渲染相关的全局设置（色彩空间、画质等级、渲染器）JSON |
 | `live` | 曲目 ID + 难度 | 完整谱面目录：谱面与运行时音符、3D 场景、音符与特效资源、BGM 与音效、声音路由 |
 | `web` | `--pair 曲目:难度`（可重复）或 `--all`；`--live2d 模型`（可重复）或 `--all-live2d`；`--story 剧情 ID`（可重复）或 `--all-stories`；`--region 区服`（可重复）或 `--all-regions` | ournotes-player 静态站点：共享播放器 + 每谱 / 每模型 / 每集剧情清单 + 内容寻址资源；一个站点可服务多个区服，列表文本含五种语言；剧情的界面文字按语言分组，字形由开源字体生成 TextMeshPro 字体资源（`--fonts game` 时用游戏字体） |
+| `deck-data` | masterdata 文件（`--master-files` 目录或 `--apk-master`） | 供组卡工具读取的单个 JSON：每张谱面的运行时音符、技能事件与 fever 区间，以及卡牌、技能、加成、分数与活动相关的 masterdata 表（[格式](docs/deck-data.md)） |
 
 导出约定：
 

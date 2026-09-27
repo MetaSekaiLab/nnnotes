@@ -11,9 +11,10 @@ as in the game:
       MusicScoreUtility.GetTimeMsFromBar (note time, float32)                  -> time_ms_from_bar()
 
 `convert()` returns the runtime note list (the notes the game puts in
-MusicScore.NoteDictionary, including SlideComboNote ticks), the note lines and
-the events. `extract()` writes the shipped chart, the converted notes, the
-master rows and the decoded song for one music/difficulty.
+MusicScore.NoteDictionary, including SlideComboNote ticks) in position order, the
+note lines and the events. `runtime_score()` gives the same notes in the order the
+game enumerates MusicScore.NoteDictionary. `extract()` writes the shipped chart,
+the converted notes, the master rows and the decoded song for one music/difficulty.
 
 Game resources are only read from the user's own catalog/cache and written to
 the user's output directory.
@@ -884,8 +885,31 @@ def lane_position(pos: Pos, a: Note, b: Note) -> tuple:
 
 
 # --------------------------------------------------------------------------- convert
-def convert(root: dict, mirror: bool = False, start_note_id: int = 0) -> dict:
-    """SsMusicScoreConverter.Load -> plain dict of the runtime score."""
+@dataclass
+class RuntimeScore:
+    """The runtime score SsMusicScoreConverter.Load builds, before it is written as JSON."""
+    by_key: dict           # position key -> notes, keys in the order CreateNoteDictionary adds them
+    infos: list            # NoteInfoData
+    tc: TickConverter
+    events: SsEvents
+    bpm_events: list       # (bpm, Pos), BpmChangeEventList
+    bar_events: list       # (beats per bar, Pos), BarChangeEventList
+    fevers: list           # (index, start Pos, end Pos) sorted by start, FeverList
+    skills: list           # (index, Pos) in chart order, SkillEventList
+    calls: list            # (Pos, rhythms), CallChangeEventList
+    bar_line_ms: list      # BarLineTimeMsList
+    log: list
+
+    @property
+    def notes(self) -> list:
+        """MusicScore.NoteDictionary in enumeration order. SetNoteList flattens the position dictionary in the
+        order its keys were added, then list order; a slide combo tick on a position no other note has is added
+        with its slide end, so it comes after the end's position."""
+        return [n for lst in self.by_key.values() for n in lst]
+
+
+def runtime_score(root: dict, mirror: bool = False, start_note_id: int = 0) -> RuntimeScore:
+    """SsMusicScoreConverter.Load up to MusicScore.SetNoteList."""
     ev, notes = parse(root)
     tc = TickConverter(ev.sig, ev.bpm)
     infos = _build_note_infos(notes, tc, mirror)
@@ -907,7 +931,7 @@ def convert(root: dict, mirror: bool = False, start_note_id: int = 0) -> dict:
     log: list[str] = []
     idict = _info_dictionary(infos, log)
     creator = _Creator(start_note_id, bpm_events, bar_events, fevers)
-    by_key: dict = {}
+    by_key: dict = {}                                                                                 # CreateNoteDictionary
     for key in sorted(idict):
         flat = [x for lst in idict[key].values() for x in lst]
         flat.sort(key=lambda x: _priority(x.op))
@@ -922,9 +946,15 @@ def convert(root: dict, mirror: bool = False, start_note_id: int = 0) -> dict:
                     if c not in lst:
                         lst.append(c)
     log += creator.log
-    ordered = [n for k in sorted(by_key) for n in by_key[k]]
-    return _to_json(ordered, infos, tc, ev, bpm_events, bar_events, fevers, skills, calls, bar_line_ms, log,
-                    mirror, start_note_id)
+    return RuntimeScore(by_key, infos, tc, ev, bpm_events, bar_events, fevers, skills, calls, bar_line_ms, log)
+
+
+def convert(root: dict, mirror: bool = False, start_note_id: int = 0) -> dict:
+    """SsMusicScoreConverter.Load -> plain dict of the runtime score, notes in position order."""
+    s = runtime_score(root, mirror, start_note_id)
+    ordered = [n for k in sorted(s.by_key) for n in s.by_key[k]]
+    return _to_json(ordered, s.infos, s.tc, s.events, s.bpm_events, s.bar_events, s.fevers, s.skills, s.calls,
+                    s.bar_line_ms, s.log, mirror, start_note_id)
 
 
 def _pos_json(p: Pos) -> dict:

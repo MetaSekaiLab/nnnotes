@@ -1,0 +1,273 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:nnnotes:schema:deck-data",
+  "title": "nnnotes.deck-data/1",
+  "description": "Data for deck-building tools, for one master data version: every live chart as the client builds it at runtime (notes in the order the client enumerates them, skill events, fever ranges) and a subset of the master data tables as columns and rows, with the provenance of both. Written by `nnnotes deck-data`; described in docs/deck-data.md. Within the arrays of a chart's `notes` (and of its `fevers`) the i-th elements belong to the same note (range): the arrays have equal lengths, which a schema cannot state. Readers ignore keys they do not know.",
+  "type": "object",
+  "required": [
+    "format",
+    "provenance",
+    "master",
+    "charts"
+  ],
+  "properties": {
+    "format": {
+      "const": "nnnotes.deck-data/1"
+    },
+    "provenance": {
+      "type": "object",
+      "required": [
+        "region",
+        "client",
+        "catalog",
+        "master",
+        "exporter"
+      ],
+      "properties": {
+        "region": {
+          "type": "string",
+          "description": "the region whose master data this is (a configured region name), or `embedded` for the master data the APK ships"
+        },
+        "client": {
+          "type": "object",
+          "required": [
+            "versionName",
+            "versionCode"
+          ],
+          "properties": {
+            "versionName": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "versionName of the APK (null without one)"
+            },
+            "versionCode": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "description": "versionCode of the APK (null without one)"
+            }
+          }
+        },
+        "catalog": {
+          "type": "object",
+          "required": [
+            "resourceVersion",
+            "sha256"
+          ],
+          "properties": {
+            "resourceVersion": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "the resource version recorded for the catalog in the catalog store, null when none is recorded"
+            },
+            "sha256": {
+              "$ref": "#/$defs/sha256",
+              "description": "SHA-256 of the remote catalog file the charts were read with"
+            }
+          }
+        },
+        "master": {
+          "type": "object",
+          "required": [
+            "source",
+            "version",
+            "tables"
+          ],
+          "properties": {
+            "source": {
+              "enum": [
+                "api",
+                "embedded"
+              ],
+              "description": "api: files as downloaded from the region; embedded: the files the APK ships"
+            },
+            "version": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "`version` of the master data manifest"
+            },
+            "tables": {
+              "type": "object",
+              "description": "per exported table, the SHA-256 of its file as served (before decoding)",
+              "additionalProperties": {
+                "type": "object",
+                "required": [
+                  "sha256"
+                ],
+                "properties": {
+                  "sha256": {
+                    "$ref": "#/$defs/sha256"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "exporter": {
+          "type": "object",
+          "required": [
+            "name",
+            "version",
+            "chartFormat"
+          ],
+          "properties": {
+            "name": {
+              "const": "nnnotes"
+            },
+            "version": {
+              "type": "string"
+            },
+            "chartFormat": {
+              "type": "string",
+              "description": "format of the chart converter the notes come from (nnnotes.live-score/1)"
+            }
+          }
+        }
+      }
+    },
+    "master": {
+      "type": "object",
+      "description": "tables by name; a table not present reads as empty",
+      "additionalProperties": {
+        "$ref": "#/$defs/table"
+      }
+    },
+    "charts": {
+      "type": "array",
+      "description": "one chart per MasterLiveMusicScore row, sorted by scoreId",
+      "items": {
+        "$ref": "#/$defs/chart"
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "ints": {
+      "type": "array",
+      "items": {
+        "type": "integer"
+      }
+    },
+    "table": {
+      "type": "object",
+      "required": [
+        "columns",
+        "rows"
+      ],
+      "properties": {
+        "columns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "rows": {
+          "type": "array",
+          "items": {
+            "type": "array"
+          },
+          "description": "one array per row, one value per column in the order of `columns`"
+        }
+      }
+    },
+    "chart": {
+      "type": "object",
+      "required": [
+        "scoreId",
+        "asset",
+        "notes",
+        "skillEvents",
+        "fevers"
+      ],
+      "properties": {
+        "scoreId": {
+          "type": "integer",
+          "description": "MasterLiveMusicScore._id"
+        },
+        "asset": {
+          "type": "object",
+          "required": [
+            "key",
+            "sha256"
+          ],
+          "properties": {
+            "key": {
+              "type": "string",
+              "description": "Live/MusicScore/<_musicScoreTextFileName>"
+            },
+            "sha256": {
+              "$ref": "#/$defs/sha256",
+              "description": "SHA-256 of the chart TextAsset's bytes as shipped"
+            }
+          }
+        },
+        "notes": {
+          "type": "object",
+          "required": [
+            "id",
+            "op",
+            "judgementType",
+            "timeMs"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/ints",
+              "description": "note id, unique within the chart"
+            },
+            "op": {
+              "$ref": "#/$defs/ints",
+              "description": "NoteOperateType"
+            },
+            "judgementType": {
+              "$ref": "#/$defs/ints",
+              "description": "NoteJudgementType"
+            },
+            "timeMs": {
+              "$ref": "#/$defs/ints",
+              "description": "note time in chart milliseconds"
+            }
+          }
+        },
+        "skillEvents": {
+          "type": "object",
+          "required": [
+            "timeMs"
+          ],
+          "properties": {
+            "timeMs": {
+              "$ref": "#/$defs/ints",
+              "description": "skill event times in chart order (the index is the event index)"
+            }
+          }
+        },
+        "fevers": {
+          "type": "object",
+          "required": [
+            "startMs",
+            "endMs"
+          ],
+          "properties": {
+            "startMs": {
+              "$ref": "#/$defs/ints",
+              "description": "range starts, sorted (the index is the range index)"
+            },
+            "endMs": {
+              "$ref": "#/$defs/ints"
+            }
+          }
+        }
+      }
+    }
+  }
+}

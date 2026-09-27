@@ -33,6 +33,7 @@ addresses in their own configuration, and the exports stay in local directories 
 | `player` | APK | render-related global settings (color space, quality levels, renderers) as JSON |
 | `live` | music ID + difficulty | a full chart directory: chart and runtime notes, 3D scene, note and effect assets, BGM and sounds, sound routing |
 | `web` | `--pair music:difficulty` (repeatable) or `--all`; `--live2d model` (repeatable) or `--all-live2d`; `--story episode` (repeatable) or `--all-stories`; `--region region` (repeatable) or `--all-regions` | an ournotes-player static site: shared player + per-chart / per-model / per-episode manifests + content-addressed assets; one site can serve several regions, with listing texts in five languages; a story's interface texts are grouped by language, with TextMeshPro font assets generated from open fonts (the game's fonts with `--fonts game`) |
+| `deck-data` | master data files (`--master-files` directory or `--apk-master`) | one JSON file for deck-building tools: every chart's runtime notes, skill events and fever ranges, and the master data tables about cards, skills, bonuses, scores and events ([format](https://github.com/MetaSekaiLab/nnnotes/blob/main/docs/deck-data.md)) |
 
 Export conventions:
 

@@ -27,6 +27,7 @@ whatever the console encoding.
                          [--story 10462 [--story ...] | --all-stories] [--story-languages en,ja] [--font en=<file>]
                          [--font emoji=<file>]
                          [--region <region> [--region ...] | --all-regions]
+    nnnotes deck-data --master-files <master download dir> | --apk-master -o out/deck-data.json[.gz]
     nnnotes export -o out/assets [--select group:<group> | key:<prefix> | bundle:<glob> ...] [--layout original,cas]
     nnnotes plan [--select ...] [--json] [--check] [--emit-tasks <dir>]
     nnnotes run-stage <task.json> [...]
@@ -470,6 +471,26 @@ def cmd_web(args, cfg):
         sys.exit(1)
 
 
+def cmd_deck_data(args, cfg):
+    from . import deckdata
+    if args.apk_master:
+        cfg.require_path("paths", "apk")             # the master data files ship in the APK
+    apk = _existing(cfg, "paths", "apk")
+    try:
+        if args.apk_master:
+            src, region = deckdata.apk_master(apk), deckdata.EMBEDDED
+        else:
+            src, region = deckdata.master_files(Path(args.master_files)), cfg.region()
+        key = master_key(cfg)
+        cat = open_catalog(cfg)
+        r = deckdata.export(Path(args.out), src, key, deckdata.catalog_fetch(cat), region=region,
+                            client=deckdata.apk_client(apk) if apk is not None else {},
+                            catalog=deckdata.catalog_info(cat, cli_assets.store_root(args, cfg)))
+    except deckdata.DeckDataError as e:
+        sys.exit(f"nnnotes: {e}")
+    _print_json(r)
+
+
 # ---------------------------------------------------------------- parser
 def parse_pair(s: str) -> tuple[int, str]:
     m = re.fullmatch(r"(\d+)[:_](easy|normal|hard|expert)", s)
@@ -686,6 +707,16 @@ def build_parser() -> argparse.ArgumentParser:
     _band_args(c)
     _live_option_arg(c)
     c.set_defaults(func=cmd_web, usage=c.error)
+
+    c = sub.add_parser("deck-data", help="every live chart and the master data tables deck-building tools read -> "
+                                         "one JSON file")
+    g = c.add_mutually_exclusive_group(required=True)
+    g.add_argument("--master-files", metavar="DIR",
+                   help="master data files as served: MasterManifest.json and the .bin files it lists "
+                        "(`master download`)")
+    g.add_argument("--apk-master", action="store_true", help="the master data files of base.apk ([paths] apk)")
+    _out(c, "output file (.json, or .json.gz for gzip)")
+    c.set_defaults(func=cmd_deck_data, usage=c.error)
 
     cli_assets.register(sub, argparse.Namespace(open_catalog=open_catalog, print_json=_print_json))
     return p
