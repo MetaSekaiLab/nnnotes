@@ -1,9 +1,19 @@
-"""room: material translation from the pass render state (property-driven values) and empty material slots
-(synthetic shader / material typetrees)."""
+"""room: material translation from the pass render state (property-driven values), empty material slots, and the
+glTF textures, images and materials of a bundle whose serialized files reuse path ids (synthetic shader / material
+typetrees and objects)."""
+import copy
+import json
+import struct
+from types import SimpleNamespace
+
 import numpy as np
 import pytest
+from PIL import Image
+from UnityPy.classes import PPtr as UnityPPtr
 
+from fakeunity import F32, POSITION, UV0, mesh_tt, submesh, unitypy_mesh
 from nnnotes import room
+from nnnotes.unity import DEFAULT_RESOURCES
 
 FIXED = "<noninit>"
 
@@ -149,10 +159,11 @@ class Graph:
 
 def test_a_mesh_filter_without_a_mesh_is_skipped_and_reported():
     mesh = object()
-    mfs = {1: Obj({}, m_Mesh=Ref(21, mesh)), 2: Obj({}, m_Mesh=Ref(0)), 3: Obj({}, m_Mesh=Ref(0)),
-           4: Obj({}, m_Mesh=Ref(24, mesh))}
-    mrs = {1: Obj({"m_Enabled": 1}, m_Materials=["m1"]), 2: Obj({"m_Enabled": 1}, m_Materials=[]),
-           3: Obj({"m_Enabled": 0}, m_Materials=[])}               # 3: disabled renderer, 4: no renderer
+    mfs = {("f", 1): Obj({}, m_Mesh=Ref(21, mesh)), ("f", 2): Obj({}, m_Mesh=Ref(0)), ("f", 3): Obj({}, m_Mesh=Ref(0)),
+           ("f", 4): Obj({}, m_Mesh=Ref(24, mesh))}
+    mrs = {("f", 1): Obj({"m_Enabled": 1}, m_Materials=["m1"]), ("f", 2): Obj({"m_Enabled": 1}, m_Materials=[]),
+           ("f", 3): Obj({"m_Enabled": 0}, m_Materials=[]),         # 3: disabled renderer, 4: no renderer
+           ("g", 4): Obj({"m_Enabled": 1}, m_Materials=["m4"])}    # another file's GameObject 4
     nulls = []
     drawn = list(room.drawn_meshes(mfs, mrs, Graph(), nulls.append))
     assert drawn == [(11, mesh, ["m1"])]
@@ -202,3 +213,147 @@ def test_extract_room_lists_what_draws_nothing(tmp_path, monkeypatch):
                                              {"mesh": "bare", "path": "Room/obj13"}]
     assert doc["nullMaterialSubmeshes"] == [{"mesh": "quad", "path": "Room/obj11", "submesh": 0}]
     assert (tmp_path / "room.glb").is_file() and (tmp_path / "room.json").is_file()
+
+
+# ---------------------------------------------------------------- a bundle whose serialized files reuse path ids
+V0, V1 = {"x": 0.0, "y": 0.0, "z": 0.0}, {"x": 1.0, "y": 1.0, "z": 1.0}
+Q0 = {"x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0}
+ROOM_KEY = "Spot/a/Background/b"
+PREFAB = "Assets/Room.prefab"
+# the quads under the prefab root: (object name, material path id, its file id in CAB-a: 1 is CAB-b)
+ROOM_OBJECTS = [("wall", 5, 0), ("wall_b", 5, 1), ("floor", 6, 0), ("wall_c", 5, 0)]
+
+
+def ref(pid, file_id=0):
+    return {"m_FileID": file_id, "m_PathID": pid}
+
+
+class File:
+    """A serialized file as UnityPy's PPtr resolves it: name, objects by path id, externals (paths) and the bundle
+    holding it (`parent`); a file outside the loaded bundles is not found."""
+    def __init__(self, name, bundle, externals=()):
+        self.name, self.parent, self.objects = name, bundle, {}
+        self.externals = [SimpleNamespace(path=p) for p in externals]
+        self.environment = SimpleNamespace(find_file=lambda name: None)
+        bundle.files[name] = self
+
+    def add(self, kind, pid, tt, obj=None):
+        o = SimpleNamespace(type=SimpleNamespace(name=kind), path_id=pid, assets_file=self,
+                            read_typetree=lambda: copy.deepcopy(tt), read=lambda: obj)
+        self.objects[pid] = o
+        return o
+
+    def pptr(self, pid, file_id=0):
+        """A PPtr as UnityPy parses it from an object of this file."""
+        return UnityPPtr(m_FileID=file_id, m_PathID=pid, assetsfile=self)
+
+
+def tex_env(pid, file_id=0):
+    return {"m_Texture": ref(pid, file_id), "m_Scale": {"x": 1.0, "y": 1.0}, "m_Offset": {"x": 0.0, "y": 0.0}}
+
+
+def textured(name, **slots):
+    """A material typetree of shader 3 with the texture envs `slots` {slot: tex_env}."""
+    tt = material(name=name)
+    tt.update(m_Shader=ref(3), m_ValidKeywords=[], m_CustomRenderQueue=-1)
+    tt["m_SavedProperties"]["m_TexEnvs"] = [[k, v] for k, v in slots.items()]
+    return tt
+
+
+def quad(name):
+    return unitypy_mesh(mesh_tt(name, 3, {POSITION: (F32, 3, np.eye(3)), UV0: (F32, 2, np.zeros((3, 2)))},
+                                [0, 1, 2], [submesh(0, 3)]))
+
+
+def two_file_room():
+    """The environment of a bundle of two serialized files that reuse path ids. CAB-a holds the background prefab
+    (root `room`, GameObject 100, over ROOM_OBJECTS), shader 3, material 5 `a_wall` (main texture its texture 7,
+    `_Mask` in unity default resources), material 6 `a_floor` (main texture CAB-b's texture 7, `_Detail` its own
+    texture 7) and texture 7 `wall_a`. CAB-b holds shader 3, material 5 `b_wall` (main texture its texture 7) and
+    texture 7 `wall_b`: the pixels of `wall_a` with another filter."""
+    bundle = SimpleNamespace(files={})
+    a = File("CAB-a", bundle, ["archive:/CAB-b/CAB-b", DEFAULT_RESOURCES])
+    b = File("CAB-b", bundle)
+    pixels = Image.new("RGBA", (2, 2), (200, 120, 40, 255))
+    for f in (a, b):
+        f.add("Shader", 3, shader(name="Unlit/Transparent", srcBlend=fv(5.0), destBlend=fv(10.0)))
+    a.add("Material", 5, textured("a_wall", _MainTex=tex_env(7), _Mask=tex_env(9, 2)))
+    a.add("Material", 6, textured("a_floor", _MainTex=tex_env(7, 1), _Detail=tex_env(7)))
+    b.add("Material", 5, textured("b_wall", _MainTex=tex_env(7)))
+    for f, name, filter_mode in ((a, "wall_a", 1), (b, "wall_b", 0)):
+        f.add("Texture2D", 7, {"m_Name": name, "m_MipCount": 1,
+                               "m_TextureSettings": {"m_FilterMode": filter_mode, "m_WrapU": 1, "m_WrapV": 1}},
+              pixels.copy())
+    a.add("AssetBundle", 1, {"m_Container": [[PREFAB.lower(), {"asset": ref(100)}]]})
+    a.add("GameObject", 100, {"m_Name": "room", "m_IsActive": 1, "m_Layer": 0})
+    a.add("Transform", 200, {"m_GameObject": ref(100), "m_Father": ref(0), "m_LocalPosition": V0,
+                             "m_LocalRotation": Q0, "m_LocalScale": V1,
+                             "m_Children": [ref(201 + i) for i in range(len(ROOM_OBJECTS))]})
+    for i, (name, mat, file_id) in enumerate(ROOM_OBJECTS):
+        go, mesh = 101 + i, quad(f"{name}_mesh")
+        a.add("GameObject", go, {"m_Name": name, "m_IsActive": 1, "m_Layer": 0})
+        a.add("Transform", 201 + i, {"m_GameObject": ref(go), "m_Father": ref(200), "m_Children": [],
+                                     "m_LocalPosition": V0, "m_LocalRotation": Q0, "m_LocalScale": V1})
+        a.add("MeshFilter", 301 + i, {"m_GameObject": ref(go)},
+              SimpleNamespace(m_Mesh=SimpleNamespace(path_id=21 + i, read=lambda mesh=mesh: mesh)))
+        a.add("MeshRenderer", 401 + i, {"m_GameObject": ref(go), "m_Enabled": 1},
+              SimpleNamespace(m_Materials=[a.pptr(mat, file_id)]))
+    return SimpleNamespace(objects=[o for f in (a, b) for o in f.objects.values()])
+
+
+class RoomCatalog:
+    def fetch_key(self, key):
+        return []
+
+    def _entry(self, key):
+        return {"internal_id": PREFAB}
+
+
+def load_room(monkeypatch, env):
+    """UnityPy.load gives `env`; a texture's image is the object it reads as."""
+    monkeypatch.setattr(room.UnityPy, "load", lambda *a: env)
+    monkeypatch.setattr(room, "texture_image", lambda image: image)
+
+
+def glb_json(path):
+    data = path.read_bytes()
+    (n,) = struct.unpack_from("<I", data, 12)
+    return json.loads(data[20:20 + n])
+
+
+def test_textures_with_the_same_png_bytes_share_one_image():
+    glb = room._Glb()
+    linear, point = room._sampler({}), room._sampler({"m_TextureSettings": {"m_FilterMode": 0}})
+    got = [glb.texture(png, name, s) for png, name, s in ((b"png-1", "a", linear), (b"png-1", "b", point),
+                                                          (b"png-2", "c", linear))]
+    assert got == [0, 1, 2]
+    assert glb.textures == [{"name": "a", "source": 0, "sampler": 0}, {"name": "b", "source": 0, "sampler": 1},
+                            {"name": "c", "source": 1, "sampler": 0}]
+    assert [im["name"] for im in glb.images] == ["a", "c"] and len(glb.bufferViews) == 2
+
+
+def test_mesh_components_are_keyed_by_file_and_game_object():
+    bundle = SimpleNamespace(files={})
+    a, b = File("CAB-a", bundle), File("CAB-b", bundle)
+    mf_a = a.add("MeshFilter", 9, {"m_GameObject": ref(1)})
+    mf_b = b.add("MeshFilter", 9, {"m_GameObject": ref(1)})
+    mr_b = b.add("MeshRenderer", 10, {"m_GameObject": ref(1)})
+    assert room.mesh_components(SimpleNamespace(objects=[mf_a, mf_b, mr_b])) == (
+        {("CAB-a", 1): mf_a, ("CAB-b", 1): mf_b}, {("CAB-b", 1): mr_b})
+
+
+def test_extract_room_keys_materials_and_textures_by_file(tmp_path, monkeypatch):
+    load_room(monkeypatch, two_file_room())
+    doc = room.extract_room(RoomCatalog(), ROOM_KEY, tmp_path / "room.glb")
+    gltf = glb_json(tmp_path / "room.glb")
+    assert [n["name"] for n in gltf["nodes"]] == ["wall_mesh", "wall_b_mesh", "floor_mesh", "wall_c_mesh"]
+    # material 5 of CAB-a and of CAB-b are two materials; wall_c draws with CAB-a's again
+    assert [m["name"] for m in gltf["materials"]] == ["a_wall", "b_wall", "a_floor"]
+    assert [p["material"] for m in gltf["meshes"] for p in m["primitives"]] == [0, 1, 2, 0]
+    # texture 7 of CAB-a and of CAB-b are two textures, each with its sampler, of one image; a_floor takes CAB-b's
+    assert [m["pbrMetallicRoughness"]["baseColorTexture"]["index"] for m in gltf["materials"]] == [0, 1, 1]
+    assert gltf["textures"] == [{"name": "wall_a", "source": 0, "sampler": 0},
+                                {"name": "wall_b", "source": 0, "sampler": 1}]
+    assert [im["name"] for im in gltf["images"]] == ["wall_a"]
+    assert [s["magFilter"] for s in gltf["samplers"]] == [room.LINEAR, room.NEAREST]
+    assert doc["textures"] == ["wall_a", "wall_b"] and doc["samplers"] == gltf["samplers"]

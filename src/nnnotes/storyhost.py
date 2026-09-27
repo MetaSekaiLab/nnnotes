@@ -511,12 +511,8 @@ def background(cat, key: str, situation_name: str, ex: Exporter) -> dict:
     not placed: inactive."""
     env = UnityPy.load(*[str(p) for p in cat.fetch_key(key)])
     graph = SceneGraph(env)
-    mf_by_go, mr_by_go = {}, {}
-    for o in env.objects:
-        if o.type.name == "MeshFilter":
-            mf_by_go[o.read_typetree()["m_GameObject"]["m_PathID"]] = o
-        elif o.type.name == "MeshRenderer":
-            mr_by_go[o.read_typetree()["m_GameObject"]["m_PathID"]] = o
+    mf_by_go, mr_by_go = room.mesh_components(env)
+    rendered = {go for _, go in mr_by_go}         # SceneGraph: a GameObject path id is in one file only
     root_go = container_go(env, cat._entry(key)["internal_id"]).path_id
     root = graph.tf_of_go[root_go]
     spot_bg, volumes = [], []
@@ -542,15 +538,16 @@ def background(cat, key: str, situation_name: str, ex: Exporter) -> dict:
     overrides = prep["overrides"]
     floor = find_first_child_with_name(graph, root, FLOOR_NAME, FLOOR_EXCLUDE)
     renderer = None if floor is None else component_in_children(
-        graph, floor, lambda t: _go(graph, t) in mr_by_go, lambda t: active_in_hierarchy(graph, t, overrides))
+        graph, floor, lambda t: _go(graph, t) in rendered, lambda t: active_in_hierarchy(graph, t, overrides))
     shown = {**overrides, root_go: True}
     nodes, mats = glb_order(room.drawn_meshes(mf_by_go, mr_by_go, graph, lambda p: None))
     rows = []
     for p in mats:
-        mat = p.read()
-        sh = mat.m_Shader.read().object_reader
-        rows.append((mat.object_reader.read_typetree(), sh.read_typetree()["m_ParsedForm"]["m_Name"], sh))
-    tex_index = glb_textures([(tt, name) for tt, name, _ in rows])
+        mat = p.deref()
+        tt = mat.read_typetree()
+        sh = deref(mat, tt["m_Shader"])
+        rows.append((mat, tt, sh.read_typetree()["m_ParsedForm"]["m_Name"], sh))
+    tex_index = glb_textures([(mat, tt, name) for mat, tt, name, _ in rows])
     if len(volumes) > 1:
         raise NotImplementedError(f"{key}: {len(volumes)} Volume components")
     volume = None
@@ -565,7 +562,7 @@ def background(cat, key: str, situation_name: str, ex: Exporter) -> dict:
         "roomNodes": [{"path": graph.path(tf), "placed": under(graph, tf, root),
                        "active": under(graph, tf, root) and active_in_hierarchy(graph, tf, shown),
                        "renderQueue": FLOOR_QUEUE if tf == renderer else None} for tf, _ in nodes],
-        "roomMaterials": [room_material(tt, name, tex_index) for tt, name, _ in rows],
+        "roomMaterials": [room_material(mat, tt, name, tex_index) for mat, tt, name, _ in rows],
         "situation": {"name": prep["name"], "matched": prep["matched"],
                       "activate": [graph.path(x) for x in prep["activate"]],
                       "hide": [graph.path(graph.tf_of_go[g]) if g in graph.tf_of_go else None for g in prep["hide"]]},
@@ -574,7 +571,7 @@ def background(cat, key: str, situation_name: str, ex: Exporter) -> dict:
         "volume": volume,
         "lights": [{"prefab": "background", **r} for r in lighting_components(
             env, graph, root, lambda tf: active_in_hierarchy(graph, tf, shown))],
-        "shaders": {name: sh for _, name, sh in reversed(rows)},          # the first material's object
+        "shaders": {name: sh for _, _, name, sh in reversed(rows)},       # the first material's object
         "check": {"nodes": [n for _, n in nodes], "textures": len(tex_index),
                   "mirrored": sum(1 for tf, _ in nodes if under(graph, tf, root)
                                   and np.linalg.det(graph.world(tf)[:3, :3]) < 0)},
@@ -728,11 +725,7 @@ def home_host(cat, master_dir, player, host: dict, hdir: Path, keys: dict) -> di
         sit_env, sit_graph, sit_graph.tf_of_go[sit_go.path_id],
         lambda tf: active_in_hierarchy(sit_graph, tf, {sit_go.path_id: True}))]
     bg = background(cat, bg_key, sit_name + CLONE, ex)
-    glb = glb_json(sdir / "room.glb")
-    if ([n["name"] for n in glb["nodes"]] != bg["check"]["nodes"] or room_doc["meshCount"] != len(bg["roomNodes"])
-            or [m["name"] for m in glb.get("materials", [])] != [m["name"] for m in bg["roomMaterials"]]
-            or len(glb.get("images", [])) != bg["check"]["textures"]):
-        raise RuntimeError(f"{bg_key}: room.glb nodes / materials / textures differ from the background's order")
+    check_room(bg_key, glb_json(sdir / "room.glb"), room_doc, bg)
     spine_mats, spine_chars, spine_shaders = spine_records(sit_env, ex)
     if [c["path"] for c in spine_chars] != [c["path"] for c in doc["spineCharacters"]]:
         raise RuntimeError(f"{sit_key}: Spine characters differ from spot.json's")
@@ -898,16 +891,17 @@ def component_in_children(graph, tf: int, has, active) -> int | None:
 def glb_order(drawn, arrays_of=mesh_arrays) -> tuple[list, list]:
     """The nodes and materials room.extract_room writes, in its order, from its room.drawn_meshes items
     [(transform id, Mesh, material PPtrs)]: a mesh without vertex data or triangles, or whose submeshes all lack
-    a material, is no node; a material is numbered at its first use (room.submesh_primitives order, by path id).
-    -> ([(transform id, mesh name)], [material PPtr])."""
-    index: dict[int, int] = {}
+    a material, is no node; a material is numbered at its first use (room.submesh_primitives order, by
+    room.object_key). -> ([(transform id, mesh name)], [material PPtr])."""
+    index: dict[tuple[str, int], int] = {}
     mats, nodes = [], []
 
     def material_for(p) -> int:
-        if p.path_id not in index:
-            index[p.path_id] = len(mats)
+        key = room.object_key(p.deref())
+        if key not in index:
+            index[key] = len(mats)
             mats.append(p)
-        return index[p.path_id]
+        return index[key]
     for tf, mesh, pptrs in drawn:
         arrays = arrays_of(mesh)
         if arrays is None:
@@ -922,23 +916,32 @@ def glb_order(drawn, arrays_of=mesh_arrays) -> tuple[list, list]:
     return nodes, mats
 
 
-def glb_textures(materials: list) -> dict[int, int]:
-    """{texture path id: glb texture index} of room.extract_room for its materials [(typetree, shader name)] in
-    glb order: the main texture slot of each (room._main_tex_slot), numbered at first use."""
-    index: dict[int, int] = {}
-    for tt, shader_name in materials:
-        slot = room._main_tex_slot(shader_name)
-        for key, env in tt["m_SavedProperties"]["m_TexEnvs"]:
-            tid = env["m_Texture"]["m_PathID"]
-            if key == slot and tid:
-                index.setdefault(tid, len(index))
+def glb_textures(materials: list) -> dict[tuple[str, int], int]:
+    """{texture room.object_key: glb texture index} of room.extract_room for its materials [(material object,
+    typetree, shader name)] in glb order: the main texture slot of each (room.main_textures), numbered at first
+    use."""
+    index: dict[tuple[str, int], int] = {}
+    for owner, tt, shader_name in materials:
+        for tex, _ in room.main_textures(owner, tt, shader_name):
+            index.setdefault(room.object_key(tex), len(index))
     return index
 
 
-def room_material(tt: dict, shader_name: str, tex_index: dict) -> dict:
-    """A room material as saved (its shader runs as the game's): name, shader, keywords, float / int / colour
-    properties, custom render queue, and per texture slot the glb texture index (null when the texture is not in
-    the glb), scale and offset."""
+def _texture_key(owner, ref: dict) -> tuple[str, int] | None:
+    """room.object_key of the texture a material's PPtr `ref` names (read from `owner`'s typetree); None for an
+    empty slot or a texture outside the loaded files (so not in the glb)."""
+    if not ref["m_PathID"]:
+        return None
+    try:
+        return room.object_key(deref(owner, ref))
+    except FileNotFoundError:
+        return None
+
+
+def room_material(owner, tt: dict, shader_name: str, tex_index: dict) -> dict:
+    """A room material (`owner` its object, `tt` its typetree) as saved (its shader runs as the game's): name,
+    shader, keywords, float / int / colour properties, custom render queue, and per texture slot the glb texture
+    index (null when the texture is not in the glb), scale and offset."""
     sp = tt["m_SavedProperties"]
     keywords = tt.get("m_ValidKeywords")
     if keywords is None:
@@ -946,8 +949,7 @@ def room_material(tt: dict, shader_name: str, tex_index: dict) -> dict:
     return {"name": tt["m_Name"], "shader": shader_name, "keywords": list(keywords),
             "floats": dict(sp.get("m_Floats", [])), "ints": dict(sp.get("m_Ints", [])),
             "colors": dict(sp.get("m_Colors", [])), "renderQueue": tt.get("m_CustomRenderQueue"),
-            "texEnvs": {k: {"texture": tex_index.get(v["m_Texture"]["m_PathID"]) if v["m_Texture"]["m_PathID"]
-                            else None,
+            "texEnvs": {k: {"texture": tex_index.get(_texture_key(owner, v["m_Texture"])),
                             "scale": [v["m_Scale"]["x"], v["m_Scale"]["y"]],
                             "offset": [v["m_Offset"]["x"], v["m_Offset"]["y"]]} for k, v in sp["m_TexEnvs"]}}
 
@@ -959,6 +961,15 @@ def glb_json(path) -> dict:
     if data[:4] != b"glTF" or data[16:20] != b"JSON":
         raise RuntimeError(f"{path}: not a binary glTF file")
     return json.loads(data[20:20 + n])
+
+
+def check_room(key: str, glb: dict, room_doc: dict, bg: dict) -> None:
+    """room.extract_room's room.glb (its JSON chunk `glb`) and room.json (`room_doc`) have the nodes, materials and
+    glTF textures of the background record `bg` (background), in its order."""
+    if ([n["name"] for n in glb["nodes"]] != bg["check"]["nodes"] or room_doc["meshCount"] != len(bg["roomNodes"])
+            or [m["name"] for m in glb.get("materials", [])] != [m["name"] for m in bg["roomMaterials"]]
+            or len(glb.get("textures", [])) != bg["check"]["textures"]):
+        raise RuntimeError(f"{key}: room.glb nodes / materials / textures differ from the background's order")
 
 
 def volume_record(comp: dict, layer: int) -> dict:

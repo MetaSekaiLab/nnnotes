@@ -1,14 +1,16 @@
 """The host data of Overlay stories (storyhost.py) on synthetic prefab nodes, hierarchies and master rows: the host
 of a story group, the slot capture camera and layout root records, SpotBackground.Prepare, the floor render queue
-rule, the room node and material order, the build's entry and return value. Nothing here comes from game data."""
+rule, the room node, material and texture order, the build's entry and return value. Nothing here comes from game
+data."""
 import json
 from types import SimpleNamespace
 
 import numpy as np
 import pytest
 
-from nnnotes import storyhost
+from nnnotes import room, storyhost
 from nnnotes.unity import SceneGraph
+from test_room import ROOM_KEY, File, RoomCatalog, load_room, two_file_room
 
 V0 = {"x": 0.0, "y": 0.0, "z": 0.0}
 V1 = {"x": 1.0, "y": 1.0, "z": 1.0}
@@ -98,8 +100,10 @@ class Mesh:
         self.m_Name, self.tris = name, [np.asarray(t, np.int64).reshape(-1, 3) for t in tris]
 
 
-def pp(pid):
-    return SimpleNamespace(path_id=pid)
+def pp(pid, file="CAB-a"):
+    """A material PPtr: its path id and the object it names in `file`."""
+    return SimpleNamespace(path_id=pid, deref=lambda: SimpleNamespace(assets_file=SimpleNamespace(name=file),
+                                                                      path_id=pid))
 
 
 def arrays(mesh):
@@ -124,16 +128,17 @@ def test_glb_order_follows_room_extract_room():
              (2, Mesh("empty", [tri]), [pp(30)]),              # no vertex data: no node
              (3, Mesh("none", [[]]), [pp(40)]),                # no triangles
              (4, Mesh("nomat", [tri]), [pp(0)]),               # its only submesh has no material
-             (5, Mesh("b", [[], tri]), [pp(50), pp(10)])]      # the empty submesh does not number pp(50)
+             (5, Mesh("b", [[], tri]), [pp(50), pp(10)]),      # the empty submesh does not number pp(50)
+             (6, Mesh("c", [tri]), [pp(10, "CAB-b")])]         # path id 10 of another file: another material
     nodes, mats = storyhost.glb_order(drawn, arrays)
-    assert nodes == [(1, "a"), (5, "b")]
-    assert [m.path_id for m in mats] == [20, 10]
+    assert nodes == [(1, "a"), (5, "b"), (6, "c")]
+    assert [room.object_key(m.deref()) for m in mats] == [("CAB-a", 20), ("CAB-a", 10), ("CAB-b", 10)]
     with pytest.raises(NotImplementedError, match="2 submeshes, 1 materials"):
         storyhost.glb_order([(1, Mesh("c", [tri, tri]), [pp(1)])], arrays)
 
 
-def tex(pid, sx=1.0):
-    return {"m_Texture": {"m_FileID": 0, "m_PathID": pid}, "m_Scale": {"x": sx, "y": 1.0},
+def tex(pid, sx=1.0, file_id=0):
+    return {"m_Texture": {"m_FileID": file_id, "m_PathID": pid}, "m_Scale": {"x": sx, "y": 1.0},
             "m_Offset": {"x": 0.0, "y": 0.5}}
 
 
@@ -144,18 +149,51 @@ def mat_tt(name, envs, keywords=("K",)):
 
 
 def test_glb_textures_and_room_materials_keep_the_glb_order():
+    bundle = SimpleNamespace(files={})
+    fa, fb = File("CAB-a", bundle, ["archive:/CAB-b/CAB-b"]), File("CAB-b", bundle)
+    for pid in (6, 7, 8, 9):
+        fa.add("Texture2D", pid, {})
+    fb.add("Texture2D", 7, {})
     a = mat_tt("a", [["_MainTex", tex(7)], ["_Mask", tex(9)]])
     b = mat_tt("b", [["_MainTex", tex(9)], ["_Extra", tex(7)]])
     c = mat_tt("c", [["_BaseMap", tex(8)], ["_MainTex", tex(6)]])
-    index = storyhost.glb_textures([(a, "Unlit/Transparent"), (b, "Unlit/Transparent Cutout"),
-                                    (c, "Universal Render Pipeline/Unlit")])
-    assert index == {7: 0, 9: 1, 8: 2}                 # main slot only, first use; URP shaders use _BaseMap
-    rec = storyhost.room_material(a, "Unlit/Transparent", index)
+    d = mat_tt("d", [["_MainTex", tex(7)]])                      # in CAB-b: its own texture 7
+    e = mat_tt("e", [["_MainTex", tex(7, file_id=1)]])           # in CAB-a: CAB-b's texture 7
+    oa, ob, oc, od, oe = (f.add("Material", pid, tt) for f, pid, tt in
+                          ((fa, 1, a), (fa, 2, b), (fa, 3, c), (fb, 1, d), (fa, 4, e)))
+    index = storyhost.glb_textures([(oa, a, "Unlit/Transparent"), (ob, b, "Unlit/Transparent Cutout"),
+                                    (oc, c, "Universal Render Pipeline/Unlit"), (od, d, "Unlit/Texture"),
+                                    (oe, e, "Unlit/Texture")])
+    # main slot only, first use, by file and path id; URP shaders use _BaseMap
+    assert index == {("CAB-a", 7): 0, ("CAB-a", 9): 1, ("CAB-a", 8): 2, ("CAB-b", 7): 3}
+    rec = storyhost.room_material(oa, a, "Unlit/Transparent", index)
     assert rec["texEnvs"]["_Mask"] == {"texture": 1, "scale": [1.0, 1.0], "offset": [0.0, 0.5]}
-    assert storyhost.room_material(c, "U", index)["texEnvs"]["_MainTex"]["texture"] is None
+    assert storyhost.room_material(oc, c, "U", index)["texEnvs"]["_MainTex"]["texture"] is None
     assert rec["floats"] == {"_Cutoff": 0.5} and rec["keywords"] == ["K"] and rec["renderQueue"] == -1
-    empty = mat_tt("d", [["_MainTex", tex(0)]])
-    assert storyhost.room_material(empty, "U", index)["texEnvs"]["_MainTex"]["texture"] is None
+    assert storyhost.room_material(oe, e, "U", index)["texEnvs"]["_MainTex"]["texture"] == 3
+    empty = mat_tt("f", [["_MainTex", tex(0)]])
+    assert storyhost.room_material(oa, empty, "U", index)["texEnvs"]["_MainTex"]["texture"] is None
+
+
+def test_background_numbers_the_room_as_room_extract_room(tmp_path, monkeypatch):
+    """Materials and textures of two serialized files that reuse path ids: the background record and room.glb agree
+    (check_room), and a texture slot names the glTF texture, not the image."""
+    load_room(monkeypatch, two_file_room())
+    doc = room.extract_room(RoomCatalog(), ROOM_KEY, tmp_path / "room.glb")
+    gltf = storyhost.glb_json(tmp_path / "room.glb")
+    bg = storyhost.background(RoomCatalog(), ROOM_KEY, "situation(Clone)", None)
+    storyhost.check_room(ROOM_KEY, gltf, doc, bg)
+    assert bg["check"]["textures"] == len(gltf["textures"]) == 2 and len(gltf["images"]) == 1
+    mats = bg["roomMaterials"]
+    assert [m["name"] for m in mats] == ["a_wall", "b_wall", "a_floor"]
+    assert ([m["texEnvs"]["_MainTex"]["texture"] for m in mats]
+            == [m["pbrMetallicRoughness"]["baseColorTexture"]["index"] for m in gltf["materials"]] == [0, 1, 1])
+    assert mats[0]["texEnvs"]["_Mask"]["texture"] is None      # unity default resources: not loaded, not in the glb
+    assert mats[2]["texEnvs"]["_Detail"]["texture"] == 0       # CAB-a's texture 7, a_wall's main texture
+    assert bg["floor"]["renderer"] == "room/floor"
+    assert [n["renderQueue"] for n in bg["roomNodes"]] == [None, None, storyhost.FLOOR_QUEUE, None]
+    with pytest.raises(RuntimeError, match="differ from the background's order"):
+        storyhost.check_room(ROOM_KEY, {**gltf, "textures": gltf["textures"][:1]}, doc, bg)
 
 
 # ---------------------------------------------------------------- hosts, records
