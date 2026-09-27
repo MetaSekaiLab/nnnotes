@@ -137,6 +137,19 @@ def test_head_node_cut_after_script():
     assert unity._head_node(TypeTreeNode(0, "X", "Base", -1, 1, m_Children=kids[:2])) is None
 
 
+def test_script_class_missing_script_is_none():
+    kids = [TypeTreeNode(1, t, n, 0, 0) for t, n in (("PPtr<GameObject>", "m_GameObject"), ("UInt8", "m_Enabled"),
+                                                       ("PPtr<MonoScript>", "m_Script"))]
+    node = TypeTreeNode(0, "MonoBehaviour", "Base", -1, 1, m_Children=kids)
+    null = {"m_FileID": 0, "m_PathID": 0}
+    obj = SimpleNamespace(_get_typetree_node=lambda: node,
+                          read_typetree=lambda *a, **k: {"m_GameObject": null, "m_Enabled": 1, "m_Script": null})
+    assert unity.script_class(obj) is None
+    whole = SimpleNamespace(_get_typetree_node=lambda: None,
+                            read=lambda: SimpleNamespace(m_Script=SimpleNamespace(m_PathID=0)))
+    assert unity.script_class(whole) is None
+
+
 # ---------------------------------------------------------------- typetree values
 def ref_value(ex, owner, v):
     if unity.is_pptr(v):
