@@ -24,8 +24,10 @@ Two sources give the same format:
               field and recorded as SDF). Glyphs are shelf-packed, U+005F first (on the first page), then in code
               point order of their first character into pages of PAGE_WIDTH texels, at most PAGE_MAX_HEIGHT high;
               every page of an asset has the same size. The text materials are the game's localized materials with
-              the page as _MainTex and the page size as _TextureWidth / _TextureHeight. No glyph or atlas texel of
-              the game is read.
+              the page as _MainTex and the page size as _TextureWidth / _TextureHeight. The game asset's fallback
+              chain is mirrored (open_font_set): each game fallback asset stands for an asset of the font file of
+              the language LocalizeManager lists it for, which holds the characters the assets before it in the
+              chain lack. No glyph or atlas texel of the game is read.
   game_fonts  the game's TMP font assets (advui.extract with fonts="game", tmpfont.export_fonts): the same records
               moved from its ui.json into fonts.json, the glyph pages into ui/fonts/.
 
@@ -53,6 +55,7 @@ import numpy as np
 
 from . import adv, advui, cache, jsonio, languages, master, textstyle, tmpfont
 from . import shader as shader_mod
+from .config import ConfigError
 from .export import Exporter, _safe, packed_png, texture_png
 
 FONTS_FORMAT = "ournotes.story-fonts/1"
@@ -121,6 +124,15 @@ class FontFile:
             raise ValueError(f"font {self.path.name}: no family name")
         self.version = name(NAME_VERSION)
         self.license = name(NAME_LICENSE_URL, NAME_LICENSE)
+        self._face = None
+
+    def maps(self, u: int) -> bool:
+        """Whether the font maps the code point (FreeType's character map, as open_asset reads it)."""
+        if self._face is None:
+            import freetype
+            import io
+            self._face = freetype.Face(io.BytesIO(self.data), self.face_index)
+        return self._face.get_char_index(u) != 0
 
     @property
     def asset_name(self) -> str:
@@ -667,12 +679,221 @@ def fallback_chains(ex: Exporter, primaries: set, exported: set) -> dict[str, li
     return {n: search_order(fs.fallbacks, fs.fonts[n], exported) for n in sorted(exported)}
 
 
+FALLBACK_FLOATS = ("_GradientScale", "_TextureWidth", "_TextureHeight", "_WeightNormal", "_WeightBold")
+SCALE_CLAMP = 1.0                          # ShaderUtilities.m_clamp
+
+
+def no_font_file(language: str) -> FontFile:
+    """The font_of of a build given the font file of its own language only: every other language is a ConfigError
+    naming the setting."""
+    raise ConfigError(f"the fallback chain of the open font assets needs the font file of {language}: give it as "
+                      f"`{language}` in the [paths.fonts] table of the config file (`fonts.{language}` in [paths]), "
+                      f"the environment variable NNNOTES_PATHS_FONTS_{language.upper().replace('-', '_')} or "
+                      f"--font {language}=PATH")
+
+
+def counterpart_language(lang: dict, language: str, game_name: str) -> str | None:
+    """The language whose open font file stands for the game font asset `game_name` in a fallback chain built for
+    `language`: `language` when LocalizeManager (`lang`, textstyle.language_fonts) lists the asset for it (font
+    names and additional font names), else the first language in LanguageMode order that lists it; None when no
+    language lists it (the game's own fallback assets, which no open font stands for)."""
+    def lists(code: str) -> bool:
+        d = lang["languages"].get(languages.mode(code)) or {}
+        return game_name in {f"{n} SDF" for n in d.get("fontNames", []) + d.get("additionalFontNames", [])}
+    if lists(language):
+        return language
+    return next((c for c in sorted(languages.LANGUAGES, key=languages.mode) if lists(c)), None)
+
+
+def scale_ratios32(floats: dict, keywords) -> tuple[float, float | None]:
+    """ShaderUtilities.UpdateShaderRatios in float32: (_ScaleRatioA, _ScaleRatioC, None without the underlay
+    properties); RATIOS_OFF gives 1."""
+    f = np.float32
+    ratios = "RATIOS_OFF" not in keywords
+    gs, dilate = f(floats["_GradientScale"]), f(floats["_FaceDilate"])
+    weight = f(max(f(floats.get("_WeightNormal", 0.0)), f(floats.get("_WeightBold", 0.0))) / f(4.0))
+    t = max(f(1.0), f(f(f(weight + dilate) + f(floats.get("_OutlineWidth", 0.0)))
+                      + f(floats.get("_OutlineSoftness", 0.0))))
+    a = f(f(gs - f(SCALE_CLAMP)) / f(gs * t)) if ratios else f(1.0)
+    c = None
+    if "_UnderlayOffsetX" in floats:
+        rng = f(f(weight + dilate) * f(gs - f(SCALE_CLAMP)))
+        t = max(f(1.0), f(f(max(abs(f(floats["_UnderlayOffsetX"])), abs(f(floats.get("_UnderlayOffsetY", 0.0))))
+                            + f(floats.get("_UnderlayDilate", 0.0))) + f(floats.get("_UnderlaySoftness", 0.0))))
+        c = float(f(max(f(0.0), f(f(gs - f(SCALE_CLAMP)) - rng)) / f(gs * t))) if ratios else 1.0
+    return float(a), c
+
+
+def fallback_material(m: dict, target: dict, name: str) -> dict:
+    """TMP_MaterialManager.GetFallbackMaterial(m, target) (TMP_Settings.matchMaterialPreset): the text material `m`
+    named `name`, with the _MainTex, _GradientScale, _TextureWidth, _TextureHeight, _WeightNormal and _WeightBold of
+    the fallback asset's default material `target`, and the scale ratios UpdateShaderRatios gives for those values
+    (scale_ratios32; a material without _FaceDilate keeps its own)."""
+    out = copy.deepcopy(m)
+    out["material"] = name
+    out["textures"]["_MainTex"] = copy.deepcopy(target["textures"]["_MainTex"])
+    for k in FALLBACK_FLOATS:
+        out["floats"][k] = target["floats"][k]
+    if "_FaceDilate" in out["floats"]:
+        a, c = scale_ratios32(out["floats"], out["keywords"])
+        out["floats"]["_ScaleRatioA"] = a
+        if c is not None:
+            out["floats"]["_ScaleRatioC"] = c
+    return out
+
+
+def _game_font_record(ex: Exporter, f: tmpfont.Font) -> dict:
+    """The game font asset settings open_asset takes: point size, padding, render mode, style, default material."""
+    return {"pointSize": f.tt["m_FaceInfo"]["m_PointSize"], "padding": f.tt["m_AtlasPadding"],
+            "renderMode": f.tt["m_AtlasRenderMode"], "style": {k: f.tt[k] for k in STYLE_KEYS},
+            "material": ex.material(f.material_obj)}
+
+
+def open_font_set(cat, player, ex: Exporter, language: str, font: FontFile, bindings: list[dict], shown: list[str],
+                  ui_dir: Path, font_of=no_font_file, sprite_drawn: dict | None = None,
+                  margin_materials: dict | None = None) -> dict:
+    """The open font assets of the text `bindings` (their `localized` game font asset and material, replaced in
+    place by the open asset and its material) in `language`, for the texts `shown`:
+
+    - per localized game font asset (a primary) an asset of `font` (the language's font file) with the game asset's
+      point size, padding, style settings, render mode and text materials (open_asset);
+    - the game asset's fallback chain mirrored: each asset of its search order (search_order) stands for an asset of
+      the font file of its counterpart_language (`font_of(language)` -> FontFile, asked for when a character
+      reaches it) with that game asset's settings; the game's own fallback assets no language lists are left out;
+    - each shown code point goes to the first asset of its primary's chain whose font file maps it, as
+      TMP_Text.GetTextElement finds a character; one no asset maps stays with the primary as `missing`. The code
+      points the game's chain lacks take the missing glyph (tmpfont.missing_glyph: the primary gets `missingGlyph`;
+      its substitute goes through the chain like any character) and those a sprite draws for the primary's texts
+      (`sprite_drawn` {game font asset: code points}) are left out;
+    - an asset's `fallbacks` are the assets of its chain that hold a character (in search order), and each text
+      material M of a primary has, per fallback of the primary, the fallback material "M + <fallback asset>"
+      (fallback_material).
+
+    `margin_materials` {game font asset: game material names}: further text materials of that asset whose underlay
+    the glyph margin covers (so the pages equal another document's with the same characters). The pages go to
+    `ui_dir`/fonts/. -> {fonts, textures, materials, missing (code points no asset maps), substituted (code points
+    drawn as a missing glyph)}."""
+    lang = textstyle.language_fonts(player)
+    sprite_drawn = sprite_drawn or {}
+    margin_materials = margin_materials or {}
+    chars = sorted({ord(ch) for s in shown for ch in s})
+    by_game: dict[str, list[dict]] = {}
+    for t in bindings:
+        by_game.setdefault(t["localized"]["fontAsset"], []).append(t)
+    primaries = sorted(by_game)
+    fs = tmpfont.FontSet(ex)
+    missing_char = tmpfont.missing_glyph_character(player)
+    files = {language: font}
+
+    def file_of(code: str) -> FontFile:
+        if code not in files:
+            files[code] = font_of(code)
+        return files[code]
+
+    def chain(name: str, code: str) -> list[tuple[str, str]]:
+        out = [(name, code)]
+        for fb in search_order(fs.fallbacks, fs.fonts[name], set(fs.fonts)):
+            c = counterpart_language(lang, language, fb)
+            if c is not None and (fb, c) not in out:
+                out.append((fb, c))
+        return out
+
+    # the game side per primary: missing glyph, underline glyph, text materials; the characters through the chain
+    held: dict[tuple[str, str], set[int]] = {}
+    mgs, text_mats, margins, missing, substituted = {}, {}, {}, set(), set()
+    for name in primaries:
+        g = fs.by_key(advui.font_key(cat, name, name))
+        tmpfont.check_glyph_variants(fs, g, shown)
+        mg = tmpfont.missing_glyph(fs, g, chars, missing_char)
+        gone = set(mg["characters"]) if mg else set()
+        substituted |= gone
+        mgs[name] = mg
+        # GetUnderlineSpecialCharacter: '_' of the game asset itself (no fallback); a '_' its fallback draws for the
+        # text would be the underline glyph too in one open asset
+        if not tmpfont.underline_character(fs, g) and UNDERLINE_CHARACTER in chars and UNDERLINE_CHARACTER not in gone:
+            raise NotImplementedError(f"{name}: U+005F from a fallback without the asset's own underline glyph")
+        mats = {}
+        for t in by_game[name]:
+            mname = t["localized"]["material"]
+            if mname not in mats:
+                key = advui.font_key(cat, name, mname)
+                if not cat.has(key):
+                    raise KeyError(f"material key {key}")
+                mats[mname] = ex.material(ex.key_object(key))
+        text_mats[name] = mats
+        margins[name] = dict(mats)
+        for mname in sorted(margin_materials.get(name, ())):
+            key = advui.font_key(cat, name, mname)
+            if mname not in margins[name] and cat.has(key):
+                margins[name][mname] = ex.material(ex.key_object(key))
+        own = (name, language)
+        held.setdefault(own, set())
+        want = sorted({u for u in chars if u not in gone and u not in sprite_drawn.get(name, ())}
+                      | ({mg["unicode"]} if mg else set()))
+        steps = chain(name, language)
+        for u in want:
+            if u in tmpfont.TMP_SYNTHESIZED:         # every asset synthesizes these: found in the primary
+                held[own].add(u)
+                continue
+            hit = next((k for k in steps if file_of(k[1]).maps(u)), own)
+            held.setdefault(hit, set()).add(u)       # no asset maps it: the primary (open_asset: missing)
+
+    # the assets: the primaries, then the chain assets that hold a character
+    prim_keys = [(n, language) for n in primaries]
+    keys = prim_keys + sorted(k for k in held if k not in prim_keys and held[k])
+    single = len(primaries) == 1
+
+    def name_of(key: tuple[str, str]) -> str:
+        if key[1] == language and key[0] in by_game:
+            return font.asset_name if single else f"{font.asset_name} ({key[0]})"
+        return f"{file_of(key[1]).asset_name} ({key[0]})"
+
+    names = {k: name_of(k) for k in keys}
+    if len(set(names.values())) != len(names):
+        raise RuntimeError(f"open font asset names collide: {sorted(names.values())}")
+    users = {k: [n for n in primaries if k in chain(n, language)] for k in keys}
+    fonts, textures, materials, renames = {}, {}, {}, {}
+    for key in keys:
+        gname, code = key
+        primary = gname in by_game and code == language
+        margin = margins[gname] if primary else {m: r for n in users[key] for m, r in margins[n].items()}
+        name = names[key]
+        a = open_asset(file_of(code), name, sorted(held[key]), _game_font_record(ex, fs.fonts[gname]), margin,
+                       tmpfont.underline_character(fs, fs.fonts[gname]) if primary else False)
+        used = {f"{name} Material"} | ({a["renames"][m] for m in text_mats[gname]} if primary else set())
+        a["font"]["fallbacks"] = [names[k] for k in chain(gname, code)[1:] if k in names and k != key]
+        if primary and mgs[gname]:
+            a["font"]["missingGlyph"] = mgs[gname]
+        fonts[name] = a["font"]
+        textures.update(a["textures"])
+        materials.update({k: v for k, v in a["materials"].items() if k in used})
+        missing |= a["missing"]
+        if primary:
+            renames[gname] = a["renames"]
+        (ui_dir / PAGES_DIR).mkdir(parents=True, exist_ok=True)
+        for pname, px in a["pages"]:
+            (ui_dir / a["textures"][pname]["texture"]).write_bytes(packed_png(px))
+    # the fallback materials of the primaries' text materials, then the bindings
+    for gname in primaries:
+        prim = fonts[names[(gname, language)]]
+        for fb in prim["fallbacks"]:
+            target = materials[fonts[fb]["material"]]
+            for mname in sorted(text_mats[gname]):
+                own = renames[gname][mname]
+                materials[f"{own} + {fb}"] = fallback_material(materials[own], target, f"{own} + {fb}")
+        for t in by_game[gname]:
+            loc = t["localized"]
+            t["localized"] = {**loc, "fontAsset": names[(gname, language)], "material": renames[gname][loc["material"]]}
+    return {"fonts": fonts, "textures": textures, "materials": materials, "missing": missing,
+            "substituted": substituted}
+
+
 def open_fonts(cat, player, episode: dict, ui_dir: Path, language: str, font: FontFile,
-               master_dir: Path | None = None, emoji: EmojiFont | None = None) -> dict:
+               master_dir: Path | None = None, emoji: EmojiFont | None = None, font_of=no_font_file) -> dict:
     """ui/fonts.json, ui/fonts/*.png and ui/languages.json of `language` from the font file `font` and the emoji font
     `emoji` (module docstring; without one the sprites keep their metrics and have no texels), next to the
-    ui/ui.json advui.extract wrote for that language in `ui_dir`; the text shaders go to ui/shaders. Returns a
-    summary."""
+    ui/ui.json advui.extract wrote for that language in `ui_dir`; the text shaders go to ui/shaders. `font_of`:
+    the font file of another language for the fallback chains (open_font_set). Returns a summary."""
     tmpfont.require_extra()
     ui_dir = Path(ui_dir)
     ui_doc = json.loads((ui_dir / "ui.json").read_text(encoding="utf-8"))
@@ -690,9 +911,6 @@ def open_fonts(cat, player, episode: dict, ui_dir: Path, language: str, font: Fo
 
     bindings = list(texts.values()) + [t for group in (dialogs, chat, frame) for w in group.values()
                                        for t in w.values()]
-    by_game: dict[str, list[dict]] = {}           # localized game font asset -> the bindings of its texts
-    for t in bindings:
-        by_game.setdefault(t["localized"]["fontAsset"], []).append(t)
     # the code points the sprite asset draws for the texts with it (sprite_drawn); the open font asset of those
     # texts leaves them out
     sprite_drawn: dict[str, set[int]] = {}
@@ -700,51 +918,10 @@ def open_fonts(cat, player, episode: dict, ui_dir: Path, language: str, font: Fo
     if any("spriteAsset" in t for t in bindings):
         rec = advui.sprite_asset_record(ex)
         sprite_drawn = drawn_by_sprites(ex, rec, [t for t in bindings if "spriteAsset" in t], chars)
-    # the game's missing glyph per game font asset (tmpfont.missing_glyph): the code points its texts draw as the
-    # substitute; the open font asset holds the substitute instead of them
-    fs = tmpfont.FontSet(ex)
-    missing_char = tmpfont.missing_glyph_character(player)
-    fonts, textures, materials, missing, substituted = {}, {}, {}, set(), set()
-    for game_name in sorted(by_game):
-        gfont = fs.by_key(advui.font_key(cat, game_name, game_name))
-        tmpfont.check_glyph_variants(fs, gfont, shown)
-        mg = tmpfont.missing_glyph(fs, gfont, chars, missing_char)
-        gone = set(mg["characters"]) if mg else set()
-        substituted |= gone
-        # GetUnderlineSpecialCharacter: '_' of the game asset itself (no fallback); a '_' its fallback draws for the
-        # text would be the underline glyph too in one open asset
-        underline = tmpfont.underline_character(fs, gfont)
-        if not underline and UNDERLINE_CHARACTER in chars and UNDERLINE_CHARACTER not in gone:
-            raise NotImplementedError(f"{game_name}: U+005F from a fallback without the asset's own underline glyph")
-        gobj = ex.key_object(advui.font_key(cat, game_name, game_name))
-        gtt = gobj.read_typetree()
-        text_mats = {}
-        for t in by_game[game_name]:
-            mname = t["localized"]["material"]
-            if mname not in text_mats:
-                key = advui.font_key(cat, game_name, mname)
-                if not cat.has(key):
-                    raise KeyError(f"material key {key}")
-                text_mats[mname] = ex.material(ex.key_object(key))
-        game = {"pointSize": gtt["m_FaceInfo"]["m_PointSize"], "padding": gtt["m_AtlasPadding"],
-                "renderMode": gtt["m_AtlasRenderMode"], "style": {kk: gtt[kk] for kk in STYLE_KEYS},
-                "material": ex.material(ex.deref(gobj, gtt["m_Material"]))}
-        name = font.asset_name if len(by_game) == 1 else f"{font.asset_name} ({game_name})"
-        own = sorted({u for u in chars if u not in gone and u not in sprite_drawn.get(game_name, ())}
-                     | ({mg["unicode"]} if mg else set()))
-        a = open_asset(font, name, own, game, text_mats, underline)
-        if mg:
-            a["font"]["missingGlyph"] = mg
-        fonts[name] = a["font"]
-        textures.update(a["textures"])
-        materials.update(a["materials"])
-        missing |= a["missing"]
-        (ui_dir / PAGES_DIR).mkdir(parents=True, exist_ok=True)
-        for pname, px in a["pages"]:
-            (ui_dir / a["textures"][pname]["texture"]).write_bytes(packed_png(px))
-        for t in by_game[game_name]:
-            loc = t["localized"]
-            t["localized"] = {**loc, "fontAsset": name, "material": a["renames"][loc["material"]]}
+    # the open font assets with the mirrored fallback chains, the missing glyph and the fallback materials
+    fset = open_font_set(cat, player, ex, language, font, bindings, shown, ui_dir, font_of, sprite_drawn)
+    fonts, textures, materials = fset["fonts"], fset["textures"], fset["materials"]
+    missing, substituted = fset["missing"], fset["substituted"]
     coverage = {"characters": len(chars), "missing": [chr(u) for u in sorted(missing)]}
     if substituted:
         coverage["missingGlyph"] = [chr(u) for u in sorted(substituted)]
@@ -1036,6 +1213,12 @@ def game_fonts(cat, player, game_ui_dir: Path, ui_dir: Path, language: str, epis
     ex = _exporter(cat, player, ui_dir / "_fonts")
     chains = fallback_chains(ex, {t["localized"]["fontAsset"] for t in texts.values()}, set(fonts))
     fonts = {n: {**f, "fallbacks": chains[n]} for n, f in fonts.items()}
+    for t in texts.values():                        # TMP's fallback materials of the text materials (fallback_material)
+        loc = t["localized"]
+        for fb in fonts[loc["fontAsset"]]["fallbacks"]:
+            name = f"{loc['material']} + {fb}"
+            if name not in materials:
+                materials[name] = fallback_material(materials[loc["material"]], materials[fonts[fb]["material"]], name)
     driven = story_ui_text_targets(ex, ui_doc) & set(texts)
     sprites, drawn = None, set()
     if episode is not None and driven:

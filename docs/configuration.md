@@ -66,7 +66,7 @@ exist when they are given.
 | `[paths] vgmstream` | `NNNOTES_PATHS_VGMSTREAM` | `--vgmstream` | `vgmstream-cli` executable; unset: `vgmstream-cli` on `PATH` |
 | `[paths] node` | `NNNOTES_PATHS_NODE` | `--node` | Node.js executable; unset: `node` on `PATH` |
 | `[paths] player` | `NNNOTES_PATHS_PLAYER` | `--player` (of `web`) | ournotes-player checkout (built) or installed package |
-| `[paths] fonts.<language>` | `NNNOTES_PATHS_FONTS_<LANGUAGE>` (e.g. `NNNOTES_PATHS_FONTS_ZH_HANT`) | `--font <language>=PATH` (of `web`) | font file (OpenType or TrueType) the story text of a language is drawn with (`--fonts open`) |
+| `[paths] fonts.<language>` | `NNNOTES_PATHS_FONTS_<LANGUAGE>` (e.g. `NNNOTES_PATHS_FONTS_ZH_HANT`) | `--font <language>=PATH` (of `web`) | font file (OpenType or TrueType) the story text of a language is drawn with (`--fonts open`); also read for the other story languages whose game fonts fall back to that language's font |
 | `[paths] fonts.emoji` | `NNNOTES_PATHS_FONTS_EMOJI` | `--font emoji=PATH` (of `web`) | colour emoji font (PNG bitmap glyphs: CBDT or sbix) the stories' emoji sprites are drawn from (`--fonts open`); Noto Color Emoji (SIL Open Font License 1.1) is the tested font. Optional: without it the sprites keep their layout with empty glyphs, listed in `ui/fonts.json` `coverage.sprites.missing` |
 | `[export] link` | `NNNOTES_EXPORT_LINK` | `--link` (of `export`) | how `export` makes the layout files from the store: `auto` (unset), `clone`, `hard` or `copy` ([assets.md](assets.md)) |
 

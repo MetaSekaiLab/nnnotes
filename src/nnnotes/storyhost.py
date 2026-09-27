@@ -36,7 +36,7 @@ import UnityPy
 
 from . import advscene, advui, languages, master, room, spot, storyfonts, textstyle, tmpfont
 from . import shader as shader_mod
-from .export import RECT_PROPS, Exporter, TexelPacker, packed_png, streamed_frames
+from .export import RECT_PROPS, Exporter, TexelPacker, streamed_frames
 from .jsonio import dumps, write_json
 from .unity import SceneGraph, deref, mesh_arrays, script_class
 
@@ -1077,70 +1077,38 @@ def story_text_materials(story_fonts: dict | None, lang: dict, mode: int) -> dic
 
 
 def open_fonts(ui: UiDoc, cat, player, episode: dict, story_ui: dict, language: str, font, master_dir,
-               texts: list[str], story_fonts: dict | None = None) -> dict:
-    """ui/simple/fonts.json and ui/simple/fonts/*.png from the font file `font` (storyfonts.open_fonts' format
-    and generator) for the text nodes of `ui`: the characters are storyfonts.shown_characters over the story and
-    its own ui/ui.json (`story_ui`), the MasterText rows of the simple UI's text keys and `texts`. The glyph margin
-    also covers the story UI's text materials of the same font (`story_fonts`, the story's ui/fonts.json), so the
-    glyph pages equal the story UI's when the characters do."""
+               texts: list[str], story_fonts: dict | None = None, font_of=storyfonts.no_font_file) -> dict:
+    """ui/simple/fonts.json and ui/simple/fonts/*.png from the font file `font` for the text nodes of `ui`, with the
+    story UI's font logic (storyfonts.open_font_set: the fallback chains, whose other font files `font_of` gives,
+    the missing glyph, the fallback materials): the texts are storyfonts.shown_texts over the story and its own
+    ui/ui.json (`story_ui`), the MasterText rows of the simple UI's text keys and `texts`. The glyph margin also
+    covers the story UI's text materials of the same font (`story_fonts`, the story's ui/fonts.json), so the glyph
+    pages equal the story UI's when the characters do."""
     tmpfont.require_extra()
     mode, field = languages.mode(language), languages.column(language)[1:]
     lang = textstyle.language_fonts(player)
     bindings = text_bindings(ui, lang, mode)
-    story_mats = story_text_materials(story_fonts, lang, mode)
-    chars = sorted(set(storyfonts.shown_characters(episode, story_ui, master_dir, field))
-                   | set(storyfonts.shown_characters(NO_EPISODE, ui.doc, master_dir, field))
-                   | {ord(ch) for s in texts if isinstance(s, str) for ch in s})
-    ex, pages_dir = ui.ex, ui.dir / storyfonts.PAGES_DIR
-    by_game: dict[str, list[str]] = {}
-    for path, t in bindings.items():
-        by_game.setdefault(t["localized"]["fontAsset"], []).append(path)
-    fonts, textures, materials, missing = {}, {}, {}, set()
-    for game_name in sorted(by_game):
-        gobj = ex.key_object(textstyle.font_dir(game_name) + game_name)
-        gtt = gobj.read_typetree()
-        text_mats = {}
-        for path in by_game[game_name]:
-            mname = bindings[path]["localized"]["material"]
-            if mname not in text_mats:
-                key = textstyle.font_dir(game_name) + mname
-                if not cat.has(key):
-                    raise KeyError(f"material key {key}")
-                text_mats[mname] = ex.material(ex.key_object(key))
-        game = {"pointSize": gtt["m_FaceInfo"]["m_PointSize"], "padding": gtt["m_AtlasPadding"],
-                "renderMode": gtt["m_AtlasRenderMode"], "style": {k: gtt[k] for k in storyfonts.STYLE_KEYS},
-                "material": ex.material(ex.deref(gobj, gtt["m_Material"]))}
-        name = font.asset_name if len(by_game) == 1 else f"{font.asset_name} ({game_name})"
-        margin_mats = dict(text_mats)
-        for mname in sorted(story_mats.get(game_name, ())):
-            key = textstyle.font_dir(game_name) + mname
-            if mname not in margin_mats and cat.has(key):
-                margin_mats[mname] = ex.material(ex.key_object(key))
-        a = storyfonts.open_asset(font, name, chars, game, margin_mats)
-        used = {a["renames"][m] for m in text_mats} | {f"{name} Material"}
-        a["materials"] = {k: v for k, v in a["materials"].items() if k in used}
-        fonts[name] = a["font"]
-        textures.update(a["textures"])
-        materials.update(a["materials"])
-        missing |= a["missing"]
-        pages_dir.mkdir(parents=True, exist_ok=True)
-        for pname, px in a["pages"]:
-            (ui.dir / a["textures"][pname]["texture"]).write_bytes(packed_png(px))
-        for path in by_game[game_name]:
-            loc = bindings[path]["localized"]
-            bindings[path]["localized"] = {**loc, "fontAsset": name, "material": a["renames"][loc["material"]]}
-    keywords = storyfonts.text_shaders(ex, ui.dir, materials)
-    doc = {"format": storyfonts.FONTS_FORMAT, "language": language, "source": "open", "fonts": fonts,
-           "textures": textures, "materials": materials, "materialKeywords": keywords, "texts": bindings,
-           "coverage": {"characters": len(chars), "missing": [chr(u) for u in sorted(missing)]},
-           "lineBreaking": storyfonts.line_breaking(player)}
+    shown = (storyfonts.shown_texts(episode, story_ui, master_dir, field)
+             + storyfonts.shown_texts(NO_EPISODE, ui.doc, master_dir, field) + [s for s in texts if isinstance(s, str)])
+    fset = storyfonts.open_font_set(cat, player, ui.ex, language, font, list(bindings.values()), shown, ui.dir,
+                                    font_of, margin_materials=story_text_materials(story_fonts, lang, mode))
+    materials = fset["materials"]
+    keywords = storyfonts.text_shaders(ui.ex, ui.dir, materials)
+    chars = {ord(ch) for s in shown for ch in s}
+    coverage = {"characters": len(chars), "missing": [chr(u) for u in sorted(fset["missing"])]}
+    if fset["substituted"]:
+        coverage["missingGlyph"] = [chr(u) for u in sorted(fset["substituted"])]
+    doc = {"format": storyfonts.FONTS_FORMAT, "language": language, "source": "open", "fonts": fset["fonts"],
+           "textures": fset["textures"], "materials": materials, "materialKeywords": keywords, "texts": bindings,
+           "coverage": coverage, "lineBreaking": storyfonts.line_breaking(player)}
     (ui.dir / storyfonts.FONTS_DOC).write_bytes(
         dumps(doc, ensure_ascii=False, indent=1, sort_keys=True).encode("utf-8") + b"\n")
-    return {"fonts": sorted(fonts), "characters": len(chars), "missing": len(missing), "pages": len(textures)}
+    return {"fonts": sorted(fset["fonts"]), "characters": len(chars), "missing": len(fset["missing"]),
+            "pages": len(fset["textures"])}
 
 
 def simple_ui(cat, master_dir, player, episode: dict, ldir: Path, language: str, keys: dict, host: dict,
-              title_id: str | None, font) -> dict:
+              title_id: str | None, font, font_of=storyfonts.no_font_file) -> dict:
     """<ldir>/ui/simple/: ui.json (UISimpleAdvTalkWindow, the window SimpleAdvPlayer.LoadInitialTalkWindow
     attaches; for an area talk UISystemMessageWidget, which SystemMessageManager.ShowMessageByTextIdAsync shows the
     spot's title with, and `texts.areaTitle`) and its open fonts."""
@@ -1161,17 +1129,18 @@ def simple_ui(cat, master_dir, player, episode: dict, ldir: Path, language: str,
     ui.write(f"SimpleAdvPlayer talk window UI data, {language}", head={"language": advui.language_doc(language)},
              tail={"texts": texts} if texts else None)
     return open_fonts(ui, cat, player, episode, story_ui, language, font, master_dir, list(texts.values()),
-                      story_fonts)
+                      story_fonts, font_of)
 
 
 # ---------------------------------------------------------------- entry
 def build(cat, master_dir, player, episode: dict, story_dir, language_dirs: dict, groups: list, *,
-          fonts: str = "open", font_files: dict | None = None) -> dict | None:
+          fonts: str = "open", font_files: dict | None = None, font_of=None) -> dict | None:
     """The host data of `episode` (episode.json of story.build) when it is an Overlay episode (master
     `_playbackMode` 1; else None and nothing written): <story_dir>/host/ (host.json, ui/, spot/, shaders/) and in
     each language directory of `language_dirs` {language: dir with the story's ui/ui.json} its ui/simple/.
     `groups`: the story groups of the episode (storysite.story_groups), which name the host (host_of); `fonts`:
-    "open" with `font_files` {language: storyfonts.FontFile}. -> {kind, doc, ui} (the story manifest's `host`)."""
+    "open" with `font_files` {language: storyfonts.FontFile} and `font_of` (language -> FontFile, the fallback
+    chains' other font files; default: those of `font_files`). -> {kind, doc, ui} (the story manifest's `host`)."""
     if fonts not in FONT_MODES:
         raise ValueError(f"fonts must be one of {FONT_MODES}, not {fonts!r}")
     if (episode.get("master") or {}).get("_playbackMode") != OVERLAY:
@@ -1183,6 +1152,9 @@ def build(cat, master_dir, player, episode: dict, story_dir, language_dirs: dict
     lost = [lang for lang in language_dirs if lang not in font_files]
     if lost:
         raise ValueError(f"no font file for {lost}")
+    if font_of is None:
+        def font_of(code):
+            return font_files[code] if code in font_files else storyfonts.no_font_file(code)
     keys = {k: emb_key(cat, ADDRESSES[k]) for k in ("cameraTarget", "talkWindow")}
     if host.get("talk") == "area":
         keys["systemMessage"] = emb_key(cat, ADDRESSES["systemMessage"])
@@ -1214,5 +1186,5 @@ def build(cat, master_dir, player, episode: dict, story_dir, language_dirs: dict
     for language, ldir in language_dirs.items():
         shutil.rmtree(Path(ldir) / "ui" / SIMPLE_DIR, ignore_errors=True)
         simple_ui(cat, master_dir, player, episode, Path(ldir), language, keys, host,
-                  (home or {}).get("titleTextId"), font_files[language])
+                  (home or {}).get("titleTextId"), font_files[language], font_of)
     return {"kind": host["kind"], "doc": HOST_DOC, "ui": SIMPLE_DOC}

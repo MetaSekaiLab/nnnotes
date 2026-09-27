@@ -548,9 +548,13 @@ once. The format is described in the player's `docs/story-data-format.md`.
   a font file per language: `--font LANG=PATH` (repeatable) or `fonts.<lang>` in the `[paths]` table of the config
   file (`NNNOTES_PATHS_FONTS_<LANG>`, e.g. `NNNOTES_PATHS_FONTS_ZH_HANT`); every language of `--story-languages`
   needs one. Any OpenType or TrueType font (the first face of a collection) with the characters of the language
-  works; characters the font lacks are listed in `ui/fonts.json` `coverage.missing`. Characters the game's own font
-  assets lack are drawn as the game draws them, as its missing glyph (U+25A1 where the game's font has it), not from
-  the font file (`coverage.missingGlyph`). Each generated asset takes the
+  works. The game's fallback chains are mirrored: where the game takes a character from a fallback font asset of
+  another language's font (Korean text falls back to the Japanese font, for example), the generated asset falls
+  back to an asset of that language's font file, which then needs to be given too (the build stops with the setting
+  it needs when a character reaches it); characters no font file of the chain has are listed in `ui/fonts.json`
+  `coverage.missing`. Characters the game's own font assets lack are drawn as the game draws them, as its missing
+  glyph (U+25A1 where the game's font has it), not from the font file (`coverage.missingGlyph`). The simple talk
+  window of an Overlay story is handled the same way. Each generated asset takes the
   point size, padding, style settings and render mode of the game font asset the texts use in that language, so the
   game's text materials apply unchanged; its face info and glyph metrics come from the font file (FreeType, no
   hinting), its distance field from the generator `--fonts game` uses for runtime glyphs (supersampled render modes

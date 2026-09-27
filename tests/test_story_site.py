@@ -201,8 +201,8 @@ def test_story_task_builds_the_host_with_open_fonts_only(tmp_path, monkeypatch):
     def fake_dirs(cat, master_dir, player, adv_id, work, job):
         return story_dirs(work, adv_id, mode=1 if adv_id == 5 else 0)
 
-    def fake_host(cat, master_dir, player, episode, story_dir, language_dirs, groups, *, fonts, font_files):
-        calls.append((episode["advId"], fonts, font_files))
+    def fake_host(cat, master_dir, player, episode, story_dir, language_dirs, groups, *, fonts, font_files, font_of):
+        calls.append((episode["advId"], fonts, font_files, font_of("ko")))
         if episode["master"]["_playbackMode"] != 1:
             return None
         return host_files({"story": story_dir, "languages": language_dirs})
@@ -217,7 +217,7 @@ def test_story_task_builds_the_host_with_open_fonts_only(tmp_path, monkeypatch):
         assert r["ok"], r
         return json.loads((tmp_path / site / "stories" / f"{adv_id}.json").read_text(encoding="utf-8"))
     man = run(5, "open")
-    assert calls == [(5, "open", {"ja": "font-ja", "en": "font-en"})]
+    assert calls == [(5, "open", {"ja": "font-ja", "en": "font-en"}, "font-ko")]    # font_of: the chains' files
     assert man["host"] == {"kind": "home", "doc": "host/host.json", "ui": "ui/simple/ui.json"}
     assert {"host/host.json", "ui/simple/ui.json"} <= set(man["files"])
     assert all("ui/simple/fonts.json" in g["files"] for g in man["languages"].values())
@@ -417,7 +417,12 @@ def test_font_files(tmp_path, monkeypatch):
     with pytest.raises(ConfigError, match="--font en=PATH"):
         storysite.font_files(cfg, ["ja", "en"])
     monkeypatch.chdir(tmp_path)
-    assert storysite.font_files(cfg, ["en"], {"en": "f.otf"}) == {"en": str(f.resolve())}
+    # the other languages' files too, when given (the fallback chains of the open font assets)
+    assert storysite.font_files(cfg, ["en"], {"en": "f.otf"}) == {"ja": str(f.resolve()), "en": str(f.resolve())}
+    with pytest.raises(ConfigError, match="font file of ja not found"):
+        storysite.font_files(cfg, ["en"], {"en": "f.otf", "ja": "missing.otf"})
+    with pytest.raises(ConfigError, match="needs the font file of ko"):
+        storysite.font_file({"fontFiles": {"en": str(f)}}, "ko")
     with pytest.raises(ConfigError, match="not found"):
         storysite.font_files(cfg, ["ko"], {"ko": "missing.otf"})
     assert storysite.emoji_file(cfg) is None                       # optional: the sprites then have no images
@@ -425,7 +430,7 @@ def test_font_files(tmp_path, monkeypatch):
     assert storysite.emoji_file(Config({"paths": {"fonts": {"emoji": str(f)}}}, environ={})) == str(f.resolve())
     with pytest.raises(ConfigError, match="emoji font file not found"):
         storysite.emoji_file(cfg, {"emoji": "missing.ttf"})
-    assert storysite.font_files(cfg, ["en"], {"en": "f.otf", "emoji": "missing.ttf"}) == {"en": str(f.resolve())}
+    assert storysite.font_files(cfg, ["en"], {"en": "f.otf", "emoji": "missing.ttf"})["en"] == str(f.resolve())
     assert storysite.check_languages(None) == ["ja", "en", "zh-Hant", "zh-Hans", "ko"]
     assert storysite.check_languages(["ko", "ja"]) == ["ja", "ko"]
     with pytest.raises(ValueError):

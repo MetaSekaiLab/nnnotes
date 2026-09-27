@@ -187,8 +187,11 @@ def story_facts(episode: dict, scene: dict, groups: list[dict], story_languages:
 
 # ---------------------------------------------------------------- one story
 def font_file(job: dict, language: str) -> storyfonts.FontFile:
-    """The FontFile of `language` (job fontFiles), read once per process."""
+    """The FontFile of `language` (job fontFiles), read once per process; a language without one is a ConfigError
+    naming the setting (storyfonts.no_font_file)."""
     fonts = _W.setdefault("fontFiles", {})
+    if language not in job["fontFiles"]:
+        return storyfonts.no_font_file(language)
     path = job["fontFiles"][language]
     if path not in fonts:
         fonts[path] = storyfonts.FontFile(path)
@@ -229,7 +232,7 @@ def build_dirs(cat, master_dir: Path, player, adv_id: int, work: Path, job: dict
             shutil.rmtree(gdir)
         else:
             storyfonts.open_fonts(cat, player, episode, ldir / "ui", lang, font_file(job, lang), master_dir,
-                                  emoji=emoji_font(job))
+                                  emoji=emoji_font(job), font_of=lambda code: font_file(job, code))
         dirs[lang] = ldir
     share_ui_shaders(dirs)
     return {"story": sdir, "languages": dirs, "episode": episode, "scene": scene}
@@ -423,7 +426,8 @@ def story_task(adv_id: int, job: dict | None = None, data=None, groups: dict | N
             stage = "host"
             dirs["host"] = storyhost.build(
                 cat, master_dir, player, dirs["episode"], dirs["story"], dirs["languages"], groups.get(adv_id, []),
-                fonts="open", font_files={lang: font_file(job, lang) for lang in job["languages"]})
+                fonts="open", font_files={lang: font_file(job, lang) for lang in job["languages"]},
+                font_of=lambda code: font_file(job, code))
         stage = "ingest"
         r = ingest(Store(site), site, adv_id, dirs, job, groups.get(adv_id, []))
         return {**r, "id": job.get("prefix", "") + r["id"], "seconds": round(time.time() - t0, 1)}
@@ -513,12 +517,16 @@ def write_stories_index(site: Path, language: str | None = None, regions: list[d
 
 # ---------------------------------------------------------------- build
 def font_files(cfg: Config, story_languages: list[str], flags: dict[str, str] | None = None) -> dict[str, str]:
-    """{language: font file path} of the story languages: `flags` ({language: path} from --font), else
-    `[paths] fonts.<language>`; a missing or unknown one is a ConfigError naming the setting."""
+    """{language: font file path} of the story languages and of the other languages that have one (the fallback
+    chains of the open font assets draw from them: storyfonts.open_font_set): `flags` ({language: path} from
+    --font), else `[paths] fonts.<language>`; a story language without one, and a given file that does not exist,
+    is a ConfigError naming the setting."""
     flags = dict(flags or {})
     out = {}
-    for lang in story_languages:
+    for lang in languages.LANGUAGES:
         p = Path(flags[lang]) if lang in flags else cfg.path("paths.fonts", lang)
+        if p is None and lang not in story_languages:
+            continue
         if p is None:
             raise ConfigError(f"the story text of {lang} needs a font file: give it as `{lang}` in the "
                               f"[paths.fonts] table of the config file (`fonts.{lang}` in [paths]), the environment "
