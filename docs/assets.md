@@ -47,7 +47,7 @@ nnnotes store verify [--quick]
 | `--flac-level N` | FLAC compression level 0-12 of the CRI audio and the movies' audio (default 8; every level decodes to the same samples; 12 writes files 0.2-1.3 % smaller in about five times the encoding time); part of the task keys |
 | `--only-class C,...` | export only objects of these Unity classes; part of the task keys |
 | `--link` | how the layout files are made from the store (below): `auto` (default; `[export] link`), `clone`, `hard` or `copy` |
-| `--strict` | exit 1 when a view has gaps: a required role whose address names no catalog key or no fitting sub-object (empty values and roles that do not apply are not gaps); in `voices`, a voice whose cue sheet has no catalog key or whose decoded sheet lacks its cue |
+| `--strict` | exit 1 when a view has gaps: a required role whose address names no catalog key or no fitting sub-object (empty values and roles that do not apply are not gaps); in `voices`, a voice whose cue sheet has no catalog key or whose decoded sheet lacks its cue, and a story episode without a catalog key |
 | `--dry-run` | print the plan and stop |
 | `--explain` | print every setting of the run first: store, context, selection, pipeline, stages not installed, parameters, workers, memory budget, recycling, layouts |
 

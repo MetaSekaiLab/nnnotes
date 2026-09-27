@@ -218,6 +218,9 @@ TABLES["MasterText"] = [text(t, t.lower()) for t in (
     {"_id": "Talk_Text_561", "_japanese": "テストです", "_english": "Hello!", "_traditionalChinese": "測試",
      "_simplifiedChinese": "測試", "_korean": "테스트"}]
 
+for _t in voices.tables_of(voices.load_rules()):          # the story tables: no episodes here (test_voices_story)
+    TABLES.setdefault(_t, [])
+
 KEYS = ["Cri/Sound/Bgm", "Cri/Sound/InitialVoice", "Cri/Sound/VoiceBroken", "Cri/Sound/VoiceLive_01",
         "Cri/Sound/VoiceSystem_01", "Cri/Sound/VoiceSystem_02", "Cri/Sound/adv_voice_x_01", "Cri/Sound/spot_01_01_01"]
 
@@ -233,14 +236,14 @@ SHEETS = {
 }
 
 
-def sheet_acb(sheet: str) -> bytes:
-    cues, order, info = SHEETS[sheet]
+def sheet_acb(sheet: str, sheets=None) -> bytes:
+    cues, order, info = (sheets or SHEETS)[sheet]
     return simple_acb(cues, order, {a: n for a, (_, n) in info.items()})
 
 
-def stream_files(sheet: str) -> list[tuple[int, str, str, int]]:
+def stream_files(sheet: str, sheets=None) -> list[tuple[int, str, str, int]]:
     """(stream number, stream name, file, samples) as cri.decode names the files (a repeated name: <name>_<n>)."""
-    _, order, info = SHEETS[sheet]
+    _, order, info = (sheets or SHEETS)[sheet]
     out, seen = [], set()
     for n, a in enumerate(order, 1):
         name, samples = info[a]
@@ -249,20 +252,22 @@ def stream_files(sheet: str) -> list[tuple[int, str, str, int]]:
     return out
 
 
-def audio_task(sheet: str) -> Task:
-    data = sheet_acb(sheet)
+def audio_task(sheet: str, sheets=None) -> Task:
+    data = sheet_acb(sheet, sheets)
     sha = contract.sha256(data)
     return Task("cri.audio", 1, sha, {"flac": {"level": 8}}, {}, (Input("acb", sha, len(data)),))
 
 
-def audio_result(store, sheet: str, unsupported: bool = False) -> dict:
+def audio_result(store, sheet: str, unsupported: bool = False, sheets=None) -> dict:
     """A cri.audio result of a sheet, committed to `store` when given."""
-    t = audio_task(sheet) if sheet in SHEETS else Task("cri.audio", 1, contract.sha256(sheet.encode()), {}, {}, ())
+    sheets = sheets or SHEETS
+    t = audio_task(sheet, sheets) if sheet in sheets else Task("cri.audio", 1, contract.sha256(sheet.encode()), {},
+                                                              {}, ())
     if unsupported:
         return contract.result(t, [], [contract.item(t.id, "unsupported", why=contract.reason(
             "unsupported.cri.awb_external", "streamed"), cls="ACB")])
     arts = []
-    for n, name, file, samples in stream_files(sheet):
+    for n, name, file, samples in stream_files(sheet, sheets):
         data = f"{sheet}/{file}".encode()
         content = store.add(data, "flac") if store is not None else {
             "sha256": contract.sha256(data), "size": len(data), "mediaType": "audio/flac", "ext": "flac"}
@@ -276,8 +281,10 @@ def audio_result(store, sheet: str, unsupported: bool = False) -> dict:
     return res
 
 
-def audio(store=None) -> dict:
-    out = {s: voices.sheet_audio(audio_result(store, s), acb.cue_streams(sheet_acb(s))) for s in SHEETS}
+def audio(store=None, sheets=None) -> dict:
+    sheets = sheets or SHEETS
+    out = {s: voices.sheet_audio(audio_result(store, s, sheets=sheets), acb.cue_streams(sheet_acb(s, sheets)))
+           for s in sheets}
     out["VoiceBroken"] = voices.sheet_audio(audio_result(store, "VoiceBroken", unsupported=True), None)
     return out
 
@@ -297,7 +304,7 @@ def row(doc, rid):
 # ---------------------------------------------------------------- the index
 def test_every_source_gives_rows():
     doc = build(audio())
-    assert doc["schema"] == voices.SCHEMA and doc["view"] == "voices" and doc["version"] == 1
+    assert doc["schema"] == voices.SCHEMA and doc["view"] == "voices" and doc["version"] == 2
     by = {}
     for r in doc["rows"]:
         by.setdefault(r["source"]["name"], []).append(r["id"])
@@ -459,13 +466,15 @@ def test_rules_are_checked():
 
 
 # ---------------------------------------------------------------- the stage
-def planning(store, tmp: Path, keys=KEYS, skip=()) -> Env:
-    """An environment where link.addresses:main has run (the catalog keys `keys`) and the cri.audio tasks of the
-    decoded sheets have results; the raw ACBs are files under their catalog keys."""
-    mdir = write_master(tmp / "m", TABLES)
+def planning(store, tmp: Path, keys=KEYS, skip=(), sheets=None, tables=None, doc=None, results=None) -> Env:
+    """An environment where link.addresses:main has run (the catalog keys `keys`, or the address table `doc`) and
+    the cri.audio tasks of the decoded sheets have results; the raw ACBs are files under their catalog keys.
+    `results(env)`: commits further results (unity.export) before the environment is returned."""
+    sheets = sheets or SHEETS
+    mdir = write_master(tmp / "m", tables or TABLES)
     raw, deps = {}, {}
-    for sheet in list(SHEETS) + ["VoiceBroken"]:
-        data = sheet_acb(sheet) if sheet in SHEETS else b"@UTF broken"
+    for sheet in list(sheets) + ["VoiceBroken"]:
+        data = sheet_acb(sheet, sheets) if sheet in sheets else b"@UTF broken"
         stable = f"cri_assets_cri/sound/{sheet.lower()}"
         p = tmp / "raw" / stable.replace("/", "_")
         p.parent.mkdir(parents=True, exist_ok=True)
@@ -478,20 +487,22 @@ def planning(store, tmp: Path, keys=KEYS, skip=()) -> Env:
     locations += [{"id": f"remote:{100 + i}", "primaryKey": k, "kind": "asset", "dependencies": [lid[s] for s in d]}
                   for i, (k, d) in enumerate(sorted(deps.items()))]
     cat = {"rawFiles": [{"stable": s, "locations": [lid[s]]} for s in sorted(raw)], "locations": locations}
-    link = FakeAddresses(addresses_doc({k: [] for k in keys}))
+    link = FakeAddresses(doc or addresses_doc({k: [] for k in keys}))
     env = Env(store, {"catalogs": {"main": []}, "master": mdir, "views": ["voices"], "raw": raw, "index": cat})
     t = describe(link, "main", None, env)
     execute(t, store, {link.name: link})
     env.done(t.id, t.key)
-    for sheet in SHEETS:
+    for sheet in sheets:
         if sheet not in skip:
-            res = audio_result(store, sheet)
-            env.done(audio_task(sheet).id, res["key"])
+            res = audio_result(store, sheet, sheets=sheets)
+            env.done(audio_task(sheet, sheets).id, res["key"])
     b = Task("cri.audio", 1, raw["cri_assets_cri/sound/voicebroken"].sha256, {}, {}, ())
     broken = contract.result(b, [], [contract.item(b.id, "unsupported", why=contract.reason(
         "unsupported.cri.awb_external", "streamed"), cls="ACB")])
     store.commit(broken)
     env.done(b.id, broken["key"])
+    if results is not None:
+        results(env)
     return env
 
 
@@ -506,7 +517,8 @@ def run_stage(env):
 def test_stage_subjects_inputs_and_waits(tmp_path):
     store = Store(tmp_path / "s")
     stage = voices.VoiceStage()
-    assert stage.name == "view.voices" and stage.after == ("link.addresses", "cri.audio") and stage.version == 1
+    assert stage.name == "view.voices" and stage.version == 2
+    assert stage.after == ("link.addresses", "unity.export", "cri.audio")
     assert stage.subjects(Env(store, {"catalogs": {"main": []}, "master": None})) == []
     assert stage.subjects(Env(store, {"catalogs": {"main": []}, "master": tmp_path, "views": ["cards"]})) == []
     env = planning(store, tmp_path)
@@ -516,7 +528,7 @@ def test_stage_subjects_inputs_and_waits(tmp_path):
     assert [r for r in roles if r.startswith("acb:")] == sorted(f"acb:{contract.sha256(sheet_acb(s))}"
                                                                for s in SHEETS)   # not the unsupported sheet's
     assert [r for r in roles if not r.startswith("acb:")] == [
-        "addresses", *sorted(f"master:{t}" for t in voices.tables_of(stage.rules)), "rules", "sheets"]
+        "addresses", "episodes", *sorted(f"master:{t}" for t in voices.tables_of(stage.rules)), "rules", "sheets"]
     sheets = contract.loads(store.read(task.input("sheets").sha256))
     assert sorted(sheets) == sorted([*SHEETS, "VoiceBroken"])
     assert sheets["VoiceSystem_01"] == {"task": audio_task("VoiceSystem_01").id,
@@ -717,7 +729,7 @@ def test_get_without_an_export_decodes_the_one_sheet(tmp_path, capsysbinary, mon
 
 # ---------------------------------------------------------------- laziness and documentation
 def test_voices_import_nothing_heavy():
-    code = ("import sys, nnnotes.voices, nnnotes.acb; "
+    code = ("import sys, nnnotes.voices, nnnotes.acb, nnnotes.storyvoices, nnnotes.advcommand; "
             "print(sorted(m for m in ('UnityPy', 'numpy', 'PIL', 'nnnotes.cri') if m in sys.modules))")
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, cwd=ROOT, check=True).stdout
     assert out.strip() == "[]"
@@ -733,7 +745,11 @@ def test_sources_statuses_and_situations_are_documented():
         assert f"`{s['name']}`" in text_ and f"`{s['table']}`" in text_, s["name"]
         for c in s.get("cues", []):
             assert f"`{c['cue']}`" in text_ and f"`{c['category']}`" in text_
-    assert f"`{voices.SOUND_SOURCE}`" in text_
+    assert f"`{voices.SOUND_SOURCE}`" in text_ and f"`{voices.STORY_SOURCE}`" in text_
+    st = v["story"]
+    for k in st["kinds"]:
+        assert f"`{k['kind']}`" in text_ and f"`{k['table']}`" in text_, k["kind"]
+    assert f"`{voices.SPEAKER_RULE}`" in text_ and f"`{st['split']}`" in text_ and f"`{st['table']}`" in text_
     for s in voices.STATUSES:
         assert f"`{s}`" in text_, s
     for s in v["situations"]:

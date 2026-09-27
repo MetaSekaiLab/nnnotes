@@ -474,11 +474,12 @@ icon: `not-applicable`):
 
 ## Voices
 
-`view.voices` (`nnnotes.voices`) indexes the character voices the master data names: per voice its source row,
-characters, category, text in the five languages and conditions, its cue sheet and cue, and the decoded streams of
-the export that play it. It is a stage of its own rather than a view of the rules above: besides master tables and
-the address table it reads the results of `cri.audio` and the ACB of every decoded cue sheet. Its rules are the
-`voices` entry of `viewrules.json` (`nnnotes voices` queries its document, docs/commands.md).
+`view.voices` (`nnnotes.voices`) indexes the character voices the master data names and those of the story
+episodes: per voice its source row, characters, category, text in the five languages and conditions, its cue sheet
+and cue, and the decoded streams of the export that play it. It is a stage of its own rather than a view of the
+rules above: besides master tables and the address table it reads the results of `unity.export` (the episodes) and
+`cri.audio`, and the ACB of every decoded cue sheet. Its rules are the `voices` entry of `viewrules.json`
+(`nnnotes voices` queries its document, docs/commands.md).
 
 ### Sources
 
@@ -495,6 +496,7 @@ the address table it reads the results of `cri.audio` and the ACB of every decod
 | `HomeSpot` | `MasterHomeSpot` | `_characterIds`, `_introSoundId` | |
 | `Title` | `MasterTitle` | `_voiceCharacterIds`; cue names built per character (below) | the cue's name |
 | `Sound` | `MasterSound` | the rows of category Voice that no other source names | |
+| `Story` | `MasterAdv` | per voice id of an episode command: the speaker (inferred characters), the episode's sound, the line (below) | the episode's kind |
 
 - The first eight are the tables of the game's voice collection; `source.type` gives their CharacterVoiceMasterType
   value. A row whose sound column is empty or 0 names no voice (counted as `empty`). Conditions are the listed
@@ -528,6 +530,52 @@ the address table it reads the results of `cri.audio` and the ACB of every decod
   `characters`, the characters whose name token (the last `_` part of `_nameTextID`) is a word of the cue name, in
   the order they appear; `rows`, the `HomeSpot` rows whose voice is in the same sheet.
 
+### Story episodes
+
+`Story` reads every row of `MasterAdv` (the `story` rules). The row's `_advEpisodeAsset` names the episode: catalog
+key `Adv/Episode/<asset>/<asset>`, an AdvEpisodeCollection MonoBehaviour whose `Collection` is the command list,
+and three shards at the same key with a suffix, TextAssets of JSON rows: `-Text` (texts in the five languages, the
+columns of MasterText), `-Sound` (sounds, the columns of MasterSound) and `-SoundCueSheet` (cue sheets, the columns
+of MasterSoundCueSheet). A command with `VoiceIDs` gives one row per voice id:
+
+- `source`: `row` the adv id, `command` the command's `Index`, `type` its AdvCommand value and name (`Talk`,
+  `ChatTalk`, `Voice`, ...), `slot` (`1`, `2`, ...) when the command has several voice ids, `ignoreData` when its
+  `IgnoreData` is set.
+- `text`: `AdvTextID` with its row of the episode's `-Text` (`texts` null when that shard has no such row or is
+  not read); `speaker`: `TargetName` and each of `TargetTextIDs` with its `-Text` row.
+- `sound`: the voice id with its `-Sound` row's `_category` and `_cueName`, and the `_cueSheetName` of the
+  `-SoundCueSheet` row of its `_soundCueSheetID`.
+- `category`: the episode's kind; `characters` is empty (the episode data names speakers, not characters).
+- `inferred`, apart from these facts: rule `speaker-name`, the segments of `TargetName` split at `・` that are,
+  case ignored, a name part of one character: a `_` part of its `_nameTextID` after the leading parts every
+  character's `_nameTextID` shares (its name token, the last part, or another name the id gives it). `characters`
+  in speaker order and `matches` (`{segment, character}`); a part two characters have matches neither. A speaker
+  without such a segment has no `inferred`.
+
+The kind is that of the first table below (then by row id) with a row whose `_advId` is the episode; its fields and
+names are listed on the episode. An episode none of them plays has kind null.
+
+| Kind | Table | Fields | Names |
+|---|---|---|---|
+| `Main` | `MasterStoryEpisode` | `chapter` `_chapterId`, `episode` `_episodeNumber`, `character` `_characterId`, `another` `_isAnotherEpisode`, `extra` `_isExtraEpisode` | `chapter`: `MasterStoryChapter` `_nameTextId` of `_chapterId` |
+| `Friendship` | `MasterStoryFriendshipEpisode` | `friendship` `_characterFriendshipId`, `episode` `_episodeNumber`, `characterA` / `characterB`: `MasterCharacterFriendship` `_masterCharacterIdA` / `_masterCharacterIdB` | |
+| `HomeSpotTapTalk` | `MasterStoryHomeSpotTapTalkEpisode` | `spot` `_spotId`, `character` `_characterId` | |
+| `LiveResult` | `MasterStoryLiveResultEpisode` | `characters` `_characterIds` | |
+| `HomeSpot` | `MasterHomeSpot` | `spot` `_id` | `spot` `_nameTextId` |
+
+The episodes are the document's `episodes`, by adv id: `id`, `asset`, `title` (`_titleTextId`), `kind`, `table`,
+`row`, `fields`, `names`, `status`, `detail` and `voices` (its rows). An episode's status:
+
+| Status | Meaning |
+|---|---|
+| `no-value` | the MasterAdv row has no asset |
+| `missing-key` | the catalog has no key for the episode (a gap) |
+| `not-exported` | the key exists; no `unity.export` result holds its MonoBehaviour |
+| `unsupported` | the MonoBehaviour has no `Collection`, or a shard is not of the form above (`detail`) |
+| `ok` | its voices are rows |
+
+A voice of a home or after-live episode is often a cue that a row of another source also names; both rows are kept.
+
 ### Cues and streams
 
 The sound's `_soundCueSheetID` names the cue sheet (MasterSoundCueSheet `_cueSheetName`, catalog key
@@ -546,22 +594,22 @@ and `exported` (the cue's streams are decoded).
 
 | Status | Meaning |
 |---|---|
-| `no-value` | no MasterSound row for the sound, or no MasterSoundCueSheet row for its sheet (`detail`) |
-| `missing-key` | the catalog has no key `Cri/Sound/<sheet>` |
-| `not-exported` | the key exists; the export has no `cri.audio` result for its content |
+| `no-value` | no MasterSound row for the sound, or no MasterSoundCueSheet row for its sheet (`detail`); for `Story`, no `-Sound` row for the voice id or no `-SoundCueSheet` row for its sheet |
+| `missing-key` | the catalog has no key `Cri/Sound/<sheet>`; for `Story` also: no key for the episode's `-Sound` or `-SoundCueSheet` (`detail`) |
+| `not-exported` | the key exists; the export has no `cri.audio` result for its content (for `Story` also: the `-Sound` or `-SoundCueSheet` shard is not exported) |
 | `unsupported` | the sheet's `cri.audio` task did not decode it (`detail`: the reason code) |
 | `missing-cue` | the sheet is decoded; its ACB has no such cue, or the cue plays none of its streams |
 | `ok` | the cue's streams are in `audio` |
 
-Gaps are the rows that are `missing-key` or `missing-cue`, whatever their source. Whether a site shows a voice is
-not recorded: sites are built separately.
+Gaps are the rows that are `missing-key` or `missing-cue`, whatever their source, and the `missing-key` episodes.
+Whether a site shows a voice is not recorded: sites are built separately.
 
 ### Documents
 
 `nnnotes.voices/1`, canonical JSON:
 
 ```json
-{"schema": "nnnotes.voices/1", "view": "voices", "version": 1, "rules": "<digest>", "tables": ["MasterCharacter", "..."],
+{"schema": "nnnotes.voices/1", "view": "voices", "version": 2, "rules": "<digest>", "tables": ["MasterAdv", "..."],
  "characters": [{"id": 1, "token": "Alpha", "names": {"name": {"ja": "...", "en": "..."}, "short": {}, "en": {}}}],
  "rows": [{"id": "MasterTalk:561",
            "source": {"name": "Talk", "table": "MasterTalk", "row": 561, "column": "_voiceSoundId",
@@ -575,19 +623,39 @@ not recorded: sites are built separately.
                      "streams": [{"stream": 0, "file": "Growth_Alpha_RankUp_01.flac",
                                   "artifact": "cri.audio:<sha256>#Growth_Alpha_RankUp_01.flac",
                                   "sha256": "...", "size": 1, "sampleRate": 48000, "channels": 1,
-                                  "samples": 48000, "seconds": 1.0}]}}],
+                                  "samples": 48000, "seconds": 1.0}]}},
+          {"id": "MasterAdv:900001:3",
+           "source": {"name": "Story", "table": "MasterAdv", "row": 900001, "command": 3,
+                      "type": {"enum": "AdvCommand", "value": 2, "name": "Talk"}},
+           "characters": [], "category": {"name": "Main"},
+           "sound": {"id": 5001, "category": 2, "sheet": "adv_voice_x_01", "cue": "adv_voice_x_01_001"},
+           "text": {"id": "x01_1", "texts": {"ja": "...", "en": "..."}},
+           "speaker": {"name": "alpha", "texts": [{"id": "adv_alpha", "texts": {"ja": "...", "en": "..."}}]},
+           "inferred": {"characters": [1], "rule": "speaker-name", "matches": [{"segment": "alpha", "character": 1}]},
+           "availability": {"master": true, "catalog": true, "exported": true}, "status": "ok", "audio": {}}],
+ "episodes": [{"id": 900001, "asset": "adv_script_x_01", "title": {"id": "...", "texts": {}}, "kind": "Main",
+               "table": "MasterStoryEpisode", "row": 101, "fields": {"chapter": 1, "episode": 1},
+               "names": {"chapter": {"ja": "..."}}, "status": "ok", "voices": 1}],
  "snapshot": {"tables": {"MasterTalk": "<sha256>"}, "sheets": {"VoiceSystem_01": {"task": "cri.audio:<sha256>",
-                                                                                 "acb": "<sha256>", "status": "exported"}}},
- "coverage": {"rows": 1, "sources": {"Talk": {"rows": 1, "empty": 0, "counts": {"ok": 1}, "gaps": []}},
+                                                                                 "acb": "<sha256>", "status": "exported"}},
+              "episodes": "<sha256>"},
+ "coverage": {"rows": 1, "sources": {"Talk": {"rows": 1, "empty": 0, "counts": {"ok": 1}, "gaps": []},
+                                     "Story": {"rows": 1, "empty": 0, "counts": {"ok": 1}, "gaps": [],
+                                               "episodes": {"count": 1, "counts": {"ok": 1}, "gaps": []}}},
               "reverse": {"prefixes": ["Cri/Sound/Voice"], "keys": 1, "unreferencedKeys": [], "streams": 1,
                           "unreferencedStreams": {}}}}
 ```
 
 - Row ids: `<Table>:<row id>` (`:<slot>` for a row with two voices), `Title:<character>:<category>`,
-  `MasterSound:<id>`. Rows are in the order of the sources, then by id; a row of `Title` has `source.rows` and
-  `source.cue` (the template) and no sound id; a `HomeSpot` row has `names.spot`, a `MemberCard` row `names.card`.
-- `snapshot`: the content id of every master table read and, per decoded sheet, its `cri.audio` task and ACB.
-- Coverage. Forward, per source: rows, rows per status, `empty` and `gaps`. Reverse: the catalog keys under the
+  `MasterSound:<id>`, `MasterAdv:<adv id>:<command index>` (`:<slot>` for a command with several voice ids). Rows
+  are in the order of the sources, then by id (`Story`: by adv id, then in the episode's command order); a row of
+  `Title` has `source.rows` and `source.cue` (the template) and no sound id; a `HomeSpot` row has `names.spot`, a
+  `MemberCard` row `names.card`.
+- `snapshot`: the content id of every master table read, per decoded sheet its `cri.audio` task and ACB, and the
+  content id of the `episodes` input (below).
+- Coverage. Forward, per source: rows, rows per status, `empty` and `gaps`; for `Story` also `episodes` (their
+  number, number per status and the `missing-key` ones), `empty` counting the `ok` episodes without voices.
+  Reverse: the catalog keys under the
   prefixes (`Cri/Sound/Voice`, `Cri/Sound/spot_`, `Cri/Sound/InitialVoice`, `Cri/Sound/adv_voice_`), the ones whose
   sheet no row names (`unreferencedKeys`), and per decoded sheet the streams no row reaches
   (`unreferencedStreams`: `[stream, name]`).
@@ -597,9 +665,13 @@ not recorded: sites are built separately.
 - Subjects: the catalog subjects of `link.addresses`, when master data is set and `voices` is selected.
 - Inputs: `master:<Table>` for every table the rules read, `rules` (the format and the `voices` rules), `addresses`
   (the keys it looks up and the prefixes it lists, as `views.Recorder` records them), `sheets` (each sheet the
-  `cri.audio` results are known by, as `cristages.AudioStage` names them: its task and ACB content id) and
-  `acb:<sha256>` for the ACB of every decoded sheet; context `audio`, the keys of the `cri.audio` results. It runs
-  after `cri.audio` and waits for its tasks; without them every present key is `not-exported`.
+  `cri.audio` results are known by, as `cristages.AudioStage` names them, that a row of the master sources names or
+  the prefixes list: its task and ACB content id), `acb:<sha256>` for the ACB of every decoded one, `episodes` (per
+  episode asset and part: the object its key names, the MonoBehaviour of the script or the TextAsset of a shard; the
+  `unity.export` artifact that holds it, `json` or `data`, found through the address table's serialized files; its
+  content id) and `adv:<sha256>` for each of those contents; context `audio`, the keys of the `cri.audio` results.
+  It runs after `unity.export` and `cri.audio` and waits for their tasks; without them every present key and
+  episode is `not-exported`. A story voice is looked up in the sheets it reads.
 - Artifact `view.voices:<subject>#view`; facts `rows`, `entries` (rows per status), `gaps` (`export --strict`
   exits 1 when there are any) and `unreferenced` (the streams of the decoded sheets that no row reaches).
 - Derived document of the `original` layout: `views/voices.json`, with `"layout": "original"` and the `path` of

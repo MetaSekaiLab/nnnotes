@@ -19,9 +19,10 @@ whatever the console encoding.
     nnnotes shader --key <key> | --apk-bundle <substring> -o out/shaders
     nnnotes audio <cueSheet> -o out/audio
     nnnotes voices list [--from out/assets] [--character <id | name>] [--category <category>] [--source <source>]
+                        [--episode <adv id | asset>]
     nnnotes voices search <text> [--from out/assets] [--language ja] [--character ...] [--category ...]
     nnnotes voices summary [--from out/assets]
-    nnnotes voices get <row id | MasterSound id> -o out/voice [--from out/assets] [--format flac]
+    nnnotes voices get <row id | sound id> -o out/voice [--from out/assets] [--format flac]
     nnnotes crikey [--write <dir>]
     nnnotes player -o out/player.json
     nnnotes live 100001 --difficulty expert [--band 1 | --leader-card <MasterMemberCard id>] [--fonts game]

@@ -348,7 +348,7 @@
     }
   },
   "voices": {
-    "version": 1,
+    "version": 2,
     "key": "Cri/Sound/{sheet}",
     "prefixes": ["Cri/Sound/Voice", "Cri/Sound/spot_", "Cri/Sound/InitialVoice", "Cri/Sound/adv_voice_"],
     "sound": {"table": "MasterSound", "sheets": "MasterSoundCueSheet", "sheet": "_soundCueSheetID",
@@ -415,6 +415,27 @@
       {"situation": "SplashCompany", "cue": "Title_[A-Za-z]+_Company_[A-Za-z]+_[0-9]+"},
       {"situation": "Location", "cue": "vox_pt[0-9]+_[a-z]+(_[a-z]+)?"}
     ],
-    "near": ["HomeSpot"]
+    "near": ["HomeSpot"],
+    "story": {
+      "table": "MasterAdv", "asset": "_advEpisodeAsset", "title": "_titleTextId",
+      "key": "Adv/Episode/{asset}/{asset}", "shards": {"text": "-Text", "sound": "-Sound", "sheets": "-SoundCueSheet"},
+      "split": "・",
+      "kinds": [
+        {"kind": "Main", "table": "MasterStoryEpisode", "adv": "_advId",
+         "fields": {"chapter": "_chapterId", "episode": "_episodeNumber", "character": "_characterId",
+                    "another": "_isAnotherEpisode", "extra": "_isExtraEpisode"},
+         "names": {"chapter": ["_chapterId", "MasterStoryChapter._nameTextId"]}},
+        {"kind": "Friendship", "table": "MasterStoryFriendshipEpisode", "adv": "_advId",
+         "fields": {"friendship": "_characterFriendshipId", "episode": "_episodeNumber",
+                    "characterA": ["_characterFriendshipId", "MasterCharacterFriendship._masterCharacterIdA"],
+                    "characterB": ["_characterFriendshipId", "MasterCharacterFriendship._masterCharacterIdB"]}},
+        {"kind": "HomeSpotTapTalk", "table": "MasterStoryHomeSpotTapTalkEpisode", "adv": "_advId",
+         "fields": {"spot": "_spotId", "character": "_characterId"}},
+        {"kind": "LiveResult", "table": "MasterStoryLiveResultEpisode", "adv": "_advId",
+         "fields": {"characters": "_characterIds"}},
+        {"kind": "HomeSpot", "table": "MasterHomeSpot", "adv": "_advId", "fields": {"spot": "_id"},
+         "names": {"spot": "_nameTextId"}}
+      ]
+    }
   }
 }
