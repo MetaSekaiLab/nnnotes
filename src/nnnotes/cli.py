@@ -59,6 +59,7 @@ os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
 from . import __version__, cli_assets, voices
 from .addressables import BundleKey
 from .catalog import Catalog
+from .compress import DEFAULT_ENCODING, ENCODINGS
 from .config import DEFAULT_FILE, ENV_CONFIG, Config, ConfigError, config_files, find_file, use, user_file
 from .jsonio import dumps, write_json
 from .webaudio import DEFAULT_AUDIO_FORMAT, WEB_AUDIO
@@ -574,7 +575,7 @@ def cmd_web(args, cfg):
     player = cfg.path("paths", "player")
     out = Path(args.out)
     if args.player_only or args.reingest_json:
-        r = {**(web.reingest_json(out) if args.reingest_json else {}),
+        r = {**(web.reingest_json(out, args.compress) if args.reingest_json else {}),
              **web.write_player(out, web.check_player(player)), **web.write_index(out)}
     else:
         web.check_player(player)
@@ -605,7 +606,8 @@ def cmd_web(args, cfg):
             r.update(web.build(out, None if args.all else args.pair, cfg, player, args.format,
                                audio=not args.no_audio, force=args.force, tmp_dir=args.tmp, workers=args.workers,
                                band=args.band, leader_card=args.leader_card, regions=regions, fonts=args.fonts,
-                               read_workers=args.read_workers, live_options=live_options))
+                               read_workers=args.read_workers, live_options=live_options,
+                               encoding=args.compress))
         if stories:
             from .tmpfont import require_extra
             require_extra("--story / --all-stories")  # the font assets of the story text (open and game)
@@ -871,6 +873,9 @@ def build_parser() -> argparse.ArgumentParser:
     m.add_argument("--all-live2d", action="store_true", help="every Live2D model of the catalog")
     c.add_argument("--format", default=DEFAULT_AUDIO_FORMAT, choices=tuple(WEB_AUDIO), help="BGM format")
     c.add_argument("--no-audio", action="store_true", help="export no audio files")
+    c.add_argument("--compress", default=DEFAULT_ENCODING, choices=ENCODINGS,
+                   help="encoding of the compressible assets (JSON, shaders, moc3, ...) where it makes them "
+                        "smaller: gzip (default), br (brotli) or none")
     c.add_argument("--force", action="store_true", help="rebuild charts and models whose manifest exists")
     c.add_argument("--tmp", help="directory for the temporary live and model builds (default <site>.tmp)")
     c.add_argument("--workers", type=int,

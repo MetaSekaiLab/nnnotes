@@ -456,7 +456,8 @@ value is always included; a value the master data does not have is a usage error
 nnnotes web SITE [--pair MUSIC_ID:DIFFICULTY [--pair ...] | --all] [--live2d MODEL [--live2d ...] | --all-live2d]
                  [--story ADV_ID [--story ...] | --all-stories] [--story-languages LANG,...] [--font LANG=PATH ...]
 nnnotes web SITE (--player-only | --reingest-json)
-                  [--player DIR] [--format aac|opus|vorbis|mp3|flac] [--no-audio] [--force]
+                  [--player DIR] [--format aac|opus|vorbis|mp3|flac] [--no-audio] [--compress gzip|br|none]
+                  [--force]
                   [--tmp DIR] [--workers N] [--read-workers N] [--band BAND | --leader-card CARD_ID]
                   [--region REGION [--region ...] | --all-regions] [--fonts open|game]
                   [--live-option OPTION[=VALUES] ...]
@@ -470,8 +471,9 @@ SITE/index.html, chart-list.js ...        the player's chart list page; ?music=<
 SITE/ournotes-player.element.min.js       the player's built bundle (and its source map)
 SITE/charts.json                          chart index: listing facts (texts in every language), regions,
                                           manifest path, sizes
-SITE/charts/<musicId>_<difficulty>.json   chart manifest: every path the player reads -> {asset, size}, or
-                                          {parts: [[key, asset, size], ...], size} for a large JSON object
+SITE/charts/<musicId>_<difficulty>.json   chart manifest: every path the player reads -> {asset, size[, stored]},
+                                          or {parts: [[key, asset, size[, stored]], ...], size} for a large JSON
+                                          object
 SITE/charts/<region>/<id>.json            the manifest of a region whose chart files differ (see Regions)
 SITE/models.json                          Live2D model index: id, key, group, canvas, manifest path, sizes; with
                                           master data the character and its names
@@ -483,7 +485,8 @@ SITE/stories/<advId>.json                 story manifest: the common files and o
                                           same entry forms as a chart manifest
 SITE/stories/<region>/<advId>.json        the manifest of a region whose story files differ (see Regions)
 SITE/story/                               the player's story page and its bundle (when the player has them)
-SITE/assets/<sha256>.<ext>                content-addressed files shared by all charts, models and stories
+SITE/assets/<sha256>.<ext>[.gz|.br]       content-addressed files shared by all charts, models and stories
+                                          (see --compress)
 ```
 
 - `--pair` (repeatable; `<musicId>:<difficulty>` or `<musicId>_<difficulty>`) adds the given charts (a chart that
@@ -509,6 +512,17 @@ SITE/assets/<sha256>.<ext>                content-addressed files shared by all 
   `examples/live2d/index.html`, that page and `dist/ournotes-player.live2d.element.min.js` go to `SITE/live2d/`;
   when it has `examples/story-list/index.html` and `dist/ournotes-player.story.element.min.js`, they go to
   `SITE/story/` (a build that adds stories stops when the page is there without its bundle).
+- `--compress` (default `gzip`): how the compressible assets are stored: JSON files (split parts included), GLSL,
+  moc3, atlas, skel, bin, wav and glb files. With `gzip` or `br` (brotli, quality 11) such a file is stored encoded
+  when that makes it smaller: `assets/<sha256>.<ext>.gz` (or `.br`), named by the SHA-256 of the decoded bytes; its
+  entry's `size` is the decoded size and `stored` the size of the stored file (a part: `[key, asset, size, stored]`).
+  Other files, and every file with `none`, are stored as they are, without `stored`. `--reingest-json` stores the
+  JSON files again with the given `--compress`.
+- Hosting: the player decodes a `.gz` or `.br` asset when the bytes it receives have the entry's `stored` length and
+  uses them as they are when they have its `size`. A gzip site can be served as plain files; `Content-Encoding:
+  gzip` on its `.gz` files is optional (with it the browser decodes them, without it the player does). A brotli site
+  needs `Content-Encoding: br` on its `.br` files for Chromium-based browsers, which cannot decode brotli in the
+  page.
 - `--format` (default `aac`) is the BGM format of the charts and the format of every story sound (music, sound
   effects, voices); the charts' note SE, cheers and voices stay FLAC. `--no-audio` stores no audio (the player then
   runs the chart silent on its own clock, and plays stories without their sounds; story videos keep their sound
@@ -624,9 +638,9 @@ One site serves several regions and every language:
   chart list page switches with `?region=<id>&lang=<language>`.
 
 The same inputs with the same versions of nnnotes, its libraries and tools (and the same font files) give
-byte-identical outputs. Charts that fail are listed in the printed summary and in `SITE.failures.json`, models that
-fail in the summary and in `SITE.model-failures.json`, stories in `SITE.story-failures.json`; the exit status is then
-1.
+byte-identical outputs; the encoded assets also need the same zlib and brotli versions. Charts that fail are listed
+in the printed summary and in `SITE.failures.json`, models that fail in the summary and in
+`SITE.model-failures.json`, stories in `SITE.story-failures.json`; the exit status is then 1.
 
 ## deck-data
 

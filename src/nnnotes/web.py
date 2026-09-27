@@ -8,12 +8,16 @@
                                                manifest path, sizes)
     <site>/charts/<musicId>_<difficulty>.json  chart manifest: every path the player reads -> {asset, size}, or,
                                                for a large JSON object, {parts: [[key, asset, size], ...], size};
-                                               `regions`: the regions it serves
+                                               an encoded asset adds its stored length (`stored`, a part's fourth
+                                               item); `regions`: the regions it serves
     <site>/charts/<region>/<id>.json           the manifest of a region whose chart inputs differ from the first
                                                region's (only where its files differ)
-    <site>/assets/<sha256>.<ext>               content-addressed files (text assets as UTF-8, JSON without
-                                               whitespace); charts share the note skins, effects, SE sheets, band
-                                               stages and the common parts of the scene, each stored once
+    <site>/assets/<sha256>.<ext>[.gz|.br]      content-addressed files, named by the SHA-256 of their decoded bytes
+                                               (text assets as UTF-8, JSON without whitespace; JSON, GLSL, moc3 and
+                                               the other compress.COMPRESSIBLE files gzip- or brotli-encoded where
+                                               that makes them smaller, see Store); charts share the note skins,
+                                               effects, SE sheets, band stages and the common parts of the scene,
+                                               each stored once
     <site>/models.json, models/<id>.json       Live2D model index and manifests (webmodel.py), same entry forms and
                                                the same assets/; write_index keeps what either kind references
     <site>/live2d/                             the player's Live2D model page and its bundle, when the player has
@@ -32,8 +36,8 @@ against the full run on a sample of charts, see ReadSets), those files collected
 filtered shaders.json), the BGM transcoded to the web format (`audio_format`, once per music; note SE, cheers and
 voices stay FLAC: small and shared), ingest. Musics run in parallel worker processes (catalog cache writes serialized
 by a lock); temporary directories are deleted after use. A chart whose manifest exists is skipped unless `force`.
-Same inputs give byte-identical outputs. `audio=False` exports no audio file (the player then runs the chart on its
-own clock, silent).
+Same inputs give byte-identical outputs (the encoded assets: with the same zlib / brotli versions). `audio=False`
+exports no audio file (the player then runs the chart on its own clock, silent).
 
 Regions: one build can serve several regions. The regions serve the same catalog for a language, so the chart files
 depend on a region's master data only: regions whose chart tables (LIVE_TABLES) are byte-identical share one manifest
@@ -77,12 +81,14 @@ from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from pathlib import Path
 from types import SimpleNamespace
 
-from . import cache, cri, jsonio, languages, live, liveoptions, livenotes, livescene
+from . import cache, compress, cri, jsonio, languages, live, liveoptions, livenotes, livescene
+from .compress import DEFAULT_ENCODING
 from .config import Config, ConfigError, tool, usable_cpus, use
 from .score import DIFFICULTIES, master_table
 from .webaudio import DEFAULT_AUDIO_FORMAT, WEB_AUDIO
 
-SITE_FORMAT = 2
+SITE_FORMAT = 2                                    # charts.json "format"
+MANIFEST_FORMAT = 3                                # chart manifest "format" (3: entries may be stored encoded)
 AUDIO_EXT = {".flac", ".ogg", ".opus", ".wav", ".m4a", ".mp3"}
 SPLIT_MIN_BYTES = 512 * 1024
 # the live directories of a web build: no liveui/ (the player reads none of it), the BGM decoded once for the read
@@ -306,56 +312,110 @@ def chart_facts(live_dir: Path, summary: dict, difficulty: str, language: str) -
 
 
 # ---------------------------------------------------------------- store
-class Store:
-    """site/assets/<sha256>.<ext>: write-once content-addressed files (safe for concurrent writers)."""
+ENCODINGS = compress.ENCODINGS                     # stored encodings of site assets (web --compress)
 
-    def __init__(self, site: Path):
+
+class Store:
+    """site/assets/<sha256>.<ext>[.gz|.br]: write-once content-addressed files named by the SHA-256 of their decoded
+    bytes (safe for concurrent writers). `encoding` (compress.ENCODINGS): a file whose extension is
+    compress.COMPRESSIBLE is stored gzip- or brotli-encoded when that makes it smaller, under its name plus .gz / .br,
+    and its entry gains `stored` (the encoded length); "none" stores every file as it is."""
+
+    def __init__(self, site: Path, encoding: str = DEFAULT_ENCODING):
+        compress.check(encoding)
+        self.encoding = encoding
         self.dir = Path(site) / "assets"
         self.dir.mkdir(parents=True, exist_ok=True)
         self.written = 0
         self.reused = 0
-        self._have: set[str] = set()               # names this store has written or found
+        self._have: dict[str, dict] = {}           # <sha256>.<ext> this store has written or found -> its entry
 
     def put(self, path: str, data: bytes) -> dict:
         ext = Path(path).suffix.lower().lstrip(".") or "bin"
-        name = f"{hashlib.sha256(data).hexdigest()}.{ext}"
-        dst = self.dir / name
-        if name in self._have:
-            self.reused += 1
-        elif dst.exists() and dst.stat().st_size == len(data):
-            self.reused += 1
-            self._have.add(name)
+        key = f"{hashlib.sha256(data).hexdigest()}.{ext}"
+        e = self._have.get(key)
+        if e is None:
+            e = self._have[key] = self._put_encoded(key, ext, data) or self._put_raw(key, data)
         else:
-            tmp = cache.temp_path(dst)
-            tmp.write_bytes(data)
-            for i in range(20):
-                try:
-                    os.replace(tmp, dst)
-                    break
-                except PermissionError:
-                    if dst.exists() and dst.stat().st_size == len(data):
-                        tmp.unlink()
-                        break
-                    time.sleep(0.1 * (i + 1))
-            else:
-                raise RuntimeError(f"could not store {dst}")
-            self.written += 1
-            self._have.add(name)
+            self.reused += 1
+        return dict(e)
+
+    def _put_raw(self, name: str, data: bytes) -> dict:
+        dst = self.dir / name
+        if dst.exists() and dst.stat().st_size == len(data):
+            self.reused += 1
+        else:
+            self._write(dst, data)
         return {"asset": f"assets/{name}", "size": len(data)}
+
+    def _put_encoded(self, key: str, ext: str, data: bytes) -> dict | None:
+        """`data` stored encoded as `key` + .gz / .br, None when this store does not encode it (encoding "none", an
+        extension not compressible, an encoded form not smaller). A file of that name that holds `data` is kept
+        whatever encoder wrote it, so the entries naming it keep their `stored`."""
+        if self.encoding == "none" or ext not in compress.COMPRESSIBLE:
+            return None
+        name = key + compress.SUFFIXES[self.encoding]
+        dst = self.dir / name
+        stored = dst.stat().st_size if dst.is_file() else None
+        if stored is not None and stored < len(data) and compress.holds(dst, data):
+            self.reused += 1
+        else:
+            enc = compress.encode(self.encoding, data)
+            if len(enc) >= len(data):
+                return None
+            self._write(dst, enc)
+            stored = len(enc)
+        return {"asset": f"assets/{name}", "size": len(data), "stored": stored}
+
+    def _write(self, dst: Path, stored: bytes) -> None:
+        tmp = cache.temp_path(dst)
+        tmp.write_bytes(stored)
+        for i in range(20):
+            try:
+                os.replace(tmp, dst)
+                break
+            except PermissionError:
+                if dst.exists() and dst.stat().st_size == len(stored):
+                    tmp.unlink()
+                    break
+                time.sleep(0.1 * (i + 1))
+        else:
+            raise RuntimeError(f"could not store {dst}")
+        self.written += 1
 
     def put_file(self, path: str, data: bytes) -> dict:
         """One file of a chart: whole, or per top-level key for a large JSON object (see split_json)."""
         parts = split_json(data) if path.endswith(".json") else None
         if parts is None:
             return self.put(path, data)
-        return {"size": len(data), "parts": [[k, self.put(f"{path}#{k}.json", t)["asset"], len(t)] for k, t in parts]}
+        return self.put_parts(path, parts, len(data))
+
+    def put_parts(self, path: str, parts: list[tuple[str, bytes]], size: int) -> dict:
+        """A JSON file of `size` bytes stored per top-level key (`parts`: [(key, value text)], join_parts rebuilds
+        it): {size, parts: [[key, asset, size], ...]}, a part [key, asset, size, stored] when encoded."""
+        return {"size": size, "parts": [part_entry(k, self.put(f"{path}#{k}.json", t)) for k, t in parts]}
+
+
+def part_entry(key: str, e: dict) -> list:
+    """The split-JSON part [key, asset, size(, stored)] of the Store entry `e`."""
+    return [key, e["asset"], e["size"], *([e["stored"]] if "stored" in e else [])]
+
+
+def site_store(site: Path, encoding: str = DEFAULT_ENCODING) -> Store:
+    """The asset store of a site, writing its assets in `encoding`."""
+    return Store(site, encoding)
+
+
+def read_asset(site: Path, asset: str) -> bytes:
+    """The decoded bytes of a site asset (`assets/...`; by the name's suffix, compress.decode)."""
+    return compress.decode(asset, (Path(site) / asset).read_bytes())
 
 
 def entry_assets(e: dict) -> list[str]:
     return [p[1] for p in e["parts"]] if "parts" in e else [e["asset"]]
 
 
-_TEXTS = cache.bucket("webtext")                  # (build, store, path, text) -> manifest entry
+_TEXTS = cache.bucket("webtext")                  # (build, store, encoding, path, text) -> manifest entry
 
 
 def stored_text(store: Store, path: str, s: str, memo: str | None = None) -> dict:
@@ -363,7 +423,7 @@ def stored_text(store: Store, path: str, s: str, memo: str | None = None) -> dic
     charts of a music share most files, every chart the note assets)."""
     if memo is None:
         return store.put_file(path, text_asset(path, s))
-    k = _TEXTS.key(memo, str(store.dir), path, s)
+    k = _TEXTS.key(memo, str(store.dir), store.encoding, path, s)
     hit = _TEXTS.get(k)
     if hit is None:
         e = store.put_file(path, text_asset(path, s))
@@ -645,7 +705,7 @@ def ingest(store: Store, site: Path, music_id: int, difficulty: str, live_dir: P
     entries = {p: stored_text(store, p, s, memo) for p, s in text.items()}
     entries.update({p: store.put(p, b) for p, b in binary.items()})
     offered = options.manifest_options() if options else None
-    manifest = {"format": SITE_FORMAT, "musicId": music_id, "difficulty": difficulty, "audio": bool(audio),
+    manifest = {"format": MANIFEST_FORMAT, "musicId": music_id, "difficulty": difficulty, "audio": bool(audio),
                 "audioFormat": audio_format if audio else None, "flows": flows, "quality": TRACE_QUALITY,
                 **({"options": offered} if offered else {}), "chart": facts, "files": dict(sorted(entries.items()))}
     path = manifest_file(site, f"{music_id}_{difficulty}", prefix)
@@ -730,7 +790,7 @@ def ingest_task(music_id: int, charts: list, root: str, cfg: dict | None = None)
     """Ingest the charts [(difficulty, dir, summary, files)] of one music; one result per chart."""
     cfg = cfg or _W["cfg"]
     site = Path(cfg["site"])
-    store, bgm, out = Store(site), {}, []
+    store, bgm, out = site_store(site, cfg.get("encoding", DEFAULT_ENCODING)), {}, []
     for d, pdir, summary, files in charts:
         try:
             r = ingest(store, site, music_id, d, Path(pdir), summary, files, list(FLOWS), cfg["audioFormat"],
@@ -1341,14 +1401,14 @@ def write_player(site: Path, player_dir: Path, stories: bool = False) -> dict:
 def entry_text(site: Path, e: dict) -> bytes:
     """The file text of a manifest entry (a split JSON file rejoined)."""
     if "parts" in e:
-        return join_parts([(k, (site / a).read_bytes()) for k, a, _ in e["parts"]])
-    return (site / e["asset"]).read_bytes()
+        return join_parts([(q[0], read_asset(site, q[1])) for q in e["parts"]])
+    return read_asset(site, e["asset"])
 
 
-def reingest_json(site: Path) -> dict:
+def reingest_json(site: Path, encoding: str = DEFAULT_ENCODING) -> dict:
     """Every JSON file of every chart and model stored again through text_asset (after a change of the stored-text
-    rules); the manifests follow, unreferenced assets go with write_index."""
-    store, changed, memo = Store(site), 0, {}
+    rules), in `encoding`; the manifests follow, unreferenced assets go with write_index."""
+    store, changed, memo = site_store(site, encoding), 0, {}
     for mf in [*chart_manifests(site), *sorted((site / MODELS_DIR).glob("*.json"))]:
         man = json.loads(mf.read_text(encoding="utf-8"))
         files = man["files"]
@@ -1391,7 +1451,8 @@ def write_index(site: Path, language: str | None = None, regions: list[dict] | N
     """site/charts.json from every chart manifest present (index_meta: `language`, `regions` of this build),
     site/models.json from every model manifest (webmodel.write_models_index) and site/stories.json from every story
     manifest (storysite.write_stories_index; its `language` and `regions` are those storysite.build wrote); assets
-    no chart, no model and no story (common files and every language group) references removed."""
+    no chart, no model and no story (common files and every language group) references removed. The summary's
+    `assetBytes` is the size of the asset files, `bytes` their decoded size (compress.decoded_size)."""
     from .storysite import write_stories_index
     from .webmodel import write_models_index
     order = {d: i for i, d in enumerate(DIFFICULTIES)}
@@ -1419,8 +1480,9 @@ def write_index(site: Path, language: str | None = None, regions: list[dict] | N
         if f"assets/{f.name}" not in used:
             f.unlink()
             removed += 1
-    sizes = [f.stat().st_size for f in (site / "assets").iterdir()]
-    out = {"charts": len(charts), "models": models, "assets": len(sizes), "assetBytes": sum(sizes),
+    files = list((site / "assets").iterdir())
+    out = {"charts": len(charts), "models": models, "assets": len(files),
+           "assetBytes": sum(f.stat().st_size for f in files), "bytes": sum(map(compress.decoded_size, files)),
            "removedAssets": removed}
     if stories:
         out["stories"] = stories
@@ -1549,7 +1611,8 @@ def _build_group(site: Path, tmp_root: Path, pairs, cfg: Config, region: str, pr
 def build(out_dir, pairs, cfg: Config, player_dir: Path, audio_format: str = DEFAULT_AUDIO_FORMAT,
           audio: bool = True, force: bool = False, *, tmp_dir=None, log=None, workers: int | None = None,
           band: int | None = None, leader_card: int | None = None, regions: list[str] | None = None,
-          fonts: str = "open", read_workers: int | None = None, live_options: dict | None = None) -> dict:
+          fonts: str = "open", read_workers: int | None = None, live_options: dict | None = None,
+          encoding: str = DEFAULT_ENCODING) -> dict:
     """Add the charts `pairs` ([(musicId, difficulty)]; None: every chart of every region's master data) to the site
     at `out_dir`, with the player of the ournotes-player checkout or package at `player_dir`. The data comes from the
     settings `cfg` (each worker process opens its own). `regions`: the regions the charts serve (default: the one
@@ -1559,7 +1622,8 @@ def build(out_dir, pairs, cfg: Config, player_dir: Path, audio_format: str = DEF
     up to 16). `band` / `leader_card`: the band of every chart's stage, as for live.build (default: the band of the
     music's first vocal character); `fonts`: the start canvas fonts (liveui.extract, with WEB_LIVEUI);
     `live_options`: the Live option variants the charts offer (a liveoptions.parse_specs request; checked against
-    every region's master data before anything is built, liveoptions.OptionSpecError)."""
+    every region's master data before anything is built, liveoptions.OptionSpecError); `encoding`: how the assets
+    are stored (Store)."""
     player_dir = check_player(player_dir)
     if audio_format not in WEB_AUDIO:
         raise ValueError(f"audio format {audio_format}: one of {', '.join(WEB_AUDIO)}")
@@ -1576,14 +1640,15 @@ def build(out_dir, pairs, cfg: Config, player_dir: Path, audio_format: str = DEF
     groups = region_groups(masters)
     site = Path(out_dir).resolve()
     (site / "charts").mkdir(parents=True, exist_ok=True)
-    Store(site)
+    site_store(site, encoding)
     tmp_root = Path(tmp_dir).resolve() if tmp_dir else site.parent / f"{site.name}.tmp"
     tmp_root.mkdir(parents=True, exist_ok=True)
     log = log or _log
     t0 = time.time()
     job = {"site": str(site), "tmp": str(tmp_root), "audioFormat": audio_format, "audio": bool(audio),
            "player": str(player_dir), "language": language, "fonts": fonts, "band": band, "leaderCard": leader_card,
-           "cache": str(tmp_root / "cache"), "build": uuid.uuid4().hex, "liveOptions": live_options or None}
+           "cache": str(tmp_root / "cache"), "build": uuid.uuid4().hex, "liveOptions": live_options or None,
+           "encoding": encoding}
     configure_caches(job)
     results, skipped, folded, used_workers = [], [], [], 1
     offered = set()
