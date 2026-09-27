@@ -7,6 +7,11 @@ right-handed space (negate Z, reverse winding), and written with its texture(s)
 embedded. Geometry is read from the mesh's vertex/index buffers; each submesh
 becomes one primitive with the renderer's material of the same index.
 
+Objects are told apart by (serialized file name, path id) (object_key): a path
+id is unique only within its file, and a bundle's closure loads several files.
+Each Unity texture is one glTF texture with its own sampler; textures whose PNG
+bytes are equal share one glTF image.
+
 Materials are translated from the Unity material's shader and that shader's own
 pass render state (culling, blend factors and operations, depth write and test,
 colour mask, alpha to mask, queue tags) -- not from names. A render state value
@@ -26,6 +31,7 @@ are inactive in the prefab are kept, flagged `extras.unityActive = false`.
 """
 from __future__ import annotations
 
+import hashlib
 import io
 import struct
 from pathlib import Path
@@ -35,7 +41,7 @@ import UnityPy
 
 from .catalog import Catalog
 from .jsonio import dumps, write_json
-from .unity import SceneGraph, mesh_arrays, texture_image
+from .unity import SceneGraph, deref, mesh_arrays, texture_image
 
 # UnityEngine.Rendering.BlendMode
 BLEND_ONE, BLEND_ZERO, BLEND_SRC_ALPHA, BLEND_ONE_MINUS_SRC_ALPHA = 1, 0, 5, 10
@@ -155,6 +161,19 @@ def _main_tex_slot(shader_name: str) -> str:
     return "_BaseMap" if shader_name.startswith("Universal Render Pipeline/") else "_MainTex"
 
 
+def object_key(obj) -> tuple[str, int]:
+    """(serialized file name, path id) of an object: a path id is unique only within its file."""
+    return obj.assets_file.name, obj.path_id
+
+
+def main_textures(owner, mat_tt: dict, shader_name: str) -> list:
+    """[(texture object, texture env)] of a material's main texture slot (_main_tex_slot) when it holds a texture;
+    `owner` is the material's object, whose file the env's PPtr is read from."""
+    slot = _main_tex_slot(shader_name)
+    return [(deref(owner, env["m_Texture"]), env) for key, env in mat_tt["m_SavedProperties"]["m_TexEnvs"]
+            if key == slot and env["m_Texture"]["m_PathID"]]
+
+
 def _sampler(tex_tt: dict) -> dict:
     s = tex_tt.get("m_TextureSettings", {})
     mips = tex_tt.get("m_MipCount", 1) > 1
@@ -175,6 +194,7 @@ class _Glb:
         self.bin = bytearray()
         self.bufferViews, self.accessors, self.meshes, self.nodes = [], [], [], []
         self.materials, self.textures, self.images, self.samplers = [], [], [], []
+        self._image_of: dict[str, int] = {}      # sha256 of the PNG bytes -> image index
         self.ext_used: set[str] = set()
 
     def _view(self, data: bytes, target=None) -> int:
@@ -204,10 +224,15 @@ class _Glb:
         return len(self.accessors) - 1
 
     def texture(self, png: bytes, name: str, sampler: dict) -> int:
-        self.images.append({"name": name, "bufferView": self._view(png), "mimeType": "image/png"})
+        """A new texture of `png` with `sampler`. Its image is shared with the textures of the same PNG bytes and
+        keeps the name of the first."""
+        digest = hashlib.sha256(png).hexdigest()
+        if digest not in self._image_of:
+            self.images.append({"name": name, "bufferView": self._view(png), "mimeType": "image/png"})
+            self._image_of[digest] = len(self.images) - 1
         if sampler not in self.samplers:
             self.samplers.append(sampler)
-        self.textures.append({"source": len(self.images) - 1,
+        self.textures.append({"name": name, "source": self._image_of[digest],
                               "sampler": self.samplers.index(sampler)})
         return len(self.textures) - 1
 
@@ -268,13 +293,25 @@ def submesh_primitives(tris: list, mats: list, material_for, on_null) -> list:
     return prims
 
 
+def mesh_components(env) -> tuple[dict, dict]:
+    """({GameObject key: MeshFilter}, {GameObject key: MeshRenderer}) of an environment. The key is (file name,
+    GameObject path id), as object_key: a component is in its GameObject's file."""
+    mf_by_go, mr_by_go = {}, {}
+    for o in env.objects:
+        if o.type.name == "MeshFilter":
+            mf_by_go[(o.assets_file.name, o.read_typetree()["m_GameObject"]["m_PathID"])] = o
+        elif o.type.name == "MeshRenderer":
+            mr_by_go[(o.assets_file.name, o.read_typetree()["m_GameObject"]["m_PathID"])] = o
+    return mf_by_go, mr_by_go
+
+
 def drawn_meshes(mf_by_go: dict, mr_by_go: dict, graph, on_null_mesh):
-    """(transform path id, Mesh, material PPtrs) of each GameObject with a MeshFilter and an enabled MeshRenderer.
-    A MeshFilter whose mesh reference is empty (path id 0) draws nothing: its object path goes to
-    `on_null_mesh(path)`."""
-    for go_pid, mf in mf_by_go.items():
-        tf_pid = graph.tf_of_go.get(go_pid)
-        mr = mr_by_go.get(go_pid)
+    """(transform path id, Mesh, material PPtrs) of each GameObject with a MeshFilter and an enabled MeshRenderer
+    (mesh_components maps). A MeshFilter whose mesh reference is empty (path id 0) draws nothing: its object path
+    goes to `on_null_mesh(path)`."""
+    for key, mf in mf_by_go.items():
+        tf_pid = graph.tf_of_go.get(key[1])
+        mr = mr_by_go.get(key)
         if tf_pid is None or mr is None:
             continue
         if not mr.read_typetree().get("m_Enabled", 1):
@@ -289,37 +326,29 @@ def drawn_meshes(mf_by_go: dict, mr_by_go: dict, graph, on_null_mesh):
 def extract_room(cat: Catalog, bg_key: str, out_path: Path) -> dict:
     env = UnityPy.load(*[str(p) for p in cat.fetch_key(bg_key)])
     graph = SceneGraph(env)
-    mf_by_go, mr_by_go = {}, {}
-    for o in env.objects:
-        if o.type.name == "MeshFilter":
-            mf_by_go[o.read_typetree()["m_GameObject"]["m_PathID"]] = o
-        elif o.type.name == "MeshRenderer":
-            mr_by_go[o.read_typetree()["m_GameObject"]["m_PathID"]] = o
+    mf_by_go, mr_by_go = mesh_components(env)
 
     glb = _Glb()
-    tex_cache: dict[int, int] = {}
-    mat_cache: dict[int, int] = {}
+    tex_cache: dict[tuple[str, int], int] = {}   # texture object_key -> glTF texture
+    mat_cache: dict[tuple[str, int], int] = {}   # material object_key -> glTF material
 
     def material_for(pptr) -> int:
-        if pptr.path_id in mat_cache:
-            return mat_cache[pptr.path_id]
-        mat = pptr.read()
-        mat_tt = mat.object_reader.read_typetree()
-        shader_tt = mat.m_Shader.read().object_reader.read_typetree()
+        mat = pptr.deref()
+        mkey = object_key(mat)
+        if mkey in mat_cache:
+            return mat_cache[mkey]
+        mat_tt = mat.read_typetree()
+        shader_tt = deref(mat, mat_tt["m_Shader"]).read_typetree()
         gm = translate_material(mat_tt, shader_tt)
-        slot = _main_tex_slot(shader_tt["m_ParsedForm"]["m_Name"])
-        for key, env_ in mat.m_SavedProperties.m_TexEnvs:
-            if key != slot or not env_.m_Texture.path_id:
-                continue
-            tid = env_.m_Texture.path_id
+        for tex_obj, env_ in main_textures(mat, mat_tt, shader_tt["m_ParsedForm"]["m_Name"]):
+            tid = object_key(tex_obj)
             if tid not in tex_cache:
-                tex = env_.m_Texture.read()
-                buf = io.BytesIO(); texture_image(tex).save(buf, format="PNG")
-                tex_cache[tid] = glb.texture(buf.getvalue(), tex.m_Name,
-                                             _sampler(tex.object_reader.read_typetree()))
+                tex_tt = tex_obj.read_typetree()
+                buf = io.BytesIO(); texture_image(tex_obj.read()).save(buf, format="PNG")
+                tex_cache[tid] = glb.texture(buf.getvalue(), tex_tt["m_Name"], _sampler(tex_tt))
             info = {"index": tex_cache[tid]}
-            sx, sy = env_.m_Scale.x, env_.m_Scale.y
-            ox, oy = env_.m_Offset.x, env_.m_Offset.y
+            sx, sy = env_["m_Scale"]["x"], env_["m_Scale"]["y"]
+            ox, oy = env_["m_Offset"]["x"], env_["m_Offset"]["y"]
             if (sx, sy, ox, oy) != (1.0, 1.0, 0.0, 0.0):
                 # Unity samples (u*sx+ox, v*sy+oy) with a bottom-left origin;
                 # in glTF's top-left texture space that is this transform.
@@ -327,8 +356,8 @@ def extract_room(cat: Catalog, bg_key: str, out_path: Path) -> dict:
                                       {"scale": [sx, sy], "offset": [ox, 1.0 - sy - oy]}}
                 glb.ext_used.add("KHR_texture_transform")
             gm["pbrMetallicRoughness"]["baseColorTexture"] = info
-        mat_cache[pptr.path_id] = glb.material(gm)
-        return mat_cache[pptr.path_id]
+        mat_cache[mkey] = glb.material(gm)
+        return mat_cache[mkey]
 
     n_mesh = 0
     n_inactive = 0
@@ -384,7 +413,7 @@ def extract_room(cat: Catalog, bg_key: str, out_path: Path) -> dict:
                        "unlit": "KHR_materials_unlit" in m.get("extensions", {}),
                        "renderState": m["extras"]["unityRenderState"]}
                       for m in glb.materials],
-        "textures": [im["name"] for im in glb.images],
+        "textures": [t["name"] for t in glb.textures],
         "samplers": glb.samplers,
     }
     write_json(out_path.with_suffix(".json"), doc)

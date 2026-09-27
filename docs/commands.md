@@ -296,6 +296,11 @@ textures embedded, materials translated from the shader's render state. Objects 
 `extras.unityActive = false`. A summary (`meshCount`, materials, textures, samplers) is written next to it as
 `OUT.json`.
 
+Materials and textures are told apart by serialized file and path id (the prefab's bundle and its dependencies can
+reuse a path id). Each texture is one glTF texture with its own sampler, and textures whose PNG bytes are equal share
+one glTF image. The summary's `textures` has one entry per glTF texture, in glTF order (the index a material's
+`baseColorTexture` names): the Unity texture's name.
+
 The render state is that of the shader's first pass for the material: blend factors (colour and alpha), blend
 operations, colour mask, culling, depth write, depth test and alpha to mask. A state the shader takes from a
 property (`Blend [_SrcBlend] [_DstBlend]`, `Cull [_Cull]`, `ZWrite [_ZWrite]`, ...) is the material's value of that
