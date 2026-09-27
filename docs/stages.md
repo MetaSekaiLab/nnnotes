@@ -12,7 +12,8 @@ The asset export is built from three layers:
 
 ## Stages
 
-Every stage is at version 1, except `unity.census` (version 2: it lists the scripts animation clip bindings name).
+Every stage is at version 1, except `unity.census` (version 2: it lists the scripts animation clip bindings name)
+and `cri.movie` (version 2: every stream kind, codec and channel of a USM).
 
 | Stage | Subject | Inputs | Outputs |
 |---|---|---|---|
@@ -22,7 +23,7 @@ Every stage is at version 1, except `unity.census` (version 2: it lists the scri
 | `unity.export` | a bundle | the bundle, the script entries its MonoBehaviours use | the objects' artifacts and one item per object |
 | `sprite.crop` | a SpriteAtlas | the atlas' JSON, the images of its textures, the metas of the sprites of other bundles it packs | the sprites' images |
 | `cri.audio` | ACB content | `acb` (a raw file of the catalog, or the `acb` artifact of a cue sheet held in a bundle), `awb` (an AWB the catalog pairs with it), `boot` (the game's boot data: the key's source) | FLAC per stream, `cues.json`, `streams.json` |
-| `cri.movie` | USM content | `usm`, `boot` | `video.ivf` and `audio.adx` (the streams as stored), `movie.mkv` (or `movie.webm`) |
+| `cri.movie` | USM content | `usm` (a raw file of the catalog, or the `usm` artifact of a movie held in a bundle), `boot` | every stream as stored (video, alpha, audio, subtitles), `movie.mkv` (or `movie.webm`) |
 | `live2d.model` | a Live2D model key (`Character/Live2D/<group>/<name>/model/<name>`) whose bundle is selected | `bundle:<n>`: the bundles of the key's dependency closure in the order the extractor loads them (the order is part of the key); context `internalId` (the key's location); atom `live2d.extract_model` (the extractor of `nnnotes live2d`, run unchanged) | `live2d.model:<key>#<path>`: every file `nnnotes live2d` writes for the model, `<path>` relative to the model's directory; placed under `<key>/` |
 | `spine.skeleton` | a SkeletonDataAsset of a selected bundle, by its stable address `<bundle>:<pathId>` (in a bundle of several serialized files the file's tag follows the bundle name, as in `link.addresses`) | `bundle:<stable name>`: the bundles holding the serialized files the asset's file reaches through its externals; context `object` (the asset's object id); atom `spot.write_skeleton` (the Spine writer of `nnnotes spot`) | `spine.skeleton:<subject>#<file>`: the skeleton (`.json` or `.skel`), its atlases (`.atlas`) and their page images, the bytes `nnnotes spot` writes into `spine/`; one item for the asset |
 | `link.addresses` | global | catalog index, censuses | key -> objects, serialized file -> bundle, bundle -> keys |
@@ -52,7 +53,7 @@ with its reason code; any other error of a converter gives it with `generic.erro
 | Shader | `shader.json/1` | `json`: the parsed form (the bytes of `nnnotes shader`'s `<name>.json`), `program:<platform>/s<S>p<P>_<stage>_<N>`: each compiled sub-program as stored (`.glsl`, `.metal`, `.vkprog`), `index`: the variants (platform, subshader, pass, stage, GPU program type, keywords, program role), `typetree`: the typetree JSON | | a shader without a parsed form: its typetree with `generic.error` |
 | AnimationClip | `clip.json/1` | `json`: the Mecanim clip data with its bindings resolved in the bundle | | a legacy or compressed clip: `generic.clip.legacy` |
 | AnimatorController | `controller.json/1` | `json`: layers, state machines, parameters | | an AnimatorOverrideController: `generic.controller.override` |
-| MonoBehaviour (not in a hierarchy) | `mono.json/2` | `json`: `$script` (assembly, namespace, class) and the typetree; a cue sheet asset also `acb` (see below) | `sniff` | the class from the task's script table |
+| MonoBehaviour (not in a hierarchy) | `mono.json/2`, `cri.usm/1` | `json`: `$script` (assembly, namespace, class) and the typetree; a cue sheet asset also `acb`, a movie asset holding its USM also `usm` (see below) | `sniff` | the class from the task's script table |
 | TextAsset | `data/1` | `data`: the stored bytes | `sniff` | extension from the container path, else from the content |
 | Font | `font/1` | `font`: the font file | `sniff` | |
 | MonoScript | `scripts.json/1` | `<task id>#scripts.json`: every MonoScript of the bundle | | |
@@ -85,6 +86,11 @@ A cue sheet held in a bundle is a MonoBehaviour in one of two layouts; either gi
   `data.data` bytes (layout `embedded`), whatever their size; that field of the JSON is the `{"$blob"}` of the `acb`
   artifact. One that names an AWB object gives `unsupported.cri.awb_external`.
 
+A movie asset (CriWare.Assets `CriManaUsmAsset`) whose `implementation` is a CriSerializedBytesAssetImpl holds its USM
+the same way: its `data.data` bytes, whatever their size, are the artifact `<object id>#usm` (kind `cri.usm`, facts:
+`movie`, the asset's name), which `cri.movie` converts. Converter `cri.usm/1` does this; it is in the key of a bundle
+only when the bundle's script context names that class, so no other bundle's key changes with it.
+
 `sprite.crop` makes one task per SpriteAtlas that sprites of other bundles use (subject `<the atlas bundle's
 subject>:<atlas path id>`). Its inputs are the atlas' JSON, the `meta` of each such sprite and the images of the
 atlas textures they use; it writes `<sprite object id>#image` with the same bytes `unity.export` writes for a sprite
@@ -93,18 +99,26 @@ whose atlas is in its own bundle.
 ## CRI stages
 
 `cri.audio` and `cri.movie` take their subjects by content: a task is `cri.audio:<sha256 of the ACB>` or
-`cri.movie:<sha256 of the USM>`, so an ACB stored both as a raw file and in a bundle, or in several bundles, is
-decoded once. Raw files are told apart by their first bytes (`@UTF` ACB, `AFS2` AWB, `CRID` USM). Both read the
+`cri.movie:<sha256 of the USM>`, so an ACB or a USM stored both as a raw file and in a bundle, or in several bundles,
+is decoded once. Raw files are told apart by their first bytes (`@UTF` ACB, `AFS2` AWB, `CRID` USM). Both read the
 HCA keycode from the `boot` input when the task runs; the key itself is never part of a task, a record or a log.
 Each task has one item (object: the task id; class `ACB` or `USM`): `exported`, or `unsupported` with a reason code.
 Their artifacts belong to no object; the `original` layout places them under each name the stage gives the content:
 the catalog keys that load a raw file, `Cri/Sound/<cue sheet>` for a cue sheet held in a bundle (the sheet's name
-when the catalog has no such key).
+when the catalog has no such key), the keys of its bundle that end in the movie asset's name for a movie held in a
+bundle.
 
 | Stage | Parameters | Atoms | Artifacts (`<task id>#<role>`) |
 |---|---|---|---|
 | `cri.audio` | `flac.level` (8): ffmpeg's FLAC compression level 0-12 (every level decodes to the same samples) | `hca.decode` (vgmstream), `flac.encode` (ffmpeg) | one FLAC per vgmstream stream (a name repeated within the sheet gets `<name>_<stream>`; facts: stream, name, sample rate, channels, samples, loop points), `cues.json` (the first stream of each name), `streams.json` (every stream in order): the bytes `nnnotes audio` writes for the sheet (FLAC) |
-| `cri.movie` | `format`: `mkv` (default; with `flac.level`) or `webm` | `usm.demux` (nnnotes: `numpy-<v>/1`), `movie.mux` (ffmpeg) | `video.ivf` (the VP9 stream in its IVF container, unmasked; facts: size, frame rate, frames), `audio.adx` (the ADX stream when there is one; facts: channels, sample rate, samples), `movie.mkv` (VP9 copied, the audio as FLAC) or with `format: webm` `movie.webm` (VP9 copied, the audio as Opus, as the story's videos) |
+| `cri.movie` | `format`: `mkv` (default; with `flac.level`) or `webm` | `usm.demux` (nnnotes: `numpy-<v>/2`), `movie.mux` (ffmpeg), `hca.decode` (vgmstream) | per stream as stored and unmasked (a stream stored without its mask is recognised by its structure), named by its kind and, past channel 0, `_<channel>`: `video.<ext>` and `alpha.<ext>` (`ivf`: VP9 in IVF; `m1v`: MPEG-1 elementary stream, CRI's Sofdec.Prime; `h264`: H.264 Annex B; facts: codec, size, display size, frame rate, frames, an alpha stream's alpha type), `audio.<ext>` (`adx`; `hca`, still enciphered as stored; facts: channels, sample rate, samples or blocks, cipher), `subtitle.json` (the records as stored: language, time unit, start, duration, the text decoded as UTF-8 or `textHex`) with `subtitle.srt` and `subtitle.vtt`; `movie.mkv`: every video and alpha stream copied (the alpha as a second video track titled `alpha`), every audio stream as FLAC (HCA decoded by vgmstream with the boot data's key), every subtitle channel as a SubRip track (facts: the tracks); with `format: webm` `movie.webm`, the story's form: the first video stream, VP9 copied, or re-encoded as VP9 (libvpx, CRF 20) when it is not VP9 or has an alpha stream, which becomes its alpha channel cropped to the display size; the first audio stream as Opus; no subtitles |
+
+`cri.movie` in players: a player shows the first video track of `movie.mkv` and no player composites the `alpha`
+track (its luma is the opacity of the frame of the same number; when it is coded larger than the movie, its
+top-left display-size part applies). MPEG-1 streams ask in their user data for an 11-bit intra DC precision, which
+FFmpeg's decoder applies and other decoders may not. The game's catalog (version 1.0.1) holds VP9 and MPEG-1 video,
+MPEG-1 alpha streams, ADX and HCA audio, at most one audio stream per movie and no subtitles: the H.264, subtitle
+and multi-audio paths are tested on synthetic movies only.
 
 The ids of the external tools are `<tool>-<version>+sha256.<sha256 of the executable>/<revision>` (the version as
 `vgmstream-cli -V` / `ffmpeg -version` report it): another build of a tool runs the tasks that use it again, and a
@@ -187,10 +201,9 @@ The codes of items that are `generic`, `unsupported` or `failed`, and of limits 
 | `generic.controller.override` | an AnimatorOverrideController |
 | `no_data.font` | a Font without font data |
 | `unsupported.cri.awb_external` | an ACB whose waveforms are in an AWB that is not available |
-| `unsupported.usm.codec` | a USM video stream in a codec other than VP9 |
-| `unsupported.usm.alpha` | a USM with an alpha stream |
-| `unsupported.usm.subtitle` | a USM with a subtitle stream |
-| `unsupported.usm.audio_streams` | a USM with more than one audio stream |
+| `unsupported.usm.codec` | a USM video or alpha stream in a codec other than VP9, H.264 or MPEG-1, an audio stream in a codec other than ADX or HCA, or an H.264 stream without a frame rate |
+| `unsupported.usm.stream` | a USM stream of a kind other than video, alpha, audio or subtitles |
+| `unsupported.usm.subtitle` | USM subtitles that are not records, or whose text is not UTF-8 (the movie's other artifacts are made) |
 | `unsupported.class.AudioClip` | an AudioClip |
 | `unsupported.class.VideoClip` | a VideoClip |
 | `unsupported.class.MovieTexture` | a MovieTexture |

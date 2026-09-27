@@ -20,7 +20,9 @@ its census lists):
     AnimationClip         clip.json        `json`
     AnimatorController    controller.json  `json`
     MonoBehaviour         mono.json        `json` (a MonoBehaviour that is not part of a hierarchy); a cue sheet asset
-                                           also `acb`: its ACB (kind cri.acb, the cri.audio stage decodes it)
+                                           also `acb`: its ACB (kind cri.acb, the cri.audio stage decodes it); with
+                                           converter cri.usm, a movie asset also `usm`: its USM (kind cri.usm, the
+                                           cri.movie stage converts it)
     TextAsset             data             `data`: the stored bytes
     Font                  font             `font`: the font file
     MonoScript            scripts.json     "<task id>#scripts.json": every MonoScript of the bundle
@@ -41,6 +43,9 @@ A cue sheet held in a bundle is a MonoBehaviour in one of two layouts (cri.py): 
 `_chunks`: TextAssets of this bundle, joined and unmasked into the ACB) or a CriWare.Assets asset named like the sheet
 whose `implementation` managed reference is a CriSerializedBytesAssetImpl (its `data.data` bytes are the ACB: the
 field's {"$blob"} names the `acb` artifact, whatever its size). The artifact's facts name the cue sheet.
+A movie asset (CriWare.Assets CriManaUsmAsset) whose `implementation` is a CriSerializedBytesAssetImpl holds its USM
+the same way: with converter `cri.usm` (in the key of a bundle whose script context names that class) its
+`data.data` bytes are the `usm` artifact, whatever their size, the facts naming the asset.
 
 A converter's documented limit (atoms.Unsupported) gives the typetree JSON with its reason code (status `generic`);
 any other error of a converter gives it with `generic.error` and the error's message. The reason codes are listed in
@@ -72,7 +77,7 @@ SCRIPTS_TASK = contract.task_id(SCRIPTS, "all")
 # converter -> version
 CONVERTERS = {"tex.png": 1, "sprite.png": 1, "mesh.glb": 1, "prefab.json": 1, "material.json": 1, "clip.json": 1,
               "controller.json": 1, "mono.json": 2, "data": 1, "font": 1, "scripts.json": 1, "bundle.json": 1,
-              "shader.json": 1, "generic.json": 1}
+              "shader.json": 1, "generic.json": 1, "cri.usm": 1}
 # class -> the converters its objects may use (every class may fall back to generic.json)
 CLASS_CONVERTERS = {"Texture2D": ("tex.png",), "Sprite": ("sprite.png",), "Mesh": ("mesh.glb",),
                     "GameObject": ("prefab.json",), "Material": ("material.json",), "AnimationClip": ("clip.json",),
@@ -95,6 +100,9 @@ REASONS = ("generic.error", "generic.clip.legacy", "generic.controller.override"
 ACB_KIND = "cri.acb"
 SPLIT_ACB, EMBEDDED_ACB = "split", "embedded"
 EMBEDDED_ACB_IMPL = "CriSerializedBytesAssetImpl"
+# a movie asset holding its USM: converter cri.usm, only in the key of a bundle whose script context names the class
+USM_KIND, USM_CONVERTER = "cri.usm", "cri.usm"
+USM_ASSET_SCRIPT = "CriMw.CriWare.Assets.Runtime|CriWare.Assets|CriManaUsmAsset"
 
 _BYTE_TYPES = frozenset({"UInt8", "SInt8", "char"})
 _SCALARS = (int, float, str, bool, type(None))
@@ -194,6 +202,14 @@ def acb_asset(tt: dict) -> dict | None:
     sheet = tt.get("_cueSheetName")
     if isinstance(sheet, str) and isinstance(tt.get("_chunks"), list):
         return {"layout": SPLIT_ACB, "cueSheet": sheet, "chunks": tt["_chunks"]}
+    ref = embedded_bytes(tt)
+    return None if ref is None else {"layout": EMBEDDED_ACB, "cueSheet": tt.get("m_Name"), "ref": ref[0],
+                                     "impl": ref[1]}
+
+
+def embedded_bytes(tt: dict) -> tuple[int, dict] | None:
+    """(index in references.RefIds, the reference) of a CriWare.Assets asset's `implementation` when it is a
+    CriSerializedBytesAssetImpl (bytes held in the asset), else None."""
     impl = tt.get("implementation")
     if not isinstance(impl, dict) or "rid" not in impl:
         return None
@@ -201,7 +217,7 @@ def acb_asset(tt: dict) -> dict | None:
     for i, r in enumerate(ids):
         typ = r.get("type") if isinstance(r, dict) else None
         if isinstance(typ, dict) and r.get("rid") == impl["rid"] and typ.get("class") == EMBEDDED_ACB_IMPL:
-            return {"layout": EMBEDDED_ACB, "cueSheet": tt.get("m_Name"), "ref": i, "impl": r}
+            return i, r
     return None
 
 
@@ -281,6 +297,8 @@ class RefExporter:
         self.blob_ids: list[str] = []
         self.conv = "generic.json"
         self.acb_field: tuple | None = None       # (object key, field path, facts) of the embedded ACB being walked
+        self.usm_field: tuple | None = None       # the same for the USM of a movie asset
+        self.usm_assets = USM_CONVERTER in task.atoms
         self.atoms_of: dict[str, dict] = {}
         self.unresolved = 0
         classes = task.params.get("classes")
@@ -503,6 +521,12 @@ class RefExporter:
             aid, content = self._emit(self._key(owner), "acb", data, "acb", ACB_KIND, "acb", self.acb_field[2])
             self.blob_ids.append(aid)
             return {"$blob": {"sha256": content["sha256"], "size": content["size"], "format": "acb"}}
+        if self.usm_field is not None and self.usm_field[:2] == (self._key(owner), path):
+            if data[:4] != b"CRID":
+                raise ValueError(f"{path}: the movie data is not a USM (CRID): {data[:4].hex()}")
+            aid, content = self._emit(self._key(owner), "usm", data, "usm", USM_KIND, "usm", self.usm_field[2])
+            self.blob_ids.append(aid)
+            return {"$blob": {"sha256": content["sha256"], "size": content["size"], "format": "usm"}}
         if len(data) < self.blob_min:
             return {"$hex": data.hex()}
         s = self.fns["sniff"](data)
@@ -1001,7 +1025,10 @@ class RefExporter:
             s = tt.get("m_Script") or {}
             raise Unsupported("script.unresolved", f"script {s.get('m_FileID')}:{s.get('m_PathID')} is not in the "
                                                    f"task's script table")
-        acb = acb_asset(tt)
+        movie = embedded_bytes(tt) if self.usm_assets and entry == USM_ASSET_SCRIPT else None
+        acb = acb_asset(tt) if movie is None else None
+        if movie is not None:
+            self.usm_field = (key, f"references/RefIds/{movie[0]}/data/data", {"movie": _label(tt.get("m_Name"))})
         if acb is not None and acb["layout"] == EMBEDDED_ACB:
             if ((tt.get("awb") or {}).get("m_PathID")):
                 raise Unsupported("unsupported.cri.awb_external", f"cue sheet {acb['cueSheet']}: its AWB is another "
@@ -1011,8 +1038,10 @@ class RefExporter:
         try:
             doc = {"$script": entry, **self.tree(self.readers[key], tt)}
         finally:
-            self.acb_field = None
+            self.acb_field = self.usm_field = None
         ids = [self._emit(key, "json", encode_object(doc), "json", "mono.json", "json", {"script": entry})[0]]
+        if movie is not None and not any(a["id"] == contract.artifact_id(info.id, "usm") for a in self.staged):
+            raise ValueError(f"movie {tt.get('m_Name')}: no USM bytes in its {EMBEDDED_ACB_IMPL}")
         if acb is not None and acb["layout"] == EMBEDDED_ACB and not any(
                 a["id"] == contract.artifact_id(info.id, "acb") for a in self.staged):
             raise ValueError(f"cue sheet {acb['cueSheet']}: no ACB bytes in its {EMBEDDED_ACB_IMPL}")
@@ -1241,7 +1270,8 @@ class ExportStage(Stage):
 
     @property
     def ATOMS(self) -> dict:
-        return export_atoms(CLASS_CONVERTERS, self.reader_id())
+        return dict(sorted({**export_atoms(CLASS_CONVERTERS, self.reader_id()),
+                            USM_CONVERTER: converter_id(USM_CONVERTER)}.items()))
 
     def reader_id(self) -> str:
         return self.reader.id if self.reader is not None else atom_id("reader")
@@ -1280,13 +1310,17 @@ class ExportStage(Stage):
 
     def uses(self, subject: str, env) -> dict:
         """The atoms and converters of the classes the bundle's census lists; with the task's `classes` (env.params
-        while the task is described), of those of them only."""
+        while the task is described), of those of them only; converter cri.usm when a MonoBehaviour of the bundle is
+        a movie asset (its script context names the class)."""
         classes = list(self.census(subject, env)["classes"])
         only = (getattr(env, "params", None) or {}).get("classes")
         if only is not None:
             keep = set(only)
             classes = [c for c in classes if c in keep]
-        return export_atoms(classes, self.reader_id())
+        atoms = export_atoms(classes, self.reader_id())
+        if "MonoBehaviour" in classes and USM_ASSET_SCRIPT in self.context(subject, env).get("scripts", {}).values():
+            atoms = dict(sorted({**atoms, USM_CONVERTER: converter_id(USM_CONVERTER)}.items()))
+        return atoms
 
     def context(self, subject: str, env) -> dict:
         refs = census_mod.script_refs(self.census(subject, env))

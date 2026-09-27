@@ -4,6 +4,7 @@
   "bundle.json": "bundle.json/1",
   "clip.json": "clip.json/1",
   "controller.json": "controller.json/1",
+  "cri.usm": "cri.usm/1",
   "data": "data/1",
   "font": "font/1",
   "generic.json": "generic.json/1",
@@ -39,6 +40,10 @@
   "controller.json": {
    "key": "c8f44677dc63238367b1fe4bdf5a10d323f614c6b0b3e1b8d40dbc2042cfc161",
    "result": "146083127e3ad68d0107f83d907812ad705c7e3142487145267fb3fcef0a3042"
+  },
+  "cri.usm": {
+   "key": "8d1d45652a6a631253b3bad7f096af988fcc3894831a8fe5e7ec90b939bc3427",
+   "result": "ca67e2f4878b562b24cb6ca374c469ee2085a2c0259245adcae05cba4f9095b1"
   },
   "data": {
    "key": "5505c5d504c4408e8ff8eca82b9d456f2b04ff341438a24fda41583af0878596",

@@ -96,11 +96,12 @@ EMBEDDED_ACB = b"@UTF" + bytes(range(255, -1, -1)) * 20
 IMPL = ("CriMw.CriWare.Assets.Runtime", "CriWare.Assets", "CriSerializedBytesAssetImpl")
 
 
-def _embedded_acb_asset(f, pid: int, name: str, acb: bytes):
-    """A CriWare.Assets asset whose `implementation` managed reference is a CriSerializedBytesAssetImpl holding
-    `acb`, with UnityPy's managed reference nodes."""
+def _embedded_acb_asset(f, pid: int, name: str, acb: bytes, script: int = 11, **fields):
+    """A CriWare.Assets asset (script `script`) whose `implementation` managed reference is a
+    CriSerializedBytesAssetImpl holding `acb`, with UnityPy's managed reference nodes; `fields` after `implementation`
+    (by default an ACB asset's `awb`)."""
     from fakeunity import node_of
-    tt = _mono(0, pptr(11, 2), name, implementation={"rid": 1000}, awb=pptr(),
+    tt = _mono(0, pptr(script, 2), name, implementation={"rid": 1000}, **(fields or {"awb": pptr()}),
                references={"version": 2, "RefIds": [{"rid": 1000, "type": {"class": IMPL[2], "ns": IMPL[1],
                                                                              "asm": IMPL[0]},
                                                      "data": {"data": list(acb)}}]})
@@ -289,7 +290,23 @@ def bundle_plain() -> FakeEnvironment:
     return env
 
 
-BUNDLES = {"all": bundle_all, "atlas": bundle_atlas, "plain": bundle_plain}
+# a movie asset holding its USM (script 13), beside a cue sheet asset
+USM_SCRIPTS = {**SCRIPTS, "CAB-scripts:13": objexport.USM_ASSET_SCRIPT}
+WARMUP = b"CRID" + bytes(range(256)) * 2
+MOVIE_INFO = {"numAlphaStreams": 0, "width": 64, "height": 64, "codecType": 1, "numAudioStreams": 0}
+
+
+def bundle_movie() -> FakeEnvironment:
+    env = FakeEnvironment()
+    f = env.file("CAB-movie", externals=["archive:/CAB-atlas/CAB-atlas", "archive:/CAB-scripts/CAB-scripts"])
+    f.add(1, "AssetBundle", _asset_bundle([("assets/cri/warmup.asset", 2)]))
+    f.contain("assets/cri/warmup.asset", 2)
+    _embedded_acb_asset(f, 2, "warmup", WARMUP, 13, movieInfo=MOVIE_INFO, assetInfo={"loop": 0, "additive": 0})
+    _embedded_acb_asset(f, 3, "se_movie", EMBEDDED_ACB)
+    return env
+
+
+BUNDLES = {"all": bundle_all, "atlas": bundle_atlas, "plain": bundle_plain, "movie": bundle_movie}
 
 
 def open_fake(data: bytes) -> UnityBundle:
@@ -531,6 +548,46 @@ def test_cue_sheets_held_in_the_bundle(exported):
     assert by_object(doc)[oid(74)]["artifacts"] == [f"{oid(74)}#acb", f"{oid(74)}#json"]   # no blob: artifact
     small = run(store, task_for(store, "all", classes=["MonoBehaviour"], params={"blobMin": 1 << 20}))
     assert load(store, small, f"{oid(74)}#acb") == EMBEDDED_ACB                  # whatever its size
+
+
+def movie_task(store, converter=True):
+    """The task of the movie bundle: converter cri.usm in its atoms, as uses() gives it for that bundle."""
+    t = task_for(store, "movie", scripts=USM_SCRIPTS)
+    atoms = {**t.atoms, "cri.usm": "cri.usm/1"} if converter else t.atoms
+    return Task(t.stage, t.version, t.subject, t.params, dict(sorted(atoms.items())), t.inputs, t.context)
+
+
+def test_movies_held_in_the_bundle(tmp_path):
+    """A movie asset's USM bytes (CriSerializedBytesAssetImpl) are its `usm` artifact whatever their size; the cue
+    sheet beside it keeps its `acb`. Without converter cri.usm the movie asset is exported as before (its bytes are
+    not an ACB: the typetree with generic.error)."""
+    store = Store(tmp_path / "s")
+    doc = run(store, movie_task(store))
+    m, a = "CAB-movie:2", "CAB-movie:3"
+    usm = art(doc, f"{m}#usm")
+    assert load(store, doc, usm["id"]) == WARMUP and usm["content"]["ext"] == "usm"
+    assert usm["semantics"] == {"kind": "cri.usm", "format": "usm", "facts": {"movie": "warmup"}}
+    tree = obj(store, doc, f"{m}#json")
+    assert tree["$script"] == objexport.USM_ASSET_SCRIPT and tree["movieInfo"] == MOVIE_INFO
+    assert tree["references"]["RefIds"][0]["data"]["data"] == {"$blob": {"sha256": contract.sha256(WARMUP),
+                                                                         "size": len(WARMUP), "format": "usm"}}
+    assert by_object(doc)[m]["status"] == "exported" and by_object(doc)[m]["artifacts"] == [f"{m}#json", f"{m}#usm"]
+    assert load(store, doc, f"{a}#acb") == EMBEDDED_ACB
+    old = run(store, movie_task(store, converter=False))
+    assert by_object(old)[m]["status"] == "generic" and by_object(old)[m]["reason"]["code"] == "generic.error"
+    assert f"{m}#usm" not in {x["id"] for x in old["artifacts"]} and load(store, old, f"{a}#acb") == EMBEDDED_ACB
+
+
+def test_the_movie_converter_is_keyed_by_the_script_context(tmp_path):
+    store = Store(tmp_path / "s")
+    env = planning_env(store, ("all", "movie"), scripts=USM_SCRIPTS)
+    stage = ExportStage(FAKE_READER)
+    assert describe(stage, "movie", None, env).atoms["cri.usm"] == "cri.usm/1"
+    assert "cri.usm" not in describe(stage, "all", None, env).atoms
+    assert "cri.usm" not in describe(stage, "movie", {"classes": ["AssetBundle"]}, env).atoms
+    assert "cri.usm" in stage.ATOMS
+    plain = planning_env(Store(tmp_path / "p"), ("movie",))
+    assert "cri.usm" not in describe(stage, "movie", None, plain).atoms
 
 
 def test_acb_layouts(tmp_path):
@@ -775,7 +832,7 @@ def committed(store, env, task, role, doc, kind):
     env.done(task.id, task.key)
 
 
-def planning_env(store, names=("all", "atlas"), selected=None):
+def planning_env(store, names=("all", "atlas"), selected=None, scripts=SCRIPTS):
     names = tuple(sorted(set(names) | set(selected or ())))
     bundles = {}
     for n in names:
@@ -790,8 +847,8 @@ def planning_env(store, names=("all", "atlas"), selected=None):
                                                          "facts": census_mod.facts(doc)})
         store.commit(contract.result(t, [rec], []))
         env.done(t.id, t.key)
-    scripts = Task("link.scripts", 1, "all")
-    committed(store, env, scripts, "scripts", {"schema": "nnnotes.scripts/1", "scripts": SCRIPTS}, "link.scripts")
+    table = Task("link.scripts", 1, "all")
+    committed(store, env, table, "scripts", {"schema": "nnnotes.scripts/1", "scripts": scripts}, "link.scripts")
     return env
 
 
@@ -920,6 +977,7 @@ def export_golden():
         return lambda store: task_for(store, "all", classes=classes)
     fixtures = {name: fixture(classes) for name, classes in CONVERTER_CLASSES.items()}
     fixtures["all"] = fixture(None)
+    fixtures["cri.usm"] = movie_task
     return {"stage": ExportStage(FAKE_READER), "fixtures": fixtures, "libraries": LIBRARIES}
 
 

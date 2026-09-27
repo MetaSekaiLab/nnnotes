@@ -1,24 +1,33 @@
 {
  "atoms": {
+  "hca.decode": "vgmstream-fake/1",
   "movie.mux": "ffmpeg-fake/1",
-  "usm.demux": "numpy-2.4.6/1"
+  "usm.demux": "numpy-2.4.6/2"
  },
  "fixtures": {
   "alpha": {
-   "key": "1846769133857f829a546cfb2d234ee7c8fccf699a9ff99e1e4e99db9f36cf85",
-   "result": "cc4af3d391e2f5b2133675e49618dabfa47d1d9c31822285f403b8b3a51a83b4"
+   "key": "de705784dcbc103f3efb2e2f8932b5d6a907082f7bdd120fed06365e4fc624ee",
+   "result": "c72fbf5e58d8c257c844faba28c9729dc8e988620f03f6e8d06c28a6d9786f98"
+  },
+  "alpha_webm": {
+   "key": "47fea12437b9746d1e5d1679bb85bc5904ff16de36c10d2c3c45c3e289d0597c",
+   "result": "50015bf02e898246f215c5e8182e0db135a0f0402eca4ef7a8443c6d14a3c194"
+  },
+  "every_kind": {
+   "key": "4e212606f1a1758280a70d1503c92bbbc6475f745393c4de7e5d31f459d4f86f",
+   "result": "08eb01fbd765199f4203daa15c8024b440999e5b2585a46c0313591dd0ad1df0"
   },
   "mkv": {
-   "key": "aa64d1131480fe941c47a9d921982865ee16e3a2b9c66150e67e499023c84769",
-   "result": "1e53355597fabe3ef39a03f77359c5a2c625026be7241e20ed59530301ba655a"
+   "key": "06f7846dff78c0100d4ecb23e5d2e06b22a0d74fcaa1cb147b60a31c625fe60d",
+   "result": "76397b53f5707620069a0cc7733cbabfff6700579d6b1662e83e0e16bd46ed53"
   },
   "silent": {
-   "key": "59684783aa687038078c682083cacdac5031a18e7311491dc0658b01a49bcb98",
-   "result": "17c77f09f78518896a1f6dc0319ec94101be85ed83dc45ab724df1ac25d1b9bd"
+   "key": "bbc4c20ff3870aeb016f6ada10b27ab8d015571b035f391caf019767f4c657ba",
+   "result": "5e228ad210534a0e04d31b8fd7e8e3e21fdb4de94b0609ec0572f76fbe34ad40"
   },
   "webm": {
-   "key": "9ddd109466ec1df1804e5d58de876be09efd194baf5821b3db735b0775007ebc",
-   "result": "2092d215ade80724bd42f72b242dbecd5c8f470bbc7bab29ccfb7329fed39cb1"
+   "key": "4b02b27895823780540e893ae4ac35fbea1cf87f51aa74b47e4c43668c7e2226",
+   "result": "60d35a559920242986fce820dfea66529b1490ecb44462875eca3eb48ada687f"
   }
  },
  "libraries": {
@@ -26,5 +35,5 @@
  },
  "provider": "test_cristages:movie_golden",
  "stage": "cri.movie",
- "version": 1
+ "version": 2
 }
