@@ -43,7 +43,7 @@ version = { attr = "nnnotes.__version__" }
 where = ["src"]
 
 [tool.setuptools.package-data]
-nnnotes = ["typetrees/*.json", "viewrules.json"]
+nnnotes = ["typetrees/*.json", "viewrules.json", "nnnotes.example.toml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -1,9 +1,13 @@
 """nnnotes command line.
 
 Every setting (keys, the CDN base of each region, the paths of your own data and tools) comes from the config file,
-the environment or the flags below; see config.py and nnnotes.example.toml. JSON summaries are printed as UTF-8
-whatever the console encoding.
+the environment or the flags below; see config.py and nnnotes.example.toml (`nnnotes config init` writes it). JSON
+summaries are printed as UTF-8 whatever the console encoding.
 
+    nnnotes config init [--user | --file F] [--set SECTION.KEY=VALUE ...]
+    nnnotes config set SECTION.KEY VALUE
+    nnnotes config check [--json]
+    nnnotes config path [--json]
     nnnotes catalog --prefix Spot/ --limit 40
     nnnotes browse [--port 8000]
     nnnotes pull <key> [<key> ...]
@@ -55,7 +59,7 @@ os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
 from . import __version__, cli_assets, voices
 from .addressables import BundleKey
 from .catalog import Catalog
-from .config import Config, ConfigError, use
+from .config import DEFAULT_FILE, ENV_CONFIG, Config, ConfigError, config_files, find_file, use, user_file
 from .jsonio import dumps, write_json
 from .webaudio import DEFAULT_AUDIO_FORMAT, WEB_AUDIO
 
@@ -199,6 +203,150 @@ def cmd_master_decode(args, cfg):
     _print_json(r)
     if r["failed"]:
         sys.exit(1)
+
+
+def _tty() -> bool:
+    try:
+        return sys.stdin.isatty() and sys.stdout.isatty()
+    except (AttributeError, OSError, ValueError):
+        return False
+
+
+def _config_target(args, default: Path | None) -> Path:
+    """The file a config command writes: --file, --user, else `default` (None: the file the commands read)."""
+    if args.file:
+        return Path(args.file)
+    if args.user:
+        target = user_file()
+        if target is None:
+            raise ConfigError("no per-user config directory: the environment sets neither APPDATA (Windows) nor "
+                              "XDG_CONFIG_HOME / HOME")
+        return target
+    if default is not None:
+        return default
+    target = find_file(args.config)
+    if target is None:
+        raise ConfigError("no config file is read (`nnnotes config path`): name one with --file or --user, or "
+                          "write one with `nnnotes config init`")
+    return target
+
+
+def _config_value(args, name: str, text: str, stdin_used: list):
+    """(section, key, value) of `name` = `text` (`-`: read from standard input, once), checked."""
+    from . import configfile
+    setting, section = configfile.resolve(name)
+    if text == "-":
+        if stdin_used:
+            args.usage("only one value can be read from standard input")
+        stdin_used.append(name)
+        if setting.secret and _tty():
+            import getpass
+            text = getpass.getpass(f"[{section}] {setting.key} (hidden): ")
+        else:
+            text = sys.stdin.readline().rstrip("\r\n")
+    try:
+        return section, setting.key, configfile.parse_value(setting, text)
+    except ValueError as e:
+        raise ConfigError(f"setting {section}.{setting.key}: {e}") from None
+
+
+def _config_note(target: Path) -> None:
+    read = find_file()
+    if read is None or read.absolute() != target.absolute():
+        print(f"# the commands read {read.absolute() if read else 'no config file'} first (`nnnotes config path`)",
+              file=sys.stderr)
+
+
+def cmd_config_init(args, cfg):
+    from . import configfile
+    named = next((f for n, f in config_files(args.config)[:2] if f is not None), None)
+    target = _config_target(args, named or Path(DEFAULT_FILE))
+    if target.exists() and not args.force:
+        raise ConfigError(f"config file {target} exists (--force overwrites it; `nnnotes config set` edits one "
+                          f"value)")
+    values, regions, stdin_used = [], [], []
+    for item in args.set or []:
+        name, sep, text = item.partition("=")
+        if not sep:
+            args.usage(f"--set {name}: give it as SECTION.KEY=VALUE")
+        section, key, value = _config_value(args, name.strip(), text, stdin_used)
+        values.append((section, key, value))
+        region = section.split(".", 1)[1] if section.startswith("servers.") else None
+        if region and region not in regions:
+            regions.append(region)
+    if not args.set and not args.no_input and _tty():
+        try:
+            values, regions = configfile.prompt()
+        except (KeyboardInterrupt, EOFError):
+            print("\nnnnotes: config init stopped, nothing written", file=sys.stderr)
+            sys.exit(1)
+    configfile.write(target, configfile.render(values, regions))
+    print(target.absolute())
+    print(f"# {len(values)} settings written, the others empty; `nnnotes config check` shows the status of each",
+          file=sys.stderr)
+    _config_note(target)
+
+
+def _config_edit(args, value_text: str | None) -> None:
+    from . import configfile
+    target = _config_target(args, None)
+    text = target.read_text(encoding="utf-8") if target.exists() else configfile.template().decode("utf-8")
+    if value_text is None:                      # unset: an empty value
+        setting, section = configfile.resolve(args.name)
+        section, key, value = section, setting.key, [] if setting.kind == "list" else ""
+    else:
+        section, key, value = _config_value(args, args.name, value_text, [])
+    configfile.write(target, configfile.edit(text, [(section, key, value)], str(target)))
+    print(f"{target.absolute()}: {section}.{key} {'set' if value else 'emptied'}")
+    _config_note(target)
+
+
+def cmd_config_set(args, cfg):
+    _config_edit(args, args.value)
+
+
+def cmd_config_unset(args, cfg):
+    _config_edit(args, None)
+
+
+def cmd_config_check(args, cfg):
+    from . import configfile
+    r = configfile.check(cfg)
+    if args.json:
+        _print_json(r)
+    else:
+        print(f"# file: {r['file']}" if r["file"] else "# no config file is read (`nnnotes config path`)")
+        for s in r["settings"]:
+            status = s["status"] + (f": {s['reason']}" if s.get("reason") else "")
+            print(f"{s['name']}\t{s.get('origin') or '-'}\t{status}")
+        sys.stdout.flush()
+        print(f"# {r['problems']} problems", file=sys.stderr)
+    if r["problems"]:
+        sys.exit(1)
+
+
+def cmd_config_path(args, cfg):
+    from . import configfile
+    files, read = [], None
+    for name, file in config_files(args.config):
+        if file is None:
+            state = "not given"
+        elif not file.is_file():
+            state = "not found"
+        elif read is None:
+            read, state = file, "read"
+        else:
+            state = "found, not read"
+        files.append({"name": name, "path": str(file.absolute()) if file is not None else None, "state": state})
+        if read is None and file is not None and name in ("--config", ENV_CONFIG):
+            break                               # a named file that is missing stops every command
+    if args.json:
+        _print_json({"schema": configfile.PATHS, "files": files, "read": str(read.absolute()) if read else None})
+        return
+    for f in files:
+        print(f"{f['name']}\t{f['path'] or '-'}\t{f['state']}")
+    if read is None:
+        print("# no config file is read: the settings come from the environment and the flags only", file=sys.stderr)
 
 
 def cmd_servers(args, cfg):
@@ -572,6 +720,43 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--node", help="Node.js executable ([paths] node; else on PATH)")
     sub = p.add_subparsers(dest="cmd", required=True, metavar="<command>")
 
+    c = sub.add_parser("config", help="the config file: write it, set one value, check the settings, show where it is")
+    csub = c.add_subparsers(dest="config_cmd", required=True, metavar="<config command>")
+
+    def target(m, what):
+        g = m.add_mutually_exclusive_group()
+        g.add_argument("--file", help=f"the config file to {what}")
+        g.add_argument("--user", action="store_true",
+                       help=f"{what} the per-user config file, read from any directory (`config path` shows it)")
+
+    m = csub.add_parser("init", help="write a config file from the template: the values are asked in a terminal, "
+                                     "else taken from --set (the other settings empty)")
+    target(m, f"write (default: the file --config or NNNOTES_CONFIG names, else ./{DEFAULT_FILE})")
+    m.add_argument("--set", action="append", metavar="SECTION.KEY=VALUE",
+                   help="a value to write (repeatable; no questions then): VALUE - reads it from standard input; a "
+                        "list comma-separated; a path is written absolute")
+    m.add_argument("--no-input", action="store_true", help="ask nothing, also in a terminal")
+    m.add_argument("--force", action="store_true", help="overwrite an existing file")
+    m.set_defaults(func=cmd_config_init, reads_config=False, usage=m.error)
+    m = csub.add_parser("set", help="set one value of the config file the commands read (or of --file / --user; "
+                                    "a missing one is made from the template); comments and other lines stay")
+    m.add_argument("name", metavar="SECTION.KEY", help="the setting: bundle.key, servers.tw.cdn, paths.fonts.ja, ...")
+    m.add_argument("value", help="the value (a list comma-separated); - reads it from standard input, without echo "
+                                 "for the keys in a terminal")
+    target(m, "edit")
+    m.set_defaults(func=cmd_config_set, reads_config=False, usage=m.error)
+    m = csub.add_parser("unset", help="empty one value of the config file (an empty value counts as unset)")
+    m.add_argument("name", metavar="SECTION.KEY", help="the setting")
+    target(m, "edit")
+    m.set_defaults(func=cmd_config_unset, reads_config=False, usage=m.error)
+    m = csub.add_parser("check", help="every setting: where it comes from and whether it is valid, never its value; "
+                                      "exit status 1 when one is invalid, not found or unknown")
+    m.add_argument("--json", action="store_true", help="the report as JSON (nnnotes.config-check/1)")
+    m.set_defaults(func=cmd_config_check)
+    m = csub.add_parser("path", help="the config files looked up, in order, and the one the commands read")
+    m.add_argument("--json", action="store_true", help="the list as JSON (nnnotes.config-path/1)")
+    m.set_defaults(func=cmd_config_path, reads_config=False)
+
     c = sub.add_parser("catalog", help="list addressable keys")
     c.add_argument("--prefix", default="", help="only the keys that start with this prefix")
     c.add_argument("--limit", type=int, default=200, help="print at most N keys (default 200; the total goes "
@@ -733,7 +918,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv=None):
     args = build_parser().parse_args(argv)
     try:
-        cfg = load_config(args)
+        cfg = load_config(args) if getattr(args, "reads_config", True) else None
         args.func(args, cfg)
     except ConfigError as e:
         print(f"nnnotes: {e}", file=sys.stderr)

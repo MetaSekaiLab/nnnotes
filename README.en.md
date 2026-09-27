@@ -4,12 +4,28 @@
 
 nnnotes is an offline data toolkit for the game files of BanG Dream! Our Notes: it reads Addressables catalogs,
 downloads and decrypts asset bundles, downloads and decodes master data, and exports stories, Live2D models, spots,
-shaders, CRI audio and live charts as structured JSON and common file formats. The chart export is the data that
-[ournotes-player](https://github.com/empty-sekai/ournotes-player) reads. The naming was inspired by [mos9527/sssekai](https://github.com/mos9527/sssekai).
+shaders, CRI audio and live charts as structured JSON and common file formats. The charts, Live2D models and stories `web`
+exports are the data that [ournotes-player](https://github.com/empty-sekai/ournotes-player) reads. The naming was inspired by [mos9527/sssekai](https://github.com/mos9527/sssekai).
 
 This is an unofficial fan project, not affiliated with the game's developer or operator. The repository contains no
 game assets, keys or server addresses: users supply the game files, the keys needed for decryption and the server
 addresses in their own configuration, and the exports stay in local directories the user chooses.
+
+## Install and set up
+
+```sh
+pip install nnnotes              # Python 3.11+, 3.13 recommended
+nnnotes config init --user       # asks for each setting in the terminal (keys without echo), writes the per-user config file read from any directory
+nnnotes config check             # each setting's origin and whether it is valid, without its value
+```
+
+- The values (keys, the CDN and API roots of the regions, the paths of your own data and tools) come from the game
+  client you own; see Configuration below.
+- Scripts and AI agents get no questions: `nnnotes config init --user --no-input --set SECTION.KEY=VALUE ...` writes
+  the file at once, `nnnotes config set SECTION.KEY VALUE` changes one value (VALUE `-` reads it from standard input,
+  so a key need not appear on the command line), and `nnnotes config check --json` reports the states for machines.
+- `--fonts game` also needs `pip install 'nnnotes[fonts]'`; the APK, the master data and the external tools are listed
+  under Requirements below.
 
 ## Features
 
@@ -69,7 +85,7 @@ Based on all data of the Taiwan server, version 1.0.1 (zh-Hant):
 ## Requirements
 
 - Python 3.11+, 3.13 recommended (a `web` build reads and writes a lot of JSON, and the standard library encodes
-  JSON faster on 3.13); `pip install nnnotes` (for development `pip install -e .` in the repository)
+  JSON faster on 3.13); for development `pip install -e .` in the repository
 - the game's `base.apk`: APK-local bundles, the CRI keycode, boot settings. `player`, `story`, `live` and `web` read
   MonoBehaviours of its boot data with type trees that ship with nnnotes; supported now: game version 1.0.1
   (Unity 6000.3.12f1). With an APK of another version whose classes do not match, these commands stop with an
@@ -85,12 +101,17 @@ Based on all data of the Taiwan server, version 1.0.1 (zh-Hant):
 The code contains no keys, server addresses or default paths. Settings are read in this order, later sources
 overriding earlier ones:
 
-1. config file: `--config <file>`, else `NNNOTES_CONFIG`, else `nnnotes.toml` in the working directory
+1. config file: `--config <file>`, else `NNNOTES_CONFIG`, else `nnnotes.toml` in the working directory, else the
+   per-user file (`%APPDATA%\nnnotes\nnnotes.toml` on Windows, `~/.config/nnnotes/nnnotes.toml` elsewhere;
+   `nnnotes config path` lists the lookup order and the file read)
 2. environment variables: `NNNOTES_<SECTION>_<KEY>` (e.g. `NNNOTES_BUNDLE_KEY`, `NNNOTES_SERVERS_TW_CDN`)
 3. command-line flags: `--region`, `--language`, `--catalog`, `--cache`, `--master`, `--apk`, `--ffmpeg`,
    `--vgmstream`, `--node` go before the command name; `--player` is an option of `web`
 
-Copy [`nnnotes.example.toml`](https://github.com/MetaSekaiLab/nnnotes/blob/main/nnnotes.example.toml) to `nnnotes.toml` and fill it in. The settings are: the bundle
+`nnnotes config init` writes the config template (every setting empty; it ships with the package, in the repository
+[`src/nnnotes/nnnotes.example.toml`](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/nnnotes.example.toml)),
+asking for each value in a terminal; `config set` / `config unset` change one value and keep the file's comments.
+The settings are: the bundle
 key and nonce seed, the master data key and IV, the region in use (`[catalog] region`) and the catalog language
 (`[catalog] language`), the CDN base and API root of each region (`cdn`, `api` of `[servers.<region>]`), the client
 version (`[client] version`; unset: the APK's versionName), optionally the bootstrap API root (`[bootstrap] api`, for

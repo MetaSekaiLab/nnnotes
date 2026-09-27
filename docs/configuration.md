@@ -8,15 +8,51 @@ command that needs a setting nobody gave stops before it does any work.
 Lowest to highest:
 
 1. **TOML file.** `--config <file>`; else the file named by the environment variable `NNNOTES_CONFIG`; else
-   `nnnotes.toml` in the working directory, when present. A file named by `--config` or `NNNOTES_CONFIG` must exist.
+   `nnnotes.toml` in the working directory, when present; else the per-user file, when present:
+   `%APPDATA%\nnnotes\nnnotes.toml` on Windows, `$XDG_CONFIG_HOME/nnnotes/nnnotes.toml` elsewhere (`~/.config` when
+   `XDG_CONFIG_HOME` is unset). A file named by `--config` or `NNNOTES_CONFIG` must exist. `nnnotes config path`
+   lists the files in this order and the one that is read.
 2. **Environment variables** `NNNOTES_<SECTION>_<KEY>`: the setting's dotted name upper-cased, with dots, dashes
    and other non-alphanumeric characters as underscores (`bundle.key` → `NNNOTES_BUNDLE_KEY`,
    `servers.tw.cdn` → `NNNOTES_SERVERS_TW_CDN`, `bundle.nonce_seed` → `NNNOTES_BUNDLE_NONCE_SEED`).
 3. **Command-line flags**, for the settings that have one (table below).
 
 An empty value (`""`, `[]`, an empty environment variable, an empty flag) counts as unset, so a lower source still
-applies. Start from [`nnnotes.example.toml`](../nnnotes.example.toml), which lists every setting with an empty value.
-`nnnotes.toml` and `*.local.toml` are in `.gitignore`; do not commit a filled-in copy.
+applies. The template [`nnnotes.example.toml`](../src/nnnotes/nnnotes.example.toml) ships with the package and lists
+every setting with an empty value; `nnnotes config init` writes it (below). `nnnotes.toml` and `*.local.toml` are in
+`.gitignore`; do not commit a filled-in copy.
+
+## Writing the config file
+
+```bash
+nnnotes config init [--user | --file F] [--set SECTION.KEY=VALUE ...] [--no-input] [--force]
+nnnotes config set SECTION.KEY VALUE [--user | --file F]
+nnnotes config unset SECTION.KEY [--user | --file F]
+nnnotes config check [--json]
+nnnotes config path [--json]
+```
+
+- `config init` writes the template to `./nnnotes.toml` (the file `--config` or `NNNOTES_CONFIG` names, when one
+  does; `--user`: the per-user file; `--file`: that file). An existing file is kept unless `--force`.
+  - In a terminal, with no `--set` and no `--no-input`, it asks for each setting in turn. Enter leaves a setting
+    empty, the four keys are read without echo, and a malformed value is asked again. It asks for the region names
+    first, and writes one `[servers.<region>]` table per region.
+  - Otherwise it asks nothing: the `--set` values are written (a list comma-separated, a path made absolute) and the
+    other settings stay empty. A `--set` value `-` is read from standard input, once.
+- `config set` sets one value in the file the commands read (`--user` / `--file`: that file, made from the template
+  when it does not exist). The other lines and the comments stay as they are; a new region gets the template's region
+  table. VALUE `-` reads the value from standard input, without echo for the keys in a terminal. `config unset`
+  empties one value. Both check the value's format first and name only the setting when it is malformed.
+- `config check` lists every setting: where it comes from (`file`, `env`, `flag` or `-`) and its status: `ok`, `unset`,
+  `invalid` (with the reason), `not found` (a path that does not exist), or `unknown` (a key of the file or an
+  `NNNOTES_` variable that names no setting). It exits with status 1 when a setting is invalid, not found or unknown.
+  `--json` prints the report as `nnnotes.config-check/1`: `file`, `settings` (name, environment variable, flag,
+  kind, whether it is a key, description, origin, status, reason) and `problems`.
+- `config path` lists the config file candidates in lookup order and the one that is read; `--json` prints
+  `nnnotes.config-path/1`.
+
+No `config` command prints a setting's value. The config files these commands write are readable by their owner only
+(mode 600 where the file system has modes).
 
 The global flags go **before** the command name:
 
@@ -142,7 +178,8 @@ nnnotes: setting paths.apk: file <path> not found
 nnnotes: ffmpeg not found on PATH: give its path as `ffmpeg` in the [paths] table of the config file, the environment variable NNNOTES_PATHS_FFMPEG or --ffmpeg
 ```
 
-An unreadable config file (not found, invalid TOML) is reported the same way. Command-line usage errors also exit
+When no config file is read, the line of an unset setting ends with `(no config file was found: \`nnnotes config
+init\` writes one to fill in)`. An unreadable config file (not found, invalid TOML) is reported the same way. Command-line usage errors also exit
 with status 2: a missing `-o`, or a key or id the data does not have (a key not in the catalog, an episode, spot or
 music id without its master data row, a Live2D model the catalog does not have), which the error line names:
 

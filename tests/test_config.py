@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 import pytest
@@ -161,3 +162,32 @@ def test_tool_lookup(tmp_path, monkeypatch):
     monkeypatch.setattr(config.shutil, "which", lambda exe: f"/usr/bin/{exe}")
     config.use(Config.load(environ={}))
     assert config.tool("vgmstream", "vgmstream-cli") == "/usr/bin/vgmstream-cli"
+
+
+def test_user_file_location(tmp_path):
+    if os.name == "nt":
+        assert config.user_file({"APPDATA": str(tmp_path)}) == tmp_path / "nnnotes" / "nnnotes.toml"
+    else:
+        assert config.user_file({"XDG_CONFIG_HOME": str(tmp_path)}) == tmp_path / "nnnotes" / "nnnotes.toml"
+        assert config.user_file({"HOME": str(tmp_path)}) == tmp_path / ".config" / "nnnotes" / "nnnotes.toml"
+    assert config.user_file({}) is None
+
+
+def test_user_file_is_looked_up_last(tmp_path):
+    env = {"APPDATA": str(tmp_path / "u"), "XDG_CONFIG_HOME": str(tmp_path / "u")}
+    user = write(config.user_file(env), '[catalog]\nregion = "user"\n')
+    assert Config.load(environ=env).get("catalog", "region") == "user"
+    assert Config.load(environ=env).source == str(user)
+    write(tmp_path / "nnnotes.toml", '[catalog]\nregion = "cwd"\n')
+    assert Config.load(environ=env).get("catalog", "region") == "cwd"
+    assert [n for n, _ in config.config_files(environ=env)] == ["--config", "NNNOTES_CONFIG", "working directory",
+                                                                 "user"]
+
+
+def test_missing_setting_hints_init_only_without_a_file(tmp_path):
+    with pytest.raises(ConfigError, match="config init"):
+        Config.load(environ={}).require("catalog", "region")
+    f = write(tmp_path / "c.toml", "[catalog]\n")
+    with pytest.raises(ConfigError) as e:
+        Config.load(f, environ={}).require("catalog", "region")
+    assert "config init" not in str(e.value)
