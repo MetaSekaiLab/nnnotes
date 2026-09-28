@@ -258,23 +258,29 @@ class _Glb:
                            "extras": {"unityActive": active}})
 
     def write(self, path: Path, extras: dict):
+        """glTF requires the arrays it has to be non-empty and a buffer to hold bytes: an empty array is left out,
+        and a room without geometry is a scene without nodes and a file without the BIN chunk."""
+        scene = {"nodes": list(range(len(self.nodes)))} if self.nodes else {}
         gltf = {
             "asset": {"version": "2.0", "generator": "nnnotes/room", "extras": extras},
-            "scene": 0, "scenes": [{"nodes": list(range(len(self.nodes)))}],
+            "scene": 0, "scenes": [scene],
             "nodes": self.nodes, "meshes": self.meshes, "accessors": self.accessors,
-            "bufferViews": self.bufferViews, "buffers": [{"byteLength": len(self.bin)}],
+            "bufferViews": self.bufferViews, "buffers": [{"byteLength": len(self.bin)}] if self.bin else [],
             "materials": self.materials, "textures": self.textures,
             "images": self.images, "samplers": self.samplers,
         }
+        gltf = {k: v for k, v in gltf.items() if v != []}
         if self.ext_used:
             gltf["extensionsUsed"] = sorted(self.ext_used)
         js = dumps(gltf, separators=(",", ":")).encode("utf-8")
         js += b" " * (-len(js) % 4)
         self.bin.extend(b"\0" * (-len(self.bin) % 4))
+        size = 12 + 8 + len(js) + (8 + len(self.bin) if self.bin else 0)
         with open(path, "wb") as f:
-            f.write(struct.pack("<III", 0x46546C67, 2, 12 + 8 + len(js) + 8 + len(self.bin)))
+            f.write(struct.pack("<III", 0x46546C67, 2, size))
             f.write(struct.pack("<II", len(js), 0x4E4F534A)); f.write(js)
-            f.write(struct.pack("<II", len(self.bin), 0x004E4942)); f.write(self.bin)
+            if self.bin:
+                f.write(struct.pack("<II", len(self.bin), 0x004E4942)); f.write(self.bin)
 
 
 # ---- extraction ---------------------------------------------------------
