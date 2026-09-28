@@ -15,7 +15,9 @@ lacks with this repository's `nnnotes web --story` and uploads them to the bucke
    - fonts (pinned by SHA-256: the files the published stories record in `ui/fonts.json`), vgmstream, ffmpeg, the
      built ournotes-player (`STORY_PLAYER_REF`), the APK (playfetch with the account in `PLAYFETCH_CREDENTIALS`), the
      decoded master data;
-   - every object of the site except `assets/` (the manifests and indexes, about 150 MB);
+   - every object of the site except `assets/` (the manifests and indexes, about 150 MB), over plain HTTP like the
+     player's browser: the bucket serves public read, and Cloudflare's S3-signed ranged downloads were rejected
+     intermittently with `SignatureDoesNotMatch`;
    - `nnnotes web site --story <id> ...` (with the Live2D models these stories load that the site lacks), then
      `nnnotes web site --player-only`, which rewrites `stories.json`, `models.json`, `charts.json` and the player
      pages from every manifest present, also after a failed build;
