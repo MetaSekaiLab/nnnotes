@@ -183,11 +183,11 @@ def apk_master(apk) -> MasterSource:
     return MasterSource(EMBEDDED, f"{apk} {APK_MASTER}", version, hashes, read)
 
 
-def read_master(src: MasterSource, key) -> tuple[dict[str, list[dict]], dict[str, str]]:
-    """The rows (`_allData`) of every table of TABLES and the SHA-256 of each file as served. `key`: a
-    master.MasterKey."""
+def read_master(src: MasterSource, key, tables=None) -> tuple[dict[str, list[dict]], dict[str, str]]:
+    """The rows (`_allData`) of every table of `tables` (default: TABLES) and the SHA-256 of each file as served.
+    `key`: a master.MasterKey."""
     from . import master
-    names = {t: f"{t}.bin" for t, _ in TABLES}
+    names = {t: f"{t}.bin" for t in (tables if tables is not None else (t for t, _ in TABLES))}
     unlisted = [t for t, n in names.items() if n not in src.hashes]
     if unlisted:
         raise DeckDataError(f"master data {src.where}: {MANIFEST} lists no {', '.join(unlisted)}")

@@ -37,6 +37,7 @@ summaries are printed as UTF-8 whatever the console encoding.
                          [--font emoji=<file>]
                          [--region <region> [--region ...] | --all-regions]
     nnnotes deck-data --master-files <master download dir> | --apk-master -o out/deck-data.json[.gz]
+    nnnotes songs --master-files <master download dir> | --apk-master [--no-bgm] [--jackets DIR] -o out/songs.json[.gz]
     nnnotes export -o out/assets [--select group:<group> | key:<prefix> | bundle:<glob> ...] [--layout original,cas]
     nnnotes plan [--select ...] [--json] [--check] [--emit-tasks <dir>]
     nnnotes run-stage <task.json> [...]
@@ -656,6 +657,28 @@ def cmd_deck_data(args, cfg):
     _print_json(r)
 
 
+def cmd_songs(args, cfg):
+    from . import deckdata, songs
+    if args.apk_master:
+        cfg.require_path("paths", "apk")             # the master data files ship in the APK
+    apk = _existing(cfg, "paths", "apk")
+    try:
+        if args.apk_master:
+            src, region = deckdata.apk_master(apk), deckdata.EMBEDDED
+        else:
+            src, region = deckdata.master_files(Path(args.master_files)), cfg.region()
+        key = master_key(cfg)
+        cat = open_catalog(cfg)
+        r = songs.export(Path(args.out), src, key, deckdata.catalog_fetch(cat),
+                         None if args.no_bgm else songs.catalog_bgm(cat), region=region,
+                         client=deckdata.apk_client(apk) if apk is not None else {},
+                         catalog=deckdata.catalog_info(cat, cli_assets.store_root(args, cfg)),
+                         jacket=songs.catalog_jacket(cat) if args.jackets else None, jackets_dir=args.jackets)
+    except (deckdata.DeckDataError, songs.SongsError) as e:
+        sys.exit(f"nnnotes: {e}")
+    _print_json(r)
+
+
 # ---------------------------------------------------------------- parser
 def parse_pair(s: str) -> tuple[int, str]:
     m = re.fullmatch(r"(\d+)[:_](easy|normal|hard|expert)", s)
@@ -929,6 +952,20 @@ def build_parser() -> argparse.ArgumentParser:
     g.add_argument("--apk-master", action="store_true", help="the master data files of base.apk ([paths] apk)")
     _out(c, "output file (.json, or .json.gz for gzip)")
     c.set_defaults(func=cmd_deck_data, usage=c.error)
+
+    c = sub.add_parser("songs", help="every live song's metadata (titles, credits, bands, BGM length) and chart facts "
+                                     "(levels, note counts, BPM, times) -> one JSON file")
+    g = c.add_mutually_exclusive_group(required=True)
+    g.add_argument("--master-files", metavar="DIR",
+                   help="master data files as served: MasterManifest.json and the .bin files it lists "
+                        "(`master download`)")
+    g.add_argument("--apk-master", action="store_true", help="the master data files of base.apk ([paths] apk)")
+    c.add_argument("--no-bgm", action="store_true",
+                   help="do not read the BGM cue sheets (every song's bgm.length is null)")
+    c.add_argument("--jackets", metavar="DIR",
+                   help="also write every song's jacket as DIR/<jacket>.webp (at most 320 px on the longer side)")
+    _out(c, "output file (.json, or .json.gz for gzip)")
+    c.set_defaults(func=cmd_songs, usage=c.error)
 
     cli_assets.register(sub, argparse.Namespace(open_catalog=open_catalog, print_json=_print_json))
     voices.register(sub, argparse.Namespace(open_catalog=open_catalog, master_dir=master_dir))

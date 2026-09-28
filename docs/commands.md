@@ -683,3 +683,23 @@ same inputs give the same bytes. Prints `{out, format, region, masterSource, mas
 notes, bytes, fileBytes, sha256}`. A missing or mismatching input (a master data file, a column, a chart asset)
 stops the command with exit status 1 before the file is written. The format is described in
 [deck-data.md](deck-data.md).
+
+## songs
+
+```
+nnnotes songs (--master-files DIR | --apk-master) [--no-bgm] [--jackets DIR] -o FILE
+```
+
+Writes one JSON file with every `MasterLiveMusic` song's metadata for one master data version: titles, readings and
+credits in the five text languages, bands (and a song's own band name), vocal characters, category, tags, release
+time, jacket, Gekisou missions, the whole `MasterLiveMusic` row, the live BGM's cue and length (read from the cue
+sheet's ACB, without decoding audio), and per difficulty the chart facts a song listing shows: level and display
+level, full combo count, note counts (judged, total, per operate type), BPM (main, min, max and every change), the
+first and last note times, the live's music length (last note + 1000 ms), skill event times and fever ranges. The
+master data is read as for `deck-data` (same options, same checks), so the two files of one master data version join
+by `scoreId`. `--no-bgm` skips the cue sheets (every `bgm.length` is null). `--jackets DIR` also writes every song's
+jacket as `DIR/<jacket>.webp` (at most 320 px on the longer side). `FILE` ending in `.gz` is written gzip-compressed;
+the file is canonical. Prints `{out, format, region, masterSource, masterVersion, songs, charts, bgm, jackets, bytes,
+fileBytes, sha256}`. A missing or unreadable input (a master data file, a text id, a chart asset, a cue sheet or cue, a
+jacket) stops the command with exit status 1 before the file is written. The format is described in
+[songs.md](songs.md).

@@ -41,6 +41,7 @@ nnnotes config check             # 每项设置的来源和格式是否有效，
 | `live` | 曲目 ID + 难度 | 完整谱面目录：谱面与运行时音符、3D 场景、音符与特效资源、BGM 与音效、声音路由 |
 | `web` | `--pair 曲目:难度`（可重复）或 `--all`；`--live2d 模型`（可重复）或 `--all-live2d`；`--story 剧情 ID`（可重复）或 `--all-stories`；`--region 区服`（可重复）或 `--all-regions` | ournotes-player 静态站点：共享播放器 + 每谱 / 每模型 / 每集剧情清单 + 内容寻址资源；剧情用到的 Live2D 模型先按模型构建并列入 `models.json`，剧情清单引用它们；一个站点可服务多个区服，列表文本含五种语言；剧情的界面文字按语言分组，字形由开源字体生成 TextMeshPro 字体资源（`--fonts game` 时用游戏字体）；可压缩的资源（JSON、着色器、moc3 等）默认以 gzip 存储，`--compress br` / `none` 可改 |
 | `deck-data` | masterdata 文件（`--master-files` 目录或 `--apk-master`） | 供组卡工具读取的单个 JSON：每张谱面的运行时音符、技能事件与 fever 区间，以及卡牌、技能、加成、分数与活动相关的 masterdata 表（[格式](docs/deck-data.md)） |
+| `songs` | masterdata 文件（`--master-files` 目录或 `--apk-master`） | 全部歌曲元数据的单个 JSON：五语标题与作词作曲编曲、乐队、演唱角色、分类、标签、上线时间、BGM 时长，以及每个难度的等级、音符数、BPM、谱面时间、技能事件与 fever 区间（[格式](docs/songs.md)） |
 
 导出约定：
 
