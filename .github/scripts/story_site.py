@@ -198,7 +198,16 @@ def fetched_file(site: Path) -> Path:
 def cmd_fetch(site_dir: str) -> None:
     site, bucket = Path(site_dir), Bucket()
     keys = [k for k in bucket.keys() if not k.startswith(ASSETS) and not k.endswith("/")]
-    parallel(lambda k: bucket.download(k, site / k), keys)
+    endpoint = env("STORY_S3_ENDPOINT").rstrip("/")
+
+    # The bucket serves public read + list, so the fetch is plain HTTP like the player's, not a signed S3
+    # call: Cloudflare's edge intermittently returned SignatureDoesNotMatch on signed ranged downloads.
+    def fetch(key: str) -> None:
+        dest = site / key
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(get(f"{endpoint}/{env('STORY_S3_BUCKET')}/{bucket.prefix}{key}", timeout=300))
+
+    parallel(fetch, keys)
     (site / "assets").mkdir(parents=True, exist_ok=True)
     digests = {k: sha256(site / k) for k in keys}
     fetched_file(site).write_text(json.dumps(digests, indent=1, sort_keys=True), encoding="utf-8")
