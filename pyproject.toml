@@ -11,9 +11,9 @@ license-files = ["LICENSE"]
 requires-python = ">=3.11"
 authors = [{ name = "MetaMiku" }, { name = "emptysekai" }]
 dependencies = [
-    # 1.25.x requires etcpak, whose PyPI wheels lack manylinux x86_64 for new CPython, so the runner cannot install
-    # it (uv and pip both refuse). Stay on the 1.24 line until UnityPy fixes its etcpak dependency.
-    "UnityPy>=1.24,<1.25",
+    # 1.25.3's PyPI metadata briefly required etcpak (no manylinux x86_64 wheel); the same version now declares
+    # tpk-ar instead. pip 26's resolver keeps the cached old metadata and fails, so we install with uv.
+    "UnityPy>=1.25",
     "numpy>=2.0",
     "Pillow>=10.0",
     "pycryptodome>=3.20",
