@@ -642,6 +642,47 @@ def test_model_dir_exports_each_model_once(tmp_path, monkeypatch):
         webmodel.ModelDir(None, player, root).ensure(KEY_B)
 
 
+@pytest.mark.parametrize("force", [False, True])
+def test_model_dir_shared_by_processes_keeps_one_whole_model(tmp_path, monkeypatch, force):
+    """Another process (another ModelDir on the same root) installs the model while this one exports it: without
+    force the first installed copy is kept and this export dropped, with force this export replaces it; either way
+    one whole model directory and no temporary directory is left."""
+    player = fake_export(monkeypatch, motion_sync=True)
+    root, real, other = tmp_path / "live2d", webmodel.export_model, []
+
+    def racing(*a):
+        if not other:
+            other.append(webmodel.ModelDir(None, player, root, force=force))
+            other[0].ensure(KEY_A)
+        return real(*a)
+    monkeypatch.setattr(webmodel, "export_model", racing)
+    a = webmodel.ModelDir(None, player, root, force=force)
+    assert a.ensure(KEY_A) == {"id": "adv_model_a", "motionSync": True}
+    assert (a.built, a.skipped) == ((["adv_model_a"], []) if force else ([], ["adv_model_a"]))
+    assert other[0].built == ["adv_model_a"]
+    assert [p.name for p in root.iterdir()] == ["adv_model_a"]
+    assert dir_files(root) == [f"adv_model_a/{f}" for f in model_files("adv_model_a")]
+
+
+def test_model_dir_exports_a_model_moved_aside_after_the_check(tmp_path, monkeypatch):
+    """The model directory existed when checked but is gone when read (a forced export of another process moved it
+    aside): exported here."""
+    player = fake_export(monkeypatch, motion_sync=True)
+    root = tmp_path / "live2d"
+    d, real, seen = root / "adv_model_a", webmodel.Path.exists, []
+
+    def exists(p):
+        if p == d and not seen:
+            seen.append(p)
+            return True
+        return real(p)
+    monkeypatch.setattr(webmodel.Path, "exists", exists)
+    a = webmodel.ModelDir(None, player, root)
+    assert a.ensure(KEY_A) == {"id": "adv_model_a", "motionSync": True}
+    assert seen and (a.built, a.skipped) == (["adv_model_a"], [])
+    assert dir_files(root) == [f"adv_model_a/{f}" for f in model_files("adv_model_a")]
+
+
 def test_story_command_exports_its_models_next_to_the_story(tmp_path, capsys, monkeypatch):
     from nnnotes import story
     player = fake_export(monkeypatch)

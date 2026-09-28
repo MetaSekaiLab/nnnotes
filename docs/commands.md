@@ -177,7 +177,9 @@ OUT/story.json            index of the above (a file the episode does not need i
 story.json `models` maps the key of each model to its id (`<name>` of `Character/Live2D/<group>/<name>/model/<name>`)
 and `modelsDir` is the path from OUT to MODELS. A model directory that exists is used as it is, so the stories of one
 models directory export each model once; `--force` exports the episode's models again. The printed summary lists
-the models exported (`modelsBuilt`) and those used as they were (`modelsSkipped`).
+the models exported (`modelsBuilt`) and those used as they were (`modelsSkipped`). Several `story` processes may
+share a models directory: a model appears in it in one rename, whole, and a model two processes export at once is
+kept from the first to finish (the other's export, the same bytes, is dropped and counted in `modelsSkipped`).
 
 `--format` (default `flac`) is the audio format and `--flac-level` its FLAC compression level (as for `audio`);
 `--no-audio` leaves the cue sheets undecoded (no `audio/`, `audio`
