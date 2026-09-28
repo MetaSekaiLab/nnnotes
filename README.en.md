@@ -74,13 +74,13 @@ Based on all data of the Taiwan server, version 1.0.1 (zh-Hant):
 | catalog / bundle decryption / dependency closure | working |
 | master data decoding | working |
 | stories, `adv` | 946 / 946 episodes |
-| stories, `story` (full directory) | 946 / 946 episodes have all their resources in the catalog and of supported kinds (the resource closure equals the game's own per-episode download list); 759 exported one by one, the other 187 (with frames, effects, post effects, stills and the like) not yet one by one |
+| stories, `story` (full directory) | 946 / 946 episodes have all their resources in the catalog and of supported kinds (the resource closure equals the game's own per-episode download list); 946 / 946 exported and checked one by one: the files, models and audio the output refers to exist, every JSON parses and every path it refers to resolves; the 235 episodes with frames, effects, post effects, stills, chats, talk windows or videos are byte-identical across two exports except for the models directory path |
 | Live2D models | 239 / 239 (every model of the catalog; episodes use 185 of them) |
 | CRI audio | 681 / 681 cue sheets |
 | charts, `live` | 336 / 336 (music, difficulty) pairs |
-| web site, `web` | 336 / 336 charts, 239 / 239 Live2D models, 946 / 946 story episodes (two full builds in English without audio are byte-identical and 946 / 946 pass the data validation; a 27-episode sample in five languages with AAC audio is likewise identical across two builds and valid) |
-| spots, `spot` / `room` | one spot verified, the others not individually checked |
-| other regions (en / kr) and languages | checked: the regions serve the same catalog for a language and the same bundles, and the keys are shared; the master tables the charts use are the same in the three regions, and the text tables have all five languages; the chart exports checked match the Taiwan server's. A full multi-region site build is not verified yet |
+| web site, `web` | 336 / 336 charts, 239 / 239 Live2D models, 946 / 946 story episodes (two full builds in English without audio are byte-identical and 946 / 946 pass the data validation); two full builds of the three regions in five languages with AAC audio (`--all-regions`, with the live master data: 340 charts of 85 musics) are likewise byte-identical and pass the data validation in full |
+| spots, `spot` / `room` | 39 / 39 spots, every reference resolves; `room` exports 20 / 20 room backgrounds of the catalog. Every glb passes the Khronos glTF-Validator with 0 errors |
+| other regions (en / kr) and languages | checked: the regions serve the same catalog for a language and the same bundles, and the keys are shared; the master tables the charts use are the same in the three regions, and the text tables have all five languages; the chart exports checked match the Taiwan server's. A full multi-region site build is verified (the row above) |
 
 ## Requirements
 
