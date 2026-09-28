@@ -72,7 +72,10 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-      - run: python -m pip install --quiet boto3
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - run: uv pip install --system --quiet boto3
       - name: Stories to build
         id: plan
         env:
@@ -101,13 +104,13 @@ jobs:
         # The runner's preinstalled SDKs take most of its disk; a story build keeps its bundles and work files.
         run: sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL && df -h "$GITHUB_WORKSPACE"
 
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
       - name: Install nnnotes
-        run: |
-          python -m pip install --upgrade pip
-          # UnityPy 1.25.x requires etcpak, which has no manylinux x86_64 wheel on PyPI (only PyPy / cp37), so the
-          # runner's cp313 environment cannot resolve it. Pin to the 1.24 line, which does not require etcpak.
-          python -m pip install "UnityPy>=1.24,<1.25"
-          python -m pip install -e ".[fonts]" boto3
+        # UnityPy 1.25.x requires etcpak, which has no manylinux x86_64 wheel on PyPI (only PyPy / cp37), so the
+        # runner's cp313 environment cannot resolve it. pyproject.toml already pins it to the 1.24 line.
+        run: uv pip install --system -e ".[fonts]" boto3
 
       - name: Tools
         run: |

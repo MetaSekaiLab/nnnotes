@@ -12,7 +12,7 @@ requires-python = ">=3.11"
 authors = [{ name = "MetaMiku" }, { name = "emptysekai" }]
 dependencies = [
     # 1.25.x requires etcpak, whose PyPI wheels lack manylinux x86_64 for new CPython, so the runner cannot install
-    # it. Stay on the 1.24 line (sdist on PyPI, built from source like before) until UnityPy fixes its etcpak dep.
+    # it (uv and pip both refuse). Stay on the 1.24 line until UnityPy fixes its etcpak dependency.
     "UnityPy>=1.24,<1.25",
     "numpy>=2.0",
     "Pillow>=10.0",
