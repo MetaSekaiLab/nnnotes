@@ -6,8 +6,8 @@ fails on the defect it is there for. Runs in seconds, without the network:
 The JSON Schema gate uses docs/schema/music-data.schema.json (or $MUSIC_DATA_SCHEMA) when the checkout has it; the
 page smoke test runs when $MUSIC_DATA_PAGE names ournotes-player's examples/songs (and Node.js is installed). Real
 files, when named: $MUSIC_DATA_SAMPLE (a file with the play scenario fields: the content gates pass; one made before
-the ranges' luckPoints, the deck gate stops on those alone) and $MUSIC_DATA_OLD_SAMPLE (one without the play scenario
-fields: the scenario gate stops it).
+the ranges' luckPoints and the Gekisou skill aptitude, the deck and aptitude gates stop it on those alone) and
+$MUSIC_DATA_OLD_SAMPLE (one without the play scenario fields: the scenario gate stops it).
 """
 import copy
 import hashlib
@@ -55,21 +55,83 @@ def check_deck(exact):
 
 
 LUCK_SEEDS = [11, 22]                                                   # a luck chart's seeds; else the one seed 0
+# the Gekisou skill aptitude's shapes: id, source, mission, band condition
+SHAPES = [(0, "member", 1, False), (1, "support", 2, True), (2, "member", 3, False), (3, "support", 4, False)]
+SEED_RULE = {"deterministicTest": 4, "batches": [32, 64, 128, 256, 512, 1024], "relative": 0.01, "baseline": 0.001,
+             "crossSeeds": 64}
+
+
+def effect(band=False):
+    return {"effectType": 2000, "triggerType": 7010, "activationTimeSecond": 5.0, "effectValue": 1000,
+            "maxEffectValue": 0, "effectLimitCount": 0, "effectExecuteLimitCount": 0, "skillTargetIds": [],
+            "trigger": [[{"type": 7010, "values": [1], "positive": True, "targetIds": []}]],
+            "condition": [[{"type": 5000, "values": [1], "positive": True, "targetIds": None}]] if band else [],
+            "release": [], "reset": [], "cumulative": None}
+
+
+def aptitude_head():
+    return {"plainKind": 0, "host": "one performer with a synthetic empty Gekisou skill", "seedRule": SEED_RULE,
+            "shapes": [{"id": i, "source": src, "mission": m, "bandCondition": band, "effects": [effect(band)],
+                        "skills": [{"id": 10 + i, "level": 5, "memberTargetIds": [41] if band else None,
+                                    "bandIds": [1] if band else None}]} for i, src, m, band in SHAPES]}
+
+
+def variant(deck, shape, match, deterministic):
+    """One shape's aptitude on a chart: deterministic on a chart without a luck range, else on 32 seeds."""
+    se = 0 if deterministic else 12.5
+
+    def p(m):
+        return [m, se]
+    ranges = [{"rangeScore": p(300), "rankBonus": p(750), "rangeScorePerfect": p(300), "maxCombo": p(0),
+               "justCount": p(0), "luckPoints": p(2)} for _ in deck["ranges"]]
+    n = 1 if deterministic else 32
+    linear = deck["seeds"][0]["rangeWeights"] is not None
+    result = {"shape": shape, "bandMatch": match, "deterministic": deterministic, "seeds": n, "seTargetMet": True,
+            "crossSeeds": min(n, SEED_RULE["crossSeeds"]), "score": p(1500), "scorePerfect": p(1500),
+            "tail": p(1500 - 1050 * len(ranges)), "tailPerfect": p(1500 - 1050 * len(ranges)),
+            "converted": p(0), "ranges": ranges,
+            "weights": [p(0.01), p(0.02)],
+            "rangeWeights": [[p(0.001)] * len(ranges), [p(0.002)] * len(ranges)] if linear else None,
+            "check": {"seed": deck["seeds"][0]["seed"], "ranks": [2] * len(ranges) if linear else [1] * len(ranges),
+                      "deck": [[0, 7000], None], "exact": 5000, "predicted": 5000.5, "bound": 3.0}}
+    base = deck["seeds"][0]
+    score = base["score"] + 1500
+    weight = base["weights"][0][0] + 0.01
+    if linear:
+        for r, info in zip(base["ranges"], deck["ranges"], strict=True):
+            percent = info["rankBonusPercents"][1]
+            score += int(r["rangeScore"] * percent / 100) - r["rankBonus"] + 300 * (percent - 250) / 100
+        weight += (190 - 250) / 100 * (0.1 + 0.001)
+    predicted = 1000003 * (score / 300000 + 0.7 * weight)
+    result["check"].update(exact=round(predicted), predicted=predicted)
+    return result
+
+
+def aptitude(deck, luck):
+    missions = {r["mission"] for r in deck["ranges"]}
+    variants = [variant(deck, i, match, deterministic=not luck) for i, _, m, band in SHAPES
+                if m == 4 or m in missions for match in ((True, False) if band else (None,))]
+    factors = [{"judgedNotes": 12, "justNotes": 0, "perfectNotes": 0, "tailNotes": 2, "comboAtStart": 5,
+                "lotteries": [4.0, 0.0] if r["mission"] == 2 else [0, 0]} for r in deck["ranges"]]
+    return {"factors": factors, "variants": variants}
 
 
 def deck_chart(luck=False):
     def one(n):
         return {"seed": n, "score": 120000 + n, "ranges": [{"rangeScore": 4000, "rankBonus": 10000, "maxCombo": 10,
                                                             "justCount": 0, "luckPoints": 3 if luck else 0,
-                                                            "lotResults": [0, 0, 0, 0], "rangeScorePerfect": 4000}],
+                                                            "lotResults": [1, 2, 0, 1] if luck else [0, 0, 0, 0],
+                                                            "rangeScorePerfect": 4000}],
                 "weights": [[0.5, 0.25]], "check": check_deck(2000), "scorePerfect": 120000 + n,
                 "rangeWeights": [[[0.1], [0.05]]], "rankCheck": dict(check_deck(1900), ranks=[3])}
-    return {"convertedNoteCount": 20, "skip": 0.01, "events": [[0, 1000], [1, 3000]], "positions": 2,
-            "ranges": [{"index": 0, "mission": 2 if luck else 1, "startMs": 1000, "endMs": 5000,
-                        "rankBonusPercent": 250, "rankBonusPercents": [250, 190, 160, 100, 100]}],
-            "justNotes": 0, "seeds": [one(n) for n in (LUCK_SEEDS if luck else [0])],
-            "offSeeds": [{"seed": 0, "score": 90000, "weights": [[0.4, 0.2]], "check": check_deck(1500)}],
-            "unplayable": None}
+    d = {"convertedNoteCount": 20, "skip": 0.01, "events": [[0, 1000], [1, 3000]], "positions": 2,
+         "ranges": [{"index": 0, "mission": 2 if luck else 1, "startMs": 1000, "endMs": 5000,
+                     "rankBonusPercent": 250, "rankBonusPercents": [250, 190, 160, 100, 100]}],
+         "justNotes": 0, "seeds": [one(n) for n in (LUCK_SEEDS if luck else [0])],
+         "offSeeds": [{"seed": 0, "score": 90000, "weights": [[0.4, 0.2]], "check": check_deck(1500)}],
+         "unplayable": None}
+    d["gekisouAptitude"] = aptitude(d, luck)
+    return d
 
 
 def chart(difficulty, score_id, last=60000, luck=False):
@@ -113,7 +175,8 @@ def sample() -> dict:
         "characters": [{"id": 1, "bandId": 1, "name": text("ch"), "shortName": text("c"), "mainColor": "#77BBDD"}],
         "tags": [{"id": 1, "name": text("tag")}],
         "categories": [{"id": 1, "musicCategories": [1], "name": text("cat")}],
-        "deck": {"model": {"power": 300000, "checkPower": 1000003}, "kinds": [kind]},
+        "deck": {"model": {"power": 300000, "checkPower": 1000003, "gekisouAptitude": "one skill at a time"},
+                 "kinds": [kind], "gekisouAptitude": aptitude_head()},
         "songs": [song(100001, [chart("easy", 10), chart("expert", 30, luck=True)]),
                   song(100002, [chart("expert", 40, luck=True)])],
     }
@@ -164,6 +227,30 @@ def seed(doc, song=0, chart=0):
     return doc["songs"][song]["charts"][chart]["deck"]["seeds"][0]
 
 
+def apt(doc, song=0, chart=0):
+    return doc["songs"][song]["charts"][chart]["deck"]["gekisouAptitude"]
+
+
+def var(doc, i=0, song=0, chart=0):
+    return apt(doc, song, chart)["variants"][i]
+
+
+def shape(doc, i):
+    return doc["deck"]["gekisouAptitude"]["shapes"][i]
+
+
+def nonlinear(doc, song=0, chart=0):
+    """A chart whose ranks are not linear (overlapping ranges): no rangeWeights, the checks at rank 1."""
+    d = doc["songs"][song]["charts"][chart]["deck"]
+    for s in d["seeds"]:
+        s.update(rangeWeights=None, rankCheck=None)
+    for v in d["gekisouAptitude"]["variants"]:
+        v["rangeWeights"] = None
+        v["check"]["ranks"] = [1] * len(d["ranges"])
+        predicted = 1000003 * ((d["seeds"][0]["score"] + v["score"][0]) / 300000 + 0.7 * 0.51)
+        v["check"].update(exact=round(predicted), predicted=predicted)
+
+
 # ---------------------------------------------------------------- the gates
 def test_the_sample_passes_every_gate(tmp_path):
     r = run(tmp_path, sample(), page=page_path())
@@ -194,6 +281,20 @@ def test_page_smoke(tmp_path):
     assert not g["passed"] and any("free scenario" in f for f in g["failures"])
 
 
+def test_page_aptitude_check_reconstruction(tmp_path):
+    page = page_path()
+    if page is None or "aptitudeFigures" not in (page / "ranking.js").read_text(encoding="utf-8"):
+        pytest.skip("page does not yet expose the aptitude API")
+    doc = sample()
+    # Stochastic check values are not reconstructible from means; changing them must not trigger reconstruction.
+    var(doc, 0, 0, 1)["check"].update(exact=99999999, predicted=99999999)
+    assert gate(run(tmp_path, doc, page=page), "page")["passed"]
+    # Even a self-consistent exported check is independently rejected when deterministic deltas disagree.
+    var(doc)["check"].update(exact=99999999, predicted=99999999)
+    g = gate(run(tmp_path, doc, page=page), "page")
+    assert any("deterministic check reconstruction" in f for f in g["failures"]), g
+
+
 def unplayable(doc):
     doc["songs"][1]["charts"][0]["deck"]["unplayable"] = "more than three fevers"      # its seeds kept
 
@@ -214,6 +315,70 @@ def unplayable(doc):
     (lambda d: seed(d)["ranges"][0].pop("rangeScorePerfect"), "scenarios", "rangeScorePerfect missing"),
     (lambda d: seed(d).update(rangeWeights=[[[0.1]]]), "scenarios", "rangeWeights are not"),
     (lambda d: seed(d)["rankCheck"].update(exact=99999), "scenarios", "rank check deck is not within"),
+    # the Gekisou skill aptitude
+    (lambda d: d["deck"].pop("gekisouAptitude"), "aptitude", "deck.gekisouAptitude missing"),
+    (lambda d: d["deck"]["model"].pop("gekisouAptitude"), "aptitude", "deck.model.gekisouAptitude: no text"),
+    (lambda d: d["deck"]["gekisouAptitude"].update(plainKind=1), "aptitude", "the page's plain kind is 0"),
+    (lambda d: d["deck"]["kinds"][0].update(durationMs=6000), "aptitude", "plainKind 0, the page's plain kind is None"),
+    (lambda d: d["deck"]["kinds"][0].update(durationMs=6000), "aptitude", "weights or rangeWeights without a plain"),
+    (lambda d: d["deck"]["gekisouAptitude"].pop("host"), "aptitude", "deck.gekisouAptitude: no host"),
+    (lambda d: d["deck"]["gekisouAptitude"].update(seedRule=dict(SEED_RULE, batches=[64, 32])), "aptitude",
+     "deck.gekisouAptitude.seedRule"),
+    (lambda d: shape(d, 1).update(id=5), "aptitude", "ids are not 0, 1, 2, ... in order"),
+    (lambda d: shape(d, 0).update(source="card"), "aptitude", "shape 0: source 'card'"),
+    (lambda d: shape(d, 2).update(mission=5), "aptitude", "shape 2: mission 5"),
+    (lambda d: shape(d, 0).update(bandCondition=True), "aptitude", "bandCondition True (a support skill's alone)"),
+    (lambda d: shape(d, 3).update(bandCondition=True), "aptitude",
+     "shape 3: bandCondition True, its effects have 0 condition 5000"),
+    (lambda d: shape(d, 1)["effects"][0]["condition"][0][0].update(targetIds=[41]), "aptitude",
+     "condition 5000 targetIds not null"),
+    (lambda d: shape(d, 0)["effects"][0].pop("cumulative"), "aptitude", "effect 0: cumulative missing or malformed"),
+    (lambda d: shape(d, 0)["effects"][0].update(effectValue=1.5), "aptitude", "effectValue missing or malformed"),
+    (lambda d: shape(d, 0)["effects"][0].update(reset=None), "aptitude", "reset missing or malformed"),
+    (lambda d: shape(d, 1)["skills"][0].update(memberTargetIds=None), "aptitude", "is not an id, a level"),
+    (lambda d: shape(d, 0)["skills"][0].update(bandIds=[1]), "aptitude", "is not an id, a level"),
+    (lambda d: shape(d, 0).update(skills=[]), "aptitude", "shape 0: no skills"),
+    (lambda d: d["songs"][0]["charts"][0]["deck"].pop("gekisouAptitude"), "aptitude", "no deck.gekisouAptitude"),
+    (lambda d: d["songs"][0]["charts"][0]["deck"].update(gekisouAptitude=None), "aptitude",
+     "deck.gekisouAptitude is null, but the chart is playable"),
+    (unplayable, "aptitude", "a Gekisou skill aptitude on a chart unplayable with Gekisou on"),
+    (lambda d: apt(d)["factors"].pop(), "aptitude", "0 factors for 1 ranges"),
+    (lambda d: apt(d)["factors"][0].update(justNotes=3), "aptitude", "Just or Perfect notes in a range without"),
+    (lambda d: apt(d)["factors"][0].update(tailNotes=-1), "aptitude", "tailNotes missing or not counts"),
+    (lambda d: apt(d)["factors"][0].update(lotteries=[1, 0]), "aptitude", "in a range without the luck mission"),
+    (lambda d: apt(d, 0, 1)["factors"][0].update(lotteries=[3.0, 0]), "aptitude", "deck.seeds' lotResults give 4.0"),
+    (lambda d: apt(d)["variants"].pop(0), "aptitude", "variants lack [(0, None)]"),
+    (lambda d: apt(d)["variants"].reverse(), "aptitude", "not in shape order, true first"),
+    (lambda d: apt(d, 0, 1)["variants"].pop(1), "aptitude", "variants lack [(1, False)]"),
+    (lambda d: var(d).update(shape=9), "aptitude", "variants of shapes ['9'] not in deck.gekisouAptitude.shapes"),
+    (lambda d: var(d).update(shape=2), "aptitude", "variants of shapes [2] of a mission the chart does not play"),
+    (lambda d: var(d, 0, 0, 1).update(bandMatch=None), "aptitude", "bandMatch None for a shape with a band"),
+    (lambda d: var(d).update(bandMatch=True), "aptitude", "bandMatch True for a shape without a band"),
+    (lambda d: var(d).pop("tail"), "aptitude", "shape 0: no tail"),
+    (lambda d: var(d).update(score=[1500]), "aptitude", "score not [mean, se]"),
+    (lambda d: var(d).update(score=[1500, -1]), "aptitude", "score not [mean, se]"),
+    (lambda d: var(d).update(converted=[float("nan"), 0]), "aptitude", "converted not [mean, se]"),
+    (lambda d: var(d)["ranges"][0].update(luckPoints=None), "aptitude", "ranges[0].luckPoints not [mean, se]"),
+    (lambda d: var(d).update(score=[1500, 1]), "aptitude", "deterministic, but a standard error is not 0: score"),
+    (lambda d: var(d).update(seeds=2), "aptitude", "deterministic, but 2 seeds"),
+    (lambda d: var(d, 0, 0, 1).update(seeds=33), "aptitude", "33 seeds (seTargetMet True), not a batch"),
+    (lambda d: var(d, 0, 0, 1).update(seTargetMet=False), "aptitude", "32 seeds (seTargetMet False), not a batch"),
+    (lambda d: var(d, 0, 0, 1).update(crossSeeds=64), "aptitude", "crossSeeds 64, expected min(32, 64)"),
+    (lambda d: var(d)["ranges"].append(dict(var(d)["ranges"][0])), "aptitude", "2 range results for 1 ranges"),
+    (lambda d: var(d).update(tail=[451, 0]), "aptitude", "tail 451 is not score 1500 less the ranges' rangeScore"),
+    (lambda d: var(d)["weights"].append([0, 0]), "aptitude", "weights are not one [mean, se] per position"),
+    (lambda d: seed(d).update(rangeWeights=None, rankCheck=None), "aptitude",
+     "rangeWeights, but deck.seeds[0].rangeWeights is null"),
+    (lambda d: var(d).update(rangeWeights=[[[0, 0]]]), "aptitude", "rangeWeights are not [position][range]"),
+    (lambda d: (nonlinear(d), var(d)["check"].update(ranks=[2])), "aptitude", "ranks are not linear (rank 1 alone)"),
+    (lambda d: var(d)["check"].update(seed=5), "aptitude", "the check's seed 5 is not deck.seeds[0]'s 0"),
+    (lambda d: var(d, 0, 0, 1)["check"].update(seed=22), "aptitude", "the check's seed 22 is not deck.seeds[0]'s 11"),
+    (lambda d: var(d)["check"].update(ranks=[6]), "aptitude", "the check's ranks [6] are not one rank per range"),
+    (lambda d: var(d)["check"].update(deck=[[1, 7000], None]), "aptitude", "not a [plain kind, value] or null"),
+    (lambda d: var(d)["check"].update(exact=99999999), "aptitude", "the check is not within its bound"),
+    (lambda d: var(d)["check"].pop("bound"), "aptitude", "the check has no seed, ranks"),
+    (lambda d: var(d).update(tailPerfect=[449, 0]), "aptitude", "tailPerfect is not scorePerfect"),
+    (lambda d: var(d).update(converted=[0.5, 0]), "aptitude", "a point delta is not an integer"),
     # the deck statistics
     (lambda d: d.update(deck=None), "deck", "deck is null"),
     (lambda d: d["songs"][0]["charts"][0].update(deck=None), "deck", "no deck statistics"),
@@ -289,7 +454,7 @@ def test_a_jacket_file_is_missing(tmp_path):
 
 def test_warnings_do_not_fail(tmp_path):
     doc = sample()
-    seed(doc).update(rangeWeights=None, rankCheck=None)                   # overlapping ranges
+    nonlinear(doc)                                                        # overlapping ranges
     seed(doc, 0, 1)["rangeWeights"][0] = None                             # a kind reading the confirmed rank
     doc["songs"][1]["charts"][0]["deck"]["offSeeds"][0]["weights"][0] = None
     doc["songs"][0]["master"]["MasterLiveMusic"]["_rate"] = float("inf")  # 1e999 in master data as served
@@ -298,6 +463,50 @@ def test_warnings_do_not_fail(tmp_path):
     assert r["passed"], failures(r)
     assert gate(r, "scenarios")["warningCount"] == 3 and gate(r, "finite")["warningCount"] == 1
     assert gate(r, "references")["warnings"] == ["songs without a zh-Hant title: 100002"]
+
+
+def test_aptitude_warnings(tmp_path):
+    doc = sample()
+    var(doc, 0, 0, 1).update(seeds=1024, seTargetMet=False, crossSeeds=64)   # the last batch, not the target
+    r = run(tmp_path, doc)
+    assert r["passed"], failures(r)
+    assert gate(r, "aptitude")["warnings"] == [
+        "1 variants missed the seed rule's standard error target: 30 shape 1"]
+    assert gate(r, "aptitude")["note"] == ("4 shapes; 3 charts with an aptitude, 0 null; 8 variants, "
+                                           "2 deterministic; plain kind 0")
+
+
+def test_no_gekisou_skill_shapes(tmp_path):
+    doc = sample()
+    doc["deck"]["gekisouAptitude"]["shapes"] = []
+    kept = apt(doc)
+    for _, c in music_data.charts_of(doc):
+        c["deck"]["gekisouAptitude"] = None
+    r = run(tmp_path, doc, page=page_path())
+    assert r["passed"], failures(r)
+    doc["songs"][0]["charts"][0]["deck"]["gekisouAptitude"] = kept
+    g = gate(run(tmp_path, doc), "aptitude")
+    assert g["failures"] == ["chart 10 (100001 easy): a Gekisou skill aptitude on a chart without a Gekisou skill "
+                             "shape"]
+
+
+def test_an_unplayable_chart_has_no_aptitude(tmp_path):
+    doc = sample()
+    doc["songs"][1]["charts"][0]["deck"].update(unplayable="more than three fevers", seeds=[], gekisouAptitude=None)
+    r = run(tmp_path, doc, page=page_path())
+    assert r["passed"], failures(r)
+    assert gate(r, "aptitude")["note"].startswith("4 shapes; 2 charts with an aptitude, 1 null")
+
+
+def test_gzip_caps(tmp_path, monkeypatch):
+    raw, ctx = context(tmp_path, sample())
+    g = gate(gates(raw, ctx, only=("gzip",)), "gzip")
+    assert g["passed"] and g["note"].startswith(f"{len(music_data.gzip.compress(raw, 6))} bytes gzipped")
+    monkeypatch.setattr(music_data, "APTITUDE_GZIP_MAX", 100)
+    g = gate(gates(raw, ctx, only=("gzip",)), "gzip")
+    assert not g["passed"] and g["failures"][0].startswith("the Gekisou skill aptitude: ")
+    monkeypatch.setattr(music_data, "FILE_GZIP_MAX", 100)
+    assert len(gate(gates(raw, ctx, only=("gzip",)), "gzip")["failures"]) == 2
 
 
 def test_against_the_published_file(tmp_path):
@@ -380,12 +589,26 @@ def test_a_real_file_with_the_scenario_fields(tmp_path):
     raw = real("MUSIC_DATA_SAMPLE")
     (tmp_path / "music-data.json").write_bytes(raw)
     ctx = Context(language="zh-Hant", page=page_path(), file=tmp_path / "music-data.json", published=raw)
-    r = gates(raw, ctx, only=CONTENT + ("counts", "size", "page"))
-    if luck_points(raw):
-        assert r["passed"], failures(r)
-    else:
-        assert [n for n, _ in failures(r)] == ["deck"] and before_luck_points(r), failures(r)
+    r = gates(raw, ctx, only=CONTENT + ("aptitude", "counts", "size", "gzip", "page"))
+    new = [n for n, ok in (("deck", luck_points(raw)), ("aptitude", "gekisouAptitude" in json.loads(raw)["deck"]))
+           if not ok]                                                  # the gates of fields made after the file
+    assert [n for n, _ in failures(r)] == new, failures(r)
+    assert "deck" not in new or before_luck_points(r)
+    g = gate(r, "aptitude")
+    assert "aptitude" not in new or all(f.endswith(("gekisouAptitude missing", "gekisouAptitude: no text",
+                                                    ": no deck.gekisouAptitude")) for f in g["failures"]), g
     assert gate(r, "scenarios")["warningCount"] == 0
+    print(f"aptitude: {g['note']}; warnings: {g['warnings']}; gzip: {gate(r, 'gzip')['note']}")
+
+
+def test_real_aptitude_deck_sample():
+    """Optional real chart-stats output, wrapped without modifying its statistics or touching the source file."""
+    stats = json.loads(real("MUSIC_DATA_APTITUDE_DECK_SAMPLE"))
+    doc = {"deck": {k: stats[k] for k in ("model", "kinds", "gekisouAptitude")},
+           "songs": [{"id": c["musicId"], "charts": [{"scoreId": c["scoreId"], "difficulty": c["difficulty"],
+                       "skillEventsMs": [e[1] for e in c["events"]], "deck": c}]} for c in stats["charts"]]}
+    report = gates(json.dumps(doc).encode(), Context(), only=("deck", "aptitude", "gzip"))
+    assert report["passed"], failures(report)
 
 
 # ---------------------------------------------------------------- publish (a stand-in bucket)
