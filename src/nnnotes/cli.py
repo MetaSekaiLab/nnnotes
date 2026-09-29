@@ -89,6 +89,8 @@ def load_config(args) -> Config:
     overrides = {k: getattr(args, dest, None) for k, (dest, _) in FLAG_SETTINGS.items()}
     cfg = Config.load(getattr(args, "config", None), overrides=overrides,
                       flags={k: flag for k, (_, flag) in FLAG_SETTINGS.items()})
+    if getattr(args, "func", None) is cmd_config_check:
+        return use(cfg)                         # diagnose raw settings before applying runtime defaults
     if cfg.provider() == "jp" and not cfg.has("catalog", "language"):
         cfg = cfg.for_region(cfg.region())
     return use(cfg)
@@ -617,7 +619,7 @@ def cmd_web(args, cfg):
                    if args.web_regions or args.all_regions else None)   # None: the one [catalog] region
         if (stories or models) and regions and len({cfg.provider(r) for r in regions}) > 1:
             raise ConfigError("build JP stories/models in a separate site directory from international releases")
-        if (stories or models) and regions and cfg.provider(regions[0]) == "jp":
+        if (stories or models) and regions:
             cfg = use(cfg.for_region(regions[0]))
         base = {"region": regions[0]} if regions else {}
         unknown = web.unknown_pairs(cfg, args.pair, regions) if args.pair else []

@@ -76,10 +76,11 @@ class Catalog:
     `cdn`: the region's CDN base (needed only to download what the cache lacks); `bundle_key`: the bundle
     decryption key (needed only for bundles not yet in the cache). Either may be a function that returns it, called
     the first time it is needed (a ConfigError it raises is raised naming the file that needed the setting).
+    `apk_catalog`: the stored catalog to replay without opening an APK; JP local reads verify it before extraction.
     """
 
     def __init__(self, catalog_bytes: bytes, cache_dir: Path, *, cdn=None, bundle_key=None, apk: Path | None = None,
-                 source=None, session=None):
+                 source=None, session=None, apk_catalog: bytes | None = None):
         self._settings = {"cdn": cdn, "bundle_key": bundle_key}
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
@@ -88,9 +89,21 @@ class Catalog:
         self._sources = {"remote": catalog_bytes}
         self._locations: list[dict] | None = None
         self._parsed: tuple | None = None
-        if self.apk is not None:
+        if apk_catalog is not None:
+            self._sources["apk"] = apk_catalog
+        elif self.apk is not None:
             with ApkSet(self.apk) as z:
                 self._sources["apk"] = z.read(APK_CATALOG)
+
+    def check_apk(self, archive) -> None:
+        """Before extracting a JP local file, verify the APK against this catalog's snapshot."""
+        if self.source is not None and "apk" in self._sources:
+            try:
+                matches = archive.read(APK_CATALOG) == self._sources["apk"]
+            except KeyError:
+                matches = False
+            if not matches:
+                raise ConfigError("JP historical catalog needs the APK set it was imported with")
 
     def local_cache_dir(self) -> Path:
         """JP embedded files also depend on the APK catalog, independently of the CDN snapshot."""
@@ -278,6 +291,7 @@ class Catalog:
                 raise apk_missing(f"bundle {b.name}")
             rel = b.internal_id[len(LOCAL_PREFIX):].lstrip("/")
             with ApkSet(self.apk) as z:
+                self.check_apk(z)
                 data = z.read(APK_AA_DIR + rel)
             key = self._setting("bundle_key", b.name) if data[:7] != b"UnityFS" else None
         _write_atomic(dst, _unityfs(data, b.name, key))
@@ -329,6 +343,7 @@ class Catalog:
             dst = self.local_cache_dir() / "bundles" / name
             if not (dst.exists() and dst.stat().st_size > 0):
                 dst.parent.mkdir(parents=True, exist_ok=True)
+                self.check_apk(z)
                 data = z.read(names[0])
                 key = self._setting("bundle_key", name) if data[:7] != b"UnityFS" else None
                 _write_atomic(dst, _unityfs(data, name, key))

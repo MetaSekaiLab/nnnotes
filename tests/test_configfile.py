@@ -180,6 +180,30 @@ def test_edit_refuses_what_it_cannot_edit():
         configfile.edit('[paths]\nfonts.ja = "a"\n', [("paths.fonts", "ja", "b")], "f")
 
 
+@pytest.mark.parametrize("provider", ['"jpp"', '42'])
+def test_check_reports_invalid_provider_as_json(tmp_path, capsys, provider):
+    conf = tmp_path / "nnnotes.toml"
+    conf.write_text(f'[catalog]\nregion="jp"\n[servers.jp]\nprovider={provider}\n', encoding="utf-8")
+    code, out, err = run(["--config", str(conf), "config", "check", "--json"], capsys)
+    assert code == 1 and not err
+    report = json.loads(out)
+    assert report["problems"] == 1
+    item = next(s for s in report["settings"] if s["name"] == "servers.jp.provider")
+    assert item["status"] == "invalid"
+
+
+def test_check_does_not_turn_jp_language_defaults_into_flags(tmp_path, capsys):
+    conf = tmp_path / "nnnotes.toml"
+    conf.write_text('[catalog]\nregion="jp"\n[servers.jp]\nprovider="jp"\n', encoding="utf-8")
+    code, out, _ = run(["--config", str(conf), "config", "check", "--json"], capsys)
+    assert code == 0
+    settings = {s["name"]: s for s in json.loads(out)["settings"]}
+    assert settings["catalog.region"]["origin"] == "file"
+    assert settings["catalog.language"]["status"] == "unset"
+    cfg = cli.load_config(cli.build_parser().parse_args(["--config", str(conf), "master", "version"]))
+    assert cfg.require("catalog", "language") == "ja"  # normal commands still apply the JP default
+
+
 def test_check_reports_states_not_values(tmp_path, capsys, monkeypatch):
     (tmp_path / "nnnotes.toml").write_text(
         f'[bundle]\nkey = "{KEY}"\n[master]\niv = "00"\n[catalog]\nregion = "xx"\n[servers.tw]\ncdn = "ftp://h"\n'
