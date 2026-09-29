@@ -104,6 +104,9 @@ jobs:
         # The runner's preinstalled SDKs take most of its disk; a story build keeps its bundles and work files.
         run: sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL && df -h "$GITHUB_WORKSPACE"
 
+      - uses: Swatinem/rust-cache@v2          # the install builds the extension module nnnotes._deck (rust/)
+        with:
+          workspaces: rust
       - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true

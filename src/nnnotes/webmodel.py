@@ -321,7 +321,13 @@ def source_entry(address: str, doc: dict, where: str) -> dict:
 class ModelDir:
     """The models of `root`: each model in <root>/<id>/, the files of a model manifest (read_files; the shader index
     reduced to the listed GLES3 programs as web.collect reduces it) in the layout export_model writes. ensure exports
-    a model whose directory does not exist, or every model once when `force`; `built` / `skipped`: the ids."""
+    a model whose directory does not exist, or every model once when `force`; `built` / `skipped`: the ids (a model
+    another process installed meanwhile is skipped).
+
+    Processes may share `root` (several `nnnotes story` at once): a model directory appears in one rename, whole, and
+    the first process to install a model wins; the others drop their export (the same bytes: exports are
+    deterministic) and use it. `force` moves a previous directory aside before installing; a process that finds the
+    directory gone in between exports the model itself."""
 
     def __init__(self, cat, player, root: Path, force: bool = False):
         self.cat, self.player, self.root, self.force = cat, player, Path(root), force
@@ -333,38 +339,60 @@ class ModelDir:
         mid = model_id(address)
         if mid not in self._done:
             d = self.root / mid
-            if self.force or not d.exists():
-                self._export(address, d)
-                self.built.append(mid)
-            else:
-                self.skipped.append(mid)
             index = d / MODEL_INDEX
-            if not index.is_file():
+            built = (self.force or not d.exists()) and self._export(address, d)
+            if not index.is_file() and not d.exists():     # moved aside by a forced export of another process
+                built = self._export(address, d)
+            (self.built if built else self.skipped).append(mid)
+            try:
+                doc = json.loads(index.read_text(encoding="utf-8"))
+            except FileNotFoundError:
                 raise RuntimeError(f"{d}: no {MODEL_INDEX} (not a model directory); remove it or export again "
-                                   f"(--force)")
-            self._done[mid] = source_entry(address, json.loads(index.read_text(encoding="utf-8")), str(index))
+                                   f"(--force)") from None
+            self._done[mid] = source_entry(address, doc, str(index))
         return self._done[mid]
 
-    def _export(self, address: str, d: Path) -> None:
-        """The model into a temporary directory next to `d`, then renamed to `d` (a previous `d` removed)."""
+    def _export(self, address: str, d: Path) -> bool:
+        """The model into a temporary directory in `root`, then renamed to `d`; False when another process's `d` is
+        there instead (kept: without `force` any `d`, with `force` one installed after the previous `d` was moved
+        aside)."""
         self.root.mkdir(parents=True, exist_ok=True)
         work = Path(tempfile.mkdtemp(prefix=f".{d.name}-", dir=self.root))
         try:
             summary = export_model(self.cat, self.player, address, work / "export")
             text, binary = collect(work / "export", summary["files"])
             files = {**{p: t.encode("utf-8") for p, t in text.items()}, **binary}
+            model = work / "model"
             for rel, data in sorted(files.items()):
-                (work / "model" / rel).parent.mkdir(parents=True, exist_ok=True)
-                (work / "model" / rel).write_bytes(data)
-            if d.exists():
-                shutil.rmtree(d)
-            (work / "model").rename(d)
+                (model / rel).parent.mkdir(parents=True, exist_ok=True)
+                (model / rel).write_bytes(data)
+            if _install(model, d):
+                return True
+            if not self.force:
+                return False
+            try:
+                d.rename(work / "previous")
+            except FileNotFoundError:                     # moved aside by another process
+                pass
+            return _install(model, d)
         finally:
             shutil.rmtree(work, ignore_errors=True)
 
     def story_fields(self, story_dir: Path) -> dict:
         """`modelsDir`: the relative path from the story directory to `root` (posix)."""
         return {"modelsDir": Path(os.path.relpath(os.path.abspath(self.root), os.path.abspath(story_dir))).as_posix()}
+
+
+def _install(src: Path, d: Path) -> bool:
+    """Rename the directory `src` to `d`; False when `d` exists (a non-empty directory: POSIX refuses to replace it,
+    Windows any directory)."""
+    try:
+        src.rename(d)
+        return True
+    except OSError:
+        if not d.exists():
+            raise
+        return False
 
 
 class SiteModels:
