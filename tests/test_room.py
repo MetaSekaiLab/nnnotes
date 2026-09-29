@@ -332,6 +332,39 @@ def test_textures_with_the_same_png_bytes_share_one_image():
     assert [im["name"] for im in glb.images] == ["a", "c"] and len(glb.bufferViews) == 2
 
 
+def glb_chunks(path):
+    data = path.read_bytes()
+    magic, version, size = struct.unpack_from("<III", data, 0)
+    assert (magic, version, size) == (0x46546C67, 2, len(data))
+    chunks, at = [], 12
+    while at < len(data):
+        n, kind = struct.unpack_from("<II", data, at)
+        chunks.append((kind, data[at + 8:at + 8 + n]))
+        at += 8 + n
+    return chunks
+
+
+def test_a_room_without_geometry_is_a_valid_empty_gltf(tmp_path):
+    """No empty arrays (glTF requires the arrays it has to be non-empty), no buffer and no BIN chunk."""
+    room._Glb().write(tmp_path / "room.glb", {"backgroundKey": "k"})
+    chunks = glb_chunks(tmp_path / "room.glb")
+    assert [kind for kind, _ in chunks] == [0x4E4F534A]
+    doc = json.loads(chunks[0][1])
+    assert doc == {"asset": {"version": "2.0", "generator": "nnnotes/room", "extras": {"backgroundKey": "k"}},
+                   "scene": 0, "scenes": [{}]}
+
+
+def test_a_room_with_geometry_keeps_its_arrays_and_bin_chunk(tmp_path):
+    glb = room._Glb()
+    glb.texture(b"png-1", "a", room._sampler({}))
+    glb.write(tmp_path / "room.glb", {})
+    chunks = glb_chunks(tmp_path / "room.glb")
+    assert [kind for kind, _ in chunks] == [0x4E4F534A, 0x004E4942]
+    doc = json.loads(chunks[0][1])
+    assert doc["buffers"] == [{"byteLength": 5}] and len(chunks[1][1]) == 8   # the chunk is padded to 4 bytes
+    assert list(doc) == ["asset", "scene", "scenes", "bufferViews", "buffers", "textures", "images", "samplers"]
+
+
 def test_mesh_components_are_keyed_by_file_and_game_object():
     bundle = SimpleNamespace(files={})
     a, b = File("CAB-a", bundle), File("CAB-b", bundle)

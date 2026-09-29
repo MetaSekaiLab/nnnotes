@@ -327,18 +327,23 @@ def _head_node(node: TypeTreeNode) -> TypeTreeNode | None:
     return head
 
 
-def script_class(obj) -> str:
-    """Class name of a MonoBehaviour (needs the monoscript bundle loaded). Reads the header up to m_Script with the
-    object's own typetree (not its fields); the whole object when that is not possible."""
+def script_class(obj) -> str | None:
+    """Class name of a MonoBehaviour (needs the monoscript bundle loaded); None for a missing script (null m_Script).
+    Reads the header up to m_Script with the object's own typetree (not its fields); the whole object when that is
+    not possible."""
     try:
         head = _head_node(obj._get_typetree_node())
         if head is not None:
-            ms = deref(obj, obj.read_typetree(head, check_read=False)["m_Script"])
-            if ms is not None:
-                return ms.read().m_ClassName
+            pptr = obj.read_typetree(head, check_read=False)["m_Script"]
+            if not pptr["m_PathID"]:
+                return None
+            return deref(obj, pptr).read().m_ClassName
     except Exception:
         pass
-    return obj.read().m_Script.read().m_ClassName
+    script = obj.read().m_Script
+    if not script.m_PathID:
+        return None
+    return script.read().m_ClassName
 
 
 def strip_pptrs(tt: dict) -> dict:
