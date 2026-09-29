@@ -51,6 +51,13 @@ missed, and `workflow_dispatch`:
 
 Runs do not overlap (`concurrency: music-data`).
 
+**Publishing switch.** Nothing is uploaded unless the repository variable `MUSIC_DATA_PUBLISH` is `true` (unset:
+off). Off, every run, whatever its trigger (the schedule, `masterdata-updated`, `workflow_dispatch` with or without
+`dry_run`), is a dry run: it builds, runs every gate and the smoke test, and lists what it would upload; the publish
+step then gets no bucket key (anonymous, it can only read) and `music_data.py publish` itself refuses to upload.
+Turn it on (`gh variable set MUSIC_DATA_PUBLISH --body true`) once the published format is final; while it is off,
+nothing being published, `plan` finds no `build.json` and every run builds.
+
 ## Gates
 
 Every one must pass, else nothing is published. Warnings go to the job summary and `build.json` and do not stop it.
@@ -95,6 +102,7 @@ Repository variables:
 | Variable | Default | |
 |---|---|---|
 | `MUSIC_DATA_PLAYER_REF` | none: **required** | the ournotes-player commit whose chart data page reads this file (the page with the play scenarios); a run stops before building without it |
+| `MUSIC_DATA_PUBLISH` | none: off | `true`: upload; anything else: every run is a dry run |
 | `MUSIC_DATA_PLAYER_REPOSITORY` | `empty-sekai/ournotes-player` | |
 | `MUSIC_DATA_S3_PREFIX` | `music-data` | the key prefix in the bucket |
 | `MUSIC_DATA_MASTERDATA_REGION` | `hk-tw-mo` | the region of `index.json`; the build reads the TW catalog (`[catalog] region` `tw`) |
@@ -103,10 +111,11 @@ Repository variables:
 ## Before the first run
 
 - **nnnotes.** The workflow runs this fork's nnnotes. It needs upstream's `music-data` command with the play
-  scenarios (MetaSekaiLab/nnnotes `a03591e`) and `--decoded-master` (MetaSekaiLab/nnnotes#6): sync the fork with
-  upstream first. Until then `plan` stops naming what is missing.
+  scenarios (MetaSekaiLab/nnnotes `a03591e`) and `--decoded-master` (MetaSekaiLab/nnnotes#6, `12df2a6`): sync the
+  fork with upstream first. Until then `plan` stops naming what is missing.
 - **The page.** Set `MUSIC_DATA_PLAYER_REF` to the ournotes-player commit of the chart data page that reads the play
   scenario fields, once that page is merged.
+- **Publishing.** Set `MUSIC_DATA_PUBLISH` to `true` last, when dry runs pass and the published format is final.
 
 ## Notes
 

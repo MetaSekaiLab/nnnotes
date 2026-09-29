@@ -395,6 +395,7 @@ def published_out(tmp_path, monkeypatch, s3):
     monkeypatch.setenv("STORY_S3_ENDPOINT", "https://storage.example")
     monkeypatch.setenv("STORY_S3_BUCKET", "moenotes")
     monkeypatch.delenv("FORCE", raising=False)
+    monkeypatch.setenv("MUSIC_DATA_PUBLISH", "true")
     return out, report
 
 
@@ -428,6 +429,18 @@ def test_publish_stops_before_the_marker_when_the_file_does_not_read_back(tmp_pa
     with pytest.raises(SystemExit, match="music-data.json: the bucket does not serve what was uploaded"):
         music_data.cmd_publish(str(out))
     assert "music-data/build.json" not in s3.store
+
+
+@pytest.mark.parametrize("switch", [None, "", "false", "True", "1"])
+def test_publishing_is_off_unless_the_switch_is_true(tmp_path, monkeypatch, switch):
+    s3 = FakeS3()
+    out, _ = published_out(tmp_path, monkeypatch, s3)
+    if switch is None:
+        monkeypatch.delenv("MUSIC_DATA_PUBLISH")
+    else:
+        monkeypatch.setenv("MUSIC_DATA_PUBLISH", switch)
+    music_data.cmd_publish(str(out))                          # a dry run, whatever the command line says
+    assert s3.log == [] and s3.store == {}
 
 
 def test_publish_needs_passed_gates(tmp_path, monkeypatch):

@@ -18,7 +18,8 @@ decoded master data, checked by quality gates and published into the story site'
     publish OUT [--dry-run]
                           the jackets the bucket lacks or has at another size (every one with $FORCE), the file's
                           archive copy, then music-data.json, build.json last; each read back and its SHA-256 checked.
-                          Only a file whose check.json passed; never deletes
+                          Only a file whose check.json passed; never deletes. A dry run unless $MUSIC_DATA_PUBLISH is
+                          `true` (the publishing switch, off by default): it lists what it would upload
 
 Bucket: story_site.Bucket ($STORY_S3_ENDPOINT, $STORY_S3_BUCKET, credentials $STORY_S3_ACCESS_KEY /
 $STORY_S3_SECRET_KEY) with the key prefix $MUSIC_DATA_S3_PREFIX (default music-data). The published files are read
@@ -187,6 +188,7 @@ def cmd_plan() -> None:
             + "\n- this run: " + ("builds" + (" (force)" if force else "") + (f", changed: {', '.join(changed)}"
                                                                               if changed and have else "")
                                   if build else "nothing changed, nothing to build"))
+    summary(f"- publishing: {'on' if publishing() else 'off (MUSIC_DATA_PUBLISH is not `true`: a dry run)'}")
     output("build", "true" if build else "false")
 
 
@@ -791,7 +793,15 @@ def read_back(b, key: str, digest: str) -> None:
     fail(f"{key}: the bucket does not serve what was uploaded (SHA-256 {digest[:12]})")
 
 
+def publishing() -> bool:
+    """The publishing switch: uploads only with MUSIC_DATA_PUBLISH `true` (a repository variable, unset: off)."""
+    return os.environ.get("MUSIC_DATA_PUBLISH") == "true"
+
+
 def cmd_publish(out: str, dry_run: bool = False) -> None:
+    if not publishing() and not dry_run:
+        summary("- publishing is off (the repository variable MUSIC_DATA_PUBLISH is not `true`): a dry run")
+        dry_run = True
     o = Path(out)
     raw = (o / FILE).read_bytes()
     report = json.loads((o / "check.json").read_text(encoding="utf-8"))
@@ -802,16 +812,22 @@ def cmd_publish(out: str, dry_run: bool = False) -> None:
     if not b.writable and not dry_run:
         fail("publish needs STORY_S3_ACCESS_KEY and STORY_S3_SECRET_KEY")
     force = os.environ.get("FORCE") == "true"
-    have = b.keys(JACKETS)
+    try:
+        have = b.keys(JACKETS)
+        archived = b.keys(marker["archive"]).get(marker["archive"]) == len(raw)
+    except Exception as e:                           # a dry run without a key where the bucket lists to none
+        if not dry_run:
+            raise
+        print(f"cannot list the bucket ({type(e).__name__}): the dry run lists every object", flush=True)
+        have, archived = {}, False
     jackets = sorted((o / "jackets").glob("*.webp"))
     new = [j for j in jackets if force or have.get(JACKETS + j.name) != j.stat().st_size]
-    archived = b.keys(marker["archive"]).get(marker["archive"]) == len(raw)
     steps = [(JACKETS + j.name, j, JACKET_CACHE, False) for j in new]
     if not archived:
         steps.append((marker["archive"], o / FILE, ARCHIVE_CACHE, True))
     # the file before the marker that names it, the jackets and the archive copy before the file
     steps += [(FILE, o / FILE, FILE_CACHE, True), (MARKER, o / MARKER, FILE_CACHE, True)]
-    if dry_run:
+    if dry_run or not publishing():
         for key, _, _, _ in steps:
             print(f"would upload {b.prefix}{key}")
     else:

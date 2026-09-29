@@ -11,7 +11,8 @@ name: Music data
 #
 # Triggers: moenotes-masterdata-sync sends repository_dispatch `masterdata-updated` when a region starts serving a new
 # master snapshot; a daily schedule catches a missed dispatch; workflow_dispatch builds although nothing changed
-# (`force`) or does a dry run. docs: .github/MUSIC_DATA.md
+# (`force`) or does a dry run. Publishing switch: unless the repository variable MUSIC_DATA_PUBLISH is `true`, every
+# run, whatever its trigger, is a dry run (it builds and checks, and uploads nothing). docs: .github/MUSIC_DATA.md
 
 on:
   repository_dispatch:
@@ -42,6 +43,8 @@ env:
   STORY_S3_ENDPOINT: ${{ vars.STORY_S3_ENDPOINT || 'https://storage.bdon.moe' }}
   STORY_S3_BUCKET: ${{ vars.STORY_S3_BUCKET || 'moenotes' }}
   MUSIC_DATA_S3_PREFIX: ${{ vars.MUSIC_DATA_S3_PREFIX || 'music-data' }}
+  # The publishing switch: anything but 'true' makes every run a dry run.
+  MUSIC_DATA_PUBLISH: ${{ vars.MUSIC_DATA_PUBLISH || 'false' }}
   # moenotes-masterdata-sync: decoded master data by region (index.json lists every file with its SHA-256).
   MASTERDATA_BASE_URL: ${{ vars.MASTERDATA_BASE_URL || 'https://metadata.bdon.moe' }}
   MASTERDATA_REGION: ${{ vars.MUSIC_DATA_MASTERDATA_REGION || 'hk-tw-mo' }}
@@ -138,9 +141,10 @@ jobs:
         run: python .github/scripts/music_data.py check "$WORK/out" "$WORK/master" "$WORK/page/examples/songs"
 
       - name: Publish
-        # only after every gate passed (a failed step skips it); a dry run lists what it would upload
+        # Only after every gate passed (a failed step skips it). A dry run (the dry_run input, or the publishing switch
+        # MUSIC_DATA_PUBLISH off) lists what it would upload; it gets no bucket key: anonymous, it can only read.
         env:
-          STORY_S3_ACCESS_KEY: ${{ secrets.STORY_S3_ACCESS_KEY }}
-          STORY_S3_SECRET_KEY: ${{ secrets.STORY_S3_SECRET_KEY }}
+          STORY_S3_ACCESS_KEY: ${{ vars.MUSIC_DATA_PUBLISH == 'true' && secrets.STORY_S3_ACCESS_KEY || '' }}
+          STORY_S3_SECRET_KEY: ${{ vars.MUSIC_DATA_PUBLISH == 'true' && secrets.STORY_S3_SECRET_KEY || '' }}
           FORCE: ${{ github.event.inputs.force }}
-        run: python .github/scripts/music_data.py publish "$WORK/out" ${{ github.event.inputs.dry_run == 'true' && '--dry-run' || '' }}
+        run: python .github/scripts/music_data.py publish "$WORK/out" ${{ (github.event.inputs.dry_run == 'true' || vars.MUSIC_DATA_PUBLISH != 'true') && '--dry-run' || '' }}
