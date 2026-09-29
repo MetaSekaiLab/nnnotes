@@ -73,7 +73,8 @@ def test_init_with_values(tmp_path, capsys):
     data = tomllib.loads(f.read_text(encoding="utf-8"))
     assert data["bundle"]["key"] == KEY and data["catalog"]["region"] == "en"
     assert data["servers"] == {"en": {"name": "", "cdn": "https://cdn.test/", "api": "", "languages": ["en", "ja"],
-                                      "master": ""}}                  # the example region table renamed
+                                      "master": "", "provider": "", "client_version": "", "apk": "",
+                                      "catalog": ""}}                  # the example region table renamed
     assert data["paths"]["cache"] == str((tmp_path / "cache").absolute())
     assert "# CDN base URL of the region" in f.read_text(encoding="utf-8")         # the comments stay
     if os.name != "nt":

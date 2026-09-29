@@ -1,5 +1,9 @@
 # nnnotes？！
 
+Japanese-release support includes anonymous version discovery, authenticated CDN downloads, gzip catalogs,
+snapshot-isolated caches and split APKs. See the [JP guide](https://github.com/StarMoe-org/nnnotes/blob/main/docs/jp.md)
+for configuration and validation limits.
+
 [简体中文](https://github.com/MetaSekaiLab/nnnotes/blob/main/README.md) | [English](https://github.com/MetaSekaiLab/nnnotes/blob/main/README.en.md)
 
 nnnotes is an offline data toolkit for the game files of BanG Dream! Our Notes: it reads Addressables catalogs,

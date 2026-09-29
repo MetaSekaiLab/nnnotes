@@ -137,6 +137,32 @@ def master_index() -> tuple[str, dict]:
     return base + region["path"], region
 
 
+def configure_region() -> None:
+    """Keep build inputs from one release; JP client/API/CDN are read from the public snapshot."""
+    region = env("MASTERDATA_REGION")
+    names = {"hk-tw-mo": "tw", "en": "en", "kr": "kr", "jp": "jp"}
+    if region not in names or env("NNNOTES_CATALOG_REGION") != names[region]:
+        sys.exit("story_site: master region and catalog region differ")
+    if region != "jp":
+        return
+    _, snapshot = master_index()
+    entry = snapshot.get("entry") or {}
+    assets = entry.get("assets") or {}
+    upstream = entry.get("upstream") or {}
+    api = assets.get("api_root") or upstream.get("api_root")
+    bundle = assets.get("bundle_root")
+    from urllib.parse import urlsplit
+    cdn = upstream.get("cdn_root")
+    if bundle:
+        u = urlsplit(bundle)
+        cdn = f"{u.scheme}://{u.netloc}"
+    client = entry.get("client_version")
+    if not all(isinstance(v, str) and v for v in (api, cdn, client)):
+        sys.exit("story_site: JP snapshot lacks API/CDN/client metadata")
+    os.environ.update(NNNOTES_SERVERS_JP_API=api, NNNOTES_SERVERS_JP_CDN=cdn,
+                      NNNOTES_SERVERS_JP_CLIENT_VERSION=client, NNNOTES_SERVERS_JP_PROVIDER="jp")
+
+
 def fetch_table(url: str, name: str, digest: str, dest: Path) -> None:
     if not re.fullmatch(r"[A-Za-z0-9_-]+\.json", name):
         sys.exit(f"story_site: unexpected master file name {name!r}")
@@ -215,10 +241,13 @@ def cmd_fetch(site_dir: str) -> None:
 
 
 def cmd_build(site_dir: str, ids: list[str]) -> None:
+    configure_region()
     site = Path(site_dir).resolve()
     stories = parse_ids(" ".join(ids))
     tmp = site.parent / f"{site.name}.tmp"
     nnnotes = [sys.executable, "-m", "nnnotes", "web", str(site), "--tmp", str(tmp)]
+    if env("MASTERDATA_REGION") == "jp":
+        nnnotes += ["--story-languages", "ja"]
     status = 0
     if stories:
         cmd = nnnotes + [a for i in stories for a in ("--story", str(i))]

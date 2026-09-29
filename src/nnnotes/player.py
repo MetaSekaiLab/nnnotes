@@ -18,13 +18,13 @@ import io
 import json
 import re
 import struct
-import zipfile
 from importlib import resources
 from pathlib import Path
 
 import UnityPy
 from UnityPy.helpers.TypeTreeNode import TypeTreeNode
 
+from .apkset import ApkSet
 from .config import ConfigError
 from .unity import DEFAULT_RESOURCES, deref, external_path, is_pptr
 
@@ -149,8 +149,13 @@ def manifest_version_code(data: bytes) -> int | None:
 
 class PlayerData:
     def __init__(self, apk: Path):
-        with zipfile.ZipFile(apk) as z:
+        with ApkSet(apk) as z:
             self.env = UnityPy.load(io.BytesIO(z.read(DATA_IN_APK)))
+            # Split Unity builds keep resources.assets (materials, shaders and settings) in
+            # datapack.unity3d; level0 in data.unity3d refers to it by external file id.
+            datapack = "assets/bin/Data/datapack.unity3d"
+            if datapack in z.namelist():
+                self.env.load_file(io.BytesIO(z.read(datapack)), name="datapack.unity3d")
             self.defaults = UnityPy.load(io.BytesIO(z.read(DEFAULT_RESOURCES_IN_APK)))
             self.game_version = (manifest_version_name(z.read(MANIFEST_IN_APK))
                                  if MANIFEST_IN_APK in z.namelist() else None)

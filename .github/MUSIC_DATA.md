@@ -1,5 +1,9 @@
 # Music data workflow (StarMoe)
 
+JP: `MUSIC_DATA_MASTERDATA_REGION=jp` selects the JP package, catalog and client metadata, with
+`jp/music-data` as the default output prefix. The marker includes the asset hash and the provenance gate rejects
+a catalog from another snapshot. See [Japanese release](../docs/jp.md) for setup and validation limits.
+
 `.github/workflows/music-data.yml` keeps the music data file of the chart data page (ournotes-player
 `examples/songs`) up to date: `nnnotes music-data` of the current master data ([docs/music-data.md](../docs/music-data.md):
 every song and chart with the deck model's statistics and the play scenarios), checked by quality gates and
@@ -14,8 +18,8 @@ published into the story site's bucket under `music-data/` (`https://storage.bdo
 
 A run never deletes anything from the bucket. Its helper steps are `.github/scripts/music_data.py` (with the bucket,
 HTTP and master data helpers of `story_site.py`), `music_data_smoke.mjs`, `songs_page.sh` and `apk.sh`; the gate
-self-test is `test_music_data.py`. Nothing outside `.github/` differs from upstream, so the fork syncs with it as
-before. The Cloudflare Pages preview of the page is not part of the workflow.
+self-tests are `test_music_data.py` and `test_jp_workflow.py`. The fork also contains JP support in `src/nnnotes`.
+The Cloudflare Pages preview of the page is not part of the workflow.
 
 ## A run
 

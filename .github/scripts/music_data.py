@@ -49,7 +49,7 @@ FORMAT = "nnnotes.music-data/1"
 BUILD_FORMAT = "moenotes.music-data-build/1"
 # This script's own version of a build: bump it when what it builds or publishes changes, so that the next run builds
 # although the master data, the deck model and nnnotes are the same.
-RECIPE = 1
+RECIPE = 2
 FILE, MARKER, JACKETS, ARCHIVE = "music-data.json", "build.json", "jackets/", "archive/"
 MANIFEST = "MasterManifest.json"
 SOURCE_PATHS = ("src", "rust", "pyproject.toml")    # nnnotes' code: the commit that last changed one of them
@@ -58,7 +58,7 @@ SMOKE = Path(__file__).resolve().parent / "music_data_smoke.mjs"
 ARCHIVE_CACHE = story_site.ASSET_CACHE              # archive/<version>/<sha256>.json: content-addressed
 FILE_CACHE = "no-cache"                             # music-data.json and build.json change in place
 JACKET_CACHE = "public, max-age=86400"
-SNAPSHOT_KEYS = ("version", "resource_version", "client_version", "verified_at", "manifest_sha256", "table_count")
+SNAPSHOT_KEYS = ("version", "resource_version", "resource_hash", "client_version", "verified_at", "manifest_sha256", "table_count")
 
 # the gates' bounds (MUSIC_DATA.md)
 SIZE_RATIO = (0.8, 2.0)                             # against the published file
@@ -159,6 +159,7 @@ def inputs(entry: dict, root: Path = Path(".")) -> dict:
     """What a build is made of: the master data snapshot, the deck model, nnnotes and this script."""
     return {"masterRegion": env("MASTERDATA_REGION"), "masterVersion": entry.get("version"),
             "resourceVersion": entry.get("resource_version"), "clientVersion": entry.get("client_version"),
+            "resourceHash": entry.get("resource_hash"),
             "deckCommit": deck_commit(root), "nnnotesCommit": nnnotes_commit(root), "recipe": RECIPE}
 
 
@@ -220,6 +221,7 @@ def cmd_master(out: str) -> None:
 
 # ---------------------------------------------------------------- build
 def cmd_build(out: str) -> None:
+    story_site.configure_region()
     o = Path(out).resolve()
     o.mkdir(parents=True, exist_ok=True)
     nnnotes = [sys.executable, "-m", "nnnotes"]
@@ -324,6 +326,10 @@ def gate_provenance(doc, ctx: Context, g: Gate):
         v = ctx.snapshot["entry"].get("version")
         if m.get("version") != v:
             g.fail(f"master.version {m.get('version')!r}, the snapshot's {v!r}")
+        if ctx.snapshot.get("region") == "jp":
+            for expected, actual in (("resource_version", "resourceVersion"), ("resource_hash", "resourceHash")):
+                if (p.get("catalog") or {}).get(actual) != ctx.snapshot["entry"].get(expected):
+                    g.fail(f"JP catalog {actual} differs from the master snapshot")
     if ctx.master is not None:
         manifest = json.loads((ctx.master / MANIFEST).read_bytes())
         if m.get("version") != manifest.get("version"):
