@@ -26,6 +26,14 @@ language = ""
 
 # One table per region; add more tables ([servers.<name>]) for other regions.
 [servers.tw]
+# protocol: international or jp (empty: jp for the region named jp, international otherwise)
+provider = ""
+# optional per-region client version; empty: [client] version, else this region's APK versionName
+client_version = ""
+# optional per-region APK, base.apk with adjacent splits, APKS/XAPK, or directory containing base.apk
+apk = ""
+# optional per-region catalog file; JP files use a .source.json sidecar written by catalogs fetch
+catalog = ""
 # label of the region in the local catalog browser (`nnnotes browse`)
 name = ""
 # CDN base URL of the region: catalogs, bundles, raw audio data and master data are fetched below it
@@ -46,7 +54,7 @@ api = ""
 version = ""
 
 [paths]
-# catalog .bin file to read instead of downloading catalog_main_<language>.bin into the cache (flag --catalog)
+# catalog .bin file to read instead of downloading; JP source metadata is stored in <file>.source.json
 catalog = ""
 # cache directory: downloaded catalogs, decrypted bundles, raw CDN files (flag --cache)
 cache = ""

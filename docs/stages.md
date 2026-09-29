@@ -13,7 +13,8 @@ The asset export is built from three layers:
 ## Stages
 
 Every stage is at version 1, except `unity.census` (version 2: it lists the scripts animation clip bindings name)
-and `cri.movie` (version 2: every stream kind, codec and channel of a USM).
+and `cri.movie` (version 2: every stream kind, codec and channel of a USM), and `catalog.index` (version 2:
+gzip input and Japanese remote asset placeholders).
 
 | Stage | Subject | Inputs | Outputs |
 |---|---|---|---|

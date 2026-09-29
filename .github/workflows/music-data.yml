@@ -35,14 +35,14 @@ permissions:
 
 # One run at a time: a run replaces music-data.json and build.json.
 concurrency:
-  group: music-data
+  group: music-data-${{ vars.MUSIC_DATA_MASTERDATA_REGION || 'hk-tw-mo' }}
   cancel-in-progress: false
 
 env:
   # The story site's bucket (its repository variables) and the key prefix of the music data.
   STORY_S3_ENDPOINT: ${{ vars.STORY_S3_ENDPOINT || 'https://storage.bdon.moe' }}
   STORY_S3_BUCKET: ${{ vars.STORY_S3_BUCKET || 'moenotes' }}
-  MUSIC_DATA_S3_PREFIX: ${{ vars.MUSIC_DATA_S3_PREFIX || 'music-data' }}
+  MUSIC_DATA_S3_PREFIX: ${{ vars.MUSIC_DATA_S3_PREFIX || (vars.MUSIC_DATA_MASTERDATA_REGION == 'jp' && 'jp/music-data' || 'music-data') }}
   # The publishing switch: anything but 'true' makes every run a dry run.
   MUSIC_DATA_PUBLISH: ${{ vars.MUSIC_DATA_PUBLISH || 'false' }}
   # moenotes-masterdata-sync: decoded master data by region (index.json lists every file with its SHA-256).
@@ -53,12 +53,14 @@ env:
   PLAYER_REPOSITORY: ${{ vars.MUSIC_DATA_PLAYER_REPOSITORY || 'empty-sekai/ournotes-player' }}
   PLAYER_REF: ${{ vars.MUSIC_DATA_PLAYER_REF || '' }}
   PLAYFETCH_VERSION: ${{ vars.PLAYFETCH_VERSION || 'v0.92' }}
-  APK_PACKAGE: ${{ vars.STORY_APK_PACKAGE || 'com.bilibili.sirius' }}
+  APK_PACKAGE: ${{ vars.MUSIC_DATA_MASTERDATA_REGION == 'jp' && 'com.bushiroad.sirius' || vars.STORY_APK_PACKAGE || 'com.bilibili.sirius' }}
   PYTHON_VERSION: "3.13"
   WORK: ${{ github.workspace }}/../work
   # nnnotes settings (docs/configuration.md); the bundle key and the CDN come from secrets in the build step.
-  NNNOTES_CATALOG_REGION: tw
-  NNNOTES_CATALOG_LANGUAGE: zh-Hant
+  NNNOTES_CATALOG_REGION: ${{ vars.MUSIC_DATA_MASTERDATA_REGION == 'jp' && 'jp' || 'tw' }}
+  NNNOTES_CATALOG_LANGUAGE: ${{ vars.MUSIC_DATA_MASTERDATA_REGION == 'jp' && 'ja' || 'zh-Hant' }}
+  NNNOTES_SERVERS_JP_NAME: JP
+  NNNOTES_SERVERS_JP_LANGUAGES: ja
   NNNOTES_SERVERS_TW_NAME: TW/HK/MO
   NNNOTES_SERVERS_TW_LANGUAGES: zh-Hans,zh-Hant,en,ko,ja
 
@@ -115,7 +117,7 @@ jobs:
       - name: Gate self-test
         env:
           MUSIC_DATA_PAGE: ${{ env.WORK }}/page/examples/songs
-        run: python -m pytest -q -p no:cacheprovider .github/scripts/test_music_data.py
+        run: python -m pytest -q -p no:cacheprovider .github/scripts/test_music_data.py .github/scripts/test_jp_workflow.py
 
       - name: APK
         env:

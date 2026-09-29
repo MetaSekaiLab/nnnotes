@@ -18,6 +18,7 @@ import gzip
 import hashlib
 import json
 import os
+import re
 import time
 import urllib.error
 import urllib.request
@@ -218,25 +219,39 @@ def _get(url: str, retries: int = 3, timeout: int = 60) -> bytes:
     raise AssertionError("unreachable")
 
 
-def download(cdn: str, version: str, out_dir: Path, workers: int = 16) -> dict:
+def download(cdn: str, version: str, out_dir: Path, workers: int = 16, *, get=None, strict=False) -> dict:
     """Master data `version` from the CDN into <out_dir>/ (the manifest and every listed file, SHA-256 checked;
     files already present with the right hash are kept)."""
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     base = f"{cdn.rstrip('/')}/master/{version}"
-    manifest_raw = _get(f"{base}/MasterManifest.json")
+    get = get or _get
+    manifest_raw = get(f"{base}/MasterManifest.json")
     manifest = json.loads(manifest_raw.decode("utf-8"))
-    (out_dir / "MasterManifest.json").write_bytes(manifest_raw)
+    if strict and manifest.get("version") != version:
+        raise DownloadError("master manifest version differs from the requested version")
     files = manifest.get("files", [])
+    if strict:
+        seen = set()
+        for entry in files:
+            name = entry.get("name")
+            if (not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9_-]+\.bin", name)
+                    or name in seen or not re.fullmatch(r"[0-9a-fA-F]{64}", str(entry.get("hash", "")))
+                    or type(entry.get("size")) is not int or not 64 < entry["size"] <= 128 * 1024 * 1024):
+                raise DownloadError("invalid JP master manifest entry")
+            seen.add(name)
 
     def one(f: dict):
         name, sha = f["name"], (f.get("hash") or "").lower()
         if "/" in name or "\\" in name or name in ("", ".", ".."):
             return {"file": name, "error": "unexpected file name"}
         dst = out_dir / name
-        if sha and dst.is_file() and hashlib.sha256(dst.read_bytes()).hexdigest() == sha:
+        if (sha and dst.is_file() and (not strict or dst.stat().st_size == f["size"])
+                and hashlib.sha256(dst.read_bytes()).hexdigest() == sha):
             return "kept"
-        data = _get(f"{base}/{name}")
+        data = get(f"{base}/{name}")
+        if strict and (len(data) != f.get("size") or not sha):
+            return {"file": name, "error": "size or hash missing/different from the manifest"}
         if sha and hashlib.sha256(data).hexdigest() != sha:
             return {"file": name, "error": "sha256 differs from the manifest"}
         tmp = dst.with_name(f"{name}.{os.getpid()}.part")
@@ -246,6 +261,9 @@ def download(cdn: str, version: str, out_dir: Path, workers: int = 16) -> dict:
 
     with ThreadPoolExecutor(max(1, workers)) as ex:
         results = list(ex.map(one, files))
+    if not strict or not any(isinstance(r, dict) for r in results):
+        from .cache import write_atomic
+        write_atomic(out_dir / "MasterManifest.json", manifest_raw)
     return {"version": manifest.get("version", version), "files": len(files),
             "downloaded": results.count("downloaded"), "kept": results.count("kept"),
             "failed": [r for r in results if isinstance(r, dict)], "out": str(out_dir)}
