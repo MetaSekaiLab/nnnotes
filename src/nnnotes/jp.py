@@ -213,9 +213,20 @@ class Session:
                 response = connection.getresponse()
                 status = response.status
                 if status == 200:
+                    length = response.getheader("Content-Length")
+                    if length is not None and not response.chunked:
+                        if not length.isdecimal():
+                            raise gameapi.GameApiError("JP download has invalid Content-Length")
+                        length = int(length)
+                        if length > limit:
+                            raise gameapi.GameApiError("JP download exceeds the size limit")
+                    else:
+                        length = None
                     data = response.read(limit + 1)
                     if len(data) > limit:
                         raise gameapi.GameApiError("JP download exceeds the size limit")
+                    if length is not None and len(data) != length:
+                        raise gameapi.GameApiError("JP download is truncated")
                     return data
             except (OSError, http.client.HTTPException):
                 raise gameapi.GameApiError("JP CDN download failed: connection error") from None

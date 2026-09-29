@@ -60,7 +60,8 @@ _keys_lock = threading.Lock()
 
 def hca_key(apk) -> int:
     """crikey.find_key of an APK, read once per process (keyed by the file's path, size and modification time)."""
-    k = cache.file_id(apk)
+    path = Path(apk)
+    k = cache.file_id(path / "base.apk" if path.is_dir() else path)
     with _keys_lock:
         if k in _keys:
             return _keys[k]

@@ -7,6 +7,7 @@ what the user points it at into a local cache the user controls.
 from __future__ import annotations
 
 import http.client
+import hashlib
 import sys
 import threading
 import urllib.parse
@@ -90,6 +91,12 @@ class Catalog:
         if self.apk is not None:
             with ApkSet(self.apk) as z:
                 self._sources["apk"] = z.read(APK_CATALOG)
+
+    def local_cache_dir(self) -> Path:
+        """JP embedded files also depend on the APK catalog, independently of the CDN snapshot."""
+        if self.source is not None and "apk" in self._sources:
+            return self.cache_dir / "apk" / hashlib.sha256(self._sources["apk"]).hexdigest()
+        return self.cache_dir
 
     def _parse(self) -> tuple:
         """(entries, by offset, by primary key), parsed the first time a lookup needs them (a command that only
@@ -247,7 +254,7 @@ class Catalog:
     # --- fetch -------------------------------------------------------------
     def cached(self, b: Bundle) -> Path | None:
         """The file fetch(b) returns when the bundle is in the cache already, else None."""
-        dst = self.cache_dir / "bundles" / b.name
+        dst = (self.cache_dir if b.remote else self.local_cache_dir()) / "bundles" / b.name
         return dst if dst.is_file() and dst.stat().st_size > 0 else None
 
     def cached_raw(self, e: dict) -> Path | None:
@@ -258,7 +265,7 @@ class Catalog:
 
     def fetch(self, b: Bundle) -> Path:
         """Local path to the decrypted bundle (CDN download or APK read)."""
-        dst = self.cache_dir / "bundles" / b.name
+        dst = (self.cache_dir if b.remote else self.local_cache_dir()) / "bundles" / b.name
         dst.parent.mkdir(parents=True, exist_ok=True)
         if dst.exists() and dst.stat().st_size > 0:
             return dst
@@ -319,7 +326,7 @@ class Catalog:
             if len(names) != 1:
                 raise KeyError(f"{name_contains!r}: {len(names)} APK bundles match")
             name = names[0].rsplit("/", 1)[1]
-            dst = self.cache_dir / "bundles" / name
+            dst = self.local_cache_dir() / "bundles" / name
             if not (dst.exists() and dst.stat().st_size > 0):
                 dst.parent.mkdir(parents=True, exist_ok=True)
                 data = z.read(names[0])

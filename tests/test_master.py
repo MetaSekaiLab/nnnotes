@@ -95,6 +95,17 @@ def test_download_rejects_path_names(tmp_path):
     assert not (tmp_path / "evil.bin").exists()
 
 
+def test_international_manifest_survives_worker_exception(tmp_path):
+    manifest = json.dumps({"version": "v", "files": [{"name": "MasterA.bin", "hash": ""}]}).encode()
+    def get(url):
+        if url.endswith("MasterManifest.json"):
+            return manifest
+        raise master.DownloadError("connection failed")
+    with pytest.raises(master.DownloadError):
+        master.download("https://cdn.invalid", "v", tmp_path, get=get)
+    assert (tmp_path / "MasterManifest.json").read_bytes() == manifest
+
+
 # ---------------------------------------------------------------- the stored JSON
 def test_table_json_is_the_json_rule():
     finite = {"_allData": [{"_id": 1, "_name": "テスト\n\"q\"", "_v": 0.1, "_w": -2.5e-12, "_big": 1e300, "_n": None,
