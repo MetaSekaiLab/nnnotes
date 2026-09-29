@@ -15,7 +15,7 @@ crate-type = ["cdylib"]
 [dependencies]
 pyo3 = { version = "0.29", features = ["abi3-py311"] }
 # pinned by commit; .github/workflows/deck.yml opens a pull request when ournotes-deck moves
-ournotes-deck = { git = "https://github.com/empty-sekai/ournotes-deck", rev = "94281d18ce50c991d7c8a082d2a32a4522050454" }
+ournotes-deck = { git = "https://github.com/empty-sekai/ournotes-deck", rev = "155bd2ad89d077d3bdcfbca9c45c0100475ab538" }
 serde_json = { version = "1", features = ["raw_value", "arbitrary_precision"] }
 
 [profile.release]
