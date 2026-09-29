@@ -384,7 +384,7 @@ class CatalogDB:
                          ("resourceVersion", resource_version), ("apkVersionName", apk_version_name)):
             if given is not None and v[k] is None:
                 v[k] = given
-        label = label or (f"{source['version']}/{source['hash']}" if source else
+        label = label or (f"{source['version']}/{source['hash']}/{vid[:12]}" if source else
                           default_label(remote_rec["sha256"], resource_version))
         for other in versions:
             if other is not v and label in other["labels"] and (other["region"], other["language"]) == (

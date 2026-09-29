@@ -82,7 +82,8 @@ CRI locations use `{Fwk.Resource.RemoteAssetDir}`. These are indexed, resolved a
 snapshot, including in `browse`, `catalogs`, `export`, `plan` and `run-stage`.
 
 The cache lives under `<cache>/jp/<CDN-origin-digest>/<asset-version>/<asset-hash>/`. It cannot reuse the
-international catalog cache. Each cached `catalog_main.bin` has a `catalog_main.bin.source.json` with its SHA-256
+international catalog cache. Embedded files are further isolated under `apk/<APK-catalog-SHA256>/`, so an APK
+update cannot reuse old local bundles when the CDN snapshot stays unchanged. Each cached `catalog_main.bin` has a `catalog_main.bin.source.json` with its SHA-256
 and public source metadata. For an offline `--catalog` or `catalogs import`, copy the pair together. Credentials
 are reacquired only when a missing file must be downloaded.
 
@@ -106,7 +107,8 @@ catalog version/hash matches the master snapshot. A mixed master/catalog region 
 ## Validation and current limits
 
 The synthetic tests use local gRPC and HTTP servers, including gzip catalogs, split packages, authentication
-rotation, redirects, 429, source isolation, hash-only updates, offline replay and invalid paths.
+rotation, redirects, 429, truncated responses, source isolation, APK-only and hash-only updates, offline replay
+and invalid paths.
 
 Live validation on 2026-09-30 used JP client 1.0.4 and local JP Android 1.0.3 data:
 

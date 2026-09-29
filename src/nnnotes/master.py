@@ -228,18 +228,26 @@ def download(cdn: str, version: str, out_dir: Path, workers: int = 16, *, get=No
     get = get or _get
     manifest_raw = get(f"{base}/MasterManifest.json")
     manifest = json.loads(manifest_raw.decode("utf-8"))
-    if strict and manifest.get("version") != version:
+    if strict and (not isinstance(manifest, dict) or manifest.get("version") != version):
         raise DownloadError("master manifest version differs from the requested version")
     files = manifest.get("files", [])
     if strict:
+        if not isinstance(files, list) or not files:
+            raise DownloadError("JP master manifest has no file list")
         seen = set()
         for entry in files:
+            if not isinstance(entry, dict):
+                raise DownloadError("invalid JP master manifest entry")
             name = entry.get("name")
             if (not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9_-]+\.bin", name)
                     or name in seen or not re.fullmatch(r"[0-9a-fA-F]{64}", str(entry.get("hash", "")))
                     or type(entry.get("size")) is not int or not 64 < entry["size"] <= 128 * 1024 * 1024):
                 raise DownloadError("invalid JP master manifest entry")
             seen.add(name)
+    else:
+        # Preserve the original partial-download receipt even if a worker raises.
+        from .cache import write_atomic
+        write_atomic(out_dir / "MasterManifest.json", manifest_raw)
 
     def one(f: dict):
         name, sha = f["name"], (f.get("hash") or "").lower()

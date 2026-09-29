@@ -34,7 +34,7 @@ def cat_bytes():
 @pytest.fixture
 def upstream(server):
     state = SimpleNamespace(hash=HASH, credential="synthetic-secret", asset=True, seen=[], status=200,
-                            body=gzip.compress(cat_bytes()), cdn_override=None)
+                            body=gzip.compress(cat_bytes()), cdn_override=None, content_length=None)
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
@@ -42,6 +42,8 @@ def upstream(server):
             expected = "Basic " + base64.b64encode(("sirius:" + state.credential).encode()).decode()
             status = state.status if self.headers.get("Authorization") == expected else 401
             self.send_response(status)
+            if state.content_length is not None:
+                self.send_header("Content-Length", str(state.content_length))
             if status == 302:
                 self.send_header("Location", "http://127.0.0.1:1/leak")
             self.end_headers()
@@ -109,6 +111,24 @@ def test_authenticated_download_rotation_and_redaction(upstream):
     assert len(upstream.seen) == 2 and len(upstream.grpc.seen) == 2
     assert upstream.seen[-1][1]["User-Agent"] == "OurNotes/1.0.4"
     assert "Authorization" not in json.dumps(obs.source.to_dict())
+
+
+def test_truncated_download_is_not_cached(upstream, tmp_path):
+    session = jp.Session(upstream.cfg, "jp")
+    source = session.observe().source
+    upstream.content_length = len(upstream.body) + 5
+    cat = Catalog(cat_bytes(), tmp_path, source=source, session=session)
+    with pytest.raises(gameapi.GameApiError, match="truncated"):
+        cat.fetch_raw({"internal_id": jp.PLACEHOLDER + "audio/test.acb"})
+    assert cat.cached_raw({"internal_id": jp.PLACEHOLDER + "audio/test.acb"}) is None
+
+
+def test_declared_download_limit_is_checked(upstream):
+    session = jp.Session(upstream.cfg, "jp")
+    source = session.observe().source
+    upstream.content_length = 10000
+    with pytest.raises(gameapi.GameApiError, match="size limit"):
+        session.get(source.catalog_url, source=source, limit=1000)
 
 
 @pytest.mark.parametrize("status", [302, 429, 500, 403])
@@ -201,6 +221,33 @@ def test_catalogdb_source_identity_and_fetcher(upstream, tmp_path):
     assert cat.source == source and cat.cache_dir == source.cache_dir(tmp_path / "cache")
 
 
+def test_apk_update_with_same_asset_snapshot_does_not_reuse_embedded_cache(tmp_path):
+    from nnnotes.catalog import APK_CATALOG, APK_AA_DIR
+    source = jp.Source("jp", "1.0", HASH, "https://cdn.invalid")
+    apk = tmp_path / "base.apk"
+    cache = tmp_path / "cache"
+    db = catalogdb.CatalogDB(tmp_path / "store")
+    cfg = Config({"catalog": {"region": "jp"}, "paths": {"apk": str(apk)}}, environ={})
+    from nnnotes.cli_assets import Workspace
+    for revision in (1, 2):
+        local = synth.CatalogWriter().build([("Local", "Assets/local", [1]),
+                                             ("local.bundle", synth.local("local.bundle"), [])],
+                                            build_hash=str(revision) * 32)
+        content = b"UnityFS\0" + bytes([revision])
+        apk.write_bytes(zip_bytes({APK_CATALOG: local, APK_AA_DIR + "Android/local.bundle": content}))
+        cat = Catalog(cat_bytes(), source.cache_dir(cache), source=source, apk=apk)
+        v = db.add(cat_bytes(), local, source=source.to_dict(), region="jp")
+        workspace = Workspace.__new__(Workspace)
+        workspace.version = v
+        rel = workspace._cache_rel("bundle", {"name": "local.bundle", "remote": False}, {})
+        assert cat.fetch(cat.resolve("Local")[0]).read_bytes() == content
+        assert (cache / rel).read_bytes() == content
+        fetcher = CatalogFetcher(tmp_path / "store", cache, cfg)
+        replay, _ = fetcher.catalog(v["id"])
+        assert replay.fetch(replay.resolve("Local")[0]).read_bytes() == content
+    assert len(db.versions()) == 2
+
+
 def zip_bytes(files):
     output = io.BytesIO()
     with zipfile.ZipFile(output, "w") as z:
@@ -266,6 +313,15 @@ def test_jp_master_manifest_checks_before_writing(tmp_path):
     assert len(seen) == 1 and not (tmp_path / "MasterManifest.json").exists()
 
 
+@pytest.mark.parametrize("files", [None, [], {}, [None]])
+def test_jp_master_rejects_missing_or_malformed_file_lists(tmp_path, files):
+    from nnnotes import master
+    with pytest.raises(master.DownloadError, match="manifest"):
+        master.download("https://cdn.invalid", MASTER, tmp_path, strict=True,
+                        get=lambda _: json.dumps({"version": MASTER, "files": files}).encode())
+    assert not (tmp_path / "MasterManifest.json").exists()
+
+
 def test_export_cache_locator_uses_source_namespace(tmp_path):
     from nnnotes.cli_assets import Workspace
     source = jp.Source("jp", "1.0.0.300", HASH, "https://cdn.invalid")
@@ -285,3 +341,13 @@ def test_music_data_preserves_asset_hash(tmp_path):
                      **{**PROV, "catalog": {**PROV["catalog"], "resourceHash": HASH}})
     doc = json.loads(output.read_bytes())
     assert doc["provenance"]["catalog"]["resourceHash"] == HASH
+
+
+def test_directory_hca_key_tracks_replaced_base_apk(tmp_path, monkeypatch):
+    from nnnotes import cri
+    apk = tmp_path / "base.apk"
+    apk.write_bytes(b"first")
+    monkeypatch.setattr(cri.crikey, "find_key", lambda directory: len((directory / "base.apk").read_bytes()))
+    assert cri.hca_key(tmp_path) == 5
+    apk.write_bytes(b"replacement")
+    assert cri.hca_key(tmp_path) == 11

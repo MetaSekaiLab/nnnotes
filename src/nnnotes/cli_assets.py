@@ -321,7 +321,7 @@ class CatalogFetcher:
         if loc["kind"] == "bundle":
             return cat.fetch(Bundle(0, iid, file_name(iid), remote_path(iid) is not None))
         if remote_path(iid) is None:
-            return self._apk_file(iid, apk=cat.apk, cache=cat.cache_dir)
+            return self._apk_file(iid, apk=cat.apk, cache=cat.local_cache_dir())
         return cat.fetch_raw({"internal_id": iid})
 
     def _apk_file(self, internal_id: str, *, apk=None, cache=None) -> Path:
@@ -685,6 +685,8 @@ class Workspace:
         if self.version.get("source"):
             from .jp import Source
             prefix = Source.from_dict(self.version["source"]).cache_dir(Path(".")).as_posix() + "/"
+            if not entry.get("remote", True) and self.version.get("apk"):
+                prefix += "apk/" + self.version["apk"]["sha256"] + "/"
         if kind == "bundle":
             return prefix + f"bundles/{entry['name']}"
         rel = remote_path(loc["internalId"])
