@@ -1,0 +1,174 @@
+name: Story site (one region)
+
+# One region's story site: plan the stories its site lacks, build them, publish. Called by story-site.yml once per
+# region (a matrix); every region's site is separate (its own bucket prefix, master data, APK and catalog).
+
+on:
+  workflow_call:
+    inputs:
+      region:
+        description: "moenotes-masterdata-sync region: hk-tw-mo or jp"
+        type: string
+        required: true
+      stories:
+        type: string
+        default: ""
+      force:
+        type: boolean
+        default: false
+      dry_run:
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+env:
+  # The bucket of the site (repository variables; the defaults are the StarMoe site). JP is published under jp/:
+  # its Live2D model ids overlap the international ones.
+  STORY_S3_ENDPOINT: ${{ vars.STORY_S3_ENDPOINT || 'https://storage.bdon.moe' }}
+  STORY_S3_BUCKET: ${{ vars.STORY_S3_BUCKET || 'moenotes' }}
+  STORY_S3_PREFIX: ${{ inputs.region == 'jp' && (vars.STORY_S3_PREFIX_JP || 'jp') || (vars.STORY_S3_PREFIX || '') }}
+  # moenotes-masterdata-sync: decoded master data by region (index.json lists every table with its SHA-256).
+  MASTERDATA_BASE_URL: ${{ vars.MASTERDATA_BASE_URL || 'https://metadata.bdon.moe' }}
+  MASTERDATA_REGION: ${{ inputs.region }}
+  # At most this many stories per run (a run must end within the job limit); the next run builds the rest.
+  STORY_LIMIT: ${{ vars.STORY_LIMIT || '40' }}
+  # The ournotes-player the site is written for (its page files are part of the site).
+  PLAYER_REPOSITORY: ${{ vars.STORY_PLAYER_REPOSITORY || 'empty-sekai/ournotes-player' }}
+  PLAYER_REF: ${{ vars.STORY_PLAYER_REF || '3774d8ac3987' }}
+  PLAYFETCH_VERSION: ${{ vars.PLAYFETCH_VERSION || 'v0.92' }}
+  APK_PACKAGE: ${{ inputs.region == 'jp' && 'com.bushiroad.sirius' || vars.STORY_APK_PACKAGE || 'com.bilibili.sirius' }}
+  PYTHON_VERSION: "3.13"
+  WORK: ${{ github.workspace }}/../work
+  # nnnotes settings (docs/configuration.md); the keys and the CDN come from secrets in the build step, JP's API/CDN/
+  # client version from its public master snapshot (story_site.py configure_region).
+  NNNOTES_CATALOG_REGION: ${{ inputs.region == 'jp' && 'jp' || 'tw' }}
+  NNNOTES_CATALOG_LANGUAGE: ${{ inputs.region == 'jp' && 'ja' || 'zh-Hant' }}
+  NNNOTES_SERVERS_JP_NAME: JP
+  NNNOTES_SERVERS_JP_LANGUAGES: ja
+  NNNOTES_SERVERS_TW_NAME: TW/HK/MO
+  NNNOTES_SERVERS_TW_LANGUAGES: zh-Hans,zh-Hant,en,ko,ja
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      stories: ${{ steps.plan.outputs.stories }}
+      count: ${{ steps.plan.outputs.count }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - run: uv pip install --system --quiet boto3
+      - name: Stories to build
+        id: plan
+        env:
+          STORY_S3_ACCESS_KEY: ${{ secrets.STORY_S3_ACCESS_KEY }}
+          STORY_S3_SECRET_KEY: ${{ secrets.STORY_S3_SECRET_KEY }}
+          REQUESTED: ${{ inputs.stories }}
+        run: python .github/scripts/story_site.py plan
+
+  build:
+    needs: plan
+    if: needs.plan.outputs.count != '0'
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+
+      - name: Free disk space
+        # The runner's preinstalled SDKs take most of its disk; a story build keeps its bundles and work files.
+        run: sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL && df -h "$GITHUB_WORKSPACE"
+
+      - uses: Swatinem/rust-cache@v2          # the install builds the extension module nnnotes._deck (rust/)
+        with:
+          workspaces: rust
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - name: Install nnnotes
+        # UnityPy 1.25.x requires etcpak, which has no manylinux x86_64 wheel on PyPI (only PyPy / cp37), so the
+        # runner's cp313 environment cannot resolve it. pyproject.toml already pins it to the 1.24 line.
+        run: uv pip install --system -e ".[fonts]" boto3
+
+      - name: Tools
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg > /dev/null
+          .github/scripts/tools.sh "$WORK/tools"
+
+      - name: Fonts
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.WORK }}/fonts
+          key: story-fonts-${{ hashFiles('.github/scripts/fonts.sh') }}
+      - run: .github/scripts/fonts.sh "$WORK/fonts"
+
+      - name: ournotes-player
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.WORK }}/player
+          key: story-player-${{ env.PLAYER_REPOSITORY }}-${{ env.PLAYER_REF }}
+      - run: .github/scripts/player.sh "$WORK/player"
+
+      - name: APK
+        env:
+          PLAYFETCH_CREDENTIALS_JSON: ${{ secrets.PLAYFETCH_CREDENTIALS }}
+        run: .github/scripts/apk.sh "$WORK/apk"
+
+      - name: Master data
+        run: python .github/scripts/story_site.py master "$WORK/master"
+
+      - name: The published site
+        env:
+          STORY_S3_ACCESS_KEY: ${{ secrets.STORY_S3_ACCESS_KEY }}
+          STORY_S3_SECRET_KEY: ${{ secrets.STORY_S3_SECRET_KEY }}
+        run: python .github/scripts/story_site.py fetch "$WORK/site"
+
+      - name: Build
+        id: build
+        env:
+          NNNOTES_BUNDLE_KEY: ${{ secrets.NNNOTES_BUNDLE_KEY }}
+          NNNOTES_BUNDLE_NONCE_SEED: ${{ secrets.NNNOTES_BUNDLE_NONCE_SEED }}
+          NNNOTES_SERVERS_TW_CDN: ${{ secrets.NNNOTES_SERVERS_TW_CDN }}
+          NNNOTES_PATHS_CACHE: ${{ env.WORK }}/cache
+          NNNOTES_PATHS_MASTER: ${{ env.WORK }}/master
+          NNNOTES_PATHS_APK: ${{ env.WORK }}/apk/base.apk
+          NNNOTES_PATHS_PLAYER: ${{ env.WORK }}/player
+          NNNOTES_PATHS_VGMSTREAM: ${{ env.WORK }}/tools/vgmstream-cli
+          NNNOTES_PATHS_FONTS_JA: ${{ env.WORK }}/fonts/NotoSansCJKjp-Regular.otf
+          NNNOTES_PATHS_FONTS_EN: ${{ env.WORK }}/fonts/NotoSansCJKjp-Regular.otf
+          NNNOTES_PATHS_FONTS_ZH_HANT: ${{ env.WORK }}/fonts/NotoSansCJKtc-Regular.otf
+          NNNOTES_PATHS_FONTS_ZH_HANS: ${{ env.WORK }}/fonts/NotoSansCJKsc-Regular.otf
+          NNNOTES_PATHS_FONTS_KO: ${{ env.WORK }}/fonts/Pretendard-SemiBold.otf
+          NNNOTES_PATHS_FONTS_EMOJI: ${{ env.WORK }}/fonts/NotoColorEmoji.ttf
+          FORCE: ${{ inputs.force }}
+        run: python .github/scripts/story_site.py build "$WORK/site" ${{ needs.plan.outputs.stories }}
+
+      - name: Publish
+        # Also after a partial build: the stories that were built are published, the failed ones are built again by
+        # the next run (they have no manifest). A dry run lists what it would upload.
+        if: always() && steps.build.outcome != 'skipped' && steps.build.outcome != 'cancelled'
+        env:
+          STORY_S3_ACCESS_KEY: ${{ secrets.STORY_S3_ACCESS_KEY }}
+          STORY_S3_SECRET_KEY: ${{ secrets.STORY_S3_SECRET_KEY }}
+        run: python .github/scripts/story_site.py publish "$WORK/site" ${{ inputs.dry_run && '--dry-run' || '' }}
+
+      - name: Failures
+        if: always()
+        run: |
+          f="$WORK/site.story-failures.json"
+          if [ -f "$f" ]; then echo "::error::stories failed (${{ inputs.region }}), see the job summary"; { echo '### Failed stories (${{ inputs.region }})'; echo '```json'; cat "$f"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"; fi

@@ -3,10 +3,16 @@
 `.github/workflows/story-site.yml` keeps the StarMoe story site up to date: it builds the stories the published site
 lacks with this repository's `nnnotes web --story` and uploads them to the bucket that serves the site
 (`https://storage.bdon.moe/moenotes/`, the layout `nnnotes web` writes: `stories.json`, `stories/`, `models/`,
-`assets/`, `story/`). It only adds: a run never deletes anything from the bucket. Its helper steps are in
+`assets/`, `story/`), one site per game region: `hk-tw-mo` at the bucket root, `jp` under `jp/`
+(`https://storage.bdon.moe/moenotes/jp/`; JP Live2D model ids overlap the international ones). It only adds: a run
+never deletes anything from the bucket. Its helper steps are in
 `.github/scripts/`; nothing outside `.github/` differs from upstream, so the fork syncs with it as before.
 
 ## A run
+
+`story-site.yml` picks the regions (`story_site.py regions`: those of `STORY_REGIONS` that the dispatch's
+`client_payload.regions` names, the `region` input of a manual run, every one on the schedule) and calls
+`story-site-region.yml` once per region, in parallel. Each region's run:
 
 1. **plan** (a few seconds): the MasterAdv ids of the decoded master data of moenotes-masterdata-sync
    (`MasterAdv.json`, SHA-256 checked against its `index.json`) against the `stories/<id>.json` objects of the bucket.
@@ -32,9 +38,10 @@ snapshot: `dispatch_repositories`), a daily schedule (03:23 UTC) in case a dispa
 |---|---|
 | `stories` | MasterAdv ids to build (spaces or commas); empty: every story the site lacks |
 | `force` | rebuild the given stories and their Live2D models although their manifests exist |
+| `region` | `all` (every region of `STORY_REGIONS`), `hk-tw-mo` or `jp` |
 | `dry_run` | build, then list what would be uploaded instead of uploading |
 
-Runs do not overlap (`concurrency: story-site`).
+Runs of one region do not overlap (`concurrency: story-site-<region>`); the regions build side by side.
 
 ## Settings
 
@@ -49,8 +56,8 @@ Repository secrets (Settings → Secrets and variables → Actions → Secrets):
 | `STORY_S3_ACCESS_KEY`, `STORY_S3_SECRET_KEY` | an S3 key that can list, read and write the bucket |
 
 Repository variables (optional; the defaults are the StarMoe site): `STORY_S3_ENDPOINT` (`https://storage.bdon.moe`),
-`STORY_S3_BUCKET` (`moenotes`), `STORY_S3_PREFIX` (empty: the bucket root), `MASTERDATA_BASE_URL`
-(`https://metadata.bdon.moe`), `STORY_MASTERDATA_REGION` (`hk-tw-mo`), `STORY_LIMIT` (`40`), `STORY_PLAYER_REPOSITORY`
+`STORY_S3_BUCKET` (`moenotes`), `STORY_S3_PREFIX` (empty: the bucket root; the hk-tw-mo site), `STORY_S3_PREFIX_JP` (`jp`), `MASTERDATA_BASE_URL`
+(`https://metadata.bdon.moe`), `STORY_REGIONS` (`hk-tw-mo jp`: the regions with a site), `STORY_LIMIT` (`40`), `STORY_PLAYER_REPOSITORY`
 (`empty-sekai/ournotes-player`), `STORY_PLAYER_REF` (`3774d8ac3987`), `PLAYFETCH_VERSION` (`v0.92`),
 `STORY_APK_PACKAGE` (`com.bilibili.sirius`).
 

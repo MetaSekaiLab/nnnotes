@@ -2,6 +2,9 @@
 """The story site's CI steps (.github/workflows/story-site.yml): the published site lives in an S3 bucket, a run adds
 the stories it lacks.
 
+    regions               the regions this run builds (GitHub outputs `regions`, a JSON list, and `count`): those of
+                          $STORY_REGIONS (default hk-tw-mo) that the repository_dispatch payload names, or
+                          $REQUESTED_REGION of a workflow_dispatch (empty / "all": every one), or all on a schedule
     plan                  the stories to build: $REQUESTED, else every MasterAdv id without a manifest in the bucket
                           (at most $STORY_LIMIT, in id order); GitHub outputs `stories` (space separated) and `count`
     master OUT            the decoded master data of $MASTERDATA_REGION from moenotes-masterdata-sync (index.json:
@@ -135,6 +138,43 @@ def master_index() -> tuple[str, dict]:
     if not re.fullmatch(r"/([a-z]+/)?master/", region["path"]):
         sys.exit(f"story_site: unexpected master path {region['path']!r}")
     return base + region["path"], region
+
+
+# Regions with a story site (story-site-region.yml gives each its own bucket prefix: JP model ids overlap the
+# international ones).
+SITE_REGIONS = ("hk-tw-mo", "jp")
+
+
+def split_list(text: str) -> list[str]:
+    return [part for part in re.split(r"[\s,]+", text.strip()) if part]
+
+
+def select_regions(enabled: str, event: str, payload: list[str] | None, requested: str) -> list[str]:
+    """The regions a run builds: of $STORY_REGIONS, the dispatch's regions, the requested one, or all (schedule)."""
+    allowed = [r for r in split_list(enabled) if r in SITE_REGIONS]
+    unknown = [r for r in split_list(enabled) if r not in SITE_REGIONS]
+    if unknown:
+        sys.exit(f"story_site: no story site for region(s) {', '.join(unknown)}")
+    if event == "repository_dispatch":
+        # Older dispatches carry no regions: build every enabled one (a run without new stories ends at plan).
+        wanted = payload if payload else allowed
+    elif event == "workflow_dispatch" and requested and requested != "all":
+        wanted = [requested]
+    else:
+        wanted = allowed
+    return [r for r in allowed if r in wanted]
+
+
+def cmd_regions() -> None:
+    payload = None
+    event_path = os.environ.get("GITHUB_EVENT_PATH")
+    if event_path and Path(event_path).is_file():
+        regions = (json.loads(Path(event_path).read_text(encoding="utf-8")).get("client_payload") or {}).get("regions")
+        payload = [r for r in regions if isinstance(r, str)] if isinstance(regions, list) else None
+    regions = select_regions(env("STORY_REGIONS", "hk-tw-mo"), env("GITHUB_EVENT_NAME", ""), payload,
+                             os.environ.get("REQUESTED_REGION", ""))
+    output("regions", json.dumps(regions))
+    output("count", str(len(regions)))
 
 
 def configure_region() -> None:
@@ -298,7 +338,9 @@ def main(argv: list[str]) -> None:
     if not argv:
         sys.exit(__doc__)
     cmd, args = argv[0], argv[1:]
-    if cmd == "plan" and not args:
+    if cmd == "regions" and not args:
+        cmd_regions()
+    elif cmd == "plan" and not args:
         cmd_plan()
     elif cmd == "master" and len(args) == 1:
         cmd_master(args[0])

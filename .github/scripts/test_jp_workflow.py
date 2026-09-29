@@ -50,3 +50,36 @@ def test_jp_catalog_provenance_matches_snapshot():
     gate = music_data.Gate()
     music_data.gate_provenance(doc, context, gate)
     assert any('resourceHash differs' in s for s in gate.failures)
+
+
+def test_regions_follow_the_dispatch_payload():
+    assert story_site.select_regions('hk-tw-mo jp', 'repository_dispatch', ['jp'], '') == ['jp']
+    assert story_site.select_regions('hk-tw-mo jp', 'repository_dispatch', ['hk-tw-mo', 'en', 'kr'], '') == ['hk-tw-mo']
+    # an older dispatch without regions: every enabled region
+    assert story_site.select_regions('hk-tw-mo,jp', 'repository_dispatch', None, '') == ['hk-tw-mo', 'jp']
+
+
+def test_regions_of_schedule_and_manual_runs():
+    assert story_site.select_regions('hk-tw-mo jp', 'schedule', None, '') == ['hk-tw-mo', 'jp']
+    assert story_site.select_regions('hk-tw-mo jp', 'workflow_dispatch', None, 'all') == ['hk-tw-mo', 'jp']
+    assert story_site.select_regions('hk-tw-mo jp', 'workflow_dispatch', None, 'jp') == ['jp']
+    # a region STORY_REGIONS leaves out is not built
+    assert story_site.select_regions('hk-tw-mo', 'workflow_dispatch', None, 'jp') == []
+
+
+def test_regions_reject_a_region_without_a_story_site():
+    with pytest.raises(SystemExit, match='no story site'):
+        story_site.select_regions('hk-tw-mo kr', 'schedule', None, '')
+
+
+def test_regions_command_reads_the_event(tmp_path, monkeypatch):
+    import json
+    event = tmp_path / 'event.json'
+    event.write_text(json.dumps({'client_payload': {'regions': ['jp']}}), encoding='utf-8')
+    out = tmp_path / 'out'
+    monkeypatch.setenv('GITHUB_EVENT_PATH', str(event))
+    monkeypatch.setenv('GITHUB_EVENT_NAME', 'repository_dispatch')
+    monkeypatch.setenv('GITHUB_OUTPUT', str(out))
+    monkeypatch.setenv('STORY_REGIONS', 'hk-tw-mo jp')
+    story_site.cmd_regions()
+    assert out.read_text(encoding='utf-8').splitlines() == ['regions=["jp"]', 'count=1']

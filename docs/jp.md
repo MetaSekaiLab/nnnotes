@@ -95,7 +95,8 @@ APK catalog. A JP master download likewise rejects a different current master sn
 
 ## Workflow integration
 
-For the StarMoe workflows, set `MUSIC_DATA_MASTERDATA_REGION=jp` or `STORY_MASTERDATA_REGION=jp`. This selects the
+For the StarMoe workflows, set `MUSIC_DATA_MASTERDATA_REGION=jp`; the story site builds JP beside hk-tw-mo (`STORY_REGIONS`,
+default `hk-tw-mo jp`, one run per region). This selects the
 JP package and Japanese catalog language; the build reads API/CDN/client-version from the JP entry in the public
 masterdata index. The default output prefixes become `jp/music-data` and `jp`, with separate concurrency groups.
 Custom output prefixes must also be separate from the international outputs. Publishing remains controlled by
