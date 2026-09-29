@@ -60,6 +60,11 @@ TABLE_ROWS = {
         {"_id": 3, "_group": 9, "_liveScoreRank": 7, "_requiredScore": 900, "_battleLiveRequiredScore": 1800},
         {"_id": 1, "_group": 9, "_liveScoreRank": 2, "_requiredScore": 0, "_battleLiveRequiredScore": 0},
         {"_id": 2, "_group": 8, "_liveScoreRank": 6, "_requiredScore": 5, "_battleLiveRequiredScore": 6}],
+    # the songs' missions [1, 3, 3] are pattern 3; pattern 2 rows are another song's
+    "MasterLiveGekisouRankingScoreBonus": [
+        {"_id": 100 * p + 10 * c + k, "_missionPattern": p, "_count": c, "_rank": k,
+         "_scoreBonusPercent": (6 - k) * c + 10 * p}
+        for p in (2, 3) for c in (1, 2, 3) for k in (1, 2, 3, 4, 5)],
 }
 CHARTS = {"c/c_01": gzip.compress(json.dumps(CHART).encode("utf-8"), mtime=0),
           "c/c_02": json.dumps(SMALL).encode("utf-8"),
@@ -96,6 +101,10 @@ def bgm(sheet, cue):
 WEIGHT = "0.30000000000000004"                  # a binary64 value: kept as the deck model writes it
 
 
+def trunc_percent(score, percent):
+    return int(score * percent / 100)
+
+
 class FakeDeck:
     """The interface of nnnotes._deck: statistics made from the deck input as the model reports them."""
     COMMIT = "7e5d84b5998d28c21541ce3f2e0a3dfb1439f4f6"
@@ -118,6 +127,8 @@ class FakeDeck:
         def table(name):
             return [dict(zip(m[name]["columns"], r)) for r in m[name]["rows"]]
         levels = {r["_id"]: r["_musicScoreLevel"] for r in table("MasterLiveMusicScore")}
+        bonus = {(r["_missionPattern"], r["_count"], r["_rank"]): r["_scoreBonusPercent"]
+                 for r in table("MasterLiveGekisouRankingScoreBonus")}
         songs = {}
         for r in table("MasterLiveMusic"):
             for d in musicdata.DIFFICULTIES:
@@ -129,16 +140,28 @@ class FakeDeck:
             music, d, missions = songs[c["scoreId"]]
             last = max(c["notes"]["timeMs"])
             fevers = list(zip(c["fevers"]["startMs"], c["fevers"]["endMs"]))[:3]
+            positions = min(len(c["skillEvents"]["timeMs"]), 5)
+            pattern = 3 if missions == [1, 3, 3] else 0
+            percents = [[bonus.get((pattern, i + 1, k), 0) for k in range(1, 6)] for i in range(len(fevers))]
+            check = {"deck": [[0, 5000]], "exact": 2000, "predicted": 2000.25, "bound": 7.0}
             s = {"scoreId": c["scoreId"], "musicId": music, "difficulty": d, "level": levels[c["scoreId"]],
                  "judgedNotes": sum(score.is_judgement_note(op) for op in c["notes"]["op"]),
                  "convertedNoteCount": len(c["notes"]["id"]), "lastNoteMs": last, "musicLengthMs": last + 1000,
                  "skip": 1.5, "events": [[i % 5, t] for i, t in enumerate(c["skillEvents"]["timeMs"])],
-                 "positions": min(len(c["skillEvents"]["timeMs"]), 5), "missions": missions,
-                 "ranges": [{"index": i, "mission": missions[i], "startMs": a, "endMs": b, "rankBonusPercent": 10}
+                 "positions": positions, "missions": missions,
+                 "ranges": [{"index": i, "mission": missions[i], "startMs": a, "endMs": b,
+                             "rankBonusPercent": percents[i][0], "rankBonusPercents": percents[i]}
                             for i, (a, b) in enumerate(fevers)],
                  "justNotes": 0,
-                 "seeds": [{"seed": 0, "score": 1234, "ranges": [], "weights": [["W"]],
-                            "check": {"deck": [[0, 5000]], "exact": 2000, "predicted": 2000.25, "bound": 7.0}}]}
+                 "seeds": [{"seed": 0, "score": 1234,
+                            "ranges": [{"rangeScore": 101 * (i + 1), "rankBonus": trunc_percent(101 * (i + 1), p[0]),
+                                        "maxCombo": 1, "justCount": 0, "lotResults": [0, 0, 0, 0],
+                                        "rangeScorePerfect": 101 * (i + 1)} for i, p in enumerate(percents)],
+                            "weights": [["W"] * positions], "check": check, "scorePerfect": 1234,
+                            "rangeWeights": [[["W"] * len(fevers)] * positions],
+                            "rankCheck": {"ranks": [2] * len(fevers), "exact": 2001, "predicted": 2000.5,
+                                          "bound": 7.0} if fevers else None}],
+                 "offSeeds": [{"seed": 0, "score": 1000, "weights": [["W"] * positions], "check": dict(check)}]}
             if self.change:
                 self.change(s)
             charts.append(s)
@@ -251,8 +274,14 @@ def test_deck(tmp_path):
     assert list(c["deck"]) == list(musicdata.DECK_CHART_KEYS)
     assert c["deck"]["events"] == [[0, 2500], [1, 500]] and c["deck"]["ranges"][1]["startMs"] == 2000
     assert c["deck"]["unplayable"] is None and c["deck"]["skip"] == 1.5
+    # the ranks: the song's mission pattern (3) rows of every range
+    assert [r["rankBonusPercents"] for r in c["deck"]["ranges"]] == [[35, 34, 33, 32, 31], [40, 38, 36, 34, 32]]
+    seed = c["deck"]["seeds"][0]
+    assert seed["rankCheck"]["ranks"] == [2, 2] and seed["scorePerfect"] == seed["score"]
+    assert [r["rankBonus"] for r in seed["ranges"]] == [35, 80]
+    assert c["deck"]["offSeeds"][0]["score"] == 1000
     # the deck model's numbers as it writes them: a binary64 value is not narrowed to binary32
-    assert b'"weights":[[' + WEIGHT.encode() + b']]' in raw and b'"predicted":2000.25' in raw
+    assert b'"weights":[[' + WEIGHT.encode() + b',' + WEIGHT.encode() + b']]' in raw and b'"predicted":2000.25' in raw
     assert "master" not in doc and "charts" not in doc
     schema_validator().validate(doc)
     (tmp_path / "m").rename(tmp_path / "m0")
@@ -268,11 +297,53 @@ def test_deck(tmp_path):
     (lambda s: s["events"].pop(), "skill event times"),
     (lambda s: s["ranges"] and s["ranges"][0].update(endMs=1), "fevers"),
     (lambda s: s.update(difficulty="hard"), "difficulty 'hard' differs"),
+    (lambda s: s["ranges"] and s["ranges"][0]["rankBonusPercents"].__setitem__(2, 99), "range 0: .*percentages"),
+    (lambda s: s["ranges"] and s["ranges"][0].update(rankBonusPercent=1), "range 0: .*percentages"),
+    (lambda s: s["ranges"] and s["seeds"][0]["ranges"][0].update(rankBonus=-1), "rank bonus -1 is not trunc"),
+    (lambda s: s["seeds"][0]["ranges"].pop(), "range results for"),
+    (lambda s: s.pop("offSeeds"), "no Gekisou off statistics"),
+    (lambda s: s["offSeeds"].append(s["offSeeds"][0]), "no Gekisou off statistics"),
+    (lambda s: s["offSeeds"][0]["weights"].append(None), "Gekisou off: weights"),
+    (lambda s: s["offSeeds"][0]["check"].update(exact=0), "Gekisou off: the check deck scores 0"),
+    (lambda s: s["seeds"][0].update(scorePerfect=1), "otherwise on the Perfect play"),
+    (lambda s: s["seeds"][0]["weights"][0].pop(), "weights are not"),
+    (lambda s: s["seeds"][0]["weights"].append(None), "weights are not"),
+    (lambda s: s["seeds"][0].update(rangeWeights=[[]]), "rangeWeights are not"),
+    (lambda s: s["seeds"][0]["check"].update(bound=0.1), "the check deck scores 2000"),
+    (lambda s: s["ranges"] and s["seeds"][0]["rankCheck"].update(exact=0), "at ranks"),
+    (lambda s: s["ranges"] and s["seeds"][0]["rankCheck"].update(ranks=[6, 1]), "rank check ranks"),
 ])
 def test_deck_checks(tmp_path, change, match):
     with pytest.raises(musicdata.MusicDataError, match=match):
         export(tmp_path, deck=FakeDeck(change))
     assert not (tmp_path / "music.json").exists()
+
+
+def test_deck_without_range_weights(tmp_path):
+    """A chart without range weights, a kind without them and a kind without Gekisou off weights are carried."""
+    def change(s):
+        s["seeds"][0]["rangeWeights"] = None if s["scoreId"] == 10 else [None]
+        s["seeds"][0]["rankCheck"] = None
+        s["offSeeds"][0]["weights"] = [None]
+    export(tmp_path, deck=FakeDeck(change))
+    doc = json.loads((tmp_path / "music.json").read_bytes())
+    decks = {c["scoreId"]: c["deck"] for s in doc["songs"] for c in s["charts"]}
+    assert decks[10]["seeds"][0]["rangeWeights"] is None and decks[20]["seeds"][0]["rangeWeights"] == [None]
+    assert decks[30]["offSeeds"][0]["weights"] == [None]
+    schema_validator().validate(doc)
+
+
+def test_rank_bonus_percents():
+    assert [musicdata.mission_pattern(m) for m in ([1, 2, 0], [2, 2, 2], [1, 2, 3], [1, 1, 3], [1, 3, 3],
+                                                    [3, 1, 3])] == [0, 1, 2, 3, 3, 3]
+    rows = [{"_missionPattern": 2, "_count": 1, "_rank": 1, "_scoreBonusPercent": 30},
+            {"_missionPattern": 2, "_count": 3, "_rank": 5, "_scoreBonusPercent": 4},
+            {"_missionPattern": 2, "_count": 3, "_rank": 5, "_scoreBonusPercent": 5},     # a later row wins
+            {"_missionPattern": 2, "_count": 4, "_rank": 1, "_scoreBonusPercent": 9},     # no fourth range
+            {"_missionPattern": 2, "_count": 1, "_rank": 6, "_scoreBonusPercent": 9},     # no sixth rank
+            {"_missionPattern": 1, "_count": 2, "_rank": 1, "_scoreBonusPercent": 9}]     # another pattern
+    assert musicdata.rank_bonus_percents(rows, [1, 2, 3]) == [[30, 0, 0, 0, 0], [0] * 5, [0, 0, 0, 0, 5]]
+    assert musicdata.rank_bonus_percents(rows, [0, 0, 0]) == [[0] * 5] * 3
 
 
 def test_deck_errors(tmp_path, monkeypatch):

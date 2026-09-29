@@ -2,7 +2,8 @@
 `nnnotes.music-data/1`, docs/music-data.md): titles and credits in every language, bands, vocal characters, category,
 tags, release time, score ranks, the live BGM's length, per difficulty the chart facts (level, note counts, BPM, chart
 times, skill events, fever ranges) and the chart's deck statistics, what the chart contributes to the live score
-whatever the deck, measured by the deck model ournotes-deck (the extension module nnnotes._deck).
+whatever the deck, with Gekisou on (a Gekisou live, every rank) and off (a solo live), measured by the deck model
+ournotes-deck (the extension module nnnotes._deck).
 
 Master data is read from the files as served (deckdata.master_files / apk_master: SHA-256 checked against the
 manifest, decoded with master.decode). Charts are the TextAssets `Live/MusicScore/<file name>` converted by
@@ -255,12 +256,89 @@ class Deck:
 
 
 # the keys of a chart's statistics carried by `deck` (the others are checked against the chart facts)
-DECK_CHART_KEYS = ("convertedNoteCount", "skip", "events", "positions", "ranges", "justNotes", "seeds",
+DECK_CHART_KEYS = ("convertedNoteCount", "skip", "events", "positions", "ranges", "justNotes", "seeds", "offSeeds",
                    "unplayable")
+RANKS = 5                                   # the ranks of a Gekisou range (a Gekisou live has up to five players)
+GEKISOU_RANGES = 3                          # the Gekisou ranges of a live (its first three fevers)
 
 
-def chart_deck(song: dict, chart: dict, stats: dict) -> dict:
-    """A chart's `deck` from its statistics, after checking them against the song and the chart facts."""
+def mission_pattern(missions) -> int:
+    """The mission pattern of a song's three Gekisou missions, the `_missionPattern` of its rank bonus rows: 0 when a
+    mission is missing, 1 all the same, 2 all different, 3 otherwise."""
+    a, b, c = missions
+    if not (a and b and c):
+        return 0
+    if a == b:
+        return 1 if a == c else 3
+    return 2 if b != c and a != c else 3
+
+
+def rank_bonus_percents(rows: list[dict], missions) -> list[list]:
+    """The rank bonus percentages [range][rank - 1] of a song's missions from the MasterLiveGekisouRankingScoreBonus
+    rows of its mission pattern (`_count`: the range 1..3, `_rank` 1..5; a later row wins; 0 without a row)."""
+    pattern = mission_pattern(missions)
+    out = [[0] * RANKS for _ in range(GEKISOU_RANGES)]
+    for r in rows:
+        c, k = (r.get("_count") or 0) - 1, (r.get("_rank") or 0) - 1
+        if r.get("_missionPattern") == pattern and 0 <= c < GEKISOU_RANGES and 0 <= k < RANKS:
+            out[c][k] = r.get("_scoreBonusPercent")
+    return out
+
+
+def _trunc_percent(score: int, percent: int) -> int:
+    """trunc(score * percent / 100), the rank bonus of a range score."""
+    p = score * percent
+    return p // 100 if p >= 0 else -(-p // 100)
+
+
+def _numbers(v, n: int) -> bool:
+    """Whether v is a list of n numbers (as the deck model writes them)."""
+    return isinstance(v, list) and len(v) == n and all(
+        isinstance(x, (int, deckdata._Num)) and not isinstance(x, bool) for x in v)
+
+
+def _check_seed_shapes(stats: dict, kinds: int, where: str) -> None:
+    """The array shapes and the checks of a chart's statistics: `weights[kind][position]` (a kind null only with
+    Gekisou off), `rangeWeights[kind][position][range]` (null, or a kind null), one Gekisou off seed, the seeds'
+    ranges one per range, and every check (and rank check) within its bound."""
+    positions, n = stats["positions"], len(stats["ranges"])
+
+    def check(c, what):
+        if abs(c["exact"] - float(c["predicted"])) > float(c["bound"]):
+            raise MusicDataError(f"{where}: {what} scores {c['exact']}, predicted {c['predicted']} beyond the bound "
+                                 f"{c['bound']}")
+
+    for seed in stats["seeds"]:
+        s = f"seed {seed['seed']}"
+        w = seed.get("weights")
+        if not (isinstance(w, list) and len(w) == kinds and all(_numbers(x, positions) for x in w)):
+            raise MusicDataError(f"{where}: {s}: weights are not [kind][position]")
+        if len(seed["ranges"]) != n:
+            raise MusicDataError(f"{where}: {s}: {len(seed['ranges'])} range results for {n} ranges")
+        rw = seed.get("rangeWeights")
+        if rw is not None and not (isinstance(rw, list) and len(rw) == kinds and all(
+                k is None or (isinstance(k, list) and len(k) == positions and all(_numbers(x, n) for x in k))
+                for k in rw)):
+            raise MusicDataError(f"{where}: {s}: rangeWeights are not [kind][position][range]")
+        check(seed["check"], f"{s}: the check deck")
+        rc = seed.get("rankCheck")
+        if rc is not None:
+            if len(rc["ranks"]) != n or not all(1 <= r <= RANKS for r in rc["ranks"]):
+                raise MusicDataError(f"{where}: {s}: rank check ranks {rc['ranks']!r}")
+            check(rc, f"{s}: the check deck at ranks {rc['ranks']!r}")
+    off = stats.get("offSeeds")
+    if not isinstance(off, list) or len(off) != 1:
+        raise MusicDataError(f"{where}: the deck model gives no Gekisou off statistics (offSeeds)")
+    for seed in off:
+        w = seed.get("weights")
+        if not (isinstance(w, list) and len(w) == kinds and all(x is None or _numbers(x, positions) for x in w)):
+            raise MusicDataError(f"{where}: Gekisou off: weights are not [kind][position]")
+        check(seed["check"], "Gekisou off: the check deck")
+
+
+def chart_deck(song: dict, chart: dict, stats: dict, kinds: int, percents: list[list]) -> dict:
+    """A chart's `deck` from its statistics, after checking them against the song, the chart facts and the song's
+    rank bonus percentages (`percents`: rank_bonus_percents), `kinds` the number of score-up kinds."""
     where = f"chart {chart['scoreId']} ({song['id']} {chart['difficulty']})"
     checks = (
         ("music id", stats["musicId"], song["id"]),
@@ -276,6 +354,24 @@ def chart_deck(song: dict, chart: dict, stats: dict) -> dict:
     for name, deck, facts in checks:
         if deck != facts:
             raise MusicDataError(f"{where}: the deck model's {name} {deck!r} differs from the chart's {facts!r}")
+    ranges = stats["ranges"]
+    for i, r in enumerate(ranges):
+        want = percents[i] if i < len(percents) else [0] * RANKS
+        got = r.get("rankBonusPercents")
+        if got != want or r["rankBonusPercent"] != want[0]:
+            raise MusicDataError(f"{where}: range {i}: the deck model's rank bonus percentages {got!r} "
+                                 f"({r['rankBonusPercent']!r}) differ from MasterLiveGekisouRankingScoreBonus {want!r}")
+    _check_seed_shapes(stats, kinds, where)
+    for seed in stats["seeds"]:
+        for i, (r, info) in enumerate(zip(seed["ranges"], ranges)):
+            bonus = _trunc_percent(r["rangeScore"], info["rankBonusPercent"])
+            if r["rankBonus"] != bonus:
+                raise MusicDataError(f"{where}: seed {seed['seed']} range {i}: rank bonus {r['rankBonus']} is not "
+                                     f"trunc({r['rangeScore']} * {info['rankBonusPercent']} / 100) = {bonus}")
+        if stats["justNotes"] == 0 and (seed.get("scorePerfect") != seed["score"] or any(
+                r.get("rangeScorePerfect") != r["rangeScore"] for r in seed["ranges"])):
+            raise MusicDataError(f"{where}: seed {seed['seed']}: a chart without Just notes scores otherwise on the "
+                                 f"Perfect play ({seed.get('scorePerfect')} for {seed['score']})")
     return {k: stats.get(k) for k in DECK_CHART_KEYS}
 
 
@@ -387,9 +483,11 @@ def build(tables: dict[str, list[dict]], table_sha: dict[str, str], fetch: Calla
         by_score = {c["scoreId"]: c for c in stats["charts"]}
         if sorted(by_score) != measured:
             raise MusicDataError("deck model: the charts measured differ from the songs' charts")
+        bonus_rows = tables.get("MasterLiveGekisouRankingScoreBonus", [])
         for s in songs:
+            percents = rank_bonus_percents(bonus_rows, s["gekisouMissions"])
             for c in s["charts"]:
-                c["deck"] = chart_deck(s, c, by_score[c["scoreId"]])
+                c["deck"] = chart_deck(s, c, by_score[c["scoreId"]], len(stats["kinds"]), percents)
         deck_doc = {"model": stats["model"], "kinds": stats["kinds"]}
 
     read = [t for t in tables_of(deck is not None, full) if t in tables]

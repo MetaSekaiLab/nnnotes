@@ -44,7 +44,7 @@ checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 [[package]]
 name = "ournotes-deck"
 version = "0.0.1"
-source = "git+https://github.com/empty-sekai/ournotes-deck?rev=7e5d84b5998d28c21541ce3f2e0a3dfb1439f4f6#7e5d84b5998d28c21541ce3f2e0a3dfb1439f4f6"
+source = "git+https://github.com/empty-sekai/ournotes-deck?rev=d4abb52ff75059a13e99a88fd6812ec1bdaa5dd2#d4abb52ff75059a13e99a88fd6812ec1bdaa5dd2"
 dependencies = [
  "serde",
  "serde_json",
