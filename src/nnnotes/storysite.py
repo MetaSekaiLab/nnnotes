@@ -658,6 +658,8 @@ def build(out_dir, adv_ids, cfg: Config, player_dir, audio_format: str = "aac", 
     if fonts not in FONT_SOURCES:
         raise ValueError(f"fonts {fonts!r}: one of {', '.join(FONT_SOURCES)}")
     require_extra()
+    if story_languages is None and cfg.provider((regions or [cfg.get("catalog", "region")])[0]) == "jp":
+        story_languages = ["ja"]
     langs = check_languages(story_languages)
     base = languages.check(cfg.require("catalog", "language"))
     default = base if base in langs else langs[0]

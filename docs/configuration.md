@@ -1,5 +1,7 @@
 # Configuration
 
+For Japanese-release endpoints, catalog snapshots and split APKs, see [Japanese release](jp.md).
+
 nnnotes has no built-in keys, server addresses or data paths. Every setting comes from one of three sources, and a
 command that needs a setting nobody gave stops before it does any work.
 
@@ -87,6 +89,10 @@ exist when they are given.
 | `[catalog] region` | `NNNOTES_CATALOG_REGION` | `--region` | name of one `[servers.<region>]` table |
 | `[catalog] language` | `NNNOTES_CATALOG_LANGUAGE` | `--language` | catalog language: the `<language>` of `catalog_main_<language>.bin`: `ja`, `en`, `zh-Hant`, `zh-Hans` or `ko`; also the client language of `live`, `story` and `web` (the text field, fonts and line spacing of their UI) and of the model labels of `web --live2d` |
 | `[servers.<region>] name` | `NNNOTES_SERVERS_<REGION>_NAME` | — | label of the region in `browse` (default: the region name) |
+| `[servers.<region>] provider` | `NNNOTES_SERVERS_<REGION>_PROVIDER` | — | `international` or `jp`; empty selects `jp` for the region named jp, international otherwise |
+| `[servers.<region>] client_version` | `NNNOTES_SERVERS_<REGION>_CLIENT_VERSION` | — | per-region API client version; overrides `[client] version`, then falls back to the region's APK versionName |
+| `[servers.<region>] apk` | `NNNOTES_SERVERS_<REGION>_APK` | `--apk` | per-region APK, APKS/XAPK or directory with base.apk; adjacent splits of base.apk are read automatically; the flag overrides it |
+| `[servers.<region>] catalog` | `NNNOTES_SERVERS_<REGION>_CATALOG` | `--catalog` | per-region catalog file; JP needs the matching `<file>.source.json`; the flag overrides it |
 | `[servers.<region>] cdn` | `NNNOTES_SERVERS_<REGION>_CDN` | — | CDN base URL of the region (a trailing `/` is ignored) |
 | `[servers.<region>] languages` | `NNNOTES_SERVERS_<REGION>_LANGUAGES` | — | catalog languages `browse` lists: a TOML array of strings; comma-separated in the environment |
 | `[servers.<region>] api` | `NNNOTES_SERVERS_<REGION>_API` | — | API root of the region: `https://host[:port]` (TLS, port 443 by default), `host[:port]`, or `http://host[:port]` for a plain-text local server; no path |

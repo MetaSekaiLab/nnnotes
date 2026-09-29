@@ -456,7 +456,7 @@ _W: dict = {}
 
 def _open(cfg: Config, region: str | None = None):
     from .cli import open_catalog, player_data
-    return open_catalog(cfg, region=region), player_data(cfg)
+    return open_catalog(cfg, region=region), player_data(cfg, region)
 
 
 def _worker_init(cfg: Config, lock, job: dict) -> None:

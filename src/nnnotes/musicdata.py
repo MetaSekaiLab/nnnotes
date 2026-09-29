@@ -496,7 +496,8 @@ def build(tables: dict[str, list[dict]], table_sha: dict[str, str], fetch: Calla
         "provenance": {
             "region": region,
             "client": {"versionName": client.get("versionName"), "versionCode": client.get("versionCode")},
-            "catalog": {"resourceVersion": catalog.get("resourceVersion"), "sha256": catalog.get("sha256")},
+            "catalog": {"resourceVersion": catalog.get("resourceVersion"), "sha256": catalog.get("sha256"),
+                        **({"resourceHash": catalog["resourceHash"]} if catalog.get("resourceHash") else {})},
             "master": {"source": master_source, "version": master_version,
                        "tables": {t: {"sha256": table_sha[t]} for t in read}},
             "exporter": exporter,

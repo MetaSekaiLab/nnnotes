@@ -27,9 +27,9 @@ from __future__ import annotations
 import re
 import urllib.error
 import urllib.request
-import zipfile
 from pathlib import Path
 
+from .apkset import ApkSet
 from . import contract
 from .addressables import parse_header, parse_keys, parse_locations, remote_path
 from .catalog import APK_CATALOG, Catalog, file_name, location_kind
@@ -294,9 +294,13 @@ def format_diff(d: dict) -> str:
 
 
 # ---------------------------------------------------------------- the store of versions
-def version_id(remote_sha: str, apk_sha: str | None) -> str:
+def version_id(remote_sha: str, apk_sha: str | None, source: dict | None = None) -> str:
     """The id of a catalog version: the key hash of its two catalogs' content ids."""
-    return contract.digest({"remote": remote_sha, "apk": apk_sha})
+    identity = {"remote": remote_sha, "apk": apk_sha}
+    if source is not None:
+        from .jp import Source
+        identity["source"] = Source.from_dict(source).to_dict()
+    return contract.digest(identity)
 
 
 def default_label(remote_sha: str, resource_version: str | None = None) -> str:
@@ -307,7 +311,7 @@ def default_label(remote_sha: str, resource_version: str | None = None) -> str:
 
 def apk_catalog(apk) -> bytes:
     """The local catalog inside an APK."""
-    with zipfile.ZipFile(apk) as z:
+    with ApkSet(apk) as z:
         return z.read(APK_CATALOG)
 
 
@@ -361,12 +365,12 @@ class CatalogDB:
 
     def add(self, remote: bytes, apk: bytes | None = None, *, label: str | None = None, region: str | None = None,
             language: str | None = None, hash_text: str | None = None, resource_version: str | None = None,
-            apk_version_name: str | None = None) -> dict:
+            apk_version_name: str | None = None, source: dict | None = None) -> dict:
         """Import a catalog pair (idempotent: a known pair gets the label and the facts it did not have yet); the
         version. A label names one version per region and language."""
         remote_rec = self._put(bytes(remote))
         apk_rec = self._put(bytes(apk)) if apk is not None else None
-        vid = version_id(remote_rec["sha256"], apk_rec["sha256"] if apk_rec else None)
+        vid = version_id(remote_rec["sha256"], apk_rec["sha256"] if apk_rec else None, source)
         versions = self._load()
         v = next((x for x in versions if x["id"] == vid), None)
         if v is None:
@@ -374,11 +378,14 @@ class CatalogDB:
                  "region": region, "language": language, "remote": remote_rec, "apk": apk_rec, "hash": None,
                  "resourceVersion": None, "apkVersionName": None}
             versions.append(v)
+            if source is not None:
+                v["source"] = dict(source)
         for k, given in (("region", region), ("language", language), ("hash", hash_text),
                          ("resourceVersion", resource_version), ("apkVersionName", apk_version_name)):
             if given is not None and v[k] is None:
                 v[k] = given
-        label = label or default_label(remote_rec["sha256"], resource_version)
+        label = label or (f"{source['version']}/{source['hash']}/{vid[:12]}" if source else
+                          default_label(remote_rec["sha256"], resource_version))
         for other in versions:
             if other is not v and label in other["labels"] and (other["region"], other["language"]) == (
                     v["region"], v["language"]):
@@ -431,7 +438,7 @@ class IndexStage(Stage):
     """catalog.index: a catalog pair -> its index. Subjects and inputs come from the fact "catalogs": {subject:
     [Input "remote", Input "apk" (optional)]} (CatalogDB.inputs). Artifact "<task id>#index"."""
     name = "catalog.index"
-    version = 1
+    version = 2
 
     def subjects(self, env) -> list[str]:
         return sorted(env.fact("catalogs"))

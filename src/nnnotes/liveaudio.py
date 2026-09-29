@@ -25,9 +25,9 @@ each cue layer maps to its vgmstream stream by `streams.json` (memory AWB order)
 from __future__ import annotations
 
 import struct
-import zipfile
 from pathlib import Path
 
+from .apkset import ApkSet
 from .acb import commands as _commands, tables as _tables, u16s as _u16s
 from .catalog import Catalog
 from .jsonio import write_json
@@ -129,7 +129,7 @@ def acb_cues(acb: bytes) -> dict[str, dict]:
 
 def acf_info(apk: Path) -> dict:
     """Categories, buses and REACT entries of the game's ACF (`assets/Cri/Sound/Sirius.acf` in the APK)."""
-    with zipfile.ZipFile(apk) as z:
+    with ApkSet(apk) as z:
         top, T = _tables(z.read(ACF_IN_APK))
     cat_names = {r["Index"]: r["Name"] for r in T["CategoryNameTable"]}
     cats = {}

@@ -13,8 +13,9 @@ from __future__ import annotations
 import io
 import re
 import struct
-import zipfile
 from pathlib import Path
+
+from .apkset import ApkSet
 
 DATA_IN_APK = "assets/bin/Data/data.unity3d"
 
@@ -22,8 +23,8 @@ DATA_IN_APK = "assets/bin/Data/data.unity3d"
 def _load_data(src: Path):
     import UnityPy                    # here, not at import: the modules that import this one seldom call it
     src = Path(src)
-    if src.suffix.lower() in (".apk", ".zip"):
-        with zipfile.ZipFile(src) as z:
+    if src.is_dir() or src.suffix.lower() in (".apk", ".zip", ".apks", ".xapk"):
+        with ApkSet(src) as z:
             return UnityPy.load(io.BytesIO(z.read(DATA_IN_APK)))
     return UnityPy.load(str(src))
 

@@ -28,6 +28,7 @@ from urllib.parse import urlsplit
 
 import grpc
 
+from .apkset import ApkSet
 from .config import Config, ConfigError, describe
 
 VERSION_METHOD = "/app.masterdata.MasterdataService/Version"
@@ -111,6 +112,7 @@ def strings(buf: bytes, names: dict[int, str]) -> dict[str, str]:
 class MasterVersion:
     version: str                # master data version
     resource_version: str
+    resource_hash: str | None = None
 
 
 @dataclass(frozen=True)
@@ -180,7 +182,7 @@ def channel_target(root: str) -> tuple[str, bool]:
 
 
 def call(root: str, method: str, request: bytes, client_version: str, *, timeout: float = TIMEOUT,
-         attempts: int = ATTEMPTS, setting: str = "the API root") -> bytes:
+         attempts: int = ATTEMPTS, setting: str = "the API root", response_metadata: dict | None = None) -> bytes:
     """One unary call with raw bytes; returns the response message's bytes. `setting` names the root in errors.
     Raises GameApiError."""
     target, tls = channel_target(root)
@@ -192,7 +194,11 @@ def call(root: str, method: str, request: bytes, client_version: str, *, timeout
         for i in range(attempts):
             last = i + 1 == attempts
             try:
-                body = stub(request, timeout=timeout, metadata=metadata(client_version))
+                body, response = stub.with_call(request, timeout=timeout, metadata=metadata(client_version))
+                if response_metadata is not None:
+                    response_metadata.clear()
+                    response_metadata.update(response.initial_metadata() or ())
+                    response_metadata.update(response.trailing_metadata() or ())
             except grpc.RpcError as e:
                 code = e.code()
                 if code in RETRY_STATUS and not last:
@@ -256,23 +262,26 @@ def apk_version_name(apk: Path) -> str | None:
     """`versionName` of the APK's AndroidManifest.xml (None when the APK has none)."""
     from .player import MANIFEST_IN_APK, manifest_version_name
     try:
-        with zipfile.ZipFile(apk) as z:
+        with ApkSet(apk) as z:
             data = z.read(MANIFEST_IN_APK) if MANIFEST_IN_APK in z.namelist() else None
     except (zipfile.BadZipFile, OSError):
         raise ConfigError(f"setting paths.apk: {apk} is not a readable APK") from None
     return manifest_version_name(data) if data is not None else None
 
 
-def client_version(cfg: Config) -> str:
+def client_version(cfg: Config, region: str | None = None) -> str:
     """The `x-client-version` of calls: `[client] version`, else the versionName of `[paths] apk`."""
-    v = cfg.get("client", "version")
+    region = region or cfg.get("catalog", "region")
+    if region:
+        cfg = cfg.for_region(region)
+    v = cfg.get(f"servers.{region}", "client_version") or cfg.get("client", "version")
     what = "setting client.version"
     if v is None:
         apk = cfg.path("paths", "apk")
         if apk is None:
             raise ConfigError(f"the game API needs the client version: give it as {describe('client', 'version')}, "
                               f"or give base.apk as {describe('paths', 'apk', '--apk')} to use its versionName")
-        if not apk.is_file():
+        if not apk.exists():
             raise ConfigError(f"setting paths.apk: file {apk} not found")
         v = apk_version_name(apk)
         if not v:
@@ -288,8 +297,11 @@ def client_version(cfg: Config) -> str:
 def master_version(cfg: Config, region: str, *, timeout: float = TIMEOUT) -> MasterVersion:
     """The master data version region `region` serves now (its `[servers.<region>] api`)."""
     section = f"servers.{region}"
+    if cfg.provider(region) == "jp":
+        from .jp import Session
+        return Session(cfg, region).observe(timeout=timeout).version
     root = api_root(cfg, section)
-    return fetch_master_version(root, client_version(cfg), timeout=timeout, setting=f"[{section}] api")
+    return fetch_master_version(root, client_version(cfg, region), timeout=timeout, setting=f"[{section}] api")
 
 
 def server_list(cfg: Config, *, timeout: float = TIMEOUT) -> list[Server]:
