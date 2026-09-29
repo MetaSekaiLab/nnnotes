@@ -1,0 +1,150 @@
+name: Music data
+
+# Publishes the music data file of the current master data for the chart data page (ournotes-player examples/songs):
+# `nnnotes music-data` (every song and chart with the deck model's statistics, docs/music-data.md) of
+# moenotes-masterdata-sync's decoded master data, into the story site's bucket under music-data/: music-data.json,
+# jackets/, archive/<master version>/<sha256>.json and the build marker build.json. A run first compares what it would
+# build (the master data snapshot, the deck commit, the nnnotes commit) with the published build.json and ends there
+# when nothing changed; else it builds, checks the file (quality gates and a smoke test with the page's own modules)
+# and uploads it: the jackets and the archive copy first, then music-data.json, the build marker last. A file that
+# fails a gate is not published. Nothing is deleted from the bucket.
+#
+# Triggers: moenotes-masterdata-sync sends repository_dispatch `masterdata-updated` when a region starts serving a new
+# master snapshot; a daily schedule catches a missed dispatch; workflow_dispatch builds although nothing changed
+# (`force`) or does a dry run. Publishing switch: unless the repository variable MUSIC_DATA_PUBLISH is `true`, every
+# run, whatever its trigger, is a dry run (it builds and checks, and uploads nothing). docs: .github/MUSIC_DATA.md
+
+on:
+  repository_dispatch:
+    types: [masterdata-updated]
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "build and publish although the published file was made from the same inputs"
+        type: boolean
+        default: false
+      dry_run:
+        description: "build and check, but upload nothing"
+        type: boolean
+        default: false
+  schedule:
+    - cron: "41 3 * * *"
+
+permissions:
+  contents: read
+
+# One run at a time: a run replaces music-data.json and build.json.
+concurrency:
+  group: music-data
+  cancel-in-progress: false
+
+env:
+  # The story site's bucket (its repository variables) and the key prefix of the music data.
+  STORY_S3_ENDPOINT: ${{ vars.STORY_S3_ENDPOINT || 'https://storage.bdon.moe' }}
+  STORY_S3_BUCKET: ${{ vars.STORY_S3_BUCKET || 'moenotes' }}
+  MUSIC_DATA_S3_PREFIX: ${{ vars.MUSIC_DATA_S3_PREFIX || 'music-data' }}
+  # The publishing switch: anything but 'true' makes every run a dry run.
+  MUSIC_DATA_PUBLISH: ${{ vars.MUSIC_DATA_PUBLISH || 'false' }}
+  # moenotes-masterdata-sync: decoded master data by region (index.json lists every file with its SHA-256).
+  MASTERDATA_BASE_URL: ${{ vars.MASTERDATA_BASE_URL || 'https://metadata.bdon.moe' }}
+  MASTERDATA_REGION: ${{ vars.MUSIC_DATA_MASTERDATA_REGION || 'hk-tw-mo' }}
+  # The ournotes-player whose chart data page reads the file: its modules smoke-test every build. No default yet: the
+  # page with the play scenarios is not merged; a run stops before building until MUSIC_DATA_PLAYER_REF is set.
+  PLAYER_REPOSITORY: ${{ vars.MUSIC_DATA_PLAYER_REPOSITORY || 'empty-sekai/ournotes-player' }}
+  PLAYER_REF: ${{ vars.MUSIC_DATA_PLAYER_REF || '' }}
+  PLAYFETCH_VERSION: ${{ vars.PLAYFETCH_VERSION || 'v0.92' }}
+  APK_PACKAGE: ${{ vars.STORY_APK_PACKAGE || 'com.bilibili.sirius' }}
+  PYTHON_VERSION: "3.13"
+  WORK: ${{ github.workspace }}/../work
+  # nnnotes settings (docs/configuration.md); the bundle key and the CDN come from secrets in the build step.
+  NNNOTES_CATALOG_REGION: tw
+  NNNOTES_CATALOG_LANGUAGE: zh-Hant
+  NNNOTES_SERVERS_TW_NAME: TW/HK/MO
+  NNNOTES_SERVERS_TW_LANGUAGES: zh-Hans,zh-Hant,en,ko,ja
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      build: ${{ steps.plan.outputs.build }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0          # the nnnotes commit: the last one that changed src/, rust/ or pyproject.toml
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Inputs against the published build
+        id: plan
+        env:
+          FORCE: ${{ github.event.inputs.force }}
+        run: python .github/scripts/music_data.py plan
+
+  build:
+    needs: plan
+    if: needs.plan.outputs.build == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+
+      - name: The chart data page
+        run: .github/scripts/songs_page.sh "$WORK/page"
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - name: Install nnnotes
+        # builds the extension module nnnotes._deck: the deck model at the commit rust/Cargo.toml pins
+        run: uv pip install --system -e ".[test]" boto3
+
+      - name: Gate self-test
+        env:
+          MUSIC_DATA_PAGE: ${{ env.WORK }}/page/examples/songs
+        run: python -m pytest -q -p no:cacheprovider .github/scripts/test_music_data.py
+
+      - name: APK
+        env:
+          PLAYFETCH_CREDENTIALS_JSON: ${{ secrets.PLAYFETCH_CREDENTIALS }}
+        run: .github/scripts/apk.sh "$WORK/apk"
+
+      - name: Master data
+        run: python .github/scripts/music_data.py master "$WORK/master"
+
+      - name: Build
+        env:
+          NNNOTES_BUNDLE_KEY: ${{ secrets.NNNOTES_BUNDLE_KEY }}
+          NNNOTES_BUNDLE_NONCE_SEED: ${{ secrets.NNNOTES_BUNDLE_NONCE_SEED }}
+          NNNOTES_SERVERS_TW_CDN: ${{ secrets.NNNOTES_SERVERS_TW_CDN }}
+          # A new cache on every run, never actions/cache: nnnotes keeps a downloaded catalog file for good (a cached
+          # one would never see a new resource version), and the cache holds decrypted game files.
+          NNNOTES_PATHS_CACHE: ${{ env.WORK }}/cache
+          NNNOTES_PATHS_MASTER: ${{ env.WORK }}/master
+          NNNOTES_PATHS_APK: ${{ env.WORK }}/apk/base.apk
+        run: python .github/scripts/music_data.py build "$WORK/out"
+
+      - name: Gates
+        run: python .github/scripts/music_data.py check "$WORK/out" "$WORK/master" "$WORK/page/examples/songs"
+
+      - name: Publish
+        # Only after every gate passed (a failed step skips it). A dry run (the dry_run input, or the publishing switch
+        # MUSIC_DATA_PUBLISH off) lists what it would upload; it gets no bucket key: anonymous, it can only read.
+        env:
+          STORY_S3_ACCESS_KEY: ${{ vars.MUSIC_DATA_PUBLISH == 'true' && secrets.STORY_S3_ACCESS_KEY || '' }}
+          STORY_S3_SECRET_KEY: ${{ vars.MUSIC_DATA_PUBLISH == 'true' && secrets.STORY_S3_SECRET_KEY || '' }}
+          FORCE: ${{ github.event.inputs.force }}
+        run: python .github/scripts/music_data.py publish "$WORK/out" ${{ (github.event.inputs.dry_run == 'true' || vars.MUSIC_DATA_PUBLISH != 'true') && '--dry-run' || '' }}
