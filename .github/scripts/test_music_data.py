@@ -5,8 +5,9 @@ fails on the defect it is there for. Runs in seconds, without the network:
 
 The JSON Schema gate uses docs/schema/music-data.schema.json (or $MUSIC_DATA_SCHEMA) when the checkout has it; the
 page smoke test runs when $MUSIC_DATA_PAGE names ournotes-player's examples/songs (and Node.js is installed). Real
-files, when named: $MUSIC_DATA_SAMPLE (a file with the play scenario fields: the content gates pass) and
-$MUSIC_DATA_OLD_SAMPLE (one without them: the scenario gate stops it).
+files, when named: $MUSIC_DATA_SAMPLE (a file with the play scenario fields: the content gates pass; one made before
+the ranges' luckPoints, the deck gate stops on those alone) and $MUSIC_DATA_OLD_SAMPLE (one without the play scenario
+fields: the scenario gate stops it).
 """
 import copy
 import hashlib
@@ -53,27 +54,31 @@ def check_deck(exact):
     return {"deck": [[0, 5000], None], "exact": exact, "predicted": exact + 0.25, "bound": 7.0}
 
 
-def deck_chart():
-    seed = {"seed": 0, "score": 120000, "ranges": [{"rangeScore": 4000, "rankBonus": 10000, "maxCombo": 10,
-                                                   "justCount": 0, "lotResults": [0, 0, 0, 0],
-                                                   "rangeScorePerfect": 4000}],
-            "weights": [[0.5, 0.25]], "check": check_deck(2000), "scorePerfect": 120000,
-            "rangeWeights": [[[0.1], [0.05]]], "rankCheck": dict(check_deck(1900), ranks=[3])}
+LUCK_SEEDS = [11, 22]                                                   # a luck chart's seeds; else the one seed 0
+
+
+def deck_chart(luck=False):
+    def one(n):
+        return {"seed": n, "score": 120000 + n, "ranges": [{"rangeScore": 4000, "rankBonus": 10000, "maxCombo": 10,
+                                                            "justCount": 0, "luckPoints": 3 if luck else 0,
+                                                            "lotResults": [0, 0, 0, 0], "rangeScorePerfect": 4000}],
+                "weights": [[0.5, 0.25]], "check": check_deck(2000), "scorePerfect": 120000 + n,
+                "rangeWeights": [[[0.1], [0.05]]], "rankCheck": dict(check_deck(1900), ranks=[3])}
     return {"convertedNoteCount": 20, "skip": 0.01, "events": [[0, 1000], [1, 3000]], "positions": 2,
-            "ranges": [{"index": 0, "mission": 1, "startMs": 1000, "endMs": 5000, "rankBonusPercent": 250,
-                        "rankBonusPercents": [250, 190, 160, 100, 100]}],
-            "justNotes": 0, "seeds": [seed],
+            "ranges": [{"index": 0, "mission": 2 if luck else 1, "startMs": 1000, "endMs": 5000,
+                        "rankBonusPercent": 250, "rankBonusPercents": [250, 190, 160, 100, 100]}],
+            "justNotes": 0, "seeds": [one(n) for n in (LUCK_SEEDS if luck else [0])],
             "offSeeds": [{"seed": 0, "score": 90000, "weights": [[0.4, 0.2]], "check": check_deck(1500)}],
             "unplayable": None}
 
 
-def chart(difficulty, score_id, last=60000):
+def chart(difficulty, score_id, last=60000, luck=False):
     return {"difficulty": difficulty, "scoreId": score_id, "level": 10, "displayLevel": 10.5, "fullComboCount": 20,
             "asset": {"key": f"Live/MusicScore/c/c_{score_id}", "sha256": "ab" * 32},
             "notes": {"judged": 20, "total": 22, "byOperateType": {"1": 20, "120": 2}},
             "bpm": {"main": 120.0, "min": 120.0, "max": 120.0, "changes": [{"timeMs": 0, "bpm": 120.0}]},
             "firstNoteMs": 1000, "lastJudgedNoteMs": last, "lastNoteMs": last, "musicLengthMs": last + 1000,
-            "skillEventsMs": [1000, 3000], "fevers": [[1000, 5000]], "deck": deck_chart()}
+            "skillEventsMs": [1000, 3000], "fevers": [[1000, 5000]], "deck": deck_chart(luck)}
 
 
 def song(i, charts):
@@ -109,7 +114,8 @@ def sample() -> dict:
         "tags": [{"id": 1, "name": text("tag")}],
         "categories": [{"id": 1, "musicCategories": [1], "name": text("cat")}],
         "deck": {"model": {"power": 300000, "checkPower": 1000003}, "kinds": [kind]},
-        "songs": [song(100001, [chart("easy", 10), chart("expert", 30)]), song(100002, [chart("expert", 40)])],
+        "songs": [song(100001, [chart("easy", 10), chart("expert", 30, luck=True)]),
+                  song(100002, [chart("expert", 40, luck=True)])],
     }
 
 
@@ -216,6 +222,14 @@ def unplayable(doc):
     (lambda d: d["songs"][0]["charts"][0]["deck"].update(seeds=[]), "deck", "no seeds"),
     (unplayable, "deck", "unplayable, but has Gekisou on seeds"),
     (lambda d: d["songs"][0]["charts"][0]["deck"].update(events=[[0, 1000]]), "deck", "1 skill events"),
+    (lambda d: seed(d).update(seed=5), "deck", "seeds [5] without a luck range, expected the one seed 0"),
+    (lambda d: d["songs"][0]["charts"][1]["deck"]["seeds"].pop(), "deck", "1 seeds on a luck chart"),
+    (lambda d: d["songs"][0]["charts"][1]["deck"]["seeds"][1].update(seed=11), "deck", "2 seeds on a luck chart"),
+    (lambda d: d["songs"][1]["charts"][0]["deck"]["seeds"][1].update(seed=33), "deck",
+     "its 2 seeds are not the 2 of the first luck chart"),
+    (lambda d: seed(d)["ranges"][0].update(rankBonus=9999), "deck", "rankBonus 9999 is not trunc(4000 * 250 / 100)"),
+    (lambda d: seed(d)["ranges"][0].pop("luckPoints"), "deck", "seed 0 range 0: luckPoints missing"),
+    (lambda d: seed(d, 0, 1)["ranges"][0].update(luckPoints=2.5), "deck", "seed 11 range 0: luckPoints not an int"),
     # numbers
     (lambda d: seed(d)["weights"][0].__setitem__(1, float("nan")), "finite", "weights[0][1]: not finite"),
     (lambda d: d["songs"][1]["charts"][0]["bpm"].update(main=float("inf")), "finite", "bpm.main: not finite"),
@@ -339,10 +353,23 @@ def real(name):
     return Path(p).read_bytes()
 
 
+def luck_points(raw: bytes) -> bool:
+    """Whether a file's deck.seeds ranges have luckPoints (a file made before them has none)."""
+    return any("luckPoints" in r for _, c in music_data.charts_of(json.loads(raw))
+               for s in (c.get("deck") or {}).get("seeds") or [] for r in s.get("ranges") or [])
+
+
+def before_luck_points(r: dict) -> bool:
+    """The deck gate stopped only on the ranges' missing luckPoints."""
+    g = gate(r, "deck")
+    return not g["passed"] and all(f.endswith("luckPoints missing") for f in g["failures"])
+
+
 def test_a_real_file_without_the_scenario_fields():
     raw = real("MUSIC_DATA_OLD_SAMPLE")
     r = gates(raw, Context(language="zh-Hant"), only=CONTENT)
-    assert failures(r) == [("scenarios", gate(r, "scenarios")["failures"])]
+    assert [n for n, _ in failures(r)] == (["scenarios"] if luck_points(raw) else ["deck", "scenarios"])
+    assert luck_points(raw) or before_luck_points(r)
     g = gate(r, "scenarios")
     charts = sum(len(s["charts"]) for s in json.loads(raw)["songs"])
     assert g["failureCount"] >= charts and all("offSeeds missing" in f or "rankBonusPercents missing" in f
@@ -354,7 +381,10 @@ def test_a_real_file_with_the_scenario_fields(tmp_path):
     (tmp_path / "music-data.json").write_bytes(raw)
     ctx = Context(language="zh-Hant", page=page_path(), file=tmp_path / "music-data.json", published=raw)
     r = gates(raw, ctx, only=CONTENT + ("counts", "size", "page"))
-    assert r["passed"], failures(r)
+    if luck_points(raw):
+        assert r["passed"], failures(r)
+    else:
+        assert [n for n, _ in failures(r)] == ["deck"] and before_luck_points(r), failures(r)
     assert gate(r, "scenarios")["warningCount"] == 0
 
 

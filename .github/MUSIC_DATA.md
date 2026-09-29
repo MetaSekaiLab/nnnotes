@@ -68,7 +68,7 @@ Every one must pass, else nothing is published. Warnings go to the job summary a
 | `schema` | the file against `docs/schema/music-data.schema.json` of the checkout (JSON Schema 2020-12) |
 | `provenance` | `format`; `region` `tw`; `master.source` `api`; `master.version` equal to the snapshot's and its `MasterManifest.json`'s; every table's SHA-256 the manifest's, every decoded table read the one `index.json` lists; the song tables and the deck model's present; `deck.commit` the one `rust/Cargo.lock` pins; `exporter.version` the installed nnnotes; an APK version; a catalog SHA-256 (warning: the APK is another client version than the snapshot's) |
 | `counts` | no fewer songs and charts than the published file (warning: ids no longer in it) |
-| `deck` | deck statistics on every chart: kinds, a positive power, events and positions matching the chart, seeds unless unplayable (a warning), `weights[kind][position]` numbers, every check deck within its bound |
+| `deck` | deck statistics on every chart: kinds, a positive power, events and positions matching the chart, seeds unless unplayable (a warning): the one seed 0 on a chart without a luck range, else two or more different seeds, the same on every luck chart (their number is the file's, not fixed), `weights[kind][position]` numbers, every seed range's `rankBonus` = trunc(`rangeScore` x `rankBonusPercent` / 100) and its `luckPoints` an int, every check deck within its bound |
 | `scenarios` | the play scenario fields: `offSeeds` exactly one entry (seed 0, score, weights, check within its bound), every range's `rankBonusPercents` five ints (the first `rankBonusPercent`), every seed's `scorePerfect`, `rangeWeights` (`[kind][position][range]`) and `rankCheck` (within its bound), every seed range's `rangeScorePerfect` (warnings, none in TW: a null `rangeWeights`, a null kind in it or in `offSeeds`' weights) |
 | `finite` | no NaN or infinity (warning: one inside master data rows, `songs[].master`, which the format writes as `1e999`) |
 | `references` | texts in every language of `languages` (names and titles not empty); unique ids; songs sorted; the songs' bands, vocal characters and tags in the file; a band or a band name; a jacket, and its file in `jackets/`; a BGM cue; score ranks; charts in difficulty order, score ids unique (warnings: a title without a `zh-Hant` text, a music category on no tab, a character of no band) |
@@ -89,7 +89,8 @@ python -m pytest -q -p no:cacheprovider .github/scripts/test_music_data.py
 
 with, optionally, `MUSIC_DATA_SCHEMA` (a schema file when the checkout has none), `MUSIC_DATA_PAGE` (an
 `examples/songs` directory: the smoke test), `MUSIC_DATA_SAMPLE` (a real file with the play scenario fields: its
-content gates pass) and `MUSIC_DATA_OLD_SAMPLE` (one without them: the scenario gate stops it).
+content gates pass; one made before the ranges' `luckPoints`: the deck gate stops it on those alone) and
+`MUSIC_DATA_OLD_SAMPLE` (one without the play scenario fields: the scenario gate stops it).
 
 ## Settings
 
@@ -112,7 +113,9 @@ Repository variables:
 
 - **nnnotes.** The workflow runs this fork's nnnotes. It needs upstream's `music-data` command with the play
   scenarios (MetaSekaiLab/nnnotes `a03591e`) and `--decoded-master` (MetaSekaiLab/nnnotes#6, `12df2a6`): sync the
-  fork with upstream first. Until then `plan` stops naming what is missing.
+  fork with upstream first. Until then `plan` stops naming what is missing. The deck gate also needs the ranges'
+  `luckPoints`, which come with nnnotes' and ournotes-deck's Gekisou skill changes: until the fork has them every
+  build stops there.
 - **The page.** Set `MUSIC_DATA_PLAYER_REF` to the ournotes-player commit of the chart data page that reads the play
   scenario fields, once that page is merged.
 - **Publishing.** Set `MUSIC_DATA_PUBLISH` to `true` last, when dry runs pass and the published format is final.

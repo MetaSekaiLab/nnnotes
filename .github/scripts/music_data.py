@@ -49,7 +49,7 @@ FORMAT = "nnnotes.music-data/1"
 BUILD_FORMAT = "moenotes.music-data-build/1"
 # This script's own version of a build: bump it when what it builds or publishes changes, so that the next run builds
 # although the master data, the deck model and nnnotes are the same.
-RECIPE = 1
+RECIPE = 2
 FILE, MARKER, JACKETS, ARCHIVE = "music-data.json", "build.json", "jackets/", "archive/"
 MANIFEST = "MasterManifest.json"
 SOURCE_PATHS = ("src", "rust", "pyproject.toml")    # nnnotes' code: the commit that last changed one of them
@@ -66,6 +66,7 @@ BGM_MS = (30_000, 600_000)                          # a song's BGM length
 BGM_CUE_SLACK_MS = 1000                             # |durationMs - lengthMs|
 BGM_TAIL_MS = 60_000                                # BGM after the last note: more is reported
 RANKS = 5
+LUCK_MISSION = 2                                    # a range of it draws lots: its chart has several seeds
 DIFFICULTIES = ("easy", "normal", "hard", "expert")
 SONG_TABLES = ("MasterLiveMusic", "MasterLiveMusicScore", "MasterText", "MasterBand", "MasterCharacter", "MasterTag",
                "MasterLiveMusicCategory", "MasterSound", "MasterSoundCueSheet", "MasterLiveScoreRank")
@@ -290,6 +291,16 @@ def within(c) -> bool:
             and abs(c["exact"] - c["predicted"]) <= c["bound"])
 
 
+def rank_bonus(range_score: int, percent: int) -> int:
+    """trunc(rangeScore * percent / 100): a range's rank bonus."""
+    q = abs(range_score * percent) // 100
+    return q if range_score * percent >= 0 else -q
+
+
+def luck_chart(deck: dict) -> bool:
+    return any(isinstance(r, dict) and r.get("mission") == LUCK_MISSION for r in deck.get("ranges") or [])
+
+
 def gate_schema(doc, ctx: Context, g: Gate):
     if ctx.schema is None:
         g.note = "skipped"
@@ -410,6 +421,9 @@ def weights_shape(w, kinds: int, positions: int, nullable: bool) -> bool:
 
 
 def gate_deck(doc, ctx: Context, g: Gate):
+    """The deck statistics. Seeds (deck.model.seeds): the one seed 0 on a chart without a luck range, else two or more
+    seeds, the same on every luck chart (their number is the file's); every range's rankBonus the rank 1 bonus and
+    its luckPoints (the range's luck points without skills)."""
     deck = doc.get("deck")
     if not isinstance(deck, dict):
         g.fail("deck is null: no deck statistics (made with --no-deck?)")
@@ -421,6 +435,7 @@ def gate_deck(doc, ctx: Context, g: Gate):
     if not (is_num(power) and power > 0):
         g.fail(f"deck.model.power {power!r}")
     n = unplayable = seeds = 0
+    luck_seeds = None
     for song, chart in charts_of(doc):
         n += 1
         w, d = where(song, chart), chart.get("deck")
@@ -440,6 +455,17 @@ def gate_deck(doc, ctx: Context, g: Gate):
                 g.fail(f"{w}: unplayable, but has Gekisou on seeds")
         elif not d.get("seeds"):
             g.fail(f"{w}: no seeds")
+        values = [s.get("seed") for s in d.get("seeds") or []]
+        if values and not luck_chart(d):
+            if len(values) != 1 or not is_int(values[0]) or values[0] != 0:
+                g.fail(f"{w}: seeds {values[:4]!r} without a luck range, expected the one seed 0")
+        elif values:
+            if not all(map(is_int, values)) or len(values) < 2 or len(set(values)) != len(values):
+                g.fail(f"{w}: {len(values)} seeds on a luck chart, expected two or more different int seeds")
+            elif luck_seeds is None:
+                luck_seeds = values
+            elif values != luck_seeds:
+                g.fail(f"{w}: its {len(values)} seeds are not the {len(luck_seeds)} of the first luck chart")
         for seed in d.get("seeds") or []:
             seeds += 1
             s = f"{w} seed {seed.get('seed')}"
@@ -449,9 +475,20 @@ def gate_deck(doc, ctx: Context, g: Gate):
                 g.fail(f"{s}: weights are not [kind][position] numbers")
             if len(seed.get("ranges") or []) != len(d.get("ranges") or []):
                 g.fail(f"{s}: {len(seed.get('ranges') or [])} range results for {len(d.get('ranges') or [])} ranges")
+            for i, (r, rr) in enumerate(zip(seed.get("ranges") or [], d.get("ranges") or [], strict=False)):
+                r, rr = (r if isinstance(r, dict) else {}), (rr if isinstance(rr, dict) else {})
+                if not (is_int(r.get("rangeScore")) and is_int(r.get("rankBonus"))):
+                    g.fail(f"{s} range {i}: rangeScore {r.get('rangeScore')!r}, rankBonus {r.get('rankBonus')!r}")
+                elif is_int(rr.get("rankBonusPercent")) and r["rankBonus"] != rank_bonus(r["rangeScore"],
+                                                                                         rr["rankBonusPercent"]):
+                    g.fail(f"{s} range {i}: rankBonus {r['rankBonus']} is not trunc({r['rangeScore']} * "
+                           f"{rr['rankBonusPercent']} / 100)")
+                if not is_int(r.get("luckPoints")):
+                    g.fail(f"{s} range {i}: luckPoints {'missing' if 'luckPoints' not in r else 'not an int'}")
             if not within(seed.get("check")):
                 g.fail(f"{s}: the check deck is not within its bound")
-    g.note = f"{n} charts, {kinds} kinds, {seeds} seeds, {unplayable} unplayable"
+    g.note = (f"{n} charts, {kinds} kinds, {seeds} seeds, {unplayable} unplayable, "
+              f"{len(luck_seeds or [])} seeds per luck chart")
 
 
 def gate_scenarios(doc, ctx: Context, g: Gate):
