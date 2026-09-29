@@ -443,6 +443,9 @@
               }
             }
           }
+        },
+        "gekisouAptitude": {
+          "$ref": "#/$defs/gekisouAptitude"
         }
       }
     },
@@ -960,6 +963,9 @@
             "null"
           ],
           "description": "why the game cannot play the chart with Gekisou (seeds is then empty; offSeeds is not)"
+        },
+        "gekisouAptitude": {
+          "$ref": "#/$defs/chartGekisouAptitude"
         }
       }
     },
@@ -1334,6 +1340,587 @@
           }
         }
       }
+    },
+    "aptitudeMeanSE": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "number",
+          "minimum": 0
+        }
+      ],
+      "items": false,
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "aptitudeCondition": {
+      "type": "object",
+      "required": [
+        "type",
+        "values",
+        "positive",
+        "targetIds"
+      ],
+      "properties": {
+        "type": {
+          "type": "integer"
+        },
+        "values": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        },
+        "positive": {
+          "type": "boolean"
+        },
+        "targetIds": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "integer"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "aptitudeEffect": {
+      "type": "object",
+      "required": [
+        "effectType",
+        "triggerType",
+        "effectValue",
+        "maxEffectValue",
+        "effectLimitCount",
+        "effectExecuteLimitCount",
+        "activationTimeSecond",
+        "skillTargetIds",
+        "trigger",
+        "condition",
+        "release",
+        "reset",
+        "cumulative"
+      ],
+      "properties": {
+        "effectType": {
+          "type": "integer"
+        },
+        "triggerType": {
+          "type": "integer"
+        },
+        "effectValue": {
+          "type": "integer"
+        },
+        "maxEffectValue": {
+          "type": "integer"
+        },
+        "effectLimitCount": {
+          "type": "integer"
+        },
+        "effectExecuteLimitCount": {
+          "type": "integer"
+        },
+        "activationTimeSecond": {
+          "type": "number"
+        },
+        "skillTargetIds": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        },
+        "trigger": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/aptitudeCondition"
+            }
+          }
+        },
+        "condition": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/aptitudeCondition"
+            }
+          }
+        },
+        "release": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/aptitudeCondition"
+            }
+          }
+        },
+        "reset": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/aptitudeCondition"
+            }
+          }
+        },
+        "cumulative": {
+          "anyOf": [
+            {
+              "type": "object",
+              "required": [
+                "type",
+                "values",
+                "targetIds",
+                "maxCumulativeCount"
+              ],
+              "properties": {
+                "type": {
+                  "type": "integer"
+                },
+                "values": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer"
+                  }
+                },
+                "targetIds": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer"
+                  }
+                },
+                "maxCumulativeCount": {
+                  "type": "integer"
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "aptitudeShape": {
+      "type": "object",
+      "required": [
+        "id",
+        "source",
+        "mission",
+        "bandCondition",
+        "effects",
+        "skills"
+      ],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "source": {
+          "enum": [
+            "member",
+            "support"
+          ]
+        },
+        "mission": {
+          "enum": [
+            1,
+            2,
+            3,
+            4
+          ]
+        },
+        "bandCondition": {
+          "type": "boolean"
+        },
+        "effects": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/aptitudeEffect"
+          }
+        },
+        "skills": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "level",
+              "memberTargetIds",
+              "bandIds"
+            ],
+            "properties": {
+              "id": {
+                "type": "integer"
+              },
+              "level": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "memberTargetIds": {
+                "anyOf": [
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "integer"
+                    }
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "bandIds": {
+                "anyOf": [
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "integer"
+                    }
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          },
+          "minItems": 1
+        }
+      }
+    },
+    "gekisouAptitude": {
+      "anyOf": [
+        {
+          "type": "object",
+          "required": [
+            "plainKind",
+            "host",
+            "seedRule",
+            "shapes"
+          ],
+          "properties": {
+            "plainKind": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "host": {
+              "type": "string",
+              "minLength": 1
+            },
+            "seedRule": {
+              "type": "object",
+              "required": [
+                "deterministicTest",
+                "batches",
+                "relative",
+                "baseline",
+                "crossSeeds"
+              ],
+              "properties": {
+                "deterministicTest": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "batches": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "minItems": 1
+                },
+                "relative": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "baseline": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "crossSeeds": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            },
+            "shapes": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/aptitudeShape"
+              }
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "aptitudeVariant": {
+      "type": "object",
+      "required": [
+        "shape",
+        "bandMatch",
+        "deterministic",
+        "seeds",
+        "seTargetMet",
+        "crossSeeds",
+        "score",
+        "scorePerfect",
+        "tail",
+        "tailPerfect",
+        "converted",
+        "ranges",
+        "weights",
+        "rangeWeights",
+        "check"
+      ],
+      "properties": {
+        "shape": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "bandMatch": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "deterministic": {
+          "type": "boolean"
+        },
+        "seeds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "seTargetMet": {
+          "type": "boolean"
+        },
+        "crossSeeds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "score": {
+          "$ref": "#/$defs/aptitudeMeanSE"
+        },
+        "scorePerfect": {
+          "$ref": "#/$defs/aptitudeMeanSE"
+        },
+        "tail": {
+          "$ref": "#/$defs/aptitudeMeanSE"
+        },
+        "tailPerfect": {
+          "$ref": "#/$defs/aptitudeMeanSE"
+        },
+        "converted": {
+          "$ref": "#/$defs/aptitudeMeanSE"
+        },
+        "ranges": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "rangeScore",
+              "rankBonus",
+              "rangeScorePerfect",
+              "maxCombo",
+              "justCount",
+              "luckPoints"
+            ],
+            "properties": {
+              "rangeScore": {
+                "$ref": "#/$defs/aptitudeMeanSE"
+              },
+              "rankBonus": {
+                "$ref": "#/$defs/aptitudeMeanSE"
+              },
+              "rangeScorePerfect": {
+                "$ref": "#/$defs/aptitudeMeanSE"
+              },
+              "maxCombo": {
+                "$ref": "#/$defs/aptitudeMeanSE"
+              },
+              "justCount": {
+                "$ref": "#/$defs/aptitudeMeanSE"
+              },
+              "luckPoints": {
+                "$ref": "#/$defs/aptitudeMeanSE"
+              }
+            }
+          }
+        },
+        "weights": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/aptitudeMeanSE"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rangeWeights": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/aptitudeMeanSE"
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "check": {
+          "type": "object",
+          "required": [
+            "seed",
+            "ranks",
+            "deck",
+            "exact",
+            "predicted",
+            "bound"
+          ],
+          "properties": {
+            "seed": {
+              "type": "integer"
+            },
+            "ranks": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 5
+              }
+            },
+            "deck": {
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "array",
+                    "prefixItems": [
+                      {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      {
+                        "type": "integer"
+                      }
+                    ],
+                    "items": false,
+                    "minItems": 2,
+                    "maxItems": 2
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "exact": {
+              "type": "integer"
+            },
+            "predicted": {
+              "type": "number"
+            },
+            "bound": {
+              "type": "number",
+              "minimum": 0
+            }
+          }
+        }
+      }
+    },
+    "chartGekisouAptitude": {
+      "anyOf": [
+        {
+          "type": "object",
+          "required": [
+            "factors",
+            "variants"
+          ],
+          "properties": {
+            "factors": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "judgedNotes",
+                  "justNotes",
+                  "perfectNotes",
+                  "tailNotes",
+                  "comboAtStart",
+                  "lotteries"
+                ],
+                "properties": {
+                  "judgedNotes": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "justNotes": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "perfectNotes": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "tailNotes": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "comboAtStart": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "lotteries": {
+                    "$ref": "#/$defs/aptitudeMeanSE"
+                  }
+                }
+              }
+            },
+            "variants": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/aptitudeVariant"
+              }
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
     }
   }
 }

@@ -11,7 +11,8 @@ as its extension module `nnnotes._deck`. The format is `nnnotes.music-data/1`; i
 
 ```
 nnnotes music-data (--master-files DIR | --apk-master | --decoded-master) [--full] [--no-deck] [--seeds N]
-                   [--workers N] [--no-bgm] [--jackets DIR] -o FILE
+                   [--workers N] [--no-gekisou-aptitude] [--aptitude-max-seeds N] [--aptitude-cross-seeds N]
+                   [--no-bgm] [--jackets DIR] -o FILE
 ```
 
 - `--master-files DIR`: master data files as served, `DIR/MasterManifest.json` and the `.bin` files it lists
@@ -29,6 +30,9 @@ nnnotes music-data (--master-files DIR | --apk-master | --decoded-master) [--ful
   whole-live simulation, dozens of lives per chart: a full run takes processor time in proportion to the number of
   charts. `--workers N` sets the threads it uses (default: every processor), `--seeds N` the seeds measured on a chart
   with a luck range (default 8).
+- `--no-gekisou-aptitude`: keep the existing deck statistics but skip single-skill aptitude measurements.
+  `--aptitude-max-seeds N` caps their samples (default 1024), and `--aptitude-cross-seeds N` caps cross-term samples
+  (default 64). Lower caps reduce work but may leave the standard-error target unmet.
 - `--no-bgm`: do not read the cue sheets (every `bgm.length` is null).
 - `--jackets DIR`: also write every song's jacket, the Texture2D `Image/Jacket/<jacket>`, as `DIR/<jacket>.webp`
   (WebP quality 88, scaled down with Lanczos to at most 320 pixels on the longer side, without alpha when opaque); a
@@ -63,7 +67,7 @@ the wheels on PyPI carry it. See [Building](#building).
   "languages": ["ja", "en", "zh-Hant", "zh-Hans", "ko"],
   "bands": [...], "characters": [...], "tags": [...], "categories": [...],
   "gekisouCatalog": {"skills": [...], "supportSkills": [...], "members": [...], "snaps": [...]},
-  "deck": {"model": {...}, "kinds": [...]},
+  "deck": {"model": {...}, "kinds": [...], "gekisouAptitude": {...}},
   "songs": [{"id": 100001, ..., "charts": [{..., "deck": {...}}, ...]}, ...],
   "master": {...}, "charts": [...]
 }
@@ -264,6 +268,59 @@ every array has its shape (`[kind][position]`, `[kind][position][range]`, one ra
 points, one Gekisou off seed), the seeds are the chart's seed set (none on a chart unplayable with Gekisou, seed 0
 without a luck range, else the first `--seeds` seeds of the published seed set, which nnnotes computes itself), and
 every check and rank check is within its bound.
+
+### Gekisou skill aptitude
+
+`deck.gekisouAptitude` describes the shapes measured, and each chart's `deck.gekisouAptitude` describes how its
+score changes with **one** such shape equipped. It does not select a deck, and increments measured separately must
+not be added to estimate several skills together. The existing `deck.seeds` still measures Gekisou **without card
+Gekisou skills**; a solo/free live uses `offSeeds`, without Gekisou. These are model results, not a guarantee that
+they reproduce the game.
+
+The file header has `plainKind` (the ordinary, unconditional, whole-team five-second score-up kind used for cross
+terms, or null), `host` (how a support skill's paired member is measured), `seedRule` and `shapes`. A shape has a
+continuous zero-based `id`, `source` (`member` or `support`), `mission` (1 combo, 2 luck, 3 Just, 4 all),
+`bandCondition`, normalized `effects`, and `skills`. Each skill is `{id, level, memberTargetIds, bandIds}`; join its
+id to `gekisouCatalog.skills` or `supportSkills` for its name. Members use their skill's highest level; snaps use
+the support skill level at their highest rank. Effect rows preserve the master order and expose their effect,
+trigger, duration, value, limits, targets, four condition groups and cumulative condition (the exact fields are in
+the JSON Schema). Equivalent parameters share a shape. Support condition 5000's target is normalized away;
+`memberTargetIds` and `bandIds` retain each skill's targets and bands for matching, or are null without that condition.
+
+Each chart has `{factors, variants}`, or null when aptitude is disabled, the chart is unplayable with Gekisou, there
+are no ranges, or the master has no shapes. `factors`, in range order, has `judgedNotes`, `justNotes`, `perfectNotes`,
+`tailNotes`, `comboAtStart`, and `lotteries`: the mean and standard error of the number of lotteries without a skill,
+on `deck.seeds` (zero outside luck ranges).
+
+Variants are in shape-id order, only for the chart's missions or mission 4. A band-conditioned shape appears twice,
+`bandMatch: true` then `false`; otherwise `bandMatch` is null. Each variant has:
+
+| Field | Content |
+|---|---|
+| `shape`, `bandMatch` | shape and the measured band condition |
+| `deterministic`, `seeds`, `seTargetMet`, `crossSeeds` | whether random dependencies were excluded and four initial plays agreed, number of measured seeds, whether the standard-error target was met, number used for cross terms |
+| `score`, `scorePerfect`, `tail`, `tailPerfect`, `converted` | score increments, the increments after the ranges, and the conversion increment; each `[mean, standard error]` |
+| `ranges` | one object per range: `rangeScore`, `rankBonus`, `rangeScorePerfect`, `maxCombo`, `justCount`, `luckPoints`, each `[mean, standard error]` |
+| `weights` | cross terms `[position][mean, standard error]`, null without a plain kind |
+| `rangeWeights` | cross terms `[position][range][mean, standard error]`, null without a plain kind or a linear rank model |
+| `check` | first seed's check: `seed`, `ranks`, `deck` (plain kind/value or null per slot), `exact`, `predicted`, `bound` |
+
+Point increments are measured at `deck.model.power`, using the same seed for the equipped and unequipped plays.
+`score.mean = tail.mean + sum(rangeScore.mean + rankBonus.mean)`; **standard errors cannot be added this way**.
+Point means and errors are rounded to 0.001. With R ranges this equality allows `(2+2R)*0.0005 + 1e-8` points of
+independent rounding error. Weights, lottery statistics and the check's prediction and bound keep binary64 precision.
+A deterministic result uses one seed and zero standard errors. Charts with luck ranges, effects 11000–11005,
+or probability condition 4011 in any condition group always use random sampling, even if the first observations
+agree; four matching observations alone do not establish determinism. Others expand through `seedRule.batches` (normally
+32, 64, 128, 256, 512, 1024), stopping when the unrounded score error is at most the larger of `relative` (0.01) times
+the absolute mean increment and `baseline` (0.001) times the no-skill mean on the same seeds. A result at the cap may
+have `seTargetMet: false`. Cross terms use the first `min(seeds, seedRule.crossSeeds)` seeds (normally capped at 64).
+The sampled increment is an estimate, not an exact expectation; consult its error and the check bound.
+
+The exporter checks the shape table against independently read master data, its skill/level coverage and bands,
+the variants' references, mission and band coverage, finite `[mean, se]` pairs with nonnegative errors, deterministic
+zero errors, array lengths, the tail identity and each check's bound. New exports always include the aptitude keys;
+the Schema still accepts older `/1` files without them.
 
 ## The deck input (`--full`)
 

@@ -671,7 +671,8 @@ in the printed summary and in `SITE.failures.json`, models that fail in the summ
 
 ```
 nnnotes music-data (--master-files DIR | --apk-master | --decoded-master) [--full] [--no-deck] [--seeds N]
-                   [--workers N] [--no-bgm] [--jackets DIR] -o FILE
+                   [--workers N] [--no-gekisou-aptitude] [--aptitude-max-seeds N] [--aptitude-cross-seeds N]
+                   [--no-bgm] [--jackets DIR] -o FILE
 ```
 
 Writes one JSON file with every `MasterLiveMusic` song and its charts for one master data version: titles, readings
@@ -685,7 +686,9 @@ score-up skill kind at every performance position, with Gekisou on (a Gekisou li
 rank and the Perfect play need) and off (a solo live), measured by the deck model ournotes-deck (built into nnnotes as
 `nnnotes._deck`) on its whole-live simulation and checked against the chart facts and the master data. `--full` also writes the deck model's input: every
 `MasterLiveMusicScore` row's chart as the client builds it at runtime (notes, skill events, fever ranges) and the
-master data tables about cards, skills, bonuses, scores and events. `--no-deck` skips the deck model (every chart's
+master data tables about cards, skills, bonuses, scores and events. Single-skill Gekisou aptitude is included by
+default (not an optimal deck); `--no-gekisou-aptitude` omits it, `--aptitude-max-seeds N` (1024) and
+`--aptitude-cross-seeds N` (64) cap its sampling and cross terms. `--no-deck` skips the deck model (every chart's
 `deck` is null); `--seeds N` (default 8) and `--workers N` (default: every processor) set its seeds on charts with a
 luck range and its threads. The master data is decoded from the files as served: `--master-files DIR` reads
 `DIR/MasterManifest.json` and the `.bin` files it lists (`master download`; the file's region is `[catalog] region`),

@@ -37,7 +37,7 @@ summaries are printed as UTF-8 whatever the console encoding.
                          [--font emoji=<file>]
                          [--region <region> [--region ...] | --all-regions]
     nnnotes music-data --master-files <master download dir> | --apk-master | --decoded-master [--full] [--no-deck]
-                       [--no-bgm] [--jackets DIR] -o out/music-data.json[.gz]
+                       [--no-gekisou-aptitude] [--no-bgm] [--jackets DIR] -o out/music-data.json[.gz]
     nnnotes export -o out/assets [--select group:<group> | key:<prefix> | bundle:<glob> ...] [--layout original,cas]
     nnnotes plan [--select ...] [--json] [--check] [--emit-tasks <dir>]
     nnnotes run-stage <task.json> [...]
@@ -674,7 +674,9 @@ def cmd_music_data(args, cfg):
         cfg.require_path("paths", "apk")             # the master data files ship in the APK
     apk = _existing(cfg, "paths", "apk")
     try:
-        deck = None if args.no_deck else musicdata.Deck(seeds=args.seeds, workers=args.workers)
+        deck = None if args.no_deck else musicdata.Deck(
+            seeds=args.seeds, workers=args.workers, aptitude=not args.no_gekisou_aptitude,
+            aptitude_max_seeds=args.aptitude_max_seeds, aptitude_cross_seeds=args.aptitude_cross_seeds)
         if args.apk_master:
             src, region = deckdata.apk_master(apk), deckdata.EMBEDDED
         elif args.decoded_master:                    # decoded elsewhere: no master key
@@ -978,6 +980,12 @@ def build_parser() -> argparse.ArgumentParser:
                    help="seeds measured on a chart with a luck range (default 8)")
     c.add_argument("--workers", type=int, metavar="N",
                    help="threads measuring charts (default: every processor)")
+    c.add_argument("--no-gekisou-aptitude", action="store_true",
+                   help="leave out the charts' Gekisou aptitude (every gekisouAptitude is null)")
+    c.add_argument("--aptitude-max-seeds", type=int, metavar="N",
+                   help="seeds of a Gekisou aptitude variant at most (default: the deck model's, 1024)")
+    c.add_argument("--aptitude-cross-seeds", type=int, metavar="N",
+                   help="seeds of a Gekisou aptitude variant's cross terms (default: the deck model's, 64)")
     c.add_argument("--no-bgm", action="store_true",
                    help="do not read the BGM cue sheets (every song's bgm.length is null)")
     c.add_argument("--jackets", metavar="DIR",
