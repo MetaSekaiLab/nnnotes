@@ -90,6 +90,29 @@ def test_version_headers_and_master_without_asset(upstream):
     assert result.version == MASTER and result.resource_version == "" and result.resource_hash is None
 
 
+@pytest.mark.parametrize("api", ["api.invalid:443", " api.invalid:8443/ ", "[::1]:443"])
+def test_api_root_defaults_to_https(api, monkeypatch):
+    cfg = Config({"catalog": {"region": "jp"}, "servers": {"jp": {
+        "api": api, "cdn": "https://cdn.invalid", "client_version": "1.0.4"}}}, environ={})
+    calls = []
+    def call(root, *args, response_metadata, **kwargs):
+        calls.append(root)
+        response_metadata.update({"x-sirius-env": "https://cdn.invalid", "x-sirius-cred": "synthetic"})
+        return version_response(MASTER)
+    monkeypatch.setattr(gameapi, "call", call)
+    configfile.validate(configfile.resolve("servers.jp.api")[0], api)
+    assert jp.Session(cfg, "jp").observe().version.version == MASTER
+    assert calls == [jp.origin("https://" + api.strip())]
+
+
+@pytest.mark.parametrize("api", ["http://api.invalid", "https://user:pass@api.invalid", "https://api.invalid/path"])
+def test_api_origin_restrictions_still_apply(api, monkeypatch):
+    cfg = Config({"catalog": {"region": "jp"}, "servers": {"jp": {"api": api}}}, environ={})
+    monkeypatch.setattr(gameapi, "call", lambda *a, **kw: pytest.fail("invalid origin reached the API"))
+    with pytest.raises(ConfigError):
+        jp.Session(cfg, "jp").observe()
+
+
 def test_live_selection_numeric_and_no_fallback():
     def entry(client, version):
         return {"minClientVersion": client, "version": version, "Android": HASH}
@@ -248,6 +271,66 @@ def test_apk_update_with_same_asset_snapshot_does_not_reuse_embedded_cache(tmp_p
     assert len(db.versions()) == 2
 
 
+def local_catalog(revision=1):
+    return synth.CatalogWriter().build([
+        ("Local", "Assets/local", [1]),
+        ("local.bundle", synth.local("local.bundle"), []),
+        ("local.acb", synth.local("local.acb"), []),
+    ], build_hash=str(revision) * 32)
+
+
+@pytest.mark.parametrize("apk_state", ["unset", "missing", "different", "broken"])
+@pytest.mark.parametrize("kind", ["bundles", "rawFiles"])
+def test_remote_replay_does_not_open_the_apk(upstream, tmp_path, apk_state, kind):
+    from nnnotes.catalog import APK_CATALOG
+    cfg = upstream.cfg
+    cfg._data["bundle"] = {"key": "00" * 16, "nonce_seed": "11"}
+    cfg._data["paths"] = {"cache": str(tmp_path / "cache")}
+    apk = tmp_path / "base.apk"
+    if apk_state != "unset":
+        cfg._data["paths"]["apk"] = str(apk)
+    if apk_state == "different":
+        apk.write_bytes(zip_bytes({APK_CATALOG: local_catalog(2)}))
+    elif apk_state == "broken":
+        apk.write_bytes(b"not a zip")
+    source = jp.Session(cfg, "jp").observe().source
+    db = catalogdb.CatalogDB(tmp_path / "store")
+    record = db.add(cat_bytes(), local_catalog(), source=source.to_dict(), region="jp")
+    entry = next(e for e in db.index(record)[kind] if e["remote"])
+    upstream.body = b"UnityFS\0synthetic resource"
+    fetcher = CatalogFetcher(tmp_path / "store", tmp_path / "cache", cfg)
+    assert fetcher.fetch_location(record["id"], entry["location"]).read_bytes() == upstream.body
+    assert len(upstream.seen) == 1
+
+
+@pytest.mark.parametrize("kind", ["bundles", "rawFiles"])
+@pytest.mark.parametrize("state", ["matching", "different", "no-catalog", "cached"])
+def test_local_replay_validates_only_on_cache_miss(tmp_path, kind, state):
+    from nnnotes.catalog import APK_CATALOG, APK_AA_DIR
+    source = jp.Source("jp", "1.0", HASH, "https://cdn.invalid")
+    apk = tmp_path / "base.apk"
+    members = {APK_AA_DIR + "Android/local.bundle": b"UnityFS\0local", APK_AA_DIR + "Android/local.acb": b"@UTFraw"}
+    if state != "no-catalog":
+        members[APK_CATALOG] = local_catalog(2 if state == "different" else 1)
+    apk.write_bytes(zip_bytes(members))
+    cfg = Config({"catalog": {"region": "jp"}, "paths": {"apk": str(apk)}}, environ={})
+    db = catalogdb.CatalogDB(tmp_path / "store")
+    record = db.add(cat_bytes(), local_catalog(), source=source.to_dict(), region="jp")
+    entry = next(e for e in db.index(record)[kind] if not e["remote"])
+    fetcher = CatalogFetcher(tmp_path / "store", tmp_path / "cache", cfg)
+    if state in ("different", "no-catalog"):
+        with pytest.raises(ConfigError, match="APK set it was imported with"):
+            fetcher.fetch_location(record["id"], entry["location"])
+        return
+    expected = members[APK_AA_DIR + ("Android/local.bundle" if kind == "bundles" else "Android/local.acb")]
+    assert fetcher.fetch_location(record["id"], entry["location"]).read_bytes() == expected
+    if state == "cached":
+        apk.unlink()
+        cfg._data["paths"].pop("apk")
+        replay = CatalogFetcher(tmp_path / "store", tmp_path / "cache", cfg)
+        assert replay.fetch_location(record["id"], entry["location"]).read_bytes() == expected
+
+
 def zip_bytes(files):
     output = io.BytesIO()
     with zipfile.ZipFile(output, "w") as z:
@@ -285,6 +368,31 @@ def test_per_region_apk_and_client_settings(tmp_path):
     assert gameapi.client_version(cfg, "jp") == "1.0.4" and gameapi.client_version(cfg, "tw") == "1.0.1"
     assert configfile.resolve("servers.jp.apk")[0].kind == "path"
     assert configfile.resolve("servers.jp.client_version")[0].kind == "string"
+
+
+@pytest.mark.parametrize("kind", ["--all-live2d", "--all-stories"])
+@pytest.mark.parametrize("region", ["jp", "tw"])
+def test_web_preflight_uses_the_selected_regions_apk(tmp_path, monkeypatch, kind, region):
+    from nnnotes import storysite, tmpfont, web, webmodel
+    conf = tmp_path / "nnnotes.toml"
+    default = "jp" if region == "tw" else "tw"
+    conf.write_text(f'[catalog]\nregion="{default}"\nlanguage="ja"\n'
+                    f'[servers.{default}]\ncdn="https://default.invalid"\n'
+                    f'[servers.{region}]\ncdn="https://target.invalid"\napk="target.apk"\n'
+                    '[paths]\nplayer="player"\n', encoding="utf-8")
+    (tmp_path / "target.apk").write_bytes(b"synthetic")
+    monkeypatch.setattr(tmpfont, "require_extra", lambda *a, **kw: None)
+    monkeypatch.setattr(web, "check_player", lambda *a, **kw: tmp_path / "player")
+    monkeypatch.setattr(cli, "open_catalog", lambda *a, **kw: object())
+    monkeypatch.setattr(webmodel, "catalog_models", lambda *a, **kw: {})
+    seen = []
+    def build(out, selection, cfg, *args, **kwargs):
+        seen.append((cfg.region(), cfg.path("paths", "apk")))
+        return {}
+    monkeypatch.setattr(webmodel, "build", build)
+    monkeypatch.setattr(storysite, "build", build)
+    cli.main(["--config", str(conf), "web", str(tmp_path / "site"), kind, "--region", region])
+    assert seen == [(region, tmp_path / "target.apk")]
 
 
 def test_datapack_is_loaded_in_the_boot_environment(tmp_path, monkeypatch):

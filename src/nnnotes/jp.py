@@ -160,8 +160,8 @@ class Session:
     def observe(self, *, timeout=gameapi.TIMEOUT):
         with self._lock:
             section = f"servers.{self.region}"
-            api = gameapi.api_root(self.cfg, section)
-            origin(api)
+            api = gameapi.api_root(self.cfg, section).strip()
+            api = origin(api if "://" in api else "https://" + api)
             allowed = origin(self.cfg.cdn(self.region))
             client = gameapi.client_version(self.cfg, self.region)
             headers = {}

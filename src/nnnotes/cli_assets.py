@@ -301,12 +301,10 @@ class CatalogFetcher:
                     session = Session(cfg, cfg.region())
                     cache = source.cache_dir(cache)
                 cat = Catalog(remote, cache, cdn=lambda: cfg.cdn(cfg.region()),
-                              bundle_key=lambda: _bundle_key(cfg), apk=cfg.path("paths", "apk"),
+                              bundle_key=lambda: _bundle_key(cfg), apk_catalog=apk,
                               source=source, session=session)
-                if source is not None and apk is not None and cat.sources().get("apk") != apk:
-                    raise ConfigError("JP historical catalog needs the APK set it was imported with")
-                # Replay the APK catalog imported with this version, not today's catalog offsets.
-                cat._sources = {"remote": remote, **({"apk": apk} if apk is not None else {})}
+                # Replay imported offsets; the current APK is needed only for uncached local files.
+                cat.apk = cfg.path("paths", "apk")
                 hit = self._catalogs[vid] = (cat, catalogdb.by_id(catalogdb.index(remote, apk)))
             return hit
 
@@ -321,23 +319,20 @@ class CatalogFetcher:
         if loc["kind"] == "bundle":
             return cat.fetch(Bundle(0, iid, file_name(iid), remote_path(iid) is not None))
         if remote_path(iid) is None:
-            return self._apk_file(iid, apk=cat.apk, cache=cat.local_cache_dir())
+            return self._apk_file(iid, cat)
         return cat.fetch_raw({"internal_id": iid})
 
-    def _apk_file(self, internal_id: str, *, apk=None, cache=None) -> Path:
-        """A raw file of the APK as stored, through the cache (raw/<its path below the APK's Addressables
-        directory>, where a CDN file of that path would be); KeyError when the APK does not hold it."""
+    def _apk_file(self, internal_id: str, cat) -> Path:
+        """A raw APK file through its snapshot's cache; only a cache miss needs the matching APK."""
         from .cache import write_atomic
         from .catalog import APK_AA_DIR
-        if self.cache is None:
-            raise self.cfg.missing("paths", "cache")
-        apk = apk or self.cfg.path("paths", "apk")
-        if apk is None:
-            raise self.cfg.missing("paths", "apk")
         rel = apk_rel(internal_id)
-        dst = (cache or self.cache) / "raw" / rel
+        dst = cat.local_cache_dir() / "raw" / rel
         if not (dst.is_file() and dst.stat().st_size > 0):
-            with ApkSet(apk) as z:
+            if cat.apk is None:
+                raise self.cfg.missing("paths", "apk")
+            with ApkSet(cat.apk) as z:
+                cat.check_apk(z)
                 data = z.read(APK_AA_DIR + rel)
             dst.parent.mkdir(parents=True, exist_ok=True)
             write_atomic(dst, data)
