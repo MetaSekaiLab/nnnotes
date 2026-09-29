@@ -677,12 +677,13 @@ nnnotes music-data (--master-files DIR | --apk-master | --decoded-master) [--ful
 Writes one JSON file with every `MasterLiveMusic` song and its charts for one master data version: titles, readings
 and credits in the five text languages, bands (and a song's own band name), vocal characters, category, tags,
 release time, jacket, Gekisou missions, score ranks, the whole `MasterLiveMusic` row, the live BGM's cue and length
-(read from the cue sheet's ACB, without decoding audio); per difficulty the chart facts (level and display level,
-full combo count, note counts, BPM, note times, the live's music length, skill event times, fever ranges) and the
-chart's deck statistics: the no-skill score and the weight of every score-up skill kind at every performance
-position, with Gekisou on (a Gekisou live at rank 1, with what every other rank and the Perfect play need) and off (a
-solo live), measured by the deck model ournotes-deck (built into nnnotes as `nnnotes._deck`) on its whole-live
-simulation and checked against the chart facts and the master data. `--full` also writes the deck model's input: every
+(read from the cue sheet's ACB, without decoding audio); the Gekisou catalog (member cards and snaps with their
+characters, bands and Gekisou skills and support skills: missions, highest levels, names and descriptions); per
+difficulty the chart facts (level and display level, full combo count, note counts, BPM, note times, the live's music
+length, skill event times, fever ranges) and the chart's deck statistics: the no-skill score and the weight of every
+score-up skill kind at every performance position, with Gekisou on (a Gekisou live at rank 1, with what every other
+rank and the Perfect play need) and off (a solo live), measured by the deck model ournotes-deck (built into nnnotes as
+`nnnotes._deck`) on its whole-live simulation and checked against the chart facts and the master data. `--full` also writes the deck model's input: every
 `MasterLiveMusicScore` row's chart as the client builds it at runtime (notes, skill events, fever ranges) and the
 master data tables about cards, skills, bonuses, scores and events. `--no-deck` skips the deck model (every chart's
 `deck` is null); `--seeds N` (default 8) and `--workers N` (default: every processor) set its seeds on charts with a

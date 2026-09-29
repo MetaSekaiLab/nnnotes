@@ -35,6 +35,60 @@ MUSIC = {"_id": 100002, "_sortOrder": 2, "_startAt": "2026/01/01 0:00:00", "_def
          "_extra": [7]}
 MUSIC1 = dict(MUSIC, _id=100001, _sortOrder=1, _titleTextID="T1", _bandNameTextID="BN", _easyID=10, _expertID=0,
               _liveScoreRankGroup=7)
+
+
+def columns(table, **values):
+    """A row of a deck input table: every column 0 (an id list empty), then `values`."""
+    cols = dict(deckdata.TABLES)[table]
+    return {**{c: [] if c.endswith(("IDs", "Ids", "Categories")) else 0 for c in cols}, **values}
+
+
+def member_card(i, character, skill, **values):
+    return columns("MasterMemberCard", _id=i, _characterID=character, _rarity=3, _cardType=1, _bestMusicTagIDs=[1],
+                   _gekisouSkillID=skill, _nameTextID=f"Card{i}", _subtitleTextID=f"Sub{i}" if i <= 2 else "",
+                   **values)
+
+
+def snap(i, character, support, **values):
+    return columns("MasterSupportCard", _id=i, _characterIDs=[character], _rarity=2, _supportCardRankGroup=1,
+                   _gekisouSupportSkillId01=support, _nameTextID=f"Snap{i}",
+                   _descriptionTextID="SnapSub41" if i == 41 else "", **values)
+
+
+def effect(table, key, i, skill, level, group=0):
+    return columns(table, _id=i, **{key: skill}, _level=level, _skillConditionGroup=group, _skillEffectType=2000,
+                   _effectValue=100 * level)
+
+
+# Gekisou skills 1 (combo, levels 1..5), 2 (Just count, 1..3), 3 (luck, 1..5); Gekisou support skills 31 (Just count,
+# two rows per level: a member of band 1 or not) and 32 (combo); member cards 1..8 (card 6 without a Gekisou skill);
+# snaps 41..44 (43 without a Gekisou support skill), highest rank 5
+GEKISOU_ROWS = {
+    "MasterMemberCard": [member_card(1, 1, 1), member_card(2, 2, 2), member_card(3, 3, 1), member_card(4, 4, 3),
+                         member_card(5, 5, 2), member_card(6, 6, 0), member_card(7, 3, 3), member_card(8, 1, 2)],
+    "MasterGekisouSkill": [
+        {"_id": 1, "_nameTextID": "GS1", "_descriptionTextFormatID": "GSD1", "_gekisouMissionType": 1,
+         "_skillCategories": [1]},
+        {"_id": 2, "_nameTextID": "GS2", "_descriptionTextFormatID": "GSD2", "_gekisouMissionType": 3,
+         "_skillCategories": [2]},
+        {"_id": 3, "_nameTextID": "GS3", "_descriptionTextFormatID": "", "_gekisouMissionType": 2,
+         "_skillCategories": [3]}],
+    "MasterGekisouSkillEffect": [
+        effect("MasterGekisouSkillEffect", "_gekisouSkillID", 10 * s + lv, s, lv)
+        for s, top in ((1, 5), (2, 3), (3, 5)) for lv in range(1, top + 1)],
+    "MasterGekisouSupportSkill": [
+        {"_id": 31, "_nameTextID": "GS31", "_descriptionTextFormatID": "GSD31", "_gekisouSupportSkillExecTiming": 1,
+         "_gekisouMissionType": 3},
+        {"_id": 32, "_nameTextID": "GS32", "_descriptionTextFormatID": "", "_gekisouSupportSkillExecTiming": 1,
+         "_gekisouMissionType": 1}],
+    "MasterGekisouSupportSkillEffect": [
+        effect("MasterGekisouSupportSkillEffect", "_gekisouSupportSkillID", 100 * g + 10 * s + lv, s, lv, g)
+        for s, groups in ((31, (100, 101)), (32, (0,))) for lv in range(1, 6) for g in groups],
+    "MasterSupportCard": [snap(41, 1, 31), snap(42, 2, 32), snap(43, 3, 0), snap(44, 4, 31)],
+    "MasterSupportCardRank": [
+        columns("MasterSupportCardRank", _id=r, _group=1, _rank=r, _gekisouSupportSkill01Level=r,
+                _gekisouSupportSkill02Level=r) for r in range(1, 6)],
+}
 TABLE_ROWS = {
     "MasterLiveMusic": [MUSIC, MUSIC1],
     "MasterLiveMusicScore": [
@@ -47,11 +101,21 @@ TABLE_ROWS = {
         {"_id": 40, "_musicScoreTextFileName": "c/c_04", "_musicScoreLevel": 1, "_fullComboCount": 2,
          "_musicScoreDisplayLevel": 1.0}],                  # a chart of no song
     "MasterText": [text("T1", "one"), text("T2", "two"), text("P2", "pho"), text("L2", "lyr"), text("C2", "com"),
-                   text("BN", "crychic"), text("Band1", "mygo"), text("Ch1", "tomori"), text("Ch1s", "tomo"),
-                   text("Tag1", "tag"), text("Cat1", "original")],
-    "MasterBand": [{"_id": 1, "_nameTextID": "Band1", "_mainColorCode": "#3388BB", "_subColorCode": "#FFFFFF"}],
+                   text("BN", "crychic"), text("Band1", "mygo"), text("Band2", "mujica"), text("Ch1", "tomori"),
+                   text("Ch1s", "tomo"), text("Tag1", "tag"), text("Cat1", "original")]
+                  + [text(f"Ch{i}", f"char{i}") for i in range(2, 7)]
+                  + [text(f"Card{i}", f"card{i}") for i in range(1, 9)] + [text(f"Sub{i}", f"sub{i}") for i in (1, 2)]
+                  + [text(f"Snap{i}", f"snap{i}") for i in (41, 42, 43, 44)] + [text("SnapSub41", "snapsub41")]
+                  + [text(f"GS{i}", f"gs{i}") for i in (1, 2, 3, 31, 32)] + [text(f"GSD{i}", f"gsd{i}")
+                                                                             for i in (1, 2, 31)],
+    "MasterBand": [{"_id": 1, "_nameTextID": "Band1", "_mainColorCode": "#3388BB", "_subColorCode": "#FFFFFF"},
+                   {"_id": 2, "_nameTextID": "Band2", "_mainColorCode": "#881122", "_subColorCode": "#000000"}],
+    # characters 1..4 of band 1, 5 and 6 of band 2
     "MasterCharacter": [{"_id": 1, "_nameTextID": "Ch1", "_shortNameTextID": "Ch1s", "_bandID": 1,
-                         "_mainColorCode": "#77BBDD"}],
+                         "_mainColorCode": "#77BBDD"}]
+                       + [{"_id": i, "_nameTextID": f"Ch{i}", "_shortNameTextID": "", "_bandID": 1 if i <= 4 else 2,
+                           "_mainColorCode": "#000000"} for i in range(2, 7)],
+    **GEKISOU_ROWS,
     "MasterTag": [{"_id": 1, "_nameTextID": "Tag1"}],
     "MasterLiveMusicCategory": [{"_id": 1, "_musicCategories": [1], "_textKey": "Cat1"}],
     "MasterSound": [{"_id": 13, "_soundCueSheetID": 5, "_cueName": "song2"}],
@@ -108,13 +172,14 @@ def trunc_percent(score, percent):
 class FakeDeck:
     """The interface of nnnotes._deck: statistics made from the deck input as the model reports them."""
     COMMIT = "7e5d84b5998d28c21541ce3f2e0a3dfb1439f4f6"
+    FORMAT = "ournotes-deck.chart-stats/2"
 
     def __init__(self, change=None, fail=None):
         self.change, self.fail, self.inputs = change, fail, []
 
     def info(self):
         return {"name": "ournotes-deck", "version": "0.0.1", "source": "https://github.com/empty-sekai/ournotes-deck",
-                "commit": self.COMMIT, "dataFormat": deckdata.DECK_FORMAT, "format": "ournotes-deck.chart-stats/2"}
+                "commit": self.COMMIT, "dataFormat": deckdata.DECK_FORMAT, "format": self.FORMAT}
 
     def chart_stats(self, data, seeds, workers):
         if self.fail:
@@ -141,9 +206,20 @@ class FakeDeck:
             last = max(c["notes"]["timeMs"])
             fevers = list(zip(c["fevers"]["startMs"], c["fevers"]["endMs"]))[:3]
             positions = min(len(c["skillEvents"]["timeMs"]), 5)
-            pattern = 3 if missions == [1, 3, 3] else 0
+            pattern = musicdata.mission_pattern(missions)
             percents = [[bonus.get((pattern, i + 1, k), 0) for k in range(1, 6)] for i in range(len(fevers))]
             check = {"deck": [[0, 5000]], "exact": 2000, "predicted": 2000.25, "bound": 7.0}
+
+            def seed_stats(seed):
+                return {"seed": seed, "score": 1234,
+                        "ranges": [{"rangeScore": 101 * (i + 1), "rankBonus": trunc_percent(101 * (i + 1), p[0]),
+                                    "maxCombo": 1, "justCount": 0, "luckPoints": 0, "lotResults": [0, 0, 0, 0],
+                                    "rangeScorePerfect": 101 * (i + 1)} for i, p in enumerate(percents)],
+                        "weights": [["W"] * positions], "check": dict(check), "scorePerfect": 1234,
+                        "rangeWeights": [[["W"] * len(fevers)] * positions],
+                        "rankCheck": {"ranks": [2] * len(fevers), "exact": 2001, "predicted": 2000.5,
+                                      "bound": 7.0} if fevers else None}
+            luck = musicdata.MISSION_LUCK in missions[:len(fevers)]
             s = {"scoreId": c["scoreId"], "musicId": music, "difficulty": d, "level": levels[c["scoreId"]],
                  "judgedNotes": sum(score.is_judgement_note(op) for op in c["notes"]["op"]),
                  "convertedNoteCount": len(c["notes"]["id"]), "lastNoteMs": last, "musicLengthMs": last + 1000,
@@ -153,19 +229,12 @@ class FakeDeck:
                              "rankBonusPercent": percents[i][0], "rankBonusPercents": percents[i]}
                             for i, (a, b) in enumerate(fevers)],
                  "justNotes": 0,
-                 "seeds": [{"seed": 0, "score": 1234,
-                            "ranges": [{"rangeScore": 101 * (i + 1), "rankBonus": trunc_percent(101 * (i + 1), p[0]),
-                                        "maxCombo": 1, "justCount": 0, "lotResults": [0, 0, 0, 0],
-                                        "rangeScorePerfect": 101 * (i + 1)} for i, p in enumerate(percents)],
-                            "weights": [["W"] * positions], "check": check, "scorePerfect": 1234,
-                            "rangeWeights": [[["W"] * len(fevers)] * positions],
-                            "rankCheck": {"ranks": [2] * len(fevers), "exact": 2001, "predicted": 2000.5,
-                                          "bound": 7.0} if fevers else None}],
+                 "seeds": [seed_stats(x) for x in (musicdata.published_seeds(seeds) if luck else [0])],
                  "offSeeds": [{"seed": 0, "score": 1000, "weights": [["W"] * positions], "check": dict(check)}]}
             if self.change:
                 self.change(s)
             charts.append(s)
-        out = json.dumps({"format": "ournotes-deck.chart-stats/2", "source": {}, "model": {"power": 300000},
+        out = json.dumps({"format": self.FORMAT, "source": {}, "model": {"power": 300000},
                           "kinds": [{"id": 0, "effectType": 2000, "activationTimeSecond": 7.5}], "charts": charts})
         return out.replace('"W"', WEIGHT)
 
@@ -191,17 +260,19 @@ def test_document(tmp_path):
     assert (r["songs"], r["charts"], r["deck"], r["full"]) == (2, 3, None, False)
     assert r["sha256"] == hashlib.sha256(raw).hexdigest()
     doc = json.loads(raw)
-    assert list(doc) == ["format", "provenance", "languages", "bands", "characters", "tags", "categories", "deck",
-                         "songs"]
+    assert list(doc) == ["format", "provenance", "languages", "bands", "characters", "tags", "categories",
+                         "gekisouCatalog", "deck", "songs"]
     assert doc["format"] == "nnnotes.music-data/1" and doc["languages"] == ["ja", "en", "zh-Hant", "zh-Hans", "ko"]
     p = doc["provenance"]
     assert list(p) == ["region", "client", "catalog", "master", "exporter", "deck"] and p["deck"] is None
-    assert list(p["master"]["tables"]) == list(musicdata.SONG_TABLES)      # without the deck model: its tables only
+    # without the deck model: the song and the Gekisou catalog tables only
+    assert list(p["master"]["tables"]) == list(musicdata.SONG_TABLES + musicdata.CATALOG_TABLES)
     assert p["exporter"] == {"name": "nnnotes", "version": cli.__version__, "chartFormat": deckdata.CHART_FORMAT}
     assert doc["deck"] is None
-    assert doc["bands"] == [{"id": 1, "name": {"ja": "mygo-ja", "en": "mygo-en", "zh-Hant": "mygo-tw",
-                                               "zh-Hans": "mygo-cn", "ko": "mygo-ko"},
-                             "mainColor": "#3388BB", "subColor": "#FFFFFF"}]
+    assert doc["bands"][0] == {"id": 1, "name": {"ja": "mygo-ja", "en": "mygo-en", "zh-Hant": "mygo-tw",
+                                                 "zh-Hans": "mygo-cn", "ko": "mygo-ko"},
+                               "mainColor": "#3388BB", "subColor": "#FFFFFF"}
+    assert [b["id"] for b in doc["bands"]] == [1, 2]
     assert doc["characters"][0]["name"]["ja"] == "tomori-ja" and doc["characters"][0]["bandId"] == 1
     assert doc["categories"] == [{"id": 1, "musicCategories": [1], "name": dict(doc["categories"][0]["name"])}]
     one, two = doc["songs"]
@@ -278,7 +349,7 @@ def test_deck(tmp_path):
     assert [r["rankBonusPercents"] for r in c["deck"]["ranges"]] == [[35, 34, 33, 32, 31], [40, 38, 36, 34, 32]]
     seed = c["deck"]["seeds"][0]
     assert seed["rankCheck"]["ranks"] == [2, 2] and seed["scorePerfect"] == seed["score"]
-    assert [r["rankBonus"] for r in seed["ranges"]] == [35, 80]
+    assert [r["rankBonus"] for r in seed["ranges"]] == [35, 80] and [r["luckPoints"] for r in seed["ranges"]] == [0, 0]
     assert c["deck"]["offSeeds"][0]["score"] == 1000
     # the deck model's numbers as it writes them: a binary64 value is not narrowed to binary32
     assert b'"weights":[[' + WEIGHT.encode() + b',' + WEIGHT.encode() + b']]' in raw and b'"predicted":2000.25' in raw
@@ -312,6 +383,9 @@ def test_deck(tmp_path):
     (lambda s: s["seeds"][0]["check"].update(bound=0.1), "the check deck scores 2000"),
     (lambda s: s["ranges"] and s["seeds"][0]["rankCheck"].update(exact=0), "at ranks"),
     (lambda s: s["ranges"] and s["seeds"][0]["rankCheck"].update(ranks=[6, 1]), "rank check ranks"),
+    (lambda s: s["seeds"][0]["ranges"][0].pop("luckPoints"), "chart 10 .*seed 0 range 0: no luck points"),
+    (lambda s: s["seeds"][0].update(seed=3), r"chart 10 .*seeds \[3\] are not the chart's seed set \[0\]"),
+    (lambda s: s["seeds"].append(dict(s["seeds"][0], seed=5)), r"chart 10 .*seeds \[0, 5\] are not the chart's seed"),
 ])
 def test_deck_checks(tmp_path, change, match):
     with pytest.raises(musicdata.MusicDataError, match=match):
@@ -331,6 +405,99 @@ def test_deck_without_range_weights(tmp_path):
     assert decks[10]["seeds"][0]["rangeWeights"] is None and decks[20]["seeds"][0]["rangeWeights"] == [None]
     assert decks[30]["offSeeds"][0]["weights"] == [None]
     schema_validator().validate(doc)
+
+
+def test_gekisou_catalog(tmp_path):
+    export(tmp_path)                                            # without the deck model as with it
+    cat = json.loads((tmp_path / "music.json").read_bytes())["gekisouCatalog"]
+    assert list(cat) == ["skills", "supportSkills", "members", "snaps"]
+    assert cat["skills"][0] == {"id": 1, "mission": 1, "maxLevel": 5,
+                                "name": {"ja": "gs1-ja", "en": "gs1-en", "zh-Hant": "gs1-tw", "zh-Hans": "gs1-cn",
+                                         "ko": "gs1-ko"},
+                                "description": {"ja": "gsd1-ja", "en": "gsd1-en", "zh-Hant": "gsd1-tw",
+                                                "zh-Hans": "gsd1-cn", "ko": "gsd1-ko"}}
+    assert [(s["id"], s["mission"], s["maxLevel"]) for s in cat["skills"]] == [(1, 1, 5), (2, 3, 3), (3, 2, 5)]
+    assert cat["skills"][2]["description"] is None                           # no text id
+    assert [(s["id"], s["mission"], s["maxLevel"]) for s in cat["supportSkills"]] == [(31, 3, 5), (32, 1, 5)]
+    assert cat["supportSkills"][0]["name"]["en"] == "gs31-en" and cat["supportSkills"][1]["description"] is None
+    assert cat["members"][0] == {"id": 1, "characterId": 1, "bandId": 1, "rarity": 3, "gekisouSkillId": 1,
+                                 "name": {"ja": "card1-ja", "en": "card1-en", "zh-Hant": "card1-tw",
+                                          "zh-Hans": "card1-cn", "ko": "card1-ko"},
+                                 "subtitle": {"ja": "sub1-ja", "en": "sub1-en", "zh-Hant": "sub1-tw",
+                                              "zh-Hans": "sub1-cn", "ko": "sub1-ko"}}
+    assert [(m["id"], m["characterId"], m["bandId"], m["gekisouSkillId"]) for m in cat["members"]] == [
+        (1, 1, 1, 1), (2, 2, 1, 2), (3, 3, 1, 1), (4, 4, 1, 3), (5, 5, 2, 2), (6, 6, 2, None), (7, 3, 1, 3),
+        (8, 1, 1, 2)]
+    assert cat["members"][2]["subtitle"] is None
+    assert [(s["id"], s["characterIds"], s["rarity"], s["gekisouSupportSkillIds"], s["supportSkillLevel"])
+            for s in cat["snaps"]] == [(41, [1], 2, [31], 5), (42, [2], 2, [32], 5), (43, [3], 2, [], 5),
+                                       (44, [4], 2, [31], 5)]
+    assert cat["snaps"][0]["name"]["ja"] == "snap41-ja" and cat["snaps"][0]["subtitle"]["ko"] == "snapsub41-ko"
+    assert cat["snaps"][1]["subtitle"] is None
+    schema_validator().validate(json.loads((tmp_path / "music.json").read_bytes()))
+
+
+def _rows(change):
+    rows = json.loads(json.dumps(TABLE_ROWS))
+    change(rows)
+    return rows
+
+
+@pytest.mark.parametrize("change, match", [
+    (lambda r: r["MasterMemberCard"][0].update(_characterID=9), "MasterMemberCard 1: character 9 is not in"),
+    (lambda r: r["MasterMemberCard"][0].update(_gekisouSkillID=9), "MasterMemberCard 1: Gekisou skill 9 is not in"),
+    (lambda r: r["MasterMemberCard"].append(r["MasterMemberCard"][0]), "MasterMemberCard: _id 1 occurs twice"),
+    (lambda r: r["MasterSupportCard"][0].update(_gekisouSupportSkillId01=99),
+     "MasterSupportCard 41: Gekisou support skill 99 is not in"),
+    (lambda r: r["MasterSupportCard"][0].update(_supportCardRankGroup=7),
+     "MasterSupportCard 41: rank group 7 has no MasterSupportCardRank row"),
+    (lambda r: (r["MasterSupportCard"][0].update(_gekisouSupportSkillId02=32),
+                r["MasterSupportCardRank"][4].update(_gekisouSupportSkill02Level=4)),
+     r"MasterSupportCard 41: its Gekisou support skills \[31, 32\] have the levels \[5, 4\]"),
+    (lambda r: r["MasterGekisouSkill"][0].update(_nameTextID="GSX"), "MasterText has no text 'GSX'"),
+    (lambda r: r["MasterGekisouSupportSkill"].append(r["MasterGekisouSupportSkill"][0]),
+     "MasterGekisouSupportSkill: _id 31 occurs twice"),
+])
+def test_gekisou_catalog_errors(tmp_path, change, match):
+    with pytest.raises(musicdata.MusicDataError, match=match):
+        export(tmp_path, rows=_rows(change))
+    assert not (tmp_path / "music.json").exists()
+
+
+def test_gekisou_catalog_levels(tmp_path):
+    """A snap's level is its rank group's highest rank's; two Gekisou support skills of one level are one snap."""
+    def change(r):
+        r["MasterSupportCard"][0]["_gekisouSupportSkillId02"] = 32
+        r["MasterSupportCardRank"].append(columns("MasterSupportCardRank", _id=9, _group=1, _rank=6,
+                                                  _gekisouSupportSkill01Level=3, _gekisouSupportSkill02Level=3))
+    export(tmp_path, rows=_rows(change))
+    snaps = json.loads((tmp_path / "music.json").read_bytes())["gekisouCatalog"]["snaps"]
+    assert (snaps[0]["gekisouSupportSkillIds"], snaps[0]["supportSkillLevel"]) == ([31, 32], 3)
+
+
+def test_published_seeds():
+    # ournotes-deck tests/gekisou_play.rs: published_seeds_are_fixed_and_nested
+    assert musicdata.published_seeds(8) == [-70152769, -452351740, 156766337, -1696681451, -1283484205, -895566507,
+                                            322491774, 2099122494]
+    assert musicdata.published_seeds(64)[:8] == musicdata.published_seeds(8)
+
+
+def on(score_id, change):
+    """A FakeDeck change of one chart."""
+    return lambda s: change(s) if s["scoreId"] == score_id else None
+
+
+def test_luck_chart(tmp_path):
+    """A chart with a luck range: its seeds are the first published seeds."""
+    rows = _rows(lambda r: r["MasterLiveMusic"][1].update(_gekisouMission1=2))       # song 100001: [2, 3, 3]
+    export(tmp_path, rows=rows, deck=FakeDeck())
+    doc = json.loads((tmp_path / "music.json").read_bytes())
+    deck = doc["songs"][0]["charts"][0]["deck"]
+    assert [s["seed"] for s in deck["seeds"]] == musicdata.published_seeds(8)
+    schema_validator().validate(doc)
+    (tmp_path / "m").rename(tmp_path / "m1")
+    with pytest.raises(musicdata.MusicDataError, match=r"chart 10 .*seeds .* are not the chart's seed set"):
+        export(tmp_path, rows=rows, deck=FakeDeck(on(10, lambda s: s["seeds"].pop())))
 
 
 def test_rank_bonus_percents():

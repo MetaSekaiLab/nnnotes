@@ -280,6 +280,133 @@
         }
       }
     },
+    "gekisouCatalog": {
+      "type": "object",
+      "description": "the Gekisou skills a deck brings to a Gekisou live and the cards that carry them, every list sorted by id (docs/music-data.md, gekisouCatalog)",
+      "required": [
+        "skills",
+        "supportSkills",
+        "members",
+        "snaps"
+      ],
+      "properties": {
+        "skills": {
+          "type": "array",
+          "description": "MasterGekisouSkill: the member cards' Gekisou skills",
+          "items": {
+            "$ref": "#/$defs/gekisouSkill"
+          }
+        },
+        "supportSkills": {
+          "type": "array",
+          "description": "MasterGekisouSupportSkill: the snaps' Gekisou support skills",
+          "items": {
+            "$ref": "#/$defs/gekisouSkill"
+          }
+        },
+        "members": {
+          "type": "array",
+          "description": "MasterMemberCard",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "characterId",
+              "bandId",
+              "rarity",
+              "gekisouSkillId",
+              "name",
+              "subtitle"
+            ],
+            "properties": {
+              "id": {
+                "type": "integer"
+              },
+              "characterId": {
+                "type": "integer"
+              },
+              "bandId": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "description": "the character's band"
+              },
+              "rarity": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "gekisouSkillId": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "description": "_gekisouSkillID (a skills[] id); null for 0"
+              },
+              "name": {
+                "$ref": "#/$defs/text",
+                "description": "_nameTextID"
+              },
+              "subtitle": {
+                "$ref": "#/$defs/text",
+                "description": "_subtitleTextID: the card's title"
+              }
+            }
+          }
+        },
+        "snaps": {
+          "type": "array",
+          "description": "MasterSupportCard",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "characterIds",
+              "rarity",
+              "gekisouSupportSkillIds",
+              "supportSkillLevel",
+              "name",
+              "subtitle"
+            ],
+            "properties": {
+              "id": {
+                "type": "integer"
+              },
+              "characterIds": {
+                "$ref": "#/$defs/ints"
+              },
+              "rarity": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "gekisouSupportSkillIds": {
+                "$ref": "#/$defs/ints",
+                "description": "_gekisouSupportSkillId01 / 02 that are not 0 (supportSkills[] ids)"
+              },
+              "supportSkillLevel": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "description": "the level of its Gekisou support skills at the snap's highest rank (MasterSupportCardRank)"
+              },
+              "name": {
+                "$ref": "#/$defs/text",
+                "description": "_nameTextID"
+              },
+              "subtitle": {
+                "$ref": "#/$defs/text",
+                "description": "_descriptionTextID: the snap's title"
+              }
+            }
+          }
+        }
+      }
+    },
     "deck": {
       "type": [
         "object",
@@ -477,6 +604,41 @@
         ]
       }
     },
+    "gekisouSkill": {
+      "type": "object",
+      "required": [
+        "id",
+        "mission",
+        "maxLevel",
+        "name",
+        "description"
+      ],
+      "properties": {
+        "id": {
+          "type": "integer"
+        },
+        "mission": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "_gekisouMissionType: 1 combo, 2 luck, 3 Just count, 4 every mission"
+        },
+        "maxLevel": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "the highest _level of the skill's effect rows, 0 without one"
+        },
+        "name": {
+          "$ref": "#/$defs/text",
+          "description": "_nameTextID"
+        },
+        "description": {
+          "$ref": "#/$defs/text",
+          "description": "_descriptionTextFormatID: the format text with its placeholders"
+        }
+      }
+    },
     "deckChart": {
       "type": [
         "object",
@@ -606,6 +768,10 @@
                     },
                     "justCount": {
                       "type": "integer"
+                    },
+                    "luckPoints": {
+                      "type": "integer",
+                      "description": "the luck points gained in the range (TotalBonusPoint), a luck range's rank figure"
                     },
                     "lotResults": {
                       "type": "array",

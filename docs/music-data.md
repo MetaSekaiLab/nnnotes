@@ -2,10 +2,11 @@
 
 `nnnotes music-data` writes one JSON file with every live song and chart of one master data version: what a song
 listing shows (titles and credits in every language, bands, vocal characters, category, tags, release time, score
-ranks, jacket, BGM length), per difficulty the chart facts (level, note counts, BPM, chart times, skill events,
-fevers), and per chart its **deck statistics**: what the chart contributes to the live score whatever the deck, in a
-solo live (Gekisou off) and in a Gekisou live at every rank, measured by the deck model [ournotes-deck](https://github.com/empty-sekai/ournotes-deck), which nnnotes carries as
-its extension module `nnnotes._deck`. The format is `nnnotes.music-data/1`; its JSON Schema is
+ranks, jacket, BGM length), the Gekisou catalog (member cards, snaps and their Gekisou skills), per difficulty the
+chart facts (level, note counts, BPM, chart times, skill events, fevers), and per chart its **deck statistics**: what
+the chart contributes to the live score whatever the deck, in a solo live (Gekisou off) and in a Gekisou live at every
+rank, measured by the deck model [ournotes-deck](https://github.com/empty-sekai/ournotes-deck), which nnnotes carries
+as its extension module `nnnotes._deck`. The format is `nnnotes.music-data/1`; its JSON Schema is
 [schema/music-data.schema.json](schema/music-data.schema.json).
 
 ```
@@ -45,10 +46,10 @@ is written gzip-compressed. The command prints a summary (`songs`, `charts`, `de
 The command writes the file only when every table, chart and cue sheet was read and every chart measured: a missing
 or mismatching master data file, a table without a column the file exports, a text id that `MasterText` does not
 have, a score id that `MasterLiveMusicScore` does not have, a missing or unreadable chart asset, a note id that
-occurs twice in a chart, a cue sheet without the song's cue, (with `--jackets`) a missing jacket texture, a chart the
-deck model cannot measure or whose check deck fails, or deck statistics that disagree with the chart facts or the
-master data stops it
-with exit status 1 and a line naming the input. The file is written through a temporary file and a rename.
+occurs twice in a chart, a cue sheet without the song's cue, a member card or snap whose character, Gekisou (support)
+skill or rank group the master data does not have, (with `--jackets`) a missing jacket texture, a chart the deck model
+cannot measure or whose check deck fails, or deck statistics that disagree with the chart facts or the master data
+stops it with exit status 1 and a line naming the input. The file is written through a temporary file and a rename.
 
 An installation without the extension module (a source checkout that was not built) runs only with `--no-deck`;
 the wheels on PyPI carry it. See [Building](#building).
@@ -61,6 +62,7 @@ the wheels on PyPI carry it. See [Building](#building).
   "provenance": {"region": ..., "client": {...}, "catalog": {...}, "master": {...}, "exporter": {...}, "deck": {...}},
   "languages": ["ja", "en", "zh-Hant", "zh-Hans", "ko"],
   "bands": [...], "characters": [...], "tags": [...], "categories": [...],
+  "gekisouCatalog": {"skills": [...], "supportSkills": [...], "members": [...], "snaps": [...]},
   "deck": {"model": {...}, "kinds": [...]},
   "songs": [{"id": 100001, ..., "charts": [{..., "deck": {...}}, ...]}, ...],
   "master": {...}, "charts": [...]
@@ -88,7 +90,7 @@ A **text** is an object with one string per language of `languages` (`{"ja": ...
 | `catalog.sha256` | SHA-256 of the remote catalog file the charts were read with |
 | `master.source` | `api` (`--master-files`, `--decoded-master`: the region's files) or `embedded` (`--apk-master`) |
 | `master.version` | the `version` of the master data manifest |
-| `master.tables.<Table>.sha256` | SHA-256 of each table's file as served, before decoding: the song tables (`MasterLiveMusic`, `MasterLiveMusicScore`, `MasterText`, `MasterBand`, `MasterCharacter`, `MasterTag`, `MasterLiveMusicCategory`, `MasterSound`, `MasterSoundCueSheet`, `MasterLiveScoreRank`) and, when the deck model runs or with `--full`, the tables of [the deck input](#the-deck-input---full) |
+| `master.tables.<Table>.sha256` | SHA-256 of each table's file as served, before decoding: the song tables (`MasterLiveMusic`, `MasterLiveMusicScore`, `MasterText`, `MasterBand`, `MasterCharacter`, `MasterTag`, `MasterLiveMusicCategory`, `MasterSound`, `MasterSoundCueSheet`, `MasterLiveScoreRank`), the tables of the Gekisou catalog (`MasterMemberCard`, `MasterSupportCard`, `MasterSupportCardRank`, `MasterGekisouSkill`, `MasterGekisouSkillEffect`, `MasterGekisouSupportSkill`, `MasterGekisouSupportSkillEffect`) and, when the deck model runs or with `--full`, the tables of [the deck input](#the-deck-input---full) |
 | `exporter.name`, `exporter.version` | `nnnotes` and its version |
 | `exporter.chartFormat` | the format of the chart converter the notes come from, `nnnotes.live-score/1` |
 | `deck` | the deck model: `{name, version, source, commit, format}`, `ournotes-deck`, its package version, repository, the git commit nnnotes is built with and the statistics format (`ournotes-deck.chart-stats/2`); null with `--no-deck` |
@@ -101,6 +103,24 @@ A **text** is an object with one string per language of `languages` (`{"ja": ...
 | `characters[].id`, `.bandId`, `.name`, `.shortName`, `.mainColor` | `MasterCharacter` |
 | `tags[].id`, `.name` | `MasterTag` (the ids of `bestMusicTagIds`) |
 | `categories[].id`, `.musicCategories`, `.name` | `MasterLiveMusicCategory` (the listing's category tabs; `musicCategories` are the song category values it shows) |
+
+### gekisouCatalog
+
+The Gekisou skills a deck brings to a Gekisou live and the cards that carry them, from the master data (written with
+`--no-deck` too): the member cards' Gekisou skills, the snaps' Gekisou support skills, the member cards and the
+snaps, every list sorted by `id`. Texts as above; `description` is the master data's format text with its
+placeholders (`{effects[0].value}`, ...), which a page fills from the effect rows or leaves out.
+
+| Field | Content |
+|---|---|
+| `skills[]` | `MasterGekisouSkill`, the member cards' Gekisou skills: `id`, `mission` (`_gekisouMissionType`: 1 combo, 2 luck, 3 Just count, 4 every mission), `maxLevel` (the highest `_level` of its `MasterGekisouSkillEffect` rows, 0 without one), `name` (`_nameTextID`), `description` (`_descriptionTextFormatID`) |
+| `supportSkills[]` | `MasterGekisouSupportSkill`, the snaps' Gekisou support skills: the same fields (`MasterGekisouSupportSkillEffect` for `maxLevel`) |
+| `members[]` | `MasterMemberCard`: `id`, `characterId`, `bandId` (the character's `MasterCharacter._bandID`), `rarity`, `gekisouSkillId` (`_gekisouSkillID`, null for 0), `name` (`_nameTextID`), `subtitle` (`_subtitleTextID`, the card's title) |
+| `snaps[]` | `MasterSupportCard`: `id`, `characterIds`, `rarity`, `gekisouSupportSkillIds` (`_gekisouSupportSkillId01`, `_gekisouSupportSkillId02` that are not 0), `supportSkillLevel` (their level at the snap's highest rank: `_gekisouSupportSkill01Level` / `02Level` of the `MasterSupportCardRank` row of its rank group with the highest `_rank`), `name` (`_nameTextID`), `subtitle` (`_descriptionTextID`, the snap's title) |
+
+A member card's character, Gekisou skill and a snap's Gekisou support skills must be in their tables, and a snap's
+rank group must have a row; a snap whose two Gekisou support skills have different levels at its highest rank stops
+the command (the catalog has one level per snap).
 
 ### songs
 
@@ -179,7 +199,10 @@ skills) are not linear in the chart alone and have no weights: a deck's score wi
 
 A luck range draws lottery results from the play's random seed, so the Gekisou on measurements are given **per
 seed**: one seed (0) when no range is a luck range, else the first `--seeds` seeds of the deck model's published seed
-set. The seed set is not the game's seed law (which is unknown); a mean over it is not the game's expectation.
+set. That set is a fixed sequence: candidate `k` is the low 32 bits (signed) of output `k + 1` of SplitMix64 started at
+`0x6765_6B69_736F_7531` (`gekisou1`), kept when its pair of stream seeds (`|b|` and `|b ^ 0x9E3779B9|`, -2^31 as
+2^31 - 1) differs from those of every seed kept before it, so a smaller set is a prefix of a larger one. The seed
+set is not the game's seed law (which is unknown); a mean over it is not the game's expectation.
 
 ### Ranks
 
@@ -228,7 +251,7 @@ fields; `values` lists what the master data uses.
 | `positions` | the performance positions the events fire (the largest position + 1): the length of every `weights[kind]` |
 | `ranges[]` | the Gekisou ranges: `index`, `mission` (1 combo, 2 luck, 3 Just count), `startMs`, `endMs`, `rankBonusPercents` (the rank bonus percentages of ranks 1..5 of the song's mission pattern, `MasterLiveGekisouRankingScoreBonus`), `rankBonusPercent` (the rank 1 percentage, `rankBonusPercents[0]`) |
 | `justNotes` | notes judged Just on the Gekisou on play |
-| `seeds[]` | Gekisou on, per seed: `seed`; `score` (points at `model.power`, rank 1 bonuses included); `ranges[]` (`rangeScore`: the points gained inside the range, `rankBonus`: its rank 1 bonus in points, `maxCombo`, `justCount`, `lotResults`: lottery results Miss, Hit, Super Hit, Critical, `rangeScorePerfect`: `rangeScore` on the Perfect play); `weights[kind][position]` (points per unit of deck power and of factor); `check` (`deck`: `[kind, value]` or null per position, `exact`, `predicted`, `bound`: points at `model.checkPower`); `scorePerfect` (`score` on the Perfect play); `rangeWeights[kind][position][range]` (range points per unit of deck power and of factor, or null; a kind null); `rankCheck` (`ranks`: 1..5 per range, `exact`, `predicted`, `bound`; null without ranges or range weights) |
+| `seeds[]` | Gekisou on, per seed: `seed`; `score` (points at `model.power`, rank 1 bonuses included); `ranges[]` (`rangeScore`: the points gained inside the range, `rankBonus`: its rank 1 bonus in points, `maxCombo`, `justCount`, `luckPoints`: the luck points gained (`TotalBonusPoint`; a combo, Just count or luck range ranks the room by `maxCombo`, `justCount` or `luckPoints`), `lotResults`: lottery results Miss, Hit, Super Hit, Critical, `rangeScorePerfect`: `rangeScore` on the Perfect play); `weights[kind][position]` (points per unit of deck power and of factor); `check` (`deck`: `[kind, value]` or null per position, `exact`, `predicted`, `bound`: points at `model.checkPower`); `scorePerfect` (`score` on the Perfect play); `rangeWeights[kind][position][range]` (range points per unit of deck power and of factor, or null; a kind null); `rankCheck` (`ranks`: 1..5 per range, `exact`, `predicted`, `bound`; null without ranges or range weights) |
 | `offSeeds[]` | Gekisou off, one seed: `seed` (0), `score`, `weights[kind][position]` (a kind null when its conditions read the Gekisou state, which a solo live does not have) and `check`, as in `seeds[]` |
 | `unplayable` | null, or why the game cannot play the chart with Gekisou (more than three fevers: the game fails when the fourth starts); `seeds` is then empty, `offSeeds` is not |
 
@@ -237,8 +260,10 @@ note time, music length, Gekisou missions, skill event times and fever ranges mu
 `deck`. Its numbers are checked against the master data and themselves: every range's `rankBonusPercents` are the
 `MasterLiveGekisouRankingScoreBonus` rows of the song's mission pattern (0 without a row), every `rankBonus` is
 `trunc(rangeScore * rankBonusPercent / 100)`, a chart without Just notes has the same scores on the Perfect play,
-every array has its shape (`[kind][position]`, `[kind][position][range]`, one range result per range, one Gekisou off
-seed), and every check and rank check is within its bound.
+every array has its shape (`[kind][position]`, `[kind][position][range]`, one range result per range with its luck
+points, one Gekisou off seed), the seeds are the chart's seed set (none on a chart unplayable with Gekisou, seed 0
+without a luck range, else the first `--seeds` seeds of the published seed set, which nnnotes computes itself), and
+every check and rank check is within its bound.
 
 ## The deck input (`--full`)
 
