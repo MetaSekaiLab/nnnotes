@@ -24,6 +24,7 @@ import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .apkset import ApkSet
 from .jsonio import write_json
 
 LIB_ENTRY_SUFFIX = "lib/arm64-v8a/libcri_lips_unity.so"
@@ -190,7 +191,7 @@ def _scan_const(rodata: bytes, c: Const) -> bytes:
 
 def _library_in(apk: Path) -> bytes | None:
     try:
-        with zipfile.ZipFile(apk) as z:
+        with ApkSet(apk) as z:
             for info in z.infolist():
                 if info.filename.endswith(LIB_ENTRY_SUFFIX):
                     return z.read(info.filename)

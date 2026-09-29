@@ -202,6 +202,10 @@ class Config:
         return list(v)
 
     def path(self, section: str, key: str) -> Path | None:
+        if section == "paths" and key in ("apk", "catalog") and self.origin(section, key) != "flag":
+            region = self.get("catalog", "region")
+            if region and self.has(f"servers.{region}", key):
+                section = f"servers.{region}"
         v, origin = self._raw(section, key)
         if v is None:
             return None
@@ -244,6 +248,19 @@ class Config:
 
     def region(self) -> str:
         return self.require("catalog", "region")
+
+    def provider(self, region: str | None = None) -> str:
+        region = region or self.get("catalog", "region")
+        value = self.get(f"servers.{region}", "provider") or ("jp" if region == "jp" else "international")
+        if value not in ("jp", "international"):
+            raise ConfigError(f"setting servers.{region}.provider: must be jp or international")
+        return value
+
+    def for_region(self, region: str) -> "Config":
+        overrides = {**self._over, ("catalog", "region"): region}
+        if self.provider(region) == "jp":
+            overrides[("catalog", "language")] = "ja"
+        return Config(self._data, self._base, self.source, self._env, overrides, self._flags)
 
     def cdn(self, region: str) -> str:
         """CDN base of a region, without a trailing slash."""

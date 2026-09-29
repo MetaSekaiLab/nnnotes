@@ -62,6 +62,7 @@ from .addressables import BundleKey
 from .catalog import Catalog
 from .compress import DEFAULT_ENCODING, ENCODINGS
 from .config import DEFAULT_FILE, ENV_CONFIG, Config, ConfigError, config_files, find_file, use, user_file
+from .gameapi import GameApiError
 from .jsonio import dumps, write_json
 from .webaudio import DEFAULT_AUDIO_FORMAT, WEB_AUDIO
 
@@ -86,8 +87,11 @@ FLAG_SETTINGS = {
 # ---------------------------------------------------------------- settings -> data
 def load_config(args) -> Config:
     overrides = {k: getattr(args, dest, None) for k, (dest, _) in FLAG_SETTINGS.items()}
-    return use(Config.load(getattr(args, "config", None), overrides=overrides,
-                           flags={k: flag for k, (_, flag) in FLAG_SETTINGS.items()}))
+    cfg = Config.load(getattr(args, "config", None), overrides=overrides,
+                      flags={k: flag for k, (_, flag) in FLAG_SETTINGS.items()})
+    if cfg.provider() == "jp" and not cfg.has("catalog", "language"):
+        cfg = cfg.for_region(cfg.region())
+    return use(cfg)
 
 
 def bundle_key(cfg: Config) -> BundleKey:
@@ -96,6 +100,8 @@ def bundle_key(cfg: Config) -> BundleKey:
 
 def _existing(cfg: Config, section: str, key: str, kind: str = "file") -> Path | None:
     p = cfg.path(section, key)
+    if key == "apk" and p is not None and p.is_dir():
+        return p
     if p is not None and not (p.is_file() if kind == "file" else p.is_dir()):
         raise ConfigError(f"setting {section}.{key}: {kind} {p} not found")
     return p
@@ -107,9 +113,15 @@ def open_catalog(cfg: Config, bundles: bool = True, region: str | None = None) -
     serves them all. `bundles`: bundles will be fetched; else only the catalog is read. The region, its CDN base
     and the bundle key are read from the settings only when something must be downloaded (every file in the cache:
     none of them is needed), then a missing one is a ConfigError naming the setting."""
+    if region:
+        cfg = cfg.for_region(region)
     cache = cfg.require_path("paths", "cache")
     catbin = _existing(cfg, "paths", "catalog")
     apk = _existing(cfg, "paths", "apk")
+    if cfg.provider() == "jp":
+        from .jp import open_catalog as jp_catalog
+        return jp_catalog(cfg, cfg.region(), catalog_file=catbin,
+                          bundle_key=(lambda: bundle_key(cfg)) if bundles else None, apk=apk)
     language = cfg.require("catalog", "language") if catbin is None else None
     cdn = (lambda: cfg.cdn(region or cfg.region())) if bundles or catbin is None else None
     key = (lambda: bundle_key(cfg)) if bundles else None
@@ -126,8 +138,10 @@ def master_dir(cfg: Config, region: str | None = None) -> Path:
     return _existing(cfg, section, key, "directory")
 
 
-def player_data(cfg: Config):
+def player_data(cfg: Config, region: str | None = None):
     from .player import PlayerData
+    if region:
+        cfg = cfg.for_region(region)
     cfg.require_path("paths", "apk")
     return PlayerData(_existing(cfg, "paths", "apk"))
 
@@ -183,7 +197,7 @@ def cmd_browse(args, cfg):
         langs = cfg.get_list(f"servers.{r}", "languages")
         if not langs:
             raise cfg.missing(f"servers.{r}", "languages")
-        regions.append(Region(r, cfg.get(f"servers.{r}", "name") or r, cfg.cdn(r), langs))
+        regions.append(Region(r, cfg.get(f"servers.{r}", "name") or r, cfg.cdn(r), langs, cfg))
     serve(regions, bundle_key(cfg), cfg.require_path("paths", "cache"), args.port, args.host)
 
 
@@ -368,7 +382,10 @@ def cmd_master_version(args, cfg):
         v = gameapi.master_version(cfg, region)
     except gameapi.GameApiError as e:
         sys.exit(f"nnnotes: {e}")
-    _print_json({"region": region, "masterVersion": v.version, "resourceVersion": v.resource_version})
+    result = {"region": region, "masterVersion": v.version, "resourceVersion": v.resource_version}
+    if v.resource_hash is not None:
+        result["resourceHash"] = v.resource_hash
+    _print_json(result)
 
 
 def cmd_master_download(args, cfg):
@@ -376,8 +393,16 @@ def cmd_master_download(args, cfg):
     region = cfg.region()
     cdn = cfg.cdn(region)
     try:
-        version = gameapi.master_version(cfg, region).version if args.latest else args.version
-        r = master.download(cdn, version, Path(args.out), workers=args.workers)
+        if cfg.provider(region) == "jp":
+            from .jp import Session, master_version
+            session = Session(cfg, region)
+            observation = session.observe()
+            version = observation.version.version if args.latest else master_version(args.version)
+            r = master.download(observation.cdn, version, Path(args.out), workers=args.workers,
+                                get=lambda url: session.get(url, master=version), strict=True)
+        else:
+            version = gameapi.master_version(cfg, region).version if args.latest else args.version
+            r = master.download(cdn, version, Path(args.out), workers=args.workers)
     except (gameapi.GameApiError, master.DownloadError) as e:
         sys.exit(f"nnnotes: {e}")
     _print_json(r)
@@ -590,6 +615,10 @@ def cmd_web(args, cfg):
         web.check_player(player)
         regions = (web.site_regions(cfg, args.web_regions, args.all_regions)
                    if args.web_regions or args.all_regions else None)   # None: the one [catalog] region
+        if (stories or models) and regions and len({cfg.provider(r) for r in regions}) > 1:
+            raise ConfigError("build JP stories/models in a separate site directory from international releases")
+        if (stories or models) and regions and cfg.provider(regions[0]) == "jp":
+            cfg = use(cfg.for_region(regions[0]))
         base = {"region": regions[0]} if regions else {}
         unknown = web.unknown_pairs(cfg, args.pair, regions) if args.pair else []
         if unknown:
@@ -967,6 +996,8 @@ def main(argv=None):
     except ConfigError as e:
         print(f"nnnotes: {e}", file=sys.stderr)
         sys.exit(2)
+    except GameApiError as e:
+        sys.exit(f"nnnotes: {e}")
 
 
 if __name__ == "__main__":

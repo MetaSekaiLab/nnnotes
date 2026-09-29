@@ -49,6 +49,7 @@ import fnmatch
 import json
 import sys
 import threading
+import zipfile
 from collections import Counter
 from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
@@ -57,6 +58,7 @@ from importlib import import_module, util
 from pathlib import Path
 from types import SimpleNamespace
 
+from .apkset import ApkSet
 from . import contract
 from .config import ConfigError, describe as describe_setting, usable_cpus, use
 from .contract import Cost, IncompatibleTask, Input, Task
@@ -289,8 +291,22 @@ class CatalogFetcher:
                     raise FileNotFoundError(f"catalog version {vid[:12]} is not in the store")
                 remote, apk = db.catalog_bytes(v)
                 cfg, region = self.cfg, v.get("region")
-                cat = Catalog(remote, self.cache, cdn=lambda: cfg.cdn(region or cfg.region()),
-                              bundle_key=lambda: _bundle_key(cfg), apk=cfg.path("paths", "apk"))
+                region = region or cfg.get("catalog", "region")
+                if region:
+                    cfg = cfg.for_region(region)
+                source, session, cache = None, None, self.cache
+                if v.get("source") is not None:
+                    from .jp import Source, Session
+                    source = Source.from_dict(v["source"])
+                    session = Session(cfg, cfg.region())
+                    cache = source.cache_dir(cache)
+                cat = Catalog(remote, cache, cdn=lambda: cfg.cdn(cfg.region()),
+                              bundle_key=lambda: _bundle_key(cfg), apk=cfg.path("paths", "apk"),
+                              source=source, session=session)
+                if source is not None and apk is not None and cat.sources().get("apk") != apk:
+                    raise ConfigError("JP historical catalog needs the APK set it was imported with")
+                # Replay the APK catalog imported with this version, not today's catalog offsets.
+                cat._sources = {"remote": remote, **({"apk": apk} if apk is not None else {})}
                 hit = self._catalogs[vid] = (cat, catalogdb.by_id(catalogdb.index(remote, apk)))
             return hit
 
@@ -305,24 +321,23 @@ class CatalogFetcher:
         if loc["kind"] == "bundle":
             return cat.fetch(Bundle(0, iid, file_name(iid), remote_path(iid) is not None))
         if remote_path(iid) is None:
-            return self._apk_file(iid)
+            return self._apk_file(iid, apk=cat.apk, cache=cat.local_cache_dir())
         return cat.fetch_raw({"internal_id": iid})
 
-    def _apk_file(self, internal_id: str) -> Path:
+    def _apk_file(self, internal_id: str, *, apk=None, cache=None) -> Path:
         """A raw file of the APK as stored, through the cache (raw/<its path below the APK's Addressables
         directory>, where a CDN file of that path would be); KeyError when the APK does not hold it."""
-        import zipfile
         from .cache import write_atomic
         from .catalog import APK_AA_DIR
         if self.cache is None:
             raise self.cfg.missing("paths", "cache")
-        apk = self.cfg.path("paths", "apk")
+        apk = apk or self.cfg.path("paths", "apk")
         if apk is None:
             raise self.cfg.missing("paths", "apk")
         rel = apk_rel(internal_id)
-        dst = self.cache / "raw" / rel
+        dst = (cache or self.cache) / "raw" / rel
         if not (dst.is_file() and dst.stat().st_size > 0):
-            with zipfile.ZipFile(apk) as z:
+            with ApkSet(apk) as z:
                 data = z.read(APK_AA_DIR + rel)
             dst.parent.mkdir(parents=True, exist_ok=True)
             write_atomic(dst, data)
@@ -447,6 +462,9 @@ class Workspace:
         self.calibration = load_calibration(self.root)
         self.scheduled = calibrated(self.installed.stages, self.calibration)   # the stages with calibrated costs
         self.version, self.remote, self.apk_catalog = self._catalog_version()
+        if self.version.get("region"):
+            self.cfg = cfg.for_region(self.version["region"])
+            self.apk = self.cfg.path("paths", "apk")
         self._index = None
         self._problems: list = []
         self._apk_names: set | None = None
@@ -473,11 +491,13 @@ class Workspace:
         cat = self.common.open_catalog(self.cfg, bundles=False)
         src = cat.sources()
         remote, apk = src["remote"], src.get("apk")
-        vid = catalogdb.version_id(contract.sha256(remote), contract.sha256(apk) if apk is not None else None)
+        source = cat.source.to_dict() if getattr(cat, "source", None) else None
+        vid = catalogdb.version_id(contract.sha256(remote), contract.sha256(apk) if apk is not None else None, source)
         v = next((x for x in self.db.versions() if x["id"] == vid), None)
         if v is None:
             v = self.db.add(remote, apk, region=self.cfg.get("catalog", "region"),
-                            language=self.cfg.get("catalog", "language"), apk_version_name=_apk_version(self.apk))
+                            language=self.cfg.get("catalog", "language"), apk_version_name=_apk_version(self.apk),
+                            source=source, resource_version=source["version"] if source else None)
         return v, remote, apk
 
     def catalogs_fact(self) -> dict:
@@ -661,17 +681,24 @@ class Workspace:
 
     def _cache_rel(self, kind: str, entry: dict, loc: dict) -> str:
         from .addressables import remote_path
+        prefix = ""
+        if self.version.get("source"):
+            from .jp import Source
+            prefix = Source.from_dict(self.version["source"]).cache_dir(Path(".")).as_posix() + "/"
+            if not entry.get("remote", True) and self.version.get("apk"):
+                prefix += "apk/" + self.version["apk"]["sha256"] + "/"
         if kind == "bundle":
-            return f"bundles/{entry['name']}"
+            return prefix + f"bundles/{entry['name']}"
         rel = remote_path(loc["internalId"])
         if rel is None:                                   # a raw file of the APK (CatalogFetcher._apk_file)
             rel = apk_rel(loc["internalId"])
-        return "raw/" + rel.lstrip("/")
+        return prefix + "raw/" + rel.lstrip("/")
 
     def _inputs(self, kind: str, entries: list[dict], fetch: bool) -> dict:
         from .catalogdb import by_id
         locs = by_id(self.index())
         memo_kind = "bundles" if kind == "bundle" else "raw"
+        memo_prefix = self.version["id"] + ":" if self.version.get("source") else ""
         out, todo = {}, []
         for e in entries:
             loc = locs[e["location"]]
@@ -682,7 +709,7 @@ class Workspace:
             if path is not None and path.is_file() and path.stat().st_size > 0:
                 todo.append((e, locators, path))
                 continue
-            known = self.store.named(memo_kind, e["name"]) if e["name"] != e["stable"] else None
+            known = self.store.named(memo_kind, memo_prefix + e["name"]) if e["name"] != e["stable"] else None
             if known is not None:                # a hashed file name: its recorded identity holds
                 out[e["stable"]] = Input(kind, known[0], known[1], e["name"], tuple(locators))
             elif not e["remote"] and self.apk is None:
@@ -701,7 +728,7 @@ class Workspace:
             try:
                 if path is None:
                     path = self.fetcher.fetch_location(self.version["id"], e["location"])
-                sha, size = self.store.identify(path, memo_kind, e["name"])
+                sha, size = self.store.identify(path, memo_kind, memo_prefix + e["name"])
             except ConfigError:
                 raise
             except KeyError as x:                # not in the APK
@@ -726,9 +753,8 @@ class Workspace:
         """Whether the APK holds the file of a location (read from its directory, not fetched)."""
         from .catalog import APK_AA_DIR
         if self._apk_names is None:
-            import zipfile
             try:
-                with zipfile.ZipFile(self.apk) as z:
+                with ApkSet(self.apk) as z:
                     self._apk_names = set(z.namelist())
             except (OSError, zipfile.BadZipFile):
                 raise ConfigError(f"setting paths.apk: {self.apk} is not a readable APK") from None
@@ -1309,7 +1335,7 @@ def _apk_catalog(args, cfg) -> bytes | None:
     apk = cfg.path("paths", "apk")
     if apk is None:
         return None
-    if not apk.is_file():
+    if not apk.exists():
         raise ConfigError(f"setting paths.apk: file {apk} not found")
     return apk_catalog(apk)
 
@@ -1320,10 +1346,14 @@ def cmd_catalogs_import(args, cfg, common):
     except OSError as e:
         args.usage(f"{args.file}: {e.strerror or e}")
     try:
+        source = None
+        if cfg.provider() == "jp":
+            from .jp import read_source
+            source = read_source(args.file, remote).to_dict()
         v = _db(args, cfg).add(remote, _apk_catalog(args, cfg), label=args.label,
                                region=cfg.get("catalog", "region"), language=cfg.get("catalog", "language"),
                                resource_version=args.resource_version,
-                               apk_version_name=_apk_version(cfg.path("paths", "apk")))
+                               apk_version_name=_apk_version(cfg.path("paths", "apk")), source=source)
     except ValueError as e:
         args.usage(str(e))
     print(_version_line(v))
@@ -1332,6 +1362,16 @@ def cmd_catalogs_import(args, cfg, common):
 def cmd_catalogs_fetch(args, cfg, common):
     from . import catalogdb
     region = cfg.region()
+    if cfg.provider(region) == "jp":
+        from .jp import open_catalog
+        cat = open_catalog(cfg, region, apk=cfg.path("paths", "apk"))
+        src = cat.sources()
+        v = _db(args, cfg).add(src["remote"], src.get("apk"), label=args.label, region=region,
+                               language=cfg.get("catalog", "language") or "ja", source=cat.source.to_dict(),
+                               resource_version=cat.source.version,
+                               apk_version_name=_apk_version(cfg.path("paths", "apk")))
+        print(_version_line(v))
+        return
     cdn = cfg.cdn(region)
     language = cfg.require("catalog", "language")
     try:

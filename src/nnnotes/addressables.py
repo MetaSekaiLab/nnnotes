@@ -15,6 +15,8 @@ nonce seed come from the configuration (`[bundle] key`, `[bundle] nonce_seed`).
 from __future__ import annotations
 
 import hashlib
+import gzip
+import io
 import struct
 from dataclasses import dataclass, field
 from html import escape
@@ -32,6 +34,23 @@ ENCRYPTED_BYTES = 16384            # only the first 16 KiB of a bundle are encry
 CATALOG_MAGIC = 0x0DE38942
 CATALOG_VERSION = 2
 NONE = 0xFFFFFFFF
+REMOTE_PREFIX = "{Fwk.Resource.RemoteAssetDir}/"
+MAX_CATALOG = 128 * 1024 * 1024
+
+
+def catalog_bytes(data: bytes) -> bytes:
+    """Normalize HTTP gzip or raw binary catalog bytes with a bounded expanded size."""
+    if len(data) > MAX_CATALOG:
+        raise ValueError("catalog exceeds the size limit")
+    if data.startswith(b"\x1f\x8b"):
+        try:
+            with gzip.GzipFile(fileobj=io.BytesIO(data)) as stream:
+                data = stream.read(MAX_CATALOG + 1)
+        except (OSError, EOFError):
+            raise ValueError("invalid gzip catalog") from None
+        if len(data) > MAX_CATALOG:
+            raise ValueError("expanded catalog exceeds the size limit")
+    return data
 
 
 @dataclass(frozen=True)
@@ -56,6 +75,9 @@ def decrypt(data: bytes, filename: str, key: BundleKey) -> bytes:
 
 def remote_path(internal_id: str) -> str | None:
     """The path below the CDN base of a remote location (an absolute URL: everything after its host), else None."""
+    if internal_id.startswith(REMOTE_PREFIX):
+        from .jp import relative_path
+        return "/" + relative_path(internal_id[len(REMOTE_PREFIX):])
     scheme, sep, rest = internal_id.partition("://")
     if not sep or not scheme.isalpha():
         return None
@@ -65,6 +87,7 @@ def remote_path(internal_id: str) -> str | None:
 
 def parse(data: bytes) -> list[dict]:
     """Every location of a binary catalog: {offset, primary_key, internal_id, dependencies (location offsets)}."""
+    data = catalog_bytes(data)
     def u32(offset):
         return struct.unpack_from("<I", data, offset)[0]
 
@@ -229,6 +252,7 @@ class _Buffer:
 def parse_header(data: bytes) -> dict:
     """The header of a binary catalog: magic, version, keysOffset, locatorId, instanceProvider, sceneProvider
     ({id, assembly, type, data}), initObjects (the same, the providers the catalog initializes), buildResultHash."""
+    data = catalog_bytes(data)
     if len(data) < HEADER.size:
         raise ValueError("unsupported catalog format")
     magic, version, keys, locator, instance, scene, init, build = HEADER.unpack_from(data, 0)
@@ -244,6 +268,7 @@ def parse_header(data: bytes) -> dict:
 def parse_keys(data: bytes) -> list[dict]:
     """The key table of a binary catalog in stored order (ContentCatalogData.ResourceLocator.KeyData {u32 key object,
     u32 location set}): {"key": value, "type": the key's type name, "locations": location offsets}."""
+    data = catalog_bytes(data)
     header = parse_header(data)
     buf = _Buffer(data)
     out = []
@@ -267,6 +292,7 @@ def parse_locations(data: bytes) -> list[dict]:
     offsets), dependency hash (i32), extra data (an ObjectTypeData) and resource type (a TypeSerializer.Data).
     extra_data of bundle and raw file locations is an AssetBundleRequestOptions: {type, hash, bundleName, crc,
     bundleSize, timeout, redirectLimit, retryCount, flags and the flag bits by name}."""
+    data = catalog_bytes(data)
     header = parse_header(data)
     buf = _Buffer(data)
     offsets: set[int] = set()
@@ -309,6 +335,7 @@ class Region:
     label: str
     cdn: str = field(repr=False)
     languages: list[str]
+    config: object = field(default=None, repr=False)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -329,6 +356,12 @@ class Handler(BaseHTTPRequestHandler):
     def catalog(self, region: Region, language: str):
         key = (region.name, language)
         if key not in self.server.catalogs:
+            if region.config is not None and region.config.provider(region.name) == "jp":
+                from .jp import open_catalog
+                cat = open_catalog(region.config, region.name, bundle_key=self.server.bundle_key)
+                self.server.catalogs[key] = browse(cat.entries)
+                self.server.jp_catalogs[key] = cat
+                return self.server.catalogs[key]
             catalog = self.server.cache / "catalogs" / region.name / f"catalog_main_{language}.bin"
             if not catalog.exists():
                 with urlopen(region.cdn + f"/asset/Android/{catalog.name}", timeout=60) as response:
@@ -358,7 +391,13 @@ class Handler(BaseHTTPRequestHandler):
         if language not in region.languages:
             self.send_error(404)
             return
-        bundles, files = self.catalog(region, language)
+        from .gameapi import GameApiError
+        from .config import ConfigError
+        try:
+            bundles, files = self.catalog(region, language)
+        except (GameApiError, ConfigError, ValueError):
+            self.send_error(502, "Catalog could not be loaded")
+            return
         base = f"/{quote(region.name)}/{quote(language)}/"
         if len(parts) > 2 and parts[2] == "download":
             ident = parts[3] if len(parts) == 4 else ""
@@ -367,8 +406,17 @@ class Handler(BaseHTTPRequestHandler):
                 return
             entry = bundles[int(ident)]
             name = entry["internal_id"].rsplit("/", 1)[1]
-            with urlopen(region.cdn + remote_path(entry["internal_id"]), timeout=60) as response:
-                data = decrypt(response.read(), name, self.server.bundle_key)
+            try:
+                cat = getattr(self.server, "jp_catalogs", {}).get((region.name, language))
+                if cat is not None:
+                    from .catalog import Bundle
+                    data = cat.fetch(Bundle(int(ident), entry["internal_id"], name, True)).read_bytes()
+                else:
+                    with urlopen(region.cdn + remote_path(entry["internal_id"]), timeout=60) as response:
+                        data = decrypt(response.read(), name, self.server.bundle_key)
+            except (GameApiError, ConfigError, ValueError):
+                self.send_error(502, "Resource could not be downloaded")
+                return
             self.send_response(200)
             self.send_header("Content-Type", "application/octet-stream")
             self.send_header("Content-Disposition", "attachment; filename*=UTF-8''" + quote(name))
@@ -404,6 +452,7 @@ def serve(regions: list[Region], bundle_key: BundleKey, cache: Path, port: int, 
     server.bundle_key = bundle_key
     server.cache = Path(cache)
     server.catalogs = {}
+    server.jp_catalogs = {}
     print(f"nnnotes browse: serving on {host}:{port}", flush=True)
     try:
         server.serve_forever()

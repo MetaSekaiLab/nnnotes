@@ -37,10 +37,10 @@ import json
 import subprocess
 import tempfile
 import threading
-import zipfile
 from collections import defaultdict
 from pathlib import Path
 
+from .apkset import ApkSet
 from . import contract
 from .atoms import impl_id
 from .contract import Cost, IncompatibleTask, Input
@@ -72,14 +72,19 @@ def boot_input(store, apk) -> Input | None:
     if apk is None:
         return None
     apk = Path(apk)
-    if apk.suffix.lower() not in (".apk", ".zip"):
+    if not apk.is_dir() and apk.suffix.lower() not in (".apk", ".zip", ".apks", ".xapk"):
         sha, size = store.identify(apk)
         return Input("boot", sha, size, apk.name, ({"kind": "file", "path": str(apk.resolve())},))
+    if apk.is_dir():
+        with ApkSet(apk) as z:
+            data = z.read(BOOT_IN_APK)
+        sha = store.put(data)
+        return Input("boot", sha, len(data), "data.unity3d", ({"kind": "store"},))
     apk_sha, _ = store.identify(apk)
     name = f"boot:{apk_sha}"
     known = store.named("files", name)
     if known is None or not store.has(*known):
-        with zipfile.ZipFile(apk) as z:
+        with ApkSet(apk) as z:
             data = z.read(BOOT_IN_APK)
         known = store.identify(store.path(store.put(data)), "files", name)
     return Input("boot", known[0], known[1], "data.unity3d", ({"kind": "store"},))

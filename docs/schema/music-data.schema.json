@@ -71,6 +71,11 @@
               ],
               "description": "the resource version recorded for the catalog in the catalog store, null when none is recorded"
             },
+            "resourceHash": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{32}$",
+              "description": "JP Android asset directory hash, when the catalog source is JP"
+            },
             "sha256": {
               "$ref": "#/$defs/sha256",
               "description": "SHA-256 of the remote catalog file the charts were read with"

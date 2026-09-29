@@ -28,6 +28,7 @@ FONT_KEYS = (*languages.LANGUAGES, "emoji")
 LINKS = ("auto", "clone", "hard", "copy")
 FILES = {("paths", "catalog"), ("paths", "apk"), ("paths", "ffmpeg"), ("paths", "vgmstream"), ("paths", "node")}
 DIRS = {("paths", "master"), ("paths", "player"), (REGION, "master")}
+REGION_PATHS = {"apk", "catalog"}
 CHECK = "nnnotes.config-check/1"
 PATHS = "nnnotes.config-path/1"
 PROBLEMS = ("invalid", "not found", "unknown")
@@ -59,7 +60,8 @@ def _template_settings() -> list[Setting]:
         elif (m := _KEYVAL.match(line)) and section:
             sec = REGION if section == f"servers.{TEMPLATE_REGION}" else section
             key, value = m.group(2), m.group(3).strip()
-            kind = "list" if value.startswith("[") else "path" if sec == "paths" or (sec, key) in DIRS else "string"
+            kind = "list" if value.startswith("[") else "path" if (sec == "paths" or (sec, key) in DIRS
+                    or sec == REGION and key in REGION_PATHS) else "string"
             out.append(Setting(sec, key, kind, (sec, key) in SECRETS, " ".join(comment)))
             comment = []
     for k in FONT_KEYS:
@@ -120,6 +122,8 @@ def validate(setting: Setting, value) -> None:
         u = urlsplit(value)
         if u.scheme not in ("https", "http") or not u.netloc:
             raise ValueError("must be an http(s):// URL")
+    elif k == (REGION, "provider") and value not in ("jp", "international"):
+        raise ValueError("must be jp or international")
     elif k in ((REGION, "api"), ("bootstrap", "api")):
         from .gameapi import channel_target
         channel_target(value)
@@ -287,7 +291,10 @@ def _status(cfg: Config, s: Setting, section: str) -> tuple[str, str | None]:
             validate(s, cfg.get_list(section, s.key))
         elif s.kind == "path":
             p = cfg.path(section, s.key)
-            if (s.section, s.key) in FILES or s.section == FONTS:
+            if s.key == "apk":
+                if not p.exists():
+                    return "not found", "no such APK or directory"
+            elif (s.section, s.key) in FILES or s.section == FONTS or (s.section, s.key) == (REGION, "catalog"):
                 if not p.is_file():
                     return "not found", "no such file"
             elif (s.section, s.key) in DIRS and not p.is_dir():

@@ -7,15 +7,16 @@ what the user points it at into a local cache the user controls.
 from __future__ import annotations
 
 import http.client
+import hashlib
 import sys
 import threading
 import urllib.parse
 import urllib.request
-import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from .addressables import BundleKey, decrypt, parse, parse_locations, remote_path
+from .apkset import ApkSet
+from .addressables import REMOTE_PREFIX, BundleKey, decrypt, parse, parse_locations, remote_path
 from .cache import write_atomic as _write_atomic
 from .config import ConfigError, apk_missing
 
@@ -46,6 +47,10 @@ def location_kind(internal_id: str) -> str:
 def file_name(internal_id: str) -> str:
     """The name of a bundle or raw file location: its path below the platform directory (`Android/`), which for a
     bundle is its bare file name."""
+    if internal_id.startswith(REMOTE_PREFIX):
+        from .jp import relative_path
+        path = relative_path(internal_id[len(REMOTE_PREFIX):])
+        return path.rsplit("/", 1)[-1] if path.endswith(".bundle") else path
     rel = remote_path(internal_id)
     if rel is None:
         rel = internal_id[len(LOCAL_PREFIX):] if internal_id.startswith(LOCAL_PREFIX) else internal_id
@@ -73,17 +78,25 @@ class Catalog:
     the first time it is needed (a ConfigError it raises is raised naming the file that needed the setting).
     """
 
-    def __init__(self, catalog_bytes: bytes, cache_dir: Path, *, cdn=None, bundle_key=None, apk: Path | None = None):
+    def __init__(self, catalog_bytes: bytes, cache_dir: Path, *, cdn=None, bundle_key=None, apk: Path | None = None,
+                 source=None, session=None):
         self._settings = {"cdn": cdn, "bundle_key": bundle_key}
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.apk = Path(apk) if apk else None
+        self.source, self.session = source, session
         self._sources = {"remote": catalog_bytes}
         self._locations: list[dict] | None = None
         self._parsed: tuple | None = None
         if self.apk is not None:
-            with zipfile.ZipFile(self.apk) as z:
+            with ApkSet(self.apk) as z:
                 self._sources["apk"] = z.read(APK_CATALOG)
+
+    def local_cache_dir(self) -> Path:
+        """JP embedded files also depend on the APK catalog, independently of the CDN snapshot."""
+        if self.source is not None and "apk" in self._sources:
+            return self.cache_dir / "apk" / hashlib.sha256(self._sources["apk"]).hexdigest()
+        return self.cache_dir
 
     def _parse(self) -> tuple:
         """(entries, by offset, by primary key), parsed the first time a lookup needs them (a command that only
@@ -241,7 +254,7 @@ class Catalog:
     # --- fetch -------------------------------------------------------------
     def cached(self, b: Bundle) -> Path | None:
         """The file fetch(b) returns when the bundle is in the cache already, else None."""
-        dst = self.cache_dir / "bundles" / b.name
+        dst = (self.cache_dir if b.remote else self.local_cache_dir()) / "bundles" / b.name
         return dst if dst.is_file() and dst.stat().st_size > 0 else None
 
     def cached_raw(self, e: dict) -> Path | None:
@@ -252,30 +265,39 @@ class Catalog:
 
     def fetch(self, b: Bundle) -> Path:
         """Local path to the decrypted bundle (CDN download or APK read)."""
-        dst = self.cache_dir / "bundles" / b.name
+        dst = (self.cache_dir if b.remote else self.local_cache_dir()) / "bundles" / b.name
         dst.parent.mkdir(parents=True, exist_ok=True)
         if dst.exists() and dst.stat().st_size > 0:
             return dst
         if b.remote:
             url = self._url(b.internal_id)
             key = self._setting("bundle_key", b.name)   # before the download: a missing key fails first
-            data = download(url)
+            data = self._download(url)
         else:
             if self.apk is None:
                 raise apk_missing(f"bundle {b.name}")
             rel = b.internal_id[len(LOCAL_PREFIX):].lstrip("/")
-            with zipfile.ZipFile(self.apk) as z:
+            with ApkSet(self.apk) as z:
                 data = z.read(APK_AA_DIR + rel)
             key = self._setting("bundle_key", b.name) if data[:7] != b"UnityFS" else None
         _write_atomic(dst, _unityfs(data, b.name, key))
         return dst
 
     def _url(self, internal_id: str) -> str:
+        if self.source is not None:
+            return self.source.url(internal_id)
         name = internal_id.rsplit('/', 1)[-1]
         cdn = self._setting("cdn", name)
         if not cdn:
             raise RuntimeError(f"{name} not cached and no CDN base given")
         return cdn.rstrip("/") + remote_path(internal_id)
+
+    def _download(self, url):
+        if self.source is not None:
+            if self.session is None:
+                raise ConfigError("JP downloads require a configured JP session")
+            return self.session.get(url, source=self.source)
+        return download(url)
 
     def fetch_key(self, key: str) -> list[Path]:
         """Every bundle of the key's closure; APK-local ones only when an APK is set."""
@@ -290,21 +312,21 @@ class Catalog:
         dst = self.cache_dir / "raw" / rel.lstrip("/")
         dst.parent.mkdir(parents=True, exist_ok=True)
         if not (dst.exists() and dst.stat().st_size > 0):
-            _write_atomic(dst, download(self._url(iid)))
+            _write_atomic(dst, self._download(self._url(iid)))
         return dst
 
     def apk_bundle(self, name_contains: str) -> Path:
         """An APK-local addressable bundle whose file name contains the substring."""
         if self.apk is None:
             raise apk_missing("an APK bundle")
-        with zipfile.ZipFile(self.apk) as z:
+        with ApkSet(self.apk) as z:
             names = [n for n in z.namelist()
                      if n.startswith(APK_AA_DIR) and n.endswith(".bundle")
                      and name_contains in n.rsplit("/", 1)[1]]
             if len(names) != 1:
                 raise KeyError(f"{name_contains!r}: {len(names)} APK bundles match")
             name = names[0].rsplit("/", 1)[1]
-            dst = self.cache_dir / "bundles" / name
+            dst = self.local_cache_dir() / "bundles" / name
             if not (dst.exists() and dst.stat().st_size > 0):
                 dst.parent.mkdir(parents=True, exist_ok=True)
                 data = z.read(names[0])

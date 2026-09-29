@@ -26,6 +26,8 @@ import zipfile
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
+
+from .apkset import ApkSet
 from typing import Callable
 
 DECK_FORMAT = "nnnotes.deck-data/1"         # the deck model's input format (ournotes-deck data::FORMAT)
@@ -188,7 +190,7 @@ def apk_master(apk) -> MasterSource:
     """The master data files the APK ships (`assets/Master/`: MasterManifest.json + .bin)."""
     apk = Path(apk)
     try:
-        with zipfile.ZipFile(apk) as z:
+        with ApkSet(apk) as z:
             raw = z.read(APK_MASTER + MANIFEST)
     except KeyError:
         raise DeckDataError(f"{apk}: no {APK_MASTER}{MANIFEST}") from None
@@ -197,7 +199,7 @@ def apk_master(apk) -> MasterSource:
     version, hashes = _manifest(raw, f"{apk} {APK_MASTER}")
 
     def read(names):
-        with zipfile.ZipFile(apk) as z:
+        with ApkSet(apk) as z:
             have = set(z.namelist())
             missing = [n for n in names if APK_MASTER + n not in have]
             if missing:
@@ -369,7 +371,7 @@ def apk_client(apk) -> dict:
     """{versionName, versionCode} of an APK's AndroidManifest.xml (None when absent)."""
     from .player import MANIFEST_IN_APK, manifest_version_code, manifest_version_name
     try:
-        with zipfile.ZipFile(apk) as z:
+        with ApkSet(apk) as z:
             data = z.read(MANIFEST_IN_APK) if MANIFEST_IN_APK in z.namelist() else None
     except (zipfile.BadZipFile, OSError):
         raise DeckDataError(f"{apk}: not a readable APK") from None
@@ -381,7 +383,9 @@ def apk_client(apk) -> dict:
 def catalog_info(cat, store_root=None) -> dict:
     """{resourceVersion, sha256} of a catalog's remote catalog file (resource_version)."""
     sha = hashlib.sha256(cat.sources()["remote"]).hexdigest()
-    return {"resourceVersion": resource_version(store_root, sha), "sha256": sha}
+    source = getattr(cat, "source", None)
+    return {"resourceVersion": source.version if source else resource_version(store_root, sha), "sha256": sha,
+            **({"resourceHash": source.hash} if source else {})}
 
 
 def resource_version(store_root, remote_sha: str) -> str | None:

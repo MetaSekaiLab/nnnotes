@@ -437,7 +437,7 @@ def open_data(cfg: Config, region: str | None = None):
     """Catalog (fetching from the CDN of `region`), the master dir of `region` and PlayerData from the settings (as
     the command line opens them; `region` None: [catalog] region)."""
     from .cli import master_dir, open_catalog, player_data
-    return open_catalog(cfg, region=region), master_dir(cfg, region), player_data(cfg)
+    return open_catalog(cfg, region=region), master_dir(cfg, region), player_data(cfg, region)
 
 
 def _lock_fetches(cat, lock) -> None:
@@ -723,6 +723,8 @@ _W: dict = {}
 
 
 def _worker_init(cfg: Config, lock, job: dict) -> None:
+    if job.get("region"):
+        cfg = cfg.for_region(job["region"])
     use(cfg)
     configure_caches(job)
     cat, master, player = open_data(cfg, job.get("region"))
@@ -1511,6 +1513,9 @@ def _build_group(site: Path, tmp_root: Path, pairs, cfg: Config, region: str, pr
                  reads: "ReadSets | None" = None) -> tuple[list, list, int]:
     """The charts `pairs` of one region group into charts/<prefix><id>.json (data of `region`); manifests that exist
     are skipped unless `force` and gain the group's `regions`. -> (results, skipped ids, workers)."""
+    cfg = cfg.for_region(region)
+    if cfg.provider(region) == "jp":
+        job = {**job, "language": "ja"}
     by_music: dict[int, list[str]] = {}
     skipped = []
     for music_id, difficulty in pairs:
@@ -1637,7 +1642,13 @@ def build(out_dir, pairs, cfg: Config, player_dir: Path, audio_format: str = DEF
     masters = region_masters(cfg, regions)
     for m in masters.values():
         liveoptions.resolve(live_options, m)
-    groups = region_groups(masters)
+    # Equal master tables alone do not imply equal assets or player data across releases.
+    groups = []
+    for group in region_groups(masters):
+        by_provider = {}
+        for region in group:
+            by_provider.setdefault(cfg.provider(region), []).append(region)
+        groups.extend(by_provider.values())
     site = Path(out_dir).resolve()
     (site / "charts").mkdir(parents=True, exist_ok=True)
     site_store(site, encoding)
