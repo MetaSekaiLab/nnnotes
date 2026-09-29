@@ -670,8 +670,8 @@ in the printed summary and in `SITE.failures.json`, models that fail in the summ
 ## music-data
 
 ```
-nnnotes music-data (--master-files DIR | --apk-master) [--full] [--no-deck] [--seeds N] [--workers N]
-                   [--no-bgm] [--jackets DIR] -o FILE
+nnnotes music-data (--master-files DIR | --apk-master | --decoded-master) [--full] [--no-deck] [--seeds N]
+                   [--workers N] [--no-bgm] [--jackets DIR] -o FILE
 ```
 
 Writes one JSON file with every `MasterLiveMusic` song and its charts for one master data version: titles, readings
@@ -689,10 +689,13 @@ master data tables about cards, skills, bonuses, scores and events. `--no-deck` 
 luck range and its threads. The master data is decoded from the files as served: `--master-files DIR` reads
 `DIR/MasterManifest.json` and the `.bin` files it lists (`master download`; the file's region is `[catalog] region`),
 `--apk-master` the same files inside `[paths] apk` (region `embedded`); each file is checked against the manifest's
-SHA-256. `--no-bgm` skips the cue sheets (every `bgm.length` is null). `--jackets DIR` also writes every song's
-jacket as `DIR/<jacket>.webp` (at most 320 px on the longer side). `FILE` ending in `.gz` is written
-gzip-compressed; the file is canonical: the same inputs and nnnotes version give the same bytes. Prints `{out,
-format, region, masterSource, masterVersion, songs, charts, deck, unplayable, full, bgm, jackets, bytes, fileBytes,
-sha256}`. A missing or unreadable input (a master data file, a column, a text id, a chart asset, a cue sheet or cue,
-a jacket), a chart the deck model cannot measure, or deck statistics that disagree with the chart facts stop the
-command with exit status 1 before the file is written. The format is described in [music-data.md](music-data.md).
+SHA-256. `--decoded-master` reads master data decoded elsewhere instead, without the master key: the `<Table>.json`
+files of the master data directory (`[paths] master`, `--master`) and the `MasterManifest.json` of the files they were
+decoded from, whose version and SHA-256 the file records (region `[catalog] region`). `--no-bgm` skips the cue sheets
+(every `bgm.length` is null). `--jackets DIR` also writes every song's jacket as `DIR/<jacket>.webp` (at most 320 px
+on the longer side). `FILE` ending in `.gz` is written gzip-compressed; the file is canonical: the same inputs and
+nnnotes version give the same bytes. Prints `{out, format, region, masterSource, masterVersion, songs, charts, deck,
+unplayable, full, bgm, jackets, bytes, fileBytes, sha256}`. A missing or unreadable input (a master data file, a
+column, a text id, a chart asset, a cue sheet or cue, a jacket), a chart the deck model cannot measure, or deck
+statistics that disagree with the chart facts stop the command with exit status 1 before the file is written. The
+format is described in [music-data.md](music-data.md).

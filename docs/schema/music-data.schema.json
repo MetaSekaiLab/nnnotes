@@ -90,7 +90,7 @@
                 "api",
                 "embedded"
               ],
-              "description": "api: files as downloaded from the region; embedded: the files the APK ships"
+              "description": "api: the region's files (downloaded, or with --decoded-master decoded elsewhere with their manifest); embedded: the files the APK ships"
             },
             "version": {
               "type": [
@@ -101,7 +101,7 @@
             },
             "tables": {
               "type": "object",
-              "description": "per table read, the SHA-256 of its file as served (before decoding)",
+              "description": "per table read, the SHA-256 of its file as served (before decoding; with --decoded-master as the manifest lists it)",
               "additionalProperties": {
                 "type": "object",
                 "required": [

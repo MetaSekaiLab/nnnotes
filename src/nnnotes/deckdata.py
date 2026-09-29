@@ -4,9 +4,11 @@
 
 Master data is decoded from the files as served: a directory with `MasterManifest.json` and the `.bin` files it
 lists (`nnnotes master download`), or the same layout inside the APK (`assets/Master/`). Each file is checked against
-the manifest's SHA-256 and decoded with master.decode. Charts are the TextAssets `Live/MusicScore/<file name>` of
-every MasterLiveMusicScore row, read from the catalog and converted by score.runtime_score; notes are listed in the
-order the client enumerates them.
+the manifest's SHA-256 and decoded with master.decode. Master data decoded elsewhere is read as it is: a directory of
+decoded tables (`<Table>.json`) with the `MasterManifest.json` of the files they were decoded from, whose version and
+SHA-256 are taken as the manifest lists them (decoded_master). Charts are the TextAssets
+`Live/MusicScore/<file name>` of every MasterLiveMusicScore row, read from the catalog and converted by
+score.runtime_score; notes are listed in the order the client enumerates them.
 
 The encoding is canonical (encode): minified UTF-8 with one trailing LF, keys in a fixed order, charts sorted by
 score id, numbers the master data writes with a fraction or exponent as the shortest decimal that reads back as the
@@ -19,6 +21,7 @@ from __future__ import annotations
 import gzip
 import hashlib
 import json
+import re
 import zipfile
 from collections import Counter
 from dataclasses import dataclass
@@ -130,12 +133,13 @@ class DeckDataError(ValueError):
 @dataclass(frozen=True)
 class MasterSource:
     """Master data files as served: `version` and the SHA-256 of each file name from the manifest, and a reader of
-    files by name."""
+    files by name. `decoded`: the reader has the decoded tables instead (`<Table>.json` for `<Table>.bin`)."""
     source: str                                         # API or EMBEDDED
     where: str                                          # the directory or APK, for messages
     version: str | None
     hashes: dict[str, str]                              # file name -> sha256 (lowercase hex; "" when not listed)
     read: Callable[[list[str]], dict[str, bytes]]       # file names -> {name: bytes}; a missing file raises KeyError
+    decoded: bool = False
 
 
 def _manifest(raw: bytes, where: str) -> tuple[str | None, dict[str, str]]:
@@ -149,12 +153,10 @@ def _manifest(raw: bytes, where: str) -> tuple[str | None, dict[str, str]]:
     return (str(version) if version is not None else None), hashes
 
 
-def master_files(directory) -> MasterSource:
-    """The master data files of a directory written by `nnnotes master download` (MasterManifest.json + .bin)."""
-    d = Path(directory)
+def _directory(d: Path, what: str, decoded: bool = False) -> MasterSource:
     m = d / MANIFEST
     if not m.is_file():
-        raise DeckDataError(f"{d}: no {MANIFEST} (a directory written by `nnnotes master download`)")
+        raise DeckDataError(f"{d}: no {MANIFEST} ({what})")
     version, hashes = _manifest(m.read_bytes(), str(d))
 
     def read(names):
@@ -165,7 +167,21 @@ def master_files(directory) -> MasterSource:
             except FileNotFoundError:
                 raise KeyError(n) from None
         return out
-    return MasterSource(API, str(d), version, hashes, read)
+    return MasterSource(API, str(d), version, hashes, read, decoded)
+
+
+def master_files(directory) -> MasterSource:
+    """The master data files of a directory written by `nnnotes master download` (MasterManifest.json + .bin)."""
+    return _directory(Path(directory), "a directory written by `nnnotes master download`")
+
+
+def decoded_master(directory) -> MasterSource:
+    """Decoded master data: a directory of decoded tables, `<Table>.json` with the `_allData` rows (as `nnnotes master
+    decode` writes them), and the `MasterManifest.json` of the files they were decoded from (a master data snapshot
+    published with its manifest). The version and each file's SHA-256 are the manifest's: the decoded tables cannot
+    be checked against the files as served."""
+    return _directory(Path(directory), "decoded master data needs the manifest of the files it was decoded from",
+                      decoded=True)
 
 
 def apk_master(apk) -> MasterSource:
@@ -192,31 +208,37 @@ def apk_master(apk) -> MasterSource:
 
 def read_master(src: MasterSource, key, tables=None) -> tuple[dict[str, list[dict]], dict[str, str]]:
     """The rows (`_allData`) of every table of `tables` (default: TABLES) and the SHA-256 of each file as served.
-    `key`: a master.MasterKey."""
+    `key`: a master.MasterKey (unused for decoded master data: None)."""
     from . import master
     names = {t: f"{t}.bin" for t in (tables if tables is not None else (t for t, _ in TABLES))}
     unlisted = [t for t, n in names.items() if n not in src.hashes]
     if unlisted:
         raise DeckDataError(f"master data {src.where}: {MANIFEST} lists no {', '.join(unlisted)}")
+    files = {t: f"{t}.json" if src.decoded else n for t, n in names.items()}
     try:
-        data = src.read(list(names.values()))
+        data = src.read(list(files.values()))
     except KeyError as e:
         raise DeckDataError(f"master data {src.where}: no file {e.args[0]}") from None
-    rk = master.round_keys(key.key)
+    rk = None if src.decoded else master.round_keys(key.key)
     tables, shas = {}, {}
     for t, n in names.items():
-        raw = data[n]
-        sha = hashlib.sha256(raw).hexdigest()
-        if src.hashes[n] and sha != src.hashes[n]:
-            raise DeckDataError(f"master data {src.where}: {n}: sha256 differs from the manifest")
+        raw, f = data[files[t]], files[t]
+        if src.decoded:                                  # the manifest's SHA-256 of the file as served
+            sha = src.hashes[n]
+            if not re.fullmatch(r"[0-9a-f]{64}", sha):
+                raise DeckDataError(f"master data {src.where}: {MANIFEST} lists no SHA-256 for {n}")
+        else:
+            sha = hashlib.sha256(raw).hexdigest()
+            if src.hashes[n] and sha != src.hashes[n]:
+                raise DeckDataError(f"master data {src.where}: {n}: sha256 differs from the manifest")
         try:
-            doc = json.loads(master.decode(raw, key, rk).decode("utf-8"))
+            doc = json.loads((raw if src.decoded else master.decode(raw, key, rk)).decode("utf-8"))
         except Exception as e:                           # padding, gzip, UTF-8 or JSON: the file cannot be read
-            raise DeckDataError(f"master data {src.where}: {n} cannot be decoded ({type(e).__name__}: "
-                                f"{str(e)[:120]})") from None
+            raise DeckDataError(f"master data {src.where}: {f} cannot be {'read' if src.decoded else 'decoded'} "
+                                f"({type(e).__name__}: {str(e)[:120]})") from None
         rows = doc.get("_allData") if isinstance(doc, dict) else None
         if not isinstance(rows, list) or not all(isinstance(r, dict) for r in rows):
-            raise DeckDataError(f"master data {src.where}: {n} has no `_allData` rows")
+            raise DeckDataError(f"master data {src.where}: {f} has no `_allData` rows")
         tables[t], shas[t] = rows, sha
     return tables, shas
 

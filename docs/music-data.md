@@ -9,14 +9,18 @@ its extension module `nnnotes._deck`. The format is `nnnotes.music-data/1`; its 
 [schema/music-data.schema.json](schema/music-data.schema.json).
 
 ```
-nnnotes music-data (--master-files DIR | --apk-master) [--full] [--no-deck] [--seeds N] [--workers N]
-                   [--no-bgm] [--jackets DIR] -o FILE
+nnnotes music-data (--master-files DIR | --apk-master | --decoded-master) [--full] [--no-deck] [--seeds N]
+                   [--workers N] [--no-bgm] [--jackets DIR] -o FILE
 ```
 
 - `--master-files DIR`: master data files as served, `DIR/MasterManifest.json` and the `.bin` files it lists
   (`nnnotes master download`). The file's `region` is `[catalog] region` (`--region`).
 - `--apk-master`: the master data files the APK ships (`assets/Master/` of `[paths] apk`, the same layout). The
   file's `region` is `embedded`.
+- `--decoded-master`: master data decoded elsewhere, the directory the other commands read (`[paths] master`,
+  `--master`, `[servers.<region>] master`): one `<Table>.json` per table (`nnnotes master decode`) and the
+  `MasterManifest.json` of the files they were decoded from, as a master data snapshot published with its manifest
+  carries it. The file's `region` is `[catalog] region`; no master key is needed.
 - `--full`: also write the deck model's input, every chart's runtime notes and the master data tables about cards,
   skills, bonuses, scores and events ([the deck input](#the-deck-input---full)), for tools that run a deck model of
   their own.
@@ -30,6 +34,9 @@ nnnotes music-data (--master-files DIR | --apk-master) [--full] [--no-deck] [--s
   page next to the file finds a song's jacket at `<DIR>/<song.jacket>.webp`.
 
 Each master data file is checked against the SHA-256 the manifest lists and decoded with `[master] key` and `iv`.
+With `--decoded-master` the tables are read as decoded, and the master data version and each file's SHA-256 are the
+manifest's: the decoded tables cannot be checked against the files as served, so the file records what the manifest
+lists (the same values as `--master-files` on those files).
 Charts are read from the catalog of `[catalog] language` (bundles fetched into the cache as for every command); the
 BGM length from the cue sheet's ACB (its `CueTable` and `WaveformTable`, no audio is decoded). `FILE` ending in `.gz`
 is written gzip-compressed. The command prints a summary (`songs`, `charts`, `deck`: the deck model's commit,
@@ -79,7 +86,7 @@ A **text** is an object with one string per language of `languages` (`{"ja": ...
 | `client.versionName`, `client.versionCode` | the APK's version name and code (null without `[paths] apk`) |
 | `catalog.resourceVersion` | the resource version recorded for the catalog in the catalog store (`nnnotes catalogs fetch` / `import`), null when none is recorded |
 | `catalog.sha256` | SHA-256 of the remote catalog file the charts were read with |
-| `master.source` | `api` (`--master-files`) or `embedded` (`--apk-master`) |
+| `master.source` | `api` (`--master-files`, `--decoded-master`: the region's files) or `embedded` (`--apk-master`) |
 | `master.version` | the `version` of the master data manifest |
 | `master.tables.<Table>.sha256` | SHA-256 of each table's file as served, before decoding: the song tables (`MasterLiveMusic`, `MasterLiveMusicScore`, `MasterText`, `MasterBand`, `MasterCharacter`, `MasterTag`, `MasterLiveMusicCategory`, `MasterSound`, `MasterSoundCueSheet`, `MasterLiveScoreRank`) and, when the deck model runs or with `--full`, the tables of [the deck input](#the-deck-input---full) |
 | `exporter.name`, `exporter.version` | `nnnotes` and its version |
