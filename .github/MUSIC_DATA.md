@@ -6,7 +6,8 @@ a catalog from another snapshot. See [Japanese release](../docs/jp.md) for setup
 
 `.github/workflows/music-data.yml` keeps the music data file of the chart data page (ournotes-player
 `examples/songs`) up to date: `nnnotes music-data` of the current master data ([docs/music-data.md](../docs/music-data.md):
-every song and chart with the deck model's statistics and the play scenarios), checked by quality gates and
+every song and chart with the deck model's statistics, the play scenarios and the chart's Gekisou skill aptitude),
+checked by quality gates and
 published into the story site's bucket under `music-data/` (`https://storage.bdon.moe/moenotes/music-data/`):
 
 | Object | Content | Cache-Control |
@@ -72,12 +73,14 @@ Every one must pass, else nothing is published. Warnings go to the job summary a
 | `schema` | the file against `docs/schema/music-data.schema.json` of the checkout (JSON Schema 2020-12) |
 | `provenance` | `format`; `region` `tw`; `master.source` `api`; `master.version` equal to the snapshot's and its `MasterManifest.json`'s; every table's SHA-256 the manifest's, every decoded table read the one `index.json` lists; the song tables and the deck model's present; `deck.commit` the one `rust/Cargo.lock` pins; `exporter.version` the installed nnnotes; an APK version; a catalog SHA-256 (warning: the APK is another client version than the snapshot's) |
 | `counts` | no fewer songs and charts than the published file (warning: ids no longer in it) |
-| `deck` | deck statistics on every chart: kinds, a positive power, events and positions matching the chart, seeds unless unplayable (a warning), `weights[kind][position]` numbers, every check deck within its bound |
+| `deck` | deck statistics on every chart: kinds, a positive power, events and positions matching the chart, seeds unless unplayable (a warning): the one seed 0 on a chart without a luck range, else two or more different seeds, the same on every luck chart (their number is the file's, not fixed), `weights[kind][position]` numbers, every seed range's `rankBonus` = trunc(`rangeScore` x `rankBonusPercent` / 100) and its `luckPoints` an int, every check deck within its bound |
 | `scenarios` | the play scenario fields: `offSeeds` exactly one entry (seed 0, score, weights, check within its bound), every range's `rankBonusPercents` five ints (the first `rankBonusPercent`), every seed's `scorePerfect`, `rangeWeights` (`[kind][position][range]`) and `rankCheck` (within its bound), every seed range's `rangeScorePerfect` (warnings, none in TW: a null `rangeWeights`, a null kind in it or in `offSeeds`' weights) |
+| `aptitude` | the Gekisou skill aptitude (every shape alone on a chart). `deck.model.gekisouAptitude` a text; `deck.gekisouAptitude`: every key, `plainKind` the page's plain kind, a `host` text, the `seedRule` (a deterministic test, increasing batches, the targets, the cross seeds), `shapes` numbered 0, 1, 2, ... (source `member` or `support`, mission 1 to 4, `bandCondition` a support skill's alone and exactly when an effect has condition 5000, effect rows with every key and their condition groups, condition 5000 without targets, skills with a level and, with a band condition alone, member targets and bands). Every chart's `deck.gekisouAptitude`: null exactly when the chart is unplayable with Gekisou on, has no Gekisou range or there is no shape; else `factors` one per range (counts; no Just or Perfect notes outside a Just range; `lotteries` `[0, 0]` outside a luck range, else the mean of `deck.seeds`' `lotResults`) and `variants` one per shape of the chart's missions (or mission 4) in shape order, a band condition shape's `bandMatch` true then false: every `[mean, se]` two finite numbers with se >= 0 (every se 0 when deterministic), ranges one per range, `tail` = `score` less the ranges' `rangeScore` and `rankBonus` (allowing 0.0005 per rounded term plus 1e-6), deterministic point deltas integers and `tailPerfect` checked against the baseline Perfect range bonuses, 1 seed when deterministic else a batch of the seed rule (the last one when `seTargetMet` is false), `crossSeeds` min(seeds, the rule's), `weights` one per position and `rangeWeights` per position and range where the plain kind and `deck.seeds[0].rangeWeights` are, else null, the `check` on `deck.seeds[0]`'s seed, a rank per range (1 where the ranks are not linear), a plain kind value or null per position, within its bound (warning: variants that missed the standard error target) |
 | `finite` | no NaN or infinity (warning: one inside master data rows, `songs[].master`, which the format writes as `1e999`) |
 | `references` | texts in every language of `languages` (names and titles not empty); unique ids; songs sorted; the songs' bands, vocal characters and tags in the file; a band or a band name; a jacket, and its file in `jackets/`; a BGM cue; score ranks; charts in difficulty order, score ids unique (warnings: a title without a `zh-Hant` text, a music category on no tab, a character of no band) |
 | `bgm` | every song's BGM length: `durationMs = samples * 1000 // sampleRate`, 30 s to 10 min, within 1 s of the cue's `lengthMs`, not ending before a chart's last note (warning: more than a minute after it) |
 | `size` | 0.8 to 2 times the published file |
+| `gzip` | the file gzipped at most 2 MB (0.37 MB before the aptitude), its Gekisou skill aptitude gzipped at most 1.2 MB (about 0.4 MB expected) |
 | `page` | `music_data_smoke.mjs`: the page's `catalog.js` and `ranking.js` in Node.js over the file: a row per chart, a plain score-up kind, data for the free, rank and Just scenarios, finite positive figures for every chart the data covers in seven scenarios (Gekisou Live at several ranks, Just rates and a Great share, Free Live), the ranking, frontier and event figures |
 | (publish) | read back after upload, SHA-256 checked |
 
@@ -93,7 +96,21 @@ python -m pytest -q -p no:cacheprovider .github/scripts/test_music_data.py
 
 with, optionally, `MUSIC_DATA_SCHEMA` (a schema file when the checkout has none), `MUSIC_DATA_PAGE` (an
 `examples/songs` directory: the smoke test), `MUSIC_DATA_SAMPLE` (a real file with the play scenario fields: its
-content gates pass) and `MUSIC_DATA_OLD_SAMPLE` (one without them: the scenario gate stops it).
+content gates pass; one made before the ranges' `luckPoints` and the aptitude: the deck and aptitude gates stop it
+on those alone) and
+`MUSIC_DATA_OLD_SAMPLE` (one without the play scenario fields: the scenario gate stops it).
+
+### Aptitude page smoke
+
+With the aptitude API (ournotes-player PR #11, `1522c24`), the same Node smoke also checks shape/skill/band
+lookups, chart variants, all five battle scenarios, Free Live exclusion, finite gains, raw standard errors,
+missing cross terms and the absence of standard errors for transformed or combined figures. Removing aptitude
+must not change the default chart figures: default ranking still has no card Gekisou skills.
+
+Only deterministic variants are reconstructed against their individual `check` seed, using positional cards and
+`masterSkillFactor` for the game's float32 conversion. Stochastic means are never used to reconstruct a check.
+Older pinned page modules explicitly report `API unavailable (skipped)`; moving `MUSIC_DATA_PLAYER_REF` remains a
+separate rollout decision. No browser or page build is needed.
 
 ## Settings
 
@@ -116,7 +133,9 @@ Repository variables:
 
 - **nnnotes.** The workflow runs this fork's nnnotes. It needs upstream's `music-data` command with the play
   scenarios (MetaSekaiLab/nnnotes `a03591e`) and `--decoded-master` (MetaSekaiLab/nnnotes#6, `12df2a6`): sync the
-  fork with upstream first. Until then `plan` stops naming what is missing.
+  fork with upstream first. Until then `plan` stops naming what is missing. The deck and aptitude gates also need
+  the ranges' `luckPoints` and the Gekisou skill aptitude, which come with nnnotes' and ournotes-deck's Gekisou skill
+  changes: until the fork has them every build stops there.
 - **The page.** Set `MUSIC_DATA_PLAYER_REF` to the ournotes-player commit of the chart data page that reads the play
   scenario fields, once that page is merged.
 - **Publishing.** Set `MUSIC_DATA_PUBLISH` to `true` last, when dry runs pass and the published format is final.

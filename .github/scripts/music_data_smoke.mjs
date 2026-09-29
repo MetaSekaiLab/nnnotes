@@ -85,10 +85,91 @@ for (const [name, scenario] of SCENARIOS) {
 }
 catalog.histogram(rows, (r) => r.level);
 
+// Aptitude is a separate view, never folded into the default song ranking. Older pinned pages may lack this API;
+// report that explicitly until PLAYER_REF is deliberately moved to a page with the aptitude UI.
+let aptitudeFigures = 0;
+const aptitudeApi = ["aptitudeShapes", "chartVariants", "aptitudeFigures", "aptitudeRate", "aptitudeSe",
+  "masterSkillFactor"].every((k) => typeof ranking[k] === "function")
+  && ["gekisouSkill", "shapeSkills", "shapeBands"].every((k) => typeof catalog[k] === "function");
+const near = (a, b) => finite(a) && finite(b) && Math.abs(a - b) <= 1e-8 * Math.max(1, Math.abs(a), Math.abs(b));
+if (aptitudeApi && data.deck?.gekisouAptitude) {
+  const shapes = ranking.aptitudeShapes(data);
+  if (shapes.size !== data.deck.gekisouAptitude.shapes.length) problem("aptitudeShapes: missing shapes");
+  for (const shape of shapes.values()) {
+    const skills = catalog.shapeSkills(data, shape, "zh-Hant");
+    if (skills.length !== new Set(shape.skills.map((s) => `${s.id}:${s.level}`)).size) {
+      problem(`shape ${shape.id}: shapeSkills count`);
+    }
+    const table = shape.source === "support" ? "supportSkills" : "skills";
+    for (const skill of skills) {
+      const named = catalog.gekisouSkill(data, table, skill.id, "zh-Hant");
+      if (!named.name || named.name !== skill.name) problem(`shape ${shape.id}: skill name lookup`);
+    }
+    const bands = catalog.shapeBands(data, shape, "zh-Hant");
+    if (bands.length !== new Set(shape.skills.flatMap((s) => s.bandIds || [])).size || bands.some((s) => !s)) {
+      problem(`shape ${shape.id}: shapeBands lookup`);
+    }
+  }
+  const power = data.deck.model.power;
+  for (const { chart } of charts) {
+    const d = chart.deck;
+    if (!d) continue;
+    const variants = ranking.chartVariants(d);
+    if (variants.length !== (d.unplayable ? 0 : d.gekisouAptitude?.variants.length || 0)) {
+      problem(`chart ${chart.scoreId}: chartVariants count`);
+    }
+    // Removing aptitude must not alter any default figure.
+    const baseline = ranking.chartFigures(d, kind, power);
+    const without = ranking.chartFigures({ ...d, gekisouAptitude: null }, kind, power);
+    if (JSON.stringify(baseline) !== JSON.stringify(without)) problem(`chart ${chart.scoreId}: aptitude changes default`);
+    for (const variant of variants) {
+      for (const [name, scenario] of SCENARIOS) {
+        const tag = `aptitude chart ${chart.scoreId} shape ${variant.shape}, ${name}`;
+        const f = ranking.aptitudeFigures(variant, d.ranges, power, scenario);
+        if (scenario?.mode === "free") {
+          if (f !== null) problem(`${tag}: Free Live has aptitude`);
+          continue;
+        }
+        aptitudeFigures++;
+        if (!f || !finite(f.base)) { problem(`${tag}: missing or nonfinite base`); continue; }
+        if (f.weights !== null && (f.weights.length !== d.positions || !f.weights.every(finite))) {
+          problem(`${tag}: invalid weights`);
+        }
+        const zero = Array(d.positions).fill(0);
+        if (!near(ranking.aptitudeRate(f, zero), f.base)) problem(`${tag}: no-skill rate`);
+        const rate = ranking.aptitudeRate(f, SKILLS);
+        if (f.weights === null ? rate !== null : !finite(rate)) problem(`${tag}: missing cross-term handling`);
+        if (ranking.aptitudeSe(f, SKILLS) !== null) problem(`${tag}: SE assigned without covariance`);
+        if (scenario === null) {
+          if (!near(f.base, variant.score[0] / power)
+            || !near(ranking.aptitudeSe(f, zero), variant.score[1] / power)) problem(`${tag}: raw mean/SE`);
+        } else if (ranking.aptitudeSe(f, zero) !== null) problem(`${tag}: transformed SE is not null`);
+      }
+      // Only deterministic deltas describe the individual check seed. Never reconstruct a stochastic check
+      // from sampled means. Ordinary check cards are positional, unlike the UI's random-order expectation.
+      if (!variant.deterministic || kind === null) continue;
+      const c = variant.check;
+      const seed = d.seeds.find((s) => s.seed === c.seed);
+      const sc = { mode: "battle", ranks: c.ranks, just: 1, great: 0 };
+      const base = ranking.scenarioSeed(seed, d.ranges, kind, sc);
+      const gain = ranking.aptitudeFigures(variant, d.ranges, power, sc);
+      if (!base || !gain?.weights) continue;
+      const predicted = data.deck.model.checkPower * ((base.score / power) + gain.base
+        + c.deck.reduce((sum, card, k) => sum + (card ? ranking.masterSkillFactor(card[1])
+          * (base.weights[k] + gain.weights[k]) : 0), 0));
+      // Exported weight rounding adds a small reconstruction error on top of the engine's bound.
+      const rounding = data.deck.model.checkPower * 1e-7 * (1 + d.ranges.length) * d.positions;
+      if (!finite(predicted) || Math.abs(predicted - c.exact) > c.bound + rounding) {
+        problem(`aptitude chart ${chart.scoreId} shape ${variant.shape}: deterministic check reconstruction`);
+      }
+    }
+  }
+}
+
 if (problems.length) {
   for (const m of problems.slice(0, 40)) console.log(m);
   if (problems.length > 40) console.log(`${problems.length - 40} more problems`);
   process.exit(1);
 }
 console.log(`page smoke test: ${rows.length} charts, ${SCENARIOS.length} scenarios, ${figures} chart figures; `
-  + `plain kind ${kind}, scenarios free/ranks/just`);
+  + `plain kind ${kind}, scenarios free/ranks/just; aptitude ${aptitudeApi ? aptitudeFigures + " figures" : "API unavailable (skipped)"}`);
