@@ -155,7 +155,7 @@ story text); it is not a setting.
 | `web --pair` / `--all` | as `live`, plus `[paths] player`, `node`; with `--region` / `--all-regions` each region's `[servers.<region>]` table (its `cdn` for what must be downloaded) and master data (`[servers.<region>] master`; `[paths] master` for at most one region) |
 | `web --live2d` / `--all-live2d` | catalog (bundles from the CDN of the site's first region), `[paths] apk`, `[paths] player`; not `node`; master data only for the model names (optional: without it `models.json` has no names) |
 | `web --player-only` / `--reingest-json` | `[paths] player` |
-| `deck-data` | catalog, `[master] key` + `iv`; `--master-files` also `[catalog] region`; `--apk-master` also `[paths] apk`; `[paths] apk` (optional otherwise) for the client version |
+| `music-data` | catalog, `[master] key` + `iv` (not with `--decoded-master`); `--master-files` also `[catalog] region`; `--apk-master` also `[paths] apk`; `--decoded-master` also `[catalog] region` and master data with its `MasterManifest.json`; `[paths] apk` (optional otherwise) for the client version |
 | `export`, `plan` | the store (`[paths] store` or `[paths] cache`); catalog (bundles are fetched into the cache); `[paths] apk` for the bundles inside the APK (without it they are reported as `source.absent`); master data for `--views`; with `--catalog-version` an imported catalog version instead of the current catalog |
 | `run-stage` | the store; `[paths] cache` for inputs located in the cache; `--fetch` also what fetching needs (region, `cdn`, bundle key, `[paths] apk`) |
 | `catalogs list` / `import` / `diff`, `store verify` | the store; `import` reads the APK's catalog from `[paths] apk` when it is set |
@@ -216,6 +216,8 @@ nnnotes: game API call Version to [servers.tw] api failed: UNAVAILABLE (server u
   `nnnotes master download --latest` (or `--version <version>`) or on the game client's own files.
   `[servers.<region>] master` the same for one region: `nnnotes --region <region> master download --latest -o <dir>`,
   then `nnnotes master decode <dir> -o <region dir>` (the regions serve different master data versions).
+  `music-data --decoded-master` also reads the `MasterManifest.json` of the decoded files there (copy it from the
+  download directory; a published master data snapshot may carry it).
 - **CRI HCA keycode**: not a setting. `audio`, `story`, `live` and `web` read it from the APK's boot data;
   `nnnotes crikey` shows whether one was found and can write it as a `.hcakey` file for vgmstream.
 - **Tools**: [vgmstream](https://vgmstream.org/) (`vgmstream-cli`), [FFmpeg](https://ffmpeg.org/) and, for
