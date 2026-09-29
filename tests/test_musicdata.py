@@ -502,3 +502,31 @@ def test_command(tmp_path, capsys, monkeypatch):
     monkeypatch.setattr(musicdata, "Deck", lambda **kw: real(module=FakeDeck(fail="boom"), **kw))
     code, _, err = run(base + ["-o", str(tmp_path / "x.json")], capsys)
     assert code == 1 and "deck model: boom" in err and not (tmp_path / "x.json").exists()
+
+
+def test_command_decoded_master(tmp_path, capsys, monkeypatch):
+    from test_deckdata import decoded_dir
+    d = master_dir(tmp_path)
+    dec = decoded_dir(tmp_path, d)
+    out = tmp_path / "o" / "music.json"
+    code, _, err = run(["--region", "xx", "music-data", "--decoded-master", "--no-deck", "-o", str(out)], capsys)
+    assert code == 2 and "paths.master" in err
+    monkeypatch.setattr(cli, "open_catalog", lambda cfg, **kw: FakeCatalog(CHARTS))
+    monkeypatch.setattr(score, "fetch_chart", lambda cat, name: cat.charts[name])
+    fake = FakeDeck()
+    real = musicdata.Deck
+    monkeypatch.setattr(musicdata, "Deck", lambda **kw: real(module=fake, **kw))
+    common = ["--region", "xx", "--cache", str(tmp_path / "cache")]
+    options = ["--no-bgm", "--full", "-o"]
+    code, stdout, err = run(common + ["--master", str(dec), "music-data", "--decoded-master"] + options + [str(out)],
+                            capsys)                                     # no master key is set
+    assert code == 0, err
+    r = json.loads(stdout)
+    assert (r["masterSource"], r["masterVersion"], r["region"], r["songs"]) == ("api", "v-test", "xx", 2)
+    # the file of the master data files as served, byte for byte
+    monkeypatch.setenv("NNNOTES_MASTER_KEY", synth.MASTER_KEY.hex())
+    monkeypatch.setenv("NNNOTES_MASTER_IV", synth.MASTER_IV.hex())
+    code, _, err = run(common + ["music-data", "--master-files", str(d)] + options + [str(tmp_path / "f.json")],
+                       capsys)
+    assert code == 0, err
+    assert out.read_bytes() == (tmp_path / "f.json").read_bytes()

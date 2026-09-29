@@ -36,8 +36,8 @@ summaries are printed as UTF-8 whatever the console encoding.
                          [--story 10462 [--story ...] | --all-stories] [--story-languages en,ja] [--font en=<file>]
                          [--font emoji=<file>]
                          [--region <region> [--region ...] | --all-regions]
-    nnnotes music-data --master-files <master download dir> | --apk-master [--full] [--no-deck] [--no-bgm]
-                       [--jackets DIR] -o out/music-data.json[.gz]
+    nnnotes music-data --master-files <master download dir> | --apk-master | --decoded-master [--full] [--no-deck]
+                       [--no-bgm] [--jackets DIR] -o out/music-data.json[.gz]
     nnnotes export -o out/assets [--select group:<group> | key:<prefix> | bundle:<glob> ...] [--layout original,cas]
     nnnotes plan [--select ...] [--json] [--check] [--emit-tasks <dir>]
     nnnotes run-stage <task.json> [...]
@@ -646,9 +646,11 @@ def cmd_music_data(args, cfg):
         deck = None if args.no_deck else musicdata.Deck(seeds=args.seeds, workers=args.workers)
         if args.apk_master:
             src, region = deckdata.apk_master(apk), deckdata.EMBEDDED
+        elif args.decoded_master:                    # decoded elsewhere: no master key
+            src, region = deckdata.decoded_master(master_dir(cfg)), cfg.region()
         else:
             src, region = deckdata.master_files(Path(args.master_files)), cfg.region()
-        key = master_key(cfg)
+        key = None if src.decoded else master_key(cfg)
         cat = open_catalog(cfg)
         r = musicdata.export(Path(args.out), src, key, deckdata.catalog_fetch(cat),
                              None if args.no_bgm else musicdata.catalog_bgm(cat), region=region,
@@ -933,6 +935,9 @@ def build_parser() -> argparse.ArgumentParser:
                    help="master data files as served: MasterManifest.json and the .bin files it lists "
                         "(`master download`)")
     g.add_argument("--apk-master", action="store_true", help="the master data files of base.apk ([paths] apk)")
+    g.add_argument("--decoded-master", action="store_true",
+                   help="decoded master data ([paths] master or --master) with the MasterManifest.json of the files "
+                        "it was decoded from; no master key")
     c.add_argument("--full", action="store_true",
                    help="also write the deck model's input: every chart's runtime notes and the master data tables "
                         "about cards, skills, bonuses, scores and events")

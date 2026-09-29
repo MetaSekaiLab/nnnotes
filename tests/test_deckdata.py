@@ -4,6 +4,7 @@ music data file that carries it is tested in test_musicdata."""
 import gzip
 import hashlib
 import json
+import shutil
 import struct
 import zipfile
 
@@ -11,7 +12,7 @@ import numpy as np
 import pytest
 
 import synth
-from nnnotes import cli, deckdata, jsonio, player, score
+from nnnotes import cli, deckdata, jsonio, master, player, score
 from nnnotes.catalogdb import CatalogDB
 from nnnotes.master import MasterKey
 
@@ -370,6 +371,50 @@ def test_apk_master_and_client(tmp_path):
     with pytest.raises(deckdata.DeckDataError, match="no file MasterMemberCard.bin"):
         deckdata.read_master(deckdata.apk_master(tmp_path / "partial.apk"), KEY)
     assert deckdata.apk_client(tmp_path / "empty.apk") == {"versionName": None, "versionCode": None}
+
+
+# ---------------------------------------------------------------- decoded master data
+def decoded_dir(tmp_path, d, name="dec"):
+    """The decoded tables of a master_dir (`master decode`) with its manifest, as a published snapshot carries them."""
+    out = tmp_path / name
+    assert not master.decode_files(sorted(d.glob("*.bin")), out, KEY)["failed"]
+    shutil.copy(d / "MasterManifest.json", out / "MasterManifest.json")
+    return out
+
+
+def test_decoded_master(tmp_path):
+    d = master_dir(tmp_path)
+    src = deckdata.decoded_master(decoded_dir(tmp_path, d))
+    assert (src.source, src.version, src.decoded) == ("api", "v-test", True)
+    # the same rows and the manifest's SHA-256 of the files as served, without the key
+    assert deckdata.read_master(src, None) == deckdata.read_master(deckdata.master_files(d), KEY)
+    export(tmp_path, "e.json", src=src)
+    export(tmp_path, "f.json")
+    assert (tmp_path / "e.json").read_bytes() == (tmp_path / "f.json").read_bytes()
+
+
+def test_decoded_master_checks(tmp_path):
+    d = master_dir(tmp_path)
+    with pytest.raises(deckdata.DeckDataError, match="no MasterManifest.json .decoded master data needs the manifest"):
+        deckdata.decoded_master(tmp_path)
+    dec = decoded_dir(tmp_path, d, "a")
+    (dec / "MasterBand.json").unlink()
+    failing(tmp_path, "no file MasterBand.json", src=deckdata.decoded_master(dec), key=None)
+    dec = decoded_dir(tmp_path, d, "b")
+    (dec / "MasterBand.json").write_text("{", encoding="utf-8")
+    failing(tmp_path, r"MasterBand.json cannot be read \(JSONDecodeError", src=deckdata.decoded_master(dec), key=None)
+    (dec / "MasterBand.json").write_text('{"x": 1}', encoding="utf-8")
+    failing(tmp_path, "MasterBand.json has no `_allData` rows", src=deckdata.decoded_master(dec), key=None)
+    dec = decoded_dir(tmp_path, d, "c")
+    m = json.loads((dec / "MasterManifest.json").read_text(encoding="utf-8"))
+    for f in m["files"]:
+        if f["name"] == "MasterBand.bin":
+            f["hash"] = ""
+    (dec / "MasterManifest.json").write_text(json.dumps(m), encoding="utf-8")
+    failing(tmp_path, "MasterManifest.json lists no SHA-256 for MasterBand.bin", src=deckdata.decoded_master(dec),
+            key=None)
+    dec = decoded_dir(tmp_path, master_dir(tmp_path, skip={"MasterEvent"}, name="m2"), "e")
+    failing(tmp_path, "lists no MasterEvent", src=deckdata.decoded_master(dec), key=None)
 
 
 def test_resource_version_from_the_catalog_store(tmp_path):
