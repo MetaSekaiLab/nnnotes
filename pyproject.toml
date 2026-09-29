@@ -1,6 +1,6 @@
 [build-system]
-requires = ["setuptools>=77"]
-build-backend = "setuptools.build_meta"
+requires = ["maturin>=1.9,<2"]
+build-backend = "maturin"
 
 [project]
 name = "nnnotes"
@@ -37,14 +37,14 @@ Homepage = "https://github.com/MetaSekaiLab/nnnotes"
 Source = "https://github.com/MetaSekaiLab/nnnotes"
 Issues = "https://github.com/MetaSekaiLab/nnnotes/issues"
 
-[tool.setuptools.dynamic]
-version = { attr = "nnnotes.__version__" }
-
-[tool.setuptools.packages.find]
-where = ["src"]
-
-[tool.setuptools.package-data]
-nnnotes = ["typetrees/*.json", "viewrules.json", "nnnotes.example.toml"]
+[tool.maturin]
+# the pure Python package src/nnnotes with the extension module nnnotes._deck (rust/: ournotes-deck, pinned by
+# commit); the version is rust/Cargo.toml's, kept equal to nnnotes.__version__ (tests/test_musicdata.py)
+python-source = "src"
+module-name = "nnnotes._deck"
+manifest-path = "rust/Cargo.toml"
+profile = "release"
+locked = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

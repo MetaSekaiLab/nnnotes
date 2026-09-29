@@ -1,0 +1,23 @@
+[package]
+name = "nnnotes-deck"
+# the nnnotes version (src/nnnotes/__init__.py); the wheel takes its version from here
+version = "0.1.2"
+edition = "2024"
+rust-version = "1.85"
+description = "nnnotes._deck: the ournotes-deck chart statistics as a Python extension module"
+license = "MIT"
+publish = false
+
+[lib]
+name = "_deck"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.29", features = ["abi3-py311"] }
+# pinned by commit; .github/workflows/deck.yml opens a pull request when ournotes-deck moves
+ournotes-deck = { git = "https://github.com/empty-sekai/ournotes-deck", rev = "7e5d84b5998d28c21541ce3f2e0a3dfb1439f4f6" }
+serde_json = { version = "1", features = ["raw_value", "arbitrary_precision"] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

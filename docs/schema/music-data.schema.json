@@ -1,0 +1,1034 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:nnnotes:schema:music-data",
+  "title": "nnnotes.music-data/1",
+  "description": "Every live song and chart of one master data version: song metadata in every language, chart facts and the deck model's chart statistics, with --full also the deck model's input (every chart's runtime notes and a subset of the master data tables as columns and rows). Written by `nnnotes music-data`; described in docs/music-data.md. Within the arrays of a deck input chart's `notes` (and of its `fevers`) the i-th elements belong to the same note (range): the arrays have equal lengths, which a schema cannot state. Readers ignore keys they do not know.",
+  "type": "object",
+  "required": [
+    "format",
+    "provenance",
+    "languages",
+    "bands",
+    "characters",
+    "tags",
+    "categories",
+    "deck",
+    "songs"
+  ],
+  "properties": {
+    "format": {
+      "const": "nnnotes.music-data/1"
+    },
+    "provenance": {
+      "type": "object",
+      "required": [
+        "region",
+        "client",
+        "catalog",
+        "master",
+        "exporter",
+        "deck"
+      ],
+      "properties": {
+        "region": {
+          "type": "string",
+          "description": "the region whose master data this is (a configured region name), or `embedded` for the master data the APK ships"
+        },
+        "client": {
+          "type": "object",
+          "required": [
+            "versionName",
+            "versionCode"
+          ],
+          "properties": {
+            "versionName": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "versionName of the APK (null without one)"
+            },
+            "versionCode": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "description": "versionCode of the APK (null without one)"
+            }
+          }
+        },
+        "catalog": {
+          "type": "object",
+          "required": [
+            "resourceVersion",
+            "sha256"
+          ],
+          "properties": {
+            "resourceVersion": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "the resource version recorded for the catalog in the catalog store, null when none is recorded"
+            },
+            "sha256": {
+              "$ref": "#/$defs/sha256",
+              "description": "SHA-256 of the remote catalog file the charts were read with"
+            }
+          }
+        },
+        "master": {
+          "type": "object",
+          "required": [
+            "source",
+            "version",
+            "tables"
+          ],
+          "properties": {
+            "source": {
+              "enum": [
+                "api",
+                "embedded"
+              ],
+              "description": "api: files as downloaded from the region; embedded: the files the APK ships"
+            },
+            "version": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "`version` of the master data manifest"
+            },
+            "tables": {
+              "type": "object",
+              "description": "per table read, the SHA-256 of its file as served (before decoding)",
+              "additionalProperties": {
+                "type": "object",
+                "required": [
+                  "sha256"
+                ],
+                "properties": {
+                  "sha256": {
+                    "$ref": "#/$defs/sha256"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "exporter": {
+          "type": "object",
+          "required": [
+            "name",
+            "version",
+            "chartFormat"
+          ],
+          "properties": {
+            "name": {
+              "const": "nnnotes"
+            },
+            "version": {
+              "type": "string"
+            },
+            "chartFormat": {
+              "type": "string",
+              "description": "format of the chart converter the notes come from (nnnotes.live-score/1)"
+            }
+          }
+        },
+        "deck": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "the deck model the statistics come from; null without it (--no-deck)",
+          "required": [
+            "name",
+            "version",
+            "source",
+            "commit",
+            "format"
+          ],
+          "properties": {
+            "name": {
+              "const": "ournotes-deck"
+            },
+            "version": {
+              "type": "string"
+            },
+            "source": {
+              "type": "string",
+              "description": "the repository"
+            },
+            "commit": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{40}$"
+            },
+            "format": {
+              "type": "string",
+              "description": "the statistics format, ournotes-deck.chart-stats/2"
+            }
+          }
+        }
+      }
+    },
+    "languages": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "bands": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "$ref": "#/$defs/text"
+          },
+          "mainColor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "subColor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "characters": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "$ref": "#/$defs/text"
+          },
+          "bandId": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "shortName": {
+            "$ref": "#/$defs/text"
+          },
+          "mainColor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "$ref": "#/$defs/text"
+          }
+        }
+      }
+    },
+    "categories": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "$ref": "#/$defs/text"
+          },
+          "musicCategories": {
+            "$ref": "#/$defs/ints"
+          }
+        }
+      }
+    },
+    "deck": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "required": [
+        "model",
+        "kinds"
+      ],
+      "description": "the deck model's measurement and score-up kinds; null with --no-deck",
+      "properties": {
+        "model": {
+          "type": "object"
+        },
+        "kinds": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "effectType"
+            ],
+            "properties": {
+              "id": {
+                "type": "integer"
+              },
+              "effectType": {
+                "type": "integer"
+              }
+            }
+          }
+        }
+      }
+    },
+    "songs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/song"
+      }
+    },
+    "master": {
+      "type": "object",
+      "description": "--full: the deck input's tables by name; a table not present reads as empty",
+      "additionalProperties": {
+        "$ref": "#/$defs/table"
+      }
+    },
+    "charts": {
+      "type": "array",
+      "description": "--full: one chart per MasterLiveMusicScore row, sorted by scoreId",
+      "items": {
+        "$ref": "#/$defs/chart"
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "ints": {
+      "type": "array",
+      "items": {
+        "type": "integer"
+      }
+    },
+    "table": {
+      "type": "object",
+      "required": [
+        "columns",
+        "rows"
+      ],
+      "properties": {
+        "columns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "rows": {
+          "type": "array",
+          "items": {
+            "type": "array"
+          },
+          "description": "one array per row, one value per column in the order of `columns`"
+        }
+      }
+    },
+    "chart": {
+      "type": "object",
+      "required": [
+        "scoreId",
+        "asset",
+        "notes",
+        "skillEvents",
+        "fevers"
+      ],
+      "properties": {
+        "scoreId": {
+          "type": "integer",
+          "description": "MasterLiveMusicScore._id"
+        },
+        "asset": {
+          "type": "object",
+          "required": [
+            "key",
+            "sha256"
+          ],
+          "properties": {
+            "key": {
+              "type": "string",
+              "description": "Live/MusicScore/<_musicScoreTextFileName>"
+            },
+            "sha256": {
+              "$ref": "#/$defs/sha256",
+              "description": "SHA-256 of the chart TextAsset's bytes as shipped"
+            }
+          }
+        },
+        "notes": {
+          "type": "object",
+          "required": [
+            "id",
+            "op",
+            "judgementType",
+            "timeMs"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/ints",
+              "description": "note id, unique within the chart"
+            },
+            "op": {
+              "$ref": "#/$defs/ints",
+              "description": "NoteOperateType"
+            },
+            "judgementType": {
+              "$ref": "#/$defs/ints",
+              "description": "NoteJudgementType"
+            },
+            "timeMs": {
+              "$ref": "#/$defs/ints",
+              "description": "note time in chart milliseconds"
+            }
+          }
+        },
+        "skillEvents": {
+          "type": "object",
+          "required": [
+            "timeMs"
+          ],
+          "properties": {
+            "timeMs": {
+              "$ref": "#/$defs/ints",
+              "description": "skill event times in chart order (the index is the event index)"
+            }
+          }
+        },
+        "fevers": {
+          "type": "object",
+          "required": [
+            "startMs",
+            "endMs"
+          ],
+          "properties": {
+            "startMs": {
+              "$ref": "#/$defs/ints",
+              "description": "range starts, sorted (the index is the range index)"
+            },
+            "endMs": {
+              "$ref": "#/$defs/ints"
+            }
+          }
+        }
+      }
+    },
+    "text": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "one string per language of `languages`; null: no text id",
+      "required": [
+        "ja",
+        "en",
+        "zh-Hant",
+        "zh-Hans",
+        "ko"
+      ],
+      "additionalProperties": {
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    },
+    "deckChart": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "the chart's deck statistics (docs/music-data.md, Deck statistics); null with --no-deck",
+      "required": [
+        "convertedNoteCount",
+        "skip",
+        "events",
+        "positions",
+        "ranges",
+        "justNotes",
+        "seeds",
+        "unplayable"
+      ],
+      "properties": {
+        "convertedNoteCount": {
+          "type": "integer"
+        },
+        "skip": {
+          "type": "number"
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "prefixItems": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "minItems": 2,
+            "maxItems": 2
+          },
+          "description": "[performance position, time ms] per skill event, in chart order"
+        },
+        "positions": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ranges": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "index",
+              "mission",
+              "startMs",
+              "endMs",
+              "rankBonusPercent"
+            ],
+            "properties": {
+              "index": {
+                "type": "integer"
+              },
+              "mission": {
+                "type": "integer"
+              },
+              "startMs": {
+                "type": "integer"
+              },
+              "endMs": {
+                "type": "integer"
+              },
+              "rankBonusPercent": {
+                "type": "integer"
+              }
+            }
+          }
+        },
+        "justNotes": {
+          "type": "integer"
+        },
+        "seeds": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "seed",
+              "score",
+              "ranges",
+              "weights",
+              "check"
+            ],
+            "properties": {
+              "seed": {
+                "type": "integer"
+              },
+              "score": {
+                "type": "integer",
+                "description": "the exact no-skill score at model.power"
+              },
+              "ranges": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "rangeScore",
+                    "rankBonus",
+                    "maxCombo",
+                    "justCount",
+                    "lotResults"
+                  ],
+                  "properties": {
+                    "rangeScore": {
+                      "type": "integer"
+                    },
+                    "rankBonus": {
+                      "type": "integer"
+                    },
+                    "maxCombo": {
+                      "type": "integer"
+                    },
+                    "justCount": {
+                      "type": "integer"
+                    },
+                    "lotResults": {
+                      "type": "array",
+                      "items": {
+                        "type": "integer"
+                      },
+                      "minItems": 4,
+                      "maxItems": 4
+                    }
+                  }
+                }
+              },
+              "weights": {
+                "type": "array",
+                "items": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  }
+                },
+                "description": "weights[kind][position]: score per unit of deck power and of factor"
+              },
+              "check": {
+                "type": "object",
+                "required": [
+                  "deck",
+                  "exact",
+                  "predicted",
+                  "bound"
+                ],
+                "properties": {
+                  "deck": {
+                    "type": "array",
+                    "items": {
+                      "type": [
+                        "array",
+                        "null"
+                      ]
+                    }
+                  },
+                  "exact": {
+                    "type": "integer"
+                  },
+                  "predicted": {
+                    "type": "number"
+                  },
+                  "bound": {
+                    "type": "number"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "unplayable": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "songChart": {
+      "type": "object",
+      "required": [
+        "difficulty",
+        "scoreId",
+        "level",
+        "displayLevel",
+        "fullComboCount",
+        "asset",
+        "notes",
+        "bpm",
+        "firstNoteMs",
+        "lastJudgedNoteMs",
+        "lastNoteMs",
+        "musicLengthMs",
+        "skillEventsMs",
+        "fevers",
+        "deck"
+      ],
+      "properties": {
+        "difficulty": {
+          "enum": [
+            "easy",
+            "normal",
+            "hard",
+            "expert"
+          ]
+        },
+        "scoreId": {
+          "type": "integer"
+        },
+        "level": {
+          "type": "integer"
+        },
+        "displayLevel": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "fullComboCount": {
+          "type": "integer"
+        },
+        "asset": {
+          "type": "object",
+          "required": [
+            "key",
+            "sha256"
+          ],
+          "properties": {
+            "key": {
+              "type": "string",
+              "description": "Live/MusicScore/<_musicScoreTextFileName>"
+            },
+            "sha256": {
+              "$ref": "#/$defs/sha256",
+              "description": "SHA-256 of the chart TextAsset's bytes as shipped"
+            }
+          }
+        },
+        "notes": {
+          "type": "object",
+          "required": [
+            "judged",
+            "total",
+            "byOperateType"
+          ],
+          "properties": {
+            "judged": {
+              "type": "integer"
+            },
+            "total": {
+              "type": "integer"
+            },
+            "byOperateType": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "integer"
+              }
+            }
+          }
+        },
+        "bpm": {
+          "type": "object",
+          "required": [
+            "main",
+            "min",
+            "max",
+            "changes"
+          ],
+          "properties": {
+            "main": {
+              "type": "number"
+            },
+            "min": {
+              "type": "number"
+            },
+            "max": {
+              "type": "number"
+            },
+            "changes": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "timeMs",
+                  "bpm"
+                ],
+                "properties": {
+                  "timeMs": {
+                    "type": "integer"
+                  },
+                  "bpm": {
+                    "type": "number"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "firstNoteMs": {
+          "type": "integer"
+        },
+        "lastJudgedNoteMs": {
+          "type": "integer"
+        },
+        "lastNoteMs": {
+          "type": "integer"
+        },
+        "musicLengthMs": {
+          "type": "integer"
+        },
+        "skillEventsMs": {
+          "$ref": "#/$defs/ints"
+        },
+        "fevers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ints",
+            "minItems": 2,
+            "maxItems": 2
+          }
+        },
+        "deck": {
+          "$ref": "#/$defs/deckChart"
+        }
+      }
+    },
+    "song": {
+      "type": "object",
+      "required": [
+        "id",
+        "sortOrder",
+        "startAt",
+        "defaultUnlock",
+        "title",
+        "ruby",
+        "phonetic",
+        "bandIds",
+        "bandName",
+        "vocalCharacterIds",
+        "lyricist",
+        "composer",
+        "arranger",
+        "musicType",
+        "musicCategories",
+        "bestMusicTagIds",
+        "jacket",
+        "gekisouMissions",
+        "bgm",
+        "scoreRanks",
+        "charts",
+        "master"
+      ],
+      "properties": {
+        "id": {
+          "type": "integer"
+        },
+        "sortOrder": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "startAt": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "defaultUnlock": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "title": {
+          "$ref": "#/$defs/text"
+        },
+        "ruby": {
+          "$ref": "#/$defs/text"
+        },
+        "phonetic": {
+          "$ref": "#/$defs/text"
+        },
+        "bandName": {
+          "$ref": "#/$defs/text"
+        },
+        "lyricist": {
+          "$ref": "#/$defs/text"
+        },
+        "composer": {
+          "$ref": "#/$defs/text"
+        },
+        "arranger": {
+          "$ref": "#/$defs/text"
+        },
+        "bandIds": {
+          "$ref": "#/$defs/ints"
+        },
+        "vocalCharacterIds": {
+          "$ref": "#/$defs/ints"
+        },
+        "musicType": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "musicCategories": {
+          "$ref": "#/$defs/ints"
+        },
+        "bestMusicTagIds": {
+          "$ref": "#/$defs/ints"
+        },
+        "jacket": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "gekisouMissions": {
+          "type": "array",
+          "items": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "minItems": 3,
+          "maxItems": 3
+        },
+        "bgm": {
+          "type": "object",
+          "required": [
+            "soundId",
+            "cueSheet",
+            "cue",
+            "length"
+          ],
+          "properties": {
+            "soundId": {
+              "type": "integer"
+            },
+            "cueSheet": {
+              "type": "string"
+            },
+            "cue": {
+              "type": "string"
+            },
+            "length": {
+              "type": [
+                "object",
+                "null"
+              ],
+              "required": [
+                "lengthMs",
+                "samples",
+                "sampleRate",
+                "durationMs"
+              ],
+              "properties": {
+                "lengthMs": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "samples": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "sampleRate": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "durationMs": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "scoreRanks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "rank",
+              "requiredScore",
+              "battleRequiredScore"
+            ],
+            "properties": {
+              "rank": {
+                "enum": [
+                  "E",
+                  "D",
+                  "C",
+                  "B",
+                  "A",
+                  "S",
+                  "SS"
+                ]
+              },
+              "requiredScore": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "battleRequiredScore": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            }
+          }
+        },
+        "charts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/songChart"
+          }
+        },
+        "master": {
+          "type": "object",
+          "required": [
+            "MasterLiveMusic",
+            "MasterLiveScoreRank"
+          ],
+          "properties": {
+            "MasterLiveMusic": {
+              "type": "object"
+            },
+            "MasterLiveScoreRank": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

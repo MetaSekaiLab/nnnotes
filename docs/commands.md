@@ -667,39 +667,31 @@ byte-identical outputs; the encoded assets also need the same zlib and brotli ve
 in the printed summary and in `SITE.failures.json`, models that fail in the summary and in
 `SITE.model-failures.json`, stories in `SITE.story-failures.json`; the exit status is then 1.
 
-## deck-data
+## music-data
 
 ```
-nnnotes deck-data (--master-files DIR | --apk-master) -o FILE
+nnnotes music-data (--master-files DIR | --apk-master) [--full] [--no-deck] [--seeds N] [--workers N]
+                   [--no-bgm] [--jackets DIR] -o FILE
 ```
 
-Writes one JSON file for deck-building tools, for one master data version: every `MasterLiveMusicScore` row's chart
-as the client builds it at runtime (notes, skill events, fever ranges) and the master data tables about cards,
-skills, bonuses, scores and events, with their provenance. The master data is decoded from the files as served:
-`--master-files DIR` reads `DIR/MasterManifest.json` and the `.bin` files it lists (`master download`; the file's
-region is `[catalog] region`), `--apk-master` the same files inside `[paths] apk` (region `embedded`); each file is
-checked against the manifest's SHA-256. `FILE` ending in `.gz` is written gzip-compressed. The file is canonical: the
-same inputs give the same bytes. Prints `{out, format, region, masterSource, masterVersion, tables, rows, charts,
-notes, bytes, fileBytes, sha256}`. A missing or mismatching input (a master data file, a column, a chart asset)
-stops the command with exit status 1 before the file is written. The format is described in
-[deck-data.md](deck-data.md).
-
-## songs
-
-```
-nnnotes songs (--master-files DIR | --apk-master) [--no-bgm] [--jackets DIR] -o FILE
-```
-
-Writes one JSON file with every `MasterLiveMusic` song's metadata for one master data version: titles, readings and
-credits in the five text languages, bands (and a song's own band name), vocal characters, category, tags, release
-time, jacket, Gekisou missions, the whole `MasterLiveMusic` row, the live BGM's cue and length (read from the cue
-sheet's ACB, without decoding audio), and per difficulty the chart facts a song listing shows: level and display
-level, full combo count, note counts (judged, total, per operate type), BPM (main, min, max and every change), the
-first and last note times, the live's music length (last note + 1000 ms), skill event times and fever ranges. The
-master data is read as for `deck-data` (same options, same checks), so the two files of one master data version join
-by `scoreId`. `--no-bgm` skips the cue sheets (every `bgm.length` is null). `--jackets DIR` also writes every song's
-jacket as `DIR/<jacket>.webp` (at most 320 px on the longer side). `FILE` ending in `.gz` is written gzip-compressed;
-the file is canonical. Prints `{out, format, region, masterSource, masterVersion, songs, charts, bgm, jackets, bytes,
-fileBytes, sha256}`. A missing or unreadable input (a master data file, a text id, a chart asset, a cue sheet or cue, a
-jacket) stops the command with exit status 1 before the file is written. The format is described in
-[songs.md](songs.md).
+Writes one JSON file with every `MasterLiveMusic` song and its charts for one master data version: titles, readings
+and credits in the five text languages, bands (and a song's own band name), vocal characters, category, tags,
+release time, jacket, Gekisou missions, score ranks, the whole `MasterLiveMusic` row, the live BGM's cue and length
+(read from the cue sheet's ACB, without decoding audio); per difficulty the chart facts (level and display level,
+full combo count, note counts, BPM, note times, the live's music length, skill event times, fever ranges) and the
+chart's deck statistics: the no-skill score and the weight of every score-up skill kind at every performance
+position, measured by the deck model ournotes-deck (built into nnnotes as `nnnotes._deck`) on its whole-live
+simulation and checked against the chart facts. `--full` also writes the deck model's input: every
+`MasterLiveMusicScore` row's chart as the client builds it at runtime (notes, skill events, fever ranges) and the
+master data tables about cards, skills, bonuses, scores and events. `--no-deck` skips the deck model (every chart's
+`deck` is null); `--seeds N` (default 8) and `--workers N` (default: every processor) set its seeds on charts with a
+luck range and its threads. The master data is decoded from the files as served: `--master-files DIR` reads
+`DIR/MasterManifest.json` and the `.bin` files it lists (`master download`; the file's region is `[catalog] region`),
+`--apk-master` the same files inside `[paths] apk` (region `embedded`); each file is checked against the manifest's
+SHA-256. `--no-bgm` skips the cue sheets (every `bgm.length` is null). `--jackets DIR` also writes every song's
+jacket as `DIR/<jacket>.webp` (at most 320 px on the longer side). `FILE` ending in `.gz` is written
+gzip-compressed; the file is canonical: the same inputs and nnnotes version give the same bytes. Prints `{out,
+format, region, masterSource, masterVersion, songs, charts, deck, unplayable, full, bgm, jackets, bytes, fileBytes,
+sha256}`. A missing or unreadable input (a master data file, a column, a text id, a chart asset, a cue sheet or cue,
+a jacket), a chart the deck model cannot measure, or deck statistics that disagree with the chart facts stop the
+command with exit status 1 before the file is written. The format is described in [music-data.md](music-data.md).

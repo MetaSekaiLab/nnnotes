@@ -1,5 +1,6 @@
-"""Deck data export (deckdata), the runtime note order of the chart converter (score.runtime_score) and the APK
-version code, on synthetic master data, charts and manifests."""
+"""The deck input (deckdata: master data as served, chart records, canonical encoding), the runtime note order of the
+chart converter (score.runtime_score) and the APK version code, on synthetic master data, charts and manifests. The
+music data file that carries it is tested in test_musicdata."""
 import gzip
 import hashlib
 import json
@@ -38,15 +39,6 @@ RUNTIME = [(1, 20), (2, 1), (40001, 121), (3, 21), (4, 122), (5, 22), (10001, 12
            (50001, 120), (60001, 120), (70001, 120), (6, 1), (7, 101), (8, 103), (9, 60), (10, 40)]
 TIMES = [0, 1000, 1000, 1041, 1500, 2000, 250, 500, 750, 1291, 1541, 1791, 2500, 3000, 4000, 4500, 5000]
 JUDGEMENTS = [10, 1, 1, 21, 1, 11, 21, 21, 21, 21, 21, 21, 2, 1, 1, 21, 5]
-
-
-def schema_validator():
-    jsonschema = pytest.importorskip("jsonschema")
-    from pathlib import Path
-    doc = json.loads((Path(__file__).resolve().parents[1] / "docs" / "schema" / "deck-data.schema.json")
-                     .read_text(encoding="utf-8"))
-    jsonschema.Draft202012Validator.check_schema(doc)
-    return jsonschema.Draft202012Validator(doc)
 
 
 # ---------------------------------------------------------------- converter order
@@ -138,33 +130,31 @@ PROV = {"region": "xx", "client": {"versionName": "9.9.9", "versionCode": 99},
         "catalog": {"resourceVersion": None, "sha256": "ab" * 32}}
 
 
-def export(tmp_path, out="deck.json", rows=rows_of, charts=CHARTS, **kw):
+def export(tmp_path, out="deck.json", rows=rows_of, charts=CHARTS, src=None, key=None, **kw):
+    """Read the master data and every chart, build the deck input and write it canonically to `out` (as
+    `music-data --full` carries it); the document."""
     d = master_dir(tmp_path, rows) if not (tmp_path / "m").exists() else tmp_path / "m"
-    return deckdata.export(tmp_path / out, deckdata.master_files(d), KEY, fetcher(charts), **dict(PROV, **kw))
+    tables, shas = deckdata.read_master(src or deckdata.master_files(d), key or KEY)
+    prov = dict(PROV, **kw)
+    doc = deckdata.build(tables, deckdata.charts(tables["MasterLiveMusicScore"], fetcher(charts)),
+                         {"region": prov["region"], "tables": shas})
+    data = deckdata.encode(doc)
+    (tmp_path / out).write_bytes(deckdata.file_bytes(data, out.endswith(".gz")))
+    return doc
 
 
 # ---------------------------------------------------------------- the document
-def test_export_document(tmp_path):
-    r = export(tmp_path)
+def test_deck_input_document(tmp_path):
+    doc = export(tmp_path)
     raw = (tmp_path / "deck.json").read_bytes()
     assert raw.endswith(b"}\n") and raw.count(b"\n") == 1 and b"\r" not in raw
-    assert r["bytes"] == len(raw) and r["sha256"] == hashlib.sha256(raw).hexdigest()
-    assert (r["charts"], r["notes"], r["tables"]) == (3, 21, len(deckdata.TABLES))
-    doc = json.loads(raw)
+    assert json.loads(raw) == json.loads(deckdata.encode(doc))
     assert list(doc) == ["format", "provenance", "master", "charts"] and doc["format"] == "nnnotes.deck-data/1"
-    p = doc["provenance"]
-    assert list(p) == ["region", "client", "catalog", "master", "exporter"]
-    assert p["region"] == "xx" and p["client"] == {"versionName": "9.9.9", "versionCode": 99}
-    assert p["catalog"] == {"resourceVersion": None, "sha256": "ab" * 32}
-    assert p["master"]["source"] == "api" and p["master"]["version"] == "v-test"
-    names = [t for t, _ in deckdata.TABLES]
-    assert list(p["master"]["tables"]) == names == list(doc["master"])
-    for t in names:
+    assert list(doc["master"]) == [t for t, _ in deckdata.TABLES]
+    assert len(doc["charts"]) == 3 and sum(len(c["notes"]["id"]) for c in doc["charts"]) == 21
+    for t, _ in deckdata.TABLES:
         served = (tmp_path / "m" / f"{t}.bin").read_bytes()
-        assert p["master"]["tables"][t]["sha256"] == hashlib.sha256(served).hexdigest()
-    assert p["exporter"] == {"name": "nnnotes", "version": cli.__version__,
-                             "chartFormat": score.convert(SMALL)["format"]}
-    schema_validator().validate(doc)
+        assert doc["provenance"]["tables"][t] == hashlib.sha256(served).hexdigest()
 
 
 def test_master_columns_and_values(tmp_path):
@@ -225,9 +215,9 @@ def test_charts(tmp_path):
 
 
 def test_output_is_deterministic_and_gzip_has_no_name_or_time(tmp_path):
-    a = export(tmp_path, "a.json")
-    b = export(tmp_path, "b.json")
-    assert (tmp_path / "a.json").read_bytes() == (tmp_path / "b.json").read_bytes() and a["sha256"] == b["sha256"]
+    export(tmp_path, "a.json")
+    export(tmp_path, "b.json")
+    assert (tmp_path / "a.json").read_bytes() == (tmp_path / "b.json").read_bytes()
     export(tmp_path, "a.json.gz")
     export(tmp_path, "b.json.gz")
     gz = (tmp_path / "a.json.gz").read_bytes()
@@ -250,8 +240,7 @@ def test_non_finite_values(tmp_path):
             return [{"_id": 1, "_comboBonusType": 1, "_requiredComboCount": 10, "_bonusFactor": float("nan")}]
         return rows_of(name)
     with pytest.raises(deckdata.DeckDataError, match="MasterLiveComboScoreBonus row 0 _bonusFactor: NaN"):
-        deckdata.export(tmp_path / "n.json", deckdata.master_files(master_dir(tmp_path, nan, name="n")), KEY,
-                        fetcher(CHARTS), **PROV)
+        export(tmp_path, "n.json", src=deckdata.master_files(master_dir(tmp_path, nan, name="n")))
     assert not (tmp_path / "n.json").exists()
 
 
@@ -260,8 +249,8 @@ def failing(tmp_path, match, *, src=None, charts=CHARTS, key=KEY):
     if src is None:
         src = deckdata.master_files(tmp_path / "m" if (tmp_path / "m").exists() else master_dir(tmp_path))
     with pytest.raises(deckdata.DeckDataError, match=match):
-        deckdata.export(tmp_path / "out.json", src, key, fetcher(charts), **PROV)
-    assert not (tmp_path / "out.json").exists() and list(tmp_path.glob("out.json*")) == []
+        export(tmp_path, "out.json", src=src, key=key, charts=charts)
+    assert not (tmp_path / "out.json").exists()
 
 
 def test_missing_chart_asset(tmp_path):
@@ -369,11 +358,8 @@ def test_apk_master_and_client(tmp_path):
     assert (src.source, src.version) == ("embedded", "v-test")
     client = deckdata.apk_client(apk)
     assert client == {"versionName": "9.9.9", "versionCode": 99}
-    deckdata.export(tmp_path / "e.json", src, KEY, fetcher(CHARTS), region=deckdata.EMBEDDED, client=client,
-                    catalog=PROV["catalog"])
-    export(tmp_path, "f.json")
-    e, f = (json.loads((tmp_path / n).read_bytes()) for n in ("e.json", "f.json"))
-    assert e["provenance"]["master"]["source"] == "embedded" and e["provenance"]["region"] == "embedded"
+    e = export(tmp_path, "e.json", src=src)
+    f = export(tmp_path, "f.json")
     assert e["master"] == f["master"] and e["charts"] == f["charts"]
     with zipfile.ZipFile(tmp_path / "empty.apk", "w") as z:
         z.writestr("x", b"")
@@ -419,40 +405,9 @@ def run(argv, capsys):
     return code, out, err + message
 
 
-def test_command(tmp_path, capsys, monkeypatch):
-    d = master_dir(tmp_path)
-    out = tmp_path / "o" / "deck.json.gz"
-    code, _, err = run(["deck-data", "-o", str(out)], capsys)
-    assert code == 2 and "--master-files" in err and "--apk-master" in err
-    code, _, err = run(["deck-data", "--master-files", str(d), "-o", str(out)], capsys)
-    assert code == 2 and "catalog.region" in err
-    code, _, err = run(["--region", "xx", "deck-data", "--master-files", str(d), "-o", str(out)], capsys)
-    assert code == 2 and "master.key" in err
-    code, _, err = run(["deck-data", "--apk-master", "-o", str(out)], capsys)
-    assert code == 2 and "paths.apk" in err
-    monkeypatch.setenv("NNNOTES_MASTER_KEY", synth.MASTER_KEY.hex())
-    monkeypatch.setenv("NNNOTES_MASTER_IV", synth.MASTER_IV.hex())
-    monkeypatch.setattr(cli, "open_catalog", lambda cfg, **kw: FakeCatalog(CHARTS))
-    monkeypatch.setattr(score, "fetch_chart", lambda cat, name: cat.charts[name])
-    code, stdout, err = run(["--region", "xx", "--cache", str(tmp_path / "cache"), "deck-data", "--master-files",
-                             str(d), "-o", str(out)], capsys)
-    assert code == 0, err
-    r = json.loads(stdout)
-    assert (r["charts"], r["masterVersion"], r["region"]) == (3, "v-test", "xx")
-    doc = json.loads(gzip.decompress(out.read_bytes()))
-    assert doc["provenance"]["catalog"] == {"resourceVersion": None,
-                                            "sha256": hashlib.sha256(b"remote catalog").hexdigest()}
-    assert doc["provenance"]["client"] == {"versionName": None, "versionCode": None}
-    assert synth.MASTER_KEY.hex() not in stdout + err
-    monkeypatch.setattr(cli, "open_catalog", lambda cfg, **kw: FakeCatalog({}))
-    code, _, err = run(["--region", "xx", "--cache", str(tmp_path / "cache"), "deck-data", "--master-files",
-                        str(d), "-o", str(tmp_path / "x.json")], capsys)
-    assert code == 1 and "no such asset" in err and not (tmp_path / "x.json").exists()
-
-
 def test_the_tables_are_documented():
     from pathlib import Path
-    text = (Path(__file__).resolve().parents[1] / "docs" / "deck-data.md").read_text(encoding="utf-8")
+    text = (Path(__file__).resolve().parents[1] / "docs" / "music-data.md").read_text(encoding="utf-8")
     documented = []
     for line in text.splitlines():
         if line.startswith("| `Master"):

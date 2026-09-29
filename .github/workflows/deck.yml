@@ -1,0 +1,50 @@
+name: Deck model
+
+# nnnotes builds the deck model ournotes-deck at the commit rust/Cargo.toml pins, so that one nnnotes version always
+# carries one deck model. When ournotes-deck's main moves past that commit, this opens a pull request that moves the
+# pin; CI then builds and tests it like any change.
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Compare the pinned commit with ournotes-deck's main
+        id: deck
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          pinned=$(sed -nE 's/^ournotes-deck = .*rev = "([0-9a-f]{40})".*/\1/p' rust/Cargo.toml)
+          head=$(git ls-remote https://github.com/empty-sekai/ournotes-deck refs/heads/main | cut -f1)
+          # ahead: main contains the pinned commit and more; behind or diverged: leave the pin to a person
+          status=$(gh api "repos/empty-sekai/ournotes-deck/compare/$pinned...$head" --jq .status)
+          echo "pinned $pinned, main $head: $status"
+          echo "pinned=$pinned" >> "$GITHUB_OUTPUT"
+          echo "head=$head" >> "$GITHUB_OUTPUT"
+          echo "move=$([ "$status" = ahead ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+      - name: Move the pin
+        if: steps.deck.outputs.move == 'true'
+        working-directory: rust
+        run: |
+          sed -i -E 's/(rev = ")${{ steps.deck.outputs.pinned }}(")/\1${{ steps.deck.outputs.head }}\2/' Cargo.toml
+          cargo update -p ournotes-deck
+      - uses: peter-evans/create-pull-request@v7
+        if: steps.deck.outputs.move == 'true'
+        with:
+          branch: deck/update
+          commit-message: "build(deck): ournotes-deck ${{ steps.deck.outputs.head }}"
+          title: "build(deck): ournotes-deck ${{ steps.deck.outputs.head }}"
+          body: |
+            Moves the deck model to ournotes-deck's main,
+            https://github.com/empty-sekai/ournotes-deck/compare/${{ steps.deck.outputs.pinned }}...${{ steps.deck.outputs.head }}
+
+            Music data files made after this change name the new commit in `provenance.deck.commit`; their deck
+            statistics may differ.

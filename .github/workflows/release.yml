@@ -8,25 +8,79 @@ permissions:
   contents: read
 
 jobs:
-  build:
+  check:
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check the tag against the package and extension versions
+        run: |
+          version=$(python3 -c 'import re, pathlib; print(re.search(r"__version__ = \"([^\"]+)\"", pathlib.Path("src/nnnotes/__init__.py").read_text()).group(1))')
+          cargo=$(python3 -c 'import re, pathlib; print(re.search(r"^version = \"([^\"]+)\"", pathlib.Path("rust/Cargo.toml").read_text(), re.M).group(1))')
+          if [ "v$version" != "$GITHUB_REF_NAME" ] || [ "$cargo" != "$version" ]; then
+            echo "tag $GITHUB_REF_NAME, package $version and rust/Cargo.toml $cargo differ" >&2
+            exit 1
+          fi
+
+  # one abi3 wheel (CPython 3.11 and later) per platform with the extension module nnnotes._deck, and the sdist
+  wheels:
+    needs: check
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - {os: ubuntu-latest, target: x86_64, manylinux: "2_28"}
+          - {os: ubuntu-24.04-arm, target: aarch64, manylinux: "2_28"}
+          - {os: windows-latest, target: x64}
+          - {os: macos-latest, target: aarch64}
+          - {os: macos-15-intel, target: x86_64}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
-      - name: Check the tag against the package version
+      - uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.target }}
+          manylinux: ${{ matrix.manylinux || 'auto' }}
+          args: --release --locked --out dist
+      - uses: actions/upload-artifact@v7
+        with:
+          name: wheel-${{ matrix.os }}-${{ matrix.target }}
+          path: dist/
+          if-no-files-found: error
+
+  sdist:
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: PyO3/maturin-action@v1
+        with:
+          command: sdist
+          args: --out dist
+      - uses: actions/upload-artifact@v7
+        with:
+          name: sdist
+          path: dist/
+          if-no-files-found: error
+
+  build:
+    needs: [wheels, sdist]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist/
+          merge-multiple: true
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - name: Check the distributions
         run: |
-          version=$(python -c 'import re, pathlib; print(re.search(r"__version__ = \"([^\"]+)\"", pathlib.Path("src/nnnotes/__init__.py").read_text()).group(1))')
-          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
-            echo "tag $GITHUB_REF_NAME does not match the package version $version" >&2
-            exit 1
-          fi
-      - name: Build sdist and wheel
-        run: |
-          python -m pip install --upgrade pip build twine
-          python -m build
+          python -m pip install --upgrade pip twine
           python -m twine check --strict dist/*
+          ls dist
       - uses: actions/upload-artifact@v7
         with:
           name: dist

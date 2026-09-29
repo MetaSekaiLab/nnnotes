@@ -9,3 +9,6 @@ nnnotes.toml
 .env
 out/
 cache/
+rust/target/
+src/nnnotes/_deck*.pyd
+src/nnnotes/_deck*.so
