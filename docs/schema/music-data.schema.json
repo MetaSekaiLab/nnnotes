@@ -546,7 +546,17 @@
                 "type": "integer"
               },
               "rankBonusPercent": {
-                "type": "integer"
+                "type": "integer",
+                "description": "the rank 1 bonus percentage (rankBonusPercents[0])"
+              },
+              "rankBonusPercents": {
+                "type": "array",
+                "items": {
+                  "type": "integer"
+                },
+                "minItems": 5,
+                "maxItems": 5,
+                "description": "the rank bonus percentages of ranks 1..5 of the song's mission pattern"
               }
             }
           }
@@ -604,6 +614,10 @@
                       },
                       "minItems": 4,
                       "maxItems": 4
+                    },
+                    "rangeScorePerfect": {
+                      "type": "integer",
+                      "description": "the range score on the Perfect play (every Just judged Perfect)"
                     }
                   }
                 }
@@ -646,6 +660,125 @@
                     "type": "number"
                   }
                 }
+              },
+              "scorePerfect": {
+                "type": "integer",
+                "description": "the exact no-skill score at model.power on the Perfect play (every Just judged Perfect), its rank 1 bonuses included"
+              },
+              "rangeWeights": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "type": [
+                    "array",
+                    "null"
+                  ],
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "number"
+                    }
+                  }
+                },
+                "description": "rangeWeights[kind][position][range]: range score per unit of deck power and of factor; null when the ranks do not follow linearly on the chart, a kind null when its conditions read the confirmed rank"
+              },
+              "rankCheck": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "required": [
+                  "ranks",
+                  "exact",
+                  "predicted",
+                  "bound"
+                ],
+                "description": "the check deck played at random ranks; null without ranges or range weights",
+                "properties": {
+                  "ranks": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 5
+                    }
+                  },
+                  "exact": {
+                    "type": "integer"
+                  },
+                  "predicted": {
+                    "type": "number"
+                  },
+                  "bound": {
+                    "type": "number"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "offSeeds": {
+          "type": "array",
+          "description": "the measurements with Gekisou off (a solo live), one seed",
+          "items": {
+            "type": "object",
+            "required": [
+              "seed",
+              "score",
+              "weights",
+              "check"
+            ],
+            "properties": {
+              "seed": {
+                "type": "integer"
+              },
+              "score": {
+                "type": "integer",
+                "description": "the exact no-skill score at model.power, Gekisou off"
+              },
+              "weights": {
+                "type": "array",
+                "items": {
+                  "type": [
+                    "array",
+                    "null"
+                  ],
+                  "items": {
+                    "type": "number"
+                  }
+                },
+                "description": "weights[kind][position], Gekisou off; a kind null when its conditions read the Gekisou state"
+              },
+              "check": {
+                "type": "object",
+                "required": [
+                  "deck",
+                  "exact",
+                  "predicted",
+                  "bound"
+                ],
+                "properties": {
+                  "deck": {
+                    "type": "array",
+                    "items": {
+                      "type": [
+                        "array",
+                        "null"
+                      ]
+                    }
+                  },
+                  "exact": {
+                    "type": "integer"
+                  },
+                  "predicted": {
+                    "type": "number"
+                  },
+                  "bound": {
+                    "type": "number"
+                  }
+                }
               }
             }
           }
@@ -654,7 +787,8 @@
           "type": [
             "string",
             "null"
-          ]
+          ],
+          "description": "why the game cannot play the chart with Gekisou (seeds is then empty; offSeeds is not)"
         }
       }
     },

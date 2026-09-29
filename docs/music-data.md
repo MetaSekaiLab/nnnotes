@@ -3,8 +3,8 @@
 `nnnotes music-data` writes one JSON file with every live song and chart of one master data version: what a song
 listing shows (titles and credits in every language, bands, vocal characters, category, tags, release time, score
 ranks, jacket, BGM length), per difficulty the chart facts (level, note counts, BPM, chart times, skill events,
-fevers), and per chart its **deck statistics**: what the chart contributes to the live score whatever the deck,
-measured by the deck model [ournotes-deck](https://github.com/empty-sekai/ournotes-deck), which nnnotes carries as
+fevers), and per chart its **deck statistics**: what the chart contributes to the live score whatever the deck, in a
+solo live (Gekisou off) and in a Gekisou live at every rank, measured by the deck model [ournotes-deck](https://github.com/empty-sekai/ournotes-deck), which nnnotes carries as
 its extension module `nnnotes._deck`. The format is `nnnotes.music-data/1`; its JSON Schema is
 [schema/music-data.schema.json](schema/music-data.schema.json).
 
@@ -39,7 +39,8 @@ The command writes the file only when every table, chart and cue sheet was read 
 or mismatching master data file, a table without a column the file exports, a text id that `MasterText` does not
 have, a score id that `MasterLiveMusicScore` does not have, a missing or unreadable chart asset, a note id that
 occurs twice in a chart, a cue sheet without the song's cue, (with `--jackets`) a missing jacket texture, a chart the
-deck model cannot measure or whose check deck fails, or deck statistics that disagree with the chart facts stops it
+deck model cannot measure or whose check deck fails, or deck statistics that disagree with the chart facts or the
+master data stops it
 with exit status 1 and a line naming the input. The file is written through a temporary file and a rename.
 
 An installation without the extension module (a source checkout that was not built) runs only with `--no-deck`;
@@ -138,12 +139,18 @@ plays, `musicLengthMs` is the length the score code uses; a listing chooses the 
 
 ## Deck statistics
 
-The deck model plays every chart of a song on its whole-live simulation, with Gekisou on as the game plays every
-live, solo (rank 1), in the theoretical best play: every judged note at its exact time, Just inside the Just-count
-ranges and Perfect elsewhere, the frame times of the game's default schedule. It measures, at deck power
-`model.power` (300000):
+The deck model plays every chart of a song on its whole-live simulation in the theoretical best play, the frame
+times of the game's default schedule, in two scenarios:
 
-- `score`: the exact score without skills, the rank bonuses of the Gekisou ranges included;
+- **Gekisou on** (`seeds`), as a Gekisou live (Battle Live, up to five players) plays: every judged note at its exact
+  time, Just inside the Just-count ranges and Perfect elsewhere, rank 1 in every Gekisou range. Other ranks follow
+  from the same numbers (below).
+- **Gekisou off** (`offSeeds`), as a solo live (Free Live, Challenge Live) plays: every judged note Perfect at its
+  exact time, seed 0, no Just, luck, Gekisou combo or rank bonus. A chart with more than three fevers plays here too.
+
+In each it measures, at deck power `model.power` (300000):
+
+- `score`: the exact score without skills (with Gekisou on, the rank 1 bonuses of the Gekisou ranges included);
 - for every **score-up kind** (`deck.kinds`) and every performance position `k`, `weights[kind][k]`: the exact score
   a deck gains when its position-`k` member has one effect of that kind at factor 1, divided by the deck power. The
   effect runs through the simulation's own updaters, conditions, frames and appliers, so the weight carries every rule
@@ -163,15 +170,42 @@ master values at another power (`model.checkPower`), and the command fails when 
 the formula. Effects of other types (cumulative score 2001 / 2003, life, judgement conversion, Gekisou and snap
 skills) are not linear in the chart alone and have no weights: a deck's score with them comes from the simulation.
 
-A luck range draws lottery results from the play's random seed, so the measurements are given **per seed**: one seed
-(0) when no range is a luck range, else the first `--seeds` seeds of the deck model's published seed set. The seed
-set is not the game's seed law (which is unknown); a mean over it is not the game's expectation.
+A luck range draws lottery results from the play's random seed, so the Gekisou on measurements are given **per
+seed**: one seed (0) when no range is a luck range, else the first `--seeds` seeds of the deck model's published seed
+set. The seed set is not the game's seed law (which is unknown); a mean over it is not the game's expectation.
+
+### Ranks
+
+In a Gekisou live, range `i` takes a rank `r_i` from 1 to 5 among the room's players, and its rank bonus is
+`trunc(rangeScore_i * p_i(r_i) / 100)` with `p_i(r) = ranges[i].rankBonusPercents[r - 1]`. The bonus is a fixed score
+at the range's end: it changes no factor and no note score, and a later range's score holds it at both ends, so the
+range scores do not depend on the ranks. At ranks `r` a seed's numbers are therefore
+
+```
+score_r            = score - sum_i rankBonus_i + sum_i trunc(rangeScore_i * p_i(r_i) / 100)      (exact)
+weights_r[kind][k] = weights[kind][k] + sum_i (p_i(r_i) - p_i(1)) / 100 * rangeWeights[kind][k][i]
+```
+
+(`rankBonus_i`, `rangeScore_i`: `seeds[].ranges[i]`), and a deck scores `P * (score_r / power + sum_k factor_k *
+weights_r[kind_k][k])` as above; `weights_r` is within `2 * ranges / power` per unit of factor of the exact weight at
+those ranks. At rank 1 everywhere these are `score` and `weights`. `rangeWeights` is null when a range's bonus can fall
+inside another range's score frames (overlapping ranges), and a kind's entry is null when its conditions read the
+confirmed rank (condition 7012): the ranks do not follow linearly there. `rankCheck` plays the seed's check deck at
+random ranks through the simulation's explicit rank confirmations and bounds it against these formulas.
+
+### Just rate
+
+`scorePerfect` and `ranges[i].rangeScorePerfect` are the no-skill score (rank 1 bonuses included) and the range
+scores of the same play with every Just judged Perfect (the Just judgement is enabled only inside the Just-count
+ranges, so nothing else changes). Between a Just rate of 1 (`score`, `rangeScore`) and 0 (`scorePerfect`,
+`rangeScorePerfect`) a page can interpolate; the rank bonus of the Perfect play is `trunc(rangeScorePerfect_i *
+p_i(r_i) / 100)`. A chart without Just notes (`justNotes` 0) has `scorePerfect == score`.
 
 ### deck
 
 | Field | Content |
 |---|---|
-| `model` | the deck model's description of the measurement: `engine`, `play`, `score` (the formula), `power`, `checkPower`, `unitValue` (the effect value of factor 1, 10000), `seeds` |
+| `model` | the deck model's description of the measurement: `engine`, `play`, `score` (the formula), `power`, `checkPower`, `unitValue` (the effect value of factor 1, 10000), `seeds`, `ranks` (the rank formulas), `perfect` (the Perfect play), `off` (the Gekisou off scenario) |
 | `kinds[]` | the score-up kinds of the master data: `MasterLiveSkillEffect` rows of type 2000, 2002, 2004 or 2005 without a cumulative condition, grouped by what shapes their score. `id` (the index in `weights`), `effectType`, `activationTimeSecond`, `durationMs` (`ceil(activationTimeSecond * 1000f)`), `skillTargetIds`, `skillConditionGroup`, `skillReleaseConditionGroup`, `effectLimitCount`, `effectExecuteLimitCount`, `effectExecuteLimitResetConditionGroup`; `rows` (master rows of the kind) and `values` (their distinct `_effectValue`s, ascending) |
 
 The kind of a card's live skill is found by matching its `MasterLiveSkillEffect` row (at the skill level) on these
@@ -185,14 +219,19 @@ fields; `values` lists what the master data uses.
 | `skip` | score per unit of deck power of a skipped live (every note Great, combo 0, no skills) |
 | `events` | `[[position, timeMs], ...]`: the skill events in chart order with the performance position each fires |
 | `positions` | the performance positions the events fire (the largest position + 1): the length of every `weights[kind]` |
-| `ranges[]` | the Gekisou ranges: `index`, `mission` (1 combo, 2 luck, 3 Just count), `startMs`, `endMs`, `rankBonusPercent` (the solo rank bonus percentage of the song's mission pattern) |
-| `justNotes` | notes judged Just on the play |
-| `seeds[]` | per seed: `seed`; `score`; `ranges[]` (`rangeScore`: the score gained inside the range, `rankBonus`, `maxCombo`, `justCount`, `lotResults`: lottery results Miss, Hit, Super Hit, Critical); `weights[kind][position]`; `check` (`deck`: `[kind, value]` or null per position, `exact`, `predicted`, `bound`) |
-| `unplayable` | null, or why the game cannot play the chart (more than three fevers: the game fails when the fourth starts); `seeds` is then empty |
+| `ranges[]` | the Gekisou ranges: `index`, `mission` (1 combo, 2 luck, 3 Just count), `startMs`, `endMs`, `rankBonusPercents` (the rank bonus percentages of ranks 1..5 of the song's mission pattern, `MasterLiveGekisouRankingScoreBonus`), `rankBonusPercent` (the rank 1 percentage, `rankBonusPercents[0]`) |
+| `justNotes` | notes judged Just on the Gekisou on play |
+| `seeds[]` | Gekisou on, per seed: `seed`; `score` (points at `model.power`, rank 1 bonuses included); `ranges[]` (`rangeScore`: the points gained inside the range, `rankBonus`: its rank 1 bonus in points, `maxCombo`, `justCount`, `lotResults`: lottery results Miss, Hit, Super Hit, Critical, `rangeScorePerfect`: `rangeScore` on the Perfect play); `weights[kind][position]` (points per unit of deck power and of factor); `check` (`deck`: `[kind, value]` or null per position, `exact`, `predicted`, `bound`: points at `model.checkPower`); `scorePerfect` (`score` on the Perfect play); `rangeWeights[kind][position][range]` (range points per unit of deck power and of factor, or null; a kind null); `rankCheck` (`ranks`: 1..5 per range, `exact`, `predicted`, `bound`; null without ranges or range weights) |
+| `offSeeds[]` | Gekisou off, one seed: `seed` (0), `score`, `weights[kind][position]` (a kind null when its conditions read the Gekisou state, which a solo live does not have) and `check`, as in `seeds[]` |
+| `unplayable` | null, or why the game cannot play the chart with Gekisou (more than three fevers: the game fails when the fourth starts); `seeds` is then empty, `offSeeds` is not |
 
 The deck model's chart facts are checked against the file's: the song, difficulty, level, judged note count, last
 note time, music length, Gekisou missions, skill event times and fever ranges must agree, and are not repeated in
-`deck`.
+`deck`. Its numbers are checked against the master data and themselves: every range's `rankBonusPercents` are the
+`MasterLiveGekisouRankingScoreBonus` rows of the song's mission pattern (0 without a row), every `rankBonus` is
+`trunc(rangeScore * rankBonusPercent / 100)`, a chart without Just notes has the same scores on the Perfect play,
+every array has its shape (`[kind][position]`, `[kind][position][range]`, one range result per range, one Gekisou off
+seed), and every check and rank check is within its bound.
 
 ## The deck input (`--full`)
 
