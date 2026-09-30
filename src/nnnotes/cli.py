@@ -755,6 +755,11 @@ def _out(c, what: str, required: bool = True) -> None:
     c.add_argument("-o", "--out", required=required, help=what)
 
 
+def cmd_ui(args, cfg):
+    from . import ui
+    ui.command(args, cfg)
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="nnnotes", description="BanG Dream! Our Notes data toolkit")
     p.add_argument("--version", action="version", version=f"nnnotes {__version__}")
@@ -987,6 +992,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     cli_assets.register(sub, argparse.Namespace(open_catalog=open_catalog, print_json=_print_json))
     voices.register(sub, argparse.Namespace(open_catalog=open_catalog, master_dir=master_dir))
+    c = sub.add_parser("ui", help="export an offline UI prefab library for ournotes-player/ui")
+    _out(c, "UI data directory outside the source repositories")
+    c.add_argument("--key", action="append", help="exact APK catalog key (repeatable)")
+    c.add_argument("--prefix", default="EmbUI/", help="APK UI key prefix (default EmbUI/)")
+    c.add_argument("--limit", type=int, help="maximum number of keys")
+    c.add_argument("--no-dependencies", action="store_true", help="omit additional prefab roots and controllers")
+    c.add_argument("--force", action="store_true", help="re-export the selected keys")
+    c.set_defaults(func=cmd_ui, usage=c.error)
     return p
 
 
