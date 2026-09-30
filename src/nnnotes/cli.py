@@ -645,7 +645,8 @@ def cmd_music_data(args, cfg):
     try:
         deck = None if args.no_deck else musicdata.Deck(
             seeds=args.seeds, workers=args.workers, aptitude=not args.no_gekisou_aptitude,
-            aptitude_max_seeds=args.aptitude_max_seeds, aptitude_cross_seeds=args.aptitude_cross_seeds)
+            aptitude_max_seeds=args.aptitude_max_seeds, aptitude_cross_seeds=args.aptitude_cross_seeds,
+            require_convergence=not args.allow_unconverged_aptitude)
         if args.apk_master:
             src, region = deckdata.apk_master(apk), deckdata.EMBEDDED
         elif args.decoded_master:                    # decoded elsewhere: no master key
@@ -660,7 +661,7 @@ def cmd_music_data(args, cfg):
                              catalog=deckdata.catalog_info(cat, cli_assets.store_root(args, cfg)),
                              deck=deck, full=args.full,
                              jacket=musicdata.catalog_jacket(cat) if args.jackets else None,
-                             jackets_dir=args.jackets)
+                             jackets_dir=args.jackets, replay_dir=args.replay_dir, replay_engine=args.replay_engine)
     except (deckdata.DeckDataError, musicdata.MusicDataError) as e:
         sys.exit(f"nnnotes: {e}")
     _print_json(r)
@@ -952,11 +953,18 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--no-gekisou-aptitude", action="store_true",
                    help="leave out the charts' Gekisou aptitude (every gekisouAptitude is null)")
     c.add_argument("--aptitude-max-seeds", type=int, metavar="N",
-                   help="seeds of a Gekisou aptitude variant at most (default: the deck model's, 1024)")
+                   help="seeds of a Gekisou aptitude variant at most (default: the deck model's, 65536); "
+                        "sampling stops earlier when both score targets converge")
+    c.add_argument("--allow-unconverged-aptitude", action="store_true",
+                   help="diagnostic export only: retain unmet SE flags at the sample cap; final exports reject them")
     c.add_argument("--aptitude-cross-seeds", type=int, metavar="N",
                    help="seeds of a Gekisou aptitude variant's cross terms (default: the deck model's, 64)")
     c.add_argument("--no-bgm", action="store_true",
                    help="do not read the BGM cue sheets (every song's bgm.length is null)")
+    c.add_argument("--replay-dir", metavar="DIR",
+                   help="write canonical runtime DeckData, per-chart inputs and replay manifest under the output directory")
+    c.add_argument("--replay-engine", metavar="DIR",
+                   help="copy pinned wasm-bindgen JS/WASM + build.json into --replay-dir")
     c.add_argument("--jackets", metavar="DIR",
                    help="also write every song's jacket as DIR/<jacket>.webp (at most 320 px on the longer side)")
     _out(c, "output file (.json, or .json.gz for gzip)")

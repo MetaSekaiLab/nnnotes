@@ -31,7 +31,7 @@ nnnotes music-data (--master-files DIR | --apk-master | --decoded-master) [--ful
   charts. `--workers N` sets the threads it uses (default: every processor), `--seeds N` the seeds measured on a chart
   with a luck range (default 8).
 - `--no-gekisou-aptitude`: keep the existing deck statistics but skip single-skill aptitude measurements.
-  `--aptitude-max-seeds N` caps their samples (default 1024), and `--aptitude-cross-seeds N` caps cross-term samples
+  `--aptitude-max-seeds N` caps their samples (default 65536), and `--aptitude-cross-seeds N` caps cross-term samples
   (default 64). Lower caps reduce work but may leave the standard-error target unmet.
 - `--no-bgm`: do not read the cue sheets (every `bgm.length` is null).
 - `--jackets DIR`: also write every song's jacket, the Texture2D `Image/Jacket/<jacket>`, as `DIR/<jacket>.webp`
@@ -449,3 +449,8 @@ version of this file.
 `nnnotes.music-data/1` replaces the `nnnotes.songs/1` file of `nnnotes songs` (its fields are the songs, charts and
 their facts here) and the `nnnotes.deck-data/1` file of `nnnotes deck-data` (its content is the deck input of
 `--full`).
+
+
+Final aptitude exports require the standard-error target for both `score` and `scorePerfect`, each against its own paired no-skill baseline. Sampling extends the same published seed prefix through geometric batches, stopping as soon as both targets agree with the unchanged max(1% of increment, 0.1% of baseline) rule. The 65,536-seed cap is a failure guard, not a requirement to run every seed. An unmet cap aborts a normal export before writing artifacts. `--allow-unconverged-aptitude` is an explicit diagnostic option; it retains real SE values and unmet flags.
+
+`--replay-dir OUT/replay --replay-engine WASM_PKG` writes normalized runtime inputs and pinned WASM assets as described in [replay.md](replay.md). The music data stays compact and carries the SHA-bound `replay.manifestUrl` pointer. No original chart/master blobs or native binary are included in this artifact bundle.

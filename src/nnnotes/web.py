@@ -102,6 +102,8 @@ FLOWS = ("direct",)                                # the start flow the player h
 READ_SET_SCRIPT = "scripts/read-set.mjs"           # node <script> <live dir> -> JSON list of the paths the player reads
 PLAYER_BUNDLES = ("dist/ournotes-player.element.min.js",)
 PLAYER_PAGE_DIR = "examples/chart-list"
+SONGS_PAGE_DIR = "examples/songs"
+SONGS_PAGE_SITE_DIR = "songs"
 # module specifiers of the page that name the player's sources -> the bundle copied next to the page
 PAGE_IMPORTS = {"../../src/element.js": "./ournotes-player.element.min.js"}
 # the player's Live2D model page (when the player has it): its files and bundle go to SITE/<LIVE2D_PAGE_SITE_DIR>/
@@ -1360,11 +1362,16 @@ def write_player(site: Path, player_dir: Path, stories: bool = False) -> dict:
     maps) into the site root; when the player has the Live2D page, the same for LIVE2D_PAGE_DIR, LIVE2D_PAGE_IMPORTS
     and LIVE2D_BUNDLES into LIVE2D_PAGE_SITE_DIR; when it has the story page and its bundles, the same for
     STORY_PAGE_DIR, STORY_PAGE_IMPORTS and STORY_BUNDLES into STORY_PAGE_SITE_DIR (`stories`: the build adds stories,
-    so a story page without its bundles is a ConfigError instead of being left out)."""
+    so a story page without its bundles is a ConfigError instead of being left out). The songs page and all its
+    local dependencies are copied into SITE/songs when the checkout supplies it."""
     player_dir = check_player(player_dir)
     bundles, version = player_bundles(player_dir, PLAYER_BUNDLES)
     page = page_files(player_dir / PLAYER_PAGE_DIR, PAGE_IMPORTS, version)
     files = {**page, **bundles}
+    songs = {}
+    if (player_dir / SONGS_PAGE_DIR / "index.html").is_file():
+        songs = page_files(player_dir / SONGS_PAGE_DIR, {}, version, "SONGS_PAGE_IMPORTS")
+        files.update({f"{SONGS_PAGE_SITE_DIR}/{r}": d for r, d in songs.items()})
     live2d = {}
     if (player_dir / LIVE2D_PAGE_DIR / "index.html").is_file():
         missing = [rel for rel in LIVE2D_BUNDLES if not (player_dir / rel).is_file()]
@@ -1395,6 +1402,8 @@ def write_player(site: Path, player_dir: Path, stories: bool = False) -> dict:
            "live2dPageFiles": len(live2d)}
     if story_page:
         out["storyPageFiles"] = len(story_page)
+    if songs:
+        out["songsPageFiles"] = len(songs)
     return out
 
 
