@@ -4,7 +4,7 @@
 nnnotes [global options] <command> [command options]
 ```
 
-Global options (before the command): `--config`, `--region`, `--language`, `--catalog`, `--cache`, `--master`,
+Global options (before the command): `--config`, `--region`, `--language`, `--catalog`, `--catalog-release`, `--cache`, `--master`,
 `--apk`, `--ffmpeg`, `--vgmstream`, `--node`, plus `--version` and `--help`. They set the settings
 described in [configuration.md](configuration.md), which also lists the settings each command needs.
 `nnnotes <command> --help` prints the options of a command. The asset export commands (`export`, `plan`,
@@ -42,15 +42,22 @@ setting's value. Details in [configuration.md](configuration.md#writing-the-conf
 `pull` and every extractor read bundles through the cache (`[paths] cache`):
 
 ```
-<cache>/catalog_main_<language>.bin     the catalog of the language, the same for every region (downloaded on first
-                                        use unless [paths] catalog is set)
+<cache>/catalog_main_<language>.bin     the legacy main catalog (explicit main or no API/version pin)
 <cache>/bundles/<bundle file name>      bundles of the dependency closures, decrypted (UnityFS)
 <cache>/raw/<path>                      raw CDN files stored as they are (e.g. CRI cue sheet data)
 <cache>/catalogs/<region>/              catalogs downloaded by `browse`
+<cache>/international/<CDN SHA256>/<resource version>/
+                                       versioned catalog, bundles and raw files; isolated from old main caches
 ```
 
 Files already in the cache are not downloaded again. When `[paths] apk` is set, the APK's own catalog is merged with
 the region's and bundles that ship inside the APK are read from it.
+
+For international regions with a configured API, catalog-based commands discover `resource_version` first and
+download `catalog_<resource_version>_<language>.bin`. `catalogs fetch` labels the bytes with the version used to
+select that file, rather than querying a newer label after downloading main. Use `--catalog-release VERSION` or
+the [version settings](configuration.md) to pin builds and use cached data offline. An explicit `--catalog FILE`
+bypasses discovery. JP keeps its existing Version-driven path.
 
 ## catalog
 

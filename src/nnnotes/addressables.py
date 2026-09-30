@@ -362,13 +362,10 @@ class Handler(BaseHTTPRequestHandler):
                 self.server.catalogs[key] = browse(cat.entries)
                 self.server.jp_catalogs[key] = cat
                 return self.server.catalogs[key]
-            catalog = self.server.cache / "catalogs" / region.name / f"catalog_main_{language}.bin"
-            if not catalog.exists():
-                with urlopen(region.cdn + f"/asset/Android/{catalog.name}", timeout=60) as response:
-                    raw = response.read()
-                catalog.parent.mkdir(parents=True, exist_ok=True)
-                catalog.write_bytes(raw)
-            self.server.catalogs[key] = browse(parse(catalog.read_bytes()))
+            from .catalog import Catalog
+            version = region.config.catalog_version(region.name) if region.config is not None else "main"
+            cat = Catalog.load(language, self.server.cache / "catalogs" / region.name, cdn=region.cdn, version=version)
+            self.server.catalogs[key] = browse(cat.entries)
         return self.server.catalogs[key]
 
     def do_GET(self):

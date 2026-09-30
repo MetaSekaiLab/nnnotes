@@ -20,9 +20,12 @@ iv = ""
 [catalog]
 # region the commands use: the name of one [servers.<region>] table below (flag --region)
 region = ""
-# catalog language: catalog_main_<language>.bin, one of ja, en, zh-Hant, zh-Hans, ko; also the client language of the
+# catalog language: catalog_<version>_<language>.bin, one of ja, en, zh-Hant, zh-Hans, ko; also the client language of the
 # live start canvas, the story UI and the web model labels (flag --language)
 language = ""
+# optional international resource version (flag --catalog-release); empty: API resource_version when configured,
+# otherwise legacy main. Set main explicitly to inspect the old catalog; JP uses its own version/hash discovery.
+version = ""
 
 # One table per region; add more tables ([servers.<name>]) for other regions.
 [servers.tw]
@@ -34,6 +37,8 @@ client_version = ""
 apk = ""
 # optional per-region catalog file; JP files use a .source.json sidecar written by catalogs fetch
 catalog = ""
+# optional per-region international catalog version; overrides [catalog] version, but not --catalog-release
+catalog_version = ""
 # label of the region in the local catalog browser (`nnnotes browse`)
 name = ""
 # CDN base URL of the region: catalogs, bundles, raw audio data and master data are fetched below it
