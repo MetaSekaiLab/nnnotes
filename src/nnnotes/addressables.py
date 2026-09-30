@@ -88,37 +88,26 @@ def remote_path(internal_id: str) -> str | None:
 def parse(data: bytes) -> list[dict]:
     """Every location of a binary catalog: {offset, primary_key, internal_id, dependencies (location offsets)}."""
     data = catalog_bytes(data)
-    def u32(offset):
-        return struct.unpack_from("<I", data, offset)[0]
-
-    def array(offset):
-        if offset == NONE:
-            return []
-        return struct.unpack_from(f"<{u32(offset - 4) // 4}I", data, offset)
-
-    def text(offset):
-        if offset == NONE:
-            return ""
-        if offset & 0x40000000:                     # a path of parts, stored last part first
-            parts = []
-            while offset != NONE:
-                part, offset = struct.unpack_from("<II", data, offset & 0x3FFFFFFF)
-                parts.append(text(part))
-            return "/".join(reversed(parts))
-        pos = offset & 0x3FFFFFFF
-        return data[pos:pos + u32(pos - 4)].decode("utf-16-le" if offset & 0x80000000 else "ascii")
-
-    magic, version, keys = struct.unpack_from("<III", data)
+    if len(data) < 12:
+        raise ValueError("unsupported catalog format")
+    buf = _Buffer(data)
+    magic, version, keys = buf.unpack("<III", 0)
     if magic != CATALOG_MAGIC or version != CATALOG_VERSION:
         raise ValueError("unsupported catalog format")
+    n = buf.u32(keys - 4)
+    if n % 8:
+        raise ValueError(f"catalog key table: byte length {n} is not a multiple of 8")
+    buf.check(keys, n)
     locations = set()
-    for pos in range(keys, keys + u32(keys - 4), 8):
-        locations.update(array(u32(pos + 4)))
+    for pos in range(keys, keys + n, 8):
+        locations.update(buf.array(buf.u32(pos + 4)))
     result = []
     for pos in sorted(locations):
-        primary, internal, _, deps = struct.unpack_from("<4I", data, pos)
-        result.append({"offset": pos, "primary_key": text(primary),
-                       "internal_id": text(internal), "dependencies": array(deps)})
+        buf.check(pos, LOCATION.size)
+        primary, internal, _, deps = buf.unpack("<4I", pos)
+        result.append({"offset": pos, "primary_key": buf.string(primary, "/") or "",
+                       "internal_id": buf.string(internal, "/") or "",
+                       "dependencies": [] if deps == NONE else tuple(buf.array(deps))})
     return result
 
 
@@ -149,8 +138,16 @@ class _Buffer:
         self._plain: dict[int, str] = {}
         self._types: dict[int, tuple] = {}
 
+    def check(self, offset: int, size: int) -> None:
+        if offset < 0 or size < 0 or offset > len(self.data) - size:
+            raise ValueError(f"catalog data at {offset}: past the end of the catalog")
+
+    def unpack(self, fmt: str, offset: int) -> tuple:
+        self.check(offset, struct.calcsize(fmt))
+        return struct.unpack_from(fmt, self.data, offset)
+
     def u32(self, offset: int) -> int:
-        return struct.unpack_from("<I", self.data, offset)[0]
+        return self.unpack("<I", offset)[0]
 
     def array(self, offset: int) -> list[int]:
         """A u32 array (its byte length is the u32 before it); [] for null."""
@@ -159,13 +156,15 @@ class _Buffer:
         n = self.u32(offset - 4)
         if n % 4:
             raise ValueError(f"catalog array at {offset}: byte length {n} is not a multiple of 4")
-        return list(struct.unpack_from(f"<{n // 4}I", self.data, offset))
+        return list(self.unpack(f"<{n // 4}I", offset))
 
     def plain(self, offset: int) -> str:
         s = self._plain.get(offset)
         if s is None:
             pos = offset & OFFSET_MASK
-            raw = self.data[pos:pos + self.u32(pos - 4)]
+            size = self.u32(pos - 4)
+            self.check(pos, size)
+            raw = self.data[pos:pos + size]
             s = self._plain[offset] = raw.decode("utf-16-le" if offset & UNICODE else "ascii")
         return s
 
@@ -183,7 +182,7 @@ class _Buffer:
             if pos in seen:
                 raise ValueError(f"catalog string at {offset & OFFSET_MASK}: the part chain loops")
             seen.add(pos)
-            part, link = struct.unpack_from("<II", self.data, pos)
+            part, link = self.unpack("<II", pos)
             if part != NONE and part & DYNAMIC:
                 raise ValueError(f"catalog string at {pos}: a nested part list")
             parts.append("" if part == NONE else self.plain(part))
@@ -195,7 +194,7 @@ class _Buffer:
             return None
         t = self._types.get(offset)
         if t is None:
-            assembly, cls = struct.unpack_from("<II", self.data, offset)
+            assembly, cls = self.unpack("<II", offset)
             t = self._types[offset] = (self.string(assembly, "."), self.string(cls, "."))
         return t
 
@@ -204,20 +203,20 @@ class _Buffer:
         TypeSerializer.Data."""
         if offset == NONE:
             return None
-        ident, typ, data = struct.unpack_from("<III", self.data, offset)
+        ident, typ, data = self.unpack("<III", offset)
         t = self.type_name(typ) or (None, None)
         return {"id": self.string(ident, ""), "assembly": t[0], "type": t[1], "data": self.string(data, "")}
 
     def key(self, offset: int) -> tuple[str | None, object]:
         """A key object (ObjectTypeData {type, object}) -> (type name, value). System.String keys are an
         ObjectToStringRemap {u32 string, u16 separator}; System.Int32 keys a 4-byte integer; other types None."""
-        typ, obj = struct.unpack_from("<II", self.data, offset)
+        typ, obj = self.unpack("<II", offset)
         cls = (self.type_name(typ) or (None, None))[1]
         if cls == "System.String":
-            sid, sep = struct.unpack_from("<IH", self.data, obj)
+            sid, sep = self.unpack("<IH", obj)
             return cls, self.string(sid, chr(sep) if sep else "")
         if cls == "System.Int32":
-            return cls, struct.unpack_from("<i", self.data, obj)[0]
+            return cls, self.unpack("<i", obj)[0]
         return cls, None
 
     def extra(self, offset: int) -> dict | None:
@@ -225,7 +224,7 @@ class _Buffer:
         AssetBundleRequestOptions, the decoded options; None for null."""
         if offset == NONE:
             return None
-        typ, obj = struct.unpack_from("<II", self.data, offset)
+        typ, obj = self.unpack("<II", offset)
         cls = (self.type_name(typ) or (None, None))[1]
         out: dict = {"type": cls}
         if cls == REQUEST_OPTIONS and obj != NONE:
@@ -236,13 +235,15 @@ class _Buffer:
         """AssetBundleRequestOptionsSerializationAdapter.SerializedData {u32 hash, u32 bundleName, u32 crc,
         u32 bundleSize, u32 common}: hash a Hash128 (16 raw bytes, hex in stored order), bundleName read with '_',
         common a SerializedData.Common {i16 timeout, u8 redirectLimit, u8 retryCount, i32 flags}."""
-        hash_id, name_id, crc, size, common = struct.unpack_from("<5I", self.data, offset)
+        hash_id, name_id, crc, size, common = self.unpack("<5I", offset)
+        if hash_id != NONE:
+            self.check(hash_id, 16)
         out = {"hash": None if hash_id == NONE else self.data[hash_id:hash_id + 16].hex(),
                "bundleName": self.string(name_id, "_"), "crc": crc, "bundleSize": size}
         if common == NONE:
             out.update(timeout=None, redirectLimit=None, retryCount=None, flags=None)
             return out
-        timeout, redirects, retries, flags = struct.unpack_from("<hBBi", self.data, common)
+        timeout, redirects, retries, flags = self.unpack("<hBBi", common)
         out.update(timeout=timeout, redirectLimit=redirects, retryCount=retries, flags=flags)
         for name, bit in FLAG_BITS:
             out[name] = (flags & bit) // bit if name == "assetLoadMode" else bool(flags & bit)
@@ -276,6 +277,7 @@ def parse_keys(data: bytes) -> list[dict]:
     n = buf.u32(table - 4)
     if n % 8:
         raise ValueError(f"catalog key table: byte length {n} is not a multiple of 8")
+    buf.check(table, n)
     for pos in range(table, table + n, 8):
         key_obj, locations = struct.unpack_from("<II", data, pos)
         cls, value = buf.key(key_obj) if key_obj != NONE else (None, None)
@@ -297,7 +299,11 @@ def parse_locations(data: bytes) -> list[dict]:
     buf = _Buffer(data)
     offsets: set[int] = set()
     table = header["keysOffset"]
-    for pos in range(table, table + buf.u32(table - 4), 8):
+    n = buf.u32(table - 4)
+    if n % 8:
+        raise ValueError(f"catalog key table: byte length {n} is not a multiple of 8")
+    buf.check(table, n)
+    for pos in range(table, table + n, 8):
         offsets.update(buf.array(buf.u32(pos + 4)))
     out = []
     for pos in sorted(offsets):

@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .apkset import ApkSet
-from .addressables import REMOTE_PREFIX, BundleKey, decrypt, parse, parse_locations, remote_path
+from .addressables import UNITYFS, REMOTE_PREFIX, BundleKey, decrypt, parse, parse_locations, remote_path
 from .cache import write_atomic as _write_atomic
 from .config import ConfigError, apk_missing, check_catalog_version
 
@@ -59,11 +59,26 @@ def file_name(internal_id: str) -> str:
 
 
 def _unityfs(data: bytes, name: str, key: BundleKey | None) -> bytes:
-    if data[:7] == b"UnityFS":
+    if data.startswith(UNITYFS):
         return data
     if key is None:
         raise RuntimeError(f"bundle {name} is encrypted and no bundle key was given")
-    return decrypt(data, name, key)
+    decoded = decrypt(data, name, key)
+    if not decoded.startswith(UNITYFS):
+        raise ValueError(f"bundle {name} is not UnityFS after decryption (wrong key or damaged file)")
+    return decoded
+
+
+def _cached_bundle(path: Path) -> Path | None:
+    """A decrypted bundle cache hit requires the complete UnityFS signature."""
+    if path.is_file():
+        try:
+            with path.open("rb") as stream:
+                if stream.read(len(UNITYFS)) == UNITYFS:
+                    return path
+        except FileNotFoundError:
+            pass
+    return None
 
 
 class Catalog:
@@ -281,7 +296,7 @@ class Catalog:
     def cached(self, b: Bundle) -> Path | None:
         """The file fetch(b) returns when the bundle is in the cache already, else None."""
         dst = (self.cache_dir if b.remote else self.local_cache_dir()) / "bundles" / b.name
-        return dst if dst.is_file() and dst.stat().st_size > 0 else None
+        return _cached_bundle(dst)
 
     def cached_raw(self, e: dict) -> Path | None:
         """The file fetch_raw(e) returns when it is in the cache already, else None."""
@@ -293,8 +308,9 @@ class Catalog:
         """Local path to the decrypted bundle (CDN download or APK read)."""
         dst = (self.cache_dir if b.remote else self.local_cache_dir()) / "bundles" / b.name
         dst.parent.mkdir(parents=True, exist_ok=True)
-        if dst.exists() and dst.stat().st_size > 0:
-            return dst
+        hit = _cached_bundle(dst)
+        if hit is not None:
+            return hit
         if b.remote:
             url = self._url(b.internal_id)
             key = self._setting("bundle_key", b.name)   # before the download: a missing key fails first
@@ -306,7 +322,7 @@ class Catalog:
             with ApkSet(self.apk) as z:
                 self.check_apk(z)
                 data = z.read(APK_AA_DIR + rel)
-            key = self._setting("bundle_key", b.name) if data[:7] != b"UnityFS" else None
+            key = self._setting("bundle_key", b.name) if not data.startswith(UNITYFS) else None
         _write_atomic(dst, _unityfs(data, b.name, key))
         return dst
 
@@ -354,11 +370,11 @@ class Catalog:
                 raise KeyError(f"{name_contains!r}: {len(names)} APK bundles match")
             name = names[0].rsplit("/", 1)[1]
             dst = self.local_cache_dir() / "bundles" / name
-            if not (dst.exists() and dst.stat().st_size > 0):
+            if _cached_bundle(dst) is None:
                 dst.parent.mkdir(parents=True, exist_ok=True)
                 self.check_apk(z)
                 data = z.read(names[0])
-                key = self._setting("bundle_key", name) if data[:7] != b"UnityFS" else None
+                key = self._setting("bundle_key", name) if not data.startswith(UNITYFS) else None
                 _write_atomic(dst, _unityfs(data, name, key))
         return dst
 
