@@ -17,7 +17,6 @@ from __future__ import annotations
 import gzip
 import hashlib
 import json
-import os
 import re
 import time
 import urllib.error
@@ -29,6 +28,7 @@ from pathlib import Path
 import numpy as np
 
 from . import jsonio
+from .store import write_file
 
 PREFIX = 64                     # bytes before the ciphertext
 BLOCK = 32                      # 256-bit block
@@ -246,8 +246,7 @@ def download(cdn: str, version: str, out_dir: Path, workers: int = 16, *, get=No
             seen.add(name)
     else:
         # Preserve the original partial-download receipt even if a worker raises.
-        from .cache import write_atomic
-        write_atomic(out_dir / "MasterManifest.json", manifest_raw)
+        write_file(out_dir / "MasterManifest.json", manifest_raw)
 
     def one(f: dict):
         name, sha = f["name"], (f.get("hash") or "").lower()
@@ -262,16 +261,13 @@ def download(cdn: str, version: str, out_dir: Path, workers: int = 16, *, get=No
             return {"file": name, "error": "size or hash missing/different from the manifest"}
         if sha and hashlib.sha256(data).hexdigest() != sha:
             return {"file": name, "error": "sha256 differs from the manifest"}
-        tmp = dst.with_name(f"{name}.{os.getpid()}.part")
-        tmp.write_bytes(data)
-        os.replace(tmp, dst)
+        write_file(dst, data)
         return "downloaded"
 
     with ThreadPoolExecutor(max(1, workers)) as ex:
         results = list(ex.map(one, files))
     if not strict or not any(isinstance(r, dict) for r in results):
-        from .cache import write_atomic
-        write_atomic(out_dir / "MasterManifest.json", manifest_raw)
+        write_file(out_dir / "MasterManifest.json", manifest_raw)
     return {"version": manifest.get("version", version), "files": len(files),
             "downloaded": results.count("downloaded"), "kept": results.count("kept"),
             "failed": [r for r in results if isinstance(r, dict)], "out": str(out_dir)}
