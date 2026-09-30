@@ -315,9 +315,9 @@ def apk_catalog(apk) -> bytes:
         return z.read(APK_CATALOG)
 
 
-def fetch(cdn: str, language: str, timeout: float = 120) -> tuple[bytes, str | None]:
+def fetch(cdn: str, language: str, timeout: float = 120, *, version: str = "main") -> tuple[bytes, str | None]:
     """The remote catalog of `language` from a CDN base, and the text of its `.hash` file (None when not served)."""
-    base = cdn.rstrip("/") + "/asset/Android/" + Catalog.cache_file(language, Path(".")).name
+    base = cdn.rstrip("/") + "/asset/Android/" + Catalog.cache_file(language, Path("."), version=version).name
     with urllib.request.urlopen(base, timeout=timeout) as r:
         data = r.read()
     try:

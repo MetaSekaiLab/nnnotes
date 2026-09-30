@@ -31,6 +31,13 @@ class ConfigError(Exception):
     """A setting is missing or malformed (the message names the setting, never its value)."""
 
 
+def check_catalog_version(value: str) -> str:
+    """One safe international catalog filename component, including the legacy main selector."""
+    if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", value) or ".." in value:
+        raise ValueError("must be a single catalog version without path separators")
+    return value
+
+
 def user_file(environ: dict[str, str] | None = None) -> Path | None:
     """The per-user config file: `%APPDATA%\\nnnotes\\nnnotes.toml` on Windows, else
     `$XDG_CONFIG_HOME/nnnotes/nnnotes.toml` (`~/.config` when XDG_CONFIG_HOME is unset); None when the environment
@@ -265,6 +272,24 @@ class Config:
     def cdn(self, region: str) -> str:
         """CDN base of a region, without a trailing slash."""
         return self.require(f"servers.{region}", "cdn").rstrip("/")
+
+    def catalog_version(self, region: str | None = None) -> str:
+        """International selector: flag, regional/global pin, API resource_version, else legacy main."""
+        region = region or self.get("catalog", "region")
+        section, key = "catalog", "version"
+        if region and self.origin(section, key) != "flag" and self.has(f"servers.{region}", "catalog_version"):
+            section, key = f"servers.{region}", "catalog_version"
+        value = self.get(section, key)
+        if value is None and region and self.has(f"servers.{region}", "api"):
+            from .gameapi import master_version
+            value = master_version(self, region).resource_version
+            section, key = f"servers.{region}", "api"
+        elif value is None:
+            value = "main"
+        try:
+            return check_catalog_version(value)
+        except ValueError as error:
+            raise ConfigError(f"setting {section}.{key}: {error}") from None
 
     def master(self, region: str | None) -> tuple[str, str]:
         """The setting that names the decoded master data of `region`: the --master flag, else

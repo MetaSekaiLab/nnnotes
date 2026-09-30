@@ -492,7 +492,7 @@ class Workspace:
         if v is None:
             v = self.db.add(remote, apk, region=self.cfg.get("catalog", "region"),
                             language=self.cfg.get("catalog", "language"), apk_version_name=_apk_version(self.apk),
-                            source=source, resource_version=source["version"] if source else None)
+                            source=source, resource_version=source["version"] if source else getattr(cat, "resource_version", None))
         return v, remote, apk
 
     def catalogs_fact(self) -> dict:
@@ -1356,6 +1356,7 @@ def cmd_catalogs_import(args, cfg, common):
 
 def cmd_catalogs_fetch(args, cfg, common):
     from . import catalogdb
+    from .catalog import Catalog
     region = cfg.region()
     if cfg.provider(region) == "jp":
         from .jp import open_catalog
@@ -1369,19 +1370,14 @@ def cmd_catalogs_fetch(args, cfg, common):
         return
     cdn = cfg.cdn(region)
     language = cfg.require("catalog", "language")
+    version = cfg.catalog_version(region)
+    filename = Catalog.cache_file(language, Path("."), version=version).name
     try:
-        data, hash_text = catalogdb.fetch(cdn, language)
+        data, hash_text = catalogdb.fetch(cdn, language, version=version)
     except OSError as e:                             # URLError, HTTPError, timeouts (the message has no URL)
-        sys.exit(f"nnnotes: catalog_main_{language}.bin could not be fetched: {type(e).__name__}: "
+        sys.exit(f"nnnotes: {filename} could not be fetched: {type(e).__name__}: "
                  f"{getattr(e, 'reason', None) or getattr(e, 'code', None) or ''}".rstrip(": "))
-    resource = None
-    if cfg.has(f"servers.{region}", "api"):
-        from . import gameapi
-        try:
-            resource = gameapi.master_version(cfg, region).resource_version
-        except gameapi.GameApiError as e:
-            print(f"nnnotes: no resource version (the label defaults to the catalog's sha256): {e}",
-                  file=sys.stderr)
+    resource = version if version != "main" else None
     try:
         v = _db(args, cfg).add(data, _apk_catalog(args, cfg), label=args.label, region=region, language=language,
                                hash_text=hash_text, resource_version=resource,
@@ -1526,7 +1522,7 @@ def register(sub, common=None) -> None:
     _store_arg(m)
     m.set_defaults(func=bind(cmd_catalogs_list), usage=m.error)
     m = csub.add_parser("import", help="import a catalog file (with the APK's catalog when [paths] apk is set)")
-    m.add_argument("file", help="catalog_main_<language>.bin")
+    m.add_argument("file", help="catalog_<version>_<language>.bin")
     m.add_argument("--label", help="label of the version (default: its resource version, else the sha256 prefix)")
     m.add_argument("--apk-catalog", help="the APK's catalog.bin (default: read from [paths] apk)")
     m.add_argument("--resource-version", help="the game's resource version of this catalog")
@@ -1556,7 +1552,7 @@ def main(argv=None) -> None:
     """The asset commands alone, with the global flags of the command line (tests; `nnnotes` has them too)."""
     from .cli import load_config
     p = argparse.ArgumentParser(prog="nnnotes")
-    for flag in ("--config", "--region", "--language", "--catalog", "--cache", "--master", "--apk", "--ffmpeg",
+    for flag in ("--config", "--region", "--language", "--catalog", "--catalog-release", "--cache", "--master", "--apk", "--ffmpeg",
                  "--vgmstream", "--node"):
         p.add_argument(flag)
     sub = p.add_subparsers(dest="cmd", required=True, metavar="<command>")

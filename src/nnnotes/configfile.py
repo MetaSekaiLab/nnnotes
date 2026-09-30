@@ -17,7 +17,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from . import languages
-from .config import Config, ConfigError, env_name, template
+from .config import Config, ConfigError, check_catalog_version, env_name, template
 
 SECRETS = {("bundle", "key"), ("bundle", "nonce_seed"), ("master", "key"), ("master", "iv")}
 HEX_BYTES = {("bundle", "key"): 16, ("bundle", "nonce_seed"): None, ("master", "key"): 32, ("master", "iv"): 32}
@@ -124,6 +124,8 @@ def validate(setting: Setting, value) -> None:
             raise ValueError("must be an http(s):// URL")
     elif k == (REGION, "provider") and value not in ("jp", "international"):
         raise ValueError("must be jp or international")
+    elif k in (("catalog", "version"), (REGION, "catalog_version")):
+        check_catalog_version(value)
     elif k in ((REGION, "api"), ("bootstrap", "api")):
         from .gameapi import channel_target
         channel_target(value)

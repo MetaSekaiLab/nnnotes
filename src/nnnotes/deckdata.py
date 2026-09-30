@@ -384,7 +384,7 @@ def catalog_info(cat, store_root=None) -> dict:
     """{resourceVersion, sha256} of a catalog's remote catalog file (resource_version)."""
     sha = hashlib.sha256(cat.sources()["remote"]).hexdigest()
     source = getattr(cat, "source", None)
-    return {"resourceVersion": source.version if source else resource_version(store_root, sha), "sha256": sha,
+    return {"resourceVersion": source.version if source else (getattr(cat, "resource_version", None) or resource_version(store_root, sha)), "sha256": sha,
             **({"resourceHash": source.hash} if source else {})}
 
 

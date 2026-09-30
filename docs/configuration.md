@@ -87,19 +87,21 @@ exist when they are given.
 | `[master] key` | `NNNOTES_MASTER_KEY` | — | Rijndael-256 key of the master data files: 32 bytes as 64 hex digits |
 | `[master] iv` | `NNNOTES_MASTER_IV` | — | Rijndael-256 CBC initialization vector: 32 bytes as 64 hex digits |
 | `[catalog] region` | `NNNOTES_CATALOG_REGION` | `--region` | name of one `[servers.<region>]` table |
-| `[catalog] language` | `NNNOTES_CATALOG_LANGUAGE` | `--language` | catalog language: the `<language>` of `catalog_main_<language>.bin`: `ja`, `en`, `zh-Hant`, `zh-Hans` or `ko`; also the client language of `live`, `story` and `web` (the text field, fonts and line spacing of their UI) and of the model labels of `web --live2d` |
+| `[catalog] language` | `NNNOTES_CATALOG_LANGUAGE` | `--language` | catalog language: the `<language>` of `catalog_<version>_<language>.bin`: `ja`, `en`, `zh-Hant`, `zh-Hans` or `ko`; also the client language of `live`, `story` and `web` (the text field, fonts and line spacing of their UI) and of the model labels of `web --live2d` |
+| `[catalog] version` | `NNNOTES_CATALOG_VERSION` | `--catalog-release` | optional international resource version; unset: query the configured region API, or use legacy `main` when no API is configured; JP uses its own discovery |
 | `[servers.<region>] name` | `NNNOTES_SERVERS_<REGION>_NAME` | — | label of the region in `browse` (default: the region name) |
 | `[servers.<region>] provider` | `NNNOTES_SERVERS_<REGION>_PROVIDER` | — | `international` or `jp`; empty selects `jp` for the region named jp, international otherwise |
 | `[servers.<region>] client_version` | `NNNOTES_SERVERS_<REGION>_CLIENT_VERSION` | — | per-region API client version; overrides `[client] version`, then falls back to the region's APK versionName |
 | `[servers.<region>] apk` | `NNNOTES_SERVERS_<REGION>_APK` | `--apk` | per-region APK, APKS/XAPK or directory with base.apk; adjacent splits of base.apk are read automatically; the flag overrides it |
 | `[servers.<region>] catalog` | `NNNOTES_SERVERS_<REGION>_CATALOG` | `--catalog` | per-region catalog file; JP needs the matching `<file>.source.json`; the flag overrides it |
+| `[servers.<region>] catalog_version` | `NNNOTES_SERVERS_<REGION>_CATALOG_VERSION` | `--catalog-release` | per-region international version pin; overrides `[catalog] version`, but not the command-line flag |
 | `[servers.<region>] cdn` | `NNNOTES_SERVERS_<REGION>_CDN` | — | CDN base URL of the region (a trailing `/` is ignored) |
 | `[servers.<region>] languages` | `NNNOTES_SERVERS_<REGION>_LANGUAGES` | — | catalog languages `browse` lists: a TOML array of strings; comma-separated in the environment |
 | `[servers.<region>] api` | `NNNOTES_SERVERS_<REGION>_API` | — | API root of the region: `https://host[:port]` (TLS, port 443 by default), `host[:port]`, or `http://host[:port]` for a plain-text local server; no path |
 | `[servers.<region>] master` | `NNNOTES_SERVERS_<REGION>_MASTER` | — | decoded master data directory of the region (default: `[paths] master`) |
 | `[bootstrap] api` | `NNNOTES_BOOTSTRAP_API` | — | API root that serves the server list (`nnnotes servers`), same format |
 | `[client] version` | `NNNOTES_CLIENT_VERSION` | — | client version sent to the game's API, e.g. `1.0.1`; unset: the `versionName` of `[paths] apk` |
-| `[paths] catalog` | `NNNOTES_PATHS_CATALOG` | `--catalog` | a catalog `.bin` file to read instead of downloading `catalog_main_<language>.bin` |
+| `[paths] catalog` | `NNNOTES_PATHS_CATALOG` | `--catalog` | a catalog `.bin` file to read instead of discovering/downloading a catalog; explicit files stay usable offline |
 | `[paths] cache` | `NNNOTES_PATHS_CACHE` | `--cache` | cache directory (created when missing) |
 | `[paths] store` | `NNNOTES_PATHS_STORE` | `--store` (of `export`, `plan`, `run-stage`, `catalogs`, `store`) | store directory of the asset export ([assets.md](assets.md)); unset: `<[paths] cache>/store` |
 | `[paths] master` | `NNNOTES_PATHS_MASTER` | `--master` | decoded master data directory, one `<Table>.json` per table; the flag overrides `[servers.<region>] master` |
@@ -121,9 +123,24 @@ for several of them. The other commands use the one region named by `[catalog] r
 table per region.
 
 Master data per region: a command that reads master data for region `<r>` takes the directory of the `--master` flag,
-else `[servers.<r>] master`, else `[paths] master`. The regions serve the same catalog for a language, so the
-catalog settings and the cached `catalog_main_<language>.bin` serve every region; bundles are fetched from the CDN of
-the region in use.
+else `[servers.<r>] master`, else `[paths] master`. International catalog selection uses `resource_version`, not
+the master version or a change to the CDN root. `catalog_main` is a separate catalog that may remain old.
+When the region has an API root, catalog-based commands query Version before selecting a download; discovery
+failure stops rather than treating main as current. Without an API or version pin, the old main/offline behavior
+is retained. JP's version/hash directory and authentication remain unchanged.
+
+For repeatable builds, pin the resource version belonging to your master snapshot:
+
+```sh
+nnnotes --region tw --catalog-release 1.0.0.201 web site --story 10948
+nnnotes --region tw --catalog-release 1.0.0.201 live2d MODEL_ID -o out/model
+```
+
+Alternatively set `NNNOTES_SERVERS_TW_CATALOG_VERSION` in the build environment; workers inherit this pin.
+`--catalog-release` selects a remote resource release. The asset commands' existing `--catalog-version LABEL|SHA`
+still selects an already imported store record. To inspect the historical main catalog, explicitly pin `main`.
+Versioned caches are isolated by CDN root and resource version; a cached pin needs the CDN setting to identify
+its directory but performs no API/catalog download. A missing versioned file never falls back to main.
 
 ## What each command needs
 

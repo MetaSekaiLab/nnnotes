@@ -18,7 +18,7 @@ from pathlib import Path
 from .apkset import ApkSet
 from .addressables import REMOTE_PREFIX, BundleKey, decrypt, parse, parse_locations, remote_path
 from .cache import write_atomic as _write_atomic
-from .config import ConfigError, apk_missing
+from .config import ConfigError, apk_missing, check_catalog_version
 
 LOCAL_PREFIX = "{UnityEngine.AddressableAssets.Addressables.RuntimePath}"
 APK_AA_DIR = "assets/aa/"          # + "Android/<bundle>"
@@ -80,12 +80,13 @@ class Catalog:
     """
 
     def __init__(self, catalog_bytes: bytes, cache_dir: Path, *, cdn=None, bundle_key=None, apk: Path | None = None,
-                 source=None, session=None, apk_catalog: bytes | None = None):
+                 source=None, session=None, apk_catalog: bytes | None = None, resource_version: str | None = None):
         self._settings = {"cdn": cdn, "bundle_key": bundle_key}
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.apk = Path(apk) if apk else None
         self.source, self.session = source, session
+        self.resource_version = resource_version
         self._sources = {"remote": catalog_bytes}
         self._locations: list[dict] | None = None
         self._parsed: tuple | None = None
@@ -142,18 +143,28 @@ class Catalog:
     # --- construction ------------------------------------------------------
     @classmethod
     def load(cls, language: str, cache_dir: Path, *, cdn=None, bundle_key=None,
-             apk: Path | None = None) -> "Catalog":
+             apk: Path | None = None, version: str = "main") -> "Catalog":
         """The remote catalog of `language` from the cache, downloaded from the CDN on first use (`cdn` /
-        `bundle_key`: as for Catalog)."""
+        `bundle_key`: as for Catalog). A versioned catalog is isolated by CDN root and version; main retains
+        its legacy offline cache path. Missing versioned files never fall back to main."""
         cache_dir = Path(cache_dir)
-        cat = cls.cache_file(language, cache_dir)
+        filename = cls.cache_file(language, Path("."), version=version).name
+        if version != "main":
+            cdn = _setting(cdn, filename)
+            if not cdn:
+                raise ConfigError("a versioned catalog needs its CDN root to identify the cache")
+            cache_dir = cache_dir / "international" / hashlib.sha256(cdn.rstrip("/").encode()).hexdigest() / version
+        cat = cache_dir / filename
         if not cat.exists():
             cdn = _setting(cdn, cat.name)
             if not cdn:
                 raise FileNotFoundError(f"{cat} not cached and no CDN base given")
             cat.parent.mkdir(parents=True, exist_ok=True)
-            _write_atomic(cat, download(cdn.rstrip("/") + f"/asset/Android/{cat.name}"))
-        return cls(cat.read_bytes(), cache_dir, cdn=cdn, bundle_key=bundle_key, apk=apk)
+            data = download(cdn.rstrip("/") + f"/asset/Android/{cat.name}")
+            parse(data)  # Never install a corrupt/error response as a reusable catalog.
+            _write_atomic(cat, data)
+        return cls(cat.read_bytes(), cache_dir, cdn=cdn, bundle_key=bundle_key, apk=apk,
+                   resource_version=version if version != "main" else None)
 
     def _setting(self, name: str, needed_by: str):
         """The `cdn` / `bundle_key` given to the catalog, its function called (once) now that `needed_by` needs it."""
@@ -167,9 +178,11 @@ class Catalog:
         return None if callable(v) or not v else v.rstrip("/")
 
     @staticmethod
-    def cache_file(language: str, cache_dir: Path) -> Path:
+    def cache_file(language: str, cache_dir: Path, *, version: str = "main") -> Path:
         """Where the remote catalog of `language` is cached."""
-        return Path(cache_dir) / f"catalog_main_{language}.bin"
+        check_catalog_version(version)
+        check_catalog_version(language)
+        return Path(cache_dir) / f"catalog_{version}_{language}.bin"
 
     # --- lookup ------------------------------------------------------------
     def keys(self, prefix: str = "") -> list[str]:
