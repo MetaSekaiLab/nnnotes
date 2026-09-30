@@ -1,0 +1,10 @@
+nnnotes 0.1.3 adds a music-data exporter, Japanese-release support and an experimental offline UI library export.
+
+- `nnnotes music-data` produces one `nnnotes.music-data/1` file with song metadata, chart facts, the Gekisou catalog and deck statistics. The pinned `ournotes-deck` model is bundled as `nnnotes._deck`; `--full` includes the model inputs and versioned replay data. Decoded master data can be read with its manifest.
+- International catalogs now follow the discovered resource version instead of stale `catalog_main` files. `--catalog-release` pins a build; caches are isolated by CDN root/version, and explicit local catalogs stay offline.
+- Japanese-release support includes version discovery, authenticated CDN downloads, gzip catalogs, snapshot-isolated caches and split APKs. See the [JP guide](https://github.com/MetaSekaiLab/nnnotes/blob/main/docs/jp.md) for configuration and validation coverage.
+- `nnnotes ui` exports serialized prefab libraries, stable node and controller references, and image/font resources for `ournotes-player/ui`. Resume validates pack and dependency hashes. See the [UI format](https://github.com/MetaSekaiLab/nnnotes/blob/main/docs/ui.md).
+
+The UI feature is experimental. It preserves serialized data for inspection; full Unity Presenter behavior and real JP UI rendering coverage are outside the verified scope. The chart model and replay data retain the validation limits documented in the [music-data guide](https://github.com/MetaSekaiLab/nnnotes/blob/main/docs/music-data.md).
+
+Validation: Python 3.11, 3.12 and 3.13 CI, strict golden records and Rust lints pass. Source-distribution metadata passes `twine check --strict`. Cross-repository browser review covers complete button labels, a numeric Animator binding and two parallel chapter tweens with no diagnostics or console errors.
