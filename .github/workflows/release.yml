@@ -3,6 +3,7 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -13,6 +14,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Check the tag against the package and extension versions
+        if: startsWith(github.ref, 'refs/tags/v')
         run: |
           version=$(python3 -c 'import re, pathlib; print(re.search(r"__version__ = \"([^\"]+)\"", pathlib.Path("src/nnnotes/__init__.py").read_text()).group(1))')
           cargo=$(python3 -c 'import re, pathlib; print(re.search(r"^version = \"([^\"]+)\"", pathlib.Path("rust/Cargo.toml").read_text(), re.M).group(1))')
@@ -89,6 +91,7 @@ jobs:
 
   pypi:
     needs: build
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     environment:
       name: pypi
@@ -107,6 +110,7 @@ jobs:
 
   github-release:
     needs: pypi
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -122,6 +126,12 @@ jobs:
         env:
           OUTPUT: RELEASE_NOTES.md
           GITHUB_REPO: ${{ github.repository }}
+      - name: Use reviewed release notes when available
+        run: |
+          reviewed="release-notes/${GITHUB_REF_NAME}.txt"
+          if [ -f "$reviewed" ]; then
+            cp "$reviewed" RELEASE_NOTES.md
+          fi
       - uses: actions/download-artifact@v8
         with:
           name: dist
