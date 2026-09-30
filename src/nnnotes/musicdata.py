@@ -309,7 +309,8 @@ class Deck:
     the deck model's defaults)."""
 
     def __init__(self, seeds: int = DECK_SEEDS, workers: int | None = None, module=None, aptitude: bool = True,
-                 aptitude_max_seeds: int | None = None, aptitude_cross_seeds: int | None = None):
+                 aptitude_max_seeds: int | None = None, aptitude_cross_seeds: int | None = None,
+                 require_convergence: bool = True):
         if module is None:
             try:
                 from . import _deck as module
@@ -319,6 +320,7 @@ class Deck:
         self.module, self.seeds, self.workers = module, seeds, workers
         self.aptitude, self.aptitude_max_seeds, self.aptitude_cross_seeds = \
             aptitude, aptitude_max_seeds, aptitude_cross_seeds
+        self.require_convergence = require_convergence
 
     def info(self) -> dict:
         """{name, version, source, commit, format} of the deck model."""
@@ -336,6 +338,16 @@ class Deck:
         doc = json.loads(text, parse_float=deckdata._Num)
         if doc.get("format") != self.info()["format"]:
             raise MusicDataError(f"deck model: wrote {doc.get('format')!r}, expected {self.info()['format']!r}")
+        if self.require_convergence and self.aptitude:
+            unmet = [(c.get("scoreId"), v.get("shape"), v.get("bandMatch"), v.get("seeds"))
+                     for c in doc.get("charts", [])
+                     for v in (c.get("gekisouAptitude") or {}).get("variants", [])
+                     if v.get("seTargetMet") is not True]
+            if unmet:
+                chart, shape, band, seeds = unmet[0]
+                raise MusicDataError(f"deck model: {len(unmet)} aptitude variants did not meet BOTH score SE targets; "
+                                     f"chart {chart}, shape {shape}, bandMatch {band}, seeds {seeds}; "
+                                     "increase --aptitude-max-seeds; no final artifact written")
         return doc
 
 
@@ -1078,16 +1090,35 @@ def tables_of(deck: bool, full: bool) -> tuple[str, ...]:
 def export(out, src: deckdata.MasterSource, key, fetch: Callable[[str], bytes],
            bgm: Callable[[str, str], dict] | None, *, region: str, client: dict, catalog: dict,
            deck: Deck | None = None, full: bool = False, jacket: Callable[[str], bytes] | None = None,
-           jackets_dir=None) -> dict:
+           jackets_dir=None, replay_dir=None, replay_engine=None) -> dict:
     """Read the master data, every chart and every BGM cue sheet, measure the charts with `deck`, then write the file
     `out` (gzip when it ends in `.gz`) through a temporary file and a rename; with `jacket` and `jackets_dir`, first
     every song's jacket as `<jackets_dir>/<jacket>.webp`. Returns the summary."""
     from .cache import write_atomic
     out = Path(out)
     try:
-        tables, shas = deckdata.read_master(src, key, tables_of(deck is not None, full))
+        if replay_engine is not None and replay_dir is None:
+            raise deckdata.DeckDataError("--replay-engine needs --replay-dir")
+        if replay_dir is not None and bgm is None:
+            raise deckdata.DeckDataError("replay export requires actual BGM lengths; --no-bgm is incompatible")
+        tables, shas = deckdata.read_master(src, key, tables_of(deck is not None, full or replay_dir is not None))
         doc = build(tables, shas, fetch, bgm, region=region, client=client, catalog=catalog,
-                    master_source=src.source, master_version=src.version, deck=deck, full=full)
+                    master_source=src.source, master_version=src.version, deck=deck, full=full or replay_dir is not None)
+        replay_files = None
+        if replay_dir is not None:
+            from . import replaydata
+            replay_files, replay_manifest = replaydata.bundle(doc, replay_engine)
+            manifest_sha = hashlib.sha256(replay_files["manifest.json"]).hexdigest()
+            replay_target = Path(replay_dir) / manifest_sha
+            try:
+                relative = replay_target.resolve().relative_to(out.parent.resolve()).as_posix()
+            except ValueError:
+                raise deckdata.DeckDataError("replay directory must be under the music-data output directory") from None
+            doc["replay"] = {"format": replaydata.FORMAT, "manifestUrl": relative + "/manifest.json",
+                             "sha256": manifest_sha,
+                             "charts": len(replay_manifest["charts"])}
+            if not full:
+                del doc["master"], doc["charts"]
         jackets = sorted({s["jacket"] for s in doc["songs"] if s["jacket"]}) if jacket is not None else []
         images = {name: jacket(name) for name in jackets}
         data = deckdata.encode(deckdata._value(doc, "music data"))
@@ -1099,6 +1130,8 @@ def export(out, src: deckdata.MasterSource, key, fetch: Callable[[str], bytes],
         for name, image in images.items():
             write_atomic(d / f"{name}.webp", image)
     written = deckdata.file_bytes(data, out.name.endswith(".gz"))
+    if replay_files is not None:
+        replaydata.write(replay_target, replay_files)
     out.parent.mkdir(parents=True, exist_ok=True)
     write_atomic(out, written)
     charts = [c for s in doc["songs"] for c in s["charts"]]
@@ -1107,4 +1140,5 @@ def export(out, src: deckdata.MasterSource, key, fetch: Callable[[str], bytes],
             "deck": doc["provenance"]["deck"]["commit"] if deck is not None else None,
             "unplayable": sum(1 for c in charts if c["deck"] and c["deck"]["unplayable"]),
             "full": full, "bgm": bgm is not None, "jackets": len(jackets),
-            "bytes": len(data), "fileBytes": len(written), "sha256": hashlib.sha256(written).hexdigest()}
+            "bytes": len(data), "fileBytes": len(written), "sha256": hashlib.sha256(written).hexdigest(),
+            **({"replay": doc["replay"]} if replay_files is not None else {})}

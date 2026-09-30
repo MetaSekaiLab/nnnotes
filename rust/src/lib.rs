@@ -60,7 +60,7 @@ fn measure(data: &DeckData, options: &Options, workers: usize) -> Result<Vec<Cha
 /// as `ournotes-deck chart-stats` writes it. `seeds`: the size of the seed set of charts with a luck range (default
 /// 8); `workers`: threads measuring charts (default: the available parallelism). Raises ValueError for data the
 /// deck model cannot read or a chart whose check deck fails. `aptitude`: measure single Gekisou skill shapes
-/// (default true); `aptitude_max_seeds` and `aptitude_cross_seeds`: sample caps (defaults 1024 and 64).
+/// (default true); `aptitude_max_seeds` and `aptitude_cross_seeds`: sample caps (defaults 65536 and 64).
 #[pyfunction]
 #[pyo3(signature = (data, seeds=None, workers=None, aptitude=true, aptitude_max_seeds=None, aptitude_cross_seeds=None))]
 fn chart_stats(

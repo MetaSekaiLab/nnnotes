@@ -194,6 +194,25 @@ def test_write_player(tmp_path):
         web.write_player(out, player)
 
 
+def test_write_player_copies_the_complete_songs_module_tree(tmp_path):
+    player = fake_player(tmp_path / "p")
+    files = {"index.html": b'<script type="module" src="./songs.js"></script>',
+             "songs.js": b'import "./catalog.js"; import "./replay-panel.js";',
+             "catalog.js": b"export const catalog = {};", "text.js": b"export const text = {};",
+             "replay-panel.js": b'import "./replay-preset.js";',
+             "replay-worker.js": b"// worker", "replay-preset.js": b"// preset",
+             "nested/future-dependency.json": b"{}"}
+    for name, data in files.items():
+        path = player / web.SONGS_PAGE_DIR / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+    site = tmp_path / "site"
+    result = web.write_player(site, player)
+    assert result["songsPageFiles"] == len(files)
+    assert {path.relative_to(site / "songs").as_posix(): path.read_bytes()
+            for path in (site / "songs").rglob("*") if path.is_file()} == files
+
+
 def test_player_only_command(tmp_path, capsys):
     from nnnotes import cli
     out = tmp_path / "site"

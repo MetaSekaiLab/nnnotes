@@ -468,6 +468,32 @@
       "items": {
         "$ref": "#/$defs/chart"
       }
+    },
+    "replay": {
+      "type": "object",
+      "required": [
+        "format",
+        "manifestUrl",
+        "sha256",
+        "charts"
+      ],
+      "properties": {
+        "format": {
+          "const": "nnnotes.replay-manifest/1"
+        },
+        "manifestUrl": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "charts": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "description": "Optional normalized replay artifact manifest, URL relative to the music-data URL; shared Rust/WASM engine only."
     }
   },
   "$defs": {
