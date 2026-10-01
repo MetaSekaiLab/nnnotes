@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:nnnotes:schema:sprite-geometries",
+  "title": "nnnotes.observed-sprite-geometries/1",
+  "type": "object",
+  "required": ["schema", "region", "client", "catalogSha256", "source", "sprites"],
+  "properties": {
+    "schema": {"const": "nnnotes.observed-sprite-geometries/1"},
+    "region": {"type": "string", "minLength": 1},
+    "client": {"type": "object", "properties": {"versionName": {"type": "string"}, "versionCode": {"type": "integer"}}},
+    "catalogSha256": {"$ref": "#/$defs/sha"},
+    "source": {
+      "type": "object", "required": ["kind", "catalogs", "native", "runtimeVerified"],
+      "properties": {
+        "kind": {"const": "observed-nnnotes-sprite-metadata"},
+        "catalogs": {"type": "object", "required": ["remote"], "additionalProperties": {"$ref": "#/$defs/fingerprint"}},
+        "native": {"type": "object"},
+        "runtimeVerified": {"const": false},
+        "publicBitmaps": {"$ref": "#/$defs/file"}
+      }
+    },
+    "sprites": {
+      "type": "object", "minProperties": 1,
+      "additionalProperties": {
+        "type": "object", "required": ["geometry", "source"],
+        "properties": {
+          "geometry": {
+            "type": "object", "required": ["rect", "textureRect", "textureRectOffset", "pivot", "border", "pixelsPerUnit", "settingsRaw", "downscaleMultiplier"],
+            "properties": {
+              "rect": {"$ref": "#/$defs/rect"}, "textureRect": {"$ref": "#/$defs/rect"},
+              "textureRectOffset": {"$ref": "#/$defs/xy"}, "pivot": {"$ref": "#/$defs/xy"},
+              "border": {"type": "object", "required": ["x", "y", "z", "w"], "additionalProperties": {"type": "number"}},
+              "pixelsPerUnit": {"type": "number", "exclusiveMinimum": 0},
+              "settingsRaw": {"type": "integer", "minimum": 0},
+              "downscaleMultiplier": {"type": "number", "exclusiveMinimum": 0}
+            }
+          },
+          "source": {
+            "type": "object", "required": ["key", "name", "assetFile", "pathId", "catalogSha256", "bundles"],
+            "properties": {
+              "key": {"type": "string", "minLength": 1}, "name": {"type": "string"},
+              "assetFile": {"type": "string", "minLength": 1},
+              "pathId": {"type": "string", "pattern": "^-?[0-9]+$"},
+              "catalogSha256": {"$ref": "#/$defs/sha"},
+              "bundles": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/file"}}
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "sha": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "fingerprint": {"type": "object", "required": ["sha256", "size"], "properties": {"sha256": {"$ref": "#/$defs/sha"}, "size": {"type": "integer", "minimum": 0}}},
+    "file": {"allOf": [{"$ref": "#/$defs/fingerprint"}, {"type": "object", "required": ["file"], "properties": {"file": {"type": "string", "minLength": 1}}}]},
+    "xy": {"type": "object", "required": ["x", "y"], "properties": {"x": {"type": "number"}, "y": {"type": "number"}}},
+    "rect": {"allOf": [{"$ref": "#/$defs/xy"}, {"type": "object", "required": ["width", "height"], "properties": {"width": {"type": "number", "minimum": 0}, "height": {"type": "number", "minimum": 0}}}]}
+  }
+}
