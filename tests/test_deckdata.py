@@ -198,6 +198,22 @@ def test_whole_table_columns_in_first_seen_order(tmp_path):
             src=deckdata.master_files(master_dir(tmp_path, partial, name="p")))
 
 
+def test_vip_identity_is_exported_independently_from_effect_rows(tmp_path):
+    def rows(name):
+        if name == "MasterVip":
+            return [{"_id": 101, "_vipRank": 1, "_point": 0}, {"_id": 121, "_vipRank": 21, "_point": 999}]
+        if name == "MasterVipRankBonus":
+            return [{"_id": 125, "_vipRank": 21, "_vipBonusType": 0, "_value": 3}]
+        return rows_of(name)
+
+    document = export(tmp_path, rows=rows)
+    vip = document["master"]["MasterVip"]
+    assert vip == {"columns": ["_id", "_vipRank"], "rows": [[101, 1], [121, 21]]}
+    assert document["master"]["MasterVipRankBonus"]["rows"] == [[125, 21, 0, 3]]
+    # Rank 1 remains represented even without an effect row; effect IDs are not ranks.
+    assert document["provenance"]["tables"]["MasterVip"] == hashlib.sha256((tmp_path / "m/MasterVip.bin").read_bytes()).hexdigest()
+
+
 def test_charts(tmp_path):
     export(tmp_path)
     charts = json.loads((tmp_path / "deck.json").read_bytes())["charts"]
