@@ -356,6 +356,7 @@ column their rows have, in the order the rows first have them; when such a table
 | `MasterBandItemSkillEffect` | `_id` `_bandItemId` `_level` `_skillTargetIDs` `_skillEffectType` `_effectValue` |
 | `MasterBandItem` | `_id` `_bandId` |
 | `MasterBandItemLevel` | `_id` `_bandItemId` `_level` `_playerRank` |
+| `MasterVip` | `_id` `_vipRank` |
 | `MasterVipRankBonus` | `_id` `_vipRank` `_vipBonusType` `_value` |
 | `MasterMemoryMusicGroup` | `_id` `_skillTargetIds` |
 | `MasterMemoryMusic` | `_id` `_groupId` |
