@@ -230,6 +230,11 @@ The music data file of `nnnotes music-data`, `nnnotes.music-data/1`
 ([schema/music-data.schema.json](schema/music-data.schema.json)), names its format in a `format` field; it is
 described in [music-data.md](music-data.md).
 
+The metadata-only Sprite observation file, `nnnotes.observed-sprite-geometries/1`
+([schema/sprite-geometries.schema.json](schema/sprite-geometries.schema.json)),
+retains original geometry and input hashes independently of public artwork
+bitmaps; usage and evidence scope are in [sprite-geometries.md](sprite-geometries.md).
+
 ## Store
 
 The store is a directory, and the cache of all stage work:

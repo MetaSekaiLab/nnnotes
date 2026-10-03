@@ -1,5 +1,9 @@
 # Serialized UI libraries (experimental)
 
+For external artwork binding, use the separate
+[original Sprite geometry producer](sprite-geometries.md) to preserve the
+logical rectangle and transparent trim offsets without decoding textures.
+
 `nnnotes ui` exports an offline prefab library for the optional `ournotes-player/ui` preview module. It reads the
 embedded Addressables catalog and bundle closure of the APK set you supply; it does not contact a game API. Keep
 outputs outside the nnnotes and ournotes-player source repositories. The export contains game data that these
