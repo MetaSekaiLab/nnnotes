@@ -415,7 +415,7 @@ def _check_rank_check(rc: dict, n: int, s: str, where: str) -> None:
     _check_bound(rc, f"{s}: the check deck at ranks {rc['ranks']!r}", where)
 
 
-# ournotes-deck's published seed set (live::seeds): candidate k is the low 32 bits (a signed integer) of output k + 1
+# ournotes-sim's published seed set (live::seeds): candidate k is the low 32 bits (a signed integer) of output k + 1
 # of SplitMix64 started at SEED_ORIGIN (the ASCII bytes of `gekisou1`); a candidate is kept when its pair of effective
 # stream seeds (|b| and |b ^ 0x9E3779B9|, -2^31 taken as 2^31 - 1) differs from that of every seed kept before it
 SEED_ORIGIN = 0x6765_6B69_736F_7531

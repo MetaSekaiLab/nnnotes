@@ -1,5 +1,5 @@
-//! Records the ournotes-deck package the module is built with (version and git commit, from Cargo.lock) as the
-//! environment variables DECK_VERSION, DECK_SOURCE and DECK_COMMIT of the crate.
+//! Records the ournotes-sim package the module is built with (version, repository and git commit, from Cargo.lock)
+//! as the environment variables DECK_VERSION, DECK_SOURCE and DECK_COMMIT of the crate.
 
 use std::path::Path;
 
@@ -16,15 +16,15 @@ fn main() {
                 Some(v.trim_matches('"').to_string())
             })
         };
-        if field("name").as_deref() == Some("ournotes-deck") {
+        if field("name").as_deref() == Some("ournotes-sim") {
             version = field("version");
             source = field("source");
         }
     }
-    let version = version.expect("Cargo.lock has no ournotes-deck package");
-    let source = source.expect("ournotes-deck has no source in Cargo.lock");
+    let version = version.expect("Cargo.lock has no ournotes-sim package");
+    let source = source.expect("ournotes-sim has no source in Cargo.lock");
     // git+https://github.com/empty-sekai/ournotes-deck?rev=<rev>#<commit>
-    let (url, commit) = source.split_once('#').expect("ournotes-deck is not a git dependency");
+    let (url, commit) = source.split_once('#').expect("ournotes-sim is not a git dependency");
     let url = url.strip_prefix("git+").unwrap_or(url);
     let url = url.split_once('?').map_or(url, |(u, _)| u);
     println!("cargo:rustc-env=DECK_VERSION={version}");

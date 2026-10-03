@@ -38,8 +38,8 @@ Source = "https://github.com/MetaSekaiLab/nnnotes"
 Issues = "https://github.com/MetaSekaiLab/nnnotes/issues"
 
 [tool.maturin]
-# the pure Python package src/nnnotes with the extension module nnnotes._deck (rust/: ournotes-deck, pinned by
-# commit); the version is rust/Cargo.toml's, kept equal to nnnotes.__version__ (tests/test_musicdata.py)
+# the pure Python package src/nnnotes with the extension module nnnotes._deck (rust/: ournotes-sim of ournotes-deck,
+# pinned by commit); the version is rust/Cargo.toml's, kept equal to nnnotes.__version__ (tests/test_musicdata.py)
 python-source = "src"
 module-name = "nnnotes._deck"
 manifest-path = "rust/Cargo.toml"

@@ -1,12 +1,12 @@
-//! `nnnotes._deck`: the chart statistics of ournotes-deck (`ournotes-deck.chart-stats/2`) on a deck data document
-//! held in memory, the charts measured in parallel.
+//! `nnnotes._deck`: the chart statistics of the deck model ournotes-sim (`ournotes-deck.chart-stats/2`) on a deck
+//! data document held in memory, the charts measured in parallel.
 
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use ournotes_deck::chartstats::{self, AptitudeOptions, ChartStats, GEKISOU_SEEDS, Options};
-use ournotes_deck::data::DeckData;
-use ournotes_deck::error::Error;
+use ournotes_sim::chartstats::{self, AptitudeOptions, ChartStats, GEKISOU_SEEDS, Options};
+use ournotes_sim::data::DeckData;
+use ournotes_sim::error::Error;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
@@ -94,8 +94,8 @@ fn chart_stats(
     })
 }
 
-/// info() -> dict: the ournotes-deck package of this module (name, version, source, commit) and the formats it reads
-/// and writes.
+/// info() -> dict: the deck model of this module (name: the ournotes-deck repository; version, source and commit:
+/// its crate ournotes-sim as built) and the formats it reads and writes.
 #[pyfunction]
 fn info(py: Python<'_>) -> PyResult<Bound<'_, PyDict>> {
     let d = PyDict::new(py);
@@ -103,7 +103,7 @@ fn info(py: Python<'_>) -> PyResult<Bound<'_, PyDict>> {
     d.set_item("version", env!("DECK_VERSION"))?;
     d.set_item("source", env!("DECK_SOURCE"))?;
     d.set_item("commit", env!("DECK_COMMIT"))?;
-    d.set_item("dataFormat", ournotes_deck::data::FORMAT)?;
+    d.set_item("dataFormat", ournotes_sim::data::FORMAT)?;
     d.set_item("format", chartstats::FORMAT)?;
     Ok(d)
 }
