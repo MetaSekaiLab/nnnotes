@@ -97,7 +97,7 @@ A **text** is an object with one string per language of `languages` (`{"ja": ...
 | `master.tables.<Table>.sha256` | SHA-256 of each table's file as served, before decoding: the song tables (`MasterLiveMusic`, `MasterLiveMusicScore`, `MasterText`, `MasterBand`, `MasterCharacter`, `MasterTag`, `MasterLiveMusicCategory`, `MasterSound`, `MasterSoundCueSheet`, `MasterLiveScoreRank`), the tables of the Gekisou catalog (`MasterMemberCard`, `MasterSupportCard`, `MasterSupportCardRank`, `MasterGekisouSkill`, `MasterGekisouSkillEffect`, `MasterGekisouSupportSkill`, `MasterGekisouSupportSkillEffect`) and, when the deck model runs or with `--full`, the tables of [the deck input](#the-deck-input---full) |
 | `exporter.name`, `exporter.version` | `nnnotes` and its version |
 | `exporter.chartFormat` | the format of the chart converter the notes come from, `nnnotes.live-score/1` |
-| `deck` | the deck model: `{name, version, source, commit, format}`, `ournotes-deck`, its package version, repository, the git commit nnnotes is built with and the statistics format (`ournotes-deck.chart-stats/2`); null with `--no-deck` |
+| `deck` | the deck model: `{name, version, source, commit, format}`, `ournotes-deck`, the package version of its crate ournotes-sim, the repository, the git commit nnnotes is built with and the statistics format (`ournotes-deck.chart-stats/2`); null with `--no-deck` |
 
 ### bands, characters, tags, categories
 
@@ -432,12 +432,12 @@ The deck model reads the same content under the format name `nnnotes.deck-data/1
 
 ## Building
 
-The deck model is the Rust crate ournotes-deck, pinned by commit in `rust/Cargo.toml` (and `rust/Cargo.lock`) and
-built into the extension module `nnnotes._deck` with [maturin](https://www.maturin.rs/) (PyO3, the stable ABI of
-Python 3.11 and later: one wheel per platform). The release workflow builds the wheels; `pip install .` or
-`pip install -e .` in a checkout builds the module with the Rust toolchain. The same nnnotes version always carries
-the same deck model: the commit moves only through a pull request (`.github/workflows/deck.yml` opens one when
-ournotes-deck's `main` moves), and `provenance.deck.commit` names it in every file.
+The deck model is the Rust crate ournotes-sim of the ournotes-deck repository, pinned by commit in `rust/Cargo.toml`
+(and `rust/Cargo.lock`) and built into the extension module `nnnotes._deck` with [maturin](https://www.maturin.rs/)
+(PyO3, the stable ABI of Python 3.11 and later: one wheel per platform). The release workflow builds the wheels;
+`pip install .` or `pip install -e .` in a checkout builds the module with the Rust toolchain. The same nnnotes
+version always carries the same deck model: the commit moves only through a pull request (`.github/workflows/deck.yml`
+opens one when ournotes-deck's `main` moves), and `provenance.deck.commit` names it in every file.
 
 ## Versions
 

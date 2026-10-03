@@ -1,8 +1,8 @@
 name: Deck model
 
-# nnnotes builds the deck model ournotes-deck at the commit rust/Cargo.toml pins, so that one nnnotes version always
-# carries one deck model. When ournotes-deck's main moves past that commit, this opens a pull request that moves the
-# pin; CI then builds and tests it like any change.
+# nnnotes builds the deck model, the crate ournotes-sim of the ournotes-deck repository, at the commit rust/Cargo.toml
+# pins, so that one nnnotes version always carries one deck model. When ournotes-deck's main moves past that commit,
+# this opens a pull request that moves the pin; CI then builds and tests it like any change.
 on:
   schedule:
     - cron: "17 3 * * *"
@@ -22,9 +22,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          pinned=$(sed -nE 's/^ournotes-deck = .*rev = "([0-9a-f]{40})".*/\1/p' rust/Cargo.toml)
+          pinned=$(sed -nE 's/^ournotes-sim = .*rev = "([0-9a-f]{40})".*/\1/p' rust/Cargo.toml)
+          [ -n "$pinned" ] || { echo "rust/Cargo.toml pins no ournotes-sim commit" >&2; exit 1; }
           head=$(git ls-remote https://github.com/empty-sekai/ournotes-deck refs/heads/main | cut -f1)
-          # ahead: main contains the pinned commit and more; behind or diverged: leave the pin to a person
+          # ahead: main contains the pinned commit and more; behind or diverged: leave the pin to a person (with no
+          # common history the comparison itself fails)
           status=$(gh api "repos/empty-sekai/ournotes-deck/compare/$pinned...$head" --jq .status)
           echo "pinned $pinned, main $head: $status"
           echo "pinned=$pinned" >> "$GITHUB_OUTPUT"
@@ -35,7 +37,7 @@ jobs:
         working-directory: rust
         run: |
           sed -i -E 's/(rev = ")${{ steps.deck.outputs.pinned }}(")/\1${{ steps.deck.outputs.head }}\2/' Cargo.toml
-          cargo update -p ournotes-deck
+          cargo update -p ournotes-sim
       - uses: peter-evans/create-pull-request@v7
         if: steps.deck.outputs.move == 'true'
         with:

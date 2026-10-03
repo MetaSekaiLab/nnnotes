@@ -30,7 +30,7 @@ from pathlib import Path
 from .apkset import ApkSet
 from typing import Callable
 
-DECK_FORMAT = "nnnotes.deck-data/1"         # the deck model's input format (ournotes-deck data::FORMAT)
+DECK_FORMAT = "nnnotes.deck-data/1"         # the deck model's input format (ournotes-sim data::FORMAT)
 CHART_FORMAT = "nnnotes.live-score/1"      # score.convert's format: the converter the notes come from
 CHART_PREFIX = "Live/MusicScore/"          # + MasterLiveMusicScore._musicScoreTextFileName
 MANIFEST = "MasterManifest.json"

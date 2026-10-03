@@ -579,7 +579,7 @@ def test_gekisou_catalog_levels(tmp_path):
 
 
 def test_published_seeds():
-    # ournotes-deck tests/gekisou_play.rs: published_seeds_are_fixed_and_nested
+    # ournotes-deck crates/ournotes-sim/tests/gekisou_play.rs: published_seeds_are_fixed_and_nested
     assert musicdata.published_seeds(8) == [-70152769, -452351740, 156766337, -1696681451, -1283484205, -895566507,
                                             322491774, 2099122494]
     assert musicdata.published_seeds(64)[:8] == musicdata.published_seeds(8)

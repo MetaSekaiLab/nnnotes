@@ -4,7 +4,7 @@ name = "nnnotes-deck"
 version = "0.1.3"
 edition = "2024"
 rust-version = "1.85"
-description = "nnnotes._deck: the ournotes-deck chart statistics as a Python extension module"
+description = "nnnotes._deck: the ournotes-sim chart statistics as a Python extension module"
 license = "MIT"
 publish = false
 
@@ -14,8 +14,9 @@ crate-type = ["cdylib"]
 
 [dependencies]
 pyo3 = { version = "0.29", features = ["abi3-py311"] }
-# pinned by commit; .github/workflows/deck.yml opens a pull request when ournotes-deck moves
-ournotes-deck = { git = "https://github.com/empty-sekai/ournotes-deck", rev = "dbd9cf01a4854808dceb6aedcd4041af372faeee" }
+# the deck model, the crate ournotes-sim of the ournotes-deck repository, pinned by commit;
+# .github/workflows/deck.yml opens a pull request when ournotes-deck's main moves
+ournotes-sim = { git = "https://github.com/empty-sekai/ournotes-deck", rev = "e27d289d549aff74955977659e1bee5c72d6a4f5" }
 serde_json = { version = "1", features = ["raw_value", "arbitrary_precision"] }
 
 [profile.release]
