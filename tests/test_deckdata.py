@@ -214,6 +214,24 @@ def test_vip_identity_is_exported_independently_from_effect_rows(tmp_path):
     assert document["provenance"]["tables"]["MasterVip"] == hashlib.sha256((tmp_path / "m/MasterVip.bin").read_bytes()).hexdigest()
 
 
+def test_character_rank_carries_its_experience_threshold(tmp_path):
+    def rows(name):
+        if name == "MasterCharacterRank":
+            return [{"_id": 1, "_rank": 1, "_exp": 0, "_bonus": 0}, {"_id": 2, "_rank": 2, "_exp": 3, "_bonus": 5}]
+        return rows_of(name)
+
+    ranks = export(tmp_path, rows=rows)["master"]["MasterCharacterRank"]
+    # A character's rank is the highest rank whose cumulative experience it has reached.
+    assert ranks == {"columns": ["_id", "_rank", "_exp", "_bonus"], "rows": [[1, 1, 0, 0], [2, 2, 3, 5]]}
+
+    def without_exp(name):
+        if name == "MasterCharacterRank":
+            return [{"_id": 1, "_rank": 1, "_bonus": 0}]
+        return rows_of(name)
+    failing(tmp_path, r"MasterCharacterRank: row 0 \(_id 1\) has no column _exp",
+            src=deckdata.master_files(master_dir(tmp_path, without_exp, name="p")))
+
+
 def test_charts(tmp_path):
     export(tmp_path)
     charts = json.loads((tmp_path / "deck.json").read_bytes())["charts"]

@@ -63,7 +63,7 @@ TABLES: tuple[tuple[str, tuple[str, ...] | None], ...] = tuple(
                               "_supportSkill02Level _gekisouSupportSkill01Level _gekisouSupportSkill02Level"),
     ("MasterCharacter", "_id _bandID"),
     ("MasterBand", "_id"),
-    ("MasterCharacterRank", "_id _rank _bonus"),
+    ("MasterCharacterRank", "_id _rank _exp _bonus"),
     ("MasterCharacterTotalRank", "_id _totalRank _bonus"),
     ("MasterBandItemSkillEffect", "_id _bandItemId _level _skillTargetIDs _skillEffectType _effectValue"),
     ("MasterBandItem", "_id _bandId"),
