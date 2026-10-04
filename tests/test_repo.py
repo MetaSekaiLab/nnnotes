@@ -37,11 +37,19 @@ def workflow_triggers(text: str) -> list[str]:
     return events
 
 
-def test_commit_messages_are_checked_on_pull_requests_only():
+def test_commit_messages_are_checked_on_pull_requests_and_dispatched_branches():
     text = (ROOT / ".github" / "workflows" / "commitlint.yml").read_text(encoding="utf-8")
-    assert workflow_triggers(text) == ["pull_request"]
+    assert workflow_triggers(text) == ["pull_request", "workflow_dispatch"]
     assert "event_name == 'push'" not in text and "github.event.before" not in text
     assert "github.event.pull_request.title" in text and "github.event.pull_request.base.sha" in text
+
+
+def test_the_deck_pin_pull_request_gets_its_checks():
+    workflows = ROOT / ".github" / "workflows"
+    deck = (workflows / "deck.yml").read_text(encoding="utf-8")
+    for name in ("ci.yml", "commitlint.yml"):
+        assert "workflow_dispatch" in workflow_triggers((workflows / name).read_text(encoding="utf-8"))
+        assert f"gh workflow run {name} --repo \"$GITHUB_REPOSITORY\" --ref deck/update" in deck
 
 
 @pytest.mark.parametrize("name", ["README.md", "README.en.md"])

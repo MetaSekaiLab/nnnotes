@@ -1,10 +1,12 @@
 name: Commit messages
 
-# Pull requests only: the PR title and the PR's commits follow Conventional Commits. Commits pushed to main directly
-# are not checked.
+# Pull requests: the PR title and the PR's commits follow Conventional Commits. Commits pushed to main directly are
+# not checked. Dispatched on a branch (the Deck model workflow does so for the pull request it opens): the branch's
+# commits since main.
 on:
   pull_request:
     types: [opened, edited, synchronize, reopened]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -22,11 +24,14 @@ jobs:
       - name: Install commitlint
         run: npm install --no-save --no-package-lock @commitlint/cli@19 @commitlint/config-conventional@19
       - name: Pull request title
+        if: github.event_name == 'pull_request'
         env:
           TITLE: ${{ github.event.pull_request.title }}
         run: printf '%s\n' "$TITLE" | npx --no-install commitlint --verbose
-      - name: Pull request commits
-        run: >-
-          npx --no-install commitlint --verbose
-          --from ${{ github.event.pull_request.base.sha }}
-          --to ${{ github.event.pull_request.head.sha }}
+      - name: Commits
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          from=${BASE:-$(git merge-base origin/main "$HEAD")}
+          npx --no-install commitlint --verbose --from "$from" --to "$HEAD"

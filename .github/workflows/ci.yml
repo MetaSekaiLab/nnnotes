@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  # the Deck model workflow dispatches CI on the pull request it opens
+  workflow_dispatch:
 
 permissions:
   contents: read
