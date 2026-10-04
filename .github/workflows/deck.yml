@@ -2,13 +2,15 @@ name: Deck model
 
 # nnnotes builds the deck model, the crate ournotes-sim of the ournotes-deck repository, at the commit rust/Cargo.toml
 # pins, so that one nnnotes version always carries one deck model. When ournotes-deck's main moves past that commit,
-# this opens a pull request that moves the pin; CI then builds and tests it like any change.
+# this opens a pull request that moves the pin and dispatches CI and the commit message check on its branch (a pull
+# request opened with the workflow token starts no workflow by itself); their checks land on the pull request.
 on:
   schedule:
     - cron: "17 3 * * *"
   workflow_dispatch:
 
 permissions:
+  actions: write
   contents: write
   pull-requests: write
 
@@ -39,6 +41,7 @@ jobs:
           sed -i -E 's/(rev = ")${{ steps.deck.outputs.pinned }}(")/\1${{ steps.deck.outputs.head }}\2/' Cargo.toml
           cargo update -p ournotes-sim
       - uses: peter-evans/create-pull-request@v8
+        id: pr
         if: steps.deck.outputs.move == 'true'
         with:
           branch: deck/update
@@ -50,3 +53,10 @@ jobs:
 
             Music data files made after this change name the new commit in `provenance.deck.commit`; their deck
             statistics may differ.
+      - name: Check the pull request
+        if: steps.pr.outputs.pull-request-operation == 'created' || steps.pr.outputs.pull-request-operation == 'updated'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref deck/update
+          gh workflow run commitlint.yml --repo "$GITHUB_REPOSITORY" --ref deck/update
