@@ -1090,7 +1090,7 @@ def tables_of(deck: bool, full: bool) -> tuple[str, ...]:
 def export(out, src: deckdata.MasterSource, key, fetch: Callable[[str], bytes],
            bgm: Callable[[str, str], dict] | None, *, region: str, client: dict, catalog: dict,
            deck: Deck | None = None, full: bool = False, jacket: Callable[[str], bytes] | None = None,
-           jackets_dir=None, replay_dir=None, replay_engine=None) -> dict:
+           jackets_dir=None, replay_dir=None, replay_engine=None, recommend_engine=None) -> dict:
     """Read the master data, every chart and every BGM cue sheet, measure the charts with `deck`, then write the file
     `out` (gzip when it ends in `.gz`) through a temporary file and a rename; with `jacket` and `jackets_dir`, first
     every song's jacket as `<jackets_dir>/<jacket>.webp`. Returns the summary."""
@@ -1099,6 +1099,8 @@ def export(out, src: deckdata.MasterSource, key, fetch: Callable[[str], bytes],
     try:
         if replay_engine is not None and replay_dir is None:
             raise deckdata.DeckDataError("--replay-engine needs --replay-dir")
+        if recommend_engine is not None and replay_dir is None:
+            raise deckdata.DeckDataError("--recommend-engine needs --replay-dir")
         if replay_dir is not None and bgm is None:
             raise deckdata.DeckDataError("replay export requires actual BGM lengths; --no-bgm is incompatible")
         tables, shas = deckdata.read_master(src, key, tables_of(deck is not None, full or replay_dir is not None))
@@ -1107,7 +1109,7 @@ def export(out, src: deckdata.MasterSource, key, fetch: Callable[[str], bytes],
         replay_files = None
         if replay_dir is not None:
             from . import replaydata
-            replay_files, replay_manifest = replaydata.bundle(doc, replay_engine)
+            replay_files, replay_manifest = replaydata.bundle(doc, replay_engine, recommend_engine)
             manifest_sha = hashlib.sha256(replay_files["manifest.json"]).hexdigest()
             replay_target = Path(replay_dir) / manifest_sha
             try:

@@ -1,6 +1,6 @@
 # Shared Rust/WASM replay inputs
 
-`nnnotes music-data --replay-dir OUT/replay --replay-engine WASM_PKG -o OUT/music-data.json` writes the normalized input of the pinned deck model. The engine package must contain `ournotes_replay.js`, `ournotes_replay_bg.wasm` and `build.json`; its commit and both file hashes must match the measured model. Actual ACB cue length is required. Original encrypted master files, chart blobs and native binaries are not copied.
+`nnnotes music-data --replay-dir OUT/replay --replay-engine WASM_PKG [--recommend-engine WASM_PKG] -o OUT/music-data.json` writes the normalized input of the pinned deck model. The replay engine package must contain `ournotes_replay.js`, `ournotes_replay_bg.wasm` and `build.json` (`format:"ournotes.replay-engine/1"`); the optional recommendation engine package, the wasm-bindgen `--target web` build of the deck model's `wasm/recommend`, must contain `ournotes_recommend.js`, `ournotes_recommend_bg.wasm` and `build.json` (`format:"ournotes.recommend-engine/1"`). Each `build.json` records `commit`, `jsSha256` and `wasmSha256`; the commit and both file hashes must match the measured model and the package files. Actual ACB cue length is required. Original encrypted master files, chart blobs and native binaries are not copied.
 
 The music-data pointer is:
 
@@ -22,12 +22,18 @@ The music-data pointer is:
     "wasm":{"url":"engine/ournotes_replay_bg.wasm","sha256":"<SHA>","bytes":0},
     "build":{"url":"engine/build.json","sha256":"<SHA>","bytes":0}
   },
+  "recommendEngine": {
+    "model": {"name":"ournotes-deck","version":"<version>","source":"<repository>","commit":"<pinned commit>","format":"ournotes-deck.chart-stats/2"},
+    "js":{"url":"recommend/ournotes_recommend.js","sha256":"<SHA>","bytes":0},
+    "wasm":{"url":"recommend/ournotes_recommend_bg.wasm","sha256":"<SHA>","bytes":0},
+    "build":{"url":"recommend/build.json","sha256":"<SHA>","bytes":0}
+  },
   "unlistedScoreIds":[],
   "clock":"Explicit frames from ReplaySession.template; no Python/JS scoring or scheduling"
 }
 ```
 
-Numbers and SHA placeholders above illustrate the schema; actual manifests contain measured sizes, complete chart entries and computed hashes. A data-only export can leave `engine` null. A publishable interactive bundle supplies the pinned engine. Normalized runtime rows belonging to no listed live song are omitted and recorded in `unlistedScoreIds`.
+Numbers and SHA placeholders above illustrate the schema; actual manifests contain measured sizes, complete chart entries and computed hashes. A data-only export can leave `engine` null. A publishable interactive bundle supplies the pinned engine. `recommendEngine` is present only with `--recommend-engine`; its `model` is the same pinned model as `engine.model` and `deck-data.json`'s `provenance.deck`, so the recommendation module and the deck data it reads come from one model commit and one master snapshot. The module's exported API is the one of `wasm/recommend` at `model.commit`. Normalized runtime rows belonging to no listed live song are omitted and recorded in `unlistedScoreIds`.
 
 Each chart resource is `{format:"nnnotes.replay-chart/1",scoreId,musicLengthMs,chart}`. `chart` retains the existing DeckData record: `asset:{key,sha256}`, equal-length `notes:{id,op,judgementType,timeMs}` arrays in native enumeration order, `skillEvents:{timeMs}` and `fevers:{startMs,endMs}`. `deck-data.json` uses the existing `nnnotes.deck-data/1` schema and adds `provenance.replay.musicLengthsMs:{"<scoreId>":<actual ACB lengthMs>}`. Score-table length is a separate native value derived by the shared Rust chart implementation; it must not be replaced by audio length.
 

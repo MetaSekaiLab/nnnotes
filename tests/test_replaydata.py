@@ -75,6 +75,81 @@ def test_engine_manifest_rejects_stale_pin_and_changed_wasm(tmp_path):
         export(changed, deck=FakeDeck(), replay_dir=changed / "replay", replay_engine=engine)
 
 
+def package(directory, js_name, wasm_name, build_format, commit, js=b"export class Session {}"):
+    """A synthetic wasm-bindgen package with its build.json."""
+    directory.mkdir(parents=True, exist_ok=True)
+    wasm = b"\x00asm\x01\x00\x00\x00"
+    (directory / js_name).write_bytes(js)
+    (directory / wasm_name).write_bytes(wasm)
+    built = {"format": build_format, "commit": commit, "workingTreeDirty": False,
+             "jsSha256": hashlib.sha256(js).hexdigest(), "wasmSha256": hashlib.sha256(wasm).hexdigest()}
+    (directory / "build.json").write_text(json.dumps(built))
+    return built
+
+
+def replay_package(tmp_path):
+    return package(tmp_path / "replay-pkg", replaydata.JS, replaydata.WASM, "ournotes.replay-engine/1", FakeDeck.COMMIT)
+
+
+def recommend_package(tmp_path, commit=FakeDeck.COMMIT, build_format="ournotes.recommend-engine/1"):
+    return package(tmp_path / "recommend-pkg", replaydata.RECOMMEND_JS, replaydata.RECOMMEND_WASM, build_format, commit,
+                   b"export class RecommendationSession {}")
+
+
+def test_recommend_engine_shares_the_model_of_the_deck_data(tmp_path):
+    replay_package(tmp_path)
+    built = recommend_package(tmp_path)
+    plain = tmp_path / "plain"
+    plain.mkdir()
+    result = export(plain, deck=FakeDeck(), replay_dir=plain / "replay", replay_engine=tmp_path / "replay-pkg")
+    assert "recommendEngine" not in json.loads((plain / result["replay"]["manifestUrl"]).read_bytes())
+    out = tmp_path / "out"
+    out.mkdir()
+    result = export(out, deck=FakeDeck(), replay_dir=out / "replay", replay_engine=tmp_path / "replay-pkg",
+                    recommend_engine=tmp_path / "recommend-pkg")
+    manifest_path = out / result["replay"]["manifestUrl"]
+    manifest = json.loads(manifest_path.read_bytes())
+    entry = manifest["recommendEngine"]
+    data = json.loads((manifest_path.parent / manifest["deckData"]["url"]).read_bytes())
+    assert list(entry) == ["model", "js", "wasm", "build"]
+    assert entry["model"] == manifest["engine"]["model"] == data["provenance"]["deck"]
+    assert entry["model"]["commit"] == FakeDeck.COMMIT
+    assert [entry[k]["url"] for k in ("js", "wasm", "build")] == [
+        "recommend/ournotes_recommend.js", "recommend/ournotes_recommend_bg.wasm", "recommend/build.json"]
+    assert manifest["engine"]["build"]["url"] == "engine/build.json"
+    for key, name in (("js", replaydata.RECOMMEND_JS), ("wasm", replaydata.RECOMMEND_WASM)):
+        payload = (manifest_path.parent / entry[key]["url"]).read_bytes()
+        assert payload == (tmp_path / "recommend-pkg" / name).read_bytes()
+        assert (entry[key]["sha256"], entry[key]["bytes"]) == (hashlib.sha256(payload).hexdigest(), len(payload))
+    assert (entry["js"]["sha256"], entry["wasm"]["sha256"]) == (built["jsSha256"], built["wasmSha256"])
+    build = (manifest_path.parent / entry["build"]["url"]).read_bytes()
+    assert json.loads(build) == built
+    assert (entry["build"]["sha256"], entry["build"]["bytes"]) == (hashlib.sha256(build).hexdigest(), len(build))
+
+
+@pytest.mark.parametrize("change,message", [
+    ("commit", "recommend engine: build.json commit differs"),
+    ("format", "recommend engine: build.json commit differs"),
+    ("wasm", "recommend engine: JS/WASM SHA differs"),
+    ("missing", "recommend engine: missing ournotes_recommend.js"),
+    ("no-replay-dir", "--recommend-engine needs --replay-dir"),
+])
+def test_recommend_engine_rejects_another_build(tmp_path, change, message):
+    replay_package(tmp_path)
+    recommend_package(tmp_path, commit="0" * 40 if change == "commit" else FakeDeck.COMMIT,
+                      build_format="ournotes.replay-engine/1" if change == "format" else "ournotes.recommend-engine/1")
+    pkg = tmp_path / "recommend-pkg"
+    if change == "wasm":
+        (pkg / replaydata.RECOMMEND_WASM).write_bytes(b"\x00asm\x01\x00\x00\x00changed")
+    if change == "missing":
+        (pkg / replaydata.RECOMMEND_JS).unlink()
+    replay = {} if change == "no-replay-dir" else {"replay_dir": tmp_path / "replay",
+                                                    "replay_engine": tmp_path / "replay-pkg"}
+    with pytest.raises(musicdata.MusicDataError, match=message):
+        export(tmp_path, deck=FakeDeck(), recommend_engine=pkg, **replay)
+    assert not (tmp_path / "music.json").exists() and not (tmp_path / "replay").exists()
+
+
 def test_final_export_rejects_unmet_sampling_instead_of_publishing_flag(tmp_path):
     def unmet(chart):
         apt = chart.get("gekisouAptitude")
