@@ -498,6 +498,30 @@ def test_catalog_versions_import_list_and_diff(tmp_path, capsys):
     assert nn(capsys, "catalogs", "diff", "v1", "v9", *s)[0] == 2
 
 
+def test_catalog_import_takes_the_resource_version_from_the_file_name(tmp_path, capsys):
+    s = ["--store", tmp_path / "s"]
+    named = tmp_path / "catalog_1.0.0.201_en.bin"
+    named.write_bytes(catalog_bytes())
+    main = tmp_path / "catalog_main_en.bin"
+    main.write_bytes(synth.CatalogWriter().build([(NAMES["shared"], synth.remote(NAMES["shared"]), [])]))
+    assert nn(capsys, "catalogs", "import", named, *s)[0] == 0
+    assert nn(capsys, "catalogs", "import", main, *s)[0] == 0
+    vs = json.loads(nn(capsys, "catalogs", "list", "--json", *s)[1])["versions"]
+    assert [(v["labels"], v["resourceVersion"]) for v in vs] == [
+        (["1.0.0.201"], "1.0.0.201"), ([contract.sha256(main.read_bytes())[:12]], None)]
+
+
+def test_catalog_import_resource_version_option():
+    file = Path("catalog_1.0.0.201_en.bin")
+    assert cli_assets._import_resource_version("1.0.0.300", file, None) == "1.0.0.300"
+    assert cli_assets._import_resource_version(None, Path("renamed.bin"), None) is None
+    assert cli_assets._import_resource_version(None, file, {"version": "1.0.0.300"}) == "1.0.0.300"
+    with pytest.raises(ValueError, match="differs from the catalog's source version"):
+        cli_assets._import_resource_version("1.0.0.201", file, {"version": "1.0.0.300"})
+    with pytest.raises(ValueError, match="--resource-version"):
+        cli_assets._import_resource_version("../x", file, None)
+
+
 def test_store_verify(tmp_path, capsys, fake):
     d = setup_data(tmp_path)
     export(capsys, tmp_path, d, "s", "o")

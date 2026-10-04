@@ -8,7 +8,7 @@ the store.
     nnnotes plan [the selection and parameters of export] [-o OUT] [--json] [--since RUN] [--check] [--census]
                  [--emit-tasks DIR] [--why TASK]
     nnnotes run-stage TASK.json|DIR [...] [--store DIR] [--fetch] [--force]
-    nnnotes catalogs list [--json] | import FILE [--label L] | fetch [--label L] | diff A B [--json]
+    nnnotes catalogs list [--json] | import FILE [--label L] [--resource-version V] | fetch [--label L] | diff A B [--json]
     nnnotes store verify [--quick]
 
 The pipeline is the registry STAGE_SOURCES in order: each entry names the module and attribute of a stage (a Stage
@@ -47,6 +47,7 @@ from __future__ import annotations
 import argparse
 import fnmatch
 import json
+import re
 import sys
 import threading
 import zipfile
@@ -60,7 +61,7 @@ from types import SimpleNamespace
 
 from .apkset import ApkSet
 from . import contract
-from .config import ConfigError, describe as describe_setting, usable_cpus, use
+from .config import ConfigError, check_catalog_version, describe as describe_setting, usable_cpus, use
 from .contract import Cost, IncompatibleTask, Input, Task
 from .stages import Env, Pending, Stage, describe, execute
 
@@ -1335,6 +1336,28 @@ def _apk_catalog(args, cfg) -> bytes | None:
     return apk_catalog(apk)
 
 
+CATALOG_FILE = re.compile(r"catalog_([A-Za-z0-9][A-Za-z0-9.-]*)_[A-Za-z0-9-]+\.bin")
+
+
+def _import_resource_version(given: str | None, file: Path, source: dict | None) -> str | None:
+    """The resource version of an imported catalog: `given` (--resource-version), else the JP source's version, else
+    the version in an international file name `catalog_<version>_<language>.bin` (none for `main`). A JP source is
+    authoritative: a different `given` is an error."""
+    if given is not None:
+        try:
+            check_catalog_version(given)
+        except ValueError as e:
+            raise ValueError(f"--resource-version {given!r}: {e}") from None
+    if source is not None:
+        if given is not None and given != source["version"]:
+            raise ValueError(f"--resource-version {given} differs from the catalog's source version {source['version']}")
+        return source["version"]
+    if given is not None:
+        return given
+    m = CATALOG_FILE.fullmatch(file.name)
+    return m[1] if m and m[1] != "main" and ".." not in m[1] else None
+
+
 def cmd_catalogs_import(args, cfg, common):
     try:
         remote = Path(args.file).read_bytes()
@@ -1345,9 +1368,10 @@ def cmd_catalogs_import(args, cfg, common):
         if cfg.provider() == "jp":
             from .jp import read_source
             source = read_source(args.file, remote).to_dict()
+        resource = _import_resource_version(args.resource_version, Path(args.file), source)
         v = _db(args, cfg).add(remote, _apk_catalog(args, cfg), label=args.label,
                                region=cfg.get("catalog", "region"), language=cfg.get("catalog", "language"),
-                               resource_version=args.resource_version,
+                               resource_version=resource,
                                apk_version_name=_apk_version(cfg.path("paths", "apk")), source=source)
     except ValueError as e:
         args.usage(str(e))
@@ -1525,7 +1549,9 @@ def register(sub, common=None) -> None:
     m.add_argument("file", help="catalog_<version>_<language>.bin")
     m.add_argument("--label", help="label of the version (default: its resource version, else the sha256 prefix)")
     m.add_argument("--apk-catalog", help="the APK's catalog.bin (default: read from [paths] apk)")
-    m.add_argument("--resource-version", help="the game's resource version of this catalog")
+    m.add_argument("--resource-version",
+                   help="the game's resource version of this catalog (default: the JP source's version, else the "
+                        "version in the file name catalog_<version>_<language>.bin)")
     _store_arg(m)
     m.set_defaults(func=bind(cmd_catalogs_import), usage=m.error)
     m = csub.add_parser("fetch", help="fetch the region's current catalog and import it")

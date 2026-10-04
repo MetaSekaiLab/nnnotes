@@ -25,7 +25,7 @@ nnnotes export -o OUT [--layout original[,cas]] [--select group:G|key:PREFIX|bun
 nnnotes plan  [the selection and parameters of export] [-o OUT] [--json] [--since RUN] [--check] [--census]
               [--emit-tasks DIR] [--why TASK]
 nnnotes run-stage TASK.json|DIR [...] [--store DIR] [--fetch] [--force]
-nnnotes catalogs list [--json] | import FILE [--label L] [--apk-catalog FILE] | fetch [--label L]
+nnnotes catalogs list [--json] | import FILE [--label L] [--apk-catalog FILE] [--resource-version V] | fetch [--label L]
                  | diff OLD NEW [--json]
 nnnotes store verify [--quick]
 ```
@@ -109,8 +109,10 @@ The catalog versions of a store: `import` a catalog file (with the APK's catalog
 them (labels, version ids or sha256 prefixes): keys added, removed and changed, bundles and raw files by stable name,
 the keys that reach a changed file, and, when a run over each version has stored its address table, the objects by
 stable address (an object keeps its stable address while its object id changes with its bundle's content). A version
-is labelled by `--label`, else by the resource version (`fetch`, when the region has an API root), else by the
-first 12 hex digits of its sha256. `export` imports the current catalog when it is not imported yet.
+is labelled by `--label`, else by its resource version, else by the first 12 hex digits of its sha256. `fetch`
+records the resource version it downloads (none for `main`); `import` takes `--resource-version`, else the JP
+catalog's source version, else the version in a file name `catalog_<version>_<language>.bin` as `fetch` and the
+cache name them (none for `main`). `export` imports the current catalog when it is not imported yet.
 
 ### store verify
 
