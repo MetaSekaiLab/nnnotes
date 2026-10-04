@@ -143,6 +143,16 @@ nnnotes web out/site --live2d adv_live2d_rana_003_casual_spring_01 --player <our
 
 `web` 构建的耗时分布，以及其中哪些部分已由编译代码执行，见 [docs/performance.md](docs/performance.md)。
 
+## 版本记录
+
+每个版本的改动见 [CHANGELOG.md](CHANGELOG.md)，由 [git-cliff](https://git-cliff.org/) 根据提交生成。发版时，改版本号的那个提交同时重新生成它：
+
+```bash
+git cliff --tag vX.Y.Z -o CHANGELOG.md
+```
+
+推送 `vX.Y.Z` 标签后，发布流程会核对版本号，并确认 CHANGELOG.md 里有这个版本。
+
 ## License
 
 MIT，见 [LICENSE](LICENSE)。

@@ -45,6 +45,7 @@ module-name = "nnnotes._deck"
 manifest-path = "rust/Cargo.toml"
 profile = "release"
 locked = true
+include = [{ path = "CHANGELOG.md", format = "sdist" }]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
