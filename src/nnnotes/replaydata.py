@@ -29,8 +29,13 @@ def _package(files: dict[str, bytes], source: Path, model: dict | None, name: st
         built = json.loads((source / "build.json").read_text(encoding="utf8"))
     except (OSError, ValueError):
         raise deckdata.DeckDataError(f"{name}: missing or malformed build.json") from None
-    if built.get("format") != build_format or not model or built.get("commit") != model.get("commit"):
-        raise deckdata.DeckDataError(f"{name}: build.json commit differs from the pinned deck model")
+    if not model or not model.get("commit"):
+        raise deckdata.DeckDataError(f"{name}: the pinned deck model identity is required")
+    if built.get("format") != build_format:
+        raise deckdata.DeckDataError(f"{name}: build.json format is {built.get('format')!r}, not {build_format}")
+    if built.get("commit") != model["commit"]:
+        raise deckdata.DeckDataError(f"{name}: build.json commit {built.get('commit')!r} differs from the pinned "
+                                     f"deck model {model['commit']}")
     js_path, wasm_path, build_path = f"{prefix}/{js}", f"{prefix}/{wasm}", f"{prefix}/build.json"
     for file, path in ((js, js_path), (wasm, wasm_path)):
         if not (source / file).is_file():
@@ -38,8 +43,6 @@ def _package(files: dict[str, bytes], source: Path, model: dict | None, name: st
         files[path] = (source / file).read_bytes()
     if not files[wasm_path].startswith(b"\x00asm\x01\x00\x00\x00"):
         raise deckdata.DeckDataError(f"{name}: not a WASM v1 module")
-    if not model.get("commit"):
-        raise deckdata.DeckDataError(f"{name}: the pinned deck model identity is required")
     if built.get("jsSha256") != hashlib.sha256(files[js_path]).hexdigest() or \
             built.get("wasmSha256") != hashlib.sha256(files[wasm_path]).hexdigest():
         raise deckdata.DeckDataError(f"{name}: JS/WASM SHA differs from build.json")
