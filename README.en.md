@@ -191,6 +191,17 @@ everywhere.
 See [docs/performance.md](https://github.com/MetaSekaiLab/nnnotes/blob/main/docs/performance.md) for where a
 `web` build spends its time and which parts of it run in compiled code.
 
+## Changelog
+
+[CHANGELOG.md](https://github.com/MetaSekaiLab/nnnotes/blob/main/CHANGELOG.md) lists the changes in every version,
+generated from the commits by [git-cliff](https://git-cliff.org/). The commit that bumps the version regenerates it:
+
+```bash
+git cliff --tag vX.Y.Z -o CHANGELOG.md
+```
+
+When a `vX.Y.Z` tag is pushed, the release workflow checks the versions and that CHANGELOG.md has a section for it.
+
 ## License
 
 MIT, see [LICENSE](https://github.com/MetaSekaiLab/nnnotes/blob/main/LICENSE).

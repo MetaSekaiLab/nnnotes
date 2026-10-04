@@ -22,6 +22,10 @@ jobs:
             echo "tag $GITHUB_REF_NAME, package $version and rust/Cargo.toml $cargo differ" >&2
             exit 1
           fi
+          if ! grep -qF "## [$version]" CHANGELOG.md; then
+            echo "CHANGELOG.md has no section for $version" >&2
+            exit 1
+          fi
 
   # one abi3 wheel (CPython 3.11 and later) per platform with the extension module nnnotes._deck, and the sdist
   wheels:
