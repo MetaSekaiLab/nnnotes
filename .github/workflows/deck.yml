@@ -38,7 +38,7 @@ jobs:
         run: |
           sed -i -E 's/(rev = ")${{ steps.deck.outputs.pinned }}(")/\1${{ steps.deck.outputs.head }}\2/' Cargo.toml
           cargo update -p ournotes-sim
-      - uses: peter-evans/create-pull-request@v7
+      - uses: peter-evans/create-pull-request@v8
         if: steps.deck.outputs.move == 'true'
         with:
           branch: deck/update
