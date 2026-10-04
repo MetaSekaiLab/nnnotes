@@ -693,7 +693,8 @@ def cmd_music_data(args, cfg):
                              catalog=deckdata.catalog_info(cat, cli_assets.store_root(args, cfg)),
                              deck=deck, full=args.full,
                              jacket=musicdata.catalog_jacket(cat) if args.jackets else None,
-                             jackets_dir=args.jackets, replay_dir=args.replay_dir, replay_engine=args.replay_engine)
+                             jackets_dir=args.jackets, replay_dir=args.replay_dir, replay_engine=args.replay_engine,
+                             recommend_engine=args.recommend_engine)
     except (deckdata.DeckDataError, musicdata.MusicDataError) as e:
         sys.exit(f"nnnotes: {e}")
     _print_json(r)
@@ -1003,6 +1004,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="write canonical runtime DeckData, per-chart inputs and replay manifest under the output directory")
     c.add_argument("--replay-engine", metavar="DIR",
                    help="copy pinned wasm-bindgen JS/WASM + build.json into --replay-dir")
+    c.add_argument("--recommend-engine", metavar="DIR",
+                   help="copy the pinned wasm-bindgen recommendation JS/WASM + build.json into --replay-dir")
     c.add_argument("--jackets", metavar="DIR",
                    help="also write every song's jacket as DIR/<jacket>.webp (at most 320 px on the longer side)")
     _out(c, "output file (.json, or .json.gz for gzip)")

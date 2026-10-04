@@ -12,13 +12,43 @@ FORMAT = "nnnotes.replay-manifest/1"
 CHART_FORMAT = "nnnotes.replay-chart/1"
 JS = "ournotes_replay.js"
 WASM = "ournotes_replay_bg.wasm"
+RECOMMEND_JS = "ournotes_recommend.js"
+RECOMMEND_WASM = "ournotes_recommend_bg.wasm"
 
 
 def _json(value) -> bytes:
     return deckdata.encode(deckdata._value(value, "replay input"))
 
 
-def bundle(music: dict, engine_dir: Path | None = None) -> tuple[dict[str, bytes], dict]:
+def _package(files: dict[str, bytes], source: Path, model: dict | None, name: str, build_format: str, prefix: str,
+             js: str, wasm: str) -> tuple[str, str, str]:
+    """Copy a wasm-bindgen package of the pinned deck model (`js`, `wasm`, build.json) into `files` under `prefix`;
+    build.json must name the model's commit and both file hashes. Returns the JS, WASM and build.json paths."""
+    source = Path(source)
+    try:
+        built = json.loads((source / "build.json").read_text(encoding="utf8"))
+    except (OSError, ValueError):
+        raise deckdata.DeckDataError(f"{name}: missing or malformed build.json") from None
+    if built.get("format") != build_format or not model or built.get("commit") != model.get("commit"):
+        raise deckdata.DeckDataError(f"{name}: build.json commit differs from the pinned deck model")
+    js_path, wasm_path, build_path = f"{prefix}/{js}", f"{prefix}/{wasm}", f"{prefix}/build.json"
+    for file, path in ((js, js_path), (wasm, wasm_path)):
+        if not (source / file).is_file():
+            raise deckdata.DeckDataError(f"{name}: missing {file} in {source}")
+        files[path] = (source / file).read_bytes()
+    if not files[wasm_path].startswith(b"\x00asm\x01\x00\x00\x00"):
+        raise deckdata.DeckDataError(f"{name}: not a WASM v1 module")
+    if not model.get("commit"):
+        raise deckdata.DeckDataError(f"{name}: the pinned deck model identity is required")
+    if built.get("jsSha256") != hashlib.sha256(files[js_path]).hexdigest() or \
+            built.get("wasmSha256") != hashlib.sha256(files[wasm_path]).hexdigest():
+        raise deckdata.DeckDataError(f"{name}: JS/WASM SHA differs from build.json")
+    files[build_path] = _json(built)
+    return js_path, wasm_path, build_path
+
+
+def bundle(music: dict, engine_dir: Path | None = None,
+           recommend_dir: Path | None = None) -> tuple[dict[str, bytes], dict]:
     """Canonical normalized --full inputs and SHA manifest. Actual ACB length is mandatory.
 
     Runtime arrays retain native enumeration order. ReplaySession.template/run in Rust produce frames and scores.
@@ -60,32 +90,19 @@ def bundle(music: dict, engine_dir: Path | None = None) -> tuple[dict[str, bytes
     model = music["provenance"].get("deck")
     engine = None
     if engine_dir is not None:
-        engine_dir = Path(engine_dir)
-        try:
-            built = json.loads((engine_dir / "build.json").read_text(encoding="utf8"))
-        except (OSError, ValueError):
-            raise deckdata.DeckDataError("replay engine: missing or malformed build.json") from None
-        if built.get("format") != "ournotes.replay-engine/1" or not model or built.get("commit") != model.get("commit"):
-            raise deckdata.DeckDataError("replay engine: build.json commit differs from the pinned deck model")
-        for name in (JS, WASM):
-            source = engine_dir / name
-            if not source.is_file():
-                raise deckdata.DeckDataError(f"replay engine: missing {name} in {engine_dir}")
-            files[f"engine/{name}"] = source.read_bytes()
-        if not files[f"engine/{WASM}"].startswith(b"\x00asm\x01\x00\x00\x00"):
-            raise deckdata.DeckDataError("replay engine: not a WASM v1 module")
-        if not model or not model.get("commit"):
-            raise deckdata.DeckDataError("replay engine: the pinned deck model identity is required")
-        if built.get("jsSha256") != hashlib.sha256(files[f"engine/{JS}"]).hexdigest() or \
-                built.get("wasmSha256") != hashlib.sha256(files[f"engine/{WASM}"]).hexdigest():
-            raise deckdata.DeckDataError("replay engine: JS/WASM SHA differs from build.json")
-        files["engine/build.json"] = _json(built)
+        js, wasm, build = _package(files, engine_dir, model, "replay engine", "ournotes.replay-engine/1", "engine",
+                                   JS, WASM)
         engine = {"model": model, "requestFormat": "ournotes.replay/1", "class": "ReplaySession",
                   "methods": ["describeChart", "template", "run"],
-                  "js": resource(f"engine/{JS}"), "wasm": resource(f"engine/{WASM}"),
-                  "build": resource("engine/build.json")}
+                  "js": resource(js), "wasm": resource(wasm), "build": resource(build)}
+    recommend = None
+    if recommend_dir is not None:
+        js, wasm, build = _package(files, recommend_dir, model, "recommend engine", "ournotes.recommend-engine/1",
+                                   "recommend", RECOMMEND_JS, RECOMMEND_WASM)
+        recommend = {"model": model, "js": resource(js), "wasm": resource(wasm), "build": resource(build)}
     manifest = {"format": FORMAT, "deckData": {"format": deckdata.DECK_FORMAT, **resource("deck-data.json")},
                 "charts": charts, "engine": engine,
+                **({"recommendEngine": recommend} if recommend is not None else {}),
                 "unlistedScoreIds": [c["scoreId"] for c in source_records if str(c["scoreId"]) not in lengths],
                 "clock": "Explicit frames from ReplaySession.template; no Python/JS scoring or scheduling"}
     files["manifest.json"] = _json(manifest)
