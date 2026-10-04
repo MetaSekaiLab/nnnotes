@@ -47,7 +47,8 @@ def test_engine_manifest_rejects_stale_pin_and_changed_wasm(tmp_path):
     (engine / "build.json").write_text(json.dumps(built))
     stale = tmp_path / "stale"
     stale.mkdir()
-    with pytest.raises(musicdata.MusicDataError, match="commit differs"):
+    stale_pin = f"build.json commit '0{{40}}' differs from the pinned deck model {FakeDeck.COMMIT}"
+    with pytest.raises(musicdata.MusicDataError, match=stale_pin):
         export(stale, deck=FakeDeck(), replay_dir=stale / "replay", replay_engine=engine)
     assert not (stale / "music.json").exists()
     built["commit"] = FakeDeck.COMMIT
@@ -128,8 +129,8 @@ def test_recommend_engine_shares_the_model_of_the_deck_data(tmp_path):
 
 
 @pytest.mark.parametrize("change,message", [
-    ("commit", "recommend engine: build.json commit differs"),
-    ("format", "recommend engine: build.json commit differs"),
+    ("commit", "recommend engine: build.json commit '0{40}' differs from the pinned deck model"),
+    ("format", "recommend engine: build.json format is 'ournotes.replay-engine/1', not ournotes.recommend-engine/1"),
     ("wasm", "recommend engine: JS/WASM SHA differs"),
     ("missing", "recommend engine: missing ournotes_recommend.js"),
     ("no-replay-dir", "--recommend-engine needs --replay-dir"),
