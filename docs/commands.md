@@ -679,7 +679,7 @@ in the printed summary and in `SITE.failures.json`, models that fail in the summ
 ```
 nnnotes music-data (--master-files DIR | --apk-master | --decoded-master) [--full] [--no-deck] [--seeds N]
                    [--workers N] [--no-gekisou-aptitude] [--aptitude-max-seeds N] [--aptitude-cross-seeds N]
-                   [--no-bgm] [--jackets DIR] -o FILE
+                   [--stats-cache DIR] [--no-bgm] [--jackets DIR] -o FILE
 ```
 
 Writes one JSON file with every `MasterLiveMusic` song and its charts for one master data version: titles, readings
@@ -697,7 +697,9 @@ master data tables about cards, skills, bonuses, scores and events. Single-skill
 default (not an optimal deck); `--no-gekisou-aptitude` omits it, `--aptitude-max-seeds N` (1024) and
 `--aptitude-cross-seeds N` (64) cap its sampling and cross terms. `--no-deck` skips the deck model (every chart's
 `deck` is null); `--seeds N` (default 8) and `--workers N` (default: every processor) set its seeds on charts with a
-luck range and its threads. The master data is decoded from the files as served: `--master-files DIR` reads
+luck range and its threads. `--stats-cache DIR` keeps every chart's statistics in `DIR` under the SHA-256 of what
+they are a function of (the deck model's sources, these options, the master data tables and the chart) and measures
+only the charts it lacks; `DIR` then holds this file's charts only. The master data is decoded from the files as served: `--master-files DIR` reads
 `DIR/MasterManifest.json` and the `.bin` files it lists (`master download`; the file's region is `[catalog] region`),
 `--apk-master` the same files inside `[paths] apk` (region `embedded`); each file is checked against the manifest's
 SHA-256. `--decoded-master` reads master data decoded elsewhere instead, without the master key: the `<Table>.json`

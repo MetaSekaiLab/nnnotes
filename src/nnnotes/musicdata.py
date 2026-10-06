@@ -306,11 +306,13 @@ class Deck:
     """The deck model (nnnotes._deck): chart statistics of a deck input document, on `workers` threads (None: the
     available parallelism), `seeds` seeds for a chart with a luck range; with `aptitude` every chart's Gekisou aptitude
     too, a variant on at most `aptitude_max_seeds` seeds and its cross terms on at most `aptitude_cross_seeds` (None:
-    the deck model's defaults)."""
+    the deck model's defaults). With a `cache` directory, a chart's statistics are kept there under the SHA-256 of
+    what they are a function of: the model's sources (its `sourceSha256`), the options above, the master tables and
+    the chart; a chart found there is not measured again."""
 
     def __init__(self, seeds: int = DECK_SEEDS, workers: int | None = None, module=None, aptitude: bool = True,
                  aptitude_max_seeds: int | None = None, aptitude_cross_seeds: int | None = None,
-                 require_convergence: bool = True):
+                 require_convergence: bool = True, cache: Path | None = None):
         if module is None:
             try:
                 from . import _deck as module
@@ -321,14 +323,15 @@ class Deck:
         self.aptitude, self.aptitude_max_seeds, self.aptitude_cross_seeds = \
             aptitude, aptitude_max_seeds, aptitude_cross_seeds
         self.require_convergence = require_convergence
+        self.cache = None if cache is None else Path(cache)
+        self.counts: dict | None = None                 # {cached, measured} charts of the last stats()
 
     def info(self) -> dict:
-        """{name, version, source, commit, format} of the deck model."""
+        """{name, version, source, commit, sourceSha256, format} of the deck model."""
         i = self.module.info()
-        return {k: i[k] for k in ("name", "version", "source", "commit", "format")}
+        return {k: i[k] for k in ("name", "version", "source", "commit", "sourceSha256", "format")}
 
-    def stats(self, deck_input: dict) -> dict:
-        """The chart statistics document of a deck input document (deckdata.build), its numbers as written."""
+    def _measure(self, deck_input: dict) -> dict:
         try:
             text = self.module.chart_stats(deckdata.encode(deck_input).decode("utf-8"), self.seeds, self.workers,
                                            aptitude=self.aptitude, aptitude_max_seeds=self.aptitude_max_seeds,
@@ -338,6 +341,52 @@ class Deck:
         doc = json.loads(text, parse_float=deckdata._Num)
         if doc.get("format") != self.info()["format"]:
             raise MusicDataError(f"deck model: wrote {doc.get('format')!r}, expected {self.info()['format']!r}")
+        return doc
+
+    def cache_keys(self, deck_input: dict) -> list[str]:
+        """The cache key of each chart of a deck input document, in chart order."""
+        info = self.info()
+        base = {"sourceSha256": info["sourceSha256"], "format": info["format"], "seeds": self.seeds,
+                "aptitude": self.aptitude, "aptitudeMaxSeeds": self.aptitude_max_seeds,
+                "aptitudeCrossSeeds": self.aptitude_cross_seeds,
+                "master": hashlib.sha256(deckdata.encode(deck_input["master"])).hexdigest()}
+        return [hashlib.sha256(deckdata.encode({**base, "chart": hashlib.sha256(deckdata.encode(c)).hexdigest()}))
+                .hexdigest() for c in deck_input["charts"]]
+
+    def _cached_stats(self, deck_input: dict) -> dict:
+        """stats() through the cache: measure the charts it lacks, add them, then keep only this document's charts."""
+        from .cache import write_atomic
+        keys = self.cache_keys(deck_input)
+        found = {}
+        for k in keys:
+            path = self.cache / f"{k}.json"
+            if path.is_file():
+                found[k] = json.loads(path.read_bytes(), parse_float=deckdata._Num)
+        missing = [c for c, k in zip(deck_input["charts"], keys) if k not in found]
+        doc = self._measure({**deck_input, "charts": missing})
+        if len(doc.get("charts") or []) != len(missing):
+            raise MusicDataError("deck model: the charts measured differ from the charts asked for")
+        self.cache.mkdir(parents=True, exist_ok=True)
+        measured = iter(doc["charts"])
+        for k in keys:
+            if k not in found:
+                found[k] = next(measured)
+                write_atomic(self.cache / f"{k}.json", deckdata.encode(found[k]))
+        for path in self.cache.glob("*.json"):
+            if path.stem not in found:
+                path.unlink()
+        doc["charts"] = [found[k] for k in keys]
+        self.counts = {"cached": len(keys) - len(missing), "measured": len(missing)}
+        return doc
+
+    def stats(self, deck_input: dict) -> dict:
+        """The chart statistics document of a deck input document (deckdata.build), its numbers as written. With a
+        cache, the cache then holds exactly this document's charts."""
+        if self.cache is None:
+            doc = self._measure(deck_input)
+            self.counts = {"cached": 0, "measured": len(deck_input["charts"])}
+        else:
+            doc = self._cached_stats(deck_input)
         if self.require_convergence and self.aptitude:
             unmet = [(c.get("scoreId"), v.get("shape"), v.get("bandMatch"), v.get("seeds"))
                      for c in doc.get("charts", [])
@@ -1140,6 +1189,7 @@ def export(out, src: deckdata.MasterSource, key, fetch: Callable[[str], bytes],
     return {"out": str(out), "format": FORMAT, "region": region, "masterSource": src.source,
             "masterVersion": src.version, "songs": len(doc["songs"]), "charts": len(charts),
             "deck": doc["provenance"]["deck"]["commit"] if deck is not None else None,
+            **({"deckStats": deck.counts} if deck is not None else {}),
             "unplayable": sum(1 for c in charts if c["deck"] and c["deck"]["unplayable"]),
             "full": full, "bgm": bgm is not None, "jackets": len(jackets),
             "bytes": len(data), "fileBytes": len(written), "sha256": hashlib.sha256(written).hexdigest(),
