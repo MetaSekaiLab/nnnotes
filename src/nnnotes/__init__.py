@@ -4,4 +4,4 @@ Reads Addressables catalogs, fetches and decrypts asset bundles, decodes master 
 models, spots, shaders, CRI audio and live charts as JSON and common file formats. Game files, keys and server
 addresses are supplied by the user through the configuration; nothing of the game is included.
 """
-__version__ = "0.1.3"
+__version__ = "0.1.4"
