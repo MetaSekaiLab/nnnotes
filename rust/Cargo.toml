@@ -14,8 +14,8 @@ crate-type = ["cdylib"]
 
 [dependencies]
 pyo3 = { version = "0.29", features = ["abi3-py311"] }
-# the deck model, the crate ournotes-sim of the ournotes-deck repository, pinned by commit;
-# .github/workflows/deck.yml opens a pull request when ournotes-deck's main moves
+# the deck model, the crate ournotes-sim of the ournotes-deck repository, pinned to the commit of a release;
+# .github/workflows/deck.yml opens a pull request when ournotes-deck publishes a newer release
 ournotes-sim = { git = "https://github.com/empty-sekai/ournotes-deck", rev = "ddf212b601731f9ab74245119d4408d2746a370c" }
 serde_json = { version = "1", features = ["raw_value", "arbitrary_precision"] }
 

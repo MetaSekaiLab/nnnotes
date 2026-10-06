@@ -1,6 +1,6 @@
 # Shared Rust/WASM replay inputs
 
-`nnnotes music-data --replay-dir OUT/replay --replay-engine WASM_PKG [--recommend-engine WASM_PKG] -o OUT/music-data.json` writes the normalized input of the pinned deck model. The replay engine package must contain `ournotes_replay.js`, `ournotes_replay_bg.wasm` and `build.json` (`format:"ournotes.replay-engine/1"`); the optional recommendation engine package, the wasm-bindgen `--target web` build of the deck model's `wasm/recommend`, must contain `ournotes_recommend.js`, `ournotes_recommend_bg.wasm` and `build.json` (`format:"ournotes.recommend-engine/1"`). Each `build.json` records `commit`, `jsSha256` and `wasmSha256`; the commit and both file hashes must match the measured model and the package files. Actual ACB cue length is required. Original encrypted master files, chart blobs and native binaries are not copied.
+`nnnotes music-data --replay-dir OUT/replay --replay-engine PKG [--recommend-engine PKG] -o OUT/music-data.json` writes the normalized input of the pinned deck model. Each engine is an ournotes-deck WASM release package of the pinned model, given as the downloaded archive or its extracted directory: `ournotes-replay-wasm-vVERSION.tar.gz` for `--replay-engine` and, optionally, `ournotes-recommend-wasm-vVERSION.tar.gz` for `--recommend-engine`. Its `build-info.json` must describe that module's WASM package (`kind:"wasm"`, `module`), name the pinned model's `commit`, and list in `files` the SHA-256 of the web binding's JS and WASM files, which must match the package files. The web binding (`web/ournotes_<module>_wasm.js` and `web/ournotes_<module>_wasm_bg.wasm`) and `build-info.json` are copied byte for byte. Actual ACB cue length is required. Original encrypted master files, chart blobs and native binaries are not copied.
 
 The music-data pointer is:
 
@@ -18,15 +18,15 @@ The music-data pointer is:
   "engine": {
     "model": {"name":"ournotes-deck","version":"<version>","source":"<repository>","commit":"<pinned commit>","format":"ournotes-deck.chart-stats/2"},
     "requestFormat":"ournotes.replay/1","class":"ReplaySession","methods":["describeChart","template","run"],
-    "js":{"url":"engine/ournotes_replay.js","sha256":"<SHA>","bytes":0},
-    "wasm":{"url":"engine/ournotes_replay_bg.wasm","sha256":"<SHA>","bytes":0},
-    "build":{"url":"engine/build.json","sha256":"<SHA>","bytes":0}
+    "js":{"url":"engine/ournotes_replay_wasm.js","sha256":"<SHA>","bytes":0},
+    "wasm":{"url":"engine/ournotes_replay_wasm_bg.wasm","sha256":"<SHA>","bytes":0},
+    "build":{"url":"engine/build-info.json","sha256":"<SHA>","bytes":0}
   },
   "recommendEngine": {
     "model": {"name":"ournotes-deck","version":"<version>","source":"<repository>","commit":"<pinned commit>","format":"ournotes-deck.chart-stats/2"},
-    "js":{"url":"recommend/ournotes_recommend.js","sha256":"<SHA>","bytes":0},
-    "wasm":{"url":"recommend/ournotes_recommend_bg.wasm","sha256":"<SHA>","bytes":0},
-    "build":{"url":"recommend/build.json","sha256":"<SHA>","bytes":0}
+    "js":{"url":"recommend/ournotes_recommend_wasm.js","sha256":"<SHA>","bytes":0},
+    "wasm":{"url":"recommend/ournotes_recommend_wasm_bg.wasm","sha256":"<SHA>","bytes":0},
+    "build":{"url":"recommend/build-info.json","sha256":"<SHA>","bytes":0}
   },
   "unlistedScoreIds":[],
   "clock":"Explicit frames from ReplaySession.template; no Python/JS scoring or scheduling"

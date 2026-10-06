@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import tarfile
 from pathlib import Path
 
 from . import deckdata
@@ -10,44 +11,62 @@ from .cache import write_atomic
 
 FORMAT = "nnnotes.replay-manifest/1"
 CHART_FORMAT = "nnnotes.replay-chart/1"
-JS = "ournotes_replay.js"
-WASM = "ournotes_replay_bg.wasm"
-RECOMMEND_JS = "ournotes_recommend.js"
-RECOMMEND_WASM = "ournotes_recommend_bg.wasm"
+BUILD_INFO = "build-info.json"
 
 
 def _json(value) -> bytes:
     return deckdata.encode(deckdata._value(value, "replay input"))
 
 
-def _package(files: dict[str, bytes], source: Path, model: dict | None, name: str, build_format: str, prefix: str,
-             js: str, wasm: str) -> tuple[str, str, str]:
-    """Copy a wasm-bindgen package of the pinned deck model (`js`, `wasm`, build.json) into `files` under `prefix`;
-    build.json must name the model's commit and both file hashes. Returns the JS, WASM and build.json paths."""
-    source = Path(source)
+def _read_package(source: Path, paths: tuple[str, ...], name: str) -> dict[str, bytes]:
+    """Those of the files `paths` that a release package holds: a directory, or a .tar.gz archive holding the package
+    directory."""
+    if source.is_dir():
+        return {path: (source / path).read_bytes() for path in paths if (source / path).is_file()}
     try:
-        built = json.loads((source / "build.json").read_text(encoding="utf8"))
-    except (OSError, ValueError):
-        raise deckdata.DeckDataError(f"{name}: missing or malformed build.json") from None
+        with tarfile.open(source, "r:gz") as archive:
+            return {member.name.partition("/")[2]: archive.extractfile(member).read()
+                    for member in archive.getmembers() if member.isfile() and member.name.partition("/")[2] in paths}
+    except (OSError, tarfile.TarError):
+        raise deckdata.DeckDataError(
+            f"{name}: {source} is neither a package directory nor a .tar.gz package") from None
+
+
+def _package(files: dict[str, bytes], source: Path, model: dict | None, module: str,
+             prefix: str) -> tuple[str, str, str]:
+    """Copy the web binding of an ournotes-deck WASM release package of `module` (`replay` or `recommend`), the
+    `ournotes-<module>-wasm-v<version>` .tar.gz or its directory, into `files` under `prefix`. Its build-info.json must
+    describe the WASM package of `module` built from the pinned model's commit, with the SHA-256 of both files.
+    Returns the JS, WASM and build-info.json paths."""
+    name = f"{module} engine"
+    stem = f"web/ournotes_{module}_wasm"
+    js, wasm = f"{stem}.js", f"{stem}_bg.wasm"
+    package = _read_package(Path(source), (BUILD_INFO, js, wasm), name)
     if not model or not model.get("commit"):
         raise deckdata.DeckDataError(f"{name}: the pinned deck model identity is required")
-    if built.get("format") != build_format:
-        raise deckdata.DeckDataError(f"{name}: build.json format is {built.get('format')!r}, not {build_format}")
-    if built.get("commit") != model["commit"]:
-        raise deckdata.DeckDataError(f"{name}: build.json commit {built.get('commit')!r} differs from the pinned "
+    if BUILD_INFO not in package:
+        raise deckdata.DeckDataError(f"{name}: missing {BUILD_INFO} in {source}")
+    try:
+        info = json.loads(package[BUILD_INFO])
+    except ValueError:
+        raise deckdata.DeckDataError(f"{name}: malformed {BUILD_INFO}") from None
+    if not isinstance(info, dict) or info.get("kind") != "wasm" or info.get("module") != module:
+        raise deckdata.DeckDataError(f"{name}: {BUILD_INFO} does not describe the {module} WASM package")
+    if info.get("commit") != model["commit"]:
+        raise deckdata.DeckDataError(f"{name}: {BUILD_INFO} commit {info.get('commit')!r} differs from the pinned "
                                      f"deck model {model['commit']}")
-    js_path, wasm_path, build_path = f"{prefix}/{js}", f"{prefix}/{wasm}", f"{prefix}/build.json"
-    for file, path in ((js, js_path), (wasm, wasm_path)):
-        if not (source / file).is_file():
-            raise deckdata.DeckDataError(f"{name}: missing {file} in {source}")
-        files[path] = (source / file).read_bytes()
-    if not files[wasm_path].startswith(b"\x00asm\x01\x00\x00\x00"):
+    hashes = info.get("files") if isinstance(info.get("files"), dict) else {}
+    for path in (js, wasm):
+        if path not in package:
+            raise deckdata.DeckDataError(f"{name}: missing {path} in {source}")
+        if hashes.get(path) != hashlib.sha256(package[path]).hexdigest():
+            raise deckdata.DeckDataError(f"{name}: {path} SHA-256 differs from {BUILD_INFO}")
+    if not package[wasm].startswith(b"\x00asm\x01\x00\x00\x00"):
         raise deckdata.DeckDataError(f"{name}: not a WASM v1 module")
-    if built.get("jsSha256") != hashlib.sha256(files[js_path]).hexdigest() or \
-            built.get("wasmSha256") != hashlib.sha256(files[wasm_path]).hexdigest():
-        raise deckdata.DeckDataError(f"{name}: JS/WASM SHA differs from build.json")
-    files[build_path] = _json(built)
-    return js_path, wasm_path, build_path
+    paths = tuple(f"{prefix}/{path.rsplit('/', 1)[-1]}" for path in (js, wasm, BUILD_INFO))
+    for path, data in zip(paths, (package[js], package[wasm], package[BUILD_INFO])):
+        files[path] = data
+    return paths
 
 
 def bundle(music: dict, engine_dir: Path | None = None,
@@ -93,15 +112,13 @@ def bundle(music: dict, engine_dir: Path | None = None,
     model = music["provenance"].get("deck")
     engine = None
     if engine_dir is not None:
-        js, wasm, build = _package(files, engine_dir, model, "replay engine", "ournotes.replay-engine/1", "engine",
-                                   JS, WASM)
+        js, wasm, build = _package(files, engine_dir, model, "replay", "engine")
         engine = {"model": model, "requestFormat": "ournotes.replay/1", "class": "ReplaySession",
                   "methods": ["describeChart", "template", "run"],
                   "js": resource(js), "wasm": resource(wasm), "build": resource(build)}
     recommend = None
     if recommend_dir is not None:
-        js, wasm, build = _package(files, recommend_dir, model, "recommend engine", "ournotes.recommend-engine/1",
-                                   "recommend", RECOMMEND_JS, RECOMMEND_WASM)
+        js, wasm, build = _package(files, recommend_dir, model, "recommend", "recommend")
         recommend = {"model": model, "js": resource(js), "wasm": resource(wasm), "build": resource(build)}
     manifest = {"format": FORMAT, "deckData": {"format": deckdata.DECK_FORMAT, **resource("deck-data.json")},
                 "charts": charts, "engine": engine,

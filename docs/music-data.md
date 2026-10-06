@@ -432,12 +432,15 @@ The deck model reads the same content under the format name `nnnotes.deck-data/1
 
 ## Building
 
-The deck model is the Rust crate ournotes-sim of the ournotes-deck repository, pinned by commit in `rust/Cargo.toml`
+The deck model is the Rust crate ournotes-sim of the ournotes-deck repository, pinned to the commit of an ournotes-deck
+release in `rust/Cargo.toml`
 (and `rust/Cargo.lock`) and built into the extension module `nnnotes._deck` with [maturin](https://www.maturin.rs/)
 (PyO3, the stable ABI of Python 3.11 and later: one wheel per platform). The release workflow builds the wheels;
 `pip install .` or `pip install -e .` in a checkout builds the module with the Rust toolchain. The same nnnotes
 version always carries the same deck model: the commit moves only through a pull request (`.github/workflows/deck.yml`
-opens one when ournotes-deck's `main` moves), and `provenance.deck.commit` names it in every file.
+opens one when ournotes-deck publishes a newer release with its WASM packages), and `provenance.deck.commit` names it in
+every file. The replay and recommendation engines of `--replay-engine` and `--recommend-engine` are that release's WASM
+packages.
 
 ## Versions
 
@@ -454,4 +457,4 @@ their facts here) and the `nnnotes.deck-data/1` file of `nnnotes deck-data` (its
 
 Final aptitude exports require the standard-error target for both `score` and `scorePerfect`, each against its own paired no-skill baseline. Sampling extends the same published seed prefix through geometric batches, stopping as soon as both targets agree with the unchanged max(1% of increment, 0.1% of baseline) rule. The 65,536-seed cap is a failure guard, not a requirement to run every seed. An unmet cap aborts a normal export before writing artifacts. `--allow-unconverged-aptitude` is an explicit diagnostic option; it retains real SE values and unmet flags.
 
-`--replay-dir OUT/replay --replay-engine WASM_PKG [--recommend-engine WASM_PKG]` writes normalized runtime inputs and pinned WASM assets (the replay engine and, optionally, the recommendation engine) as described in [replay.md](replay.md). The music data stays compact and carries the SHA-bound `replay.manifestUrl` pointer. No original chart/master blobs or native binary are included in this artifact bundle.
+`--replay-dir OUT/replay --replay-engine PKG [--recommend-engine PKG]` writes normalized runtime inputs and the pinned model's WASM release packages (the replay engine and, optionally, the recommendation engine) as described in [replay.md](replay.md). The music data stays compact and carries the SHA-bound `replay.manifestUrl` pointer. No original chart/master blobs or native binary are included in this artifact bundle.
