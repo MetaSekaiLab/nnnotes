@@ -12,7 +12,7 @@ as its extension module `nnnotes._deck`. The format is `nnnotes.music-data/1`; i
 ```
 nnnotes music-data (--master-files DIR | --apk-master | --decoded-master) [--full] [--no-deck] [--seeds N]
                    [--workers N] [--no-gekisou-aptitude] [--aptitude-max-seeds N] [--aptitude-cross-seeds N]
-                   [--no-bgm] [--jackets DIR] -o FILE
+                   [--stats-cache DIR] [--no-bgm] [--jackets DIR] -o FILE
 ```
 
 - `--master-files DIR`: master data files as served, `DIR/MasterManifest.json` and the `.bin` files it lists
@@ -33,6 +33,11 @@ nnnotes music-data (--master-files DIR | --apk-master | --decoded-master) [--ful
 - `--no-gekisou-aptitude`: keep the existing deck statistics but skip single-skill aptitude measurements.
   `--aptitude-max-seeds N` caps their samples (default 65536), and `--aptitude-cross-seeds N` caps cross-term samples
   (default 64). Lower caps reduce work but may leave the standard-error target unmet.
+- `--stats-cache DIR`: keep every chart's deck statistics in `DIR`, one file per chart named by the SHA-256 of what
+  they are a function of: the deck model's sources (`provenance.deck.sourceSha256`), `--seeds` and the aptitude
+  options, the master data tables of the deck input and the chart's runtime notes. A chart found there is not measured
+  again, so an export after a deck model release that keeps the model's sources, or after a master data update that
+  keeps those tables, measures only the charts that changed. `DIR` then holds this file's charts only.
 - `--no-bgm`: do not read the cue sheets (every `bgm.length` is null).
 - `--jackets DIR`: also write every song's jacket, the Texture2D `Image/Jacket/<jacket>`, as `DIR/<jacket>.webp`
   (WebP quality 88, scaled down with Lanczos to at most 320 pixels on the longer side, without alpha when opaque); a
@@ -439,7 +444,8 @@ release in `rust/Cargo.toml`
 `pip install .` or `pip install -e .` in a checkout builds the module with the Rust toolchain. The same nnnotes
 version always carries the same deck model: the commit moves only through a pull request (`.github/workflows/deck.yml`
 opens one when ournotes-deck publishes a newer release with its WASM packages), and `provenance.deck.commit` names it in
-every file. The replay and recommendation engines of `--replay-engine` and `--recommend-engine` are that release's WASM
+every file. `provenance.deck.sourceSha256` is the SHA-256 of the deck model's sources (`ournotes_sim::SOURCE_SHA256`):
+releases with the same value measure the same statistics. The replay and recommendation engines of `--replay-engine` and `--recommend-engine` are that release's WASM
 packages.
 
 ## Versions

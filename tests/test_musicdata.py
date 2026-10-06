@@ -260,6 +260,7 @@ class FakeDeck:
     """The interface of nnnotes._deck: statistics made from the deck input as the model reports them, with the Gekisou
     aptitude (SHAPES; `aptitude`) unless it is left out."""
     COMMIT = "7e5d84b5998d28c21541ce3f2e0a3dfb1439f4f6"
+    SOURCE = "5" * 64
     FORMAT = "ournotes-deck.chart-stats/2"
 
     def __init__(self, change=None, fail=None, header=None):
@@ -267,7 +268,8 @@ class FakeDeck:
 
     def info(self):
         return {"name": "ournotes-deck", "version": "0.0.1", "source": "https://github.com/empty-sekai/ournotes-deck",
-                "commit": self.COMMIT, "dataFormat": deckdata.DECK_FORMAT, "format": self.FORMAT}
+                "commit": self.COMMIT, "sourceSha256": self.SOURCE, "dataFormat": deckdata.DECK_FORMAT,
+                "format": self.FORMAT}
 
     def chart_stats(self, data, seeds, workers, aptitude=True, aptitude_max_seeds=None, aptitude_cross_seeds=None):
         if self.fail:
@@ -341,6 +343,44 @@ def export(tmp_path, rows=TABLE_ROWS, charts=CHARTS, bgm=bgm, out="music.json", 
     d = master_dir(tmp_path, rows)
     return musicdata.export(tmp_path / out, deckdata.master_files(d), KEY, charts.__getitem__, bgm, **PROV,
                             deck=musicdata.Deck(module=deck, workers=3) if deck is not None else None, **kw)
+
+
+def test_the_stats_cache_measures_only_charts_it_lacks(tmp_path):
+    cache = tmp_path / "stats"
+
+    def run(name, deck, seeds=musicdata.DECK_SEEDS, stats_cache=cache):
+        (tmp_path / name).mkdir()
+        d = master_dir(tmp_path / name)
+        return musicdata.export(tmp_path / name / "music.json", deckdata.master_files(d), KEY, CHARTS.__getitem__,
+                                bgm, **PROV, deck=musicdata.Deck(module=deck, seeds=seeds, cache=stats_cache))
+    plain = run("plain", FakeDeck(), stats_cache=None)
+    fake = FakeDeck()
+    first = run("first", fake)
+    n = plain["charts"]
+    assert len(fake.inputs[0][0]["charts"]) == n and first["deckStats"] == {"cached": 0, "measured": n}
+    assert plain["deckStats"] == {"cached": 0, "measured": n} and len(list(cache.glob("*.json"))) == n
+    again = run("again", fake)
+    assert fake.inputs[1][0]["charts"] == [] and again["deckStats"] == {"cached": n, "measured": 0}
+    assert plain["sha256"] == first["sha256"] == again["sha256"]
+    # the key names the model's sources and the options: changing either measures every chart again, and the
+    # cache then holds the new statistics only
+    other = FakeDeck()
+    other.SOURCE = "6" * 64
+    assert run("other", other)["deckStats"] == {"cached": 0, "measured": n} and len(list(cache.glob("*.json"))) == n
+    assert run("seeds", FakeDeck(), seeds=4)["deckStats"] == {"cached": 0, "measured": n}
+
+
+def test_the_stats_cache_key_reads_the_master_tables_and_the_chart():
+    deck = musicdata.Deck(module=FakeDeck())
+    doc = {"master": {"MasterLiveSetting": {"columns": ["_id"], "rows": [[1]]}},
+           "charts": [{"scoreId": 1, "notes": [1]}, {"scoreId": 2, "notes": [2]}]}
+    keys = deck.cache_keys(doc)
+    assert len(set(keys)) == 2 and all(re.fullmatch(r"[0-9a-f]{64}", k) for k in keys)
+    assert deck.cache_keys({**doc, "charts": doc["charts"][1:]}) == keys[1:]
+    changed = {**doc, "charts": [doc["charts"][0], {"scoreId": 2, "notes": [3]}]}
+    assert deck.cache_keys(changed)[0] == keys[0] and deck.cache_keys(changed)[1] != keys[1]
+    other = {**doc, "master": {"MasterLiveSetting": {"columns": ["_id"], "rows": [[2]]}}}
+    assert not set(deck.cache_keys(other)) & set(keys)
 
 
 def schema_validator():
@@ -435,7 +475,7 @@ def test_deck(tmp_path):
     assert [c["scoreId"] for c in deck_input["charts"]] == [10, 20, 30]  # the songs' charts, not chart 40
     assert deck_input["provenance"]["master"] == {"source": "api", "version": "v-test"}
     p = doc["provenance"]
-    assert p["deck"] == {k: fake.info()[k] for k in ("name", "version", "source", "commit", "format")}
+    assert p["deck"] == {k: fake.info()[k] for k in ("name", "version", "source", "commit", "sourceSha256", "format")}
     assert list(p["master"]["tables"]) == list(musicdata.tables_of(True, False))
     assert doc["deck"]["model"]["power"] == 300000
     assert doc["deck"]["gekisouAptitude"]["shapes"] == SHAPES
@@ -630,6 +670,7 @@ def test_deck_module():
     info = deck.info()
     assert info["name"] == "ournotes-deck" and info["format"] == "ournotes-deck.chart-stats/2"
     assert info["dataFormat"] == deckdata.DECK_FORMAT and re.fullmatch(r"[0-9a-f]{40}", info["commit"])
+    assert re.fullmatch(r"[0-9a-f]{64}", info["sourceSha256"])
     lock = (ROOT / "rust" / "Cargo.lock").read_text(encoding="utf-8")
     assert f"#{info['commit']}\"" in lock                               # the commit Cargo.lock pins
     with pytest.raises(ValueError, match="not a deck data file"):

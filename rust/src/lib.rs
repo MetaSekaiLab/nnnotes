@@ -95,7 +95,8 @@ fn chart_stats(
 }
 
 /// info() -> dict: the deck model of this module (name: the ournotes-deck repository; version, source and commit:
-/// its crate ournotes-sim as built) and the formats it reads and writes.
+/// its crate ournotes-sim as built; sourceSha256: the SHA-256 of that crate's sources, equal for builds that run the
+/// same model) and the formats it reads and writes.
 #[pyfunction]
 fn info(py: Python<'_>) -> PyResult<Bound<'_, PyDict>> {
     let d = PyDict::new(py);
@@ -103,6 +104,7 @@ fn info(py: Python<'_>) -> PyResult<Bound<'_, PyDict>> {
     d.set_item("version", env!("DECK_VERSION"))?;
     d.set_item("source", env!("DECK_SOURCE"))?;
     d.set_item("commit", env!("DECK_COMMIT"))?;
+    d.set_item("sourceSha256", ournotes_sim::SOURCE_SHA256)?;
     d.set_item("dataFormat", ournotes_sim::data::FORMAT)?;
     d.set_item("format", chartstats::FORMAT)?;
     Ok(d)

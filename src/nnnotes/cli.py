@@ -37,7 +37,8 @@ summaries are printed as UTF-8 whatever the console encoding.
                          [--font emoji=<file>]
                          [--region <region> [--region ...] | --all-regions]
     nnnotes music-data --master-files <master download dir> | --apk-master | --decoded-master [--full] [--no-deck]
-                       [--no-gekisou-aptitude] [--no-bgm] [--jackets DIR] -o out/music-data.json[.gz]
+                       [--no-gekisou-aptitude] [--stats-cache DIR] [--no-bgm] [--jackets DIR]
+                       -o out/music-data.json[.gz]
     nnnotes export -o out/assets [--select group:<group> | key:<prefix> | bundle:<glob> ...] [--layout original,cas]
     nnnotes plan [--select ...] [--json] [--check] [--emit-tasks <dir>]
     nnnotes run-stage <task.json> [...]
@@ -678,7 +679,7 @@ def cmd_music_data(args, cfg):
         deck = None if args.no_deck else musicdata.Deck(
             seeds=args.seeds, workers=args.workers, aptitude=not args.no_gekisou_aptitude,
             aptitude_max_seeds=args.aptitude_max_seeds, aptitude_cross_seeds=args.aptitude_cross_seeds,
-            require_convergence=not args.allow_unconverged_aptitude)
+            require_convergence=not args.allow_unconverged_aptitude, cache=args.stats_cache)
         if args.apk_master:
             src, region = deckdata.apk_master(apk), deckdata.EMBEDDED
         elif args.decoded_master:                    # decoded elsewhere: no master key
@@ -998,6 +999,9 @@ def build_parser() -> argparse.ArgumentParser:
                    help="diagnostic export only: retain unmet SE flags at the sample cap; final exports reject them")
     c.add_argument("--aptitude-cross-seeds", type=int, metavar="N",
                    help="seeds of a Gekisou aptitude variant's cross terms (default: the deck model's, 64)")
+    c.add_argument("--stats-cache", type=Path, metavar="DIR",
+                   help="keep the charts' deck statistics in DIR: a chart whose model sources, options, master tables "
+                        "and chart are unchanged is not measured again; DIR then holds this export's charts only")
     c.add_argument("--no-bgm", action="store_true",
                    help="do not read the BGM cue sheets (every song's bgm.length is null)")
     c.add_argument("--replay-dir", metavar="DIR",

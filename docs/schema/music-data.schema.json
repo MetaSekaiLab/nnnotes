@@ -169,6 +169,11 @@
               "type": "string",
               "pattern": "^[0-9a-f]{40}$"
             },
+            "sourceSha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$",
+              "description": "the SHA-256 of the deck model's sources; releases with the same value measure the same statistics"
+            },
             "format": {
               "type": "string",
               "description": "the statistics format, ournotes-deck.chart-stats/2"
