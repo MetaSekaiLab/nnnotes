@@ -44,6 +44,7 @@ summaries are printed as UTF-8 whatever the console encoding.
     nnnotes run-stage <task.json> [...]
     nnnotes catalogs list | import <catalog.bin> | fetch | diff <old> <new>
     nnnotes store verify
+    nnnotes sprite-geometries --keys selected-keys.json -o out/sprite-geometries.json
 """
 from __future__ import annotations
 
@@ -766,6 +767,11 @@ def cmd_ui(args, cfg):
     ui.command(args, cfg)
 
 
+def cmd_sprite_geometries(args, cfg):
+    from . import spritegeometry
+    spritegeometry.command(args, cfg)
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="nnnotes", description="BanG Dream! Our Notes data toolkit")
     p.add_argument("--version", action="version", version=f"nnnotes {__version__}")
@@ -1027,6 +1033,13 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--no-dependencies", action="store_true", help="omit additional prefab roots and controllers")
     c.add_argument("--force", action="store_true", help="re-export the selected keys")
     c.set_defaults(func=cmd_ui, usage=c.error)
+    c = sub.add_parser("sprite-geometries", help="observe original Sprite geometry without decoding textures")
+    c.add_argument("--key", action="append", help="exact catalog key (repeatable)")
+    c.add_argument("--keys", metavar="JSON", help="JSON array of exact catalog key strings")
+    c.add_argument("--native-fingerprints", action="store_true", help="also hash the configured APK's native libraries")
+    c.add_argument("--public-bitmaps", metavar="JSON", help="fingerprint a separately observed public bitmap listing")
+    _out(c, "Sprite metadata JSON outside the source repositories")
+    c.set_defaults(func=cmd_sprite_geometries, usage=c.error)
     return p
 
 
