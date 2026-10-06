@@ -1002,10 +1002,12 @@ def build_parser() -> argparse.ArgumentParser:
                    help="do not read the BGM cue sheets (every song's bgm.length is null)")
     c.add_argument("--replay-dir", metavar="DIR",
                    help="write canonical runtime DeckData, per-chart inputs and replay manifest under the output directory")
-    c.add_argument("--replay-engine", metavar="DIR",
-                   help="copy pinned wasm-bindgen JS/WASM + build.json into --replay-dir")
-    c.add_argument("--recommend-engine", metavar="DIR",
-                   help="copy the pinned wasm-bindgen recommendation JS/WASM + build.json into --replay-dir")
+    c.add_argument("--replay-engine", metavar="PKG",
+                   help="the deck model's replay WASM release package (ournotes-replay-wasm-vVERSION.tar.gz or its "
+                        "directory); its web JS/WASM and build-info.json are copied into --replay-dir")
+    c.add_argument("--recommend-engine", metavar="PKG",
+                   help="the deck model's recommendation WASM release package (ournotes-recommend-wasm-vVERSION.tar.gz "
+                        "or its directory); its web JS/WASM and build-info.json are copied into --replay-dir")
     c.add_argument("--jackets", metavar="DIR",
                    help="also write every song's jacket as DIR/<jacket>.webp (at most 320 px on the longer side)")
     _out(c, "output file (.json, or .json.gz for gzip)")
