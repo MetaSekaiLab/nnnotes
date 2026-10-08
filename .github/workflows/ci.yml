@@ -6,12 +6,13 @@ on:
   pull_request:
   # the Deck model workflow dispatches CI on the pull request it opens
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

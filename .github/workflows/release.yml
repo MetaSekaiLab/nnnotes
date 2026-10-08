@@ -27,6 +27,10 @@ jobs:
             exit 1
           fi
 
+  quality:
+    needs: check
+    uses: ./.github/workflows/ci.yml
+
   # one abi3 wheel (CPython 3.11 and later) per platform with the extension module nnnotes._deck, and the sdist
   wheels:
     needs: check
@@ -50,6 +54,8 @@ jobs:
           target: ${{ matrix.target }}
           manylinux: ${{ matrix.manylinux || 'auto' }}
           args: --release --locked --out dist
+      - name: Test the installed wheel
+        run: python .github/scripts/smoke_wheel.py dist
       - uses: actions/upload-artifact@v7
         with:
           name: wheel-${{ matrix.os }}-${{ matrix.target }}
@@ -72,7 +78,7 @@ jobs:
           if-no-files-found: error
 
   build:
-    needs: [wheels, sdist]
+    needs: [quality, wheels, sdist]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v8
