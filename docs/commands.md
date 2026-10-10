@@ -678,7 +678,7 @@ in the printed summary and in `SITE.failures.json`, models that fail in the summ
 
 ```
 nnnotes music-data (--master-files DIR | --apk-master | --decoded-master) [--full] [--no-deck] [--seeds N]
-                   [--workers N] [--no-gekisou-aptitude] [--aptitude-max-seeds N] [--aptitude-cross-seeds N]
+                   [--workers N] [--no-gekisou-aptitude]
                    [--stats-cache DIR] [--no-bgm] [--jackets DIR] -o FILE
 ```
 
@@ -694,10 +694,9 @@ rank and the Perfect play need) and off (a solo live), measured by the deck mode
 `nnnotes._deck`) on its whole-live simulation and checked against the chart facts and the master data. `--full` also writes the deck model's input: every
 `MasterLiveMusicScore` row's chart as the client builds it at runtime (notes, skill events, fever ranges) and the
 master data tables about cards, skills, bonuses, scores and events. Single-skill Gekisou aptitude is included by
-default (not an optimal deck); `--no-gekisou-aptitude` omits it, `--aptitude-max-seeds N` (1024) and
-`--aptitude-cross-seeds N` (64) cap its sampling and cross terms. `--no-deck` skips the deck model (every chart's
-`deck` is null); `--seeds N` (default 8) and `--workers N` (default: every processor) set its seeds on charts with a
-luck range and its threads. `--stats-cache DIR` keeps every chart's statistics in `DIR` under the SHA-256 of what
+default as independent nominal expectations; `--no-gekisou-aptitude` omits it.
+`--no-deck` leaves every chart's `deck` null. `--seeds N` (default 8) gives replay seeds for luck charts;
+`--workers N` sets measurement threads (default: every processor). `--stats-cache DIR` keeps every chart's statistics in `DIR` under the SHA-256 of what
 they are a function of (the deck model's sources, these options, the master data tables and the chart) and measures
 only the charts it lacks; `DIR` then holds this file's charts only. The master data is decoded from the files as served: `--master-files DIR` reads
 `DIR/MasterManifest.json` and the `.bin` files it lists (`master download`; the file's region is `[catalog] region`),

@@ -1,5 +1,5 @@
 """Music data: one JSON file with every live song and chart of one master data version (format
-`nnnotes.music-data/1`, docs/music-data.md): titles and credits in every language, bands, vocal characters, category,
+`nnnotes.music-data/2`, docs/music-data.md): titles and credits in every language, bands, vocal characters, category,
 tags, release time, score ranks, the live BGM's length, the Gekisou catalog (member cards, snaps and their Gekisou
 skills), per difficulty the chart facts (level, note counts, BPM, chart times, skill events, fever ranges) and the
 chart's deck statistics, what the chart contributes to the live score whatever the deck, with Gekisou on (a Gekisou
@@ -33,7 +33,7 @@ from typing import Callable
 from . import deckdata
 from .languages import LANGUAGES
 
-FORMAT = "nnnotes.music-data/1"
+FORMAT = "nnnotes.music-data/2"
 DIFFICULTIES = ("easy", "normal", "hard", "expert")
 MUSIC_LENGTH_TAIL_MS = 1000         # the live's music length: the last note time + 1000 ms (LiveScore skip path)
 
@@ -299,20 +299,19 @@ def gekisou_catalog(tables: dict[str, list[dict]], text: Texts) -> dict:
 
 
 # ---------------------------------------------------------------- the deck model
-DECK_SEEDS = 8                              # seed set size of a chart with a luck range (ournotes-deck's default)
+DECK_SEEDS = 8                              # replay seed count of a chart with a luck range
 
 
 class Deck:
     """The deck model (nnnotes._deck): chart statistics of a deck input document, on `workers` threads (None: the
-    available parallelism), `seeds` seeds for a chart with a luck range; with `aptitude` every chart's Gekisou aptitude
-    too, a variant on at most `aptitude_max_seeds` seeds and its cross terms on at most `aptitude_cross_seeds` (None:
-    the deck model's defaults). With a `cache` directory, a chart's statistics are kept there under the SHA-256 of
+    available parallelism), with independent nominal lottery and skill probabilities. `seeds` gives the number of
+    replay seeds for a chart with a luck range; `aptitude` includes every chart's Gekisou aptitude and cross terms.
+    With a `cache` directory, a chart's statistics are kept there under the SHA-256 of
     what they are a function of: the model's sources (its `sourceSha256`), the options above, the master tables and
     the chart; a chart found there is not measured again."""
 
     def __init__(self, seeds: int = DECK_SEEDS, workers: int | None = None, module=None, aptitude: bool = True,
-                 aptitude_max_seeds: int | None = None, aptitude_cross_seeds: int | None = None,
-                 require_convergence: bool = True, cache: Path | None = None):
+                 cache: Path | None = None):
         if module is None:
             try:
                 from . import _deck as module
@@ -320,9 +319,7 @@ class Deck:
                 raise MusicDataError("the deck model (nnnotes._deck) is not built into this installation: install "
                                      "nnnotes from a wheel or build it (maturin), or pass --no-deck") from None
         self.module, self.seeds, self.workers = module, seeds, workers
-        self.aptitude, self.aptitude_max_seeds, self.aptitude_cross_seeds = \
-            aptitude, aptitude_max_seeds, aptitude_cross_seeds
-        self.require_convergence = require_convergence
+        self.aptitude = aptitude
         self.cache = None if cache is None else Path(cache)
         self.counts: dict | None = None                 # {cached, measured} charts of the last stats()
 
@@ -334,8 +331,7 @@ class Deck:
     def _measure(self, deck_input: dict) -> dict:
         try:
             text = self.module.chart_stats(deckdata.encode(deck_input).decode("utf-8"), self.seeds, self.workers,
-                                           aptitude=self.aptitude, aptitude_max_seeds=self.aptitude_max_seeds,
-                                           aptitude_cross_seeds=self.aptitude_cross_seeds)
+                                           aptitude=self.aptitude)
         except ValueError as e:
             raise MusicDataError(f"deck model: {e}") from None
         doc = json.loads(text, parse_float=deckdata._Num)
@@ -347,8 +343,7 @@ class Deck:
         """The cache key of each chart of a deck input document, in chart order."""
         info = self.info()
         base = {"sourceSha256": info["sourceSha256"], "format": info["format"], "seeds": self.seeds,
-                "aptitude": self.aptitude, "aptitudeMaxSeeds": self.aptitude_max_seeds,
-                "aptitudeCrossSeeds": self.aptitude_cross_seeds,
+                "aptitude": self.aptitude,
                 "master": hashlib.sha256(deckdata.encode(deck_input["master"])).hexdigest()}
         return [hashlib.sha256(deckdata.encode({**base, "chart": hashlib.sha256(deckdata.encode(c)).hexdigest()}))
                 .hexdigest() for c in deck_input["charts"]]
@@ -387,21 +382,12 @@ class Deck:
             self.counts = {"cached": 0, "measured": len(deck_input["charts"])}
         else:
             doc = self._cached_stats(deck_input)
-        if self.require_convergence and self.aptitude:
-            unmet = [(c.get("scoreId"), v.get("shape"), v.get("bandMatch"), v.get("seeds"))
-                     for c in doc.get("charts", [])
-                     for v in (c.get("gekisouAptitude") or {}).get("variants", [])
-                     if v.get("seTargetMet") is not True]
-            if unmet:
-                chart, shape, band, seeds = unmet[0]
-                raise MusicDataError(f"deck model: {len(unmet)} aptitude variants did not meet BOTH score SE targets; "
-                                     f"chart {chart}, shape {shape}, bandMatch {band}, seeds {seeds}; "
-                                     "increase --aptitude-max-seeds; no final artifact written")
         return doc
 
 
 # the keys of a chart's statistics carried by `deck` (the others are checked against the chart facts)
-DECK_CHART_KEYS = ("convertedNoteCount", "skip", "events", "positions", "ranges", "justNotes", "seeds", "offSeeds",
+DECK_CHART_KEYS = ("convertedNoteCount", "skip", "events", "positions", "ranges", "justNotes", "expectation",
+                   "replaySeeds", "offSeeds",
                    "unplayable", "gekisouAptitude")
 RANKS = 5                                   # the ranks of a Gekisou range (a Gekisou live has up to five players)
 GEKISOU_RANGES = 3                          # the Gekisou ranges of a live (its first three fevers)
@@ -458,12 +444,6 @@ def _check_bound(c, what: str, where: str) -> None:
                              f"{c['bound']}")
 
 
-def _check_rank_check(rc: dict, n: int, s: str, where: str) -> None:
-    if len(rc["ranks"]) != n or not all(1 <= r <= RANKS for r in rc["ranks"]):
-        raise MusicDataError(f"{where}: {s}: rank check ranks {rc['ranks']!r}")
-    _check_bound(rc, f"{s}: the check deck at ranks {rc['ranks']!r}", where)
-
-
 # ournotes-sim's published seed set (live::seeds): candidate k is the low 32 bits (a signed integer) of output k + 1
 # of SplitMix64 started at SEED_ORIGIN (the ASCII bytes of `gekisou1`); a candidate is kept when its pair of effective
 # stream seeds (|b| and |b ^ 0x9E3779B9|, -2^31 taken as 2^31 - 1) differs from that of every seed kept before it
@@ -497,37 +477,74 @@ def published_seeds(n: int) -> list[int]:
 
 
 def chart_seeds(stats: dict, seeds: int) -> list[int]:
-    """The seeds of a chart's Gekisou on statistics: none when it is unplayable with Gekisou, seed 0 when no range is
-    a luck range (the play draws nothing), else the first `seeds` published seeds."""
+    """The chart's replay seeds: none when unplayable with Gekisou, 0 without a luck range, otherwise the first
+    `seeds` published seeds. Nominal expectation measurements are independent of this list."""
     if stats.get("unplayable") is not None:
         return []
     return published_seeds(seeds) if any(r["mission"] == MISSION_LUCK for r in stats["ranges"]) else [0]
 
 
-def _check_seed_shapes(stats: dict, kinds: int, where: str) -> None:
-    """The array shapes and the checks of a chart's statistics: `weights[kind][position]` (a kind null only with
-    Gekisou off), `rangeWeights[kind][position][range]` (null, or a kind null), one Gekisou off seed, the seeds'
-    ranges one per range with their luck points, and every check (and rank check) within its bound."""
+def _check_interval_bound(c, what: str, where: str) -> None:
+    """The largest separation of the expected and predicted intervals is within the stated bound."""
+    if not isinstance(c, dict) or any(k not in c for k in CHECK_KEYS):
+        raise MusicDataError(f"{where}: {what}: no expectation check")
+    if not (_estimate(c["expected"]) and _estimate(c["predicted"]) and _number(c["bound"])
+            and float(c["bound"]) >= 0):
+        raise MusicDataError(f"{where}: {what}: invalid expected, predicted or bound")
+    error = abs(float(c["expected"][0]) - float(c["predicted"][0])) + \
+        float(c["expected"][1]) + float(c["predicted"][1])
+    if error > float(c["bound"]) and not _same(error, float(c["bound"])):
+        raise MusicDataError(f"{where}: {what}: expected {c['expected']}, predicted {c['predicted']} "
+                             f"beyond the bound {c['bound']}")
+
+
+def _check_expectation_shapes(stats: dict, kinds: int, where: str) -> None:
+    """Expected intervals and their array dimensions, deterministic counters and validation decks."""
     positions, n = stats["positions"], len(stats["ranges"])
-    for seed in stats["seeds"]:
-        s = f"seed {seed['seed']}"
-        w = seed.get("weights")
-        if not (isinstance(w, list) and len(w) == kinds and all(_numbers(x, positions) for x in w)):
-            raise MusicDataError(f"{where}: {s}: weights are not [kind][position]")
-        if len(seed["ranges"]) != n:
-            raise MusicDataError(f"{where}: {s}: {len(seed['ranges'])} range results for {n} ranges")
-        for i, r in enumerate(seed["ranges"]):
-            if not _int(r.get("luckPoints")):
-                raise MusicDataError(f"{where}: {s} range {i}: no luck points (luckPoints)")
-        rw = seed.get("rangeWeights")
+    expected = stats.get("expectation")
+    if stats.get("unplayable") is not None:
+        if expected is not None:
+            raise MusicDataError(f"{where}: an expectation on an unplayable Gekisou chart")
+    else:
+        if not isinstance(expected, dict):
+            raise MusicDataError(f"{where}: no nominal expectation")
+        if not all(_estimate(expected.get(k)) for k in ("score", "scorePerfect")):
+            raise MusicDataError(f"{where}: expectation scores are not [center, half-width]")
+        w = expected.get("weights")
+        if not (isinstance(w, list) and len(w) == kinds and all(isinstance(x, list) and len(x) == positions
+                                                              and all(_estimate(y) for y in x) for x in w)):
+            raise MusicDataError(f"{where}: expectation weights are not [kind][position] intervals")
+        rs = expected.get("ranges")
+        if not isinstance(rs, list) or len(rs) != n:
+            raise MusicDataError(f"{where}: expectation range results differ from the {n} ranges")
+        for i, r in enumerate(rs):
+            if not (isinstance(r, dict) and all(_estimate(r.get(k)) for k in
+                    ("rangeScore", "rangeScorePerfect", "rankBonus", "rankBonusPerfect", "luckPoints"))
+                    and _int(r.get("maxCombo")) and _int(r.get("justCount"))
+                    and isinstance(r.get("lotResults"), list) and len(r["lotResults"]) == 4
+                    and all(_estimate(x) for x in r["lotResults"])):
+                raise MusicDataError(f"{where}: expectation range {i}: invalid scores, counters or lottery results")
+        rw = expected.get("rangeWeights")
         if rw is not None and not (isinstance(rw, list) and len(rw) == kinds and all(
-                k is None or (isinstance(k, list) and len(k) == positions and all(_numbers(x, n) for x in k))
-                for k in rw)):
-            raise MusicDataError(f"{where}: {s}: rangeWeights are not [kind][position][range]")
-        _check_bound(seed["check"], f"{s}: the check deck", where)
-        rc = seed.get("rankCheck")
-        if rc is not None:
-            _check_rank_check(rc, n, s, where)
+                k is None or (isinstance(k, list) and len(k) == positions and all(isinstance(x, list) and len(x) == n
+                                                                                and all(_estimate(y) for y in x)
+                                                                                for x in k)) for k in rw)):
+            raise MusicDataError(f"{where}: expectation rangeWeights are not [kind][position][range] intervals")
+        for name, c in (("the check deck", expected.get("check")), ("rank check", expected.get("rankCheck"))):
+            if c is None and name == "rank check":
+                continue
+            _check_interval_bound(c, name, where)
+            if not (isinstance(c["deck"], list) and len(c["deck"]) == positions and all(
+                    x is None or isinstance(x, list) and len(x) == 2 and _int(x[0]) and 0 <= x[0] < kinds
+                    and _int(x[1]) for x in c["deck"])):
+                raise MusicDataError(f"{where}: {name}: invalid check deck")
+            ranks = c["ranks"]
+            if name == "rank check":
+                if not (isinstance(ranks, list) and len(ranks) == n
+                        and all(_int(r) and 1 <= r <= RANKS for r in ranks)):
+                    raise MusicDataError(f"{where}: rank check ranks {ranks!r}")
+            elif ranks is not None:
+                raise MusicDataError(f"{where}: the baseline check deck has fixed rank arrivals")
     off = stats.get("offSeeds")
     if not isinstance(off, list) or len(off) != 1:
         raise MusicDataError(f"{where}: the deck model gives no Gekisou off statistics (offSeeds)")
@@ -537,17 +554,15 @@ def _check_seed_shapes(stats: dict, kinds: int, where: str) -> None:
             raise MusicDataError(f"{where}: Gekisou off: weights are not [kind][position]")
         _check_bound(seed["check"], "Gekisou off: the check deck", where)
 
-
 # ---------------------------------------------------------------- the Gekisou aptitude
 PLAIN_EFFECT_TYPE, PLAIN_MS = 2000, 5000    # the plain kind: score up on the whole deck for 5 s, nothing else
 CONDITION_MEMBER_TARGET = 5000              # the skill condition on the member a snap's support skill is paired with
-APTITUDE_KEYS = ("plainKind", "host", "seedRule", "shapes")
-SEED_RULE_KEYS = ("deterministicTest", "batches", "relative", "baseline", "crossSeeds")
+APTITUDE_KEYS = ("plainKind", "host", "law", "shapes")
 SHAPE_KEYS = ("id", "source", "mission", "bandCondition", "effects", "skills")
 FACTOR_COUNTS = ("judgedNotes", "justNotes", "perfectNotes", "tailNotes", "comboAtStart")
 VARIANT_MEANS = ("score", "scorePerfect", "tail", "tailPerfect", "converted")
-RANGE_MEANS = ("rangeScore", "rankBonus", "rangeScorePerfect", "maxCombo", "justCount", "luckPoints")
-CHECK_KEYS = ("seed", "ranks", "deck", "exact", "predicted", "bound")
+RANGE_MEANS = ("rangeScore", "rankBonus", "rankBonusPerfect", "rangeScorePerfect", "maxCombo", "justCount", "luckPoints")
+CHECK_KEYS = ("ranks", "deck", "expected", "predicted", "bound")
 CONDITION_GROUPS = (("trigger", "_skillTriggerConditionGroup"), ("condition", "_skillConditionGroup"),
                     ("release", "_skillReleaseConditionGroup"), ("reset", "_effectExecuteLimitResetConditionGroup"))
 MEAN_TOLERANCE = 1e-9                       # relative: a mean against its recomputation (binary64 sums)
@@ -576,20 +591,13 @@ def _number(v) -> bool:
         return False
 
 
-def _mean_se(v) -> bool:
-    """Whether v is `[mean, standard error]`: two finite numbers, the error not negative."""
+def _estimate(v) -> bool:
+    """Whether v is `[center, half-width]`: two finite numbers, the radius not negative."""
     return isinstance(v, list) and len(v) == 2 and all(_number(x) for x in v) and float(v[1]) >= 0
 
 
 def _same(a: float, b: float, scale: float = 1.0) -> bool:
     return abs(a - b) <= MEAN_TOLERANCE * max(1.0, abs(scale), abs(a), abs(b))
-
-
-def mean_se(xs: list[int]) -> tuple[float, float]:
-    """The mean of xs and its standard error (the sample standard deviation / sqrt(n); 0 for one value)."""
-    n = len(xs)
-    m = sum(xs) / n
-    return m, (math.sqrt(sum((x - m) ** 2 for x in xs) / (n - 1) / n) if n > 1 else 0.0)
 
 
 def _f32(v) -> float:
@@ -720,15 +728,8 @@ class Aptitude:
             raise MusicDataError(f"{where}: the support skills' host is not described (host)")
         if not (isinstance(model.get("gekisouAptitude"), str) and model["gekisouAptitude"]):
             raise MusicDataError("deck model: the model does not describe the aptitude (model.gekisouAptitude)")
-        rule = info["seedRule"]
-        if not (isinstance(rule, dict) and all(k in rule for k in SEED_RULE_KEYS)
-                and _int(rule["deterministicTest"]) and rule["deterministicTest"] >= 1
-                and isinstance(rule["batches"], list) and rule["batches"] and all(_int(b) for b in rule["batches"])
-                and rule["batches"][0] >= 2 and all(a < b for a, b in zip(rule["batches"], rule["batches"][1:]))
-                and _number(rule["relative"]) and float(rule["relative"]) >= 0
-                and _number(rule["baseline"]) and float(rule["baseline"]) >= 0
-                and _int(rule["crossSeeds"]) and rule["crossSeeds"] >= 1):
-            raise MusicDataError(f"{where}: seed rule {rule!r}")
+        if not isinstance(info["law"], str) or not info["law"]:
+            raise MusicDataError(f"{where}: the nominal probability law is not described (law)")
         shapes = info["shapes"]
         if not isinstance(shapes, list) or [s.get("id") if isinstance(s, dict) else s for s in shapes] != list(
                 range(len(shapes))):
@@ -784,7 +785,7 @@ class Aptitude:
         """A chart's `gekisouAptitude` after checking it: null exactly when the aptitude is left out, the master data
         has no shape, the chart is unplayable with Gekisou or has no Gekisou range; else a factor per range and a
         variant per shape of the chart's missions (both band match results of a shape with a band condition), each
-        with its means shaped and consistent (the tail, a deterministic variant's rank bonuses) and its check within
+        with its intervals shaped and consistent (the best and Perfect tails) and its check within
         its bound."""
         apt = stats.get("gekisouAptitude")
         if self.header is None or not self.shapes or stats.get("unplayable") is not None or not stats["ranges"]:
@@ -798,7 +799,7 @@ class Aptitude:
         if not (isinstance(apt, dict) and isinstance(apt.get("factors"), list) and isinstance(apt.get("variants"),
                                                                                                 list)):
             raise MusicDataError(f"{where}: none (gekisouAptitude {{factors, variants}})")
-        ranges, base = stats["ranges"], stats["seeds"]
+        ranges, base = stats["ranges"], stats["expectation"]
         self._factors(where, apt["factors"], stats)
         missions = {r["mission"] for r in ranges}
         want = [(s["id"], b) for s in self.shapes if s["mission"] == MISSION_ALL or s["mission"] in missions
@@ -816,14 +817,14 @@ class Aptitude:
         return {"factors": apt["factors"], "variants": apt["variants"]}
 
     def _factors(self, where: str, factors: list, stats: dict) -> None:
-        ranges, base = stats["ranges"], stats["seeds"]
+        ranges, base = stats["ranges"], stats["expectation"]
         if len(factors) != len(ranges):
             raise MusicDataError(f"{where}: {len(factors)} factors for {len(ranges)} ranges")
         just = 0
         for j, (f, r) in enumerate(zip(factors, ranges)):
             at = f"{where}: range {j} factors"
             if not (isinstance(f, dict) and all(_int(f.get(k)) and f[k] >= 0 for k in FACTOR_COUNTS)
-                    and _mean_se(f.get("lotteries"))):
+                    and _estimate(f.get("lotteries"))):
                 raise MusicDataError(f"{at}: not {{{', '.join(FACTOR_COUNTS)}, lotteries}}: {f!r}")
             if r["mission"] != MISSION_JUST and (f["justNotes"], f["perfectNotes"]) != (0, 0):
                 raise MusicDataError(f"{at}: {f['justNotes']} Just and {f['perfectNotes']} Perfect notes outside a "
@@ -831,109 +832,66 @@ class Aptitude:
             if f["justNotes"] + f["perfectNotes"] > f["judgedNotes"] or f["comboAtStart"] > stats["judgedNotes"]:
                 raise MusicDataError(f"{at}: note counts {f!r} beyond the range's or the chart's")
             just += f["justNotes"]
-            m, se = mean_se([sum(s["ranges"][j]["lotResults"]) for s in base]) if base else (0.0, 0.0)
-            if r["mission"] != MISSION_LUCK:
-                m, se = 0.0, 0.0
-            if not (_same(float(f["lotteries"][0]), m) and _same(float(f["lotteries"][1]), se, m)):
-                raise MusicDataError(f"{at}: lotteries {f['lotteries']}, the chart's seeds give [{m!r}, {se!r}]")
+            estimates = base["ranges"][j]["lotResults"]
+            center = sum(float(x[0]) for x in estimates) if r["mission"] == MISSION_LUCK else 0.0
+            radius = sum(float(x[1]) for x in estimates) if r["mission"] == MISSION_LUCK else 0.0
+            if abs(float(f["lotteries"][0]) - center) > float(f["lotteries"][1]) + radius + MEAN_TOLERANCE:
+                raise MusicDataError(f"{at}: lotteries {f['lotteries']}, expected counts give [{center}, {radius}]")
         if just > stats["justNotes"]:
             raise MusicDataError(f"{where}: {just} Just notes in the ranges, {stats['justNotes']} on the play")
 
-    def _variant(self, at: str, v: dict, stats: dict, base: list, plain: int | None) -> None:
-        rule, n, positions = self.header["seedRule"], len(stats["ranges"]), stats["positions"]
-        if not (isinstance(v.get("deterministic"), bool) and isinstance(v.get("seTargetMet"), bool)
-                and _int(v.get("seeds")) and _int(v.get("crossSeeds"))):
-            raise MusicDataError(f"{at}: deterministic, seeds, seTargetMet, crossSeeds "
-                                 f"{[v.get(k) for k in ('deterministic', 'seeds', 'seTargetMet', 'crossSeeds')]!r}")
-        det = v["deterministic"]
-        effects = self.shapes[v["shape"]]["effects"]
-        random = any(r["mission"] == MISSION_LUCK for r in stats["ranges"]) or any(
-            11000 <= e["effectType"] <= 11005 or any(
-                c["type"] == 4011 for key, _ in CONDITION_GROUPS for group in e[key] for c in group)
-            for e in effects)
-        if det and random:
-            raise MusicDataError(f"{at}: a deterministic variant with a random dependency")
-        if det and (v["seeds"], v["seTargetMet"]) != (1, True):
-            raise MusicDataError(f"{at}: deterministic on {v['seeds']} seeds (seTargetMet {v['seTargetMet']})")
-        if not det and (v["seeds"] not in rule["batches"]
-                        or not v["seTargetMet"] and v["seeds"] != rule["batches"][-1]):
-            raise MusicDataError(f"{at}: {v['seeds']} seeds (seTargetMet {v['seTargetMet']}), not a batch of the seed "
-                                 f"rule {rule['batches']}")
-        if v["crossSeeds"] != min(v["seeds"], rule["crossSeeds"]):
-            raise MusicDataError(f"{at}: {v['crossSeeds']} cross seeds, not min({v['seeds']}, {rule['crossSeeds']})")
+    def _variant(self, at: str, v: dict, stats: dict, base: dict, plain: int | None) -> None:
+        n, positions = len(stats["ranges"]), stats["positions"]
         pairs = [(k, v.get(k)) for k in VARIANT_MEANS]
         rs = v.get("ranges")
         if not (isinstance(rs, list) and len(rs) == n and all(isinstance(r, dict) for r in rs)):
-            raise MusicDataError(f"{at}: {len(rs) if isinstance(rs, list) else rs!r} range results for {n} ranges")
+            raise MusicDataError(f"{at}: invalid range results for {n} ranges")
         pairs += [(f"ranges[{j}].{k}", r.get(k)) for j, r in enumerate(rs) for k in RANGE_MEANS]
         w, rw = v.get("weights"), v.get("rangeWeights")
-        linear = bool(base) and base[0].get("rangeWeights") is not None
+        linear = base.get("rangeWeights") is not None
         if plain is None:
             if w is not None or rw is not None:
                 raise MusicDataError(f"{at}: weights without a plain kind")
         else:
-            if not (isinstance(w, list) and len(w) == positions):
-                raise MusicDataError(f"{at}: weights are not [position] of [mean, se]")
+            if not isinstance(w, list) or len(w) != positions:
+                raise MusicDataError(f"{at}: weights are not [position] intervals")
             pairs += [(f"weights[{k}]", x) for k, x in enumerate(w)]
             if (rw is not None) != linear:
-                raise MusicDataError(f"{at}: rangeWeights {'given' if rw is not None else 'null'}, the chart's seeds "
-                                     f"have {'them' if linear else 'none'}")
+                raise MusicDataError(f"{at}: rangeWeights differ from the baseline's range weight domain")
             if rw is not None:
-                if not (isinstance(rw, list) and len(rw) == positions and all(isinstance(x, list) and len(x) == n
-                                                                               for x in rw)):
-                    raise MusicDataError(f"{at}: rangeWeights are not [position][range] of [mean, se]")
+                if not (isinstance(rw, list) and len(rw) == positions
+                        and all(isinstance(x, list) and len(x) == n for x in rw)):
+                    raise MusicDataError(f"{at}: rangeWeights are not [position][range] intervals")
                 pairs += [(f"rangeWeights[{k}][{j}]", y) for k, x in enumerate(rw) for j, y in enumerate(x)]
         for name, x in pairs:
-            if not _mean_se(x):
-                raise MusicDataError(f"{at}: {name} {x!r} is not [mean, standard error]")
-            if det and float(x[1]) != 0:
-                raise MusicDataError(f"{at}: {name} {x!r}: a deterministic variant with a standard error")
-        m = {k: float(v[k][0]) for k in VARIANT_MEANS}
-        terms = [float(r[k][0]) for r in rs for k in ("rangeScore", "rankBonus")]
-        # Every serialized point mean is independently rounded to 0.001 (score, tail and two terms per range).
-        if abs(m["tail"] - (m["score"] - sum(terms))) > (len(terms) + 2) * 0.0005 + 1e-8:
-            raise MusicDataError(f"{at}: tail {v['tail'][0]} is not score {v['score'][0]} - {sum(terms)!r} (the "
-                                 f"ranges' scores and rank bonuses)")
-        if det:
-            ints = [float(x[0]) for name, x in pairs if not name.startswith(("weights", "rangeWeights"))]
-            if not all(x.is_integer() for x in ints):
-                raise MusicDataError(f"{at}: a deterministic variant with a fraction of a point")
-            perfect = 0                                 # the Perfect play's range scores and rank bonuses
-            for j, (r, info, r0) in enumerate(zip(rs, stats["ranges"], base[0]["ranges"])):
-                p = info["rankBonusPercent"]
-                want = _trunc_percent(r0["rangeScore"] + int(float(r["rangeScore"][0])), p) - r0["rankBonus"]
-                if int(float(r["rankBonus"][0])) != want:
-                    raise MusicDataError(f"{at}: range {j}: rank bonus {r['rankBonus'][0]} is not trunc(("
-                                         f"{r0['rangeScore']} + {r['rangeScore'][0]}) * {p} / 100) - "
-                                         f"{r0['rankBonus']} = {want}")
-                d, r0p = int(float(r["rangeScorePerfect"][0])), r0["rangeScorePerfect"]
-                perfect += d + _trunc_percent(r0p + d, p) - _trunc_percent(r0p, p)
-            if m["tailPerfect"] != m["scorePerfect"] - perfect:
-                raise MusicDataError(f"{at}: tail on the Perfect play {v['tailPerfect'][0]} is not scorePerfect "
-                                     f"{v['scorePerfect'][0]} - {perfect} (the ranges' Perfect play scores and rank "
-                                     f"bonuses)")
+            if not _estimate(x):
+                raise MusicDataError(f"{at}: {name} {x!r} is not [center, half-width]")
+            if name == "converted" or name.endswith(("maxCombo", "justCount")):
+                if float(x[1]) != 0 or not float(x[0]).is_integer():
+                    raise MusicDataError(f"{at}: {name} must be an exact integer counter")
+        for score, tail, range_score, rank_bonus in (
+                ("score", "tail", "rangeScore", "rankBonus"),
+                ("scorePerfect", "tailPerfect", "rangeScorePerfect", "rankBonusPerfect")):
+            inside = sum(float(r[k][0]) for r in rs for k in (range_score, rank_bonus))
+            # Each point center is serialized to millipoints; every field encloses its own rounding.
+            tolerance = (2 * n + 2) * 0.0005 + MEAN_TOLERANCE * max(1, abs(float(v[score][0])))
+            if abs(float(v[tail][0]) - (float(v[score][0]) - inside)) > tolerance:
+                raise MusicDataError(f"{at}: {tail} is not {score} minus the ranges' scores and rank bonuses")
         c = v.get("check")
-        if not (isinstance(c, dict) and all(k in c for k in CHECK_KEYS)):
-            raise MusicDataError(f"{at}: no check {{{', '.join(CHECK_KEYS)}}}")
-        first = base[0]["seed"] if det else published_seeds(1)[0]
-        if not _int(c["seed"]) or c["seed"] != first:
-            raise MusicDataError(f"{at}: the check plays seed {c['seed']!r}, not the variant's first {first}")
-        if not (isinstance(c["ranks"], list) and len(c["ranks"]) == n and all(_int(r) and 1 <= r <= RANKS
-                                                                                for r in c["ranks"])
+        _check_interval_bound(c, "the check deck", at)
+        if not (isinstance(c["ranks"], list) and len(c["ranks"]) == n
+                and all(_int(r) and 1 <= r <= RANKS for r in c["ranks"])
                 and (linear or all(r == 1 for r in c["ranks"]))):
             raise MusicDataError(f"{at}: check ranks {c['ranks']!r}")
         if not (isinstance(c["deck"], list) and len(c["deck"]) == positions and all(
                 x is None or (plain is not None and isinstance(x, list) and len(x) == 2 and x[0] == plain
                               and _int(x[1])) for x in c["deck"])):
-            raise MusicDataError(f"{at}: check deck {c['deck']!r} is not [plain kind ({plain}), value] or null per "
-                                 f"position")
-        _check_bound(c, "the check deck", at)
-
+            raise MusicDataError(f"{at}: check deck {c['deck']!r} is not [plain kind ({plain}), value] or null per position")
 
 def chart_deck(song: dict, chart: dict, stats: dict, kinds: int, percents: list[list], seeds: int,
                aptitude: Aptitude, plain: int | None) -> dict:
     """A chart's `deck` from its statistics, after checking them against the song, the chart facts, the song's rank
-    bonus percentages (`percents`: rank_bonus_percents), the seed set (chart_seeds: `seeds` seeds with a luck range)
+    bonus percentages (`percents`: rank_bonus_percents), the replay seed set (chart_seeds)
     and its Gekisou aptitude (Aptitude.chart, `plain` the plain kind), `kinds` the number of score-up kinds."""
     where = f"chart {chart['scoreId']} ({song['id']} {chart['difficulty']})"
     checks = (
@@ -958,20 +916,15 @@ def chart_deck(song: dict, chart: dict, stats: dict, kinds: int, percents: list[
             raise MusicDataError(f"{where}: range {i}: the deck model's rank bonus percentages {got!r} "
                                  f"({r['rankBonusPercent']!r}) differ from MasterLiveGekisouRankingScoreBonus {want!r}")
     want = chart_seeds(stats, seeds)
-    if [s["seed"] for s in stats["seeds"]] != want:
-        raise MusicDataError(f"{where}: seeds {[s['seed'] for s in stats['seeds']]} are not the chart's seed set "
-                             f"{want}")
-    _check_seed_shapes(stats, kinds, where)
-    for seed in stats["seeds"]:
-        for i, (r, info) in enumerate(zip(seed["ranges"], ranges)):
-            bonus = _trunc_percent(r["rangeScore"], info["rankBonusPercent"])
-            if r["rankBonus"] != bonus:
-                raise MusicDataError(f"{where}: seed {seed['seed']} range {i}: rank bonus {r['rankBonus']} is not "
-                                     f"trunc({r['rangeScore']} * {info['rankBonusPercent']} / 100) = {bonus}")
-        if stats["justNotes"] == 0 and (seed.get("scorePerfect") != seed["score"] or any(
-                r.get("rangeScorePerfect") != r["rangeScore"] for r in seed["ranges"])):
-            raise MusicDataError(f"{where}: seed {seed['seed']}: a chart without Just notes scores otherwise on the "
-                                 f"Perfect play ({seed.get('scorePerfect')} for {seed['score']})")
+    if stats.get("replaySeeds") != want:
+        raise MusicDataError(f"{where}: replay seeds {stats.get('replaySeeds')!r} are not the chart's seed set {want}")
+    _check_expectation_shapes(stats, kinds, where)
+    expected = stats.get("expectation")
+    if expected is not None and stats["justNotes"] == 0:
+        pairs = [(expected["score"], expected["scorePerfect"])] + [
+            (r["rangeScore"], r["rangeScorePerfect"]) for r in expected["ranges"]]
+        if any(abs(float(a[0]) - float(b[0])) > float(a[1]) + float(b[1]) + MEAN_TOLERANCE for a, b in pairs):
+            raise MusicDataError(f"{where}: a chart without Just notes scores otherwise on the Perfect play")
     return dict({k: stats.get(k) for k in DECK_CHART_KEYS}, gekisouAptitude=aptitude.chart(where, stats, plain))
 
 

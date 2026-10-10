@@ -16,14 +16,14 @@ The music-data pointer is:
   "deckData": {"format":"nnnotes.deck-data/1","url":"deck-data.json","sha256":"<SHA>","bytes":0},
   "charts": [{"scoreId":10000303,"url":"charts/10000303.json","sha256":"<SHA>","bytes":0,"musicLengthMs":120557,"noteCount":0,"assetSha256":"<original chart asset SHA>"}],
   "engine": {
-    "model": {"name":"ournotes-deck","version":"<version>","source":"<repository>","commit":"<pinned commit>","format":"ournotes-deck.chart-stats/2"},
+    "model": {"name":"ournotes-deck","version":"<version>","source":"<repository>","commit":"<pinned commit>","format":"ournotes-deck.chart-stats/3"},
     "requestFormat":"ournotes.replay/1","class":"ReplaySession","methods":["describeChart","template","run"],
     "js":{"url":"engine/ournotes_replay_wasm.js","sha256":"<SHA>","bytes":0},
     "wasm":{"url":"engine/ournotes_replay_wasm_bg.wasm","sha256":"<SHA>","bytes":0},
     "build":{"url":"engine/build-info.json","sha256":"<SHA>","bytes":0}
   },
   "recommendEngine": {
-    "model": {"name":"ournotes-deck","version":"<version>","source":"<repository>","commit":"<pinned commit>","format":"ournotes-deck.chart-stats/2"},
+    "model": {"name":"ournotes-deck","version":"<version>","source":"<repository>","commit":"<pinned commit>","format":"ournotes-deck.chart-stats/3"},
     "js":{"url":"recommend/ournotes_recommend_wasm.js","sha256":"<SHA>","bytes":0},
     "wasm":{"url":"recommend/ournotes_recommend_wasm_bg.wasm","sha256":"<SHA>","bytes":0},
     "build":{"url":"recommend/build-info.json","sha256":"<SHA>","bytes":0}

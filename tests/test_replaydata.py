@@ -159,11 +159,11 @@ def test_recommend_engine_rejects_another_build(tmp_path, change, message):
     assert not (tmp_path / "music.json").exists() and not (tmp_path / "replay").exists()
 
 
-def test_final_export_rejects_unmet_sampling_instead_of_publishing_flag(tmp_path):
+def test_final_export_checks_the_complete_expectation_interval(tmp_path):
     def unmet(chart):
         apt = chart.get("gekisouAptitude")
         if apt and apt["variants"]:
-            apt["variants"][0]["seTargetMet"] = False
-    with pytest.raises(musicdata.MusicDataError, match="did not meet BOTH score SE targets"):
+            apt["variants"][0]["check"]["expected"] = [2000, 100]
+    with pytest.raises(musicdata.MusicDataError, match="beyond the bound"):
         export(tmp_path, deck=FakeDeck(change=unmet))
     assert not (tmp_path / "music.json").exists()

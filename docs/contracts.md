@@ -226,7 +226,7 @@ The catalog versions of a store, `nnnotes.catalogs/1` ([schema/catalogs.schema.j
 ([schema/catalog-diff.schema.json](schema/catalog-diff.schema.json), `nnnotes catalogs diff --json`), are written
 by the commands.
 
-The music data file of `nnnotes music-data`, `nnnotes.music-data/1`
+The music data file of `nnnotes music-data`, `nnnotes.music-data/2`
 ([schema/music-data.schema.json](schema/music-data.schema.json)), names its format in a `format` field; it is
 described in [music-data.md](music-data.md).
 
