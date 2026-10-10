@@ -678,8 +678,7 @@ def cmd_music_data(args, cfg):
     try:
         deck = None if args.no_deck else musicdata.Deck(
             seeds=args.seeds, workers=args.workers, aptitude=not args.no_gekisou_aptitude,
-            aptitude_max_seeds=args.aptitude_max_seeds, aptitude_cross_seeds=args.aptitude_cross_seeds,
-            require_convergence=not args.allow_unconverged_aptitude, cache=args.stats_cache)
+            cache=args.stats_cache)
         if args.apk_master:
             src, region = deckdata.apk_master(apk), deckdata.EMBEDDED
         elif args.decoded_master:                    # decoded elsewhere: no master key
@@ -987,18 +986,11 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--no-deck", action="store_true",
                    help="do not run the deck model (every chart's deck is null)")
     c.add_argument("--seeds", type=int, default=8, metavar="N",
-                   help="seeds measured on a chart with a luck range (default 8)")
+                   help="replay seeds of a chart with a luck range (default 8); statistics use nominal expectations")
     c.add_argument("--workers", type=int, metavar="N",
                    help="threads measuring charts (default: every processor)")
     c.add_argument("--no-gekisou-aptitude", action="store_true",
                    help="leave out the charts' Gekisou aptitude (every gekisouAptitude is null)")
-    c.add_argument("--aptitude-max-seeds", type=int, metavar="N",
-                   help="seeds of a Gekisou aptitude variant at most (default: the deck model's, 65536); "
-                        "sampling stops earlier when both score targets converge")
-    c.add_argument("--allow-unconverged-aptitude", action="store_true",
-                   help="diagnostic export only: retain unmet SE flags at the sample cap; final exports reject them")
-    c.add_argument("--aptitude-cross-seeds", type=int, metavar="N",
-                   help="seeds of a Gekisou aptitude variant's cross terms (default: the deck model's, 64)")
     c.add_argument("--stats-cache", type=Path, metavar="DIR",
                    help="keep the charts' deck statistics in DIR: a chart whose model sources, options, master tables "
                         "and chart are unchanged is not measured again; DIR then holds this export's charts only")

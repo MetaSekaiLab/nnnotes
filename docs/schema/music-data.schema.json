@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:nnnotes:schema:music-data",
-  "title": "nnnotes.music-data/1",
+  "title": "nnnotes.music-data/2",
   "description": "Every live song and chart of one master data version: song metadata in every language, chart facts and the deck model's chart statistics, with --full also the deck model's input (every chart's runtime notes and a subset of the master data tables as columns and rows). Written by `nnnotes music-data`; described in docs/music-data.md. Within the arrays of a deck input chart's `notes` (and of its `fevers`) the i-th elements belong to the same note (range): the arrays have equal lengths, which a schema cannot state. Readers ignore keys they do not know.",
   "type": "object",
   "required": [
@@ -17,7 +17,7 @@
   ],
   "properties": {
     "format": {
-      "const": "nnnotes.music-data/1"
+      "const": "nnnotes.music-data/2"
     },
     "provenance": {
       "type": "object",
@@ -176,7 +176,7 @@
             },
             "format": {
               "type": "string",
-              "description": "the statistics format, ournotes-deck.chart-stats/2"
+              "description": "the statistics format, ournotes-deck.chart-stats/3"
             }
           }
         }
@@ -691,8 +691,9 @@
         "positions",
         "ranges",
         "justNotes",
-        "seeds",
-        "unplayable"
+        "unplayable",
+        "expectation",
+        "replaySeeds"
       ],
       "properties": {
         "convertedNoteCount": {
@@ -765,165 +766,6 @@
         "justNotes": {
           "type": "integer"
         },
-        "seeds": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "required": [
-              "seed",
-              "score",
-              "ranges",
-              "weights",
-              "check"
-            ],
-            "properties": {
-              "seed": {
-                "type": "integer"
-              },
-              "score": {
-                "type": "integer",
-                "description": "the exact no-skill score at model.power"
-              },
-              "ranges": {
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "required": [
-                    "rangeScore",
-                    "rankBonus",
-                    "maxCombo",
-                    "justCount",
-                    "lotResults"
-                  ],
-                  "properties": {
-                    "rangeScore": {
-                      "type": "integer"
-                    },
-                    "rankBonus": {
-                      "type": "integer"
-                    },
-                    "maxCombo": {
-                      "type": "integer"
-                    },
-                    "justCount": {
-                      "type": "integer"
-                    },
-                    "luckPoints": {
-                      "type": "integer",
-                      "description": "the luck points gained in the range (TotalBonusPoint), a luck range's rank figure"
-                    },
-                    "lotResults": {
-                      "type": "array",
-                      "items": {
-                        "type": "integer"
-                      },
-                      "minItems": 4,
-                      "maxItems": 4
-                    },
-                    "rangeScorePerfect": {
-                      "type": "integer",
-                      "description": "the range score on the Perfect play (every Just judged Perfect)"
-                    }
-                  }
-                }
-              },
-              "weights": {
-                "type": "array",
-                "items": {
-                  "type": "array",
-                  "items": {
-                    "type": "number"
-                  }
-                },
-                "description": "weights[kind][position]: score per unit of deck power and of factor"
-              },
-              "check": {
-                "type": "object",
-                "required": [
-                  "deck",
-                  "exact",
-                  "predicted",
-                  "bound"
-                ],
-                "properties": {
-                  "deck": {
-                    "type": "array",
-                    "items": {
-                      "type": [
-                        "array",
-                        "null"
-                      ]
-                    }
-                  },
-                  "exact": {
-                    "type": "integer"
-                  },
-                  "predicted": {
-                    "type": "number"
-                  },
-                  "bound": {
-                    "type": "number"
-                  }
-                }
-              },
-              "scorePerfect": {
-                "type": "integer",
-                "description": "the exact no-skill score at model.power on the Perfect play (every Just judged Perfect), its rank 1 bonuses included"
-              },
-              "rangeWeights": {
-                "type": [
-                  "array",
-                  "null"
-                ],
-                "items": {
-                  "type": [
-                    "array",
-                    "null"
-                  ],
-                  "items": {
-                    "type": "array",
-                    "items": {
-                      "type": "number"
-                    }
-                  }
-                },
-                "description": "rangeWeights[kind][position][range]: range score per unit of deck power and of factor; null when the ranks do not follow linearly on the chart, a kind null when its conditions read the confirmed rank"
-              },
-              "rankCheck": {
-                "type": [
-                  "object",
-                  "null"
-                ],
-                "required": [
-                  "ranks",
-                  "exact",
-                  "predicted",
-                  "bound"
-                ],
-                "description": "the check deck played at random ranks; null without ranges or range weights",
-                "properties": {
-                  "ranks": {
-                    "type": "array",
-                    "items": {
-                      "type": "integer",
-                      "minimum": 1,
-                      "maximum": 5
-                    }
-                  },
-                  "exact": {
-                    "type": "integer"
-                  },
-                  "predicted": {
-                    "type": "number"
-                  },
-                  "bound": {
-                    "type": "number"
-                  }
-                }
-              }
-            }
-          }
-        },
         "offSeeds": {
           "type": "array",
           "description": "the measurements with Gekisou off (a solo live), one seed",
@@ -993,10 +835,27 @@
             "string",
             "null"
           ],
-          "description": "why the game cannot play the chart with Gekisou (seeds is then empty; offSeeds is not)"
+          "description": "why Gekisou cannot play the chart; expectation is null and replaySeeds is empty"
         },
         "gekisouAptitude": {
           "$ref": "#/$defs/chartGekisouAptitude"
+        },
+        "expectation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/chartExpectation"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "replaySeeds": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          },
+          "description": "Seeds for deterministic replays."
         }
       }
     },
@@ -1372,21 +1231,6 @@
         }
       }
     },
-    "aptitudeMeanSE": {
-      "type": "array",
-      "prefixItems": [
-        {
-          "type": "number"
-        },
-        {
-          "type": "number",
-          "minimum": 0
-        }
-      ],
-      "items": false,
-      "minItems": 2,
-      "maxItems": 2
-    },
     "aptitudeCondition": {
       "type": "object",
       "required": [
@@ -1637,7 +1481,7 @@
           "required": [
             "plainKind",
             "host",
-            "seedRule",
+            "law",
             "shapes"
           ],
           "properties": {
@@ -1656,47 +1500,16 @@
               "type": "string",
               "minLength": 1
             },
-            "seedRule": {
-              "type": "object",
-              "required": [
-                "deterministicTest",
-                "batches",
-                "relative",
-                "baseline",
-                "crossSeeds"
-              ],
-              "properties": {
-                "deterministicTest": {
-                  "type": "integer",
-                  "minimum": 1
-                },
-                "batches": {
-                  "type": "array",
-                  "items": {
-                    "type": "integer",
-                    "minimum": 1
-                  },
-                  "minItems": 1
-                },
-                "relative": {
-                  "type": "number",
-                  "minimum": 0
-                },
-                "baseline": {
-                  "type": "number",
-                  "minimum": 0
-                },
-                "crossSeeds": {
-                  "type": "integer",
-                  "minimum": 1
-                }
-              }
-            },
             "shapes": {
               "type": "array",
               "items": {
                 "$ref": "#/$defs/aptitudeShape"
               }
+            },
+            "law": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The independent nominal lottery and skill probability law."
             }
           }
         },
@@ -1710,10 +1523,6 @@
       "required": [
         "shape",
         "bandMatch",
-        "deterministic",
-        "seeds",
-        "seTargetMet",
-        "crossSeeds",
         "score",
         "scorePerfect",
         "tail",
@@ -1739,34 +1548,20 @@
             }
           ]
         },
-        "deterministic": {
-          "type": "boolean"
-        },
-        "seeds": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "seTargetMet": {
-          "type": "boolean"
-        },
-        "crossSeeds": {
-          "type": "integer",
-          "minimum": 1
-        },
         "score": {
-          "$ref": "#/$defs/aptitudeMeanSE"
+          "$ref": "#/$defs/estimate"
         },
         "scorePerfect": {
-          "$ref": "#/$defs/aptitudeMeanSE"
+          "$ref": "#/$defs/estimate"
         },
         "tail": {
-          "$ref": "#/$defs/aptitudeMeanSE"
+          "$ref": "#/$defs/estimate"
         },
         "tailPerfect": {
-          "$ref": "#/$defs/aptitudeMeanSE"
+          "$ref": "#/$defs/estimate"
         },
         "converted": {
-          "$ref": "#/$defs/aptitudeMeanSE"
+          "$ref": "#/$defs/estimate"
         },
         "ranges": {
           "type": "array",
@@ -1778,26 +1573,30 @@
               "rangeScorePerfect",
               "maxCombo",
               "justCount",
-              "luckPoints"
+              "luckPoints",
+              "rankBonusPerfect"
             ],
             "properties": {
               "rangeScore": {
-                "$ref": "#/$defs/aptitudeMeanSE"
+                "$ref": "#/$defs/estimate"
               },
               "rankBonus": {
-                "$ref": "#/$defs/aptitudeMeanSE"
+                "$ref": "#/$defs/estimate"
               },
               "rangeScorePerfect": {
-                "$ref": "#/$defs/aptitudeMeanSE"
+                "$ref": "#/$defs/estimate"
               },
               "maxCombo": {
-                "$ref": "#/$defs/aptitudeMeanSE"
+                "$ref": "#/$defs/estimate"
               },
               "justCount": {
-                "$ref": "#/$defs/aptitudeMeanSE"
+                "$ref": "#/$defs/estimate"
               },
               "luckPoints": {
-                "$ref": "#/$defs/aptitudeMeanSE"
+                "$ref": "#/$defs/estimate"
+              },
+              "rankBonusPerfect": {
+                "$ref": "#/$defs/estimate"
               }
             }
           }
@@ -1807,7 +1606,7 @@
             {
               "type": "array",
               "items": {
-                "$ref": "#/$defs/aptitudeMeanSE"
+                "$ref": "#/$defs/estimate"
               }
             },
             {
@@ -1822,7 +1621,7 @@
               "items": {
                 "type": "array",
                 "items": {
-                  "$ref": "#/$defs/aptitudeMeanSE"
+                  "$ref": "#/$defs/estimate"
                 }
               }
             },
@@ -1832,63 +1631,7 @@
           ]
         },
         "check": {
-          "type": "object",
-          "required": [
-            "seed",
-            "ranks",
-            "deck",
-            "exact",
-            "predicted",
-            "bound"
-          ],
-          "properties": {
-            "seed": {
-              "type": "integer"
-            },
-            "ranks": {
-              "type": "array",
-              "items": {
-                "type": "integer",
-                "minimum": 1,
-                "maximum": 5
-              }
-            },
-            "deck": {
-              "type": "array",
-              "items": {
-                "anyOf": [
-                  {
-                    "type": "array",
-                    "prefixItems": [
-                      {
-                        "type": "integer",
-                        "minimum": 0
-                      },
-                      {
-                        "type": "integer"
-                      }
-                    ],
-                    "items": false,
-                    "minItems": 2,
-                    "maxItems": 2
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              }
-            },
-            "exact": {
-              "type": "integer"
-            },
-            "predicted": {
-              "type": "number"
-            },
-            "bound": {
-              "type": "number",
-              "minimum": 0
-            }
-          }
+          "$ref": "#/$defs/expectationCheck"
         }
       }
     },
@@ -1935,7 +1678,7 @@
                     "minimum": 0
                   },
                   "lotteries": {
-                    "$ref": "#/$defs/aptitudeMeanSE"
+                    "$ref": "#/$defs/estimate"
                   }
                 }
               }
@@ -1952,6 +1695,182 @@
           "type": "null"
         }
       ]
+    },
+    "estimate": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "prefixItems": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "number",
+          "minimum": 0
+        }
+      ],
+      "items": false,
+      "description": "The center and outward half-width of a nominal expectation interval."
+    },
+    "expectationCheck": {
+      "type": "object",
+      "required": [
+        "deck",
+        "ranks",
+        "expected",
+        "predicted",
+        "bound"
+      ],
+      "properties": {
+        "deck": {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "integer"
+                },
+                "minItems": 2,
+                "maxItems": 2
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "ranks": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5
+          }
+        },
+        "expected": {
+          "$ref": "#/$defs/estimate"
+        },
+        "predicted": {
+          "$ref": "#/$defs/estimate"
+        },
+        "bound": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "description": "A full nominal expectation and its linear prediction; the worst endpoint separation is within bound."
+    },
+    "chartExpectation": {
+      "type": "object",
+      "required": [
+        "score",
+        "scorePerfect",
+        "ranges",
+        "weights",
+        "rangeWeights",
+        "check",
+        "rankCheck"
+      ],
+      "properties": {
+        "score": {
+          "$ref": "#/$defs/estimate"
+        },
+        "scorePerfect": {
+          "$ref": "#/$defs/estimate"
+        },
+        "ranges": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "rangeScore",
+              "rankBonus",
+              "rankBonusPerfect",
+              "rangeScorePerfect",
+              "luckPoints",
+              "maxCombo",
+              "justCount",
+              "lotResults"
+            ],
+            "properties": {
+              "rangeScore": {
+                "$ref": "#/$defs/estimate"
+              },
+              "rankBonus": {
+                "$ref": "#/$defs/estimate"
+              },
+              "rankBonusPerfect": {
+                "$ref": "#/$defs/estimate"
+              },
+              "rangeScorePerfect": {
+                "$ref": "#/$defs/estimate"
+              },
+              "luckPoints": {
+                "$ref": "#/$defs/estimate"
+              },
+              "maxCombo": {
+                "type": "integer"
+              },
+              "justCount": {
+                "type": "integer"
+              },
+              "lotResults": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/estimate"
+                },
+                "minItems": 4,
+                "maxItems": 4,
+                "description": "Expected consumed result counts: Miss, Hit, Super Hit, Critical."
+              }
+            }
+          }
+        },
+        "weights": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/estimate"
+            }
+          }
+        },
+        "rangeWeights": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/estimate"
+              }
+            }
+          }
+        },
+        "check": {
+          "$ref": "#/$defs/expectationCheck"
+        },
+        "rankCheck": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/expectationCheck"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
     }
   }
 }

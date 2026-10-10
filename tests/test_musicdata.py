@@ -205,54 +205,59 @@ SHAPES = [
     {"id": 4, "source": "support", "mission": 1, "bandCondition": False, "effects": [effect_row(5)],
      "skills": [shape_skill(32, 5)]},
 ]
-SEED_RULE = {"deterministicTest": 4, "batches": [32, 64, 128, 256, 512, 1024], "relative": 0.01, "baseline": 0.001,
-             "crossSeeds": 64}
-NONDETERMINISTIC = {2, 3}                       # the shapes the stand-in measures on 32 seeds
+NOMINAL_LAW = "independent nominal lottery and skill probabilities"
 
 
-def mean_se(xs):
-    m = sum(xs) / len(xs)
-    return [m, (sum((x - m) ** 2 for x in xs) / (len(xs) - 1) / len(xs)) ** 0.5 if len(xs) > 1 else 0.0]
+def expected_stats(positions, percents, missions):
+    ranges = []
+    for j, p in enumerate(percents):
+        points = 101 * (j + 1)
+        luck = missions[j] == musicdata.MISSION_LUCK
+        ranges.append({"rangeScore": [points, 0], "rangeScorePerfect": [points, 0],
+                       "rankBonus": [trunc_percent(points, p[0]), 0],
+                       "rankBonusPerfect": [trunc_percent(points, p[0]), 0],
+                       "maxCombo": 1, "justCount": 0, "luckPoints": [11, 0.35] if luck else [0, 0],
+                       "lotResults": [[2, 0.01], [1, 0.01], [0.5, 0.01], [0.1, 0.01]] if luck else [[0, 0]] * 4})
+    check = {"deck": [[0, 5000]] + [None] * (positions - 1), "ranks": None,
+             "expected": [2000, 0.25], "predicted": [2000.25, 0.1], "bound": 7}
+    return {"score": [1234, 0.5], "scorePerfect": [1234, 0.5], "ranges": ranges,
+            "weights": [[["W", 0]] * positions], "rangeWeights": [[[["W", 0]] * len(ranges)] * positions],
+            "check": check, "rankCheck": dict(check, ranks=[2] * len(ranges)) if ranges else None}
 
 
 def aptitude_of(s, positions):
-    """The stand-in's Gekisou aptitude of a chart's statistics `s`: per range 5 judged notes (Perfect in a Just count
-    range), per variant +10 * (j + 1) in range j and 7 after the ranges; a nondeterministic shape's means a quarter
-    point off with a standard error of 0.5."""
-    ranges, base = s["ranges"], s["seeds"][0]
+    """Synthetic nominal intervals: known range gains and an exact seven-point tail."""
+    ranges, base = s["ranges"], s["expectation"]
     missions = {r["mission"] for r in ranges}
     factors = [{"judgedNotes": 5, "justNotes": 0, "perfectNotes": 5 if r["mission"] == 3 else 0, "tailNotes": 1,
                 "comboAtStart": 0,
-                "lotteries": mean_se([sum(x["ranges"][j]["lotResults"]) for x in s["seeds"]]) if r["mission"] == 2
-                else [0, 0]} for j, r in enumerate(ranges)]
+                "lotteries": [sum(x[i] for x in base["ranges"][j]["lotResults"]) for i in range(2)]}
+               for j, r in enumerate(ranges)]
     variants = []
     for shape in SHAPES:
         if shape["mission"] != 4 and shape["mission"] not in missions:
             continue
         for band in ((True, False) if shape["bandCondition"] else (None,)):
-            det = shape["id"] not in NONDETERMINISTIC and 2 not in missions
-            off, se = (0, 0) if det else (0.25, 0.5)
+            offset, radius = (0.25, 0.5) if shape["id"] in (2, 3) or 2 in missions else (0, 0)
             rs, inside, inside_p = [], 0, 0
             for j, (r, r0) in enumerate(zip(ranges, base["ranges"])):
                 d = 10 * (j + 1)
-                rb = trunc_percent(r0["rangeScore"] + d, r["rankBonusPercent"]) - r0["rankBonus"]
-                rbp = trunc_percent(r0["rangeScorePerfect"] + d, r["rankBonusPercent"]) - \
-                    trunc_percent(r0["rangeScorePerfect"], r["rankBonusPercent"])
-                rs.append({"rangeScore": [d + off, se], "rankBonus": [rb + off, se], "rangeScorePerfect": [d + off, se],
-                           "maxCombo": [0, 0], "justCount": [1 + off, se], "luckPoints": [off, se]})
-                inside += d + rb + 2 * off
-                inside_p += d + rbp
-            seeds = 1 if det else 32
+                rb = trunc_percent(r0["rangeScore"][0] + d, r["rankBonusPercent"]) - r0["rankBonus"][0]
+                rbp = trunc_percent(r0["rangeScorePerfect"][0] + d, r["rankBonusPercent"]) - r0["rankBonusPerfect"][0]
+                rs.append({"rangeScore": [d + offset, radius], "rankBonus": [rb + offset, radius],
+                           "rangeScorePerfect": [d + offset, radius], "rankBonusPerfect": [rbp + offset, radius],
+                           "maxCombo": [0, 0], "justCount": [1, 0], "luckPoints": [offset, radius]})
+                inside += d + rb + 2 * offset
+                inside_p += d + rbp + 2 * offset
             variants.append({
-                "shape": shape["id"], "bandMatch": band, "deterministic": det, "seeds": seeds, "seTargetMet": True,
-                "crossSeeds": min(seeds, SEED_RULE["crossSeeds"]),
-                "score": [inside + 7, se], "scorePerfect": [inside_p + 7 + off, se], "tail": [7, se],
-                "tailPerfect": [7, se], "converted": [0, 0], "ranges": rs,
-                "weights": [[0.01, se / 100]] * positions,
+                "shape": shape["id"], "bandMatch": band,
+                "score": [inside + 7, radius], "scorePerfect": [inside_p + 7, radius], "tail": [7, radius],
+                "tailPerfect": [7, radius], "converted": [0, 0], "ranges": rs,
+                "weights": [[0.01, radius / 100]] * positions,
                 "rangeWeights": [[[0.001, 0]] * len(ranges)] * positions if base["rangeWeights"] is not None else None,
-                "check": {"seed": base["seed"] if det else musicdata.published_seeds(1)[0], "ranks": [2 if base["rangeWeights"] is not None else 1] * len(ranges),
-                          "deck": [[0, 5000]] + [None] * (positions - 1), "exact": 2000, "predicted": 2000.25,
-                          "bound": 7.0}})
+                "check": {"ranks": [2 if base["rangeWeights"] is not None else 1] * len(ranges),
+                          "deck": [[0, 5000]] + [None] * (positions - 1), "expected": [2000, 0.25],
+                          "predicted": [2000.25, 0.1], "bound": 7}})
     return {"factors": factors, "variants": variants}
 
 
@@ -261,7 +266,7 @@ class FakeDeck:
     aptitude (SHAPES; `aptitude`) unless it is left out."""
     COMMIT = "7e5d84b5998d28c21541ce3f2e0a3dfb1439f4f6"
     SOURCE = "5" * 64
-    FORMAT = "ournotes-deck.chart-stats/2"
+    FORMAT = "ournotes-deck.chart-stats/3"
 
     def __init__(self, change=None, fail=None, header=None):
         self.change, self.fail, self.header, self.inputs, self.options = change, fail, header, [], []
@@ -271,12 +276,12 @@ class FakeDeck:
                 "commit": self.COMMIT, "sourceSha256": self.SOURCE, "dataFormat": deckdata.DECK_FORMAT,
                 "format": self.FORMAT}
 
-    def chart_stats(self, data, seeds, workers, aptitude=True, aptitude_max_seeds=None, aptitude_cross_seeds=None):
+    def chart_stats(self, data, seeds, workers, aptitude=True):
         if self.fail:
             raise ValueError(self.fail)
         doc = json.loads(data)
         self.inputs.append((doc, seeds, workers))
-        self.options.append((aptitude, aptitude_max_seeds, aptitude_cross_seeds))
+        self.options.append(aptitude)
         assert doc["format"] == deckdata.DECK_FORMAT and list(doc["master"]) == [t for t, _ in deckdata.TABLES]
         m = doc["master"]
         with_aptitude = aptitude
@@ -303,16 +308,6 @@ class FakeDeck:
             check = {"deck": [[0, 5000]], "exact": 2000, "predicted": 2000.25, "bound": 7.0}
             luck = musicdata.MISSION_LUCK in missions[:len(fevers)]
 
-            def seed_stats(i, seed):
-                return {"seed": seed, "score": 1234,
-                        "ranges": [{"rangeScore": 101 * (j + 1), "rankBonus": trunc_percent(101 * (j + 1), p[0]),
-                                    "maxCombo": 1, "justCount": 0, "luckPoints": 0,
-                                    "lotResults": [i % 3, 1, 0, 0] if luck else [0, 0, 0, 0],
-                                    "rangeScorePerfect": 101 * (j + 1)} for j, p in enumerate(percents)],
-                        "weights": [["W"] * positions], "check": dict(check), "scorePerfect": 1234,
-                        "rangeWeights": [[["W"] * len(fevers)] * positions],
-                        "rankCheck": {"ranks": [2] * len(fevers), "exact": 2001, "predicted": 2000.5,
-                                      "bound": 7.0} if fevers else None}
             s = {"scoreId": c["scoreId"], "musicId": music, "difficulty": d, "level": levels[c["scoreId"]],
                  "judgedNotes": sum(score.is_judgement_note(op) for op in c["notes"]["op"]),
                  "convertedNoteCount": len(c["notes"]["id"]), "lastNoteMs": last, "musicLengthMs": last + 1000,
@@ -322,7 +317,8 @@ class FakeDeck:
                              "rankBonusPercent": percents[i][0], "rankBonusPercents": percents[i]}
                             for i, (a, b) in enumerate(fevers)],
                  "justNotes": 0,
-                 "seeds": [seed_stats(i, x) for i, x in enumerate(musicdata.published_seeds(seeds) if luck else [0])],
+                 "expectation": expected_stats(positions, percents, missions),
+                 "replaySeeds": musicdata.published_seeds(seeds) if luck else [0],
                  "offSeeds": [{"seed": 0, "score": 1000, "weights": [["W"] * positions], "check": dict(check)}]}
             s["gekisouAptitude"] = aptitude_of(s, positions) if with_aptitude and fevers else None
             if self.change:
@@ -331,7 +327,7 @@ class FakeDeck:
         out = {"format": self.FORMAT, "source": {},
                "model": {"power": 300000, "gekisouAptitude": "each Gekisou (support) skill shape alone"},
                "gekisouAptitude": {"plainKind": 0, "host": "a synthetic member without a Gekisou skill",
-                                   "seedRule": SEED_RULE, "shapes": SHAPES} if aptitude else None,
+                                   "law": NOMINAL_LAW, "shapes": SHAPES} if aptitude else None,
                "kinds": [{"id": 0, "effectType": 2000, "activationTimeSecond": 7.5}], "charts": charts}
         out = json.loads(json.dumps(out))
         if self.header:
@@ -400,7 +396,7 @@ def test_document(tmp_path):
     doc = json.loads(raw)
     assert list(doc) == ["format", "provenance", "languages", "bands", "characters", "tags", "categories",
                          "gekisouCatalog", "deck", "songs"]
-    assert doc["format"] == "nnnotes.music-data/1" and doc["languages"] == ["ja", "en", "zh-Hant", "zh-Hans", "ko"]
+    assert doc["format"] == "nnnotes.music-data/2" and doc["languages"] == ["ja", "en", "zh-Hant", "zh-Hans", "ko"]
     p = doc["provenance"]
     assert list(p) == ["region", "client", "catalog", "master", "exporter", "deck"] and p["deck"] is None
     # without the deck model: the song and the Gekisou catalog tables only
@@ -485,9 +481,10 @@ def test_deck(tmp_path):
     assert c["deck"]["unplayable"] is None and c["deck"]["skip"] == 1.5
     # the ranks: the song's mission pattern (3) rows of every range
     assert [r["rankBonusPercents"] for r in c["deck"]["ranges"]] == [[35, 34, 33, 32, 31], [40, 38, 36, 34, 32]]
-    seed = c["deck"]["seeds"][0]
-    assert seed["rankCheck"]["ranks"] == [2, 2] and seed["scorePerfect"] == seed["score"]
-    assert [r["rankBonus"] for r in seed["ranges"]] == [35, 80] and [r["luckPoints"] for r in seed["ranges"]] == [0, 0]
+    expected = c["deck"]["expectation"]
+    assert expected["rankCheck"]["ranks"] == [2, 2] and expected["scorePerfect"] == expected["score"]
+    assert [r["rankBonus"] for r in expected["ranges"]] == [[35, 0], [80, 0]]
+    assert [r["luckPoints"] for r in expected["ranges"]] == [[0, 0], [0, 0]]
     assert c["deck"]["offSeeds"][0]["score"] == 1000
     # the deck model's numbers as it writes them: a binary64 value is not narrowed to binary32
     assert b'"weights":[[' + WEIGHT.encode() + b',' + WEIGHT.encode() + b']]' in raw and b'"predicted":2000.25' in raw
@@ -508,22 +505,22 @@ def test_deck(tmp_path):
     (lambda s: s.update(difficulty="hard"), "difficulty 'hard' differs"),
     (lambda s: s["ranges"] and s["ranges"][0]["rankBonusPercents"].__setitem__(2, 99), "range 0: .*percentages"),
     (lambda s: s["ranges"] and s["ranges"][0].update(rankBonusPercent=1), "range 0: .*percentages"),
-    (lambda s: s["ranges"] and s["seeds"][0]["ranges"][0].update(rankBonus=-1), "rank bonus -1 is not trunc"),
-    (lambda s: s["seeds"][0]["ranges"].pop(), "range results for"),
+    (lambda s: s["ranges"] and s["expectation"]["ranges"][0].update(rankBonus=[1, -1]), "invalid scores"),
+    (lambda s: s["expectation"]["ranges"].pop(), "range results differ"),
     (lambda s: s.pop("offSeeds"), "no Gekisou off statistics"),
     (lambda s: s["offSeeds"].append(s["offSeeds"][0]), "no Gekisou off statistics"),
     (lambda s: s["offSeeds"][0]["weights"].append(None), "Gekisou off: weights"),
     (lambda s: s["offSeeds"][0]["check"].update(exact=0), "Gekisou off: the check deck scores 0"),
-    (lambda s: s["seeds"][0].update(scorePerfect=1), "otherwise on the Perfect play"),
-    (lambda s: s["seeds"][0]["weights"][0].pop(), "weights are not"),
-    (lambda s: s["seeds"][0]["weights"].append(None), "weights are not"),
-    (lambda s: s["seeds"][0].update(rangeWeights=[[]]), "rangeWeights are not"),
-    (lambda s: s["seeds"][0]["check"].update(bound=0.1), "the check deck scores 2000"),
-    (lambda s: s["ranges"] and s["seeds"][0]["rankCheck"].update(exact=0), "at ranks"),
-    (lambda s: s["ranges"] and s["seeds"][0]["rankCheck"].update(ranks=[6, 1]), "rank check ranks"),
-    (lambda s: s["seeds"][0]["ranges"][0].pop("luckPoints"), "chart 10 .*seed 0 range 0: no luck points"),
-    (lambda s: s["seeds"][0].update(seed=3), r"chart 10 .*seeds \[3\] are not the chart's seed set \[0\]"),
-    (lambda s: s["seeds"].append(dict(s["seeds"][0], seed=5)), r"chart 10 .*seeds \[0, 5\] are not the chart's seed"),
+    (lambda s: s["expectation"].update(scorePerfect=[1, 0]), "otherwise on the Perfect play"),
+    (lambda s: s["expectation"]["weights"][0].pop(), "weights are not"),
+    (lambda s: s["expectation"]["weights"].append(None), "weights are not"),
+    (lambda s: s["expectation"].update(rangeWeights=[[]]), "rangeWeights are not"),
+    (lambda s: s["expectation"]["check"].update(bound=0.1), "the check deck: expected"),
+    (lambda s: s["ranges"] and s["expectation"]["rankCheck"].update(expected=[0, 0]), "rank check: expected"),
+    (lambda s: s["ranges"] and s["expectation"]["rankCheck"].update(ranks=[6, 1]), "rank check ranks"),
+    (lambda s: s["expectation"]["ranges"][0].pop("luckPoints"), "chart 10 .*range 0: invalid scores"),
+    (lambda s: s.update(replaySeeds=[3]), r"chart 10 .*replay seeds \[3\] are not the chart's seed set \[0\]"),
+    (lambda s: s["replaySeeds"].append(5), r"chart 10 .*replay seeds \[0, 5\] are not the chart's seed"),
 ])
 def test_deck_checks(tmp_path, change, match):
     with pytest.raises(musicdata.MusicDataError, match=match):
@@ -534,8 +531,8 @@ def test_deck_checks(tmp_path, change, match):
 def test_deck_without_range_weights(tmp_path):
     """A chart without range weights, a kind without them and a kind without Gekisou off weights are carried."""
     def change(s):
-        s["seeds"][0]["rangeWeights"] = None if s["scoreId"] == 10 else [None]
-        s["seeds"][0]["rankCheck"] = None
+        s["expectation"]["rangeWeights"] = None if s["scoreId"] == 10 else [None]
+        s["expectation"]["rankCheck"] = None
         s["offSeeds"][0]["weights"] = [None]
         if s["scoreId"] == 10:
             for v in s["gekisouAptitude"]["variants"]:
@@ -544,7 +541,7 @@ def test_deck_without_range_weights(tmp_path):
     export(tmp_path, deck=FakeDeck(change))
     doc = json.loads((tmp_path / "music.json").read_bytes())
     decks = {c["scoreId"]: c["deck"] for s in doc["songs"] for c in s["charts"]}
-    assert decks[10]["seeds"][0]["rangeWeights"] is None and decks[20]["seeds"][0]["rangeWeights"] == [None]
+    assert decks[10]["expectation"]["rangeWeights"] is None and decks[20]["expectation"]["rangeWeights"] == [None]
     assert decks[30]["offSeeds"][0]["weights"] == [None]
     schema_validator().validate(doc)
 
@@ -636,11 +633,11 @@ def test_luck_chart(tmp_path):
     export(tmp_path, rows=rows, deck=FakeDeck())
     doc = json.loads((tmp_path / "music.json").read_bytes())
     deck = doc["songs"][0]["charts"][0]["deck"]
-    assert [s["seed"] for s in deck["seeds"]] == musicdata.published_seeds(8)
+    assert deck["replaySeeds"] == musicdata.published_seeds(8)
     schema_validator().validate(doc)
     (tmp_path / "m").rename(tmp_path / "m1")
     with pytest.raises(musicdata.MusicDataError, match=r"chart 10 .*seeds .* are not the chart's seed set"):
-        export(tmp_path, rows=rows, deck=FakeDeck(on(10, lambda s: s["seeds"].pop())))
+        export(tmp_path, rows=rows, deck=FakeDeck(on(10, lambda s: s["replaySeeds"].pop())))
 
 
 def test_rank_bonus_percents():
@@ -668,7 +665,7 @@ def test_deck_errors(tmp_path, monkeypatch):
 def test_deck_module():
     deck = pytest.importorskip("nnnotes._deck")
     info = deck.info()
-    assert info["name"] == "ournotes-deck" and info["format"] == "ournotes-deck.chart-stats/2"
+    assert info["name"] == "ournotes-deck" and info["format"] == "ournotes-deck.chart-stats/3"
     assert info["dataFormat"] == deckdata.DECK_FORMAT and re.fullmatch(r"[0-9a-f]{40}", info["commit"])
     assert re.fullmatch(r"[0-9a-f]{64}", info["sourceSha256"])
     lock = (ROOT / "rust" / "Cargo.lock").read_text(encoding="utf-8")
@@ -849,13 +846,11 @@ def aptitude_fixture():
     """A header and a two-range chart, independently authored above, through JSON as the extension returns it."""
     tables = {t: TABLE_ROWS.get(t, rows_of(t)) for t in musicdata.tables_of(True, False)}
     a = musicdata.Aptitude(tables, musicdata.gekisou_catalog(tables, musicdata.Texts(tables['MasterText'])))
-    header = json.loads(json.dumps({'plainKind': 0, 'host': 'synthetic host', 'seedRule': SEED_RULE, 'shapes': SHAPES}),
+    header = json.loads(json.dumps({'plainKind': 0, 'host': 'synthetic host', 'law': NOMINAL_LAW, 'shapes': SHAPES}),
                         parse_float=deckdata._Num)
     chart = {'positions': 2, 'judgedNotes': 20, 'justNotes': 0, 'ranges': [
         {'mission': 1, 'rankBonusPercent': 35}, {'mission': 3, 'rankBonusPercent': 40}],
-        'seeds': [{'seed': 0, 'rangeWeights': [], 'ranges': [
-            {'rangeScore': 101, 'rangeScorePerfect': 101, 'rankBonus': 35, 'lotResults': [0, 0, 0, 0]},
-            {'rangeScore': 202, 'rangeScorePerfect': 202, 'rankBonus': 80, 'lotResults': [0, 0, 0, 0]}]}]}
+        'expectation': expected_stats(2, [[35], [40]], [1, 3])}
     chart['gekisouAptitude'] = aptitude_of(chart, 2)
     chart = json.loads(json.dumps(chart), parse_float=deckdata._Num)
     return a, header, chart
@@ -891,9 +886,8 @@ def test_aptitude_fixture(aptitude_fixture):
     lambda h: h['shapes'].pop(),
     lambda h: h.update(plainKind=1),
     lambda h: h.update(host=''),
-    lambda h: h['seedRule'].update(batches=[32, 16]),
-    lambda h: h['seedRule'].update(crossSeeds=0),
-    lambda h: h['seedRule'].update(relative=deckdata._Num('NaN')),
+    lambda h: h.update(law=''),
+    lambda h: h.update(law=None),
 ])
 def test_aptitude_header_rejects(aptitude_fixture, change):
     a, h, _ = aptitude_fixture
@@ -916,16 +910,13 @@ def test_aptitude_header_rejects(aptitude_fixture, change):
     lambda c: c['gekisouAptitude']['variants'][0].update(score=[deckdata._Num('NaN'), 0]),
     lambda c: c['gekisouAptitude']['variants'][0].update(score=[10**400, 0]),
     lambda c: c['gekisouAptitude']['variants'][0].update(score=[1, -1]),
-    lambda c: c['gekisouAptitude']['variants'][0].update(tail=[7, 1]),
+    lambda c: c['gekisouAptitude']['variants'][0].update(converted=[0.25, 0]),
     lambda c: c['gekisouAptitude']['variants'][0].update(tail=[8, 0]),
     lambda c: c['gekisouAptitude']['variants'][0]['ranges'].pop(),
-    lambda c: c['gekisouAptitude']['variants'][0].update(seeds=2),
-    lambda c: c['gekisouAptitude']['variants'][0].update(crossSeeds=2),
-    lambda c: c['gekisouAptitude']['variants'][2].update(seeds=31),
-    lambda c: c['gekisouAptitude']['variants'][2].update(seTargetMet=False),
+    lambda c: c['gekisouAptitude']['variants'][0]['ranges'][0].update(justCount=[1, 0.1]),
     lambda c: c['gekisouAptitude']['variants'][0]['check'].update(bound=-1),
     lambda c: c['gekisouAptitude']['variants'][0]['check'].update(predicted=deckdata._Num('NaN')),
-    lambda c: c['gekisouAptitude']['variants'][0]['check'].update(exact=0),
+    lambda c: c['gekisouAptitude']['variants'][0]['check'].update(expected=[0, 0]),
     lambda c: c['gekisouAptitude']['variants'][0]['check'].update(ranks=[0, 2]),
     lambda c: c['gekisouAptitude']['variants'][0]['check'].update(deck=[[9, 100], None]),
 ])
@@ -941,8 +932,8 @@ def test_aptitude_rounding(aptitude_fixture):
     a, h, c = aptitude_fixture
     aptitude_header(a, h)
     v = c['gekisouAptitude']['variants'][2]
-    v['tail'][0] = deckdata._Num('7.002')
-    a.chart('synthetic', c, 0)  # independently rounded terms, two ranges: 0.00300001 absolute tolerance
+    v['tail'][0] = deckdata._Num('7.000000001')
+    a.chart('synthetic', c, 0)  # binary64 sum tolerance
     v['tail'][0] = deckdata._Num('7.004')
     with pytest.raises(musicdata.MusicDataError, match='tail'):
         a.chart('synthetic', c, 0)
@@ -962,9 +953,9 @@ def test_aptitude_disabled(tmp_path):
     fake = FakeDeck()
     d = master_dir(tmp_path)
     musicdata.export(tmp_path / 'music.json', deckdata.master_files(d), KEY, CHARTS.__getitem__, bgm, **PROV,
-                     deck=musicdata.Deck(module=fake, aptitude=False, aptitude_max_seeds=32, aptitude_cross_seeds=8))
+                     deck=musicdata.Deck(module=fake, aptitude=False))
     doc = json.loads((tmp_path / 'music.json').read_bytes())
-    assert fake.options == [(False, 32, 8)]
+    assert fake.options == [False]
     assert doc['deck']['gekisouAptitude'] is None
     assert all(c['deck']['gekisouAptitude'] is None for s in doc['songs'] for c in s['charts'])
     schema_validator().validate(doc)

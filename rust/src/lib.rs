@@ -1,10 +1,10 @@
-//! `nnnotes._deck`: the chart statistics of the deck model ournotes-sim (`ournotes-deck.chart-stats/2`) on a deck
+//! `nnnotes._deck`: the chart statistics of the deck model ournotes-sim (`ournotes-deck.chart-stats/3`) on a deck
 //! data document held in memory, the charts measured in parallel.
 
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use ournotes_sim::chartstats::{self, AptitudeOptions, ChartStats, GEKISOU_SEEDS, Options};
+use ournotes_sim::chartstats::{self, ChartStats, REPLAY_SEEDS, Options};
 use ournotes_sim::data::DeckData;
 use ournotes_sim::error::Error;
 use pyo3::exceptions::PyValueError;
@@ -53,34 +53,23 @@ fn measure(data: &DeckData, options: &Options, workers: usize) -> Result<Vec<Cha
     Ok(stats)
 }
 
-/// chart_stats(data, seeds=None, workers=None, aptitude=True, aptitude_max_seeds=None,
-///             aptitude_cross_seeds=None) -> str
+/// chart_stats(data, seeds=None, workers=None, aptitude=True) -> str
 ///
-/// The `ournotes-deck.chart-stats/2` document (JSON text) of a deck data document (`nnnotes.deck-data/1` JSON text),
-/// as `ournotes-deck chart-stats` writes it. `seeds`: the size of the seed set of charts with a luck range (default
+/// The `ournotes-deck.chart-stats/3` document (JSON text) of a deck data document (`nnnotes.deck-data/1` JSON text),
+/// as `ournotes-deck chart-stats` writes it. `seeds`: the replay seed count of charts with a luck range (default
 /// 8); `workers`: threads measuring charts (default: the available parallelism). Raises ValueError for data the
 /// deck model cannot read or a chart whose check deck fails. `aptitude`: measure single Gekisou skill shapes
-/// (default true); `aptitude_max_seeds` and `aptitude_cross_seeds`: sample caps (defaults 65536 and 64).
+/// (default true). Gekisou statistics use independent nominal lottery and skill probabilities.
 #[pyfunction]
-#[pyo3(signature = (data, seeds=None, workers=None, aptitude=true, aptitude_max_seeds=None, aptitude_cross_seeds=None))]
+#[pyo3(signature = (data, seeds=None, workers=None, aptitude=true))]
 fn chart_stats(
     py: Python<'_>,
     data: &str,
     seeds: Option<usize>,
     workers: Option<usize>,
     aptitude: bool,
-    aptitude_max_seeds: Option<usize>,
-    aptitude_cross_seeds: Option<usize>,
 ) -> PyResult<String> {
-    let seeds = seeds.unwrap_or(GEKISOU_SEEDS);
-    let defaults = AptitudeOptions::default();
-    let options = Options {
-        seeds,
-        aptitude: aptitude.then_some(AptitudeOptions {
-            max_seeds: aptitude_max_seeds.unwrap_or(defaults.max_seeds),
-            cross_seeds: aptitude_cross_seeds.unwrap_or(defaults.cross_seeds),
-        }),
-    };
+    let options = Options { replay_seeds: seeds.unwrap_or(REPLAY_SEEDS), aptitude };
     let workers = workers.unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |n| n.get()));
     py.detach(|| {
         let mut data = DeckData::from_json(data).map_err(value_error)?;
