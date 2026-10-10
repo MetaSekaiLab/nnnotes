@@ -95,8 +95,8 @@ checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 
 [[package]]
 name = "ournotes-sim"
-version = "0.0.4"
-source = "git+https://github.com/empty-sekai/ournotes-deck?rev=efbf286ad60f98e50c906605e76a1ad67c18ea4b#efbf286ad60f98e50c906605e76a1ad67c18ea4b"
+version = "0.0.5"
+source = "git+https://github.com/empty-sekai/ournotes-deck?rev=67835811e06f3d528adb90ae64b012a0eb5f8966#67835811e06f3d528adb90ae64b012a0eb5f8966"
 dependencies = [
  "serde",
  "serde_json",
