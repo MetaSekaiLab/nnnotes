@@ -4,7 +4,7 @@
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use ournotes_sim::chartstats::{self, ChartStats, REPLAY_SEEDS, Options};
+use ournotes_sim::chartstats::{self, ChartStats, Options, REPLAY_SEEDS};
 use ournotes_sim::data::DeckData;
 use ournotes_sim::error::Error;
 use pyo3::exceptions::PyValueError;
