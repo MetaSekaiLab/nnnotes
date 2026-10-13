@@ -2,7 +2,7 @@
 
 [简体中文](README.md) | [English](README.en.md)
 
-nnnotes 是 BanG Dream! Our Notes 游戏文件的离线数据工具包：读取 Addressables catalog、下载并解密资源包、下载与解码 masterdata，再把剧情、Live2D、据点场景、着色器、CRI 音频和谱面导出成结构化的 JSON 与通用格式文件。`web` 导出的谱面、Live2D 模型与剧情站点就是 [ournotes-player](https://github.com/empty-sekai/ournotes-player) 读取的数据。命名灵感来自 [mos9527/sssekai](https://github.com/mos9527/sssekai)。
+nnnotes 是 BanG Dream! Our Notes 游戏文件的离线数据工具包：读取 Addressables catalog、下载并解密资源包、下载与解码 masterdata，再把剧情、Live2D、据点场景、着色器、CRI 音频和谱面导出成结构化的 JSON 与通用格式文件。`web` 导出的谱面、Live2D 模型与剧情站点就是 [ournotes-player](https://github.com/empty-sekai/ournotes-player) 读取的数据。命名灵感来自 sssekai。
 
 本项目为非官方爱好者项目，与游戏的开发和运营方无关。仓库不包含任何游戏资源、密钥或服务器地址：游戏文件、解密所需的密钥和服务器地址都由使用者在配置中自行提供，导出结果只保存在使用者指定的本地目录。
 
@@ -140,8 +140,6 @@ nnnotes web out/site --live2d adv_live2d_rana_003_casual_spring_01 --player <our
 ```
 
 所有 JSON 由同一个写出器生成（`jsonio`），保证编码、换行与数值格式一致。
-
-`web` 构建的耗时分布，以及其中哪些部分已由编译代码执行，见 [docs/performance.md](docs/performance.md)。
 
 ## 版本记录
 
