@@ -2,6 +2,12 @@
 
 All notable changes to this project are listed here. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.2.1](https://github.com/MetaSekaiLab/nnnotes/compare/v0.2.0...v0.2.1) - 2026-10-13
+
+### Build
+
+- **deck:** Ournotes-deck v0.0.8 ([53da36f](https://github.com/MetaSekaiLab/nnnotes/commit/53da36f7b73e4ccf9e1158cd571244d87648aa3f))
+
 ## [0.2.0](https://github.com/MetaSekaiLab/nnnotes/compare/v0.1.4...v0.2.0) - 2026-10-13
 
 ### Features

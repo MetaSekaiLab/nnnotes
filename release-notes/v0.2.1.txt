@@ -1,0 +1,6 @@
+nnnotes 0.2.1 pins the deck model of ournotes-deck 0.0.8, `ournotes-sim==0.0.8`.
+
+- **Charts updated after their score row.** `music-data` measures a chart on its own converted notes when the full combo count of its `MasterLiveMusicScore` row differs from the chart's judged notes, instead of stopping with an input error. The file keeps both numbers: `fullComboCount` from the score row and `notes.judged` from the chart.
+- **Statistics cache.** The deck model's source identity changes with the release, so `--stats-cache` starts a new namespace and the first build recomputes every chart's statistics.
+
+Validation: Python 3.11, 3.12, 3.13 and 3.14 CI with the deck model, strict golden records, the commit message check, and the wheel installed with `[deck]` in a fresh environment.
