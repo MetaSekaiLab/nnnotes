@@ -83,7 +83,7 @@ from .catalog import Catalog
 from .export import Exporter, TexelPacker, _safe
 from .jsonio import write_json
 from .player import PlayerData
-from . import adv, languages, textstyle
+from . import adv, fontsettings, languages, textstyle
 from .textstyle import LANGUAGE_LINE_SPACING
 
 WIDGET_KEY = "EmbUI/Prefab/UIAdvWidget"
@@ -393,7 +393,8 @@ def extract(cat: Catalog, player: PlayerData, episode: dict, out_dir: Path, font
     ui_dir = Path(out_dir) / "ui"
     ui_dir.mkdir(parents=True, exist_ok=True)
     ex = Exporter(cat, ui_dir, player=player, textures="deferred",
-                  stub_assets=("TMP_FontAsset", "TMP_SpriteAsset", "TMP_StyleSheet"))
+                  stub_assets=("TMP_FontAsset", "TMP_SpriteAsset", "TMP_StyleSheet"),
+                  font_stubs=None if game else fontsettings.builtin())
     packer = TexelPacker(ui_dir)
 
     # -- prefabs -------------------------------------------------------------
@@ -419,7 +420,7 @@ def extract(cat: Catalog, player: PlayerData, episode: dict, out_dir: Path, font
     for d in drawn:
         if d not in {n["path"] for n in nodes}:
             raise RuntimeError(f"{d} missing from the prefabs")
-    styles = textstyle.TextStyles(ex, player, mode)
+    styles = textstyle.TextStyles(ex, player, mode, None if game else fontsettings.builtin())
     dialog_nodes = {name: ex.prefab(key)["nodes"] for name, key in DIALOG_KEYS.items()}
     catalogs = pictogram_catalogs(widget + window + [n for dn in dialog_nodes.values() for n in dn])
 
@@ -453,7 +454,7 @@ def extract(cat: Catalog, player: PlayerData, episode: dict, out_dir: Path, font
     if missing:
         raise RuntimeError(f"{missing} missing from {CHAT_WIDGET_KEY}")
     chat_widget = {"nodes": [_node_record(chat_nodes[p]) for p in CHAT_WIDGET_NODES]}
-    chat, status_ids = chat_texts(ex, styles.lang, mode, episode)
+    chat, status_ids = chat_texts(ex, styles.fonts, styles.lang, mode, episode)
     status_texts = master_texts(master, status_ids, field) if master is not None and status_ids else None
 
     materials: dict = {}
@@ -993,10 +994,11 @@ def chat_text_nodes(ex: Exporter, episode: dict):
     return out, sorted(status)
 
 
-def chat_texts(ex: Exporter, lang: dict, mode: int, episode: dict) -> tuple[dict, list[str]]:
+def chat_texts(ex: Exporter, fonts, lang: dict, mode: int, episode: dict) -> tuple[dict, list[str]]:
     """chatTexts {window: {node path: {textStyle, localizeText}}} of the episode's chat windows in the language `mode`
-    (the text record of textstyle.text_style with the font and material chat_localize gives; font roles are the
-    slots of the lookup table) and the status text ids of the windows."""
+    (the text record of textstyle.text_style with the font and material chat_localize gives, their settings from
+    `fonts` (fontsettings.FontSettings); font roles are the slots of the lookup table) and the status text ids of the
+    windows."""
     table_lang, styles, out = _lookup_lang(lang), {}, {}
     nodes, status = chat_text_nodes(ex, episode)
     for name, n, comp, loc in nodes:
@@ -1005,9 +1007,9 @@ def chat_texts(ex: Exporter, lang: dict, mode: int, episode: dict) -> tuple[dict
             loc_font = chat_localize(fa, mat, lang, mode)
             fa, mat = loc_font["fontAsset"], loc_font["material"]
         if (fa, mat) not in styles:
-            face = ex.key_object(font_key(ex.cat, fa, fa)).read_typetree()["m_FaceInfo"]
-            styles[(fa, mat)] = textstyle.material_style(ex.material(ex.key_object(font_key(ex.cat, fa, mat))),
-                                                         face["m_PointSize"], face["m_Scale"])
+            face = fonts.font(fa)["faceInfo"]
+            styles[(fa, mat)] = textstyle.material_style(fonts.material(fa, mat), face["m_PointSize"],
+                                                         face["m_Scale"])
         out.setdefault(name, {})[n["path"]] = {
             "textStyle": textstyle.text_style(comp, loc, table_lang, styles[(fa, mat)], mode),
             "localizeText": {"enabled": loc["m_Enabled"], "localizeEnabled": loc["_localizeEnabled"]} if loc else None}

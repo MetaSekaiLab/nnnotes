@@ -31,7 +31,7 @@ from .export import Exporter, TexelPacker, _safe
 from .jsonio import write_json
 from .player import PlayerData
 from .score import master_table
-from . import languages, textstyle, tmpfont
+from . import fontsettings, languages, textstyle, tmpfont
 from .textstyle import LANGUAGE_LINE_SPACING
 
 SCENE_KEY = "EmbScene/Live"
@@ -171,7 +171,7 @@ def extract(cat: Catalog, player: PlayerData, out_dir: Path, master: Path, music
         raise ValueError(f"fonts {fonts}: one of {', '.join(FONT_CHOICES)}")
     mode, column = languages.mode(language), languages.column(language)
     ex = Exporter(cat, base, player=player, textures="deferred", stub_assets=TMP_STUBS,
-                  follow=("AnimatorController",))
+                  follow=("AnimatorController",), font_stubs=fontsettings.builtin() if fonts == "open" else None)
     packer = TexelPacker(base)
 
     # -- the canvas subtree of the scene (deferred: sprite / texture references) -------------------------
@@ -196,7 +196,7 @@ def extract(cat: Catalog, player: PlayerData, out_dir: Path, master: Path, music
             text_of[r["gameObject"]] = strings[key]
 
     # -- TMP texts of the drawn part: LocalizeText overrides and the characters they show -------------
-    styles = textstyle.TextStyles(ex, player, mode) if fonts == "open" else None
+    styles = textstyle.TextStyles(ex, player, mode, fontsettings.builtin()) if fonts == "open" else None
     lang = styles.lang if styles else textstyle.language_fonts(player)
     swap = styles.swap if styles else textstyle.font_swap(lang, mode)
     fontset = tmpfont.FontSet(ex) if fonts == "game" else None

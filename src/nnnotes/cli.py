@@ -744,8 +744,8 @@ def _band_args(c) -> None:
 
 def _fonts_arg(c) -> None:
     c.add_argument("--fonts", default="open", choices=("open", "game"),
-                   help="start canvas text: open: layout and style only, no font data (default); game: also the "
-                        "game's TMP fonts (needs the 'fonts' extra)")
+                   help="start canvas text: open (default): layout and style only, no font data (your fonts are not "
+                        "used); game: also the game's TMP fonts (needs the 'fonts' extra)")
 
 
 def _audio_args(c) -> None:
@@ -870,7 +870,7 @@ def build_parser() -> argparse.ArgumentParser:
     _audio_args(c)
     c.add_argument("--no-audio", action="store_true", help="do not decode the cue sheets")
     c.add_argument("--fonts", default="open", choices=("open", "game"),
-                   help="open: text layout and style only, no font data (default); game: also the game's TMP fonts "
+                   help="open (default): text layout and style only, no font data; game: also the game's TMP fonts "
                         "(needs the 'fonts' extra)")
     c.set_defaults(func=cmd_story, usage=c.error)
 

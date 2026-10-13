@@ -616,7 +616,10 @@ root), and `stories.json` counts their files in `size.models`. The format is des
   glyph (U+25A1 where the game's font has it), not from the font file (`coverage.missingGlyph`). The simple talk
   window of an Overlay story is handled the same way. Each generated asset takes the
   point size, padding, style settings and render mode of the game font asset the texts use in that language, so the
-  game's text materials apply unchanged; its face info and glyph metrics come from the font file (FreeType, no
+  game's text materials apply unchanged; those values, the game's fallback chains, the characters the game's assets
+  have and the text materials come from the table of them shipped with nnnotes (`src/nnnotes/fontsettings.json`,
+  `fontsettings.FORMAT`), so an open-font export reads no game font asset, material or font bundle;
+  its face info and glyph metrics come from the font file (FreeType, no
   hinting), its distance field from the generator `--fonts game` uses for runtime glyphs (supersampled render modes
   at up to 8x). The asset records the font's family, version, license and SHA-256. `--fonts game` uses the game's
   font assets instead (the `fonts` extra); the format is the same. No font file is stored in the site other than as

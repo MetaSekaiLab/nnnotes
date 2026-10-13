@@ -11,7 +11,7 @@ pytest.importorskip("freetype")
 pytest.importorskip("scipy")
 pytest.importorskip("fontTools")
 
-from nnnotes import advui, cache, storyfonts, tmpfont  # noqa: E402
+from nnnotes import advui, cache, fontsettings, storyfonts, tmpfont  # noqa: E402
 
 UPEM = 1000
 
@@ -432,18 +432,14 @@ def test_missing_glyph():
 
 def test_search_order():
     """TMP's depth-first fallback search, every asset once, reduced to the exported assets."""
-    class F:
-        def __init__(self, name):
-            self.name = name
-    p, a, b, c, d = F("P"), F("A"), F("B"), F("C"), F("D")
-    chain = {"P": [a, b], "A": [p, c], "B": [c, d], "C": [], "D": [a]}
-    fallbacks = lambda f: chain[f.name]  # noqa: E731
+    chain = {"P": ["A", "B"], "A": ["P", "C"], "B": ["C", "D"], "C": [], "D": ["A"]}
+    fallbacks = chain.__getitem__
     # from P: A (not exported), A's fallbacks P (itself: searched, not listed) with P's B and B's C and D
-    assert storyfonts.search_order(fallbacks, p, {"P", "B", "C", "D"}) == ["B", "C", "D"]
-    assert storyfonts.search_order(fallbacks, p, {"C", "D"}) == ["C", "D"]
+    assert storyfonts.search_order(fallbacks, "P", {"P", "B", "C", "D"}) == ["B", "C", "D"]
+    assert storyfonts.search_order(fallbacks, "P", {"C", "D"}) == ["C", "D"]
     # from D: A, P (and through P: B, C), then A's C already searched
-    assert storyfonts.search_order(fallbacks, d, {"P", "B", "C", "D"}) == ["P", "B", "C"]
-    assert storyfonts.search_order(fallbacks, c, {"P"}) == []
+    assert storyfonts.search_order(fallbacks, "D", {"P", "B", "C", "D"}) == ["P", "B", "C"]
+    assert storyfonts.search_order(fallbacks, "C", {"P"}) == []
 
 
 def test_chat_bindings(monkeypatch):
@@ -695,59 +691,28 @@ class ChainFont:
     """A game font asset for open_font_set: its characters, fallback names and settings."""
 
     def __init__(self, name, have, fallbacks=(), pad=4, point=40):
-        self.name, self.chars, self.fb, self.variants = name, set(have), list(fallbacks), {}
-        self.tt = {"m_FaceInfo": {"m_PointSize": float(point)}, "m_AtlasPadding": pad, "m_AtlasRenderMode": 4134,
-                   **game()["style"]}
-        self.material_obj = ("default", name, pad)
+        self.name, self.chars, self.fb, self.pad, self.point = name, set(have), list(fallbacks), pad, point
 
 
 def chain_env(monkeypatch, fonts, lang):
-    """open_font_set's game side over the ChainFont list `fonts` and the LocalizeManager table `lang`."""
-    by_name = {f.name: f for f in fonts}
-
-    class FontSet:
-        def __init__(self, ex):
-            self.fonts = dict(by_name)
-
-        def by_key(self, key):
-            return self.fonts[key.rsplit("/", 1)[1]]
-
-        def fallbacks(self, f):
-            return [self.fonts[n] for n in f.fb]
-
-        def _in_font(self, f, u):
-            return ("baked", f) if u in f.chars else None
-
-        def lookup(self, primary, u):
-            for f in [primary] + [self.fonts[n] for n in storyfonts.search_order(self.fallbacks, primary,
-                                                                                  set(self.fonts))]:
-                if u in f.chars:
-                    return ("baked", f)
-            return None
-
-    class Ex:
-        def material(self, obj):
-            if isinstance(obj, tuple):                    # a font asset's default material
-                m = game(pad=obj[2])["material"]
-                m = json.loads(json.dumps(m))
-                m["material"] = f"{obj[1][:-4]} SDF Material"
-                m["floats"].update({"_WeightNormal": 0.0, "_WeightBold": 0.5 + obj[2] / 100, "_FaceDilate": 0.0})
-                return m
-            m = outline_material(pad=by_name[obj.split("/")[1] + " SDF"].tt["m_AtlasPadding"])
-            m["material"] = obj.rsplit("/", 1)[1]
-            m["floats"].update({"_WeightNormal": 0.0, "_WeightBold": 0.75, "_FaceDilate": 0.0})
-            return m
-
-        def key_object(self, key):
-            return key
-
-    class Cat:
-        def has(self, key):
-            return True
-    monkeypatch.setattr(tmpfont, "FontSet", FontSet)
+    """open_font_set's game side: the font settings of the ChainFont list `fonts` (their default materials and a
+    text material "<font> - OutlineX" each) and the LocalizeManager table `lang`."""
+    table = {"format": fontsettings.FORMAT, "fonts": {}, "materials": {}}
+    for f in fonts:
+        base = f.name[:-4]
+        default = json.loads(json.dumps(game(pad=f.pad)["material"]))
+        default["material"] = f"{base} SDF Material"
+        default["floats"].update({"_WeightNormal": 0.0, "_WeightBold": 0.5 + f.pad / 100, "_FaceDilate": 0.0})
+        text = outline_material(pad=f.pad)
+        text["material"] = f"{base} - OutlineX"
+        text["floats"].update({"_WeightNormal": 0.0, "_WeightBold": 0.75, "_FaceDilate": 0.0})
+        table["materials"].update({default["material"]: default, text["material"]: text})
+        table["fonts"][f.name] = {"faceInfo": {"m_PointSize": float(f.point)}, "atlasPadding": f.pad,
+                                  "atlasRenderMode": 4134, **game()["style"], "material": default["material"],
+                                  "fallbacks": f.fb, "coverage": fontsettings.encode_coverage(f.chars)}
     monkeypatch.setattr(tmpfont, "missing_glyph_character", lambda player: 0x25A1)
     monkeypatch.setattr(storyfonts.textstyle, "language_fonts", lambda player: lang)
-    return Cat(), Ex()
+    return fontsettings.FontSettings(table)
 
 
 # LocalizeManager fonts: ja and en J, zh Z, ko K
@@ -799,14 +764,15 @@ def test_open_font_set_mirrors_the_fallback_chain(tmp_path, monkeypatch):
     ja = storyfonts.FontFile(make_font(tmp_path / "Ja.ttf", family="Ja Sans", underscore=True))
     fonts = [ChainFont("K SDF", {0x41, 0x42, 0x20, 0x5F, 0x25A1, 0x78}, ["J SDF"], pad=15, point=100),
              ChainFont("J SDF", {0x53E3, 0x48, 0x5F}, ["X SDF", "K SDF"]), ChainFont("X SDF", {0x2606})]
-    cat, ex = chain_env(monkeypatch, fonts, CHAIN_LANG)
+    settings = chain_env(monkeypatch, fonts, CHAIN_LANG)
     binding = {"localized": {"fontAsset": "K SDF", "material": "K - OutlineX", "lineSpacing": 0}}
     asked = []
 
     def font_of(code):
         asked.append(code)
         return {"ja": ja}[code]
-    r = storyfonts.open_font_set(cat, "player", ex, "ko", ko, [binding], ["AB \u53e3Hx\u2661_"], tmp_path, font_of)
+    r = storyfonts.open_font_set(None, "player", None, "ko", ko, [binding], ["AB \u53e3Hx\u2661_"], tmp_path, font_of,
+                                 settings=settings)
     prim, fb = "Ko Sans Regular SDF", "Ja Sans Regular SDF (J SDF)"
     assert asked == ["ja"] and set(r["fonts"]) == {prim, fb}
     p, f = r["fonts"][prim], r["fonts"][fb]
@@ -828,15 +794,16 @@ def test_open_font_set_mirrors_the_fallback_chain(tmp_path, monkeypatch):
     # nothing the ko font lacks: no fallback asset, no fallback material, no other font file asked for
     asked.clear()
     b2 = {"localized": {"fontAsset": "K SDF", "material": "K - OutlineX", "lineSpacing": 0}}
-    r2 = storyfonts.open_font_set(cat, "player", ex, "ko", ko, [b2], ["ABx"], tmp_path / "b", font_of)
+    r2 = storyfonts.open_font_set(None, "player", None, "ko", ko, [b2], ["ABx"], tmp_path / "b", font_of,
+                                  settings=settings)
     assert asked == [] and set(r2["fonts"]) == {prim} and r2["fonts"][prim]["fallbacks"] == []
     assert set(r2["materials"]) == {f"{prim} Material", text} and "missingGlyph" not in r2["fonts"][prim]
     # a character only the ja file has, without it: a ConfigError naming the setting
     b3 = {"localized": {"fontAsset": "K SDF", "material": "K - OutlineX", "lineSpacing": 0}}
     with pytest.raises(storyfonts.ConfigError, match="needs the font file of ja"):
-        storyfonts.open_font_set(cat, "player", ex, "ko", ko, [b3], ["A\u53e3"], tmp_path / "c")
+        storyfonts.open_font_set(None, "player", None, "ko", ko, [b3], ["A\u53e3"], tmp_path / "c", settings=settings)
     # a character no file of the chain maps stays with the primary as missing; a sprite-drawn one is left out
     b4 = {"localized": {"fontAsset": "K SDF", "material": "K - OutlineX", "lineSpacing": 0}}
-    r4 = storyfonts.open_font_set(cat, "player", ex, "ko", ko, [b4], ["A\u2606B"], tmp_path / "d", font_of,
-                                  sprite_drawn={"K SDF": {0x42}})
+    r4 = storyfonts.open_font_set(None, "player", None, "ko", ko, [b4], ["A\u2606B"], tmp_path / "d", font_of,
+                                  sprite_drawn={"K SDF": {0x42}}, settings=settings)
     assert r4["missing"] == {0x2606} and str(0x42) not in r4["fonts"][prim]["characters"]

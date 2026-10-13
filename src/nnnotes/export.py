@@ -312,6 +312,14 @@ class TexelPacker:
 CLIP_FORMATS = ("generic", "livescene", "livenotes")
 
 
+class FontStub:
+    """A reference into a font bundle left out of a closure (Exporter `font_stubs`): the record of its object in
+    the font settings' `objects` ({type, class, name})."""
+
+    def __init__(self, rec: dict, path_id: int):
+        self.rec, self.path_id = rec, path_id
+
+
 class Exporter:
     """`player` resolves references into `unity default resources` (PlayerData);
     `inline_meshes=False` emits meshes as name + vertex count; MonoBehaviour
@@ -331,11 +339,13 @@ class Exporter:
     `defer_writes` (textures "write"): texture records are made as usual but their PNG files are written only by
     `write_textures`, which can leave out the files a caller would delete.
     `class_of(o)`: the class name of a MonoBehaviour (default: unity.script_class, through its m_Script with the
-    script bundle loaded)."""
+    script bundle loaded).
+    `font_stubs` (fontsettings.FontSettings): the bundles of its font assets are left out of every closure; a
+    reference into them resolves through its `objects` (a font asset to {asset, name}, a material to its record)."""
 
     def __init__(self, cat: Catalog, out_dir: Path, player=None, inline_meshes: bool = True,
                  stub_assets: tuple[str, ...] = (), textures: str = "write", clip_format: str = "generic",
-                 follow: tuple[str, ...] = (), defer_writes: bool = False, class_of=None):
+                 follow: tuple[str, ...] = (), defer_writes: bool = False, class_of=None, font_stubs=None):
         if textures not in ("write", "deferred"):
             raise ValueError(f"textures={textures!r}")
         if clip_format not in CLIP_FORMATS:
@@ -350,6 +360,8 @@ class Exporter:
         self.follow = tuple(follow)
         self.defer_writes = defer_writes
         self.script_class = class_of or script_class
+        self.font_stubs = font_stubs
+        self._font_bundles: frozenset | None = None
         self._unwritten: dict[str, object] = {}    # defer_writes: file -> Texture2D
         self.textures: dict[tuple, dict] = {}
         self.shaders: dict[str, object] = {}
@@ -379,7 +391,10 @@ class Exporter:
         """(env, graph) of a key's bundle closure, loaded once."""
         if key in self._loaded:
             return self._loaded[key]
-        env = load_closure(self.cat.fetch_key(key))
+        if self.font_stubs is None:
+            env = load_closure(self.cat.fetch_key(key))
+        else:
+            env = load_closure(self.cat.fetch_key(key, self.font_bundles()))
         graph = SceneGraph(env)
         go_file = self._go_file
         for o in env.objects:
@@ -398,6 +413,24 @@ class Exporter:
         self._loaded[key] = (env, graph)
         return env, graph
 
+    def font_bundles(self) -> frozenset:
+        """With `font_stubs`: the names of the bundles that hold its font assets."""
+        if self._font_bundles is None:
+            from .advui import font_key
+            names = set()
+            for n, f in sorted(self.font_stubs.fonts.items()):
+                k = font_key(self.cat, n, n)            # an addressable asset: its bundle now; else the one recorded
+                names.add(self.cat.bundle_of(k).name if self.cat.has(k) else f["bundle"])
+            self._font_bundles = frozenset(names)
+        return self._font_bundles
+
+    def font_stub(self, o: FontStub) -> dict:
+        """The value of a reference into a font bundle left out (`font_stubs`): a material's record, a font asset's
+        {asset, name}."""
+        if o.rec["type"] == "Material":
+            return self.font_stubs.material(None, o.rec["name"])
+        return {"asset": o.rec["class"], "name": o.rec["name"]}
+
     def deref(self, owner, pptr: dict):
         if not pptr["m_PathID"]:
             return None
@@ -405,7 +438,13 @@ class Exporter:
             if self.player is None:
                 raise RuntimeError("reference into unity default resources needs player data")
             return self.player.deref(owner, pptr)
-        return deref(owner, pptr)
+        try:
+            return deref(owner, pptr)
+        except FileNotFoundError:
+            rec = self.font_stubs.objects.get(pptr["m_PathID"]) if self.font_stubs is not None else None
+            if rec is None:
+                raise
+            return FontStub(rec, pptr["m_PathID"])
 
     def graph(self, o) -> SceneGraph:
         return self._graph_of_file[id(o.assets_file)]
@@ -428,6 +467,8 @@ class Exporter:
         o = self.deref(owner, pptr)
         if o is None:
             return None
+        if isinstance(o, FontStub):
+            return self.font_stub(o)
         t = o.type.name
         if t in ("AnimatorController", "AnimatorOverrideController") and "AnimatorController" in self.follow:
             return self.controller(o)
