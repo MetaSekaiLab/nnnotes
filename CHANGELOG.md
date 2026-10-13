@@ -2,6 +2,36 @@
 
 All notable changes to this project are listed here. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.2.0](https://github.com/MetaSekaiLab/nnnotes/compare/v0.1.4...v0.2.0) - 2026-10-13
+
+### Features
+
+- **music-data:** Reuse cached chart statistics of unchanged model sources ([1bdbd64](https://github.com/MetaSekaiLab/nnnotes/commit/1bdbd640755e4f49e0ab302c74c1ed871aef7f70))
+- **music-data:** Measure chart statistics with nominal lottery and skill probabilities ([303b850](https://github.com/MetaSekaiLab/nnnotes/commit/303b8503621180a016c41c574a41864ac67f7b1f))
+- **fonts:** Read the game font settings from a built-in table in open-font exports ([dfe3c86](https://github.com/MetaSekaiLab/nnnotes/commit/dfe3c86524ef193361eee751983d8d3b60dddecd))
+- **music-data:** Keep native simulation programs and export Snap labels ([096361a](https://github.com/MetaSekaiLab/nnnotes/commit/096361a5f0f585aa5ee332c5d4997958f3064254))
+- **schemas:** Ship the JSON Schemas with the package as nnnotes.schemas ([7b66c09](https://github.com/MetaSekaiLab/nnnotes/commit/7b66c0923ad7c581ba7cf4ff7318f54bc9c80fb1))
+
+### Documentation
+
+- Describe the atoms and the PNG level without measurements ([babe470](https://github.com/MetaSekaiLab/nnnotes/commit/babe4706bb862bb7235b25d6bde1c5e7dec72dc1))
+
+### Build
+
+- **deck:** Ournotes-deck v0.0.3 ([c71e8f5](https://github.com/MetaSekaiLab/nnnotes/commit/c71e8f55b2713b9f394f27867f682cc8aecbaffe))
+- **deck:** Ournotes-deck v0.0.4 ([6139e40](https://github.com/MetaSekaiLab/nnnotes/commit/6139e40c189f653e53180f39a3137a1327085e7d))
+- **deck:** Ournotes-deck v0.0.5 ([7f2c950](https://github.com/MetaSekaiLab/nnnotes/commit/7f2c950d4c6008a91be2cbe32f409dc5cddbff82))
+- **deck:** Ournotes-deck v0.0.6 ([a4b9c4e](https://github.com/MetaSekaiLab/nnnotes/commit/a4b9c4ea7c03ce569155ed389a0a2df744b5b849))
+- Ship nnnotes as a pure Python package with the deck model as the extra deck ([5c1e9c6](https://github.com/MetaSekaiLab/nnnotes/commit/5c1e9c6613234418c5b7ece2b2750708f6633d1c))
+
+### CI
+
+- **release:** Verify wheels and reuse quality checks ([46cf165](https://github.com/MetaSekaiLab/nnnotes/commit/46cf165d28a4d3dfb44e232c7831a47acb3ba184))
+
+### Miscellaneous
+
+- **rust:** Order chartstats imports ([12672e8](https://github.com/MetaSekaiLab/nnnotes/commit/12672e891ca1c06df6d838681325edc9694fe45e))
+
 ## [0.1.4](https://github.com/MetaSekaiLab/nnnotes/compare/v0.1.3...v0.1.4) - 2026-10-06
 
 ### Features
