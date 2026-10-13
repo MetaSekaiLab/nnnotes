@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 import synth
-from nnnotes import cli, deckdata, musicdata, score
+from nnnotes import cli, deckdata, musicdata, schemas, score
 from nnnotes.master import MasterKey
 from test_deckdata import CHART, SMALL, FakeCatalog, rows_of, run
 from test_voices import simple_acb
@@ -343,7 +343,7 @@ def export(tmp_path, rows=TABLE_ROWS, charts=CHARTS, bgm=bgm, out="music.json", 
 
 def schema_validator():
     jsonschema = pytest.importorskip("jsonschema")
-    doc = json.loads((ROOT / "docs" / "schema" / "music-data.schema.json").read_text(encoding="utf-8"))
+    doc = schemas.load("music-data")
     jsonschema.Draft202012Validator.check_schema(doc)
     return jsonschema.Draft202012Validator(doc)
 

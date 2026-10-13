@@ -2,8 +2,8 @@
 
 The asset stages exchange documents in fixed formats. They are the public interface of the extraction: a task
 description can be run on another machine, a result can be read without nnnotes, and every output layout can be
-derived from the records. JSON Schemas of all documents are in [schema/](schema/) (draft 2020-12, each with
-`$id` `urn:nnnotes:schema:<name>`; shared definitions in [schema/common.schema.json](schema/common.schema.json)).
+derived from the records. JSON Schemas of all documents are in [src/nnnotes/schemas](../src/nnnotes/schemas/), the package `nnnotes.schemas` (draft 2020-12, each with
+`$id` `urn:nnnotes:schema:<name>`; shared definitions in [common.schema.json](../src/nnnotes/schemas/common.schema.json)).
 
 ## Versioning
 
@@ -47,7 +47,7 @@ bundles of a catalog have the same stable name, both keep their full file names.
 ## Task: nnnotes.task/1
 
 One stage applied to one subject, with everything needed to run it
-([schema/task.schema.json](schema/task.schema.json)):
+([task.schema.json](../src/nnnotes/schemas/task.schema.json)):
 
 ```json
 {"schema": "nnnotes.task/1", "id": "unity.export:membercard_assets_membercard_100101",
@@ -90,7 +90,7 @@ Locator kinds, tried in order to find an input's bytes (each checked against the
 
 ## Artifact record: nnnotes.artifact/1
 
-One output file ([schema/artifact.schema.json](schema/artifact.schema.json)):
+One output file ([artifact.schema.json](../src/nnnotes/schemas/artifact.schema.json)):
 
 ```json
 {"id": "CAB-…:-4153…#image",
@@ -112,7 +112,7 @@ Roles: an object's primary artifact is the one whose role comes first in `image`
 ## Result: nnnotes.result/1
 
 The result of a task, written after the bytes of all its artifacts are stored: its presence is the commit
-([schema/result.schema.json](schema/result.schema.json)).
+([result.schema.json](../src/nnnotes/schemas/result.schema.json)).
 
 ```json
 {"schema": "nnnotes.result/1", "key": "…", "keyParts": {…}, "status": "ok",
@@ -139,7 +139,7 @@ stage, an input that cannot be read, a worker process that dies) leaves no resul
 
 ## Run manifest: nnnotes.run/1
 
-What one run covered ([schema/run.schema.json](schema/run.schema.json)): the context (region, language, the catalog
+What one run covered ([run.schema.json](../src/nnnotes/schemas/run.schema.json)): the context (region, language, the catalog
 version, and the master data its views read: the version named by `MasterManifest.json` and the sha256 of each
 table), the selection, the normalized parameters per stage, the stage versions, every task with its
 key (`null` when it could not be described) and status (`hit`: the result was in the store, `ran`, `failed`), the
@@ -166,7 +166,7 @@ Task failure codes (failed items carry the reason codes of their stages):
 
 ## Plan: nnnotes.plan/1
 
-What a run would do, without running anything ([schema/plan.schema.json](schema/plan.schema.json)): every task as
+What a run would do, without running anything ([plan.schema.json](../src/nnnotes/schemas/plan.schema.json)): every task as
 a node with its key, status (`hit`, `run`, `unknown`), reasons and cost estimate, the edges between tasks, and a
 summary (counts, estimated CPU seconds and peak memory for the given workers and budget, tasks above the budget,
 and per layout the files it would write, remove and keep). Reasons compare the key parts with those of the same
@@ -191,7 +191,7 @@ task id in the previous run manifest:
 ## Layout manifest: nnnotes.layout/1
 
 The files an output layout owns in its directory, as `manifest.json` there
-([schema/layout.schema.json](schema/layout.schema.json)): name, parameters, and `entries` `{path, sha256, size, id}`
+([layout.schema.json](../src/nnnotes/schemas/layout.schema.json)): name, parameters, and `entries` `{path, sha256, size, id}`
 sorted by path, one per artifact (artifacts of equal content may share a path). A layout changes neither artifact
 bytes nor keys; the file names of `original` and `cas` both follow from the records, and `cas` also from the
 `original` manifest alone. Documents derived for `original` from records and paths (the views with the files of
@@ -199,14 +199,14 @@ their objects) are the exception: `original` has the derived documents, `cas` th
 
 ## Reports
 
-- Coverage, `nnnotes.coverage/1` ([schema/coverage.schema.json](schema/coverage.schema.json)): per class the census
+- Coverage, `nnnotes.coverage/1` ([coverage.schema.json](../src/nnnotes/schemas/coverage.schema.json)): per class the census
   total, the objects without an item (`missing`) and the count of every item status; per reason code its count and
   the first five object ids. An object with items in several results (a sprite whose image `sprite.crop` makes
   beside its `unity.export` item) counts once, with the most severe of its statuses (`failed`, `unsupported`,
   `generic`, `exported`, `contained`, in that order) and that item's reason.
-- Failures, `nnnotes.failures/1` ([schema/failures.schema.json](schema/failures.schema.json)): `{task, stage, input,
+- Failures, `nnnotes.failures/1` ([failures.schema.json](../src/nnnotes/schemas/failures.schema.json)): `{task, stage, input,
   object, code, message}` for failed tasks (`object` null) and failed items, sorted by task and object.
-- Cost, `nnnotes.cost/1` ([schema/cost.schema.json](schema/cost.schema.json)): the measured CPU and wall seconds
+- Cost, `nnnotes.cost/1` ([cost.schema.json](../src/nnnotes/schemas/cost.schema.json)): the measured CPU and wall seconds
   and peak resident memory of a task's last run, and the resident memory of its process when it started (a worker
   keeps memory from its earlier tasks: the task's own need is the difference).
 
@@ -214,20 +214,20 @@ Documents written by particular stages (artifacts of no object: their ids are `<
 
 | Document | Stage | Schema |
 |---|---|---|
-| `nnnotes.catalog-index/1` | `catalog.index` | [schema/catalog-index.schema.json](schema/catalog-index.schema.json) |
-| `nnnotes.census/1` | `unity.census` | [schema/census.schema.json](schema/census.schema.json) |
-| `nnnotes.scripts/1` | `link.scripts` | [schema/scripts.schema.json](schema/scripts.schema.json) |
-| `nnnotes.addresses/1` | `link.addresses` | [schema/addresses.schema.json](schema/addresses.schema.json) |
-| `nnnotes.artifacts/1` | `link.artifacts` | [schema/artifacts.schema.json](schema/artifacts.schema.json) |
-| `nnnotes.view/1` | `view.<name>` | [schema/view.schema.json](schema/view.schema.json) |
+| `nnnotes.catalog-index/1` | `catalog.index` | [catalog-index.schema.json](../src/nnnotes/schemas/catalog-index.schema.json) |
+| `nnnotes.census/1` | `unity.census` | [census.schema.json](../src/nnnotes/schemas/census.schema.json) |
+| `nnnotes.scripts/1` | `link.scripts` | [scripts.schema.json](../src/nnnotes/schemas/scripts.schema.json) |
+| `nnnotes.addresses/1` | `link.addresses` | [addresses.schema.json](../src/nnnotes/schemas/addresses.schema.json) |
+| `nnnotes.artifacts/1` | `link.artifacts` | [artifacts.schema.json](../src/nnnotes/schemas/artifacts.schema.json) |
+| `nnnotes.view/1` | `view.<name>` | [view.schema.json](../src/nnnotes/schemas/view.schema.json) |
 
-The catalog versions of a store, `nnnotes.catalogs/1` ([schema/catalogs.schema.json](schema/catalogs.schema.json),
+The catalog versions of a store, `nnnotes.catalogs/1` ([catalogs.schema.json](../src/nnnotes/schemas/catalogs.schema.json),
 `<store>/catalogs/index.json`), and the difference between two of them, `nnnotes.catalog-diff/1`
-([schema/catalog-diff.schema.json](schema/catalog-diff.schema.json), `nnnotes catalogs diff --json`), are written
+([catalog-diff.schema.json](../src/nnnotes/schemas/catalog-diff.schema.json), `nnnotes catalogs diff --json`), are written
 by the commands.
 
 The music data file of `nnnotes music-data`, `nnnotes.music-data/2`
-([schema/music-data.schema.json](schema/music-data.schema.json)), names its format in a `format` field; it is
+([music-data.schema.json](../src/nnnotes/schemas/music-data.schema.json)), names its format in a `format` field; it is
 described in [music-data.md](music-data.md).
 
 ## Store

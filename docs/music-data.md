@@ -7,7 +7,7 @@ chart facts (level, note counts, BPM, chart times, skill events, fevers), and pe
 the chart contributes to the live score whatever the deck, in a solo live (Gekisou off) and in a Gekisou live at every
 rank, measured by the deck model [ournotes-deck](https://github.com/empty-sekai/ournotes-deck), the package
 `ournotes-sim` that the extra `deck` installs (`pip install 'nnnotes[deck]'`). The format is `nnnotes.music-data/2`; its JSON Schema is
-[schema/music-data.schema.json](schema/music-data.schema.json).
+[music-data.schema.json](../src/nnnotes/schemas/music-data.schema.json).
 
 ```
 nnnotes music-data (--master-files DIR | --apk-master | --decoded-master) [--full] [--no-deck] [--seeds N]

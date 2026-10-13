@@ -1,6 +1,6 @@
 """The contract of the asset stages: canonical JSON, identities, keys and the documents stages exchange.
 
-Everything here is a public format (docs/contracts.md, JSON Schemas in docs/schema/):
+Everything here is a public format (docs/contracts.md, JSON Schemas in nnnotes.schemas):
 
     canon/1        UTF-8, LF, one trailing newline, non-ASCII as is. Contract documents: keys sorted, indent 1.
                    Object documents (typetree JSON): the object's own field order, indent 1. Non-finite floats as

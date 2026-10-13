@@ -14,7 +14,7 @@ from nnnotes.store import Store
 from test_stages import PIPELINE, toy_files, toy_stages
 
 ROOT = Path(__file__).resolve().parents[1]
-SCHEMAS = ROOT / "docs" / "schema"
+SCHEMAS = ROOT / "src" / "nnnotes" / "schemas"
 SHA = "0" * 64
 
 
@@ -237,4 +237,4 @@ def test_the_contract_is_documented():
     missing = [w for w in words if not re.search(rf"(?<![\w.-]){re.escape(w)}(?![\w-])", text)]
     assert missing == []
     for p in SCHEMAS.glob("*.schema.json"):
-        assert f"schema/{p.name}" in text, p.name
+        assert f"schemas/{p.name}" in text, p.name
