@@ -163,21 +163,21 @@ A switch changes one registry entry: the atom's id changes, exactly the tasks th
 golden records are regenerated with a version bump. A library that meets the criteria only in an unreleased version
 is not used until it is released.
 
-The current implementations and their measured position (one catalog, 14,692 bundles, 1,805,921 objects):
+The current implementations:
 
-| Atom | Implementation | Cost share of its stage |
-|---|---|---|
-| `reader` | UnityPy | the whole of `unity.census`; the open and every typetree read of `unity.export` |
-| `texture.decode` | UnityPy (`Texture2DConverter`) | about 5 % of `unity.export` CPU |
-| `png.encode` | Pillow, zlib level `png.level` (6) | more than half of `unity.export` CPU (texture images alone about 40 %) |
-| `astc.container` | nnnotes | |
-| `sprite.crop` | nnnotes | |
-| `mesh.arrays` | nnnotes | |
-| `gltf.write` | nnnotes | |
-| `sniff` | nnnotes | |
+| Atom | Implementation |
+|---|---|
+| `reader` | UnityPy |
+| `texture.decode` | UnityPy (`Texture2DConverter`) |
+| `png.encode` | Pillow, zlib level `png.level` (6) |
+| `astc.container` | nnnotes |
+| `sprite.crop` | nnnotes |
+| `mesh.arrays` | nnnotes |
+| `gltf.write` | nnnotes |
+| `sniff` | nnnotes |
 
-`png.level` (0-9) is a task parameter: a lower level writes larger files faster, with the same pixels
-([performance.md](performance.md#png-level)).
+`png.level` (0-9) is a task parameter: a lower level writes larger files faster, with the same pixels. The default
+stays 6, the level whose bytes equal the textures of the other commands.
 
 `NNNOTES_ATOM_<NAME>` (`NNNOTES_ATOM_PNG_ENCODE` for `png.encode`) replaces an atom for evaluation: its value is
 `module:attribute`, naming an `Impl` (or a callable returning one) whose id differs from the reference's. Keys and
