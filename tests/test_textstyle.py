@@ -3,7 +3,7 @@ import json
 
 import pytest
 
-from nnnotes import advui, config, languages, textstyle, tmpfont
+from nnnotes import advui, config, fontsettings, languages, textstyle, tmpfont
 from nnnotes.config import Config, ConfigError
 
 WHITE = {"r": 1.0, "g": 1.0, "b": 1.0, "a": 1.0}
@@ -143,48 +143,22 @@ def test_no_font_data_in_the_record():
                         "characterSpacing", "wordSpacing", "color", "fontStyle", "face", "outline", "underlay"}
 
 
-class FakeObject:
-    def __init__(self, tt):
-        self.tt = tt
-
-    def read_typetree(self):
-        return self.tt
-
-
-class FakeCatalog:
-    def __init__(self, keys):
-        self.keys = keys
-
-    def has(self, key):
-        return key in self.keys
-
-
-class FakeExporter:
-    def __init__(self, objects, materials):
-        self.objects, self.materials = objects, materials
-        self.cat = FakeCatalog(set(objects) | set(materials))
-
-    def key_object(self, key):
-        return self.objects.get(key) or FakeObject({"_material": key})
-
-    def material(self, o):
-        return self.materials[o.tt["_material"]]
-
-
 def test_text_styles_reads_the_localized_material(monkeypatch):
+    """The face info and the localized material come from the font settings (no font asset read)."""
     monkeypatch.setattr(textstyle, "language_fonts", lambda player: LANG)
     face = {"m_Scale": 1.0, "m_PointSize": 100.0, "m_LineHeight": 120.0, "m_AscentLine": 90.0,
             "m_DescentLine": -30.0}
-    ex = FakeExporter({"EmbFont/MainT/MainT SDF": FakeObject({"m_FaceInfo": face, "normalSpacingOffset": 0.0,
-                                                              "boldSpacing": 7.0})},
-                      {"EmbFont/MainT/MainT - Outline": material(["OUTLINE_ON"], _OutlineWidth=0.25)})
-    styles = textstyle.TextStyles(ex, player=None, mode=TW)
+    fonts = fontsettings.FontSettings({
+        "format": fontsettings.FORMAT,
+        "fonts": {"MainT SDF": {"faceInfo": face, "normalSpacingOffset": 0.0, "boldSpacing": 7.0}},
+        "materials": {"MainT - Outline": material(["OUTLINE_ON"], _OutlineWidth=0.25)}})
+    styles = textstyle.TextStyles(None, player=None, mode=TW, fonts=fonts)
     rec = styles.record("Canvas/Text", component(), LOCALIZE)
     assert rec["outline"]["widthEm"] == pytest.approx(0.25 * 15 / 16 * 0.16, abs=1e-6)
     assert styles.summary()["roles"] == {"primary": {"lineHeightEm": 1.2, "ascentEm": 0.9, "descentEm": -0.3,
                                                      "spacingOffset": 0.0, "boldSpacing": 7.0}}
     assert styles.summary()["language"] == "traditionalChinese"
-    with pytest.raises(KeyError, match="material key"):
+    with pytest.raises(KeyError, match="MainT - Default of MainT SDF not in the font settings"):
         styles.record("Canvas/Text", component(m_sharedMaterial={"material": "MainJ - Default"}), LOCALIZE)
 
 

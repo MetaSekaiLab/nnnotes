@@ -39,7 +39,7 @@ from .catalog import Catalog
 from .export import HEADER, Exporter
 from .jsonio import write_json
 from .player import PlayerData
-from . import adv, unity
+from . import adv, fontsettings, unity
 from . import master as master_mod
 
 TMP_SHADER_PREFIX = "TextMeshPro/"
@@ -70,7 +70,8 @@ class MediaExporter(Exporter):
         if fonts not in FONT_CHOICES:
             raise ValueError(f"fonts={fonts!r}")
         super().__init__(cat, out_dir, player=player, stub_assets=TMP_ASSETS if fonts == "open" else (),
-                         follow=("AnimatorController",))
+                         follow=("AnimatorController",),
+                         font_stubs=fontsettings.builtin() if fonts == "open" else None)
         self.fonts = fonts
 
     def scriptable(self, o) -> dict:
@@ -88,6 +89,16 @@ class MediaExporter(Exporter):
         if name is None or not name.startswith(TMP_SHADER_PREFIX):
             return super().material(o)
         return {"material": tt["m_Name"], "shader": {"shader": name}, "note": FONT_NOTE}
+
+    def font_stub(self, o) -> dict:
+        """As material and scriptable: a TMP material or asset of a font bundle is only named, with FONT_NOTE."""
+        out = super().font_stub(o)
+        if o.rec["type"] == "Material":
+            name = out["shader"]["shader"]
+            if not name.startswith(TMP_SHADER_PREFIX):
+                return out
+            return {"material": out["material"], "shader": {"shader": name}, "note": FONT_NOTE}
+        return {**out, "note": FONT_NOTE} if out["asset"] in TMP_ASSETS else out
 
     def component(self, o) -> dict:
         if o.type.name == "MonoBehaviour":

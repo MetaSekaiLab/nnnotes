@@ -315,21 +315,21 @@ def text_style(comp: dict, localize: dict | None, lang: dict, style: dict, mode:
 
 class TextStyles:
     """Text records of TMP texts read through an Exporter: the material each text draws with in the language
-    `mode` (LocalizeText) and the face info of its font asset; no font data is kept."""
+    `mode` (LocalizeText) and the face info of its font asset, from `fonts` (fontsettings.FontSettings; default:
+    the game's font assets, fontsettings.AssetFontSettings); no font data is kept."""
 
-    def __init__(self, ex: Exporter, player: PlayerData, mode: int):
+    def __init__(self, ex: Exporter, player: PlayerData, mode: int, fonts=None):
+        from . import fontsettings
         self.ex, self.mode = ex, mode
+        self.fonts = fonts if fonts is not None else fontsettings.AssetFontSettings(ex)
         self.lang = language_fonts(player)
         self.swap = font_swap(self.lang, mode)
         self.roles: dict[str, dict] = {}
         self._styles: dict[tuple, dict] = {}
-        self._faces: dict[str, tuple] = {}
 
     def _face(self, font_asset: str) -> tuple[dict, dict]:
-        if font_asset not in self._faces:
-            tt = self.ex.key_object(font_dir(font_asset) + font_asset).read_typetree()
-            self._faces[font_asset] = (tt["m_FaceInfo"], {k: tt[k] for k in ("normalSpacingOffset", "boldSpacing")})
-        return self._faces[font_asset]
+        f = self.fonts.font(font_asset)
+        return f["faceInfo"], {k: f[k] for k in ("normalSpacingOffset", "boldSpacing")}
 
     def record(self, path: str, comp: dict, localize: dict | None) -> dict:
         """The text record of `comp` (TMP text component) with its LocalizeText component `localize`."""
@@ -338,12 +338,9 @@ class TextStyles:
             loc = localize_text(path, fa, mat, self.swap, self.lang, self.mode)
             fa, mat = loc["fontAsset"], loc["material"]
         if (fa, mat) not in self._styles:
-            key = font_dir(fa) + mat
-            if not self.ex.cat.has(key):
-                raise KeyError(f"material key {key}")
             face, extra = self._face(fa)
-            self._styles[(fa, mat)] = material_style(self.ex.material(self.ex.key_object(key)),
-                                                     face["m_PointSize"], face["m_Scale"])
+            self._styles[(fa, mat)] = material_style(self.fonts.material(fa, mat), face["m_PointSize"],
+                                                     face["m_Scale"])
         rec = text_style(comp, localize, self.lang, self._styles[(fa, mat)], self.mode)
         if rec["fontRole"] not in self.roles:
             face, extra = self._face(fa)

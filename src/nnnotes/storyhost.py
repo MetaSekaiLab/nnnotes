@@ -34,7 +34,7 @@ from pathlib import Path
 import numpy as np
 import UnityPy
 
-from . import advscene, advui, languages, master, room, spot, storyfonts, textstyle, tmpfont
+from . import advscene, advui, fontsettings, languages, master, room, spot, storyfonts, textstyle, tmpfont
 from . import shader as shader_mod
 from .export import RECT_PROPS, Exporter, TexelPacker, streamed_frames
 from .jsonio import dumps, write_json
@@ -357,9 +357,11 @@ class UiDoc:
     def __init__(self, cat, player, out_dir: Path, mode: int | None = None):
         self.player, self.dir = player, Path(out_dir)
         self.dir.mkdir(parents=True, exist_ok=True)
-        self.ex = Exporter(cat, self.dir, player=player, textures="deferred", stub_assets=TMP_STUBS)
+        self.ex = Exporter(cat, self.dir, player=player, textures="deferred", stub_assets=TMP_STUBS,
+                           font_stubs=fontsettings.builtin())
         self.packer = TexelPacker(self.dir)
-        self.styles = textstyle.TextStyles(self.ex, player, mode) if mode is not None else None
+        self.styles = (textstyle.TextStyles(self.ex, player, mode, fontsettings.builtin()) if mode is not None
+                       else None)
         self.nodes: list[dict] = []
         self.sources: list[tuple[str, dict]] = []          # (key, prefab node) of each record
         self.roots: list[dict] = []

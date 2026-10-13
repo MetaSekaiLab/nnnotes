@@ -326,9 +326,23 @@ class Catalog:
             return self.session.get(url, source=self.source)
         return download(url)
 
-    def fetch_key(self, key: str) -> list[Path]:
-        """Every bundle of the key's closure; APK-local ones only when an APK is set."""
-        return [self.fetch(b) for b in self.resolve(key) if b.remote or self.apk]
+    def fetch_key(self, key: str, skip=frozenset()) -> list[Path]:
+        """Every bundle of the key's closure but those named in `skip`; APK-local ones only when an APK is set."""
+        return [self.fetch(b) for b in self.resolve(key) if (b.remote or self.apk) and b.name not in skip]
+
+    def bundle_of(self, key: str) -> Bundle:
+        """The bundle that holds the asset `key`: the first bundle among its location's dependencies (a bundle key:
+        that bundle)."""
+        e = self._entry(key)
+        own = self._as_bundle(e)
+        if own is not None:
+            return own
+        for d in e["dependencies"]:
+            de = self._by_off.get(d)
+            b = self._as_bundle(de) if de is not None else None
+            if b is not None:
+                return b
+        raise KeyError(f"{key}: no bundle among its dependencies")
 
     def fetch_raw(self, e: dict) -> Path:
         """A non-bundle CDN asset (e.g. CRI ACB/AWB data) as stored -- no decryption."""

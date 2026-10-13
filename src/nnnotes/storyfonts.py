@@ -27,7 +27,9 @@ Two sources give the same format:
               the page as _MainTex and the page size as _TextureWidth / _TextureHeight. The game asset's fallback
               chain is mirrored (open_font_set): each game fallback asset stands for an asset of the font file of
               the language LocalizeManager lists it for, which holds the characters the assets before it in the
-              chain lack. No glyph or atlas texel of the game is read.
+              chain lack. The game assets' settings, character coverage, fallback lists and text materials come from
+              nnnotes' table of them (fontsettings.builtin()): no game font asset, material, glyph or font bundle is
+              read.
   game_fonts  the game's TMP font assets (advui.extract with fonts="game", tmpfont.export_fonts): the same records
               moved from its ui.json into fonts.json, the glyph pages into ui/fonts/.
 
@@ -53,7 +55,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import adv, advui, cache, jsonio, languages, master, textstyle, tmpfont
+from . import adv, advui, cache, fontsettings, jsonio, languages, master, textstyle, tmpfont
 from . import shader as shader_mod
 from .config import ConfigError
 from .export import Exporter, _safe, packed_png, texture_png
@@ -84,7 +86,7 @@ FACE_KEYS = ("m_FaceIndex", "m_FamilyName", "m_StyleName", "m_PointSize", "m_Sca
              "m_AscentLine", "m_CapLine", "m_MeanLine", "m_Baseline", "m_DescentLine", "m_SuperscriptOffset",
              "m_SuperscriptSize", "m_SubscriptOffset", "m_SubscriptSize", "m_UnderlineOffset", "m_UnderlineThickness",
              "m_StrikethroughOffset", "m_StrikethroughThickness", "m_TabWidth")
-STYLE_KEYS = ("normalStyle", "normalSpacingOffset", "boldStyle", "boldSpacing", "italicStyle", "tabSize")
+STYLE_KEYS = fontsettings.STYLE_KEYS
 # OpenType name table ids
 NAME_FAMILY, NAME_STYLE, NAME_VERSION, NAME_LICENSE, NAME_LICENSE_URL = 1, 2, 5, 13, 14
 NAME_TYPO_FAMILY, NAME_TYPO_STYLE = 16, 17
@@ -529,9 +531,9 @@ def _write(ui_dir: Path, fonts_doc: dict, lang_doc: dict) -> None:
     (Path(ui_dir) / LANGUAGE_DOC).write_bytes(_dump(lang_doc))
 
 
-def _exporter(cat, player, work: Path) -> Exporter:
+def _exporter(cat, player, work: Path, font_stubs=None) -> Exporter:
     return Exporter(cat, Path(work), player=player, textures="deferred",
-                    stub_assets=("TMP_FontAsset", "TMP_SpriteAsset", "TMP_StyleSheet"))
+                    stub_assets=("TMP_FontAsset", "TMP_SpriteAsset", "TMP_StyleSheet"), font_stubs=font_stubs)
 
 
 # ---------------------------------------------------------------- open fonts
@@ -647,21 +649,21 @@ def line_breaking(player) -> dict:
             "useModernHangulLineBreakingRules": bool(tt["m_UseModernHangulLineBreakingRules"])}
 
 
-def search_order(fallbacks_of, font, exported: set) -> list[str]:
+def search_order(fallbacks_of, font: str, exported: set) -> list[str]:
     """The font assets TMP searches after `font` for a character `font` lacks, as tmpfont.FontSet.lookup
     (TMP_FontAssetUtilities.GetCharacterFromFontAsset_Internal: each fallback, then that fallback's own fallbacks,
     depth first, every asset once per search), reduced to the `exported` names, without `font` itself.
-    `fallbacks_of(f)`: the fallback assets of f (objects with a `name`)."""
+    `fallbacks_of(name)`: the names of the fallback assets of the font asset `name`."""
     out: list[str] = []
     searched: set = set()
 
-    def walk(f) -> None:
+    def walk(f: str) -> None:
         for fb in fallbacks_of(f):
-            if fb.name in searched:
+            if fb in searched:
                 continue
-            searched.add(fb.name)
-            if fb.name in exported and fb.name != font.name:
-                out.append(fb.name)
+            searched.add(fb)
+            if fb in exported and fb != font:
+                out.append(fb)
             walk(fb)
     walk(font)
     return out
@@ -676,7 +678,8 @@ def fallback_chains(ex: Exporter, primaries: set, exported: set) -> dict[str, li
     missing = sorted(exported - set(fs.fonts))
     if missing:
         raise RuntimeError(f"font assets {missing} are not reachable from {sorted(primaries)}")
-    return {n: search_order(fs.fallbacks, fs.fonts[n], exported) for n in sorted(exported)}
+    return {n: search_order(lambda f: [fb.name for fb in fs.fallbacks(fs.fonts[f])], n, exported)
+            for n in sorted(exported)}
 
 
 FALLBACK_FLOATS = ("_GradientScale", "_TextureWidth", "_TextureHeight", "_WeightNormal", "_WeightBold")
@@ -742,18 +745,12 @@ def fallback_material(m: dict, target: dict, name: str) -> dict:
     return out
 
 
-def _game_font_record(ex: Exporter, f: tmpfont.Font) -> dict:
-    """The game font asset settings open_asset takes: point size, padding, render mode, style, default material."""
-    return {"pointSize": f.tt["m_FaceInfo"]["m_PointSize"], "padding": f.tt["m_AtlasPadding"],
-            "renderMode": f.tt["m_AtlasRenderMode"], "style": {k: f.tt[k] for k in STYLE_KEYS},
-            "material": ex.material(f.material_obj)}
-
-
 def open_font_set(cat, player, ex: Exporter, language: str, font: FontFile, bindings: list[dict], shown: list[str],
                   ui_dir: Path, font_of=no_font_file, sprite_drawn: dict | None = None,
-                  margin_materials: dict | None = None) -> dict:
+                  margin_materials: dict | None = None, settings=None) -> dict:
     """The open font assets of the text `bindings` (their `localized` game font asset and material, replaced in
-    place by the open asset and its material) in `language`, for the texts `shown`:
+    place by the open asset and its material) in `language`, for the texts `shown`, with the game font assets of
+    `settings` (fontsettings.FontSettings; default: the built-in table):
 
     - per localized game font asset (a primary) an asset of `font` (the language's font file) with the game asset's
       point size, padding, style settings, render mode and text materials (open_asset);
@@ -773,6 +770,7 @@ def open_font_set(cat, player, ex: Exporter, language: str, font: FontFile, bind
     the glyph margin covers (so the pages equal another document's with the same characters). The pages go to
     `ui_dir`/fonts/. -> {fonts, textures, materials, missing (code points no asset maps), substituted (code points
     drawn as a missing glyph)}."""
+    settings = settings if settings is not None else fontsettings.builtin()
     lang = textstyle.language_fonts(player)
     sprite_drawn = sprite_drawn or {}
     margin_materials = margin_materials or {}
@@ -781,7 +779,6 @@ def open_font_set(cat, player, ex: Exporter, language: str, font: FontFile, bind
     for t in bindings:
         by_game.setdefault(t["localized"]["fontAsset"], []).append(t)
     primaries = sorted(by_game)
-    fs = tmpfont.FontSet(ex)
     missing_char = tmpfont.missing_glyph_character(player)
     files = {language: font}
 
@@ -792,7 +789,7 @@ def open_font_set(cat, player, ex: Exporter, language: str, font: FontFile, bind
 
     def chain(name: str, code: str) -> list[tuple[str, str]]:
         out = [(name, code)]
-        for fb in search_order(fs.fallbacks, fs.fonts[name], set(fs.fonts)):
+        for fb in search_order(settings.fallbacks, name, set(settings.fonts)):
             c = counterpart_language(lang, language, fb)
             if c is not None and (fb, c) not in out:
                 out.append((fb, c))
@@ -802,30 +799,25 @@ def open_font_set(cat, player, ex: Exporter, language: str, font: FontFile, bind
     held: dict[tuple[str, str], set[int]] = {}
     mgs, text_mats, margins, missing, substituted = {}, {}, {}, set(), set()
     for name in primaries:
-        g = fs.by_key(advui.font_key(cat, name, name))
-        tmpfont.check_glyph_variants(fs, g, shown)
-        mg = tmpfont.missing_glyph(fs, g, chars, missing_char)
+        settings.check_glyph_variants(name, shown)
+        mg = settings.missing_glyph(name, chars, missing_char)
         gone = set(mg["characters"]) if mg else set()
         substituted |= gone
         mgs[name] = mg
         # GetUnderlineSpecialCharacter: '_' of the game asset itself (no fallback); a '_' its fallback draws for the
         # text would be the underline glyph too in one open asset
-        if not tmpfont.underline_character(fs, g) and UNDERLINE_CHARACTER in chars and UNDERLINE_CHARACTER not in gone:
+        if not settings.underline(name) and UNDERLINE_CHARACTER in chars and UNDERLINE_CHARACTER not in gone:
             raise NotImplementedError(f"{name}: U+005F from a fallback without the asset's own underline glyph")
         mats = {}
         for t in by_game[name]:
             mname = t["localized"]["material"]
             if mname not in mats:
-                key = advui.font_key(cat, name, mname)
-                if not cat.has(key):
-                    raise KeyError(f"material key {key}")
-                mats[mname] = ex.material(ex.key_object(key))
+                mats[mname] = settings.material(name, mname)
         text_mats[name] = mats
         margins[name] = dict(mats)
         for mname in sorted(margin_materials.get(name, ())):
-            key = advui.font_key(cat, name, mname)
-            if mname not in margins[name] and cat.has(key):
-                margins[name][mname] = ex.material(ex.key_object(key))
+            if mname not in margins[name] and settings.has_material(name, mname):
+                margins[name][mname] = settings.material(name, mname)
         own = (name, language)
         held.setdefault(own, set())
         want = sorted({u for u in chars if u not in gone and u not in sprite_drawn.get(name, ())}
@@ -858,8 +850,8 @@ def open_font_set(cat, player, ex: Exporter, language: str, font: FontFile, bind
         primary = gname in by_game and code == language
         margin = margins[gname] if primary else {m: r for n in users[key] for m, r in margins[n].items()}
         name = names[key]
-        a = open_asset(file_of(code), name, sorted(held[key]), _game_font_record(ex, fs.fonts[gname]), margin,
-                       tmpfont.underline_character(fs, fs.fonts[gname]) if primary else False)
+        a = open_asset(file_of(code), name, sorted(held[key]), settings.game_record(gname), margin,
+                       settings.underline(gname) if primary else False)
         used = {f"{name} Material"} | ({a["renames"][m] for m in text_mats[gname]} if primary else set())
         a["font"]["fallbacks"] = [names[k] for k in chain(gname, code)[1:] if k in names and k != key]
         if primary and mgs[gname]:
@@ -898,7 +890,8 @@ def open_fonts(cat, player, episode: dict, ui_dir: Path, language: str, font: Fo
     ui_dir = Path(ui_dir)
     ui_doc = json.loads((ui_dir / "ui.json").read_text(encoding="utf-8"))
     mode, field = languages.mode(language), languages.column(language)[1:]
-    ex = _exporter(cat, player, ui_dir / "_fonts")
+    settings = fontsettings.builtin()
+    ex = _exporter(cat, player, ui_dir / "_fonts", settings)
     lang = textstyle.language_fonts(player)
     sprite_name = emoji.asset_name if emoji is not None else NO_EMOJI_FONT
     texts = text_bindings(ex, ui_doc, lang, mode, sprite_name)
@@ -917,9 +910,10 @@ def open_fonts(cat, player, episode: dict, ui_dir: Path, language: str, font: Fo
     rec = None
     if any("spriteAsset" in t for t in bindings):
         rec = advui.sprite_asset_record(ex)
-        sprite_drawn = drawn_by_sprites(ex, rec, [t for t in bindings if "spriteAsset" in t], chars)
+        sprite_drawn = drawn_by_sprites(rec, [t for t in bindings if "spriteAsset" in t], chars, settings.lookup)
     # the open font assets with the mirrored fallback chains, the missing glyph and the fallback materials
-    fset = open_font_set(cat, player, ex, language, font, bindings, shown, ui_dir, font_of, sprite_drawn)
+    fset = open_font_set(cat, player, ex, language, font, bindings, shown, ui_dir, font_of, sprite_drawn,
+                         settings=settings)
     fonts, textures, materials = fset["fonts"], fset["textures"], fset["materials"]
     missing, substituted = fset["missing"], fset["substituted"]
     coverage = {"characters": len(chars), "missing": [chr(u) for u in sorted(missing)]}
@@ -1056,17 +1050,14 @@ def sprite_sequence(name: str, unicode: int) -> str:
     return advui.emoji_sequence_key(name, unicode) or chr(unicode)
 
 
-def drawn_by_sprites(ex: Exporter, rec: dict, bindings: list[dict], chars) -> dict[str, set[int]]:
+def drawn_by_sprites(rec: dict, bindings: list[dict], chars, lookup) -> dict[str, set[int]]:
     """{game font asset: the code points of `chars` the sprite asset record `rec` draws for the texts of `bindings`
-    that use that font asset}: the ones the font asset lacks with its fallbacks (tmpfont.FontSet lookup, as
-    TMP_Text.GetTextElement before the sprite asset) and a sprite character of `rec` has."""
-    fs = tmpfont.FontSet(ex)
+    that use that font asset}: the ones the font asset lacks with its fallbacks (`lookup(font asset, code point)`,
+    None when no asset of the chain has it: TMP_Text.GetTextElement before the sprite asset) and a sprite character
+    of `rec` has."""
     have = {c["unicode"] for c in rec["characters"] if str(c["glyph"]) in rec["glyphs"]}
-    out = {}
-    for game_name in sorted({t["localized"]["fontAsset"] for t in bindings}):
-        f = fs.by_key(advui.font_key(ex.cat, game_name, game_name))
-        out[game_name] = {u for u in chars if u in have and fs.lookup(f, u) is None}
-    return out
+    return {game_name: {u for u in chars if u in have and lookup(game_name, u) is None}
+            for game_name in sorted({t["localized"]["fontAsset"] for t in bindings})}
 
 
 def sprite_needs(rec: dict, texts: list[str], drawn: set[int]) -> list[int]:
@@ -1225,7 +1216,11 @@ def game_fonts(cat, player, game_ui_dir: Path, ui_dir: Path, language: str, epis
         rec = advui.sprite_asset_record(ex)
         shown = shown_texts(episode, ui_doc, master_dir, languages.column(language)[1:])
         chars = sorted({ord(ch) for s in shown for ch in s})
-        drawn = set().union(*drawn_by_sprites(ex, rec, [texts[p] for p in sorted(driven)], chars).values())
+        fs = tmpfont.FontSet(ex)
+
+        def lookup(name, u):
+            return fs.lookup(fs.by_key(advui.font_key(ex.cat, name, name)), u)
+        drawn = set().union(*drawn_by_sprites(rec, [texts[p] for p in sorted(driven)], chars, lookup).values())
         if sprite_needs(rec, shown, drawn):
             sprites = game_sprite_asset(ex, ui_dir, rec)
     if sprites is None:

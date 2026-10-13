@@ -5,7 +5,7 @@ import json
 
 import pytest
 
-from nnnotes import advui
+from nnnotes import advui, fontsettings
 
 WHITE = {"spriteRef": "cab:1", "name": "WhiteRect"}
 
@@ -352,27 +352,18 @@ def test_chat_texts(monkeypatch):
                                                "_lockScreenStatusTextKey": ""}]},
               {"path": "Line/Top/Name", "components": [tmp_text("CHAT SDF", "CHAT - Default"), localize()]},
               {"path": "Line/Top/Percent", "components": [tmp_text("JA-N SDF", "JA-N - Outline", "100%")]}]
-    keys = []
-
-    class Cat:
-        def has(self, key):
-            return key.startswith("Font/")
 
     class Ex:
-        cat = Cat()
-
         def prefab(self, address):
             assert address == "Adv/Chat/Prefabs/Line"
             return {"nodes": window}
-
-        def key_object(self, key):
-            keys.append(key)
-            return FakeObj({"m_FaceInfo": {"m_PointSize": 40.0, "m_Scale": 1.0}})
-
-        def material(self, o):
-            return {"floats": {}, "colors": {}, "keywords": []}
+    face = {"m_PointSize": 40.0, "m_Scale": 1.0}
+    fonts = fontsettings.FontSettings({
+        "format": fontsettings.FORMAT, "fonts": {"EN-CHAT SDF": {"faceInfo": face}, "JA-N SDF": {"faceInfo": face}},
+        "materials": {"EN-CHAT - Default": {"floats": {}, "colors": {}, "keywords": []},
+                      "JA-N - Outline": {"floats": {}, "colors": {}, "keywords": []}}})
     monkeypatch.setattr(advui.textstyle, "material_style", lambda m, point, scale: {"face": {"point": point}})
-    got, status = advui.chat_texts(Ex(), LANG, 1, chat_episode())
+    got, status = advui.chat_texts(Ex(), fonts, LANG, 1, chat_episode())
     assert status == ["call"]
     name, pct = got["Line"]["Line/Top/Name"], got["Line"]["Line/Top/Percent"]
     assert name["localizeText"] == {"enabled": 1, "localizeEnabled": 1}
@@ -380,11 +371,11 @@ def test_chat_texts(monkeypatch):
     assert name["textStyle"]["lineSpacing"]["applied"] == -100.0 and name["textStyle"]["face"] == {"point": 40.0}
     assert pct["localizeText"] is None and pct["textStyle"]["fontRole"] == "number"
     assert pct["textStyle"]["lineSpacing"]["applied"] == 3.0
-    # the localized font's folder: the embedded copy is not in this catalog, so LocalizeManager's Font/
-    assert keys == ["Font/EN-CHAT/EN-CHAT SDF", "Font/EN-CHAT/EN-CHAT - Default", "Font/JA-N/JA-N SDF",
-                    "Font/JA-N/JA-N - Outline"]
-    assert advui.font_key(type("C", (), {"has": lambda self, k: True})(), "A SDF", "A - Default") == \
-        "EmbFont/A/A - Default"
+    # a font's folder: the embedded copy when the catalog has it, else LocalizeManager's Font/
+    no_emb = type("C", (), {"has": lambda self, k: False})()
+    emb = type("C", (), {"has": lambda self, k: True})()
+    assert advui.font_key(no_emb, "EN-CHAT SDF", "EN-CHAT - Default") == "Font/EN-CHAT/EN-CHAT - Default"
+    assert advui.font_key(emb, "A SDF", "A - Default") == "EmbFont/A/A - Default"
 
 
 def test_behaviours_record_every_serialized_field():
