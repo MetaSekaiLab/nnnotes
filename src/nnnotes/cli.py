@@ -986,14 +986,14 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--no-deck", action="store_true",
                    help="do not run the deck model (every chart's deck is null)")
     c.add_argument("--seeds", type=int, default=8, metavar="N",
-                   help="replay seeds of a chart with a luck range (default 8); statistics use nominal expectations")
+                   help="replay seeds for a chart with a luck range (default 8); expectations do not use sampling")
     c.add_argument("--workers", type=int, metavar="N",
                    help="threads measuring charts (default: every processor)")
     c.add_argument("--no-gekisou-aptitude", action="store_true",
                    help="leave out the charts' Gekisou aptitude (every gekisouAptitude is null)")
     c.add_argument("--stats-cache", type=Path, metavar="DIR",
-                   help="keep the charts' deck statistics in DIR: a chart whose model sources, options, master tables "
-                        "and chart are unchanged is not measured again; DIR then holds this export's charts only")
+                   help="reuse native simulation programs and runs in DIR across builds; "
+                        "completed cache entries survive interrupted builds")
     c.add_argument("--no-bgm", action="store_true",
                    help="do not read the BGM cue sheets (every song's bgm.length is null)")
     c.add_argument("--replay-dir", metavar="DIR",

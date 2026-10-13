@@ -152,6 +152,7 @@
             "version",
             "source",
             "commit",
+            "sourceSha256",
             "format"
           ],
           "properties": {
@@ -175,8 +176,8 @@
               "description": "the SHA-256 of the deck model's sources; releases with the same value measure the same statistics"
             },
             "format": {
-              "type": "string",
-              "description": "the statistics format, ournotes-deck.chart-stats/3"
+              "const": "ournotes-deck.chart-stats/3",
+              "description": "The native nominal-expectation statistics format."
             }
           }
         }
@@ -424,7 +425,8 @@
       ],
       "required": [
         "model",
-        "kinds"
+        "kinds",
+        "gekisouAptitude"
       ],
       "description": "the deck model's measurement and score-up kinds; null with --no-deck",
       "properties": {
@@ -693,7 +695,9 @@
         "justNotes",
         "unplayable",
         "expectation",
-        "replaySeeds"
+        "replaySeeds",
+        "offSeeds",
+        "gekisouAptitude"
       ],
       "properties": {
         "convertedNoteCount": {
@@ -732,7 +736,8 @@
               "mission",
               "startMs",
               "endMs",
-              "rankBonusPercent"
+              "rankBonusPercent",
+              "rankBonusPercents"
             ],
             "properties": {
               "index": {
@@ -764,7 +769,8 @@
           }
         },
         "justNotes": {
-          "type": "integer"
+          "type": "integer",
+          "minimum": 0
         },
         "offSeeds": {
           "type": "array",
@@ -779,7 +785,7 @@
             ],
             "properties": {
               "seed": {
-                "type": "integer"
+                "const": 0
               },
               "score": {
                 "type": "integer",
@@ -828,14 +834,16 @@
                 }
               }
             }
-          }
+          },
+          "minItems": 1,
+          "maxItems": 1
         },
         "unplayable": {
           "type": [
             "string",
             "null"
           ],
-          "description": "why Gekisou cannot play the chart; expectation is null and replaySeeds is empty"
+          "description": "Why the game cannot play the chart with Gekisou; expectation is then null and replaySeeds empty, while offSeeds remains available."
         },
         "gekisouAptitude": {
           "$ref": "#/$defs/chartGekisouAptitude"
@@ -843,19 +851,22 @@
         "expectation": {
           "anyOf": [
             {
-              "$ref": "#/$defs/chartExpectation"
+              "$ref": "#/$defs/expectedStats"
             },
             {
               "type": "null"
             }
-          ]
+          ],
+          "description": "Expected Gekisou scores under independent nominal lottery and skill probabilities; null when unplayable."
         },
         "replaySeeds": {
           "type": "array",
           "items": {
-            "type": "integer"
+            "type": "integer",
+            "minimum": -2147483648,
+            "maximum": 2147483647
           },
-          "description": "Seeds for deterministic replays."
+          "description": "Whole-live replay examples. Changing this prefix does not change expectations."
         }
       }
     },
@@ -1507,9 +1518,7 @@
               }
             },
             "law": {
-              "type": "string",
-              "minLength": 1,
-              "description": "The independent nominal lottery and skill probability law."
+              "const": "independent nominal lottery and skill probabilities"
             }
           }
         },
@@ -1570,11 +1579,11 @@
             "required": [
               "rangeScore",
               "rankBonus",
+              "rankBonusPerfect",
               "rangeScorePerfect",
               "maxCombo",
               "justCount",
-              "luckPoints",
-              "rankBonusPerfect"
+              "luckPoints"
             ],
             "properties": {
               "rangeScore": {
@@ -1698,8 +1707,6 @@
     },
     "estimate": {
       "type": "array",
-      "minItems": 2,
-      "maxItems": 2,
       "prefixItems": [
         {
           "type": "number"
@@ -1710,7 +1717,9 @@
         }
       ],
       "items": false,
-      "description": "The center and outward half-width of a nominal expectation interval."
+      "minItems": 2,
+      "maxItems": 2,
+      "description": "[center, outward interval half-width]; the radius is a numerical enclosure, not a standard error."
     },
     "expectationCheck": {
       "type": "object",
@@ -1728,9 +1737,16 @@
             "anyOf": [
               {
                 "type": "array",
-                "items": {
-                  "type": "integer"
-                },
+                "prefixItems": [
+                  {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  {
+                    "type": "integer"
+                  }
+                ],
+                "items": false,
                 "minItems": 2,
                 "maxItems": 2
               },
@@ -1761,10 +1777,55 @@
           "type": "number",
           "minimum": 0
         }
-      },
-      "description": "A full nominal expectation and its linear prediction; the worst endpoint separation is within bound."
+      }
     },
-    "chartExpectation": {
+    "expectedRange": {
+      "type": "object",
+      "required": [
+        "rangeScore",
+        "rankBonus",
+        "rankBonusPerfect",
+        "rangeScorePerfect",
+        "maxCombo",
+        "justCount",
+        "luckPoints",
+        "lotResults"
+      ],
+      "properties": {
+        "rangeScore": {
+          "$ref": "#/$defs/estimate"
+        },
+        "rankBonus": {
+          "$ref": "#/$defs/estimate"
+        },
+        "rankBonusPerfect": {
+          "$ref": "#/$defs/estimate"
+        },
+        "rangeScorePerfect": {
+          "$ref": "#/$defs/estimate"
+        },
+        "maxCombo": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "justCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "luckPoints": {
+          "$ref": "#/$defs/estimate"
+        },
+        "lotResults": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/estimate"
+          },
+          "minItems": 4,
+          "maxItems": 4
+        }
+      }
+    },
+    "expectedStats": {
       "type": "object",
       "required": [
         "score",
@@ -1785,49 +1846,7 @@
         "ranges": {
           "type": "array",
           "items": {
-            "type": "object",
-            "required": [
-              "rangeScore",
-              "rankBonus",
-              "rankBonusPerfect",
-              "rangeScorePerfect",
-              "luckPoints",
-              "maxCombo",
-              "justCount",
-              "lotResults"
-            ],
-            "properties": {
-              "rangeScore": {
-                "$ref": "#/$defs/estimate"
-              },
-              "rankBonus": {
-                "$ref": "#/$defs/estimate"
-              },
-              "rankBonusPerfect": {
-                "$ref": "#/$defs/estimate"
-              },
-              "rangeScorePerfect": {
-                "$ref": "#/$defs/estimate"
-              },
-              "luckPoints": {
-                "$ref": "#/$defs/estimate"
-              },
-              "maxCombo": {
-                "type": "integer"
-              },
-              "justCount": {
-                "type": "integer"
-              },
-              "lotResults": {
-                "type": "array",
-                "items": {
-                  "$ref": "#/$defs/estimate"
-                },
-                "minItems": 4,
-                "maxItems": 4,
-                "description": "Expected consumed result counts: Miss, Hit, Super Hit, Critical."
-              }
-            }
+            "$ref": "#/$defs/expectedRange"
           }
         },
         "weights": {
