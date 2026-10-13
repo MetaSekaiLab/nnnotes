@@ -4,7 +4,7 @@ tags, release time, score ranks, the live BGM's length, the Gekisou catalog (mem
 skills), per difficulty the chart facts (level, note counts, BPM, chart times, skill events, fever ranges) and the
 chart's deck statistics, what the chart contributes to the live score whatever the deck, with Gekisou on (a Gekisou
 live, every rank) and off (a solo live), measured by the deck model ournotes-deck (the extension module
-nnnotes._deck).
+the package ournotes-sim).
 
 Master data is read from the files as served (deckdata.master_files / apk_master: SHA-256 checked against the
 manifest, decoded with master.decode). Charts are the TextAssets `Live/MusicScore/<file name>` converted by
@@ -303,7 +303,7 @@ DECK_SEEDS = 8                              # replay seed count of a chart with 
 
 
 class Deck:
-    """The deck model (nnnotes._deck): chart statistics of a deck input document, on `workers` threads (None: the
+    """The deck model (the package ournotes-sim): chart statistics of a deck input document, on `workers` threads (None: the
     available parallelism), with independent nominal lottery and skill probabilities. `seeds` gives the number of
     replay seeds for a chart with a luck range; `aptitude` includes every chart's Gekisou aptitude and cross terms.
     With a `cache` directory, a chart's statistics are kept there under the SHA-256 of
@@ -314,10 +314,10 @@ class Deck:
                  cache: Path | None = None):
         if module is None:
             try:
-                from . import _deck as module
+                import ournotes_sim as module
             except ImportError:
-                raise MusicDataError("the deck model (nnnotes._deck) is not built into this installation: install "
-                                     "nnnotes from a wheel or build it (maturin), or pass --no-deck") from None
+                raise MusicDataError("the deck model (the package ournotes-sim) is not installed: install "
+                                     "'nnnotes[deck]', or pass --no-deck") from None
         self.module, self.seeds, self.workers = module, seeds, workers
         self.aptitude = aptitude
         self.cache = None if cache is None else Path(cache)
