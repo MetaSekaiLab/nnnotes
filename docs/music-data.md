@@ -5,8 +5,8 @@ listing shows (titles and credits in every language, bands, vocal characters, ca
 ranks, jacket, BGM length), the Gekisou catalog (member cards, snaps and their Gekisou skills), per difficulty the
 chart facts (level, note counts, BPM, chart times, skill events, fevers), and per chart its **deck statistics**: what
 the chart contributes to the live score whatever the deck, in a solo live (Gekisou off) and in a Gekisou live at every
-rank, measured by the deck model [ournotes-deck](https://github.com/empty-sekai/ournotes-deck), which nnnotes carries
-as its extension module `nnnotes._deck`. The format is `nnnotes.music-data/2`; its JSON Schema is
+rank, measured by the deck model [ournotes-deck](https://github.com/empty-sekai/ournotes-deck), the package
+`ournotes-sim` that the extra `deck` installs (`pip install 'nnnotes[deck]'`). The format is `nnnotes.music-data/2`; its JSON Schema is
 [schema/music-data.schema.json](schema/music-data.schema.json).
 
 ```
@@ -377,14 +377,12 @@ The deck model reads the same content under the format name `nnnotes.deck-data/1
 
 ## Building
 
-The deck model is the Rust crate ournotes-sim of the ournotes-deck repository, pinned to the commit of an ournotes-deck
-release in `rust/Cargo.toml`
-(and `rust/Cargo.lock`) and built into the extension module `nnnotes._deck` with [maturin](https://www.maturin.rs/)
-(PyO3, the stable ABI of Python 3.11 and later: one wheel per platform). The release workflow builds the wheels;
-`pip install .` or `pip install -e .` in a checkout builds the module with the Rust toolchain. The same nnnotes
-version always carries the same deck model: the commit moves only through a pull request (`.github/workflows/deck.yml`
-opens one when ournotes-deck publishes a newer release with its WASM packages), and `provenance.deck.commit` names it in
-every file. `provenance.deck.sourceSha256` is the SHA-256 of the deck model's sources (`ournotes_sim::SOURCE_SHA256`):
+The deck model is the Python package [ournotes-sim](https://pypi.org/project/ournotes-sim/) that each ournotes-deck
+release publishes: the Rust crate ournotes-sim of that release as an extension module, one wheel per platform. The
+extra `deck` pins one release (`pip install 'nnnotes[deck]'`, or `pip install -e ".[deck]"` in a checkout), so the
+same nnnotes version always carries the same deck model: the pin moves only through a pull request
+(`.github/workflows/deck.yml` opens one when ournotes-deck publishes a newer release with its WASM packages and its
+wheels), and `provenance.deck.version` and `provenance.deck.commit` name the release in every file. `provenance.deck.sourceSha256` is the SHA-256 of the deck model's sources (`ournotes_sim::SOURCE_SHA256`):
 releases with the same value measure the same statistics. The replay and recommendation engines of `--replay-engine` and `--recommend-engine` are that release's WASM
 packages.
 

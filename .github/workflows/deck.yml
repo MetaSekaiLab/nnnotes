@@ -1,11 +1,11 @@
 name: Deck model
 
-# nnnotes builds the deck model, the crate ournotes-sim of the ournotes-deck repository, at the commit rust/Cargo.toml
-# pins, so that one nnnotes version always carries one deck model. The pin follows ournotes-deck's releases: when the
-# latest release has published its replay and recommendation WASM packages (the engines of music-data --replay-engine
-# and --recommend-engine) and its commit is past the pinned one, this opens a pull request that moves the pin and
-# dispatches CI and the commit message check on its branch (a pull request opened with the workflow token starts no
-# workflow by itself); their checks land on the pull request.
+# The extra `deck` pins the deck model, the package ournotes-sim that ournotes-deck publishes with each release, so
+# that one nnnotes version always carries one deck model. The pin follows ournotes-deck's releases: when the latest
+# release has published its replay and recommendation WASM packages (the engines of music-data --replay-engine and
+# --recommend-engine) and its ournotes-sim wheels, and it is past the pinned release, this opens a pull request that
+# moves the pin and dispatches CI and the commit message check on its branch (a pull request opened with the workflow
+# token starts no workflow by itself); their checks land on the pull request.
 on:
   schedule:
     - cron: "17 3 * * *"
@@ -21,35 +21,32 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - name: Compare the pinned commit with ournotes-deck's latest release
+      - name: Compare the pinned release with ournotes-deck's latest release
         id: deck
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          pinned=$(sed -nE 's/^ournotes-sim = .*rev = "([0-9a-f]{40})".*/\1/p' rust/Cargo.toml)
-          [ -n "$pinned" ] || { echo "rust/Cargo.toml pins no ournotes-sim commit" >&2; exit 1; }
+          pinned=$(sed -nE 's/^deck = \["ournotes-sim==([0-9]+\.[0-9]+\.[0-9]+)"\]$/\1/p' pyproject.toml)
+          [ -n "$pinned" ] || { echo "pyproject.toml pins no ournotes-sim release" >&2; exit 1; }
           release=$(gh api repos/empty-sekai/ournotes-deck/releases/latest)
           tag=$(jq -r .tag_name <<< "$release")
-          head=$(gh api "repos/empty-sekai/ournotes-deck/commits/$tag" --jq .sha)
+          version=${tag#v}
           published=true
           for module in replay recommend; do
             jq -e --arg name "ournotes-$module-wasm-$tag.tar.gz" 'any(.assets[]; .name == $name)' <<< "$release" \
               > /dev/null || published=false
           done
-          # ahead: the release contains the pinned commit and more; behind or diverged: leave the pin to a person
-          # (with no common history the comparison itself fails)
-          status=$(gh api "repos/empty-sekai/ournotes-deck/compare/$pinned...$head" --jq .status)
-          echo "pinned $pinned, $tag $head: $status, WASM packages published: $published"
+          curl -fsS -o /dev/null "https://pypi.org/pypi/ournotes-sim/$version/json" || published=false
+          # ahead: the release contains the pinned release and more; behind or diverged: leave the pin to a person
+          status=$(gh api "repos/empty-sekai/ournotes-deck/compare/v$pinned...$tag" --jq .status)
+          echo "pinned $pinned, latest $version: $status, WASM packages and wheels published: $published"
           echo "pinned=$pinned" >> "$GITHUB_OUTPUT"
-          echo "head=$head" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "move=$([ "$status" = ahead ] && [ "$published" = true ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
       - name: Move the pin
         if: steps.deck.outputs.move == 'true'
-        working-directory: rust
-        run: |
-          sed -i -E 's/(rev = ")${{ steps.deck.outputs.pinned }}(")/\1${{ steps.deck.outputs.head }}\2/' Cargo.toml
-          cargo update -p ournotes-sim
+        run: sed -i -E 's/^(deck = \["ournotes-sim==)${{ steps.deck.outputs.pinned }}("\])$/\1${{ steps.deck.outputs.version }}\2/' pyproject.toml
       - uses: peter-evans/create-pull-request@v8
         id: pr
         if: steps.deck.outputs.move == 'true'
@@ -58,9 +55,9 @@ jobs:
           commit-message: "build(deck): ournotes-deck ${{ steps.deck.outputs.tag }}"
           title: "build(deck): ournotes-deck ${{ steps.deck.outputs.tag }}"
           body: |
-            Moves the deck model to ournotes-deck ${{ steps.deck.outputs.tag }} (${{ steps.deck.outputs.head }}),
+            Moves the deck model to ournotes-deck ${{ steps.deck.outputs.tag }},
             https://github.com/empty-sekai/ournotes-deck/releases/tag/${{ steps.deck.outputs.tag }}
-            Changes: https://github.com/empty-sekai/ournotes-deck/compare/${{ steps.deck.outputs.pinned }}...${{ steps.deck.outputs.head }}
+            Changes: https://github.com/empty-sekai/ournotes-deck/compare/v${{ steps.deck.outputs.pinned }}...${{ steps.deck.outputs.tag }}
 
             Music data files made after this change name the new commit in `provenance.deck.commit`; their deck
             statistics may differ.

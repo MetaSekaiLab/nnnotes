@@ -693,8 +693,8 @@ characters, bands and Gekisou skills and support skills: missions, highest level
 difficulty the chart facts (level and display level, full combo count, note counts, BPM, note times, the live's music
 length, skill event times, fever ranges) and the chart's deck statistics: the no-skill score and the weight of every
 score-up skill kind at every performance position, with Gekisou on (a Gekisou live at rank 1, with what every other
-rank and the Perfect play need) and off (a solo live), measured by the deck model ournotes-deck (built into nnnotes as
-`nnnotes._deck`) on its whole-live simulation and checked against the chart facts and the master data. `--full` also writes the deck model's input: every
+rank and the Perfect play need) and off (a solo live), measured by the deck model ournotes-deck (the package ournotes-sim,
+installed with `pip install 'nnnotes[deck]'`) on its whole-live simulation and checked against the chart facts and the master data. `--full` also writes the deck model's input: every
 `MasterLiveMusicScore` row's chart as the client builds it at runtime (notes, skill events, fever ranges) and the
 master data tables about cards, skills, bonuses, scores and events. Single-skill Gekisou aptitude is included by
 default as independent nominal expectations; `--no-gekisou-aptitude` omits it.

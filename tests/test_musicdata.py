@@ -7,6 +7,7 @@ import io
 import json
 import re
 import sys
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -262,7 +263,7 @@ def aptitude_of(s, positions):
 
 
 class FakeDeck:
-    """The interface of nnnotes._deck: statistics made from the deck input as the model reports them, with the Gekisou
+    """The interface of ournotes_sim: statistics made from the deck input as the model reports them, with the Gekisou
     aptitude (SHAPES; `aptitude`) unless it is left out."""
     COMMIT = "7e5d84b5998d28c21541ce3f2e0a3dfb1439f4f6"
     SOURCE = "5" * 64
@@ -657,28 +658,28 @@ def test_deck_errors(tmp_path, monkeypatch):
     with pytest.raises(musicdata.MusicDataError, match="deck model: chart 30: the check deck scores"):
         export(tmp_path, deck=FakeDeck(fail="chart 30: the check deck scores 1, the chart statistics predict 2"))
     assert not (tmp_path / "music.json").exists()
-    monkeypatch.setitem(sys.modules, "nnnotes._deck", None)              # an installation without the module
-    with pytest.raises(musicdata.MusicDataError, match="not built into this installation.*--no-deck"):
+    monkeypatch.setitem(sys.modules, "ournotes_sim", None)               # an installation without the package
+    with pytest.raises(musicdata.MusicDataError, match=r"not installed.*nnnotes\[deck\].*--no-deck"):
         musicdata.Deck()
 
 
+def deck_pin() -> str:
+    """The ournotes-sim version the extra `deck` pins."""
+    extras = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["optional-dependencies"]
+    pin, = extras["deck"]
+    return re.fullmatch(r"ournotes-sim==(\d+\.\d+\.\d+)", pin).group(1)
+
+
 def test_deck_module():
-    deck = pytest.importorskip("nnnotes._deck")
+    deck = pytest.importorskip("ournotes_sim")
     info = deck.info()
     assert info["name"] == "ournotes-deck" and info["format"] == "ournotes-deck.chart-stats/3"
     assert info["dataFormat"] == deckdata.DECK_FORMAT and re.fullmatch(r"[0-9a-f]{40}", info["commit"])
     assert re.fullmatch(r"[0-9a-f]{64}", info["sourceSha256"])
-    lock = (ROOT / "rust" / "Cargo.lock").read_text(encoding="utf-8")
-    assert f"#{info['commit']}\"" in lock                               # the commit Cargo.lock pins
+    assert info["version"] == deck_pin()                                # the release the extra pins
     with pytest.raises(ValueError, match="not a deck data file"):
         deck.chart_stats('{"format": "x"}')
     assert musicdata.Deck().info()["commit"] == info["commit"]
-
-
-def test_the_extension_version_is_the_package_version():
-    from nnnotes import __version__
-    cargo = (ROOT / "rust" / "Cargo.toml").read_text(encoding="utf-8")
-    assert re.search(r'^version = "([^"]+)"', cargo, re.M).group(1) == __version__
 
 
 # ---------------------------------------------------------------- the deck input (--full)

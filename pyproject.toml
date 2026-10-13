@@ -1,6 +1,6 @@
 [build-system]
-requires = ["maturin>=1.9,<2"]
-build-backend = "maturin"
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
 
 [project]
 name = "nnnotes"
@@ -28,6 +28,9 @@ dynamic = ["version"]
 [project.optional-dependencies]
 test = ["pytest>=8", "pyflakes>=3.2", "jsonschema>=4.18"]
 fonts = ["fonttools>=4.50", "freetype-py>=2.5", "scipy>=1.13"]
+# the deck model of music-data: one nnnotes version carries one ournotes-deck release (.github/workflows/deck.yml moves
+# the pin when ournotes-deck publishes a newer one)
+deck = ["ournotes-sim==0.0.7"]
 
 [project.scripts]
 nnnotes = "nnnotes.cli:main"
@@ -37,15 +40,14 @@ Homepage = "https://github.com/MetaSekaiLab/nnnotes"
 Source = "https://github.com/MetaSekaiLab/nnnotes"
 Issues = "https://github.com/MetaSekaiLab/nnnotes/issues"
 
-[tool.maturin]
-# the pure Python package src/nnnotes with the extension module nnnotes._deck (rust/: ournotes-sim of ournotes-deck,
-# pinned by commit); the version is rust/Cargo.toml's, kept equal to nnnotes.__version__ (tests/test_musicdata.py)
-python-source = "src"
-module-name = "nnnotes._deck"
-manifest-path = "rust/Cargo.toml"
-profile = "release"
-locked = true
-include = [{ path = "CHANGELOG.md", format = "sdist" }]
+[tool.hatch.version]
+path = "src/nnnotes/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/nnnotes"]
+
+[tool.hatch.build.targets.sdist]
+include = ["/src", "/tests", "/docs", "/scripts", "/CHANGELOG.md", "/README.md", "/README.en.md", "/LICENSE"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
