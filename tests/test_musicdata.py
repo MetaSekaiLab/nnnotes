@@ -8,6 +8,7 @@ import json
 import re
 import sys
 import tomllib
+from copy import deepcopy
 from pathlib import Path
 
 import pytest
@@ -206,65 +207,47 @@ SHAPES = [
     {"id": 4, "source": "support", "mission": 1, "bandCondition": False, "effects": [effect_row(5)],
      "skills": [shape_skill(32, 5)]},
 ]
-NOMINAL_LAW = "independent nominal lottery and skill probabilities"
+def expectation_check(positions, ranks=None):
+    return {"deck": ([[0, 5000]] + [None] * (positions - 1)) if positions else [], "ranks": ranks,
+            "expected": [2000, 0.001], "predicted": [2000.25, 0.001], "bound": 7.0}
 
 
-def expected_stats(positions, percents, missions):
-    ranges = []
-    for j, p in enumerate(percents):
-        points = 101 * (j + 1)
-        luck = missions[j] == musicdata.MISSION_LUCK
-        ranges.append({"rangeScore": [points, 0], "rangeScorePerfect": [points, 0],
-                       "rankBonus": [trunc_percent(points, p[0]), 0],
-                       "rankBonusPerfect": [trunc_percent(points, p[0]), 0],
-                       "maxCombo": 1, "justCount": 0, "luckPoints": [11, 0.35] if luck else [0, 0],
-                       "lotResults": [[2, 0.01], [1, 0.01], [0.5, 0.01], [0.1, 0.01]] if luck else [[0, 0]] * 4})
-    check = {"deck": [[0, 5000]] + [None] * (positions - 1), "ranks": None,
-             "expected": [2000, 0.25], "predicted": [2000.25, 0.1], "bound": 7}
-    return {"score": [1234, 0.5], "scorePerfect": [1234, 0.5], "ranges": ranges,
-            "weights": [[["W", 0]] * positions], "rangeWeights": [[[["W", 0]] * len(ranges)] * positions],
-            "check": check, "rankCheck": dict(check, ranks=[2] * len(ranges)) if ranges else None}
-
-
-def aptitude_of(s, positions):
-    """Synthetic nominal intervals: known range gains and an exact seven-point tail."""
-    ranges, base = s["ranges"], s["expectation"]
-    missions = {r["mission"] for r in ranges}
-    factors = [{"judgedNotes": 5, "justNotes": 0, "perfectNotes": 5 if r["mission"] == 3 else 0, "tailNotes": 1,
-                "comboAtStart": 0,
-                "lotteries": [sum(x[i] for x in base["ranges"][j]["lotResults"]) for i in range(2)]}
-               for j, r in enumerate(ranges)]
+def aptitude_of(stats, positions):
+    """Independently authored interval fixtures, not native numerical results or sampling estimates."""
+    ranges, base = stats["ranges"], stats["expectation"]
+    missions = {row["mission"] for row in ranges}
+    factors = [{"judgedNotes": 5, "justNotes": 0, "perfectNotes": 5 if row["mission"] == 3 else 0,
+                "tailNotes": 1, "comboAtStart": 0,
+                "lotteries": [sum(value[0] for value in base["ranges"][j]["lotResults"]),
+                              sum(value[1] for value in base["ranges"][j]["lotResults"])]}
+               for j, row in enumerate(ranges)]
     variants = []
     for shape in SHAPES:
         if shape["mission"] != 4 and shape["mission"] not in missions:
             continue
         for band in ((True, False) if shape["bandCondition"] else (None,)):
-            offset, radius = (0.25, 0.5) if shape["id"] in (2, 3) or 2 in missions else (0, 0)
-            rs, inside, inside_p = [], 0, 0
-            for j, (r, r0) in enumerate(zip(ranges, base["ranges"])):
-                d = 10 * (j + 1)
-                rb = trunc_percent(r0["rangeScore"][0] + d, r["rankBonusPercent"]) - r0["rankBonus"][0]
-                rbp = trunc_percent(r0["rangeScorePerfect"][0] + d, r["rankBonusPercent"]) - r0["rankBonusPerfect"][0]
-                rs.append({"rangeScore": [d + offset, radius], "rankBonus": [rb + offset, radius],
-                           "rangeScorePerfect": [d + offset, radius], "rankBonusPerfect": [rbp + offset, radius],
-                           "maxCombo": [0, 0], "justCount": [1, 0], "luckPoints": [offset, radius]})
-                inside += d + rb + 2 * offset
-                inside_p += d + rbp + 2 * offset
-            variants.append({
-                "shape": shape["id"], "bandMatch": band,
-                "score": [inside + 7, radius], "scorePerfect": [inside_p + 7, radius], "tail": [7, radius],
-                "tailPerfect": [7, radius], "converted": [0, 0], "ranges": rs,
-                "weights": [[0.01, radius / 100]] * positions,
-                "rangeWeights": [[[0.001, 0]] * len(ranges)] * positions if base["rangeWeights"] is not None else None,
-                "check": {"ranks": [2 if base["rangeWeights"] is not None else 1] * len(ranges),
-                          "deck": [[0, 5000]] + [None] * (positions - 1), "expected": [2000, 0.25],
-                          "predicted": [2000.25, 0.1], "bound": 7}})
+            rs, inside, inside_perfect = [], 0, 0
+            for j, (row, baseline) in enumerate(zip(ranges, base["ranges"])):
+                gain = 10 * (j + 1)
+                bonus = trunc_percent(baseline["rangeScore"][0] + gain, row["rankBonusPercent"]) - baseline["rankBonus"][0]
+                perfect_bonus = trunc_percent(baseline["rangeScorePerfect"][0] + gain, row["rankBonusPercent"]) - baseline["rankBonusPerfect"][0]
+                rs.append({"rangeScore": [gain, 0], "rankBonus": [bonus, 0], "rankBonusPerfect": [perfect_bonus, 0],
+                           "rangeScorePerfect": [gain, 0], "maxCombo": [0, 0], "justCount": [1, 0],
+                           "luckPoints": [0, 0]})
+                inside += gain + bonus
+                inside_perfect += gain + perfect_bonus
+            linear = base["rangeWeights"] is not None
+            variants.append({"shape": shape["id"], "bandMatch": band,
+                             "score": [inside + 7, 0], "scorePerfect": [inside_perfect + 7, 0],
+                             "tail": [7, 0], "tailPerfect": [7, 0], "converted": [0, 0], "ranges": rs,
+                             "weights": [[0.01, 1e-12]] * positions,
+                             "rangeWeights": [[[0.001, 1e-12]] * len(ranges)] * positions if linear else None,
+                             "check": expectation_check(positions, [2 if linear else 1] * len(ranges))})
     return {"factors": factors, "variants": variants}
 
 
 class FakeDeck:
-    """The interface of ournotes_sim: statistics made from the deck input as the model reports them, with the Gekisou
-    aptitude (SHAPES; `aptitude`) unless it is left out."""
+    """The /3 extension interface with synthetic expectations and independently constructed outward intervals."""
     COMMIT = "7e5d84b5998d28c21541ce3f2e0a3dfb1439f4f6"
     SOURCE = "5" * 64
     FORMAT = "ournotes-deck.chart-stats/3"
@@ -280,56 +263,72 @@ class FakeDeck:
     def chart_stats(self, data, seeds, workers, aptitude=True):
         if self.fail:
             raise ValueError(self.fail)
+        if seeds < 1:
+            raise ValueError("an empty seed set")
         doc = json.loads(data)
         self.inputs.append((doc, seeds, workers))
         self.options.append(aptitude)
         assert doc["format"] == deckdata.DECK_FORMAT and list(doc["master"]) == [t for t, _ in deckdata.TABLES]
-        m = doc["master"]
-        with_aptitude = aptitude
+        master = doc["master"]
 
         def table(name):
-            return [dict(zip(m[name]["columns"], r)) for r in m[name]["rows"]]
-        levels = {r["_id"]: r["_musicScoreLevel"] for r in table("MasterLiveMusicScore")}
-        bonus = {(r["_missionPattern"], r["_count"], r["_rank"]): r["_scoreBonusPercent"]
-                 for r in table("MasterLiveGekisouRankingScoreBonus")}
+            return [dict(zip(master[name]["columns"], row)) for row in master[name]["rows"]]
+        levels = {row["_id"]: row["_musicScoreLevel"] for row in table("MasterLiveMusicScore")}
+        bonuses = {(row["_missionPattern"], row["_count"], row["_rank"]): row["_scoreBonusPercent"]
+                   for row in table("MasterLiveGekisouRankingScoreBonus")}
         songs = {}
-        for r in table("MasterLiveMusic"):
-            for d in musicdata.DIFFICULTIES:
-                if r[f"_{d}ID"]:
-                    songs[r[f"_{d}ID"]] = (r["_id"], d, [r["_gekisouMission1"], r["_gekisouMission2"],
-                                                         r["_gekisouMission3"]])
+        for row in table("MasterLiveMusic"):
+            for difficulty in musicdata.DIFFICULTIES:
+                if row[f"_{difficulty}ID"]:
+                    songs[row[f"_{difficulty}ID"]] = (row["_id"], difficulty,
+                        [row["_gekisouMission1"], row["_gekisouMission2"], row["_gekisouMission3"]])
         charts = []
-        for c in doc["charts"]:
-            music, d, missions = songs[c["scoreId"]]
-            last = max(c["notes"]["timeMs"])
-            fevers = list(zip(c["fevers"]["startMs"], c["fevers"]["endMs"]))[:3]
-            positions = min(len(c["skillEvents"]["timeMs"]), 5)
+        for chart in doc["charts"]:
+            music, difficulty, missions = songs[chart["scoreId"]]
+            last = max(chart["notes"]["timeMs"])
+            fevers = list(zip(chart["fevers"]["startMs"], chart["fevers"]["endMs"]))[:3]
+            positions = min(len(chart["skillEvents"]["timeMs"]), 5)
             pattern = musicdata.mission_pattern(missions)
-            percents = [[bonus.get((pattern, i + 1, k), 0) for k in range(1, 6)] for i in range(len(fevers))]
-            check = {"deck": [[0, 5000]], "exact": 2000, "predicted": 2000.25, "bound": 7.0}
+            percents = [[bonuses.get((pattern, i + 1, rank), 0) for rank in range(1, 6)] for i in range(len(fevers))]
             luck = musicdata.MISSION_LUCK in missions[:len(fevers)]
-
-            s = {"scoreId": c["scoreId"], "musicId": music, "difficulty": d, "level": levels[c["scoreId"]],
-                 "judgedNotes": sum(score.is_judgement_note(op) for op in c["notes"]["op"]),
-                 "convertedNoteCount": len(c["notes"]["id"]), "lastNoteMs": last, "musicLengthMs": last + 1000,
-                 "skip": 1.5, "events": [[i % 5, t] for i, t in enumerate(c["skillEvents"]["timeMs"])],
-                 "positions": positions, "missions": missions,
-                 "ranges": [{"index": i, "mission": missions[i], "startMs": a, "endMs": b,
-                             "rankBonusPercent": percents[i][0], "rankBonusPercents": percents[i]}
-                            for i, (a, b) in enumerate(fevers)],
-                 "justNotes": 0,
-                 "expectation": expected_stats(positions, percents, missions),
-                 "replaySeeds": musicdata.published_seeds(seeds) if luck else [0],
-                 "offSeeds": [{"seed": 0, "score": 1000, "weights": [["W"] * positions], "check": dict(check)}]}
-            s["gekisouAptitude"] = aptitude_of(s, positions) if with_aptitude and fevers else None
+            expected_ranges = [{"rangeScore": [101 * (j + 1), 0],
+                                "rankBonus": [trunc_percent(101 * (j + 1), percent[0]), 0],
+                                "rankBonusPerfect": [trunc_percent(101 * (j + 1), percent[0]), 0],
+                                "rangeScorePerfect": [101 * (j + 1), 0], "maxCombo": 1, "justCount": 0,
+                                "luckPoints": [10, 0] if missions[j] == 2 else [0, 0],
+                                "lotResults": [[1, 0], [1, 0], [0, 0], [0, 0]] if missions[j] == 2 else [[0, 0]] * 4}
+                               for j, percent in enumerate(percents)]
+            expected = {"score": [1234, 0], "scorePerfect": [1234, 0], "ranges": expected_ranges,
+                        "weights": [[["W", 0]] * positions],
+                        "rangeWeights": [[[["W", 0]] * len(fevers)] * positions],
+                        "check": expectation_check(positions),
+                        "rankCheck": expectation_check(positions, [2] * len(fevers)) if fevers else None}
+            off_check = {"deck": ([[0, 5000]] + [None] * (positions - 1)) if positions else [],
+                         "exact": 2000, "predicted": 2000.25, "bound": 7.0}
+            stats = {"scoreId": chart["scoreId"], "musicId": music, "difficulty": difficulty,
+                     "level": levels[chart["scoreId"]],
+                     "judgedNotes": sum(score.is_judgement_note(op) for op in chart["notes"]["op"]),
+                     "convertedNoteCount": len(chart["notes"]["id"]), "lastNoteMs": last, "musicLengthMs": last + 1000,
+                     "skip": 1.5, "events": [[i % 5, time] for i, time in enumerate(chart["skillEvents"]["timeMs"])],
+                     "positions": positions, "missions": missions,
+                     "ranges": [{"index": i, "mission": missions[i], "startMs": a, "endMs": b,
+                                 "rankBonusPercent": percents[i][0], "rankBonusPercents": percents[i]}
+                                for i, (a, b) in enumerate(fevers)],
+                     "justNotes": 0, "expectation": expected,
+                     "replaySeeds": musicdata.published_seeds(seeds) if luck else [0],
+                     "offSeeds": [{"seed": 0, "score": 1000, "weights": [["W"] * positions], "check": off_check}]}
+            stats["gekisouAptitude"] = aptitude_of(stats, positions) if aptitude and fevers else None
             if self.change:
-                self.change(s)
-            charts.append(s)
-        out = {"format": self.FORMAT, "source": {},
-               "model": {"power": 300000, "gekisouAptitude": "each Gekisou (support) skill shape alone"},
+                self.change(stats)
+            charts.append(stats)
+        out = {"format": self.FORMAT, "source": doc["provenance"],
+               "model": {"power": 300000, "checkPower": 1000003, "unitValue": 10000,
+                         "expectation": "independent nominal probabilities with outward intervals",
+                         "gekisouAptitude": "each Gekisou (support) skill shape alone"},
                "gekisouAptitude": {"plainKind": 0, "host": "a synthetic member without a Gekisou skill",
-                                   "law": NOMINAL_LAW, "shapes": SHAPES} if aptitude else None,
-               "kinds": [{"id": 0, "effectType": 2000, "activationTimeSecond": 7.5}], "charts": charts}
+                                   "law": musicdata.EXPECTATION_LAW, "shapes": SHAPES} if aptitude else None,
+               "kinds": [{"id": 0, "effectType": 2000, "activationTimeSecond": 5.0, "durationMs": 5000}],
+               "charts": charts}
         out = json.loads(json.dumps(out))
         if self.header:
             self.header(out)
@@ -340,44 +339,6 @@ def export(tmp_path, rows=TABLE_ROWS, charts=CHARTS, bgm=bgm, out="music.json", 
     d = master_dir(tmp_path, rows)
     return musicdata.export(tmp_path / out, deckdata.master_files(d), KEY, charts.__getitem__, bgm, **PROV,
                             deck=musicdata.Deck(module=deck, workers=3) if deck is not None else None, **kw)
-
-
-def test_the_stats_cache_measures_only_charts_it_lacks(tmp_path):
-    cache = tmp_path / "stats"
-
-    def run(name, deck, seeds=musicdata.DECK_SEEDS, stats_cache=cache):
-        (tmp_path / name).mkdir()
-        d = master_dir(tmp_path / name)
-        return musicdata.export(tmp_path / name / "music.json", deckdata.master_files(d), KEY, CHARTS.__getitem__,
-                                bgm, **PROV, deck=musicdata.Deck(module=deck, seeds=seeds, cache=stats_cache))
-    plain = run("plain", FakeDeck(), stats_cache=None)
-    fake = FakeDeck()
-    first = run("first", fake)
-    n = plain["charts"]
-    assert len(fake.inputs[0][0]["charts"]) == n and first["deckStats"] == {"cached": 0, "measured": n}
-    assert plain["deckStats"] == {"cached": 0, "measured": n} and len(list(cache.glob("*.json"))) == n
-    again = run("again", fake)
-    assert fake.inputs[1][0]["charts"] == [] and again["deckStats"] == {"cached": n, "measured": 0}
-    assert plain["sha256"] == first["sha256"] == again["sha256"]
-    # the key names the model's sources and the options: changing either measures every chart again, and the
-    # cache then holds the new statistics only
-    other = FakeDeck()
-    other.SOURCE = "6" * 64
-    assert run("other", other)["deckStats"] == {"cached": 0, "measured": n} and len(list(cache.glob("*.json"))) == n
-    assert run("seeds", FakeDeck(), seeds=4)["deckStats"] == {"cached": 0, "measured": n}
-
-
-def test_the_stats_cache_key_reads_the_master_tables_and_the_chart():
-    deck = musicdata.Deck(module=FakeDeck())
-    doc = {"master": {"MasterLiveSetting": {"columns": ["_id"], "rows": [[1]]}},
-           "charts": [{"scoreId": 1, "notes": [1]}, {"scoreId": 2, "notes": [2]}]}
-    keys = deck.cache_keys(doc)
-    assert len(set(keys)) == 2 and all(re.fullmatch(r"[0-9a-f]{64}", k) for k in keys)
-    assert deck.cache_keys({**doc, "charts": doc["charts"][1:]}) == keys[1:]
-    changed = {**doc, "charts": [doc["charts"][0], {"scoreId": 2, "notes": [3]}]}
-    assert deck.cache_keys(changed)[0] == keys[0] and deck.cache_keys(changed)[1] != keys[1]
-    other = {**doc, "master": {"MasterLiveSetting": {"columns": ["_id"], "rows": [[2]]}}}
-    assert not set(deck.cache_keys(other)) & set(keys)
 
 
 def schema_validator():
@@ -506,27 +467,98 @@ def test_deck(tmp_path):
     (lambda s: s.update(difficulty="hard"), "difficulty 'hard' differs"),
     (lambda s: s["ranges"] and s["ranges"][0]["rankBonusPercents"].__setitem__(2, 99), "range 0: .*percentages"),
     (lambda s: s["ranges"] and s["ranges"][0].update(rankBonusPercent=1), "range 0: .*percentages"),
-    (lambda s: s["ranges"] and s["expectation"]["ranges"][0].update(rankBonus=[1, -1]), "invalid scores"),
-    (lambda s: s["expectation"]["ranges"].pop(), "range results differ"),
+    (lambda s: s["ranges"] and s["expectation"]["ranges"][0].update(rankBonus=-1), "range score or luck points"),
+    (lambda s: s["expectation"]["ranges"].pop(), "expectation ranges do not match"),
     (lambda s: s.pop("offSeeds"), "no Gekisou off statistics"),
     (lambda s: s["offSeeds"].append(s["offSeeds"][0]), "no Gekisou off statistics"),
     (lambda s: s["offSeeds"][0]["weights"].append(None), "Gekisou off: weights"),
     (lambda s: s["offSeeds"][0]["check"].update(exact=0), "Gekisou off: the check deck scores 0"),
-    (lambda s: s["expectation"].update(scorePerfect=[1, 0]), "otherwise on the Perfect play"),
+    (lambda s: s["expectation"].update(scorePerfect=[1, 0]), "without Just notes differs"),
     (lambda s: s["expectation"]["weights"][0].pop(), "weights are not"),
     (lambda s: s["expectation"]["weights"].append(None), "weights are not"),
     (lambda s: s["expectation"].update(rangeWeights=[[]]), "rangeWeights are not"),
-    (lambda s: s["expectation"]["check"].update(bound=0.1), "the check deck: expected"),
-    (lambda s: s["ranges"] and s["expectation"]["rankCheck"].update(expected=[0, 0]), "rank check: expected"),
-    (lambda s: s["ranges"] and s["expectation"]["rankCheck"].update(ranks=[6, 1]), "rank check ranks"),
-    (lambda s: s["expectation"]["ranges"][0].pop("luckPoints"), "chart 10 .*range 0: invalid scores"),
-    (lambda s: s.update(replaySeeds=[3]), r"chart 10 .*replay seeds \[3\] are not the chart's seed set \[0\]"),
-    (lambda s: s["replaySeeds"].append(5), r"chart 10 .*replay seeds \[0, 5\] are not the chart's seed"),
+    (lambda s: s["expectation"]["check"].update(bound=0.1), "expectation check exceeds"),
+    (lambda s: s["ranges"] and s["expectation"]["rankCheck"].update(expected=[0, 0]), "expectation check exceeds"),
+    (lambda s: s["ranges"] and s["expectation"]["rankCheck"].update(ranks=[6, 1]), "check ranks"),
+    (lambda s: s["expectation"]["ranges"][0].pop("luckPoints"), "expectation range 0: a range score or luck points"),
+    (lambda s: s.update(replaySeeds=[3]), r"chart 10 .*seeds \[3\] are not the chart's seed set \[0\]"),
+    (lambda s: s["replaySeeds"].append(5), r"chart 10 .*seeds \[0, 5\] are not the chart's seed"),
 ])
 def test_deck_checks(tmp_path, change, match):
     with pytest.raises(musicdata.MusicDataError, match=match):
         export(tmp_path, deck=FakeDeck(change))
     assert not (tmp_path / "music.json").exists()
+
+
+@pytest.fixture
+def expectation_fixture():
+    """One complete /3 chart from the controlled interface, decoded without narrowing native numbers."""
+    tables = {name: all_rows(name) for name, _ in deckdata.TABLES}
+    charts = deckdata.charts([tables["MasterLiveMusicScore"][1]], CHARTS.__getitem__)
+    source = deckdata.build(tables, charts, {})
+    document = FakeDeck().chart_stats(deckdata.encode(source).decode("utf-8"), 8, 1)
+    return json.loads(document, parse_float=deckdata._Num)["charts"][0]
+
+
+@pytest.mark.parametrize("estimate", [
+    100, [100], [100, 0, 0], [True, 0], [100, False], [100, -1],
+    [deckdata._Num("NaN"), 0], [100, deckdata._Num("Infinity")],
+    [deckdata._Num("1e308"), deckdata._Num("1e308")],
+])
+def test_expectation_rejects_invalid_enclosures(expectation_fixture, estimate):
+    expectation_fixture["expectation"]["score"] = estimate
+    with pytest.raises(musicdata.MusicDataError, match="outward radius"):
+        musicdata._check_expectation(expectation_fixture, 1, "synthetic")
+
+
+@pytest.mark.parametrize("change, message", [
+    (lambda c: c.update(justNotes=True), "judgement counts"),
+    (lambda c: c.update(justNotes=c["judgedNotes"] + 1), "judgement counts"),
+    (lambda c: c.pop("expectation"), "expectation field"),
+    (lambda c: c["expectation"].pop("rangeWeights"), "rangeWeights or rankCheck field"),
+    (lambda c: c["expectation"].pop("rankCheck"), "rangeWeights or rankCheck field"),
+    (lambda c: c["expectation"]["ranges"][0].pop("rankBonusPerfect"), "range score"),
+    (lambda c: c["expectation"]["ranges"][0].update(maxCombo=True), "judgement counters"),
+    (lambda c: c["expectation"]["ranges"][0].update(lotResults=[[1, 0]] * 4), "outside a luck range"),
+    (lambda c: c["expectation"]["check"].update(ranks=[]), "unranked expectation check"),
+    (lambda c: c["expectation"]["rankCheck"].update(deck=[None, None]), "check deck"),
+])
+def test_expectation_requires_the_new_contract(expectation_fixture, change, message):
+    change(expectation_fixture)
+    with pytest.raises(musicdata.MusicDataError, match=message):
+        musicdata._check_expectation(expectation_fixture, 1, "synthetic")
+
+
+def test_expected_bonus_is_not_truncation_of_the_expected_score(expectation_fixture):
+    # An equally likely score of 99 or 100 has E[score] = 99.5 and E[trunc(score * .35)] = 34.5.
+    # Truncating the mean would incorrectly produce 34. Native /3 explicitly measures both bonuses.
+    row = expectation_fixture["expectation"]["ranges"][0]
+    row.update(rangeScore=[deckdata._Num("99.5"), 0], rangeScorePerfect=[deckdata._Num("99.5"), 0],
+               rankBonus=[deckdata._Num("34.5"), 0], rankBonusPerfect=[deckdata._Num("34.5"), 0])
+    musicdata._check_expectation(expectation_fixture, 1, "synthetic")
+    assert trunc_percent(float(row["rangeScore"][0]), 35) != float(row["rankBonus"][0])
+
+
+def test_expectation_check_bounds_both_interval_endpoints(expectation_fixture):
+    check = expectation_fixture["expectation"]["check"]
+    check.update(expected=[1000, 1], predicted=[1000, 1], bound=1)
+    # Identical centers alone cannot certify a bound smaller than the farthest endpoint separation.
+    with pytest.raises(musicdata.MusicDataError, match="expectation check exceeds"):
+        musicdata._check_expectation(expectation_fixture, 1, "synthetic")
+    check["bound"] = 2
+    musicdata._check_expectation(expectation_fixture, 1, "synthetic")
+
+
+def test_unplayable_keeps_only_free_live_statistics(expectation_fixture):
+    original = deepcopy(expectation_fixture["offSeeds"])
+    expectation_fixture.update(unplayable="synthetic unsupported fourth fever", expectation=None,
+                               replaySeeds=[], gekisouAptitude=None)
+    musicdata._check_expectation(expectation_fixture, 1, "synthetic")
+    assert musicdata.validate_aptitude_statistics(None, expectation_fixture, "synthetic") is None
+    assert expectation_fixture["offSeeds"] == original
+    expectation_fixture.pop("expectation")
+    with pytest.raises(musicdata.MusicDataError, match="expectation field"):
+        musicdata._check_expectation(expectation_fixture, 1, "synthetic")
 
 
 def test_deck_without_range_weights(tmp_path):
@@ -535,6 +567,7 @@ def test_deck_without_range_weights(tmp_path):
         s["expectation"]["rangeWeights"] = None if s["scoreId"] == 10 else [None]
         s["expectation"]["rankCheck"] = None
         s["offSeeds"][0]["weights"] = [None]
+        s["offSeeds"][0]["check"]["deck"] = [None] * s["positions"]
         if s["scoreId"] == 10:
             for v in s["gekisouAptitude"]["variants"]:
                 v["rangeWeights"] = None
@@ -845,13 +878,17 @@ def test_command_decoded_master(tmp_path, capsys, monkeypatch):
 @pytest.fixture
 def aptitude_fixture():
     """A header and a two-range chart, independently authored above, through JSON as the extension returns it."""
-    tables = {t: TABLE_ROWS.get(t, rows_of(t)) for t in musicdata.tables_of(True, False)}
+    tables = deepcopy({t: TABLE_ROWS.get(t, rows_of(t)) for t in musicdata.tables_of(True, False)})
     a = musicdata.Aptitude(tables, musicdata.gekisou_catalog(tables, musicdata.Texts(tables['MasterText'])))
-    header = json.loads(json.dumps({'plainKind': 0, 'host': 'synthetic host', 'law': NOMINAL_LAW, 'shapes': SHAPES}),
+    header = json.loads(json.dumps({'plainKind': 0, 'host': 'synthetic host', 'law': musicdata.EXPECTATION_LAW, 'shapes': SHAPES}),
                         parse_float=deckdata._Num)
     chart = {'positions': 2, 'judgedNotes': 20, 'justNotes': 0, 'ranges': [
         {'mission': 1, 'rankBonusPercent': 35}, {'mission': 3, 'rankBonusPercent': 40}],
-        'expectation': expected_stats(2, [[35], [40]], [1, 3])}
+        'expectation': {'rangeWeights': [], 'ranges': [
+            {'rangeScore': [101, 0], 'rangeScorePerfect': [101, 0], 'rankBonus': [35, 0],
+             'rankBonusPerfect': [35, 0], 'lotResults': [[0, 0]] * 4},
+            {'rangeScore': [202, 0], 'rangeScorePerfect': [202, 0], 'rankBonus': [80, 0],
+             'rankBonusPerfect': [80, 0], 'lotResults': [[0, 0]] * 4}]}}
     chart['gekisouAptitude'] = aptitude_of(chart, 2)
     chart = json.loads(json.dumps(chart), parse_float=deckdata._Num)
     return a, header, chart
@@ -887,8 +924,9 @@ def test_aptitude_fixture(aptitude_fixture):
     lambda h: h['shapes'].pop(),
     lambda h: h.update(plainKind=1),
     lambda h: h.update(host=''),
-    lambda h: h.update(law=''),
+    lambda h: h.update(law='sampled means'),
     lambda h: h.update(law=None),
+    lambda h: h.pop('law'),
 ])
 def test_aptitude_header_rejects(aptitude_fixture, change):
     a, h, _ = aptitude_fixture
@@ -911,10 +949,13 @@ def test_aptitude_header_rejects(aptitude_fixture, change):
     lambda c: c['gekisouAptitude']['variants'][0].update(score=[deckdata._Num('NaN'), 0]),
     lambda c: c['gekisouAptitude']['variants'][0].update(score=[10**400, 0]),
     lambda c: c['gekisouAptitude']['variants'][0].update(score=[1, -1]),
-    lambda c: c['gekisouAptitude']['variants'][0].update(converted=[0.25, 0]),
+    lambda c: c['gekisouAptitude']['variants'][0].update(tail=[7, deckdata._Num('Infinity')]),
     lambda c: c['gekisouAptitude']['variants'][0].update(tail=[8, 0]),
     lambda c: c['gekisouAptitude']['variants'][0]['ranges'].pop(),
-    lambda c: c['gekisouAptitude']['variants'][0]['ranges'][0].update(justCount=[1, 0.1]),
+    lambda c: c['gekisouAptitude']['variants'][0].update(converted=[deckdata._Num('0.5'), 0]),
+    lambda c: c['gekisouAptitude']['variants'][0]['ranges'][0].pop('rankBonusPerfect'),
+    lambda c: c['gekisouAptitude']['variants'][2].update(tailPerfect=[9, 0]),
+    lambda c: c['gekisouAptitude']['variants'][2]['weights'].__setitem__(0, [0, -1]),
     lambda c: c['gekisouAptitude']['variants'][0]['check'].update(bound=-1),
     lambda c: c['gekisouAptitude']['variants'][0]['check'].update(predicted=deckdata._Num('NaN')),
     lambda c: c['gekisouAptitude']['variants'][0]['check'].update(expected=[0, 0]),
@@ -933,11 +974,60 @@ def test_aptitude_rounding(aptitude_fixture):
     a, h, c = aptitude_fixture
     aptitude_header(a, h)
     v = c['gekisouAptitude']['variants'][2]
-    v['tail'][0] = deckdata._Num('7.000000001')
-    a.chart('synthetic', c, 0)  # binary64 sum tolerance
-    v['tail'][0] = deckdata._Num('7.004')
+    v['tail'] = [deckdata._Num('7.002'), deckdata._Num('0.002')]
+    a.chart('synthetic', c, 0)  # outward radius, not a standard error or an implicit rounding tolerance
+    v['tail'][1] = deckdata._Num('0.001')
     with pytest.raises(musicdata.MusicDataError, match='tail'):
         a.chart('synthetic', c, 0)
+
+
+def test_aptitude_perfect_tail_uses_the_measured_perfect_bonus(aptitude_fixture):
+    a, h, c = aptitude_fixture
+    header = aptitude_header(a, h)
+    v = c['gekisouAptitude']['variants'][0]
+    c['justNotes'] = 1
+    v['ranges'][0]['rankBonusPerfect'][0] = deckdata._Num('4.25')
+    v['scorePerfect'][0] = deckdata._Num('49.25')
+    assert v['ranges'][0]['rankBonus'][0] == 3
+    # The Perfect and best channels have different independently measured bonuses.
+    # Their separate interval identities must both hold, without a seed or standard-error field.
+    assert musicdata.validate_aptitude_statistics(header, c, 'synthetic') == a.chart('synthetic', c, 0)
+    v['ranges'][0]['rankBonusPerfect'][0] = v['ranges'][0]['rankBonus'][0]
+    with pytest.raises(musicdata.MusicDataError, match='tailPerfect'):
+        musicdata.validate_aptitude_statistics(header, c, 'synthetic')
+
+
+@pytest.mark.parametrize('group', ['trigger', 'condition', 'release', 'reset', 'cumulative'])
+def test_confirmed_rank_shape_has_no_linear_rank_cross_terms(aptitude_fixture, group):
+    a, h, c = aptitude_fixture
+    source = a.rows[('member', 1, 5)][0]
+    effect = h['shapes'][0]['effects'][0]
+    if group == 'cumulative':
+        source['_skillCumulativeConditionID'] = 77
+        a.cumulative[77] = {'_skillCumulativeConditionType': 7012, '_conditionValues': [1],
+                            '_conditionTargetIDs': [], '_maxCumulativeCount': 1}
+        effect[group] = {'type': 7012, 'values': [1], 'targetIds': [], 'maxCumulativeCount': 1}
+    else:
+        column = dict(musicdata.CONDITION_GROUPS)[group]
+        source[column] = 77
+        a.sets[77] = [{'_id': 77, '_conditionIds': [77]}]
+        a.conditions[77] = {'_conditionType': 7012, '_conditionValues': [1],
+                            '_conditionTargetIDs': [], '_isPositive': True}
+        effect[group] = [[{'type': 7012, 'values': [1], 'targetIds': [], 'positive': True}]]
+    header = aptitude_header(a, h)  # Still checked against independent master rows.
+    v = c['gekisouAptitude']['variants'][0]
+    old_weights = v['rangeWeights']
+    v['rangeWeights'] = None
+    v['check']['ranks'] = [1, 1]
+    assert c['expectation']['rangeWeights'] is not None
+    assert musicdata.validate_aptitude_statistics(header, c, 'synthetic') == c['gekisouAptitude']
+    v['check']['ranks'][0] = 2
+    with pytest.raises(musicdata.MusicDataError, match='check ranks'):
+        a.chart('synthetic', c, 0)
+    v['check']['ranks'][0] = 1
+    v['rangeWeights'] = old_weights
+    with pytest.raises(musicdata.MusicDataError, match='rank-linear domain'):
+        musicdata.validate_aptitude_statistics(header, c, 'synthetic')
 
 
 def test_aptitude_no_plain(aptitude_fixture):

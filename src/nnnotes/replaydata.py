@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import tarfile
 from pathlib import Path
 
@@ -12,10 +13,34 @@ from .cache import write_atomic
 FORMAT = "nnnotes.replay-manifest/1"
 CHART_FORMAT = "nnnotes.replay-chart/1"
 BUILD_INFO = "build-info.json"
+LABEL_FORMAT = "nnnotes.replay-labels/1"
+LABEL_TABLES = ("MasterSupportSkill", "MasterSupportSkillEffect", "MasterGekisouSupportSkill",
+                "MasterGekisouSupportSkillEffect", "MasterText", "MasterSkillConditionSet", "MasterSkillCondition",
+                "MasterSkillCumulativeCondition", "MasterSkillTarget", "MasterCharacter", "MasterMemberCard", "MasterSupportCard", "MasterBand")
 
 
 def _json(value) -> bytes:
     return deckdata.encode(deckdata._value(value, "replay input"))
+
+
+def labels(tables: dict, hashes: dict, provenance: dict) -> dict:
+    """Original names/templates, level effects and artwork IDs from the same served master tables.
+
+    Consumers use their existing localization/description formatter. No formula or inferred growth is exported.
+    MasterSkillIcon is deliberately absent until the producer also records its source hash.
+    """
+    master = provenance.get("master") or {}
+    recorded = master.get("tables") or {}
+    result = {}
+    for name in LABEL_TABLES:
+        digest = hashes.get(name)
+        if name not in tables or not isinstance(tables[name], list):
+            raise deckdata.DeckDataError(f"replay labels: missing source table {name}")
+        if not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest) or recorded.get(name, {}).get("sha256") != digest:
+            raise deckdata.DeckDataError(f"replay labels: {name} hash differs from master provenance")
+        result[name] = {"sha256": digest, "rows": tables[name]}
+    return {"format": LABEL_FORMAT, "region": provenance["region"], "masterVersion": master.get("version"),
+            "tables": result}
 
 
 def _read_package(source: Path, paths: tuple[str, ...], name: str) -> dict[str, bytes]:
@@ -69,8 +94,8 @@ def _package(files: dict[str, bytes], source: Path, model: dict | None, module: 
     return paths
 
 
-def bundle(music: dict, engine_dir: Path | None = None,
-           recommend_dir: Path | None = None) -> tuple[dict[str, bytes], dict]:
+def bundle(music: dict, engine_dir: Path | None = None, recommend_dir: Path | None = None, *,
+           label_source: dict | None = None) -> tuple[dict[str, bytes], dict]:
     """Canonical normalized --full inputs and SHA manifest. Actual ACB length is mandatory.
 
     Runtime arrays retain native enumeration order. ReplaySession.template/run in Rust produce frames and scores.
@@ -101,6 +126,21 @@ def bundle(music: dict, engine_dir: Path | None = None,
     def resource(path: str) -> dict:
         return {"url": path, "sha256": hashlib.sha256(files[path]).hexdigest(), "bytes": len(files[path])}
 
+    label_ref = None
+    if label_source is not None:
+        if (label_source.get("format") != LABEL_FORMAT or label_source.get("region") != provenance.get("region")
+                or label_source.get("masterVersion") != (provenance.get("master") or {}).get("version")):
+            raise deckdata.DeckDataError("replay labels: snapshot identity differs from runtime inputs")
+        source_tables = label_source.get("tables") or {}
+        recorded = (provenance.get("master") or {}).get("tables") or {}
+        for name in LABEL_TABLES:
+            if (not isinstance(source_tables.get(name), dict) or not isinstance(source_tables[name].get("rows"), list)
+                    or not re.fullmatch(r"[0-9a-f]{64}", str(source_tables[name].get("sha256")))
+                    or source_tables[name].get("sha256") != recorded.get(name, {}).get("sha256")):
+                raise deckdata.DeckDataError(f"replay labels: {name} differs from runtime master provenance")
+        files["snap-labels.json"] = _json(label_source)
+        label_ref = {"format": LABEL_FORMAT, **resource("snap-labels.json")}
+
     charts = []
     for record in records:
         sid = record["scoreId"]
@@ -122,6 +162,7 @@ def bundle(music: dict, engine_dir: Path | None = None,
         recommend = {"model": model, "js": resource(js), "wasm": resource(wasm), "build": resource(build)}
     manifest = {"format": FORMAT, "deckData": {"format": deckdata.DECK_FORMAT, **resource("deck-data.json")},
                 "charts": charts, "engine": engine,
+                **({"snapLabels": label_ref} if label_ref else {}),
                 **({"recommendEngine": recommend} if recommend is not None else {}),
                 "unlistedScoreIds": [c["scoreId"] for c in source_records if str(c["scoreId"]) not in lengths],
                 "clock": "Explicit frames from ReplaySession.template; no Python/JS scoring or scheduling"}

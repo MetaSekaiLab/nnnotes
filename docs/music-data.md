@@ -26,15 +26,26 @@ nnnotes music-data (--master-files DIR | --apk-master | --decoded-master) [--ful
 - `--full`: also write the deck model's input, every chart's runtime notes and the master data tables about cards,
   skills, bonuses, scores and events ([the deck input](#the-deck-input---full)), for tools that run a deck model of
   their own.
-- `--no-deck`: leave every chart's `deck` null. `--workers N` sets the measurement threads
-  (default: every processor). `--seeds N` sets the replay seed count for a chart with a luck range (default 8);
-  nominal expectation measurements are independent of this count.
-- `--no-gekisou-aptitude`: omit single-skill aptitude measurements while retaining baseline statistics.
-- `--stats-cache DIR`: keep every chart's deck statistics in `DIR`, one file per chart named by the SHA-256 of what
-  they are a function of: the deck model's sources (`provenance.deck.sourceSha256`), `--seeds` and the aptitude
-  options, the master data tables of the deck input and the chart's runtime notes. A chart found there is not measured
-  again, so an export after a deck model release that keeps the model's sources, or after a master data update that
-  keeps those tables, measures only the charts that changed. `DIR` then holds this file's charts only.
+- `--no-deck`: do not run the deck model; every chart's `deck` is null. A full statistics build evaluates many
+  complete lives per chart. `--workers N` sets the native worker count (default: every available processor).
+- `--seeds N`: list this many replay seeds for a chart with a luck range (default 8). Expectations and aptitude
+  use the model's independent nominal probabilities, not a sample of these seeds. Increasing this option changes
+  the replay examples without changing the expected scores or their numerical enclosures.
+- `--no-gekisou-aptitude`: keep the ordinary deck statistics and skip single-skill aptitude measurements.
+- `--stats-cache DIR`: use the native model's persistent program and run cache. Reuse follows the complete
+  compiled simulation inputs, so unchanged programs and runs can survive a change to the skill catalog. New
+  shapes need their own measurements; changing a shape's numeric index does not by itself identify a new program.
+  Every invocation still passes the complete current master data and charts to the native model, which constructs
+  the current header and assembles the requested statistics. Python does not reuse a chart-sized JSON result or
+  replace the model's dependency analysis with a table allowlist.
+  Cache records are isolated by cache schema and model source SHA-256. Each completed result is saved through a
+  unique temporary file, a file sync and an atomic rename. Invalid or unreadable records are measured again;
+  interrupted work retains its completed records. Concurrent processes may compute the same missing record, but
+  publish complete records atomically. Old inputs remain available for later reuse: there is no automatic garbage
+  collection, and unused model-source directories can be removed to reclaim space. A record larger than 64 MiB is
+  not persisted. The command's `deckStats` summary reports native requests, hits, completed computations, writes,
+  invalid entries and written bytes; these count cache operations, not charts. Cache counters are not part of the
+  published music data. This cache does not import the previous Python chart cache.
 - `--no-bgm`: do not read the cue sheets (every `bgm.length` is null).
 - `--jackets DIR`: also write every song's jacket, the Texture2D `Image/Jacket/<jacket>`, as `DIR/<jacket>.webp`
   (WebP quality 88, scaled down with Lanczos to at most 320 pixels on the longer side, without alpha when opaque); a
@@ -99,7 +110,7 @@ A **text** is an object with one string per language of `languages` (`{"ja": ...
 | `master.tables.<Table>.sha256` | SHA-256 of each table's file as served, before decoding: the song tables (`MasterLiveMusic`, `MasterLiveMusicScore`, `MasterText`, `MasterBand`, `MasterCharacter`, `MasterTag`, `MasterLiveMusicCategory`, `MasterSound`, `MasterSoundCueSheet`, `MasterLiveScoreRank`), the tables of the Gekisou catalog (`MasterMemberCard`, `MasterSupportCard`, `MasterSupportCardRank`, `MasterGekisouSkill`, `MasterGekisouSkillEffect`, `MasterGekisouSupportSkill`, `MasterGekisouSupportSkillEffect`) and, when the deck model runs or with `--full`, the tables of [the deck input](#the-deck-input---full) |
 | `exporter.name`, `exporter.version` | `nnnotes` and its version |
 | `exporter.chartFormat` | the format of the chart converter the notes come from, `nnnotes.live-score/1` |
-| `deck` | the deck model: `{name, version, source, commit, format}`, `ournotes-deck`, the package version of its crate ournotes-sim, the repository, the git commit nnnotes is built with and the statistics format (`ournotes-deck.chart-stats/3`); null with `--no-deck` |
+| `deck` | the deck model: `{name, version, source, commit, sourceSha256, format}`, `ournotes-deck`, the package version of its crate ournotes-sim, the repository, the git commit nnnotes is built with and the statistics format (`ournotes-deck.chart-stats/3`); null with `--no-deck` |
 
 ### bands, characters, tags, categories
 
@@ -172,100 +183,159 @@ plays, `musicLengthMs` is the length the score code uses; a listing chooses the 
 
 ## Deck statistics
 
-The deck model reports `ournotes-deck.chart-stats/3`. Gekisou measurements use independent nominal
-lottery and skill probabilities. An interval is `[center, half-width]`, enclosing the expectation under
-that law with outward probability arithmetic and score rounding bounds. Deterministic judgement counters
-are exact integers. The law describes the model; agreement with a particular game's seed distribution
-is a separate question.
+The native statistics format is `ournotes-deck.chart-stats/3`. It evaluates complete lives on the game's default
+frame schedule in two scenarios:
 
-Serialized point centers use millipoints, consumed result counts use five fractional digits, and weights
-use twelve. Half-widths round outward at the same precision and include the center's rounding.
+- **Gekisou on** (`expectation`): each note is judged at its exact time, Just inside a Just-count range and Perfect
+  elsewhere, with rank 1 in each range. Random lotteries and probabilistic skills follow independent nominal
+  probabilities. The numbers enclose the expectation under that stated model.
+- **Gekisou off** (`offSeeds`): each note is Perfect, with seed 0 and no Just, luck, Gekisou combo or rank bonus.
+  This remains a deterministic measurement. A chart with more than three fevers can still play here.
 
-The best play judges each note at its exact time, Just in Just-count ranges and Perfect elsewhere.
-The Perfect play supplies the other endpoint, with every Just judged Perfect. Both include rank 1 bonuses.
-Free Live has its own deterministic Perfect run, without Gekisou, and remains available on charts with
-more than three fever ranges.
+### Expected values and their intervals
+
+An **Estimate** is `[center, radius]`, denoting the interval `[center - radius, center + radius]`. Both values and
+both endpoints must be finite, and the radius must be nonnegative. The radius bounds numerical uncertainty; it is
+not a standard error, a confidence interval or variation between replay seeds. Point values are serialized at
+millipoint precision, lottery counts at five decimal places and weights at twelve, with radii expanded outwards
+so rounding keeps the enclosure. A zero radius is a point interval.
+
+The no-skill expected score is measured at `deck.model.power` (300000). For each ordinary **score-up kind** and
+performance position, `expectation.weights[kind][position]` encloses the expected gain from one effect at factor
+1, divided by that power. Effects run through the simulator's own conditions, frames and appliers. A deck whose
+ordinary live skills are represented by these kinds has the score approximation
+
+```
+P * (score / model.power + sum_k factor_k * weights[kind_k][k])
+```
+
+where `P` is its power. Arithmetic on estimates must carry their radii. The approximation also has a separate
+integer-floor error, checked by a complete nominal evaluation at `model.checkPower`; a numerical radius does not
+replace that error bound. The factor follows the game's value conversion: effect type 2000 uses
+`floor(value / 10000f * 1e5) / 1e5`, type 2005 uses `floor(value / -10000f * 1e5) / 1e5`, and types 2002 and 2004
+round the binary32 quotient `value / 10000f` half to even. Other effect types, including cumulative scoring, life
+and judgement conversion, have no ordinary score-up weights.
+
+`replaySeeds` is separate from these expectations. A playable chart without a luck range lists `[0]`; otherwise
+it lists the first `--seeds` values of the published sequence. Candidate `k` is the low 32 bits, interpreted as a
+signed integer, of output `k + 1` of SplitMix64 started at `0x6765_6B69_736F_7531` (`gekisou1`). A candidate is kept
+when its effective stream-seed pair (`|b|`, `|b ^ 0x9E3779B9|`, with -2^31 treated as 2^31 - 1) differs from all
+previous pairs. A shorter list is a prefix of a longer list. These values select concrete replay examples; the
+exporter never averages them to obtain `expectation` or `gekisouAptitude`.
+
+### Ranks and Just judgements
+
+A range at rank `r` awards `trunc(rangeScore * p(r) / 100)`, where
+`p(r) = ranges[i].rankBonusPercents[r - 1]`. `rankBonus` is the expected result of that integer operation at rank 1.
+In general, **the expectation of a truncated score is not the truncation of the expected score**. Readers must
+keep the separately measured `rankBonus` and `rankBonusPerfect`; neither is reconstructed by truncating an
+expectation's center.
+
+When rank changes do not alter range scoring, the other-rank approximation replaces the rank-1 bonus by
+`E[rangeScore] * p(r) / 100` and adjusts an ordinary weight by
+`sum_i (p_i(r_i) - p_i(1)) / 100 * rangeWeights[kind][position][i]`. The native rank check includes the resulting
+integer-truncation slack in its bound. `rangeWeights` is null when overlapping ranges break that independence;
+a kind's row is null when its conditions read a confirmed rank (condition 7012). These nulls mark a limit of the
+rank formula, not a zero contribution. Such scenarios require full simulation.
+
+`scorePerfect` and `rangeScorePerfect` use the same nominal model with every Just judgement replaced by Perfect.
+`rankBonusPerfect` is measured on that play too. A chart with `justNotes == 0` has matching best and Perfect
+expectations. Interpolating between these endpoints is a consumer's approximation, not an additional measured
+Just-rate curve.
 
 ### deck
 
-`model` describes the play, probability law, measurement `power`, `checkPower`, `unitValue` and score formulas.
-`kinds` groups ordinary score-up rows of type 2000, 2002, 2004 or 2005 by duration, targets, conditions,
-release and execution limits. A weight is the expected increment per unit of deck power and effect factor.
-Type 2000 uses `value / 10000`; 2002 adds its intrinsic half factor; 2004 and 2005 use the effect's
-half-to-even rounded activation factor. A card's kind is identified by its effect row's parameters.
+| Field | Content |
+|---|---|
+| `model` | the native model's description: engine, play, score formula, measurement and check powers, effect unit value, nominal expectation law, rank approximation, Perfect play, Free Live and single-shape aptitude |
+| `kinds[]` | ordinary score-up kinds from `MasterLiveSkillEffect` types 2000, 2002, 2004 or 2005 without a cumulative condition. Each has a continuous zero-based `id`, effect type, activation time, duration, targets, condition/release/reset groups, effect limits, source `rows` and distinct sorted `values` |
+| `gekisouAptitude` | the independently validated single-shape catalog below, or null when aptitude is disabled |
+
+A kind's duration is `ceil(activationTimeSecond * 1000f)` milliseconds. Match a card's ordinary live-skill effect at
+its actual level to the kind's structural fields. Kind ids and shape ids are indices in the current document;
+they are not stable identifiers across master-data releases.
 
 ### charts[].deck
 
 | Field | Content |
 |---|---|
-| `convertedNoteCount`, `skip` | the score divisor and skipped-live score per unit of power |
-| `events`, `positions` | `[position, timeMs]` skill events and the number of measured performance positions |
-| `ranges` | index, mission, start/end times and `rankBonusPercents` for ranks 1..5 |
-| `justNotes` | exact Just count of the best play |
-| `expectation` | `score`, `scorePerfect`, `ranges`, `weights`, `rangeWeights`, `check`, `rankCheck`; null when Gekisou is unplayable |
-| `replaySeeds` | seeds for per-play replay: `[0]` without a luck range, otherwise the first `--seeds` published seeds; empty when Gekisou is unplayable |
-| `offSeeds` | one deterministic Free Live run: `seed: 0`, integer `score`, numeric `weights` and `{deck, exact, predicted, bound}` check |
-| `unplayable` | null or the reason Gekisou cannot play the chart |
+| `convertedNoteCount` | the converted note count used by the score formula |
+| `skip` | points per unit of power for a skipped live: every note Great, combo 0, no skills |
+| `events` | `[[position, timeMs], ...]` in chart order |
+| `positions` | largest event position plus one; the size of each position dimension |
+| `ranges[]` | `index`, `mission` (1 combo, 2 luck, 3 Just count), `startMs`, `endMs`, `rankBonusPercents` for ranks 1–5, and the rank-1 `rankBonusPercent` |
+| `justNotes` | notes judged Just on the best Gekisou play |
+| `expectation` | the expected Gekisou statistics below, or null when unplayable |
+| `replaySeeds` | concrete replay seeds, empty when unplayable |
+| `offSeeds` | exactly one deterministic Free Live result: seed 0, integer `score`, scalar `weights[kind][position]`, and `check` with `deck`, integer `exact`, scalar `predicted` and `bound`; a weight row is null when the kind reads unavailable Gekisou state |
+| `unplayable` | null, or why Gekisou cannot play this chart; a fourth fever is unsupported by the game. Free Live statistics remain present |
+| `gekisouAptitude` | per-range factors and single-shape increments below, or null |
 
-`expectation.score` and `scorePerfect` are point intervals at `model.power`. Each expected range has
-`rangeScore`, `rangeScorePerfect`, `rankBonus`, `rankBonusPerfect` and `luckPoints` intervals, integer
-`maxCombo` and `justCount`, and four `lotResults` intervals: expected consumed Miss, Hit, Super Hit and
-Critical counts. `weights[kind][position]` and `rangeWeights[kind][position][range]` hold intervals in
-the weight unit. A range-weight kind is null when its conditions read confirmed rank; the whole field
-is null when overlapping ranges prevent a linear rank transformation.
-
-A check has `{deck, ranks, expected, predicted, bound}`. Its deck contains `[kind, value]` or null per
-position, its score intervals use `checkPower`, and the greatest separation of their endpoints must be
-within `bound`. The baseline check uses `ranks: null`; `rankCheck` supplies explicit fixed rank arrivals
-and is null when no linear rank check is available. The exporter checks chart facts, dimensions, finite
-intervals, counters, replay seeds and every check before writing the file.
-
-### Ranks and accuracy
-
-For disjoint ranges whose effects do not read confirmed rank, an arbitrary-rank expectation uses
-
-```
-score_r = score - sum(rankBonus_i) + sum(E[trunc(rangeScore_i * p_i(r_i) / 100)])
-weight_r = weight + sum((p_i(r_i) - p_i(1)) / 100 * rangeWeight_i)
-```
-
-The expected truncation can be enclosed by scaling the range-score expectation and adding a rounding
-allowance. Truncating the center alone does not compute an expected rank bonus. At rank 1 the measured
-bonus interval is available directly. `rankBonusPerfect` supplies the Perfect endpoint's bonus.
-Just-rate interpolation and Great-share scaling are accuracy approximations; the summary does not
-describe arbitrary misses or combo breaks. Per-note replay runs an explicit play with its own seed.
-
-### Gekisou skill aptitude
-
-The file's `deck.gekisouAptitude` has `plainKind`, `host`, `law` and `shapes`. Each shape groups equivalent
-score-relevant parameters and retains its source, mission, band condition, normalized effect rows and
-skill/level references. Member skills use their highest level; support skills use the highest Snap rank's
-level. Support target differences share a shape while each skill retains `memberTargetIds` and `bandIds`.
-A support skill is measured with an empty member skill of the same mission.
-
-Each chart has `{factors, variants}` or null when there are no applicable ranges/shapes or aptitude is
-disabled. Factors give judged, Just, Perfect and tail note counts, starting combo and the expected number
-of consumed lotteries (`lotteries`, an interval). Each applicable shape has one variant, or matching and
-nonmatching band variants. A variant gives:
+The expectation object contains:
 
 | Field | Content |
 |---|---|
-| `score`, `scorePerfect`, `tail`, `tailPerfect`, `converted` | expected gains with the skill minus without it; `[center, half-width]` |
-| `ranges` | `rangeScore`, `rankBonus`, `rangeScorePerfect`, `rankBonusPerfect`, `maxCombo`, `justCount`, `luckPoints` gain intervals |
-| `weights` | the plain kind's weight changes, `[position][interval]`; null without that kind |
-| `rangeWeights` | its range-weight changes, `[position][range][interval]`; null outside the linear domain |
-| `check` | the full expected score and linear prediction for a random plain-skill deck at explicit ranks |
+| `score`, `scorePerfect` | Estimate of no-skill points, including rank-1 bonuses, on the best and Perfect plays |
+| `ranges[]` | `rangeScore`, `rankBonus`, `rankBonusPerfect`, `rangeScorePerfect` and `luckPoints` as Estimates; deterministic integer `maxCombo` and `justCount`; four `lotResults` Estimates in Miss, Hit, Super Hit, Critical order |
+| `weights` | `[kind][position]` Estimates of points per unit of deck power and effect factor |
+| `rangeWeights` | `[kind][position][range]` Estimates for rank adjustment, or null; individual kind rows may be null |
+| `check` | `deck`: `[kind, value]` or null at each position; `ranks: null`; `expected` and `predicted` Estimates in points at `model.checkPower`; scalar nonnegative `bound` |
+| `rankCheck` | the same check deck evaluated at ranks 1–5 per range; the same Estimate fields and scalar bound, or null when no rank check applies |
 
-The score and tail centers satisfy `tail = score - sum(rangeScore + rankBonus)`, and the Perfect endpoint
-uses the corresponding Perfect fields. Interval radii propagate by outward arithmetic. Conversion,
-combo and Just counters have zero radius after proving their independence from lotteries.
+The exporter checks native chart identities and times against the chart facts, and checks each range's rank
+percentages against `MasterLiveGekisouRankingScoreBonus`. It validates array dimensions, finite estimates,
+nonnegative radii, deterministic counters, replay seeds, unavailable rank domains, best/Perfect agreement without
+Just notes, and all check bounds. Checks compare the most distant endpoints; the serialized check allows only
+the outward millipoint rounding expansion of its two intervals in addition to the native bound. Lottery counts
+and luck points outside a luck range must enclose zero.
 
-Each variant measures one skill alone. Several gains cannot be added to estimate combined skills:
-combo caps, lottery gauges, Rush and Just-triggered support effects interact. Plain-skill cross weights
-are measured on the best play. Below 100% Just, a page can interpolate the no-ordinary-skill endpoints;
-it cannot derive complete cross weights at that accuracy from this summary. A full play uses replay.
-The exporter verifies shape coverage, normalized effect rows, targets, missions, variant ordering,
-intervals, tail identities and expectation checks against the supplied master data.
+### Gekisou skill aptitude
+
+`deck.gekisouAptitude` describes the shapes measured, and each chart's `deck.gekisouAptitude` describes the expected
+increment with **one** such shape equipped. Ordinary `expectation` has no card Gekisou skills. Single-shape gains
+cannot be added to estimate several interacting skills; complete formations still require simulation.
+
+The header has `plainKind`, `host`, `law` and `shapes`. `plainKind` is the ordinary, unconditional, whole-team
+five-second score-up kind used for cross terms, or null. `host` describes the paired member used for a support
+skill. `law` is exactly `independent nominal lottery and skill probabilities`.
+
+Each shape has a continuous zero-based `id`, `source` (`member` or `support`), `mission` (1 combo, 2 luck, 3 Just,
+4 all), `bandCondition`, normalized `effects` and `skills`. Each skill reference is
+`{id, level, memberTargetIds, bandIds}` and joins to the Gekisou catalog for its text. Members use their skill's
+highest level; snaps use their support skills' levels at the highest rank. Effects preserve master order and
+expose type, trigger, duration, value, limits, targets, four condition groups and cumulative condition, as specified
+by the Schema. Equivalent parameters share a shape. Support condition 5000's target is normalized away;
+`memberTargetIds` and `bandIds` retain the targets and bands for matching, or are null without that condition.
+
+A chart's aptitude is `{factors, variants}`, or null when disabled, unplayable, without ranges, or without shapes.
+`factors` has one object per range: deterministic `judgedNotes`, `justNotes`, `perfectNotes`, `tailNotes` and
+`comboAtStart`, plus an Estimate of baseline `lotteries`. That interval must agree with the sum of the baseline
+range's four expected lottery-result counts. The factors of overlapping ranges may refer to the same notes.
+
+Variants appear in shape-id order for the chart's missions and mission 4. A band-conditioned shape has a
+`bandMatch: true` variant followed by `false`; other shapes use null.
+
+| Field | Content |
+|---|---|
+| `shape`, `bandMatch` | the current shape index and measured band condition |
+| `score`, `scorePerfect` | Estimate of the total point increment on the best and Perfect plays |
+| `tail`, `tailPerfect` | Estimate of the increment outside the range scores and their bonuses |
+| `converted` | deterministic integer converted-note increment as `[value, 0]` |
+| `ranges[]` | Estimates of `rangeScore`, `rankBonus`, `rankBonusPerfect`, `rangeScorePerfect` and `luckPoints`; deterministic integer `maxCombo` and `justCount` increments as `[value, 0]` |
+| `weights` | `[position]` Estimates of cross terms with the plain kind, or null without it |
+| `rangeWeights` | `[position][range]` Estimates of cross terms, or null without a plain kind or when the chart or shape cannot use linear rank adjustment |
+| `check` | plain-kind `deck`, explicit `ranks`, expected/predicted point Estimates and scalar bound; a nonlinear-rank shape is checked at rank 1 in every range |
+
+Point increments are measured at `deck.model.power`. Their intervals must be consistent with
+`score = tail + sum(rangeScore + rankBonus)` and
+`scorePerfect = tailPerfect + sum(rangeScorePerfect + rankBonusPerfect)`. These are interval identities, not
+identities between rounded centers. A shape that reads confirmed rank in any condition group or cumulative
+condition has no linear rank cross terms, even when the chart's ordinary range weights are available.
+
+The exporter independently checks the shape catalog against the complete master data, including skill and level
+coverage, normalized effects, member targets and bands. It then checks variant order and coverage, factor counts,
+interval identities, dimensions, deterministic integer increments and expectation bounds. Aptitude has no
+sample-count, standard-error target or convergence-cap fields in this format.
 
 ## The deck input (`--full`)
 
@@ -383,14 +453,37 @@ extra `deck` pins one release (`pip install 'nnnotes[deck]'`, or `pip install -e
 same nnnotes version always carries the same deck model: the pin moves only through a pull request
 (`.github/workflows/deck.yml` opens one when ournotes-deck publishes a newer release with its WASM packages and its
 wheels), and `provenance.deck.version` and `provenance.deck.commit` name the release in every file. `provenance.deck.sourceSha256` is the SHA-256 of the deck model's sources (`ournotes_sim::SOURCE_SHA256`):
-releases with the same value measure the same statistics. The replay and recommendation engines of `--replay-engine` and `--recommend-engine` are that release's WASM
-packages.
+releases with the same value measure the same statistics. Replay bundles take the engines of the same release:
+the replay and recommendation engines of `--replay-engine` and `--recommend-engine` are its WASM packages, whose
+`build-info.json` names the release commit that `provenance.deck.commit` names; engines of another release are
+rejected.
 
 ## Versions
 
-`format` names the major version. `nnnotes.music-data/2` carries deck statistics
-`ournotes-deck.chart-stats/3`. Additive fields and tables retain their existing meanings within a major
-version; readers ignore unknown keys and reject unsupported major versions. Deck model provenance names
-the exact statistics format and source digest. The optional runtime input keeps `nnnotes.deck-data/1`.
+`format` names the major version. Within `nnnotes.music-data/2`, fields and tables are only added, never renamed,
+removed or given another meaning, and readers ignore keys they do not know. Readers must reject an unknown major
+version. This version carries `ournotes-deck.chart-stats/3` in `provenance.deck.format` and requires that exact
+statistics format from the extension module.
 
-`--replay-dir OUT/replay --replay-engine PKG [--recommend-engine PKG]` writes normalized runtime inputs and the pinned model's WASM release packages (the replay engine and, optionally, the recommendation engine) as described in [replay.md](replay.md). The music data stays compact and carries the SHA-bound `replay.manifestUrl` pointer. No original chart/master blobs or native binary are included in this artifact bundle.
+`nnnotes.music-data/2` replaces the per-seed Gekisou statistics and sampled aptitude of `/1` with nominal
+expectations and outward numerical intervals. `seeds` becomes `expectation` plus separate `replaySeeds`; the
+aptitude `seedRule` becomes `law`, sampling flags disappear, checks use interval `expected`/`predicted` values, and
+Perfect-play range bonuses are explicit. These are changes of meaning as well as shape: an older reader must not
+interpret a radius as a standard error. Free Live `offSeeds`, chart facts and the optional `nnnotes.deck-data/1`
+input retain their existing semantics. The old aptitude sampling-cap CLI options are no longer accepted.
+
+The persistent statistics cache also starts a new format. The native cache uses model-source namespaces and
+fine-grained program/run identities; no old Python chart-cache entry is migrated or trusted. Removing a cache
+changes the amount of work, not the music data bytes.
+
+Deploy readers supporting `/2` and nominal expectations before publishing the new format. The reference page
+is pinned in `.github/workflows/music-data-region.yml`; any configured override must support the same format.
+The native release packages, Python producer and deployed consumers must move together as described in
+[the publication workflow](../.github/MUSIC_DATA.md#before-the-first-run).
+
+`--replay-dir OUT/replay --replay-engine PKG [--recommend-engine PKG]` writes normalized runtime inputs, the pinned
+model's WASM release packages (the replay engine and, optionally, the recommendation engine) and same-snapshot Snap
+label/reference-card metadata as described in [replay.md](replay.md). The music data stays compact and carries
+the SHA-bound `replay.manifestUrl` pointer; its manifest optionally references `snap-labels.json`. The selected
+decoded label tables retain names/templates, original per-level effects and artwork IDs. No encrypted master/chart
+blobs or native binary are included in this artifact bundle. Label metadata does not change the score model.
