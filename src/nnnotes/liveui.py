@@ -149,7 +149,7 @@ def _game_fonts(ex: Exporter, fontset, texts: dict, chars_by_font: dict, packer:
     runtime_units: dict[str, set] = {}
     primaries = set()
     for fname in sorted(chars_by_font):
-        primary = fontset.by_key(textstyle.font_dir(fname) + fname)
+        primary = fontset.by_key(fontsettings.font_dir(fname) + fname)
         primaries.add(primary.name)
         cov, nd, rt = tmpfont.glyph_coverage(fontset, primary, sorted(chars_by_font[fname]))
         if cov["missing"]:

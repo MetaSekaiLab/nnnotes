@@ -168,7 +168,7 @@ def test_localization_and_roles():
     assert textstyle.font_role("Digits SDF", LANG) == "number"
     with pytest.raises(RuntimeError, match="lookup table"):
         textstyle.font_role("Other SDF", LANG)
-    assert textstyle.font_dir("MainT SDF") == "EmbFont/MainT/"
+    assert fontsettings.font_dir("MainT SDF") == "EmbFont/MainT/"
     assert textstyle.face_metrics(
         {"m_Scale": 1.0, "m_PointSize": 100.0, "m_LineHeight": 115.5, "m_AscentLine": 89.2, "m_DescentLine": -26.3},
         {"normalSpacingOffset": 0.0, "boldSpacing": 7.0},

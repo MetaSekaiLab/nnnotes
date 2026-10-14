@@ -35,7 +35,7 @@ from pathlib import Path
 import numpy as np
 import UnityPy
 
-from . import advscene, advui, fontsettings, languages, master, room, spot, storyfonts, textstyle, tmpfont
+from . import advui, fontsettings, languages, master, room, spot, storyfonts, textstyle, tmpfont
 from . import shader as shader_mod
 from .export import RECT_PROPS, Exporter, TexelPacker, streamed_frames
 from .jsonio import dumps, write_json
@@ -71,7 +71,6 @@ HOST_GROUPS = {"spotTalk": ("home", "tap"), "spot": ("home", "area"), "liveResul
 SUBSTITUTES = ["musicResultPanel", "rewardItems", "memberCard", "navigation", "gradeUpEffect"]
 CLONE = "(Clone)"  # Object.Instantiate's name suffix, removed by SpotBackground.Prepare
 FLOOR_NAME, FLOOR_EXCLUDE, FLOOR_QUEUE = "floor", "shadow", 2000  # SpotSceneRoot.SetObject
-BLUR_FEATURE = "Fwk.UI.Rendering.UIRendererFeature"
 REWARD_PANEL = "RewardPanel"
 COMPONENT_HEADER = ("type", "class", "m_Name")
 NO_EPISODE = {"text": {}, "commands": []}  # the episode argument of storyfonts.shown_characters for a UI alone
@@ -887,7 +886,7 @@ def home_host(cat, master_dir, player, host: dict, hdir: Path, keys: dict) -> di
     spine_mats, spine_chars, spine_shaders = spine_records(sit_env, ex)
     if [c["path"] for c in spine_chars] != [c["path"] for c in doc["spineCharacters"]]:
         raise RuntimeError(f"{sit_key}: Spine characters differ from spot.json's")
-    blur = blur_record(player.graphics())
+    blur = advui.blur_record(player.graphics())
     blur_obj = [o for o in player.renderer_shaders(blur["renderer"]) if o.read().m_ParsedForm.m_Name == blur["shader"]]
     if len(blur_obj) != 1:
         raise RuntimeError(f"renderer {blur['renderer']}: {len(blur_obj)} shaders {blur['shader']}")
@@ -1234,29 +1233,6 @@ def world_trs(nodes: list[dict], path: str) -> dict:
         rot = _qmul(rot, (r["x"], r["y"], r["z"], r["w"]))
         scl = (scl[0] * s["x"], scl[1] * s["y"], scl[2] * s["z"])
     return {"position": dict(zip("xyz", pos)), "rotation": dict(zip("xyzw", rot)), "scale": dict(zip("xyz", scl))}
-
-
-def blur_record(graphics: dict) -> dict:
-    """blur: the UIRendererFeature of renderer 0 (UIBlurController.ExecBlur -> UIRenderPass CaptureAndBlur): its
-    Dual Kawase iterations, offset, downsample, blend rate maximum and shader name, read from the player data
-    (renderer 0 of every pipeline must be the same renderer)."""
-    first = {p["m_RendererDataList"][0] for p in graphics["pipelines"].values()}
-    if len(first) != 1:
-        raise NotImplementedError(f"renderer 0 differs between the pipelines: {sorted(first)}")
-    name = advscene.camera_renderer(graphics, graphics["defaultPipeline"], 0)
-    feats = [f for f in graphics["renderers"][name]["m_RendererFeatures"] if f["class"] == BLUR_FEATURE]
-    if len(feats) != 1:
-        raise RuntimeError(f"renderer {name}: {len(feats)} {BLUR_FEATURE}")
-    f = feats[0]
-    return {
-        "renderer": name,
-        "active": bool(f["m_Active"]),
-        "iterations": f["_blurIterations"],
-        "offset": f["_blurOffset"],
-        "downsample": f["_blurDownsample"],
-        "blendRateMax": f["_blurBlendRateMax"],
-        "shader": f["_dualKawaseBlurShader"],
-    }
 
 
 def _rows(master_dir, name: str) -> dict:

@@ -27,7 +27,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from nnnotes import fontsettings
+from nnnotes import fontsettings, tmpfont
 from nnnotes.config import Config, use
 from nnnotes.export import Exporter
 from nnnotes.web import open_data
@@ -43,7 +43,7 @@ def main(argv=None) -> None:
     cat, _, player = open_data(cfg, args.region)
     with tempfile.TemporaryDirectory(prefix="fontsettings-") as work:
         ex = Exporter(cat, Path(work), player=player, textures="deferred")
-        doc = fontsettings.build(ex, player, args.game_version or player.game_version)
+        doc = tmpfont.build_font_settings(ex, player, args.game_version or player.game_version)
     fontsettings.write(doc, args.out)
     print(
         f"{args.out}: {len(doc['fonts'])} font assets, {len(doc['materials'])} materials, "

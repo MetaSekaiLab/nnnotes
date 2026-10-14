@@ -13,6 +13,7 @@ Needs the optional dependencies of the `fonts` extra (require_extra).
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import importlib.util
 import io
@@ -22,14 +23,24 @@ import numpy as np
 
 from .config import ConfigError
 from .export import Exporter, TexelPacker, _key, grow_box
-from .textstyle import font_dir
+from .fontsettings import (
+    END_OF_TEXT,
+    FONT_CLASS,
+    FORMAT,
+    SPACE,
+    STYLE_KEYS,
+    TMP_SYNTHESIZED,
+    FontSettings,
+    encode_coverage,
+    font_dir,
+    font_key,
+    is_variation_selector,
+    table_material,
+)
+from .textstyle import language_fonts
 
 EXTRA = "fonts"
 EXTRA_MODULES = {"fontTools": "fonttools", "freetype": "freetype-py", "scipy": "scipy"}
-
-# TextMeshPro synthesized control characters (TMP_FontAsset.AddSynthesizedCharactersAndFaceMetrics):
-# zero-metric glyphs used when the font file does not map them.
-TMP_SYNTHESIZED = (0x03, 0x09, 0x0A, 0x0B, 0x0D, 0x061C, 0x200B, 0x200E, 0x200F, 0x2028, 0x2029, 0x2060)
 
 
 def require_extra(what: str = "TextMesh Pro font assets") -> None:
@@ -160,12 +171,6 @@ class FontSet:
 # missing glyph
 # --------------------------------------------------------------------------
 MISSING_GLYPH_CHARACTER = 0x25A1  # TMP_Settings.missingGlyphCharacter 0: U+25A1 (TMP_Text.SetArraySizes)
-SPACE, END_OF_TEXT = 0x20, 0x03
-
-
-def is_variation_selector(u: int) -> bool:
-    """U+FE00..U+FE0F, U+E0100..U+E01EF (SetArraySizes: next >> 4 == 0xFE0 or next - 0xE0100 < 0xF0)."""
-    return u >> 4 == 0xFE0 or 0xE0100 <= u < 0xE01F0
 
 
 def missing_glyph_character(player) -> int:
@@ -727,3 +732,95 @@ def resolve_font_blocks(font_out: dict) -> None:
             b = g.pop("_block", None)
             if b is not None:
                 g["packed"] = {"texture": b["texture"], "dx": b["offset"][0], "dy": b["offset"][1]}
+
+
+# ---------------------------------------------------------------- the font settings of the game's assets
+class AssetFontSettings(FontSettings):
+    """FontSettings read from the game's font assets (`ex`: an Exporter of the catalog and player data): a font asset
+    at its address (fontsettings.font_key), its fallbacks through their references (FontSet), its materials at their
+    addresses. Needs the `fonts` extra for the source font files of dynamic assets."""
+
+    def __init__(self, ex):
+        super().__init__({"format": FORMAT, "fonts": {}, "materials": {}})
+        self.ex = ex
+        self._set = None
+        self._mat_objs: dict[str, object] = {}  # material name -> its object
+
+    def _fontset(self):
+        if self._set is None:
+            self._set = FontSet(self.ex)
+        return self._set
+
+    def _font_obj(self, name: str):
+        fs = self._fontset()
+        if name not in fs.fonts:
+            fs.by_key(font_key(self.ex.cat, name, name))
+        return fs.fonts[name]
+
+    def font(self, name: str) -> dict:
+        if name not in self.fonts:
+            f = self._font_obj(name)
+            mat = self.ex.material(f.material_obj)
+            self.materials.setdefault(mat["material"], mat)
+            self._mat_objs.setdefault(mat["material"], f.material_obj)
+            tt = f.tt
+            self.fonts[name] = {
+                "faceInfo": tt["m_FaceInfo"],
+                "atlasPadding": tt["m_AtlasPadding"],
+                "atlasRenderMode": tt["m_AtlasRenderMode"],
+                **{k: tt[k] for k in STYLE_KEYS},
+                "material": mat["material"],
+                "fallbacks": [fb.name for fb in self._fontset().fallbacks(f)],
+                "coverage": encode_coverage(set(f.chars) | (f.cmap if f.dynamic else set())),
+                "variants": sorted([b, vs] for b, vs in f.variants),
+                "bundle": f.obj.assets_file.parent.name,
+            }
+        return self.fonts[name]
+
+    def has_material(self, font: str, name: str) -> bool:
+        return name in self.materials or self.ex.cat.has(font_key(self.ex.cat, font, name))
+
+    def material(self, font: str | None, name: str) -> dict:
+        if name not in self.materials:
+            key = font_key(self.ex.cat, font, name)
+            if not self.ex.cat.has(key):
+                raise KeyError(f"material key {key}")
+            self._mat_objs[name] = self.ex.key_object(key)
+            self.materials[name] = self.ex.material(self._mat_objs[name])
+        return copy.deepcopy(self.materials[name])
+
+    def where(self) -> str:
+        return "the game's font assets"
+
+
+def build_font_settings(ex, player, game_version: str) -> dict:
+    """The font settings table (fontsettings.FORMAT) from the game's assets: every font asset LocalizeManager lists
+    for a language (font names and additional font names) with the assets of their fallback chains, their default
+    materials and the localized text materials of the listed assets that the catalog has (table_material), and the
+    objects index of those assets."""
+    lang = language_fonts(player)
+    settings = AssetFontSettings(ex)
+    listed = sorted({f"{n} SDF" for d in lang["languages"].values() for n in d["fontNames"] + d["additionalFontNames"]})
+    todo, seen = list(listed), set()
+    while todo:
+        name = todo.pop(0)
+        if name not in seen:
+            seen.add(name)
+            todo += settings.font(name)["fallbacks"]
+    for name in listed:
+        base = name[:-4] if name.endswith(" SDF") else name
+        for t in lang["materialTypes"]:
+            if settings.has_material(name, f"{base} - {t}"):
+                settings.material(name, f"{base} - {t}")
+    fs = settings._fontset()
+    objects = {
+        str(fs.fonts[n].obj.path_id): {"type": "MonoBehaviour", "class": FONT_CLASS, "name": n} for n in sorted(seen)
+    }
+    objects.update({str(o.path_id): {"type": "Material", "name": n} for n, o in sorted(settings._mat_objs.items())})
+    return {
+        "format": FORMAT,
+        "gameVersion": game_version,
+        "fonts": {n: settings.fonts[n] for n in sorted(seen)},
+        "materials": {n: table_material(settings.materials[n]) for n in sorted(settings.materials)},
+        "objects": dict(sorted(objects.items(), key=lambda kv: int(kv[0]))),
+    }

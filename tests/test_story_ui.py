@@ -627,8 +627,8 @@ def test_chat_texts(monkeypatch):
     # a font's folder: the embedded copy when the catalog has it, else LocalizeManager's Font/
     no_emb = type("C", (), {"has": lambda self, k: False})()
     emb = type("C", (), {"has": lambda self, k: True})()
-    assert advui.font_key(no_emb, "EN-CHAT SDF", "EN-CHAT - Default") == "Font/EN-CHAT/EN-CHAT - Default"
-    assert advui.font_key(emb, "A SDF", "A - Default") == "EmbFont/A/A - Default"
+    assert fontsettings.font_key(no_emb, "EN-CHAT SDF", "EN-CHAT - Default") == "Font/EN-CHAT/EN-CHAT - Default"
+    assert fontsettings.font_key(emb, "A SDF", "A - Default") == "EmbFont/A/A - Default"
 
 
 def test_behaviours_record_every_serialized_field():

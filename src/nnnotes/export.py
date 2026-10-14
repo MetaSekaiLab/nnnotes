@@ -533,13 +533,7 @@ class Exporter:
     def font_bundles(self) -> frozenset:
         """With `font_stubs`: the names of the bundles that hold its font assets."""
         if self._font_bundles is None:
-            from .advui import font_key
-
-            names = set()
-            for n, f in sorted(self.font_stubs.fonts.items()):
-                k = font_key(self.cat, n, n)  # an addressable asset: its bundle now; else the one recorded
-                names.add(self.cat.bundle_of(k).name if self.cat.has(k) else f["bundle"])
-            self._font_bundles = frozenset(names)
+            self._font_bundles = self.font_stubs.bundles(self.cat)
         return self._font_bundles
 
     def font_stub(self, o: FontStub) -> dict:

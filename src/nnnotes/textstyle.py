@@ -25,8 +25,6 @@ from .export import Exporter
 from .languages import LANGUAGES
 from .player import PlayerData
 
-FONT_PREFIX = "EmbFont/"
-
 # Fwk.Localization.LanguageMode / language field names of the text tables.
 JAPANESE_MODE = 0
 LANGUAGE_FIELDS = {mode: column[1:] for mode, column in LANGUAGES.values()}  # LanguageMode -> text field
@@ -190,11 +188,6 @@ def font_role(font_asset: str, lang: dict) -> str:
     return FONT_ROLES[i] if i < len(FONT_ROLES) else f"font{i}"
 
 
-def font_dir(font_asset: str) -> str:
-    """Addressable folder of a font asset and its materials: EmbFont/<font name without " SDF">/."""
-    return f"{FONT_PREFIX}{font_asset[:-4] if font_asset.endswith(' SDF') else font_asset}/"
-
-
 # --------------------------------------------------------------------------
 # material -> style values
 # --------------------------------------------------------------------------
@@ -355,14 +348,13 @@ def text_style(comp: dict, localize: dict | None, lang: dict, style: dict, mode:
 
 class TextStyles:
     """Text records of TMP texts read through an Exporter: the material each text draws with in the language
-    `mode` (LocalizeText) and the face info of its font asset, from `fonts` (fontsettings.FontSettings; default:
-    the game's font assets, fontsettings.AssetFontSettings); no font data is kept."""
+    `mode` (LocalizeText) and the face info of its font asset, from `fonts` (fontsettings.FontSettings: the table
+    shipped with nnnotes, fontsettings.builtin(), or the game's font assets, tmpfont.AssetFontSettings); no font data
+    is kept."""
 
-    def __init__(self, ex: Exporter, player: PlayerData, mode: int, fonts=None):
-        from . import fontsettings
-
+    def __init__(self, ex: Exporter, player: PlayerData, mode: int, fonts):
         self.ex, self.mode = ex, mode
-        self.fonts = fonts if fonts is not None else fontsettings.AssetFontSettings(ex)
+        self.fonts = fonts
         self.lang = language_fonts(player)
         self.swap = font_swap(self.lang, mode)
         self.roles: dict[str, dict] = {}
