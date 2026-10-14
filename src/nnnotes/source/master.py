@@ -31,6 +31,8 @@ import numpy as np
 
 from ..core import jsonio
 
+__all__ = ["DownloadError", "MasterKey", "decode", "decode_files", "download", "has_row", "table"]
+
 PREFIX = 64  # bytes before the ciphertext
 BLOCK = 32  # 256-bit block
 NB = NK = 8  # block / key length in 32-bit words

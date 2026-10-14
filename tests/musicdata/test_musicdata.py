@@ -850,7 +850,7 @@ def expectation_fixture():
     charts = deckdata.charts([tables["MasterLiveMusicScore"][1]], CHARTS.__getitem__)
     source = deckdata.build(tables, charts, {})
     document = FakeDeck().chart_stats(deckdata.encode(source).decode("utf-8"), 8, 1)
-    return json.loads(document, parse_float=deckdata._Num)["charts"][0]
+    return deckdata.loads(document)["charts"][0]
 
 
 @pytest.mark.parametrize(
@@ -862,15 +862,15 @@ def expectation_fixture():
         [True, 0],
         [100, False],
         [100, -1],
-        [deckdata._Num("NaN"), 0],
-        [100, deckdata._Num("Infinity")],
-        [deckdata._Num("1e308"), deckdata._Num("1e308")],
+        [deckdata.Num("NaN"), 0],
+        [100, deckdata.Num("Infinity")],
+        [deckdata.Num("1e308"), deckdata.Num("1e308")],
     ],
 )
 def test_expectation_rejects_invalid_enclosures(expectation_fixture, estimate):
     expectation_fixture["expectation"]["score"] = estimate
     with pytest.raises(musicdata.MusicDataError, match="outward radius"):
-        musicdata._check_expectation(expectation_fixture, 1, "synthetic")
+        musicdata.validate_expectation(expectation_fixture, 1, "synthetic")
 
 
 @pytest.mark.parametrize(
@@ -891,7 +891,7 @@ def test_expectation_rejects_invalid_enclosures(expectation_fixture, estimate):
 def test_expectation_requires_the_new_contract(expectation_fixture, change, message):
     change(expectation_fixture)
     with pytest.raises(musicdata.MusicDataError, match=message):
-        musicdata._check_expectation(expectation_fixture, 1, "synthetic")
+        musicdata.validate_expectation(expectation_fixture, 1, "synthetic")
 
 
 def test_expected_bonus_is_not_truncation_of_the_expected_score(expectation_fixture):
@@ -899,12 +899,12 @@ def test_expected_bonus_is_not_truncation_of_the_expected_score(expectation_fixt
     # Truncating the mean would incorrectly produce 34. Native /3 explicitly measures both bonuses.
     row = expectation_fixture["expectation"]["ranges"][0]
     row.update(
-        rangeScore=[deckdata._Num("99.5"), 0],
-        rangeScorePerfect=[deckdata._Num("99.5"), 0],
-        rankBonus=[deckdata._Num("34.5"), 0],
-        rankBonusPerfect=[deckdata._Num("34.5"), 0],
+        rangeScore=[deckdata.Num("99.5"), 0],
+        rangeScorePerfect=[deckdata.Num("99.5"), 0],
+        rankBonus=[deckdata.Num("34.5"), 0],
+        rankBonusPerfect=[deckdata.Num("34.5"), 0],
     )
-    musicdata._check_expectation(expectation_fixture, 1, "synthetic")
+    musicdata.validate_expectation(expectation_fixture, 1, "synthetic")
     assert trunc_percent(float(row["rangeScore"][0]), 35) != float(row["rankBonus"][0])
 
 
@@ -913,9 +913,9 @@ def test_expectation_check_bounds_both_interval_endpoints(expectation_fixture):
     check.update(expected=[1000, 1], predicted=[1000, 1], bound=1)
     # Identical centers alone cannot certify a bound smaller than the farthest endpoint separation.
     with pytest.raises(musicdata.MusicDataError, match="expectation check exceeds"):
-        musicdata._check_expectation(expectation_fixture, 1, "synthetic")
+        musicdata.validate_expectation(expectation_fixture, 1, "synthetic")
     check["bound"] = 2
-    musicdata._check_expectation(expectation_fixture, 1, "synthetic")
+    musicdata.validate_expectation(expectation_fixture, 1, "synthetic")
 
 
 def test_unplayable_keeps_only_free_live_statistics(expectation_fixture):
@@ -923,12 +923,12 @@ def test_unplayable_keeps_only_free_live_statistics(expectation_fixture):
     expectation_fixture.update(
         unplayable="synthetic unsupported fourth fever", expectation=None, replaySeeds=[], gekisouAptitude=None
     )
-    musicdata._check_expectation(expectation_fixture, 1, "synthetic")
+    musicdata.validate_expectation(expectation_fixture, 1, "synthetic")
     assert musicdata.validate_aptitude_statistics(None, expectation_fixture, "synthetic") is None
     assert expectation_fixture["offSeeds"] == original
     expectation_fixture.pop("expectation")
     with pytest.raises(musicdata.MusicDataError, match="expectation field"):
-        musicdata._check_expectation(expectation_fixture, 1, "synthetic")
+        musicdata.validate_expectation(expectation_fixture, 1, "synthetic")
 
 
 def test_deck_without_range_weights(tmp_path):
@@ -1319,9 +1319,8 @@ def aptitude_fixture():
     """A header and a two-range chart, independently authored above, through JSON as the extension returns it."""
     tables = deepcopy({t: TABLE_ROWS.get(t, rows_of(t)) for t in musicdata.tables_of(True, False)})
     a = musicdata.Aptitude(tables, musicdata.gekisou_catalog(tables, musicdata.Texts(tables["MasterText"])))
-    header = json.loads(
+    header = deckdata.loads(
         json.dumps({"plainKind": 0, "host": "synthetic host", "law": musicdata.EXPECTATION_LAW, "shapes": SHAPES}),
-        parse_float=deckdata._Num,
     )
     chart = {
         "positions": 2,
@@ -1349,7 +1348,7 @@ def aptitude_fixture():
         },
     }
     chart["gekisouAptitude"] = aptitude_of(chart, 2)
-    chart = json.loads(json.dumps(chart), parse_float=deckdata._Num)
+    chart = deckdata.loads(json.dumps(chart))
     return a, header, chart
 
 
@@ -1415,18 +1414,18 @@ def test_aptitude_header_rejects(aptitude_fixture, change):
         lambda c: c["gekisouAptitude"]["variants"][0].update(shape=False),
         lambda c: c["gekisouAptitude"]["variants"][2].update(bandMatch=False),
         lambda c: c["gekisouAptitude"]["variants"][0].update(score=[1]),
-        lambda c: c["gekisouAptitude"]["variants"][0].update(score=[deckdata._Num("NaN"), 0]),
+        lambda c: c["gekisouAptitude"]["variants"][0].update(score=[deckdata.Num("NaN"), 0]),
         lambda c: c["gekisouAptitude"]["variants"][0].update(score=[10**400, 0]),
         lambda c: c["gekisouAptitude"]["variants"][0].update(score=[1, -1]),
-        lambda c: c["gekisouAptitude"]["variants"][0].update(tail=[7, deckdata._Num("Infinity")]),
+        lambda c: c["gekisouAptitude"]["variants"][0].update(tail=[7, deckdata.Num("Infinity")]),
         lambda c: c["gekisouAptitude"]["variants"][0].update(tail=[8, 0]),
         lambda c: c["gekisouAptitude"]["variants"][0]["ranges"].pop(),
-        lambda c: c["gekisouAptitude"]["variants"][0].update(converted=[deckdata._Num("0.5"), 0]),
+        lambda c: c["gekisouAptitude"]["variants"][0].update(converted=[deckdata.Num("0.5"), 0]),
         lambda c: c["gekisouAptitude"]["variants"][0]["ranges"][0].pop("rankBonusPerfect"),
         lambda c: c["gekisouAptitude"]["variants"][2].update(tailPerfect=[9, 0]),
         lambda c: c["gekisouAptitude"]["variants"][2]["weights"].__setitem__(0, [0, -1]),
         lambda c: c["gekisouAptitude"]["variants"][0]["check"].update(bound=-1),
-        lambda c: c["gekisouAptitude"]["variants"][0]["check"].update(predicted=deckdata._Num("NaN")),
+        lambda c: c["gekisouAptitude"]["variants"][0]["check"].update(predicted=deckdata.Num("NaN")),
         lambda c: c["gekisouAptitude"]["variants"][0]["check"].update(expected=[0, 0]),
         lambda c: c["gekisouAptitude"]["variants"][0]["check"].update(ranks=[0, 2]),
         lambda c: c["gekisouAptitude"]["variants"][0]["check"].update(deck=[[9, 100], None]),
@@ -1444,9 +1443,9 @@ def test_aptitude_rounding(aptitude_fixture):
     a, h, c = aptitude_fixture
     aptitude_header(a, h)
     v = c["gekisouAptitude"]["variants"][2]
-    v["tail"] = [deckdata._Num("7.002"), deckdata._Num("0.002")]
+    v["tail"] = [deckdata.Num("7.002"), deckdata.Num("0.002")]
     a.chart("synthetic", c, 0)  # outward radius, not a standard error or an implicit rounding tolerance
-    v["tail"][1] = deckdata._Num("0.001")
+    v["tail"][1] = deckdata.Num("0.001")
     with pytest.raises(musicdata.MusicDataError, match="tail"):
         a.chart("synthetic", c, 0)
 
@@ -1456,8 +1455,8 @@ def test_aptitude_perfect_tail_uses_the_measured_perfect_bonus(aptitude_fixture)
     header = aptitude_header(a, h)
     v = c["gekisouAptitude"]["variants"][0]
     c["justNotes"] = 1
-    v["ranges"][0]["rankBonusPerfect"][0] = deckdata._Num("4.25")
-    v["scorePerfect"][0] = deckdata._Num("49.25")
+    v["ranges"][0]["rankBonusPerfect"][0] = deckdata.Num("4.25")
+    v["scorePerfect"][0] = deckdata.Num("49.25")
     assert v["ranges"][0]["rankBonus"][0] == 3
     # The Perfect and best channels have different independently measured bonuses.
     # Their separate interval identities must both hold, without a seed or standard-error field.

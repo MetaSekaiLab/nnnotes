@@ -15,6 +15,8 @@ from .catalog import Catalog
 from .config import Config, ConfigError, check_catalog_version, describe
 from .master import MasterKey
 
+__all__ = ["Session"]
+
 
 class Session:
     """The data sources `cfg` names. `region` arguments select another configured region; None: `[catalog] region`."""

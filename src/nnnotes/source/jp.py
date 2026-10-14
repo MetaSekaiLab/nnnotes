@@ -23,6 +23,8 @@ from .addressables import parse_header, relative_path
 from .catalog import Catalog
 from .config import ConfigError
 
+__all__ = ["Client", "Observation", "Source", "origin"]
+
 PLACEHOLDER = "{Fwk.Resource.RemoteAssetDir}/"
 CATALOG_LIMIT = 64 * 1024 * 1024
 FILE_LIMIT = 1024 * 1024 * 1024
@@ -79,6 +81,8 @@ def select_asset(raw, client):
 
 
 def origin(value):
+    """The origin (`scheme://host[:port]`, without a default port) of an HTTPS URL with no path, query or
+    credentials (HTTP only on a loopback host); a ConfigError for any other value."""
     try:
         u = urlsplit(value)
         if (
@@ -156,6 +160,10 @@ class Observation:
 
 
 class Client:
+    """The JP game API and CDN of one configured region: `observe()` asks the API for the current master version,
+    asset source and CDN credential; `get()` downloads a file of one source or master version with that credential,
+    observing again when it is older than five minutes."""
+
     def __init__(self, cfg, region):
         self.cfg, self.region = cfg.for_region(region), region
         self._observation = None
@@ -163,6 +171,7 @@ class Client:
         self._lock = threading.RLock()
 
     def observe(self, *, timeout=gameapi.TIMEOUT):
+        """Ask the API for the current Observation: master version, asset source, CDN and its credential."""
         with self._lock:
             section = f"servers.{self.region}"
             api = gameapi.api_root(self.cfg, section).strip()

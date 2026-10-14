@@ -21,6 +21,8 @@ from .addressables import REMOTE_PREFIX, BundleKey, decrypt, parse, parse_locati
 from .apkset import ApkSet
 from .config import ConfigError, apk_missing, check_catalog_version
 
+__all__ = ["Bundle", "Catalog"]
+
 LOCAL_PREFIX = "{UnityEngine.AddressableAssets.Addressables.RuntimePath}"
 APK_AA_DIR = "assets/aa/"  # + "Android/<bundle>"
 APK_CATALOG = "assets/aa/catalog.bin"

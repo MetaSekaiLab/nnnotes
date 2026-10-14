@@ -78,6 +78,8 @@ from .sitefiles import (
 )
 from .siteindex import write_index
 
+__all__ = ["catalog_models", "model_id", "model_keys"]
+
 LIVE2D_PREFIX = "Character/Live2D/"
 MODEL_KEY = re.compile(r"Character/Live2D/(?P<group>[^/]+)/(?P<name>[^/]+)/model/(?P=name)")
 MODEL_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*")

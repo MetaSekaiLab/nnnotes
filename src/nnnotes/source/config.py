@@ -22,6 +22,8 @@ import shutil
 import tomllib
 from pathlib import Path
 
+__all__ = ["Config", "ConfigError", "config_files", "user_file"]
+
 ENV_PREFIX = "NNNOTES_"
 ENV_CONFIG = "NNNOTES_CONFIG"
 DEFAULT_FILE = "nnnotes.toml"

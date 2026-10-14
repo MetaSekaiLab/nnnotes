@@ -4,6 +4,8 @@ each with the `$id` `urn:nnnotes:schema:<name>` that the others reference."""
 import json
 from importlib import resources
 
+__all__ = ["load", "names"]
+
 SUFFIX = ".schema.json"
 
 
