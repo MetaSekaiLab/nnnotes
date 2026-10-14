@@ -59,7 +59,7 @@ No `config` command prints a setting's value. The config files these commands wr
 The global flags go before or after the command name:
 
 ```bash
-nnnotes --config ~/nnnotes.toml --depot /data/nnnotes-depot bundle pull <key>
+nnnotes --config ~/nnnotes.toml --depot /data/nnnotes-depot bundle pull <key> -o bundles
 NNNOTES_PATHS_MASTER=/data/master nnnotes export episode 10462 -o episode.json
 ```
 
@@ -110,6 +110,7 @@ exist when they are given.
 | `[paths] player` | `NNNOTES_PATHS_PLAYER` | `--player` (of `site build`) | ournotes-player checkout (built) or installed package |
 | `[paths] fonts.<language>` | `NNNOTES_PATHS_FONTS_<LANGUAGE>` (e.g. `NNNOTES_PATHS_FONTS_ZH_HANT`) | `--font <language>=PATH` (of `site build`) | font file (OpenType or TrueType) the story text of a language is drawn with (`--fonts open`); also read for the other story languages whose game fonts fall back to that language's font |
 | `[paths] fonts.emoji` | `NNNOTES_PATHS_FONTS_EMOJI` | `--font emoji=PATH` (of `site build`) | colour emoji font (PNG bitmap glyphs: CBDT or sbix) the stories' emoji sprites are drawn from (`--fonts open`); Noto Color Emoji (SIL Open Font License 1.1) is the tested font. Optional: without it the sprites keep their layout with empty glyphs, listed in `ui/fonts.json` `coverage.sprites.missing` |
+| `[depot] downloads` | `NNNOTES_DEPOT_DOWNLOADS` | — | how much of the depot's downloaded bundles and raw files to keep once no command uses the depot: a size (`500MB`, `20GiB`; units B, KB, MB, GB, TB and KiB, MiB, GiB, TiB), `all`, or `0` (unset) ([commands.md](commands.md#downloads)) |
 | `[export] link` | `NNNOTES_EXPORT_LINK` | `--link` (of `export assets`) | how `export assets` makes the layout files from the depot: `auto` (unset), `clone`, `hard` or `copy` ([assets.md](assets.md)) |
 
 Hex values are case-insensitive; a `0x` prefix and surrounding whitespace are ignored. All values are TOML strings

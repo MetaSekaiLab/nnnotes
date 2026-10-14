@@ -22,11 +22,19 @@ def cmd_verify(args, cfg):
 
 
 def cmd_gc(args, cfg):
+    from ..core.downloads import exclusive
     from ..pipeline.depot import Depot
 
     if args.keep is not None and args.keep < 1:
         usage(args, "--keep must be at least 1")
-    r = Depot(Session(cfg).depot_root()).gc(keep=args.keep, dry_run=args.dry_run)
+    root = Session(cfg).depot_root()
+    with exclusive(root, args.lease) as alone:
+        if not alone:
+            sys.exit(
+                f"nnnotes depot gc: another command uses the depot ({root / 'leases'}); "
+                "gc runs when no other command does"
+            )
+        r = Depot(root).gc(keep=args.keep, dry_run=args.dry_run)
     report(
         args,
         r,
