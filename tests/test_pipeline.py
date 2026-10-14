@@ -145,8 +145,9 @@ def test_web_audio_takes_the_encoding_made_with_the_decode(tmp_path, monkeypatch
 
 
 def test_catalog_cached(tmp_path):
-    from nnnotes.catalog import Bundle, Catalog
     import synth
+
+    from nnnotes.catalog import Bundle, Catalog
 
     cat = Catalog(synth.CatalogWriter().build([("k", synth.remote("b_1.bundle"), [])]), tmp_path)
     b = Bundle(1, synth.remote("b_1.bundle"), "b_1.bundle", True)

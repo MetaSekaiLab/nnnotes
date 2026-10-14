@@ -1,15 +1,15 @@
 """Small synthetic APK sets: expansion reuse, invalidation and reader lifetimes."""
 
-from concurrent.futures import ThreadPoolExecutor
 import os
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
+from test_jp import cat_bytes, zip_bytes
 
 from nnnotes import apkset
 from nnnotes.catalog import APK_AA_DIR, APK_CATALOG, Catalog
-from test_jp import cat_bytes, zip_bytes
 
 
 @pytest.fixture(autouse=True)

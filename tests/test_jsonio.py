@@ -35,7 +35,7 @@ def test_write_json_utf8_lf_deterministic(tmp_path):
     b = write_json(tmp_path / "b.json", doc)
     data = a.read_bytes()
     assert data == b.read_bytes()
-    assert b"\r" not in data and "テスト".encode("utf-8") in data
+    assert b"\r" not in data and "テスト".encode() in data
     assert data == dumps(doc, indent=1, ensure_ascii=False).encode("utf-8")
     assert data.splitlines()[1] == b' "\xe5\x90\x8d\xe5\x89\x8d": "\xe3\x83\x86\xe3\x82\xb9\xe3\x83\x88",'
     assert json.loads(data)["list"][2]["k"] == math.inf

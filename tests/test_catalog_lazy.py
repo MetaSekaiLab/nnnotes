@@ -1,12 +1,12 @@
 """The CDN base and the bundle key are read from the settings only when something must be downloaded."""
 
 import threading
-from pathlib import Path
 import zipfile
+from pathlib import Path
 
 import pytest
-
 import synth
+
 from nnnotes import catalog, cli
 from nnnotes.addressables import BundleKey
 from nnnotes.catalog import Catalog

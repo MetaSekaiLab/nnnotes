@@ -837,10 +837,13 @@ def test_talk_windows_and_their_nodes():
 def test_backdrop_filter_and_the_backdrop_node():
     """The centre-talk backdrop is kept when a talk window uses the backdrop filter: the node UIAdvWidget's backdrop
     CanvasGroup and Image references name (one node with both components)."""
-    win = lambda on: [
-        {"path": "W", "components": [{"class": "UIAdvTalkWindow", "_useBackdropFilter": on}]},
-        {"path": "W/TalkArea", "components": [image()]},
-    ]
+
+    def win(on):
+        return [
+            {"path": "W", "components": [{"class": "UIAdvTalkWindow", "_useBackdropFilter": on}]},
+            {"path": "W/TalkArea", "components": [image()]},
+        ]
+
     assert advui.uses_backdrop_filter(win(0) + win(1)) and not advui.uses_backdrop_filter(win(0))
     path = "UIAdvWidget/FrontCanvas/CenterTalkBackdrop"
     widget = [

@@ -701,7 +701,10 @@ def _build_note_infos(notes: list, tc: TickConverter, mirror: bool) -> list[Note
     for i, n in enumerate(notes):
         if i not in merged and n.type < 3:
             out.append(_single_info(n, tc, mirror))
-    order = lambda it: (it[1].node[0].t, it[0])  # <BuildNoteInfoList>b__7_0/7_1
+
+    def order(it):  # <BuildNoteInfoList>b__7_0/7_1
+        return it[1].node[0].t, it[0]
+
     longs = sorted(((i, n) for i, n in enumerate(notes) if n.type == 3 and n.node and len(n.node) > 1), key=order)
     assigner = LineIndexAssigner(MAX_LINES)
     _line_infos(longs, True, tc, mirror, out, None, assigner)
@@ -779,8 +782,8 @@ class Note:
     combo_notes: list = field(default_factory=list)
     begin_notes: list = field(default_factory=list)
     end_combo: list = field(default_factory=list)
-    begin_ref: "Note | None" = None
-    end_ref: "Note | None" = None
+    begin_ref: Note | None = None
+    end_ref: Note | None = None
 
 
 class _Creator:

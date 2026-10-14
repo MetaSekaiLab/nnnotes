@@ -28,14 +28,16 @@ from __future__ import annotations
 import struct
 from pathlib import Path
 
+from . import cri
+from .acb import commands as _commands
+from .acb import tables as _tables
+from .acb import u16s as _u16s
 from .apkset import ApkSet
-from .acb import commands as _commands, tables as _tables, u16s as _u16s
 from .catalog import Catalog
 from .jsonio import write_json
 from .liveoptions import LiveOptions
 from .player import PlayerData
 from .score import master_table
-from . import cri
 
 ACF_IN_APK = "assets/Cri/Sound/Sirius.acf"
 

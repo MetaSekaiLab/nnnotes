@@ -292,7 +292,9 @@ class _Ex:
     LiveBarLineViewContainer -> the LiveBarLineView prefab (GameObject 50, transform 51, a root)."""
 
     def __init__(self, element_cls="LiveBarLineView", prefab_father=0):
-        p = lambda pid: {"m_FileID": 0, "m_PathID": pid}
+        def p(pid):
+            return {"m_FileID": 0, "m_PathID": pid}
+
         objs = [
             _Obj("GameObject", 10, {}),
             _Obj("MonoBehaviour", 11, {"m_GameObject": p(10), "_barLineView": p(21)}, "LiveAllNoteView"),

@@ -10,10 +10,10 @@ import sys
 
 import numpy as np
 import pytest
+from fakeunity import ANDROID, VERSION, FakeEnvironment, FakeTexture2D, rgba_bytes
 from PIL import Image
 from UnityPy.export.Texture2DConverter import parse_image_data
 
-from fakeunity import ANDROID, VERSION, FakeEnvironment, FakeTexture2D, rgba_bytes
 from nnnotes import export
 from nnnotes.atoms import ATOMS, Impl, Unsupported, astc, env_name, ids, impl_id, png, resolve
 from nnnotes.atoms.reader import ObjectInfo, UnityBundle

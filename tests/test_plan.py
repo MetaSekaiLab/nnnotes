@@ -2,12 +2,13 @@
 
 from pathlib import Path
 
+from test_stages import PIPELINE, toy_files, toy_stages
+
 from nnnotes import contract
 from nnnotes.contract import Task
 from nnnotes.orchestrate import Orchestrator
 from nnnotes.plan import plan, why
 from nnnotes.store import Store
-from test_stages import PIPELINE, toy_files, toy_stages
 
 TEXTS = {"a": "alpha\nbeta", "b": "gamma", "c": "delta\n?x"}
 

@@ -38,11 +38,11 @@ import struct
 from dataclasses import dataclass
 from pathlib import Path
 
+from . import motion as motion_mod
 from .catalog import Catalog
 from .config import apk_missing
 from .export import Exporter
 from .jsonio import write_json
-from . import motion as motion_mod
 from .unity import SceneGraph, script_class
 
 # Live2D.Cubism.Core.CubismParameterBlendMode -> exp3.json "Blend"

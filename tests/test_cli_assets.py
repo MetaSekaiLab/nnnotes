@@ -12,8 +12,8 @@ import sys
 from pathlib import Path
 
 import pytest
-
 import synth
+
 from nnnotes import cli, cli_assets, contract
 from nnnotes.census import CensusStage
 from nnnotes.config import ConfigError
@@ -459,6 +459,7 @@ def test_the_flac_level_is_a_parameter_of_the_stages_that_encode_flac(tmp_path, 
 
 def test_the_placement_is_probed_once_and_never_changes_the_files(tmp_path, capsys, fake, monkeypatch):
     import errno
+
     from nnnotes import layout
 
     def clone_by_copy(src, dst):
@@ -726,6 +727,7 @@ def test_derived_documents_read_the_paths_of_the_objects_they_name(tmp_path, cap
 # ---------------------------------------------------------------- views and the documents of a run
 def test_views_are_placed_with_paths_and_every_document_validates(tmp_path, capsys, monkeypatch):
     from test_contract import validators
+
     from nnnotes import views
 
     monkeypatch.setattr(cli_assets, "STAGE_SOURCES", FAKE_SOURCES + (REAL["view."],))
@@ -1204,6 +1206,7 @@ def test_a_setting_the_raw_fetch_lacks_aborts_the_run(tmp_path, capsys, monkeypa
 
 def test_an_interrupt_starts_no_more_raw_fetches(tmp_path, capsys, monkeypatch):
     import threading
+
     from nnnotes import orchestrate
 
     apk, name = raw_apk(tmp_path, monkeypatch)
@@ -1234,6 +1237,7 @@ def test_an_interrupt_starts_no_more_raw_fetches(tmp_path, capsys, monkeypatch):
 def test_worker_counts_follow_the_cpus_this_process_may_use(monkeypatch):
     import os
     from types import SimpleNamespace
+
     from nnnotes import config, cri
 
     monkeypatch.setattr(os, "cpu_count", lambda: 64)

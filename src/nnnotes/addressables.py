@@ -15,8 +15,8 @@ nonce seed come from the configuration (`[bundle] key`, `[bundle] nonce_seed`).
 
 from __future__ import annotations
 
-import hashlib
 import gzip
+import hashlib
 import io
 import struct
 from dataclasses import dataclass, field
@@ -433,8 +433,8 @@ class Handler(BaseHTTPRequestHandler):
         if language not in region.languages:
             self.send_error(404)
             return
-        from .gameapi import GameApiError
         from .config import ConfigError
+        from .gameapi import GameApiError
 
         try:
             bundles, files = self.catalog(region, language)

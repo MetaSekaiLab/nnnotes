@@ -26,7 +26,7 @@ classifiers = [
 dynamic = ["version"]
 
 [project.optional-dependencies]
-test = ["pytest>=8", "pyflakes>=3.2", "jsonschema>=4.18"]
+test = ["pytest>=8", "ruff>=0.15", "jsonschema>=4.18"]
 fonts = ["fonttools>=4.50", "freetype-py>=2.5", "scipy>=1.13"]
 # the deck model of music-data: one nnnotes version carries one ournotes-deck release (.github/workflows/deck.yml moves
 # the pin when ournotes-deck publishes a newer one)
@@ -57,3 +57,12 @@ addopts = "-ra"
 line-length = 120
 target-version = "py311"
 extend-exclude = [".venv"]
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "UP", "B"]
+# B023: the closures defined in loops are called within the iteration that defines them; B905: zip pairs columns whose
+# lengths are checked where they are read
+ignore = ["B023", "B905"]
+
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = ["nnnotes.liveoptions.LiveOptions"]

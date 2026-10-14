@@ -19,7 +19,6 @@ from UnityPy.helpers.TypeTreeNode import TypeTreeNode
 
 from . import cache
 
-
 # ---- typetree blobs ---------------------------------------------------------
 # A serialized file lists the typetree of each of its classes as a blob, and UnityPy parses every blob in Python
 # (TypeTreeNode.parse_blob) each time a file is loaded; the same class trees recur in almost every bundle. The parse
@@ -92,18 +91,18 @@ def _install_blob_memo() -> bool:
 _install_blob_memo()
 
 
-def load(path: str | Path) -> "UnityPy.environment.Environment":
+def load(path: str | Path) -> UnityPy.environment.Environment:
     return UnityPy.load(str(path))
 
 
-def load_bytes(data: bytes) -> "UnityPy.environment.Environment":
+def load_bytes(data: bytes) -> UnityPy.environment.Environment:
     return UnityPy.load(io.BytesIO(data))
 
 
 _closures = threading.local()
 
 
-def load_closure(paths) -> "UnityPy.environment.Environment":
+def load_closure(paths) -> UnityPy.environment.Environment:
     """UnityPy environment of the bundle files `paths` (a key's closure, in this order), shared by the loads of the
     same files in this thread: the last few closures stay loaded (cache.configure `closures` / `closure_mb`), keyed
     by each file's path, size and modification time. Reading an object gives fresh values every time, so a shared

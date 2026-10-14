@@ -12,8 +12,6 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from PIL import Image
-
 from fakeunity import (
     F32,
     NORMAL,
@@ -30,7 +28,10 @@ from fakeunity import (
     sprite_tt,
     submesh,
 )
-from nnnotes import census as census_mod, contract, objexport
+from PIL import Image
+
+from nnnotes import census as census_mod
+from nnnotes import contract, objexport
 from nnnotes.atoms import Impl, astc, estimate, gltf
 from nnnotes.atoms.reader import UnityBundle
 from nnnotes.contract import IncompatibleTask, Input, Task
@@ -233,17 +234,10 @@ def _shader_blob():
         body += e
     raw = table + body
     gles3 = ShaderGpuProgramType.kShaderGpuProgramGLES3.value
-    prog = lambda i, kws: {
-        "m_PlayerSubPrograms": [
-            [
-                {
-                    "m_BlobIndex": i,
-                    "m_KeywordIndices": kws,  # noqa: E731
-                    "m_GpuProgramType": gles3,
-                }
-            ]
-        ]
-    }
+
+    def prog(i, kws):
+        return {"m_PlayerSubPrograms": [[{"m_BlobIndex": i, "m_KeywordIndices": kws, "m_GpuProgramType": gles3}]]}
+
     parsed = {
         "m_Name": "Test/Unlit",
         "m_PropInfo": {"m_Props": [{"m_Name": "_Color", "m_DefValue[0]": 1.0}]},
@@ -842,7 +836,7 @@ def test_scriptable_objects_blobs_and_strings(exported):
         "facts": {"field": "_bytes"},
     }
     assert load(store, doc, b["id"]) == MOC
-    assert m["text"] == {"$hex": "caf".encode().hex() + "c3"}
+    assert m["text"] == {"$hex": b"caf".hex() + "c3"}
     assert by_object(doc)[oid(70)]["artifacts"] == [f"{oid(70)}#blob:_bytes", f"{oid(70)}#json"]
     lost = obj(store, doc, f"{oid(71)}#json")
     assert "$script" not in lost and lost["m_Script"] == {"$ref": {"file": "CAB-scripts", "pathId": 9}}

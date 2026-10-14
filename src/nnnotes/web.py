@@ -82,7 +82,7 @@ from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from pathlib import Path
 from types import SimpleNamespace
 
-from . import cache, compress, cri, jsonio, languages, live, liveoptions, livenotes, livescene
+from . import cache, compress, cri, jsonio, languages, live, livenotes, liveoptions, livescene
 from .compress import DEFAULT_ENCODING
 from .config import Config, ConfigError, tool, usable_cpus, use
 from .score import DIFFICULTIES, master_table
@@ -112,7 +112,8 @@ LIVE2D_PAGE_DIR = "examples/live2d"
 LIVE2D_PAGE_SITE_DIR = "live2d"
 LIVE2D_BUNDLES = ("dist/ournotes-player.live2d.element.min.js",)
 LIVE2D_PAGE_IMPORTS = {"../../src/live2d/define.js": "./ournotes-player.live2d.element.min.js"}
-# the player's story page (when the player has it and its bundle): its files and bundle go to SITE/<STORY_PAGE_SITE_DIR>/
+# the player's story page (when the player has it and its bundle): its files and bundle go to
+# SITE/<STORY_PAGE_SITE_DIR>/
 STORY_PAGE_DIR = "examples/story-list"
 STORY_PAGE_SITE_DIR = "story"
 STORY_BUNDLES = ("dist/ournotes-player.story.element.min.js",)
@@ -342,7 +343,10 @@ def localized_texts(master: dict) -> tuple[dict, dict]:
 def chart_facts(live_dir: Path, summary: dict, difficulty: str, language: str) -> dict:
     """What a chart listing needs, from the live directory (master rows, sounds) and the build summary: `title` and
     `bands` in `language`, `titles` and `bandNames` in every language."""
-    rd = lambda rel: json.loads((Path(live_dir) / rel).read_text(encoding="utf-8"))
+
+    def rd(rel):
+        return json.loads((Path(live_dir) / rel).read_text(encoding="utf-8"))
+
     index = rd("live.json")
     master = rd(index["master"])
     la = rd(index["liveAudio"])
@@ -966,14 +970,15 @@ class Pipeline:
 
     `extract(music, difficulties)` / `ingest(music, charts, root)` are submitted to `workers` (an Executor: the
     extraction processes), `read(dir, chart id)` to `readers` (threads that start Node). `window`: musics between
-    the start of their extraction and the end of their ingest. `cleanup(root)` after a music's ingest. -> one result per chart.
+    the start of their extraction and the end of their ingest. `cleanup(root)` after a music's ingest. -> one result
+    per chart.
     A failure fails its charts only, except a ConfigError (a setting or tool the build needs): run raises it once
     the stages in flight have ended."""
 
     def __init__(self, workers, readers, extract, read, ingest, cleanup, window: int, log=_log):
         self.workers, self.readers, self.window, self.log = workers, readers, max(1, window), log
         self.extract_fn, self.read_fn, self.ingest_fn, self.cleanup = extract, read, ingest, cleanup
-        self.events: "queue.Queue" = queue.Queue()
+        self.events: queue.Queue = queue.Queue()
 
     def run(self, musics: list[tuple[int, list[str]]]) -> list[dict]:
         todo = list(musics)
@@ -1420,7 +1425,7 @@ class ReadSets:
             )
 
     def sampled(self, chart_id: str) -> bool:
-        h = hashlib.sha256(f"{player_id(self.player_dir)}|{chart_id}".encode("utf-8")).digest()
+        h = hashlib.sha256(f"{player_id(self.player_dir)}|{chart_id}".encode()).digest()
         return int.from_bytes(h[:4], "big") % self.check_every == 0
 
     def read(self, live_dir, chart_id: str, variants=()) -> list[str]:
@@ -1750,7 +1755,7 @@ def _build_group(
     workers: int | None,
     log,
     read_workers: int | None = None,
-    reads: "ReadSets | None" = None,
+    reads: ReadSets | None = None,
 ) -> tuple[list, list, int]:
     """The charts `pairs` of one region group into charts/<prefix><id>.json (data of `region`); manifests that exist
     are skipped unless `force` and gain the group's `regions`. -> (results, skipped ids, workers)."""
@@ -1826,13 +1831,19 @@ def _build_group(
                 "extract": lambda m, ds: extract_task(m, ds, job, data),
                 "ingest": lambda m, charts, root: ingest_task(m, charts, root, job),
             }
-            submit = lambda name, *a: ex.submit(call[name], *a)
+
+            def submit(name, *a):
+                return ex.submit(call[name], *a)
+
             ctx = None
         else:
             ctx = mp.get_context("spawn")
             mgr = ctx.Manager()
             ex = ProcessPoolExecutor(workers, mp_context=ctx, initializer=_worker_init, initargs=(cfg, mgr.Lock(), job))
-            submit = lambda name, *a: ex.submit(_pool_call, f"{name}_task", *a)
+
+            def submit(name, *a):
+                return ex.submit(_pool_call, f"{name}_task", *a)
+
         try:
             for b, f in [(b, submit("band", b, m)) for b, m in sorted(bands.items())]:
                 try:

@@ -27,13 +27,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from . import liveaudio, livenotes, livescene, liveui, score
 from .catalog import Catalog
 from .cristages import FLAC_LEVEL
 from .jsonio import write_json
 from .liveoptions import LiveOptions
 from .player import PlayerData
 from .score import master_table
-from . import liveaudio, livenotes, livescene, liveui, score
 
 # Band of the preview when no deck centre is given: the band of the music's first vocal character
 # (MasterLiveMusic._vocalCharacterIDs[0] -> MasterCharacter._bandID). The music's own fields are not the game's input.

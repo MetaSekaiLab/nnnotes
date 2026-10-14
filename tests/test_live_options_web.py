@@ -154,9 +154,10 @@ def test_manifest_options(tmp_path):
 
 # ---------------------------------------------------------------- the flag
 def test_live_option_flag(tmp_path, capsys, monkeypatch):
-    from nnnotes import cli
     from test_live_options import write_master as option_tables
     from test_regions import fake_player, write_master
+
+    from nnnotes import cli
 
     master = option_tables(write_master(tmp_path / "m"))
     monkeypatch.setenv("NNNOTES_SERVERS_ZZ_CDN", (tmp_path / "cdn").as_uri())

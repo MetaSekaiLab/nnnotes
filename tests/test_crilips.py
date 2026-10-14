@@ -64,8 +64,8 @@ def _synthetic_version():
     import random
 
     rng = random.Random(1234)
-    w1 = struct.pack("<%df" % 6, *[rng.uniform(-1, 1) for _ in range(6)])
-    b1 = struct.pack("<%df" % 3, *[rng.uniform(-1, 1) for _ in range(3)])
+    w1 = struct.pack("<6f", *[rng.uniform(-1, 1) for _ in range(6)])
+    b1 = struct.pack("<3f", *[rng.uniform(-1, 1) for _ in range(3)])
     c1 = struct.pack("<i", 7)
     # rodata: some padding, the id string, then the blocks in a shuffled order
     idstr = b"SYNTH Lips Ver.9.9.9\x00"
@@ -209,7 +209,9 @@ def _talk(names, voices, **kw):
 def test_needs_cri_lips():
     from nnnotes import story
 
-    ep = lambda *rows: {"commands": list(rows)}
+    def ep(*rows):
+        return {"commands": list(rows)}
+
     one = _talk("a", [1])
     # a voiced row reaches the analysis on a model without MotionSync
     assert story.needs_cri_lips(ep(one), "・", [True, False])

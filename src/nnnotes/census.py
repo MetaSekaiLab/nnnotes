@@ -132,7 +132,7 @@ def _asset_bundle(d: dict, refs: _Refs, oid: tuple[str, int]) -> dict:
     }
 
 
-def _binding_scripts(d: dict, refs: "_Refs") -> list:
+def _binding_scripts(d: dict, refs: _Refs) -> list:
     """The MonoScripts an AnimationClip's generic bindings name, {file, pathId} (or {fileId, pathId}), sorted."""
     out = {}
     for b in (d.get("m_ClipBindingConstant") or {}).get("genericBindings") or ():

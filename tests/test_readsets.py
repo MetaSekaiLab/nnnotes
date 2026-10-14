@@ -435,8 +435,9 @@ def test_web_read_workers_flag_reaches_the_build(tmp_path, capsys, monkeypatch):
 
 
 def test_web_pair_that_no_region_has_is_a_usage_error(tmp_path, capsys, monkeypatch):
-    from nnnotes import cli
     from test_regions import fake_player, write_master
+
+    from nnnotes import cli
 
     master = write_master(tmp_path / "m")  # music 1: easy and expert
     monkeypatch.setenv("NNNOTES_SERVERS_ZZ_CDN", (tmp_path / "cdn").as_uri())

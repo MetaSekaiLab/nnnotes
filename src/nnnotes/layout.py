@@ -220,7 +220,7 @@ def original_entries(
         owners: dict[str, list[dict]] = {}
         for a in src.result["artifacts"]:
             owners.setdefault(contract.parse_artifact_id(a["id"])[0], []).append(a)
-        for owner, records in sorted(owners.items()):
+        for _owner, records in sorted(owners.items()):
             obj = next((r["provenance"]["object"] for r in records if r.get("provenance", {}).get("object")), None)
             if obj is None:  # artifacts of no object
                 for r in records:

@@ -1545,12 +1545,12 @@ class Exporter:
             )
         layers = [
             {
-                "name": tos.get(l["data"]["m_Binding"]),
-                "stateMachine": l["data"]["m_StateMachineIndex"],
-                "defaultWeight": l["data"]["m_DefaultWeight"],
-                "blending": l["data"]["(int&)m_LayerBlendingMode"],
+                "name": tos.get(layer["data"]["m_Binding"]),
+                "stateMachine": layer["data"]["m_StateMachineIndex"],
+                "defaultWeight": layer["data"]["m_DefaultWeight"],
+                "blending": layer["data"]["(int&)m_LayerBlendingMode"],
             }
-            for l in c["m_LayerArray"]
+            for layer in c["m_LayerArray"]
         ]
         vals = c["m_Values"]["data"]["m_ValueArray"] if "data" in c["m_Values"] else []
         params = [{"name": tos.get(v["m_ID"], v["m_ID"]), "type": v["m_Type"], "index": v["m_Index"]} for v in vals]

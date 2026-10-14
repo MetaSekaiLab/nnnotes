@@ -3,8 +3,8 @@ import json
 
 import numpy as np
 import pytest
-
 import synth
+
 from nnnotes import master
 from nnnotes.master import MasterKey
 
@@ -67,7 +67,7 @@ def test_decode_files(tmp_path):
     assert r["decoded"] == 2 and [f["file"] for f in r["failed"]] == ["MasterBad.bin"]
     data = (tmp_path / "json" / "MasterB.json").read_bytes()
     assert json.loads(data) == TABLE
-    assert b"\r" not in data and "テスト".encode("utf-8") in data  # UTF-8, LF, not escaped
+    assert b"\r" not in data and "テスト".encode() in data  # UTF-8, LF, not escaped
     assert not (tmp_path / "json" / "MasterBad.json").exists()
     with pytest.raises(FileNotFoundError):
         master.input_files([tmp_path / "absent"])

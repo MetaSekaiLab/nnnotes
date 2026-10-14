@@ -1,8 +1,8 @@
 import zipfile
 
 import pytest
-
 import synth
+
 from nnnotes.addressables import BundleKey, browse, decrypt, parse, remote_path
 from nnnotes.catalog import APK_OFFSET_BASE, Catalog
 
@@ -160,6 +160,7 @@ def test_load_downloads_catalog_once(tmp_path):
 def test_downloads_keep_one_connection_per_thread(monkeypatch):
     import http.server
     import threading
+
     from nnnotes import catalog
 
     for v in ("http_proxy", "HTTP_PROXY", "all_proxy", "ALL_PROXY"):

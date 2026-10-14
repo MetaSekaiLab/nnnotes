@@ -7,8 +7,8 @@ what the user points it at into a local cache the user controls.
 
 from __future__ import annotations
 
-import http.client
 import hashlib
+import http.client
 import sys
 import threading
 import urllib.parse
@@ -16,8 +16,8 @@ import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
-from .apkset import ApkSet
 from .addressables import REMOTE_PREFIX, BundleKey, decrypt, parse, parse_locations, remote_path
+from .apkset import ApkSet
 from .cache import write_atomic as _write_atomic
 from .config import ConfigError, apk_missing, check_catalog_version
 
@@ -164,7 +164,7 @@ class Catalog:
         bundle_key=None,
         apk: Path | None = None,
         version: str = "main",
-    ) -> "Catalog":
+    ) -> Catalog:
         """The remote catalog of `language` from the cache, downloaded from the CDN on first use (`cdn` /
         `bundle_key`: as for Catalog). A versioned catalog is isolated by CDN root and version; main retains
         its legacy offline cache path. Missing versioned files never fall back to main."""
@@ -407,7 +407,7 @@ class Catalog:
 
 
 _KEPT = threading.local()  # per thread: {(scheme, host): an open connection}
-_AGENT = "Python-urllib/%d.%d" % sys.version_info[:2]  # what urllib.request sends
+_AGENT = "Python-urllib/{}.{}".format(*sys.version_info[:2])  # what urllib.request sends
 
 
 def download(url: str, timeout: float = 120) -> bytes:

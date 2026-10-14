@@ -1,3 +1,4 @@
+import argparse
 import json
 import os
 import subprocess
@@ -6,8 +7,8 @@ import zipfile
 from pathlib import Path
 
 import pytest
-
 import synth
+
 from nnnotes import cli
 
 KEY_HEX = synth.BUNDLE_KEY.hex()
@@ -126,7 +127,7 @@ def test_web_needs_a_selection(capsys):
 def test_parse_pair():
     assert cli.parse_pair("100001:expert") == (100001, "expert")
     assert cli.parse_pair("7_easy") == (7, "easy")
-    with pytest.raises(Exception):
+    with pytest.raises(argparse.ArgumentTypeError):
         cli.parse_pair("7:extreme")
 
 
@@ -422,6 +423,7 @@ def test_flac_level_is_checked(data, argv, message, capsys):
 
 def test_flac_level_reaches_the_decode(data, tmp_path, capsys, monkeypatch):
     from types import SimpleNamespace
+
     from nnnotes import cri, live, story
 
     seen = []

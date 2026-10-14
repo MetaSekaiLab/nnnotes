@@ -384,7 +384,7 @@ def test_ingest_manifest(tmp_path):
     assert man["requires"] == {"commands": ["Bgm", "FadeOut", "Talk"], "cubismCore": True, "motionSync": True}
     assert "substitute" not in man
     assert sorted(man["languages"]) == ["en", "ja"]
-    for lang, g in man["languages"].items():
+    for _lang, g in man["languages"].items():
         assert not set(g["files"]) & set(man["files"])
         assert {"ui/ui.json", "ui/fonts.json", "ui/languages.json"} <= set(g["files"])
     # scene.json and ui/ui.json are split per top-level key whatever their size; the parts rebuild the text

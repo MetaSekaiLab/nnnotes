@@ -7,10 +7,10 @@ from importlib import resources
 from pathlib import Path
 
 import pytest
+import synth
 from UnityPy.helpers.TypeTreeHelper import read_typetree
 from UnityPy.streams.EndianBinaryReader import EndianBinaryReader
 
-import synth
 from nnnotes import cli
 from nnnotes.config import ConfigError
 from nnnotes.player import (

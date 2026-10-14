@@ -91,7 +91,7 @@ def env_name(section: str, key: str) -> str:
     return ENV_PREFIX + re.sub(r"[^A-Za-z0-9]", "_", f"{section}.{key}").upper()
 
 
-def apk_missing(what: str) -> "ConfigError":
+def apk_missing(what: str) -> ConfigError:
     """The error for data that is only in the game's APK when `[paths] apk` is not set."""
     return ConfigError(f"{what} needs the game's APK: give base.apk as {describe('paths', 'apk', '--apk')}")
 
@@ -134,7 +134,7 @@ class Config:
         environ: dict[str, str] | None = None,
         overrides: dict | None = None,
         flags: dict | None = None,
-    ) -> "Config":
+    ) -> Config:
         env = os.environ if environ is None else environ
         file = find_file(path, env)
         if file is None:
@@ -283,7 +283,7 @@ class Config:
             raise ConfigError(f"setting servers.{region}.provider: must be jp or international")
         return value
 
-    def for_region(self, region: str) -> "Config":
+    def for_region(self, region: str) -> Config:
         overrides = {**self._over, ("catalog", "region"): region}
         if self.provider(region) == "jp":
             overrides[("catalog", "language")] = "ja"

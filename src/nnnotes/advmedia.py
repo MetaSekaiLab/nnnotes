@@ -36,12 +36,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from . import adv, fontsettings, unity
+from . import master as master_mod
 from .catalog import Catalog
 from .export import HEADER, Exporter
 from .jsonio import write_json
 from .player import PlayerData
-from . import adv, fontsettings, unity
-from . import master as master_mod
 
 TMP_SHADER_PREFIX = "TextMeshPro/"
 TMP_ASSETS = ("TMP_FontAsset", "TMP_SpriteAsset", "TMP_StyleSheet")

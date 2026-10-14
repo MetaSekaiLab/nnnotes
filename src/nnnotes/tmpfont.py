@@ -291,7 +291,7 @@ class RuntimeGlyphs:
     @classmethod
     def from_font_file(
         cls, data: bytes, face_index: int, point_size: int, padding: int, oversample: int = 1
-    ) -> "RuntimeGlyphs":
+    ) -> RuntimeGlyphs:
         """The same generator for a font file of one's own (open font assets, storyfonts.py): `point_size` px per
         em, `padding` texels of distance field (spread padding + 1). `oversample` > 1: cell() rasterizes at that
         many times the point size and takes the distance at each texel centre from the finer grid (the

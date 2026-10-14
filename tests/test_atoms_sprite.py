@@ -5,8 +5,6 @@ then the canvas placement and the refusals."""
 
 import numpy as np
 import pytest
-from UnityPy.export.SpriteHelper import get_image_from_sprite
-
 from fakeunity import (
     ANDROID,
     VERSION,
@@ -19,6 +17,8 @@ from fakeunity import (
     sprite_tt,
     unitypy_sprite,
 )
+from UnityPy.export.SpriteHelper import get_image_from_sprite
+
 from nnnotes.atoms import ATOMS, Unsupported, sprite
 from nnnotes.atoms.mesh import arrays
 from nnnotes.atoms.reader import mesh_input_from_typetree

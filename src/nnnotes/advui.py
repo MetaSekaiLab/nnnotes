@@ -80,11 +80,11 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from . import adv, fontsettings, languages, textstyle
 from .catalog import Catalog
 from .export import Exporter, TexelPacker, _safe
 from .jsonio import write_json
 from .player import PlayerData
-from . import adv, fontsettings, languages, textstyle
 from .textstyle import LANGUAGE_LINE_SPACING
 
 WIDGET_KEY = "EmbUI/Prefab/UIAdvWidget"
@@ -782,7 +782,7 @@ def extract(
             raise RuntimeError(f"transition {addr}: rule texture not copied whole")
         a["_texture"] = {"texture": b["texture"], "name": a["_texture"]["name"]}
     for m in materials.values():
-        for k, v in m["textures"].items():
+        for _k, v in m["textures"].items():
             if v["texture"] is not None:
                 v["texture"] = {
                     "name": v["texture"]["name"],

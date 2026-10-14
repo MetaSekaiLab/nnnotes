@@ -27,11 +27,10 @@ from __future__ import annotations
 import importlib
 import os
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from functools import lru_cache
+from functools import cache
 from importlib import metadata
-from typing import Callable
 
 __all__ = ["ATOMS", "Impl", "Unsupported", "atom_id", "ids", "impl_id", "resolve"]
 
@@ -53,7 +52,7 @@ class Impl:
     cost: Callable[[dict], dict]
 
 
-@lru_cache(maxsize=None)
+@cache
 def _version(dist: str) -> str:
     try:
         return metadata.version(dist)
@@ -87,7 +86,7 @@ def env_name(name: str) -> str:
     return "NNNOTES_ATOM_" + re.sub(r"[^A-Z0-9]", "_", name.upper())
 
 
-@lru_cache(maxsize=None)
+@cache
 def _reference(name: str) -> Impl:
     module, fn, cost, libraries, revision = _REFERENCE[name]
     mod = importlib.import_module(f"{__name__}.{module}")

@@ -1,12 +1,11 @@
 """Install the wheel with the deck model in a fresh environment and exercise its CLI and the deck model."""
 
-from pathlib import Path
 import os
 import subprocess
 import sys
 import tempfile
 import venv
-
+from pathlib import Path
 
 SMOKE = """
 import json

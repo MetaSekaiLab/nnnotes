@@ -85,7 +85,8 @@ DOTWEEN_FIELDS = (
 )
 # components that light the renderers of a scene (lighting_components)
 LIGHTING_TYPES = ("Light", "ReflectionProbe")
-# RenderSettings values of the active scene the renderers' lighting depends on; object references by name (render_settings)
+# RenderSettings values of the active scene the renderers' lighting depends on; object references by name
+# (render_settings)
 RENDER_SETTINGS_FIELDS = (
     "m_Fog",
     "m_AmbientMode",

@@ -8,7 +8,8 @@ the store.
     nnnotes plan [the selection and parameters of export] [-o OUT] [--json] [--since RUN] [--check] [--census]
                  [--emit-tasks DIR] [--why TASK]
     nnnotes run-stage TASK.json|DIR [...] [--store DIR] [--fetch] [--force]
-    nnnotes catalogs list [--json] | import FILE [--label L] [--resource-version V] | fetch [--label L] | diff A B [--json]
+    nnnotes catalogs list [--json] | import FILE [--label L] [--resource-version V] | fetch [--label L]
+                     | diff A B [--json]
     nnnotes store verify [--quick]
 
 The pipeline is the registry STAGE_SOURCES in order: each entry names the module and attribute of a stage (a Stage
@@ -60,9 +61,10 @@ from importlib import import_module, util
 from pathlib import Path
 from types import SimpleNamespace
 
-from .apkset import ApkSet
 from . import contract
-from .config import ConfigError, check_catalog_version, describe as describe_setting, usable_cpus, use
+from .apkset import ApkSet
+from .config import ConfigError, check_catalog_version, usable_cpus, use
+from .config import describe as describe_setting
 from .contract import Cost, IncompatibleTask, Input, Task
 from .stages import Env, Pending, Stage, describe, execute
 
@@ -309,7 +311,7 @@ class CatalogFetcher:
                     cfg = cfg.for_region(region)
                 source, session, cache = None, None, self.cache
                 if v.get("source") is not None:
-                    from .jp import Source, Session
+                    from .jp import Session, Source
 
                     source = Source.from_dict(v["source"])
                     session = Session(cfg, cfg.region())

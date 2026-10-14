@@ -56,6 +56,7 @@ def mesh_values(mesh) -> dict:
 def mesh_from_values(values: dict):
     """The MeshArrays of mesh_values(...)."""
     import numpy as np
+
     from .mesh import Channel, MeshArrays, Primitive
 
     pos = np.asarray(values["positions"], np.float32).reshape(-1, 3)

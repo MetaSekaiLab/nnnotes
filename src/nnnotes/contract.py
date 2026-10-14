@@ -278,7 +278,7 @@ class Cost:
         return {"cpuSeconds": round(float(self.cpu_seconds), 3), "peakBytes": int(self.peak_bytes)}
 
     @classmethod
-    def from_json(cls, d: dict | None) -> "Cost | None":
+    def from_json(cls, d: dict | None) -> Cost | None:
         return None if d is None else cls(float(d.get("cpuSeconds", 0.0)), int(d.get("peakBytes", 0)))
 
 
@@ -308,7 +308,7 @@ class Input:
         return d
 
     @classmethod
-    def from_json(cls, d: dict) -> "Input":
+    def from_json(cls, d: dict) -> Input:
         return cls(
             d["role"], d["sha256"], int(d["size"]), d.get("name"), tuple(dict(loc) for loc in d.get("locators", ()))
         )
@@ -386,7 +386,7 @@ class Task:
         return d
 
     @classmethod
-    def from_json(cls, doc: dict) -> "Task":
+    def from_json(cls, doc: dict) -> Task:
         """The task a description holds; raises IncompatibleTask when it is not a task/1 document or its key is
         not the key of its parts (it was written by another version or edited)."""
         if not isinstance(doc, dict) or doc.get("schema") != TASK:
