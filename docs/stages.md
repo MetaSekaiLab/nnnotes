@@ -38,7 +38,9 @@ gzip input and Japanese remote asset placeholders).
 
 ## Converters (`unity.export`)
 
-`unity.export` reads one bundle alone and gives every object of it exactly one item status: `exported`,
+The converters are the library `nnnotes.unity.convert`, one module per group of classes; `unity.export`
+(`nnnotes.pipeline.objexport`) runs them over one bundle read alone and gives every object of it exactly one item
+status: `exported`,
 `contained` (part of another artifact), `generic` (typetree JSON because the specialized form could not be made;
 the reason says why), `unsupported` (a class the stage does not convert; its typetree JSON is written as well) or
 `failed` (not even the typetree JSON could be made). A converter's documented limit gives the generic typetree JSON
@@ -52,8 +54,8 @@ with its reason code; any other error of a converter gives it with `generic.erro
 | GameObject (a root) | `prefab.json/1` | `prefab`: the hierarchy's nodes (path, path ids, transform) with their components' fields | | the objects below it are `contained`; a root of a scene's file names its scene |
 | Material | `material.json/1` | `json`: shader, keywords, textures, floats, colours | | |
 | Shader | `shader.json/1` | `json`: the parsed form (the bytes of `nnnotes export shader`'s `<name>.json`), `program:<platform>/s<S>p<P>_<stage>_<N>`: each compiled sub-program as stored (`.glsl`, `.metal`, `.vkprog`), `index`: the variants (platform, subshader, pass, stage, GPU program type, keywords, program role), `typetree`: the typetree JSON | | a shader without a parsed form: its typetree with `generic.error` |
-| AnimationClip | `clip.json/1` | `json`: the Mecanim clip data with its bindings resolved in the bundle | | a legacy or compressed clip: `generic.clip.legacy` |
-| AnimatorController | `controller.json/1` | `json`: layers, state machines, parameters | | an AnimatorOverrideController: `generic.controller.override` |
+| AnimationClip | `clip.json/2` | `json`: the Mecanim clip data and its bindings as stored (see below) | | a legacy or compressed clip: `generic.clip.legacy` |
+| AnimatorController | `controller.json/2` | `json`: name, clips (`$ref`), layers, state machines, parameters, default values | | an AnimatorOverrideController: `generic.controller.override` |
 | MonoBehaviour (not in a hierarchy) | `mono.json/2`, `cri.usm/1` | `json`: `$script` (assembly, namespace, class) and the typetree; a cue sheet asset also `acb`, a movie asset holding its USM also `usm` (see below) | `sniff` | the class from the task's script table |
 | TextAsset | `data/1` | `data`: the stored bytes | `sniff` | extension from the container path, else from the content |
 | Font | `font/1` | `font`: the font file | `sniff` | |
@@ -76,6 +78,21 @@ Object JSON is canon/1 in the object's own field order:
   artifact `<object id>#blob:<field path>` (field names and array indices joined by `/`, the format by `sniff`);
 - a string whose stored bytes are not UTF-8 is `{"$hex": "<the stored bytes>"}`;
 - NaN is `{"$float": "nan"}`, infinities `1e999` / `-1e999`.
+
+An AnimationClip's `json` holds `name`, `sampleRate`, `wrapMode`, `startTime`, `stopTime`, `loopTime`,
+`cycleOffset`, `events` (with `objectReferenceParameter` as a reference), `bindings`, `streamed` (`curveCount`, and
+`discreteCurveCount` when the clip stores it; `frames`: `[time, [[curve, c0, c1, c2, c3], ...]]`, a curve's value at
+`t` being `((c0*x + c1)*x + c2)*x + c3` with `x = t - time` from its last key at or before `t`), `dense`
+(`curveCount`, `frameCount`, `sampleRate`, `beginTime`, `samples`), `constant` and `pptrCurveMapping` (references).
+Curve indices run over the streamed curves, then the dense ones, then the constant ones; each float binding takes
+`curves` of them (1 when the binding has no `curves`) in `bindings` order. A binding is the clip's GenericBinding as
+stored: `pathCrc` (crc32 of the animated object's path relative to the GameObject whose Animator plays the clip),
+`attributeCrc`, `typeID` with its `class` when it is a known class id, `customType`, `pptr`, `int`,
+`serializeReference`; a binding that names a script has `script` (the MonoScript reference) and `scriptClass`
+(its entry in the task's script table, `null` when the table lacks it), and a Transform binding (`typeID` 4) of
+position, rotation, scale or euler angles has `attribute` (`m_LocalPosition`, `m_LocalRotation`, `m_LocalScale`,
+`localEulerAnglesRaw`) and `curves` (3, 4, 3, 3). Paths and the attributes of other components are named by the
+hierarchy that plays the clip, which the clip alone does not give.
 
 A cue sheet held in a bundle is a MonoBehaviour in one of two layouts; either gives the artifact
 `<object id>#acb` (kind `cri.acb`, facts: `cueSheet`, `layout`), which `cri.audio` decodes:
