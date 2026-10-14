@@ -1,0 +1,7 @@
+nnnotes 0.2.3 pins the deck model of ournotes-deck 0.0.10, `ournotes-sim==0.0.10`.
+
+- **Certified maximum search.** A certified search under the maximum aggregation bounds each order's payoff by the position potentials and each slot's excess over them, and prunes complete teams by their cheap then fine caps against the K-th best order value. Rankings and values are unchanged.
+- **Recommendation WASM memory.** The recommend module grows its linear memory proportionally to its size, so a first search no longer spends its time growing memory through many small calls. Values computed are unchanged.
+- **Statistics cache.** The deck model's source identity changes with the release, so `--stats-cache` starts a new namespace; a chart's statistics are recomputed when its inputs changed.
+
+Validation: Python 3.11, 3.12, 3.13 and 3.14 CI with the deck model, strict golden records, the commit message check, and the wheel installed with `[deck]` in a fresh environment.
