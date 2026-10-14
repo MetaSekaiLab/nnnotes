@@ -242,6 +242,10 @@ class UnityBundle:
         """The library's object reader of `obj` (UnityPy's ObjectReader), for code that works on library objects."""
         return self._readers[(obj.file, obj.path_id)]
 
+    def serialized_file(self, file: str):
+        """The library's serialized file (UnityPy's SerializedFile) named `file`."""
+        return self._files[file]
+
     def files(self) -> list[str]:
         return list(self._files)
 
