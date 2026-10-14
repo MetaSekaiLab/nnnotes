@@ -21,6 +21,7 @@ channels (`partial.mesh.skin`), blend shapes (`unsupported.mesh.blendshapes`).
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -101,7 +102,7 @@ class MeshInput:
     vertex_count: int
     channels: tuple = ()
     vertex_data: bytes = b""
-    index_buffer: object = b""
+    index_buffer: bytes | bytearray | memoryview | Sequence[int] = b""
     index_bits: int = 16
     submeshes: tuple = ()
     decoded: dict | None = None

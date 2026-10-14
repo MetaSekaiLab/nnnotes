@@ -155,13 +155,13 @@ def parse_server_list(buf: bytes) -> list[Server]:
 
 
 # ---------------------------------------------------------------- calls
-def metadata(client_version: str, request_id: str | None = None) -> list[tuple[str, str]]:
+def metadata(client_version: str, request_id: str | None = None) -> tuple[tuple[str, str], ...]:
     """The metadata of a call: a fresh `x-request-id` unless one is given."""
-    return [
+    return (
         ("x-request-id", request_id or str(uuid.uuid4())),
         ("x-platform", PLATFORM),
         ("x-client-version", client_version),
-    ]
+    )
 
 
 def channel_target(root: str) -> tuple[str, bool]:
@@ -232,9 +232,10 @@ def call(
 def failure(name: str, setting: str, code, trailers) -> str:
     """The one-line error of a failed call: status, a hint, and the game's error code when the server sent one."""
     status = code.name if code is not None else "no status"
-    hint = STATUS_HINT.get(code)
+    hint = STATUS_HINT.get(code) if code is not None else None
     game = next((v for k, v in (trailers or ()) if k == ERROR_CODE_TRAILER), None)
-    extra = ", ".join(x for x in (hint, f"game error code {game}" if game else None, GAME_ERROR_HINT.get(game)) if x)
+    game_hint = GAME_ERROR_HINT.get(game) if game is not None else None
+    extra = ", ".join(x for x in (hint, f"game error code {game}" if game else None, game_hint) if x)
     return f"game API call {name} to {setting} failed: {status}" + (f" ({extra})" if extra else "")
 
 

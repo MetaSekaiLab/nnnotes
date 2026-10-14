@@ -42,7 +42,7 @@ import UnityPy
 
 from ..core.jsonio import dumps, write_json
 from ..source.catalog import Catalog
-from ..unity.reader import SceneGraph, deref, mesh_arrays, texture_image
+from ..unity.reader import SceneGraph, deref, mesh_arrays, referent, texture_image
 
 # UnityEngine.Rendering.BlendMode
 BLEND_ONE, BLEND_ZERO, BLEND_SRC_ALPHA, BLEND_ONE_MINUS_SRC_ALPHA = 1, 0, 5, 10
@@ -372,7 +372,7 @@ def extract_room(cat: Catalog, bg_key: str, out_path: Path) -> dict:
         if mkey in mat_cache:
             return mat_cache[mkey]
         mat_tt = mat.read_typetree()
-        shader_tt = deref(mat, mat_tt["m_Shader"]).read_typetree()
+        shader_tt = referent(mat, mat_tt["m_Shader"]).read_typetree()
         gm = translate_material(mat_tt, shader_tt)
         for tex_obj, env_ in main_textures(mat, mat_tt, shader_tt["m_ParsedForm"]["m_Name"]):
             tid = object_key(tex_obj)
@@ -381,7 +381,7 @@ def extract_room(cat: Catalog, bg_key: str, out_path: Path) -> dict:
                 buf = io.BytesIO()
                 texture_image(tex_obj.read()).save(buf, format="PNG")
                 tex_cache[tid] = glb.texture(buf.getvalue(), tex_tt["m_Name"], _sampler(tex_tt))
-            info = {"index": tex_cache[tid]}
+            info: dict = {"index": tex_cache[tid]}
             sx, sy = env_["m_Scale"]["x"], env_["m_Scale"]["y"]
             ox, oy = env_["m_Offset"]["x"], env_["m_Offset"]["y"]
             if (sx, sy, ox, oy) != (1.0, 1.0, 0.0, 0.0):

@@ -13,7 +13,7 @@ from urllib.request import urlopen
 from .. import __version__
 from ..source.addressables import BundleKey, decrypt, remote_path
 from ..source.catalog import Bundle, Catalog
-from ..source.config import ConfigError
+from ..source.config import Config, ConfigError
 from ..source.gameapi import GameApiError
 from ..source.jp import open_catalog
 from ..source.session import Session
@@ -45,12 +45,26 @@ class Region:
     label: str
     cdn: str = field(repr=False)
     languages: list[str]
-    config: object = field(default=None, repr=False)
+    config: Config | None = field(default=None, repr=False)
+
+
+class Server(ThreadingHTTPServer):
+    """The browser's HTTP server: its regions, the bundle key, the cache, and the catalogs read so far."""
+
+    def __init__(self, address, regions: list[Region], bundle_key: BundleKey, cache: Path):
+        super().__init__(address, Handler)
+        self.regions = {r.name: r for r in regions}
+        self.bundle_key = bundle_key
+        self.cache = Path(cache)
+        self.catalogs: dict[tuple[str, str], tuple[dict, dict]] = {}
+        self.jp_catalogs: dict[tuple[str, str], Catalog] = {}
 
 
 class Handler(BaseHTTPRequestHandler):
     """/ -> regions, /<region>/ -> languages, /<region>/<language>/<dir>/ -> listing,
     /<region>/<language>/download/<offset> -> the decrypted bundle."""
+
+    server: Server
 
     def listing(self, label: str, rows) -> None:
         title = f"nnnotes {__version__} /" + label
@@ -121,11 +135,14 @@ class Handler(BaseHTTPRequestHandler):
             entry = bundles[int(ident)]
             name = entry["internal_id"].rsplit("/", 1)[1]
             try:
-                cat = getattr(self.server, "jp_catalogs", {}).get((region.name, language))
+                cat = self.server.jp_catalogs.get((region.name, language))
+                path = remote_path(entry["internal_id"])
                 if cat is not None:
                     data = cat.fetch(Bundle(int(ident), entry["internal_id"], name, True)).read_bytes()
+                elif path is None:
+                    raise ValueError(f"{entry['internal_id']}: not a remote bundle")
                 else:
-                    with urlopen(region.cdn + remote_path(entry["internal_id"]), timeout=60) as response:
+                    with urlopen(region.cdn + path, timeout=60) as response:
                         data = decrypt(response.read(), name, self.server.bundle_key)
             except (GameApiError, ConfigError, ValueError):
                 self.send_error(502, "Resource could not be downloaded")
@@ -160,12 +177,7 @@ class Handler(BaseHTTPRequestHandler):
 def serve(regions: list[Region], bundle_key: BundleKey, cache: Path, port: int, host: str = "127.0.0.1") -> None:
     """Browse the catalogs of `regions` and download decrypted bundles on `host:port` (catalogs cached under
     <cache>/catalogs/<region>/)."""
-    server = ThreadingHTTPServer((host, port), Handler)
-    server.regions = {r.name: r for r in regions}
-    server.bundle_key = bundle_key
-    server.cache = Path(cache)
-    server.catalogs = {}
-    server.jp_catalogs = {}
+    server = Server((host, port), regions, bundle_key, cache)
     print(f"nnnotes catalog browse: serving on {host}:{port}", flush=True)
     try:
         server.serve_forever()

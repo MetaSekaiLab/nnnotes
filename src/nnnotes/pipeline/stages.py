@@ -237,7 +237,8 @@ def execute(task: Task, store, stages: dict[str, Stage], *, force: bool = False)
     doc = contract.result(task, out.artifacts, out.items)
     store.commit(doc)
     own = time.process_time() - cpu
-    child = None if children is None else max(0.0, children_cpu() - children)
+    now = children_cpu()
+    child = None if children is None or now is None else max(0.0, now - children)
     cost = {
         "schema": contract.COST,
         "key": task.key,

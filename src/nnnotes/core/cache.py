@@ -28,6 +28,7 @@ import threading
 from collections import OrderedDict
 from importlib import metadata
 from pathlib import Path
+from typing import Any
 
 DISK_MAGIC = b"NNC1"
 DEFAULT_MEMORY_MB = 128
@@ -169,7 +170,7 @@ class Bucket:
         budget = _settings["memory"]
         return budget // 4 if self._max_item is None else min(self._max_item, budget)
 
-    def get(self, k: str):
+    def get(self, k: str) -> Any:
         """The value stored under `k`, or None."""
         if not _settings["enabled"]:
             return None

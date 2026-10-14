@@ -32,11 +32,11 @@ def usm_asset(cat: Catalog, key: str) -> tuple[dict, Path]:
 
     info, raw = None, None
     for e in cat.dependencies(key):
-        iid = e["internal_id"]
-        if remote_path(iid) is None:
+        if remote_path(e["internal_id"]) is None:
             continue
-        if iid.endswith(".bundle"):
-            env = UnityPy.load(str(cat.fetch(cat.as_bundle(e))))
+        bundle = cat.as_bundle(e)
+        if bundle is not None:
+            env = UnityPy.load(str(cat.fetch(bundle)))
             for o in env.objects:
                 if o.type.name == "MonoBehaviour":
                     tt = o.read_typetree()

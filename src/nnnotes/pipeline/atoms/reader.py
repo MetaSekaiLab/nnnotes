@@ -15,12 +15,15 @@ MeshHandler.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from .. import contract
 from . import estimate
 from .mesh import CHANNELS, RAW_LAYOUT_SINCE, MeshInput, Submesh
 from .texture import TextureInput
+
+if TYPE_CHECKING:
+    from UnityPy.files import ObjectReader
 
 
 @dataclass(frozen=True)
@@ -40,24 +43,31 @@ class ObjectInfo:
 class BundleView(Protocol):
     def files(self) -> list[str]:
         """Serialized file names, in bundle order."""
+        ...
 
     def objects(self) -> list[ObjectInfo]:
         """Every object, file by file in bundle order, each file's objects in stored order."""
+        ...
 
     def raw(self, obj: ObjectInfo) -> bytes:
         """The object's serialized bytes."""
+        ...
 
     def typetree(self, obj: ObjectInfo) -> dict:
         """The object read through its typetree, fields in stored order."""
+        ...
 
     def container(self) -> list[tuple[str, str, int]]:
         """(container path, serialized file, path id) of every container entry, in stored order."""
+        ...
 
     def externals(self, file: str) -> list[str]:
         """The paths of a serialized file's externals (PPtr file id i names externals[i - 1])."""
+        ...
 
     def unity_version(self, file: str) -> str:
         """The Unity version a serialized file was written by."""
+        ...
 
     def texture_input(self, obj: ObjectInfo) -> TextureInput: ...
 
@@ -208,7 +218,7 @@ class UnityBundle:
     def __init__(self, env):
         self.env = env
         self._files = {f.name: f for f in self.env.assets}
-        self._readers: dict[tuple[str, int], object] = {}
+        self._readers: dict[tuple[str, int], ObjectReader] = {}
         self._infos: list[ObjectInfo] = []
         for name, f in self._files.items():
             for pid, r in f.objects.items():

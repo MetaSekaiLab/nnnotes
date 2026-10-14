@@ -69,7 +69,14 @@ def decode(inp: TextureInput):
         )
     try:
         return parse_image_data(
-            inp.data, inp.width, inp.height, fmt, tuple(inp.version), inp.platform, inp.platform_blob, True
+            inp.data,
+            inp.width,
+            inp.height,
+            fmt,
+            tuple(inp.version),
+            inp.platform,
+            inp.platform_blob,  # pyright: ignore[reportArgumentType]  (UnityPy reads the blob's bytes)
+            True,
         )
     except NotImplementedError as e:
         raise Unsupported("unsupported.texture.format", str(e)) from None

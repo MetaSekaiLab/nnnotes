@@ -43,7 +43,7 @@ import json
 import re
 import string
 from collections import OrderedDict
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from importlib import resources
 from pathlib import Path
@@ -112,10 +112,12 @@ class Addresses(Protocol):
 
     def keys(self, prefix: str = "") -> list[str]:
         """The catalog keys starting with `prefix`, sorted."""
+        ...
 
     def objects(self, key: str) -> list[Obj] | None:
         """The objects under `key` in the order its bundle stores them (None: not a catalog key; []: a key whose
         container has no census object)."""
+        ...
 
 
 class AddressIndex:
@@ -215,8 +217,9 @@ class Recorder:
 
 # ---------------------------------------------------------------- master tables
 class Tables(Protocol):
-    def __getitem__(self, name: str) -> list[dict]:
+    def __getitem__(self, name: str, /) -> list[dict]:
         """The rows of a master table (KeyError when there is no such table)."""
+        ...
 
 
 def table_rows(data: bytes) -> list[dict]:
@@ -248,7 +251,7 @@ class MasterTables:
 def load_rules(path=None) -> dict:
     """The view rules: `path`, else the package's viewrules.json; checked (check_rules)."""
     if path is None:
-        text = resources.files(__package__).joinpath(RULES_FILE).read_text(encoding="utf-8")
+        text = resources.files("nnnotes.pipeline").joinpath(RULES_FILE).read_text(encoding="utf-8")
     else:
         text = Path(path).read_text(encoding="utf-8")
     rules = json.loads(text)
@@ -463,7 +466,7 @@ def resolve(index: Addresses, address: str, expect=ANY) -> dict:
     missing."""
     key, sub = parse_address(address)
     objs = index.objects(key)
-    out = {"address": address}
+    out: dict = {"address": address}
     if not objs:
         out.update(status="missing-key", detail="not a catalog key" if objs is None else "no census objects")
         return out
@@ -679,7 +682,7 @@ def _prefix_pattern(p: str) -> tuple[str, re.Pattern]:
     return literal, re.compile(re.escape(p).replace(r"\*", "[^/]+"))
 
 
-def prefix_keys(index: Addresses, prefixes: list[str], exclude: list[str] = ()) -> list[str]:
+def prefix_keys(index: Addresses, prefixes: list[str], exclude: Sequence[str] = ()) -> list[str]:
     """The catalog keys matching a prefix (`*` stands for one path segment) and no exclusion, sorted."""
     out = set()
     for p in prefixes:
@@ -810,7 +813,9 @@ def diff(old: dict, new: dict) -> dict:
             kind = "moved"
         else:
             kind = "object"
-        row, role, each, _ = x or y
+        entry = x or y
+        assert entry is not None  # the states differ: the entry is in one of the documents
+        row, role, each, _ = entry
         c = {"row": row, "role": role, "kind": kind, "old": sx, "new": sy}
         if each:
             c["each"] = each

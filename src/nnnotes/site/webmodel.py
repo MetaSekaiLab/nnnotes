@@ -102,11 +102,16 @@ NAME_FIELDS = ("character", "names", "label")  # listing fields from the master 
 
 
 # ---------------------------------------------------------------- models and ids
-def model_id(key: str) -> str:
-    """The id of a model key: its <name>."""
+def _model_key(key: str) -> re.Match[str]:
     m = MODEL_KEY.fullmatch(key)
     if not m:
         raise ValueError(f"{key}: not a Live2D model key (Character/Live2D/<group>/<name>/model/<name>)")
+    return m
+
+
+def model_id(key: str) -> str:
+    """The id of a model key: its <name>."""
+    m = _model_key(key)
     if not MODEL_ID.fullmatch(m["name"]):
         raise ValueError(f"{key}: model name {m['name']!r} is not URL-safe")
     return m["name"]
@@ -349,7 +354,7 @@ def model_facts(key: str, summary: dict, names: dict | None = None) -> dict:
     """What a model listing needs, from the key and the export summary, plus the NAME_FIELDS of `names` (an entry
     of model_names)."""
     facts = {
-        "group": MODEL_KEY.fullmatch(key)["group"],
+        "group": _model_key(key)["group"],
         "canvas": summary["canvas"],
         "textures": len(summary["textures"]),
         "nodes": summary["nodes"],

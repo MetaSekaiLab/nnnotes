@@ -64,7 +64,7 @@ from ..source.apkset import ApkSet
 from ..source.config import ConfigError, usable_cpus, use
 from ..source.session import Session
 from . import common
-from .common import nonnegative, print_json
+from .common import nonnegative, print_json, usage
 
 GIB = 1 << 30
 LAYOUT_NAMES = ("original", "cas")
@@ -466,7 +466,7 @@ class Workspace:
         try:
             self.selection = parse_selection(getattr(args, "select", None))
         except ValueError as e:
-            args.usage(str(e))
+            usage(args, str(e))
         self.installed = installed()
         self.calibration = load_calibration(self.root)
         self.scheduled = calibrated(self.installed.stages, self.calibration)  # the stages with calibrated costs
@@ -474,7 +474,7 @@ class Workspace:
         if self.version.get("region"):
             self.cfg = cfg.for_region(self.version["region"])
             self.apk = self.cfg.path("paths", "apk")
-        self._index = None
+        self._index: dict | None = None
         self._problems: list = []
         self._apk_names: set | None = None
         self._facts: dict = {}
@@ -495,13 +495,13 @@ class Workspace:
                 except ValueError:
                     v = self.db.get(ref, self.cfg.get("catalog", "region"), self.cfg.get("catalog", "language"))
             except (KeyError, ValueError) as e:
-                self.args.usage(f"--stored-catalog {ref}: {e.args[0] if e.args else e}")
+                usage(self.args, f"--stored-catalog {ref}: {e.args[0] if e.args else e}")
             remote, apk = self.db.catalog_bytes(v)
             return v, remote, apk
         cat = Session(self.cfg).catalog(bundles=False)
         src = cat.sources()
         remote, apk = src["remote"], src.get("apk")
-        source = cat.source.to_dict() if getattr(cat, "source", None) else None
+        source = cat.source.to_dict() if cat.source is not None else None
         vid = catalogdb.version_id(contract.sha256(remote), contract.sha256(apk) if apk is not None else None, source)
         v = next((x for x in self.db.versions() if x["id"] == vid), None)
         if v is None:
@@ -512,7 +512,7 @@ class Workspace:
                 language=self.cfg.get("catalog", "language"),
                 apk_version_name=catalogdb.apk_version(self.apk),
                 source=source,
-                resource_version=source["version"] if source else getattr(cat, "resource_version", None),
+                resource_version=source["version"] if source else cat.resource_version,
             )
         return v, remote, apk
 
@@ -599,8 +599,9 @@ class Workspace:
         want = avail if spec == "all" else sorted({"view." + v.strip() for v in spec.split(",") if v.strip()})
         unknown = [w[5:] for w in want if w not in avail]
         if unknown:
-            self.args.usage(
-                f"--views: no view {', '.join(unknown)} (views: {', '.join(a[5:] for a in avail) or 'none installed'})"
+            usage(
+                self.args,
+                f"--views: no view {', '.join(unknown)} (views: {', '.join(a[5:] for a in avail) or 'none installed'})",
             )
         if want and self.master() is None:
             raise self.cfg.missing(*self.cfg.master(self.cfg.get("catalog", "region")))
@@ -616,20 +617,20 @@ class Workspace:
         level = getattr(self.args, "png_level", None)
         if level is not None:
             if not 0 <= level <= 9:
-                self.args.usage(f"--png-level {level}: expected 0 to 9")
+                usage(self.args, f"--png-level {level}: expected 0 to 9")
             takers = [n for n in pipeline if "png" in stages[n].PARAMS]
             if not takers:
-                self.args.usage("--png-level: no stage of the pipeline encodes PNG")
+                usage(self.args, "--png-level: no stage of the pipeline encodes PNG")
             for n in takers:
                 base = stages[n].PARAMS["png"]
                 out.setdefault(n, {})["png"] = {**(base if isinstance(base, dict) else {}), "level": level}
         level = getattr(self.args, "flac_level", None)
         if level is not None:
             if not 0 <= level <= 12:
-                self.args.usage(f"--flac-level {level}: expected 0 to 12")
+                usage(self.args, f"--flac-level {level}: expected 0 to 12")
             takers = [n for n in pipeline if "flac" in stages[n].PARAMS]
             if not takers:
-                self.args.usage("--flac-level: no stage of the pipeline encodes FLAC")
+                usage(self.args, "--flac-level: no stage of the pipeline encodes FLAC")
             for n in takers:
                 out.setdefault(n, {})["flac"] = {**stages[n].PARAMS["flac"], "level": level}
         only = getattr(self.args, "only_class", None)
@@ -637,8 +638,10 @@ class Workspace:
             classes = sorted({c.strip() for c in only.split(",") if c.strip()})
             takers = [n for n in pipeline if "classes" in stages[n].PARAMS]
             if not classes or not takers:
-                self.args.usage(
-                    "--only-class: " + ("no class given" if not classes else "no stage of the pipeline selects classes")
+                usage(
+                    self.args,
+                    "--only-class: "
+                    + ("no class given" if not classes else "no stage of the pipeline selects classes"),
                 )
             for n in takers:
                 out.setdefault(n, {})["classes"] = classes
@@ -646,7 +649,7 @@ class Workspace:
             try:
                 stages[n].normalize(p)
             except ValueError as e:
-                self.args.usage(str(e))
+                usage(self.args, str(e))
         return out
 
     def workers(self) -> int:
@@ -727,7 +730,7 @@ class Workspace:
             rel = apk_rel(loc["internalId"])
         return prefix + "raw/" + rel.lstrip("/")
 
-    def _inputs(self, kind: str, entries: list[dict], fetch: bool) -> dict:
+    def _inputs(self, kind: str, entries: list[dict], fetch: bool) -> Inputs:
         from ..pipeline.catalogdb import by_id
 
         locs = by_id(self.index())
@@ -839,7 +842,7 @@ class Workspace:
         if doc is None:
             runs = sorted(p.name[:-5] for p in (self.root / "runs").glob("*.json") if p.name.startswith(since))
             if len(runs) != 1:
-                self.args.usage(f"--since {since}: {'no run' if not runs else f'{len(runs)} runs'} with this id")
+                usage(self.args, f"--since {since}: {'no run' if not runs else f'{len(runs)} runs'} with this id")
             doc = self.store.run(runs[0])
         return doc
 
@@ -864,7 +867,7 @@ class Workspace:
             hits = [(n["id"], n["key"]) for n in p.doc["nodes"] if n["status"] == "hit" and self._output(n["stage"])]
             placed = self.layout_input(dict(hits))
             for tid, key in hits:
-                placed.add(tid, self.store.result(key))
+                placed.add(tid, self.store.committed(key, tid))
             for name, d in layout_dirs(Path(out), layouts).items():
                 entries, _ = self.layout_entries(name, placed, store_derived=False)
                 p.doc["summary"]["layouts"][name] = layout.diff(d, entries)
@@ -1140,7 +1143,7 @@ def cmd_export(args, cfg):
     try:
         names = parse_layouts(args.layout)
     except ValueError as e:
-        args.usage(str(e))
+        usage(args, str(e))
     use(cfg)  # the tools the atoms name are part of the keys
     ws = Workspace(args, cfg)
     pipeline = ws.pipeline()
@@ -1162,11 +1165,11 @@ def cmd_export(args, cfg):
         try:
             placement = layout.probe(out, ws.root / "cas" / "sha256", link_mode(args, cfg))
         except layout.LayoutError as e:
-            args.usage(str(e))
+            usage(args, str(e))
     if args.explain:
         for line in ws.explain(pipeline, params, orch, names, placement):
             print(line, file=sys.stderr)
-    if args.dry_run:
+    if placement is None:  # --dry-run
         sys.stdout.write(ws.plan(pipeline, params, out=out, layouts=names).text())
         return
     ws.run_index()
@@ -1301,7 +1304,7 @@ def cmd_plan(args, cfg):
         try:
             layouts = parse_layouts(args.layout)
         except ValueError as e:
-            args.usage(str(e))
+            usage(args, str(e))
     use(cfg)  # the tools the atoms name are part of the keys
     ws = Workspace(args, cfg)
     pipeline = ws.pipeline()
@@ -1341,26 +1344,26 @@ def why(ws: Workspace, p, tid: str, since=None) -> dict:
     """Why a task of a plan has its status: its reasons, and its key parts beside those of the previous run."""
     node = next((n for n in p.doc["nodes"] if n["id"] == tid), None)
     if node is None:
-        ws.args.usage(f"--why {tid}: no task with this id in the plan")
+        usage(ws.args, f"--why {tid}: no task with this id in the plan")
     new = None
     if node["key"] is not None:
         t = next((t for t in p.tasks if t.key == node["key"]), None)
         doc = None if t is not None else ws.store.result(node["key"])
         new = t.key_parts() if t is not None else (doc["keyParts"] if doc else None)
     prev = ws.previous(since)
-    old_task = next((t for t in (prev or {}).get("tasks", []) if t["id"] == tid), None)
-    old = None
-    if old_task is not None and old_task.get("key"):
-        doc = ws.store.result(old_task["key"])
-        old = doc["keyParts"] if doc else None
+    old_task = next((t for t in prev.get("tasks", []) if t["id"] == tid), None) if prev is not None else None
+    previous = old = None
+    if prev is not None and old_task is not None:
+        previous = {"run": prev["id"], "key": old_task.get("key"), "status": old_task["status"]}
+        if old_task.get("key"):
+            doc = ws.store.result(old_task["key"])
+            old = doc["keyParts"] if doc else None
     return {
         "task": tid,
         "status": node["status"],
         "key": node["key"],
         "reasons": node["reasons"],
-        "previous": {"run": prev["id"], "key": old_task.get("key"), "status": old_task["status"]}
-        if old_task is not None
-        else None,
+        "previous": previous,
         "keyParts": {"old": old, "new": new},
     }
 
@@ -1403,7 +1406,7 @@ def cmd_run_stage(args, cfg):
         try:
             tasks.append(Task.from_json(contract.loads(f.read_bytes())))
         except OSError as e:
-            args.usage(f"{f}: {e.strerror or e}")
+            usage(args, f"{f}: {e.strerror or e}")
         except (IncompatibleTask, ValueError) as e:
             problems.append(f"{f}: {e}")
     inst = installed(sorted({t.stage for t in tasks}))

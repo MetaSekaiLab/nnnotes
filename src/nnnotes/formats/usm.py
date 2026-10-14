@@ -309,7 +309,7 @@ def video_facts(s: Stream) -> dict:
     if not h and s.codec == "vp9":
         w, ht, rate, scale, frames = struct.unpack_from("<HHIII", s.data, 12)
         return {"codec": "vp9", "width": w, "height": ht, "frameRate": [rate, scale], "frames": frames}
-    facts = {"codec": s.codec}
+    facts: dict = {"codec": s.codec}
     for k, name in (
         ("width", "width"),
         ("height", "height"),
@@ -375,7 +375,7 @@ def hca_info(hca: bytes) -> dict:
         raise ValueError(f"not an HCA stream: {hca[:4].hex()}")
     size = struct.unpack_from(">H", hca, 6)[0]
     head = bytes(b & 0x7F for b in hca[:size])
-    info = {"codec": "hca"}
+    info: dict = {"codec": "hca"}
     i = head.find(b"fmt\x00")
     if i < 0:
         raise ValueError("HCA header without fmt")

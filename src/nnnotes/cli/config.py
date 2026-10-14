@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 from ..source.config import DEFAULT_FILE, ENV_CONFIG, ConfigError, config_files, find_file, user_file
-from .common import command, group, note, print_json, report, write
+from .common import command, group, note, print_json, report, usage, write
 
 
 def _tty() -> bool:
@@ -46,7 +46,7 @@ def _value(args, name: str, text: str, stdin_used: list):
     setting, section = configfile.resolve(name)
     if text == "-":
         if stdin_used:
-            args.usage("only one value can be read from standard input")
+            usage(args, "only one value can be read from standard input")
         stdin_used.append(name)
         if setting.secret and _tty():
             import getpass
@@ -77,7 +77,7 @@ def cmd_init(args, cfg):
     for item in args.set or []:
         name, sep, text = item.partition("=")
         if not sep:
-            args.usage(f"--set {name}: give it as SECTION.KEY=VALUE")
+            usage(args, f"--set {name}: give it as SECTION.KEY=VALUE")
         section, key, value = _value(args, name.strip(), text, stdin_used)
         values.append((section, key, value))
         region = section.split(".", 1)[1] if section.startswith("servers.") else None

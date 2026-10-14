@@ -336,7 +336,7 @@ def region_meta(cfg: Config, regions: list[str]) -> list[dict]:
     client languages (`[servers.<region>] languages`)."""
     out = []
     for r in regions:
-        rec = {"id": r, "name": cfg.get(f"servers.{r}", "name") or r}
+        rec: dict = {"id": r, "name": cfg.get(f"servers.{r}", "name") or r}
         langs = cfg.get_list(f"servers.{r}", "languages")
         if langs:
             rec["languages"] = langs

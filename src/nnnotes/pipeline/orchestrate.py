@@ -31,11 +31,15 @@ import traceback
 from collections import Counter
 from dataclasses import dataclass, field
 from multiprocessing.connection import wait
+from typing import TYPE_CHECKING
 
 from ..source.config import ConfigError
 from . import contract
 from .contract import Task
 from .stages import Env, Pending, Stage, describe, execute
+
+if TYPE_CHECKING:
+    from .store import Store
 
 WORKER_BYTES = 70 << 20  # resident memory of an idle worker process (interpreter and imports), per worker
 # failure codes of tasks (failed items carry the codes of their stages)
@@ -247,7 +251,7 @@ class Run:
     The reports (summary, failures, coverage) come from one reading of every result (scan), kept while the tasks
     stay the same."""
 
-    store: object
+    store: Store
     context: dict
     selection: list
     params: dict
@@ -263,7 +267,7 @@ class Run:
         for tid in sorted(self.tasks):
             t = self.tasks[tid]
             if t["status"] != "failed":
-                yield tid, self.store.result(t["key"])
+                yield tid, self.store.committed(t["key"], tid)
 
     def scan(self, visit=None, census=None) -> None:
         """Read every result once, by task id, for the reports; `visit(task id, result)` sees each as well (what
@@ -285,6 +289,7 @@ class Run:
     def _digest(self) -> Digest:
         if self._scan is None or self._scan[0] != self._tasks_now():
             self.scan()
+        assert self._scan is not None
         return self._scan[1]
 
     def failures(self) -> list[dict]:
@@ -370,6 +375,8 @@ class Digest:
         return self._files.setdefault(file, len(self._files)) * _PATH_IDS + n % _PATH_IDS
 
     def add(self, tid: str, doc: dict) -> None:
+        if self.settled is not None:
+            raise RuntimeError("the digest is settled: no result can be added")
         self.artifacts += len(doc.get("artifacts", ()))
         best, kinds = self.best, self.kinds
         for it in doc["items"]:
@@ -393,7 +400,7 @@ class Digest:
     def settle(self, census: dict | None) -> None:
         """Make the coverage document for `census` now and drop the per-object state (no object can be added)."""
         self.settled = (census, self.coverage(census))
-        self.best = self.kinds = self.reasoned = self._files = None
+        self.best, self.kinds, self.reasoned, self._files = {}, {}, {}, {}
 
     def coverage(self, census: dict | None = None) -> dict:
         """The coverage document (nnnotes.coverage/1): per class the count of every item status and the census
@@ -516,7 +523,7 @@ class Orchestrator:
             for name in pipeline:
                 self._stage(self.stages[name], norm[name], env, force, run)
         except ConfigError as e:
-            e.run = run  # what ran before the stop: its results stay valid
+            e.run = run  # pyright: ignore[reportAttributeAccessIssue]  (what ran before the stop: its results stay valid)
             raise
         finally:
             self.close()
@@ -633,6 +640,7 @@ class Orchestrator:
                     if w.conn not in ready and w.proc.sentinel not in ready:
                         continue
                     t = w.task
+                    assert t is not None  # a busy worker has its task
                     reply = None
                     try:
                         if w.conn.poll():

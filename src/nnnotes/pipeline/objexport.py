@@ -67,6 +67,7 @@ from collections import defaultdict
 from functools import cache
 from pathlib import Path
 from types import SimpleNamespace
+from typing import TYPE_CHECKING, cast
 
 from . import census as census_mod
 from . import contract, link
@@ -74,6 +75,12 @@ from .atoms import ATOMS as ATOM_REGISTRY
 from .atoms import Impl, Unsupported, atom_id, resolve
 from .contract import Cost, IncompatibleTask, Input
 from .stages import Output, Pending, Stage
+
+if TYPE_CHECKING:  # the exporter's base; exporter_type combines them when UnityPy is loaded
+    from ..unity.export import Exporter as _ExporterBase
+    from ..unity.reader import SceneGraph
+else:
+    _ExporterBase = object
 
 EXPORT, CROP, CENSUS, SCRIPTS = "unity.export", "sprite.crop", "unity.census", "link.scripts"
 SCRIPTS_TASK = contract.task_id(SCRIPTS, "all")
@@ -159,7 +166,7 @@ def converter_id(name: str) -> str:
 
 def converters_for(classes) -> list[str]:
     """The converters a bundle holding objects of `classes` may use."""
-    out = set(ALWAYS)
+    out: set[str] = set(ALWAYS)
     for c in classes:
         out.update(CLASS_CONVERTERS.get(c, ()))
     return sorted(out)
@@ -297,13 +304,14 @@ class _Script:
 
 
 # ---------------------------------------------------------------- the exporter
-class RefExporter:
+class RefExporter(_ExporterBase):
     """unity.export on one bundle. Combined with export.Exporter (exporter_type), whose material, clip and controller
     code runs here in reference mode: `ref` gives $ref values, `deref` resolves inside the bundle only (a MonoScript
     of another bundle from the script table), and MonoBehaviour classes come from the task's script table."""
 
     def __init__(self, view, task, store, fns: dict):
-        super().__init__(None, Path("."), class_of=self._script_name)
+        # no catalog: the objects come from the task's bundle view
+        super().__init__(None, Path("."), class_of=self._script_name)  # pyright: ignore[reportArgumentType]
         self.view, self.task, self.store, self.fns = view, task, store, fns
         self.blob_min = int(task.params["blobMin"])
         self.png_level = int(task.params["png"]["level"])
@@ -329,7 +337,7 @@ class RefExporter:
         self.children_memo: dict[int, tuple] = {}
         self.heads: dict[int, tuple] = {}
         self.atlas_entries: dict[tuple, list] = {}
-        self.graphs: dict[str, object] = {}
+        self.graphs: dict[str, SceneGraph] = {}
         self.member: dict[tuple, tuple] = {}
         self.comp_go: dict[tuple, int] = {}
         self.roots: list[tuple] = []
@@ -519,9 +527,9 @@ class RefExporter:
         self.special_memo[id(node)] = (node, r)
         return r
 
-    def tree(self, owner, tt: dict):
+    def tree(self, owner, tt: dict) -> dict:
         """The object JSON of `owner`'s typetree `tt` (read with owner's type tree)."""
-        return self._walk(owner, owner._get_typetree_node(), tt, "")
+        return cast(dict, self._walk(owner, owner._get_typetree_node(), tt, ""))
 
     def _walk(self, owner, node, v, path: str):
         if not self._special(node):
@@ -1210,12 +1218,13 @@ class RefExporter:
         """The `acb` artifact of a SplitAcbData: its chunk TextAssets (of this bundle) joined and unmasked."""
         from ..formats import cri
 
-        owner, parts = self.readers[key], []
+        owner, parts, chunks = self.readers[key], [], []
         for c in acb["chunks"]:
             k = self._target(owner, c) if isinstance(c, dict) else None
             if k is None or k not in self.info or self.info[k].class_name != "TextAsset":
                 raise ValueError(f"cue sheet {acb['cueSheet']}: chunk {c} is not a TextAsset of the bundle")
             parts.append(cri.text_bytes(self._tt(k).get("m_Script", "")))
+            chunks.append(k)
         data = cri.split_acb(parts, acb["cueSheet"])
         facts = {"cueSheet": _label(acb["cueSheet"]), "layout": SPLIT_ACB, "chunks": len(parts)}
         return self._emit(
@@ -1226,7 +1235,7 @@ class RefExporter:
             ACB_KIND,
             "acb",
             facts,
-            refs=[{"rel": "chunk", "object": contract.object_id(*self._target(owner, c))} for c in acb["chunks"]],
+            refs=[{"rel": "chunk", "object": contract.object_id(*k)} for k in chunks],
         )[0]
 
     def conv_generic(self, info) -> list:

@@ -253,7 +253,7 @@ def extract(
         loc = textstyle.localize_text(
             n["path"], t["m_fontAsset"]["name"], t["m_sharedMaterial"]["material"], swap, lang, mode
         )
-        shown = text_of.get(n["path"], t["m_text"])
+        shown = text_of[n["path"]] if n["path"] in text_of else t["m_text"]
         texts[n["path"]] = {"localized": loc, "text": shown, "setByInitialize": n["path"] in text_of}
         if styles:
             record = styles.record(n["path"], t, lt)
@@ -268,7 +268,7 @@ def extract(
         coverage, materials, font_out = _game_fonts(ex, fontset, texts, chars_by_font, packer)
     else:  # name stubs: no font data, no atlases
         coverage, materials = None, {}
-        font_out = {f: {"name": f, "note": FONT_NOTE} for f in sorted(chars_by_font)}
+        font_out: dict = {f: {"name": f, "note": FONT_NOTE} for f in sorted(chars_by_font)}
 
     # -- sprites: drawn Images, the difficulty icons, the jacket ----------------------------------------
     replaced = {r["gameObject"] for f in ("_jacketImages", "_difficultyImages") for r in canvas[f]}
@@ -334,7 +334,8 @@ def extract(
     # -- the root Animator's controller (evidence) -----------------------------------------------------
     an = _comp(by_path[f"{CANVAS}/root"][0], "Animator")
     controller = an["m_Controller"] if an else None
-    tmp_settings = player.names_in(player.resource("TMP Settings"), player.mono(player.resource("TMP Settings")))
+    tmp = player.resource("TMP Settings")
+    tmp_settings = {k: player.names_in(tmp, v) for k, v in player.mono(tmp).items()}
 
     doc = {
         "about": f"Live start canvas (Live/UILiveStartCanvas, LightWeight mode): what livescene/scene.json lacks, "

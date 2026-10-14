@@ -166,12 +166,12 @@ def judgement_type(op: int, crit: bool) -> int:
 MATHF_EPSILON = f32(1.401298e-45)  # Mathf.Epsilon (denormal min; 1.17549435e-38 if flush-to-zero is on, assumed off)
 
 
-def mathf_approximately(a: float, b: float) -> bool:
+def mathf_approximately(a: float | np.floating, b: float | np.floating) -> bool:
     """UnityEngine.Mathf.Approximately (inlined in IsSamePosition / EqualMusicInfoPosition)."""
-    a, b = f32(a), f32(b)
-    m = max(abs(a), abs(b))
+    x, y = f32(a), f32(b)
+    m = max(abs(x), abs(y))
     tol = max(f32(m * f32(1e-6)), f32(MATHF_EPSILON * f32(8.0)))
-    return bool(abs(f32(b - a)) < tol)
+    return bool(abs(f32(y - x)) < tol)
 
 
 # --------------------------------------------------------------------------- SsRoot (ReadNote/ReadEvents)

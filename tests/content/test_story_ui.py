@@ -427,6 +427,8 @@ def test_sprite_asset_record():
         def deref(self, o, ref):
             return FakeObj(sheet) if ref == "sheet" else ref
 
+        referent = deref
+
         def material(self, o):
             return {"material": f"{o} record"}
 

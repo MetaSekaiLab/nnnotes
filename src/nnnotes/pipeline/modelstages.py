@@ -274,7 +274,8 @@ class Live2DStage(Stage):
         cat = TaskCatalog.from_task(task, store)
         arts = []
         with tempfile.TemporaryDirectory(prefix="nnnotes-live2d-") as d:
-            summary = live2d.extract_model(cat, task.subject, Path(d))
+            # TaskCatalog answers the catalog calls of the model extractor
+            summary = live2d.extract_model(cat, task.subject, Path(d))  # pyright: ignore[reportArgumentType]
             for rel, p in _tree(Path(d)):
                 kind = live2d_kind(rel)
                 facts = {k: summary[k] for k in sorted(summary)} if kind == "live2d.model3" else {}
@@ -422,7 +423,7 @@ class SpineStage(Stage):
         written: dict[str, bytes] = {}
         try:
             sf = env.get_cab(file)
-            o = sf.objects[pid] if sf is not None and pid in getattr(sf, "objects", {}) else None
+            o = getattr(sf, "objects", {}).get(pid)
             if o is None:
                 raise KeyError(f"{oid} is not in the task's bundles")
             record = spot.write_skeleton(o, written.__setitem__)

@@ -21,8 +21,10 @@ import re
 import struct
 from importlib import resources
 from pathlib import Path
+from typing import cast
 
 import UnityPy
+from UnityPy.files import ObjectReader, SerializedFile
 from UnityPy.helpers.TypeTreeNode import TypeTreeNode
 
 from ..source.apkset import MANIFEST_IN_APK, ApkSet, manifest_version_name
@@ -48,7 +50,7 @@ def typetree_key(assembly: str, namespace: str, cls: str) -> str:
 
 def typetree_file(unity_version: str):
     """The embedded typetree file of a Unity version (an importlib.resources Traversable; it may not exist)."""
-    return resources.files(__package__).joinpath("typetrees", f"{unity_version}.json")
+    return resources.files("nnnotes.unity").joinpath("typetrees", f"{unity_version}.json")
 
 
 def load_typetrees(unity_version: str) -> dict | None:
@@ -149,11 +151,20 @@ class PlayerData:
             raise KeyError(f"shader {name!r}{f' in {file}' if file else ''}: {len(hits)} objects")
         return hits[0]
 
-    def deref(self, owner, pptr: dict):
+    def referent(self, owner, pptr: dict) -> ObjectReader:
+        """The object a reference that must not be null names (KeyError naming `owner` for a null one)."""
+        o = self.deref(owner, pptr)
+        if o is None:
+            raise KeyError(f"{owner.type.name} {owner.path_id}: a required reference is null")
+        return o
+
+    def deref(self, owner, pptr: dict) -> ObjectReader | None:
+        """The object `pptr` names, in `unity default resources` or through `owner`'s file; None if null."""
         if not pptr["m_PathID"]:
             return None
         if external_path(owner, pptr) == DEFAULT_RESOURCES:
-            return self.defaults.files[next(iter(self.defaults.files))].objects[pptr["m_PathID"]]
+            defaults = cast(SerializedFile, next(iter(self.defaults.files.values())))
+            return defaults.objects[pptr["m_PathID"]]
         return deref(owner, pptr)
 
     def script(self, o) -> tuple[str, str, str]:
@@ -162,7 +173,7 @@ class PlayerData:
         if hit is not None and hit[0] is o:
             return hit[1]
         fid, pid = struct.unpack_from("<iq", o.get_raw_data(), 16)
-        ms = self.deref(o, {"m_FileID": fid, "m_PathID": pid}).read()
+        ms = self.referent(o, {"m_FileID": fid, "m_PathID": pid}).read()
         r = ms.m_AssemblyName, ms.m_Namespace, ms.m_ClassName
         self._scripts[id(o)] = (o, r)
         return r
@@ -278,10 +289,14 @@ class PlayerData:
             if name not in renderers:
                 feats = []
                 for fp in tt["m_RendererFeatures"]:
-                    fo = self.deref(o, fp)
+                    fo = self.referent(o, fp)
                     asm, ns, cls = self.script(fo)
                     feats.append(
-                        {"class": f"{ns}.{cls}" if ns else cls, "assembly": asm, **self.names_in(fo, self.mono(fo))}
+                        {
+                            "class": f"{ns}.{cls}" if ns else cls,
+                            "assembly": asm,
+                            **{k: self.names_in(fo, v) for k, v in self.mono(fo).items()},
+                        }
                     )
                 tt["m_RendererFeatures"] = feats
                 pp = tt.get("postProcessData")

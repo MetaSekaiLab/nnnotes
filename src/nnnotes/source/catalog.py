@@ -13,8 +13,10 @@ import sys
 import threading
 import urllib.parse
 import urllib.request
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TypeAlias, TypeVar, cast
 
 from ..core.cache import write_atomic as _write_atomic
 from .addressables import REMOTE_PREFIX, BundleKey, decrypt, parse, parse_locations, relative_path, remote_path
@@ -27,6 +29,11 @@ LOCAL_PREFIX = "{UnityEngine.AddressableAssets.Addressables.RuntimePath}"
 APK_AA_DIR = "assets/aa/"  # + "Android/<bundle>"
 APK_CATALOG = "assets/aa/catalog.bin"
 APK_OFFSET_BASE = 1 << 40  # namespace for APK catalog entry offsets
+
+
+T = TypeVar("T")
+# a setting given as its value, or as a function that reads it when a file not in the cache needs it
+Lazy: TypeAlias = "T | Callable[[], T] | None"
 
 
 @dataclass(frozen=True)
@@ -86,15 +93,15 @@ class Catalog:
         catalog_bytes: bytes,
         cache_dir: Path,
         *,
-        cdn=None,
-        bundle_key=None,
+        cdn: Lazy[str] = None,
+        bundle_key: Lazy[BundleKey] = None,
         apk: Path | None = None,
         source=None,
         client=None,
         apk_catalog: bytes | None = None,
         resource_version: str | None = None,
     ):
-        self._settings = {"cdn": cdn, "bundle_key": bundle_key}
+        self._cdn, self._bundle_key = cdn, bundle_key
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.apk = Path(apk) if apk else None
@@ -160,8 +167,8 @@ class Catalog:
         language: str,
         cache_dir: Path,
         *,
-        cdn=None,
-        bundle_key=None,
+        cdn: Lazy[str] = None,
+        bundle_key: Lazy[BundleKey] = None,
         apk: Path | None = None,
         version: str = "main",
     ) -> Catalog:
@@ -177,11 +184,11 @@ class Catalog:
             cache_dir = cache_dir / "international" / hashlib.sha256(cdn.rstrip("/").encode()).hexdigest() / version
         cat = cache_dir / filename
         if not cat.exists():
-            cdn = _setting(cdn, cat.name)
-            if not cdn:
+            root = _setting(cdn, cat.name)
+            if not root:
                 raise FileNotFoundError(f"{cat} not cached and no CDN base given")
             cat.parent.mkdir(parents=True, exist_ok=True)
-            data = download(cdn.rstrip("/") + f"/asset/Android/{cat.name}")
+            data = download(root.rstrip("/") + f"/asset/Android/{cat.name}")
             parse(data)  # Never install a corrupt/error response as a reusable catalog.
             _write_atomic(cat, data)
         return cls(
@@ -193,15 +200,20 @@ class Catalog:
             resource_version=version if version != "main" else None,
         )
 
-    def _setting(self, name: str, needed_by: str):
-        """The `cdn` / `bundle_key` given to the catalog, its function called (once) now that `needed_by` needs it."""
-        v = self._settings[name] = _setting(self._settings[name], needed_by)
-        return v
+    def _cdn_for(self, needed_by: str) -> str | None:
+        """The `cdn` given to the catalog, its function called (once) now that `needed_by` needs it."""
+        self._cdn = _setting(self._cdn, needed_by)
+        return self._cdn
+
+    def _bundle_key_for(self, needed_by: str) -> BundleKey | None:
+        """The `bundle_key` given to the catalog, its function called (once) now that `needed_by` needs it."""
+        self._bundle_key = _setting(self._bundle_key, needed_by)
+        return self._bundle_key
 
     @property
     def cdn(self) -> str | None:
         """The CDN base as given (None while it is given as a function not called yet)."""
-        v = self._settings["cdn"]
+        v = self._cdn
         return None if callable(v) or not v else v.rstrip("/")
 
     @staticmethod
@@ -331,7 +343,7 @@ class Catalog:
             return dst
         if b.remote:
             url = self._url(b.internal_id)
-            key = self._setting("bundle_key", b.name)  # before the download: a missing key fails first
+            key = self._bundle_key_for(b.name)  # before the download: a missing key fails first
             data = self._download(url)
         else:
             if self.apk is None:
@@ -340,7 +352,7 @@ class Catalog:
             with ApkSet(self.apk) as z:
                 self.check_apk(z)
                 data = z.read(APK_AA_DIR + rel)
-            key = self._setting("bundle_key", b.name) if data[:7] != b"UnityFS" else None
+            key = self._bundle_key_for(b.name) if data[:7] != b"UnityFS" else None
         _write_atomic(dst, _unityfs(data, b.name, key))
         return dst
 
@@ -348,10 +360,13 @@ class Catalog:
         if self.source is not None:
             return self.source.url(internal_id)
         name = internal_id.rsplit("/", 1)[-1]
-        cdn = self._setting("cdn", name)
+        cdn = self._cdn_for(name)
         if not cdn:
             raise RuntimeError(f"{name} not cached and no CDN base given")
-        return cdn.rstrip("/") + remote_path(internal_id)
+        path = remote_path(internal_id)
+        if path is None:
+            raise ValueError(f"{internal_id}: not a remote location")
+        return cdn.rstrip("/") + path
 
     def _download(self, url):
         if self.source is not None:
@@ -408,7 +423,7 @@ class Catalog:
                 dst.parent.mkdir(parents=True, exist_ok=True)
                 self.check_apk(z)
                 data = z.read(names[0])
-                key = self._setting("bundle_key", name) if data[:7] != b"UnityFS" else None
+                key = self._bundle_key_for(name) if data[:7] != b"UnityFS" else None
                 _write_atomic(dst, _unityfs(data, name, key))
         return dst
 
@@ -463,11 +478,11 @@ def _urlopen(url: str, timeout: float) -> bytes:
         return r.read()
 
 
-def _setting(v, needed_by: str):
+def _setting(v: Lazy[T], needed_by: str) -> T | None:
     """`v`, or what it returns when it is a function; its ConfigError names `needed_by` (what is not cached)."""
     if not callable(v):
-        return v
+        return cast("T | None", v)
     try:
-        return v()
+        return cast("T", v())
     except ConfigError as e:
         raise ConfigError(f"{needed_by} is not in the cache: {e}") from None

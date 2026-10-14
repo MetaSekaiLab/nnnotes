@@ -32,8 +32,7 @@ def cmd_settings(args, cfg):
 def cmd_hca_key(args, cfg):
     from ..formats import crikey
 
-    cfg.require_path("paths", "apk")
-    k = crikey.find_key(Session(cfg).path("paths", "apk"))
+    k = crikey.find_key(Session(cfg).required_path("paths", "apk"))
     r = {"found": bool(k), "digits": len(str(k)) if k else None, "written": None}
     if args.write and k:
         d = Path(args.write)

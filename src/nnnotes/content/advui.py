@@ -78,6 +78,7 @@ values as the full atlas.
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from pathlib import Path
 
 from ..core.jsonio import write_json
@@ -364,6 +365,14 @@ def _ref_path(v) -> str | None:
     return v.get("gameObject") or v.get("transform")
 
 
+def _need_path(v) -> str:
+    """The node path of a serialized reference that must not be null (RuntimeError for a null one)."""
+    p = _ref_path(v)
+    if p is None:
+        raise RuntimeError(f"a required node reference is null ({v!r})")
+    return p
+
+
 def _plain(v, sprites: list):
     """A serialized value as plain data: a reference as its node path, a sprite as its name (its reference added to
     `sprites`), a ScriptableObject or material as its name, a texture as its name; containers element-wise."""
@@ -575,6 +584,14 @@ def _component(node: dict, classes: tuple) -> dict | None:
     return hit[0] if hit else None
 
 
+def _need_component(node: dict, classes: tuple) -> dict:
+    """The one component of `classes` on `node` (RuntimeError when it has none)."""
+    c = _component(node, classes)
+    if c is None:
+        raise RuntimeError(f"{node['path']}: no component of {classes}")
+    return c
+
+
 def extract(
     cat: Catalog,
     player: PlayerData,
@@ -643,7 +660,7 @@ def extract(
                 if not (rec.get("localizeText") or {}).get("localizeEnabled"):
                     raise NotImplementedError(f"{n['path']}: text without LocalizeText")
                 rec["textStyle"] = styles.record(
-                    n["path"], _component(n, TMP_CLASSES), _component(n, ("LocalizeText",))
+                    n["path"], _need_component(n, TMP_CLASSES), _component(n, ("LocalizeText",))
                 )
                 if not keep_text:
                     del rec["text"]
@@ -866,7 +883,8 @@ def extract(
     if blur is not None:
         doc["blur"] = blur
     if game:
-        tmp_settings = player.names_in(player.resource("TMP Settings"), player.mono(player.resource("TMP Settings")))
+        tmp = player.resource("TMP Settings")
+        tmp_settings = {k: player.names_in(tmp, v) for k, v in player.mono(tmp).items()}
         doc["fonts"] = font_out
         doc["tmpSettings"] = {
             k: tmp_settings[k]
@@ -978,9 +996,9 @@ def uses_backdrop_filter(window: list[dict]) -> bool:
 def backdrop_path(widget: list[dict], comp: dict) -> str:
     """The node of the centre-talk backdrop (UIAdvWidget BACKDROP_REFS: its CanvasGroup and Image, on one node)."""
     paths = {_ref_path(comp[k]) for k in BACKDROP_REFS}
-    if len(paths) != 1 or None in paths:
+    path = next(iter(paths)) if len(paths) == 1 else None
+    if path is None:
         raise RuntimeError(f"UIAdvWidget {BACKDROP_REFS}: {sorted(map(str, paths))}")
-    path = paths.pop()
     node = next((n for n in widget if n["path"] == path), None)
     if node is None:
         raise RuntimeError(f"{path}: not a widget node")
@@ -1102,7 +1120,7 @@ def sprite_asset_record(ex: Exporter, key: str = EMOJI_SPRITE_ASSET_KEY) -> dict
     tt = o.read_typetree()
     if tt.get("fallbackSpriteAssets"):
         raise NotImplementedError(f"{key}: fallback sprite assets")
-    sheet = ex.deref(o, tt["spriteSheet"]).read_typetree()
+    sheet = ex.referent(o, tt["spriteSheet"]).read_typetree()
     chars = [
         {"index": i, "unicode": c["m_Unicode"], "name": c["m_Name"], "glyph": c["m_GlyphIndex"], "scale": c["m_Scale"]}
         for i, c in enumerate(tt["m_SpriteCharacterTable"])
@@ -1384,7 +1402,7 @@ def chat_runtime_texts(episode: dict) -> list[str]:
     return out
 
 
-def about(language: str, windows: list[str] = (adv.DEFAULT_TALK_WINDOW,)) -> str:
+def about(language: str, windows: Sequence[str] = (adv.DEFAULT_TALK_WINDOW,)) -> str:
     """ui.json `about`: what the file holds (the widget and its talk windows), in which client language."""
     return f"ADV front canvas UI data (UIAdvWidget + {', '.join(windows)}), {language}"
 
@@ -1453,7 +1471,7 @@ def _game_fonts(
     out_nodes: list,
     field: str,
     master_ids: dict,
-    ui_texts: list[str] = (),
+    ui_texts: Sequence[str] = (),
 ) -> tuple[dict, dict]:
     """`--fonts game`: the localized font / material of every text node (`text.localized`), the TMP font assets,
     the glyph coverage of the characters the episode shows (in the text field `field`; `master_ids`:
@@ -1481,16 +1499,19 @@ def _game_fonts(
     primary = primary[0]
     coverage, needed, runtime_units = tmpfont.glyph_coverage(fonts, primary, chars)
     # the underline character from the primary asset itself (baked, or generated as its dynamic asset would)
-    hit = fonts.lookup(primary, UNDERLINE_CHARACTER)
-    in_asset = bool(hit and hit[1] is primary and hit[0] in ("baked", "runtime"))
+    kind, font = fonts.lookup(primary, UNDERLINE_CHARACTER) or (None, None)
+    in_asset = font is primary and kind in ("baked", "runtime")
     if in_asset:
-        (needed if hit[0] == "baked" else runtime_units).setdefault(primary.name, set()).add(UNDERLINE_CHARACTER)
+        (needed if kind == "baked" else runtime_units).setdefault(primary.name, set()).add(UNDERLINE_CHARACTER)
     coverage["underline"] = {"font": primary.name, "character": chr(UNDERLINE_CHARACTER), "inAsset": in_asset}
     # the missing glyph (tmpfont.missing_glyph): its substitute from the asset that has it
     tmpfont.check_glyph_variants(fonts, primary, shown)
     mg = tmpfont.missing_glyph(fonts, primary, chars, tmpfont.missing_glyph_character(ex.player))
     if mg:
-        kind, f = fonts.lookup(primary, mg["unicode"])
+        found = fonts.lookup(primary, mg["unicode"])
+        if found is None:
+            raise RuntimeError(f"missing glyph U+{mg['unicode']:04X}: in no font asset of {primary.name}")
+        kind, f = found
         if kind != "synthesized":
             (needed if kind == "baked" else runtime_units).setdefault(f.name, set()).add(mg["unicode"])
         coverage["missingGlyph"] = [chr(u) for u in mg["characters"]]

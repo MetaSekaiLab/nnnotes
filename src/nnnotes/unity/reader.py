@@ -14,6 +14,7 @@ import numpy as np
 import UnityPy
 from UnityPy.classes import PPtr
 from UnityPy.enums import TextureFormat
+from UnityPy.files import ObjectReader
 from UnityPy.helpers import MeshHelper
 from UnityPy.helpers.TypeTreeNode import TypeTreeNode
 
@@ -83,7 +84,7 @@ def _install_blob_memo() -> bool:
 
     parse_blob._nnnotes_memo = True
     parse_blob._original = parse
-    ttn.TypeTreeNode.parse_blob = classmethod(parse_blob)
+    ttn.TypeTreeNode.parse_blob = classmethod(parse_blob)  # pyright: ignore[reportAttributeAccessIssue]
     _blob_stats["installed"] = True
     return True
 
@@ -350,7 +351,7 @@ def script_class(obj) -> str | None:
             pptr = obj.read_typetree(head, check_read=False)["m_Script"]
             if not pptr["m_PathID"]:
                 return None
-            return deref(obj, pptr).read().m_ClassName
+            return referent(obj, pptr).read().m_ClassName
     except Exception:
         pass
     script = obj.read().m_Script
@@ -378,8 +379,15 @@ def external_path(owner, pptr: dict) -> str | None:
     return None if fid == 0 else owner.assets_file.externals[fid - 1].path
 
 
-def deref(owner, pptr: dict):
+def deref(owner: ObjectReader, pptr: dict) -> ObjectReader | None:
     """ObjectReader that a PPtr read from `owner`'s typetree points at; None if null."""
     if not pptr["m_PathID"]:
         return None
+    return referent(owner, pptr)
+
+
+def referent(owner: ObjectReader, pptr: dict) -> ObjectReader:
+    """ObjectReader that a non-null PPtr read from `owner`'s typetree points at (KeyError for a null one)."""
+    if not pptr["m_PathID"]:
+        raise KeyError(f"{owner.type.name} {owner.path_id}: a required reference is null")
     return PPtr(m_FileID=pptr["m_FileID"], m_PathID=pptr["m_PathID"], assetsfile=owner.assets_file).deref()

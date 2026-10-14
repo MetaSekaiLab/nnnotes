@@ -309,6 +309,8 @@ def _status(cfg: Config, s: Setting, section: str) -> tuple[str, str | None]:
             validate(s, cfg.get_list(section, s.key))
         elif s.kind == "path":
             p = cfg.path(section, s.key)
+            if p is None:
+                return "unset", None
             if s.key == "apk":
                 if not p.exists():
                     return "not found", "no such APK or directory"
@@ -321,7 +323,7 @@ def _status(cfg: Config, s: Setting, section: str) -> tuple[str, str | None]:
             v = cfg.get(section, s.key)
             validate(s, v)
             if (section, s.key) == ("catalog", "region") and v not in cfg.regions():
-                return "invalid", f"names no [servers.{v}] table and no {env_name('servers.' + v, 'cdn')}"
+                return "invalid", f"names no [servers.{v}] table and no {env_name(f'servers.{v}', 'cdn')}"
     except ConfigError as e:
         return "invalid", str(e).split(": ", 1)[-1]
     except ValueError as e:
