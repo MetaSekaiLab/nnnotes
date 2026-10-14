@@ -374,6 +374,20 @@ def test_export_writes_layouts_reports_and_hits_the_second_time(tmp_path, capsys
     assert code == 0, out
 
 
+def test_a_depot_that_keeps_no_downloads_hits_without_them(tmp_path, capsys, fake, monkeypatch):
+    monkeypatch.delenv("NNNOTES_DEPOT_DOWNLOADS")  # the default budget: 0
+    d = setup_data(tmp_path, depots=("depot",))
+    code, out, err = export(capsys, tmp_path, d, "depot", "out")
+    assert code == 1, err
+    first = json.loads(out)
+    assert not (d["downloads"] / "bundles").exists()  # removed when the command ended
+    code, out, err = export(capsys, tmp_path, d, "depot", "out")
+    assert out, err
+    again = json.loads(out)
+    assert code == 1 and again["tasks"]["ran"] == 0 and again["run"] == first["run"], err
+    assert again["layouts"]["original"]["write"] == 0
+
+
 def test_export_is_the_same_with_worker_processes(tmp_path, capsys, fake):
     d = setup_data(tmp_path, depots=("s0", "s2"))
     export(capsys, tmp_path, d, "s0", "o0")
@@ -404,7 +418,7 @@ def test_plan_emit_tasks_and_run_stage_give_the_exported_depot(tmp_path, capsys,
     d = setup_data(tmp_path, depots=("orch", "q"))
     export(capsys, tmp_path, d, "orch", "o")
     rounds = 0
-    while True:
+    while rounds <= 4:
         tasks = tmp_path / f"round{rounds}"
         code, out, err = nn(
             capsys, *flags(d), "depot", "plan", "--depot", tmp_path / "q", "--emit-tasks", tasks, "--json"
