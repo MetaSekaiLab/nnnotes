@@ -28,7 +28,7 @@ from pathlib import Path
 
 from . import contract
 from .depot import write_file
-from .orchestrate import WORKER_BYTES
+from .orchestrate import WORKER_BYTES, jobs
 from .stages import Env, Pending, Stage, describe
 
 
@@ -217,7 +217,7 @@ def plan(
                     "cost": t.cost.to_json() if t.cost is not None else None,
                 }
             )
-    return Plan(_doc(nodes, edges, runnable, workers, memory, worker_bytes, layouts or {}), runnable)
+    return Plan(_doc(nodes, edges, jobs(runnable, stages), workers, memory, worker_bytes, layouts or {}), runnable)
 
 
 def _run_reasons(t, old: dict | None, depot, forced: bool) -> list[dict]:
@@ -241,21 +241,22 @@ def _run_reasons(t, old: dict | None, depot, forced: bool) -> list[dict]:
 
 
 def _doc(
-    nodes: list, edges: set, runnable: list, workers: int, memory: int | None, worker_bytes: int, layouts: dict
+    nodes: list, edges: set, todo: list, workers: int, memory: int | None, worker_bytes: int, layouts: dict
 ) -> dict:
+    """The plan document; `todo`: the jobs (orchestrate.jobs) of the runnable tasks."""
     count = {s: sum(n["status"] == s for n in nodes) for s in ("hit", "run", "unknown")}
-    peaks = sorted((t.cost.peak_bytes if t.cost else 0 for t in runnable), reverse=True)
+    peaks = sorted((j.peak for j in todo), reverse=True)
     procs = max(1, workers)
     budget = None if memory is None else max(0, memory - procs * worker_bytes)
     peak = sum(peaks[:procs])
     if budget is not None and peaks:
         peak = min(peak, max(budget, peaks[0]))
     peak += procs * worker_bytes if peaks else 0
-    oversize = sorted({t.id for t in runnable if budget is not None and t.cost and t.cost.peak_bytes > budget})
+    oversize = sorted(t.id for j in todo if budget is not None and j.peak > budget for t in j.tasks)
     summary = {
         "tasks": len(nodes),
         **count,
-        "cpuSeconds": round(sum(t.cost.cpu_seconds for t in runnable if t.cost), 3),
+        "cpuSeconds": round(sum(j.cpu for j in todo), 3),
         "peakBytes": int(peak),
         "budget": memory,
         "oversize": oversize,
