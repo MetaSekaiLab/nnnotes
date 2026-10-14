@@ -513,7 +513,7 @@ def cmd_story(args, cfg):
         os.path.relpath(models, out)
     except ValueError:
         args.usage(f"--models {models}: not on the drive of {out} (story.json names it relative to the story)")
-    languages.check(cfg.require("catalog", "language"))  # the story UI's language (advui reads the setting)
+    language = languages.check(cfg.require("catalog", "language"))  # the story UI's language
     md = Session(cfg).master_dir()
     known_row(args, md, "MasterAdv", args.adv_id, "episode")
     cat = Session(cfg).catalog()
@@ -529,6 +529,7 @@ def cmd_story(args, cfg):
         audio=not args.no_audio,
         fonts=args.fonts,
         models=source,
+        language=language,
         audio_options=flac,
     )
     _print_json({**r, "modelsBuilt": source.built, "modelsSkipped": source.skipped})
