@@ -20,7 +20,7 @@ schemas.load("plan")  # the schema as a dict
 | `catalog-diff` | `nnnotes.catalog-diff/1` | the difference between two catalog versions (`catalog diff`) |
 | `catalog-index` | `nnnotes.catalog-index/1` | the index of a catalog pair: remote and APK catalogs, every location in catalog order |
 | `catalogs` | `nnnotes.catalogs/1` | the catalog versions of a depot (`catalog versions`) |
-| `census` | `nnnotes.census/1` | the census of one bundle: serialized files, type trees and objects, read without decoding |
+| `census` | `nnnotes.census/2` | the census of one bundle: serialized files, type trees, objects and what they reference, read without decoding |
 | `common` | | definitions shared by the other schemas |
 | `cost` | `nnnotes.cost/1` | the measured cost of a task's last run |
 | `coverage` | `nnnotes.coverage/1` | the coverage of a run per class and per reason code |

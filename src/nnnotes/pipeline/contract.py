@@ -53,7 +53,7 @@ FAILURES = "nnnotes.failures/1"
 PLAN = "nnnotes.plan/1"
 COST = "nnnotes.cost/1"
 CATALOG_INDEX = "nnnotes.catalog-index/1"
-CENSUS = "nnnotes.census/1"
+CENSUS = "nnnotes.census/2"
 VIEW = "nnnotes.view/1"
 
 # item statuses of a result: every object a task covers has exactly one

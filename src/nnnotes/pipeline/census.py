@@ -1,22 +1,31 @@
-"""The census of a bundle (stage unity.census, document nnnotes.census/1): what a bundle holds, read without
-decoding any object.
+"""The census of a bundle (stage unity.census, document nnnotes.census/2): what a bundle holds and what its
+objects reference, read without decoding any object.
 
     files          the serialized files, sorted by name, each with its Unity version, platform, whether it embeds
                    type trees, its externals ({file, path, guid, type}; `file` is the name an object id uses: the
                    last component of the path, e.g. CAB-... or "unity default resources") and its objects sorted by
-                   path id: {pathId, classId, class, byteSize, typeHash, name, script}. `name` is the object's m_Name
-                   when its type has one (read without the fields after it), `script` the {file, pathId} of a
+                   path id: {pathId, classId, class, byteSize, typeHash, name, script, bindingScripts, refs, unit}.
+                   `name` is the object's m_Name when its type has one, `script` the {file, pathId} of a
                    MonoBehaviour's m_Script (null for a null reference), `bindingScripts` the {file, pathId} of the
                    MonoScripts an AnimationClip's bindings name (MonoBehaviour fields it animates; sorted, only when
-                   there are any). Objects are grouped per file: the files of one bundle may use the same path ids
-                   (a scene bundle's scene and its shared assets).
+                   there are any). `refs` the object ids every reference in its typetree names (sorted, itself left
+                   out; only when there are any), `unit` the object id of the root GameObject of the hierarchy whose
+                   prefab holds it (unity.export converts the objects of a hierarchy together; only for the objects
+                   of a hierarchy other than its root). Objects are grouped per file: the files of one bundle may use
+                   the same path ids (a scene bundle's scene and its shared assets).
     resources      the other files of the bundle (.resS / .resource): {name, size}
     assetBundles   the AssetBundle objects: {file, pathId, name, assetBundleName, dependencies,
                    isStreamedSceneAssetBundle, sceneHashes [[scene, hash]], container [{path, file, pathId,
                    preloadIndex, preloadSize}] (stored order)}
     scripts        the MonoScript objects: {file, pathId, assembly, namespace, class, name}
     classes        objects per class; `objects` the total
-    errors         [{object, message}] of the objects whose header could not be read
+    errors         [{object, message}] of the objects whose typetree could not be read (their record has no name,
+                   script or refs)
+
+The objects reachable from an object follow from `refs` and `unit` across censuses: they are a superset of what the
+documents of unity.export reference (their items' `refs`), so a request's closure computed from censuses holds every
+object its products name. A file without type trees (the APK's built-in files) gives a MonoBehaviour's fields only
+with a type tree nnnotes ships for its type hash (`shipped`), else its header.
 
 A census is a function of the bundle's bytes: it holds no file name, time or path (a serialized file outside a
 bundle, one of the APK's built-in files, has the name its subject gives: builtins.serialized_name).
@@ -26,14 +35,13 @@ from __future__ import annotations
 
 import re
 
+from ..unity import scripttypes
 from ..unity.atoms import impl_id
 from . import builtins, contract
-from .contract import Cost, Input
+from .contract import Cost, IncompatibleTask, Input
 from .stages import Output, Pending, Stage
 
 _ADDRESS = re.compile(r"0x[0-9a-fA-F]{6,}")
-HEAD_FIELDS = ("m_Name", "m_Script")
-CLIP_FIELDS = ("m_Name", "m_ClipBindingConstant")  # an AnimationClip is read up to its bindings
 
 
 def _ext_file(path: str) -> str:
@@ -46,7 +54,7 @@ def _message(e: BaseException) -> str:
 
 
 def _serialized(env) -> tuple[list, list]:
-    """(serialized files, [name, size] of the other files) of a loaded environment, walking nested bundles."""
+    """(serialized files, {name, size} of the other files) of a loaded environment, walking nested bundles."""
     files, resources = [], []
 
     def walk(container):
@@ -70,11 +78,10 @@ def _serialized(env) -> tuple[list, list]:
 
 
 class _Refs:
-    """PPtr resolution within one serialized file."""
+    """PPtr resolution within one serialized file: its name and the names of its externals."""
 
-    def __init__(self, sf):
-        self.name = sf.name
-        self.externals = [_ext_file(x.path) for x in sf.externals]
+    def __init__(self, name: str, externals: list[str]):
+        self.name, self.externals = name, list(externals)
 
     def file(self, file_id: int) -> str | None:
         if file_id == 0:
@@ -143,89 +150,80 @@ def _binding_scripts(d: dict, refs: _Refs) -> list:
     return [out[k] for k in sorted(out)]
 
 
-def census_env(env) -> dict:
-    """The census document of a loaded UnityPy environment holding one bundle."""
-    from UnityPy.helpers.TypeTreeNode import TypeTreeNode
+def census_env(env, shipped: bool = False) -> dict:
+    """The census document of a loaded UnityPy environment holding one bundle (or one serialized file). `shipped`:
+    the MonoBehaviours of files without type trees are read with the type trees nnnotes ships
+    (nnnotes.unity.scripttypes) for their type hashes."""
+    from ..unity.atoms.reader import UnityBundle
+    from ..unity.convert import prefab
+    from ..unity.convert.objects import BundleObjects, ReadError
 
-    heads: dict[tuple, tuple] = {}
-
-    def head(node, fields=HEAD_FIELDS):
-        """The type tree cut after the last of its `fields` (None when it has none of them)."""
-        hit = heads.get((id(node), fields))
-        if hit is not None and hit[0] is node:
-            return hit[1]
-        names = [c.m_Name for c in node.m_Children]
-        last = max((names.index(n) for n in fields if n in names), default=None)
-        cut = None
-        if last is not None:
-            cut = TypeTreeNode(
-                node.m_Level,
-                node.m_Type,
-                node.m_Name,
-                node.m_ByteSize,
-                node.m_Version,
-                m_MetaFlag=node.m_MetaFlag,
-                m_Children=node.m_Children[: last + 1],
-            )
-        heads[(id(node), fields)] = (node, cut)
-        return cut
-
-    sfiles, resources = _serialized(env)
+    _, resources = _serialized(env)
+    view = UnityBundle(env)
+    trees: dict = {}
+    if shipped:
+        for f in view.files():
+            if not view.stores_typetrees(f):
+                trees.update(scripttypes.script_types(view.unity_version(f)))
+    ctx = BundleObjects(view, {}, scripts={}, blob_min=1, png_level=0, emit=_no_emit, typetrees=trees)
+    units = _units(ctx, prefab.hierarchies(ctx))
+    by_file: dict[str, list] = {}
+    for i in ctx.infos:
+        by_file.setdefault(i.file, []).append(i)
     files, bundles, scripts, errors, classes = [], [], [], [], {}
-    for sf in sfiles:
-        refs = _Refs(sf)
+    for name in sorted(by_file):
+        sf = view.serialized_file(name)
+        refs = _Refs(name, ctx.ext_files[name])
         objects = []
-        for pid in sorted(sf.objects):
-            o = sf.objects[pid]
-            try:
-                cls = o.type.name
-            except Exception:
-                cls = f"Class{o.class_id}"
-            st = getattr(o, "serialized_type", None)
-            th = getattr(st, "old_type_hash", None) if st is not None else None
+        for i in sorted(by_file[name], key=lambda i: i.path_id):
+            key = (i.file, i.path_id)
             rec = {
-                "pathId": int(pid),
-                "classId": int(o.class_id),
-                "class": cls,
-                "byteSize": int(o.byte_size),
-                "typeHash": th.hex() if th else None,
+                "pathId": i.path_id,
+                "classId": i.class_id,
+                "class": i.class_name,
+                "byteSize": i.byte_size,
+                "typeHash": i.type_hash,
             }
-            classes[cls] = classes.get(cls, 0) + 1
+            classes[i.class_name] = classes.get(i.class_name, 0) + 1
             try:
-                node = o._get_typetree_node()
-                cut = head(node, CLIP_FIELDS if cls == "AnimationClip" else HEAD_FIELDS)
-                d = o.read_typetree(cut, check_read=False) if cut is not None else {}
-                if "m_Name" in d:
+                d = ctx.tt(key, whole=False)
+                found = ctx.references(key, d)
+            except Exception as e:
+                why = str(e) if isinstance(e, ReadError) else _message(e)
+                errors.append({"object": contract.object_id(*key), "message": why})
+            else:
+                if isinstance(d.get("m_Name"), str):
                     rec["name"] = d["m_Name"]
                 if "m_Script" in d:
                     rec["script"] = refs.ref(d["m_Script"])
-                if cls == "AnimationClip":
+                if i.class_name == "AnimationClip":
                     scripts_ = _binding_scripts(d, refs)
                     if scripts_:
                         rec["bindingScripts"] = scripts_
-                if cls == "AssetBundle":
-                    bundles.append(_asset_bundle(o.read_typetree(), refs, (sf.name, int(pid))))
-                elif cls == "MonoScript":
-                    m = o.read_typetree()
+                if found:
+                    rec["refs"] = sorted(contract.object_id(*k) for k in found)
+                if i.class_name == "AssetBundle":
+                    bundles.append(_asset_bundle(d, refs, key))
+                elif i.class_name == "MonoScript":
                     scripts.append(
                         {
-                            "file": sf.name,
-                            "pathId": int(pid),
-                            "assembly": m.get("m_AssemblyName"),
-                            "namespace": m.get("m_Namespace"),
-                            "class": m.get("m_ClassName"),
-                            "name": m.get("m_Name"),
+                            "file": name,
+                            "pathId": i.path_id,
+                            "assembly": d.get("m_AssemblyName"),
+                            "namespace": d.get("m_Namespace"),
+                            "class": d.get("m_ClassName"),
+                            "name": d.get("m_Name"),
                         }
                     )
-            except Exception as e:
-                errors.append({"object": contract.object_id(sf.name, pid), "message": _message(e)})
+            if key in units:
+                rec["unit"] = units[key]
             objects.append(rec)
         files.append(
             {
-                "name": sf.name,
-                "unityVersion": getattr(sf, "unity_version", None),
+                "name": name,
+                "unityVersion": view.unity_version(name),
                 "platform": int(getattr(sf, "_m_target_platform", getattr(sf, "target_platform", 0)) or 0),
-                "typetree": bool(getattr(sf, "_enable_type_tree", True)),
+                "typetree": view.stores_typetrees(name),
                 "externals": [
                     {
                         "file": _ext_file(x.path),
@@ -250,13 +248,34 @@ def census_env(env) -> dict:
     }
 
 
-def census_file(path, name: str | None = None) -> dict:
-    """The census of a bundle file (decrypted UnityFS), or of a serialized file named `name`."""
+def _no_emit(*args, **kw):
+    raise RuntimeError("a census writes no artifact")
+
+
+def _units(ctx, h) -> dict[tuple, str]:
+    """{object key: the object id of the root GameObject of the hierarchy it belongs to} of the objects of each
+    hierarchy the converters export as one prefab (prefab.hierarchies: walked without error, rooted at a GameObject),
+    the root left out."""
+    out = {}
+    for root in h.roots:
+        go = (root.file, root.game_object)
+        info = ctx.info.get(go)
+        if root.error is not None or info is None or info.class_name != "GameObject":
+            continue
+        oid = contract.object_id(*go)
+        for k in root.members:
+            if k != go:
+                out[k] = oid
+    return out
+
+
+def census_file(path, name: str | None = None, shipped: bool = False) -> dict:
+    """The census of a bundle file (decrypted UnityFS), or of a serialized file named `name` (census_env)."""
     from ..unity import reader as unity
 
     env = unity.load(path, name)
     try:
-        return census_env(env)
+        return census_env(env, shipped)
     finally:
         del env
 
@@ -309,10 +328,11 @@ class CensusStage(Stage):
     (role "bundle": the decrypted bundle's sha256, size, name, locators)}, the APK's built-in files included
     (builtins); a bundle not fetched yet is Pending (raised by the fact, or given as a Pending / None). Artifact
     "<task id>#census". The census reads the bundle with UnityPy: its atom is the reader's ("reader", the UnityPy
-    version)."""
+    version); a built-in file's also the shipped type trees ("typetrees", scripttypes.types_id) it reads its
+    MonoBehaviours with."""
 
     name = "unity.census"
-    version = 2
+    version = 3
     ATOMS = {"reader": impl_id(("UnityPy",), 1)}
 
     def subjects(self, env) -> list[str]:
@@ -328,12 +348,23 @@ class CensusStage(Stage):
             raise ValueError(f"unity.census {subject}: input role {inp.role!r}, expected 'bundle'")
         return [inp]
 
+    def uses(self, subject: str, env) -> dict:
+        if builtins.is_builtin(subject):
+            return {**self.ATOMS, "typetrees": scripttypes.types_id()}
+        return dict(self.ATOMS)
+
     def estimate(self, subject: str, env, inputs: list[Input]) -> Cost:
         size = sum(i.size for i in inputs)
-        return Cost(0.002 + size / 40e6, (32 << 20) + 12 * size)
+        return Cost(0.002 + size / 20e6, (32 << 20) + 14 * size)
 
     def run(self, task, depot) -> Output:
-        doc = census_file(depot.open_input(task.input("bundle")), builtins.serialized_name(task.subject))
+        if task.atoms.get("typetrees", scripttypes.types_id()) != scripttypes.types_id():
+            raise IncompatibleTask(f"task {task.id}: typetrees are {scripttypes.types_id()} here")
+        doc = census_file(
+            depot.open_input(task.input("bundle")),
+            builtins.serialized_name(task.subject),
+            shipped="typetrees" in task.atoms,
+        )
         content = depot.add(contract.encode(doc), "json")
         rec = contract.artifact(
             contract.artifact_id(task.id, "census"),
