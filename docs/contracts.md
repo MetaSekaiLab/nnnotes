@@ -239,8 +239,12 @@ The depot is a directory: the downloaded game files, and the results of all stag
                                      are kept up to `[depot] downloads` ([commands.md](commands.md#downloads))
 <depot>/cas/sha256/ab/<sha256>       bytes by content id, written once (no extension: records carry it)
 <depot>/ac/ab/<key>.json             results by task key (written after the bytes they name)
-<depot>/inputs/<kind>.jsonl          input identities: name -> sha256, size, with the path, size and mtime of the
-                                     file that was hashed (bundles.jsonl, raw.jsonl, files.jsonl)
+<depot>/inputs/<kind>/ab/<digest>.json
+                                     the identity recorded for an input name (kind bundles, raw or files):
+                                     {"name", "sha256", "size"}; digest: the sha256 of the name
+<depot>/inputs/paths/ab/<digest>.json
+                                     the identity of a file as last hashed, with its path, size and mtime (a file
+                                     seen unchanged is not hashed again); digest: the sha256 of the path
 <depot>/catalogs/                    versioned catalogs
 <depot>/runs/<run>.json              run manifests
 <depot>/runs/<run>.log.jsonl         the log of the run's last execution
@@ -251,6 +255,6 @@ The depot is a directory: the downloaded game files, and the results of all stag
 ```
 
 Every file is written to a temporary name and renamed into place, so concurrent writers never see or leave a
-partial file and an interrupted task leaves no result. `cas/` and `ac/` depend only on the tasks run: two runs of the
-same tasks, with any number of workers, leave identical trees. `downloads/`, `inputs/`, `runs/*.log.jsonl`,
-`costs/` and `leases/` are local and not deterministic.
+partial file and an interrupted task leaves no result; a record that changes is one file, replaced whole. `cas/` and
+`ac/` depend only on the tasks run: two runs of the same tasks, with any number of workers, leave identical trees.
+`downloads/`, `inputs/`, `runs/*.log.jsonl`, `costs/` and `leases/` are local and not deterministic.

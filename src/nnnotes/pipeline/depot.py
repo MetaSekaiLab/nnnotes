@@ -6,9 +6,13 @@
     <depot>/cas/sha256/ab/<sha>          bytes by content id, write-once (no extension: the records carry it)
     <depot>/ac/ab/<key>.json             task results (nnnotes.result/1) by task key; written after every byte they
                                          name is in cas/, so a result present is a complete result (the commit)
-    <depot>/inputs/<kind>.jsonl          input identities: name -> sha256, size, with the (path, size, mtime) of the
-                                         file that was hashed (a memo: a file seen unchanged is not hashed again);
-                                         bundles.jsonl, raw.jsonl, files.jsonl (files verified by path only)
+    <depot>/inputs/<kind>/ab/<digest>.json
+                                         the identity recorded for an input name: {"name", "sha256", "size"} (kind:
+                                         bundles, raw or files; digest: the sha256 of the name)
+    <depot>/inputs/paths/ab/<digest>.json
+                                         the identity of a file as last hashed: {"path", "fileSize", "mtimeNs",
+                                         "sha256", "size"} (a memo: a file seen unchanged is not hashed again;
+                                         digest: the sha256 of the path)
     <depot>/catalogs/                    versioned catalogs (catalogdb)
     <depot>/runs/<run>.json              run manifests (nnnotes.run/1), deterministic
     <depot>/runs/<run>.log.jsonl         the log of the run's last execution (timings, workers, errors)
@@ -17,6 +21,7 @@
 
 Every file is written through a temporary file and a rename, so concurrent writers (threads, processes, machines on
 a shared file system) never see or leave a partial file, and a crash before a result's entry leaves no false hit.
+Records that change (input identities, the latest run of a selection) are one file each, replaced whole.
 The files of cas/ are read-only (a layout may hard-link them: an edit of such a file fails instead of changing the
 depot).
 Only costs/, runs/ and inputs/ hold non-deterministic data; cas/ and ac/ are a function of the tasks run.
@@ -138,27 +143,10 @@ def write_doc(dst, doc) -> str:
     return h.hexdigest()
 
 
-def _append(path: Path, line: str) -> None:
-    """Append one line with one write (O_APPEND): lines of concurrent writers do not interleave."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, "O_BINARY", 0), 0o666)
-    try:
-        os.write(fd, line.encode("utf-8"))
-    finally:
-        os.close(fd)
-
-
-def _lines(path: Path):
-    """The JSON lines of a file; a torn or malformed line (a writer that died mid-line) is skipped."""
-    try:
-        text = path.read_text(encoding="utf-8")
-    except OSError:
-        return
-    for line in text.splitlines():
-        try:
-            yield json.loads(line)
-        except ValueError:
-            continue
+def _record_path(directory: Path, key: str) -> Path:
+    """The file of a record by key (a name, a path) in a directory of records: ab/<sha256 of the key>.json."""
+    d = hashlib.sha256(key.encode("utf-8")).hexdigest()
+    return directory / d[:2] / f"{d}.json"
 
 
 class Depot:
@@ -170,8 +158,8 @@ class Depot:
         self.fetch = fetch
         self.written = self.reused = 0
         self._have: set[str] = set()  # content ids this depot object wrote or found
-        self._memo: dict | None = None  # (path, size, mtime_ns) -> (sha256, size)
-        self._names: dict[str, dict] = {}  # kind -> {name: (sha256, size)}
+        self._hashed: dict[str, dict] = {}  # path -> its record (inputs/paths)
+        self._names: dict[tuple[str, str], tuple[str, int]] = {}  # (kind, name) -> (sha256, size)
         self._docs: dict[str, dict] = {}  # the documents document() decoded last
         self._lock = threading.Lock()
 
@@ -354,59 +342,47 @@ class Depot:
         return _write(dst, data, same)
 
     # ---------------------------------------------------------------- inputs
-    def _load_memo(self) -> dict:
-        if self._memo is None:
-            memo: dict = {}
-            for kind in INPUT_KINDS:
-                names = self._names.setdefault(kind, {})
-                for d in _lines(self.root / "inputs" / f"{kind}.jsonl"):
-                    try:
-                        entry = (d["sha256"], int(d["size"]))
-                        if d.get("path") is not None:
-                            memo[(d["path"], int(d["fileSize"]), int(d["mtimeNs"]))] = entry
-                        if d.get("name") is not None:
-                            names[d["name"]] = entry
-                    except (KeyError, TypeError, ValueError):
-                        continue
-            self._memo = memo
-        return self._memo
-
     def identify(self, path, kind: str = "files", name: str | None = None) -> tuple[str, int]:
-        """(sha256, size) of a file: from the memo when the file's path, size and mtime are unchanged, else hashed
-        and remembered (inputs/<kind>.jsonl, with `name`)."""
+        """(sha256, size) of a file: from its record when the file's path, size and mtime are unchanged, else hashed
+        and recorded (inputs/paths); with `name`, also recorded as the identity of that name (inputs/<kind>)."""
         if kind not in INPUT_KINDS:
             raise ValueError(f"unknown input kind {kind!r}")
         p = Path(path).resolve()
         st = p.stat()
-        memo_key = (str(p), st.st_size, st.st_mtime_ns)
+        key = str(p)
         with self._lock:
-            memo = self._load_memo()
-            hit = memo.get(memo_key)
-            if hit is not None and (name is None or self._names[kind].get(name) == hit):
-                return hit
-        if hit is None:
+            rec = self._hashed.get(key)
+        if rec is None:
+            data = _read(_record_path(self.root / "inputs" / "paths", key))
+            rec = json.loads(data) if data is not None else None
+        if rec is None or (rec["fileSize"], rec["mtimeNs"]) != (st.st_size, st.st_mtime_ns):
             with open(p, "rb") as f:
-                hit = (hashlib.file_digest(f, "sha256").hexdigest(), st.st_size)
-        line = {
-            "name": name,
-            "sha256": hit[0],
-            "size": hit[1],
-            "path": str(p),
-            "fileSize": st.st_size,
-            "mtimeNs": st.st_mtime_ns,
-        }
-        _append(self.root / "inputs" / f"{kind}.jsonl", json.dumps(line, ensure_ascii=False, sort_keys=True) + "\n")
+                sha = hashlib.file_digest(f, "sha256").hexdigest()
+            rec = {"path": key, "fileSize": st.st_size, "mtimeNs": st.st_mtime_ns, "sha256": sha, "size": st.st_size}
+            _write(_record_path(self.root / "inputs" / "paths", key), contract.encode(rec))
         with self._lock:
-            self._load_memo()[memo_key] = hit
-            if name is not None:
-                self._names[kind][name] = hit
+            self._hashed[key] = rec
+        hit = (rec["sha256"], rec["size"])
+        if name is not None and self.named(kind, name) != hit:
+            doc = {"name": name, "sha256": hit[0], "size": hit[1]}
+            _write(_record_path(self.root / "inputs" / kind, name), contract.encode(doc))
+            with self._lock:
+                self._names[(kind, name)] = hit
         return hit
 
     def named(self, kind: str, name: str) -> tuple[str, int] | None:
-        """The last identity recorded for an input name, or None."""
+        """The identity recorded for an input name, or None."""
         with self._lock:
-            self._load_memo()
-            return self._names.get(kind, {}).get(name)
+            hit = self._names.get((kind, name))
+        if hit is None:
+            data = _read(_record_path(self.root / "inputs" / kind, name))
+            if data is None:
+                return None
+            doc = json.loads(data)
+            hit = (doc["sha256"], int(doc["size"]))
+            with self._lock:
+                self._names[(kind, name)] = hit
+        return hit
 
     def open_input(self, inp: Input) -> Path:
         """A file holding the bytes of `inp`: its locators in order (none: the depot), each checked against the
