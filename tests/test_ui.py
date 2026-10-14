@@ -18,10 +18,13 @@ class Catalog:
     def __init__(self, data=b"synthetic catalog", *args, **kwargs):
         self._sources = {"remote": data, "apk": data}
 
+    def sources(self):
+        return dict(self._sources)
+
     def keys(self, prefix):
         return [k for k in [KEY, KEY + "Alias"] if k.startswith(prefix)]
 
-    def _entry(self, key):
+    def entry(self, key):
         return {"internal_id": "Assets/Example/Box.prefab"}
 
 

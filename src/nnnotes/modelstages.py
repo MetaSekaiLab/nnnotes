@@ -102,7 +102,7 @@ def _ordered(task, prefix: str = "bundle:") -> list[Input]:
 
 # ---------------------------------------------------------------- the catalog of a task
 class Closures:
-    """Key lookup and dependency closures of a catalog index, as Catalog._entry and Catalog.resolve give them on the
+    """Key lookup and dependency closures of a catalog index, as Catalog.entry and Catalog.resolve give them on the
     catalogs the index was made of: a key's location is its first one inside a bundle (internal id under Assets/ or
     Packages/), else its first one (remote catalog before APK catalog, each by offset); its closure is every bundle
     location its dependencies reach, depth first, in the order Catalog.resolve lists them."""
@@ -161,7 +161,7 @@ APK_FROM_INPUTS = "<the task's inputs>"
 
 
 class TaskCatalog:
-    """What the model extractors ask of a Catalog (live2d.extract_model through export.Exporter: fetch_key, _entry,
+    """What the model extractors ask of a Catalog (live2d.extract_model through export.Exporter: fetch_key, entry,
     apk), answered from a task: its key, the internal id of the key's location and the bundles of the key's closure
     in load order, each bundle read through the store (Store.open_input: its locators, checked against its content
     id). Another key is not in it (KeyError). `apk` is not None: the extractors need the APK's bundles, and those of
@@ -186,12 +186,12 @@ class TaskCatalog:
     def keys(self, prefix: str = "") -> list[str]:
         return [self.key] if self.key.startswith(prefix) else []
 
-    def _entry(self, key: str) -> dict:
+    def entry(self, key: str) -> dict:
         self._check(key)
         return {"primary_key": key, "internal_id": self.internal_id}
 
     def entries_for(self, key: str) -> list[dict]:
-        return [self._entry(key)] if key == self.key else []
+        return [self.entry(key)] if key == self.key else []
 
     def resolve(self, key: str) -> list[Bundle]:
         """The closure as Bundles in load order: offset = the position, name = the input's file name (its content

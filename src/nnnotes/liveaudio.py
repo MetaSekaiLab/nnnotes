@@ -34,6 +34,7 @@ from .acb import tables as _tables
 from .acb import u16s as _u16s
 from .apkset import ApkSet
 from .catalog import Catalog
+from .encoders import FLAC_LEVEL
 from .jsonio import write_json
 from .liveoptions import LiveOptions
 from .player import PlayerData
@@ -387,7 +388,7 @@ def extract(
     voice_character: int | None = None,
     options: LiveOptions = LiveOptions(),
     *,
-    flac_level: int = cri.FLAC_LEVEL,
+    flac_level: int = FLAC_LEVEL,
 ) -> dict:
     """Decode the live's sound cue sheets and write <out>/audio/live-audio.json. Returns a summary.
     voice_character: None = no character voice (the game picks the voice from the player's deck; there is no rule

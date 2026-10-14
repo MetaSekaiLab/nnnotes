@@ -31,6 +31,7 @@ from pathlib import Path
 import numpy as np
 
 from . import cri, languages
+from .encoders import FLAC_LEVEL
 from .jsonio import write_json
 
 f32 = np.float32
@@ -1272,7 +1273,7 @@ def extract_audio(
     out_dir,
     audio_fmt: str = "flac",
     *,
-    flac_level: int = cri.FLAC_LEVEL,
+    flac_level: int = FLAC_LEVEL,
     also=None,
     rows: dict | None = None,
 ) -> dict:
@@ -1305,7 +1306,7 @@ def extract(
     audio: bool = True,
     audio_fmt: str = "flac",
     *,
-    flac_level: int = cri.FLAC_LEVEL,
+    flac_level: int = FLAC_LEVEL,
     also=None,
     mirror: bool = False,
 ) -> dict:

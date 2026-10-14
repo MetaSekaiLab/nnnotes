@@ -219,18 +219,25 @@ class Catalog:
     def entries_for(self, key: str) -> list[dict]:
         return list(self._by_key.get(key, []))
 
-    def _entry(self, key: str) -> dict:
+    def entry(self, key: str) -> dict:
+        """The location of `key`: its asset location (internal id under Assets/ or Packages/) when it has one, else
+        its first location. KeyError when the catalog lacks the key."""
         ents = self._by_key.get(key)
         if not ents:
             raise KeyError(key)
-        # Prefer the asset location (Assets/...) over a bundle alias.
         for e in ents:
             if e["internal_id"].startswith("Assets/") or e["internal_id"].startswith("Packages/"):
                 return e
         return ents[0]
 
+    def dependencies(self, key: str) -> list[dict]:
+        """The locations the location of `key` (entry) depends on, in its dependency order (those the catalogs
+        hold)."""
+        return [self._by_off[d] for d in self.entry(key)["dependencies"] if d in self._by_off]
+
     @staticmethod
-    def _as_bundle(e: dict) -> Bundle | None:
+    def as_bundle(e: dict) -> Bundle | None:
+        """The bundle file a location names (a remote or APK-local .bundle), else None."""
         iid = e["internal_id"]
         if iid.endswith(".bundle") and remote_path(iid) is not None:
             return Bundle(e["offset"], iid, iid.rsplit("/", 1)[1], remote=True)
@@ -266,7 +273,7 @@ class Catalog:
         another build), else its first location."""
         out: dict[str, Bundle] = {}
         for e in sorted(self.entries, key=lambda e: (e["offset"] < APK_OFFSET_BASE, e["offset"])):
-            b = self._as_bundle(e)
+            b = self.as_bundle(e)
             if b is not None:
                 out.setdefault(b.name, b)
         return [out[n] for n in sorted(out)]
@@ -285,7 +292,7 @@ class Catalog:
         """Full bundle closure for an addressable key (BFS over dependencies)."""
         seen: set[int] = set()
         out: dict[int, Bundle] = {}
-        stack = [self._entry(key)["offset"]]
+        stack = [self.entry(key)["offset"]]
         while stack:
             off = stack.pop()
             if off in seen:
@@ -294,7 +301,7 @@ class Catalog:
             e = self._by_off.get(off)
             if e is None:
                 continue
-            b = self._as_bundle(e)
+            b = self.as_bundle(e)
             if b is not None:
                 out.setdefault(b.offset, b)
             for d in e["dependencies"]:
@@ -358,13 +365,13 @@ class Catalog:
     def bundle_of(self, key: str) -> Bundle:
         """The bundle that holds the asset `key`: the first bundle among its location's dependencies (a bundle key:
         that bundle)."""
-        e = self._entry(key)
-        own = self._as_bundle(e)
+        e = self.entry(key)
+        own = self.as_bundle(e)
         if own is not None:
             return own
         for d in e["dependencies"]:
             de = self._by_off.get(d)
-            b = self._as_bundle(de) if de is not None else None
+            b = self.as_bundle(de) if de is not None else None
             if b is not None:
                 return b
         raise KeyError(f"{key}: no bundle among its dependencies")

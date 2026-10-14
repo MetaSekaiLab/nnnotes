@@ -15,12 +15,12 @@ cri.audio   subject: the sha256 of an ACB ("cri.audio:<sha256>"). The ACB is a r
 cri.movie   subject: the sha256 of a USM: a raw file of the catalog (fact "raw", magic `CRID`) or held in a bundle
             (the `cri.usm` artifacts of unity.export: a movie asset's CriSerializedBytesAssetImpl bytes), so a movie
             stored in several places is converted once. Inputs "usm", "boot" (the USM masks and the HCA cipher use
-            the same key). Artifacts, per stream as stored and unmasked (advvideo.demux), named by its kind and, past
+            the same key). Artifacts, per stream as stored and unmasked (usm.demux), named by its kind and, past
             channel 0, its channel: `video.<ext>` / `alpha.<ext>` (`ivf` VP9, `m1v` MPEG-1, `h264` H.264),
             `audio.<ext>` (`adx`, `hca`), and for subtitles `subtitle.json` (the records as stored) with
             `subtitle.srt` and `subtitle.vtt`; then `movie.mkv`: every video and alpha stream copied, every audio
             stream as FLAC (ADX through ffmpeg, HCA through vgmstream), every subtitle channel as a SubRip track.
-            Parameters `flac.level`, and `format` "webm", which makes `movie.webm` instead (advvideo.write_webm, the
+            Parameters `flac.level`, and `format` "webm", which makes `movie.webm` instead (usm.write_webm, the
             story videos' form).
             Atoms `usm.demux` (nnnotes), `movie.mux` (ffmpeg), `hca.decode` (vgmstream).
 
@@ -46,6 +46,7 @@ from . import contract
 from .apkset import ApkSet
 from .atoms import impl_id
 from .contract import Cost, IncompatibleTask, Input
+from .encoders import FLAC_LEVEL
 from .stages import Output, Pending, Stage
 
 AUDIO, MOVIE, EXPORT = "cri.audio", "cri.movie", "unity.export"
@@ -56,7 +57,6 @@ BOOT_IN_APK = "assets/bin/Data/data.unity3d"
 ACB_NAME = "sheet"  # the stem of the ACB file vgmstream reads (names come from its cues)
 TOOL_REVISION = 1
 FORMATS = ("mkv", "webm")
-FLAC_LEVEL = 8  # ffmpeg's FLAC compression level by default (here and in cri.decode)
 REASONS = (
     "unsupported.cri.awb_external",
     "unsupported.usm.codec",
@@ -543,15 +543,15 @@ class MovieStage(_CriStage):
         return Cost(0.3 + size * 1.1e-7, (96 << 20) + 12 * size)
 
     def run(self, task, store) -> Output:
-        from . import advvideo
+        from . import usm
 
         ff, vgm = _tool("ffmpeg"), _tool("vgmstream")
         self._check_atoms(task, movie_atoms(ff, vgm))
-        usm = store.input_bytes(task.input("usm"))
+        movie = store.input_bytes(task.input("usm"))
         key = hca_key(store, task.input("boot"))
         try:
-            streams = advvideo.demux(usm, key)
-        except advvideo.Unsupported as e:
+            streams = usm.demux(movie, key)
+        except usm.Unsupported as e:
             return self._item(task, why=contract.reason(e.code, str(e)))
         arts, why, tracks = [], None, []
         for s in streams:
@@ -563,16 +563,16 @@ class MovieStage(_CriStage):
                 elif why is None:
                     why = contract.reason("unsupported.usm.subtitle", problem)
                 continue
-            ext = advvideo.EXTENSIONS[s.codec]
+            ext = usm.EXTENSIONS[s.codec]
             fmt, media = STREAM_FORMATS[s.codec]
             if s.kind == "audio":
                 try:
-                    facts = advvideo.adx_info(s.data) if s.codec == "adx" else advvideo.hca_info(s.data)
+                    facts = usm.adx_info(s.data) if s.codec == "adx" else usm.hca_info(s.data)
                 except (NotImplementedError, ValueError) as e:
                     return self._item(task, why=contract.reason("unsupported.usm.codec", f"{s.name}: {e}"))
                 kind = "audio.stream"
             else:
-                facts, kind = advvideo.video_facts(s), "video.stream" if s.kind == "video" else "video.alpha"
+                facts, kind = usm.video_facts(s), "video.stream" if s.kind == "video" else "video.alpha"
             arts.append(self._artifact(task, store, f"{s.name}.{ext}", s.data, ext, kind, fmt, facts, media))
             tracks.append(s)
         out_fmt = task.params["format"]
@@ -581,13 +581,13 @@ class MovieStage(_CriStage):
             dst = work / f"movie.{out_fmt}"
             try:
                 if out_fmt == "mkv":
-                    inputs = {s.name: advvideo.stream_input(s, work / "in", key, vgm) for s in tracks}
-                    advvideo.run_ffmpeg(ff, advvideo.mkv_args(tracks, inputs, dst, task.params["flac"]["level"]), "mkv")
+                    inputs = {s.name: usm.stream_input(s, work / "in", key, vgm) for s in tracks}
+                    usm.run_ffmpeg(ff, usm.mkv_args(tracks, inputs, dst, task.params["flac"]["level"]), "mkv")
                 else:
-                    tracks = advvideo.write_webm(streams, dst, work / "in", ff, key, vgm)
-            except advvideo.Unsupported as e:
+                    tracks = usm.write_webm(streams, dst, work / "in", ff, key, vgm)
+            except usm.Unsupported as e:
                 return self._item(task, why=contract.reason(e.code, str(e)))
-            reencoded = out_fmt == "webm" and advvideo.webm_reencoded(tracks)
+            reencoded = out_fmt == "webm" and usm.webm_reencoded(tracks)
             facts = {"tracks": [_track(s, out_fmt, reencoded) for s in tracks]}
             fmt, media = MOVIE_FORMATS[out_fmt]
             arts.append(
@@ -598,11 +598,11 @@ class MovieStage(_CriStage):
     def _subtitle(self, task, store, s) -> tuple[list[dict], str | None]:
         """The artifacts of a subtitle channel and why it is not a track (None when it is): the records as JSON, and
         as SubRip and WebVTT when every text is UTF-8; the bytes as stored (`.sbt`) when they are not records."""
-        from . import advvideo
+        from . import usm
         from .jsonio import dumps
 
         try:
-            records = advvideo.subtitle_records(s.data)
+            records = usm.subtitle_records(s.data)
         except ValueError as e:
             return [
                 self._artifact(
@@ -610,10 +610,10 @@ class MovieStage(_CriStage):
                 )
             ], f"{s.name}: {e}"
         facts = {"channel": s.channel, "records": len(records)}
-        doc = dumps(advvideo.subtitle_json(s.channel, records), indent=1, ensure_ascii=False).encode()
+        doc = dumps(usm.subtitle_json(s.channel, records), indent=1, ensure_ascii=False).encode()
         arts = [self._artifact(task, store, f"{s.name}.json", doc, "json", "subtitle.records", "json", facts)]
         try:
-            srt, vtt = advvideo.subtitle_srt(records), advvideo.subtitle_webvtt(records)
+            srt, vtt = usm.subtitle_srt(records), usm.subtitle_webvtt(records)
         except UnicodeDecodeError:
             return arts, f"{s.name}: a text that is not UTF-8"
         arts.append(

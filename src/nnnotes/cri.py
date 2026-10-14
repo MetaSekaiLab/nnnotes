@@ -50,7 +50,7 @@ from . import cache, crikey
 from .addressables import remote_path
 from .catalog import Catalog
 from .config import tool, usable_cpus
-from .cristages import FLAC_LEVEL  # ffmpeg -compression_level of the flac output
+from .encoders import FLAC_LEVEL, encode_args
 from .jsonio import dumps, write_json
 
 DECODED = cache.bucket("cuesheets", salt=cache.source_salt(__file__), disk=True)
@@ -85,12 +85,8 @@ RAW_ACB = "raw CDN ACB/AWB"
 
 def raw_files(cat: Catalog, cue_sheet: str) -> dict[str, Path]:
     """{'acb': path, 'awb': path?} for a cue sheet, via the key's dependencies."""
-    entry = cat._entry(f"Cri/Sound/{cue_sheet}")
     out: dict[str, Path] = {}
-    for off in entry["dependencies"]:
-        e = cat._by_off.get(off)
-        if e is None:
-            continue
+    for e in cat.dependencies(f"Cri/Sound/{cue_sheet}"):
         iid = e["internal_id"]
         if remote_path(iid) is None or iid.endswith(".bundle"):
             continue
@@ -197,27 +193,6 @@ def layout(cat: Catalog, cue_sheet: str) -> str:
     lay = asset[0] if asset is not None else RAW_ACB
     SHEETS.put(k, (None, lay), 0)
     return lay
-
-
-def encode_args(src: Path, dst: Path, args: list[str]) -> list[str]:
-    """ffmpeg arguments (after the executable) of a bit-exact encode: no metadata, bitexact container and codec
-    flags, then `args` (codec options)."""
-    return [
-        "-hide_banner",
-        "-loglevel",
-        "error",
-        "-y",
-        "-i",
-        str(src),
-        "-map_metadata",
-        "-1",
-        "-fflags",
-        "+bitexact",
-        "-flags:a",
-        "+bitexact",
-        *args,
-        str(dst),
-    ]
 
 
 def _check_format(fmt: str, also) -> None:

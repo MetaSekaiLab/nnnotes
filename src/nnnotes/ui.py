@@ -247,7 +247,7 @@ def export_library(
     keys = sorted(set(keys if keys is not None else cat.keys(prefix)))
     old = json.loads((out / "index.json").read_text(encoding="utf-8")) if (out / "index.json").is_file() else {}
     provenance = provenance or {
-        "apk_catalog_sha256": hashlib.sha256(cat._sources.get("apk", cat._sources["remote"])).hexdigest()
+        "apk_catalog_sha256": hashlib.sha256(cat.sources().get("apk", cat.sources()["remote"])).hexdigest()
     }
     if old and old.get("provenance") != provenance:
         raise ValueError("UI output belongs to different input data; use a separate output directory")
@@ -347,7 +347,7 @@ def export_library(
                         source_key=key,
                     )
                     processed_controllers.add(cid)
-            kind = cat._entry(key)["internal_id"].rsplit(".", 1)[-1]
+            kind = cat.entry(key)["internal_id"].rsplit(".", 1)[-1]
             assets[key] = _record(
                 out,
                 ident,

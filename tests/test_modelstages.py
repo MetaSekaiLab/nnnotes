@@ -60,7 +60,7 @@ def test_closures_are_those_of_catalog_resolve(tmp_path):
     names = {b["stable"]: b["name"] for b in doc["bundles"]}
     assert c.keys() == cat.keys()
     for key in cat.keys():
-        assert c.entry(key)["internalId"] == cat._entry(key)["internal_id"]
+        assert c.entry(key)["internalId"] == cat.entry(key)["internal_id"]
         assert [names[s] for s in c.closure_bundles(key)] == [b.name for b in cat.resolve(key)], key
     assert c.entry(M1)["internalId"] == PREFAB  # the location inside a bundle
     assert c.closure_bundles(M1) == ["monoscripts", "shared", "model_m1", "tex"]
@@ -161,12 +161,12 @@ def test_task_catalog_answers_from_the_task(tmp_path):
     cat = TaskCatalog.from_task(t, store)
     assert cat.apk is not None and cat.has(M1) and not cat.has(M2)
     assert cat.keys("Character/") == [M1] and cat.keys("Other/") == []
-    assert cat._entry(M1)["internal_id"] == PREFAB and cat.entries_for(M2) == []
+    assert cat.entry(M1)["internal_id"] == PREFAB and cat.entries_for(M2) == []
     order = ["monoscripts", "shared", "model_m1", "tex"]
     assert [p.read_bytes() for p in cat.fetch_key(M1)] == [contents()[s] for s in order]
     assert [b.name for b in cat.resolve(M1)] == [i.name for i in t.inputs]
     assert [b.offset for b in cat.resolve(M1)] == [0, 1, 2, 3]
-    for f in (cat._entry, cat.fetch_key, cat.resolve):
+    for f in (cat.entry, cat.fetch_key, cat.resolve):
         with pytest.raises(KeyError):
             f(M2)
     # inputs are ordered by position, not by role text
@@ -184,7 +184,7 @@ def fake_extract(calls):
         assert cat.apk is not None
         data = b"".join(p.read_bytes() for p in cat.fetch_key(key))
         name = key.rsplit("/", 1)[-1]
-        calls.append((key, cat._entry(key)["internal_id"]))
+        calls.append((key, cat.entry(key)["internal_id"]))
         (out_dir / "textures").mkdir()
         (out_dir / "motions").mkdir()
         (out_dir / f"{name}.moc3").write_bytes(b"MOC3" + data)
