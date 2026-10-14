@@ -44,8 +44,8 @@ from pathlib import Path
 
 from ..formats.encoders import FLAC_LEVEL
 from ..source.apkset import ApkSet
+from ..unity.atoms import impl_id
 from . import contract
-from .atoms import impl_id
 from .contract import Cost, IncompatibleTask, Input
 from .stages import Output, Pending, Stage
 
