@@ -7,7 +7,7 @@ chart facts (level, note counts, BPM, chart times, skill events, fevers), and pe
 the chart contributes to the live score whatever the deck, in a solo live (Gekisou off) and in a Gekisou live at every
 rank, measured by the deck model [ournotes-deck](https://github.com/empty-sekai/ournotes-deck), the package
 `ournotes-sim` that the extra `deck` installs (`pip install 'nnnotes[deck]'`). The format is `nnnotes.music-data/2`; its JSON Schema is
-[music-data.schema.json](../src/nnnotes/schemas/music-data.schema.json).
+[music-data.schema.json](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/schemas/music-data.schema.json).
 
 ```
 nnnotes music-data (--master-files DIR | --apk-master | --decoded-master) [--full] [--no-deck] [--seeds N]
@@ -24,7 +24,7 @@ nnnotes music-data (--master-files DIR | --apk-master | --decoded-master) [--ful
   `MasterManifest.json` of the files they were decoded from, as a master data snapshot published with its manifest
   carries it. The file's `region` is `[catalog] region`; no master key is needed.
 - `--full`: also write the deck model's input, every chart's runtime notes and the master data tables about cards,
-  skills, bonuses, scores and events ([the deck input](#the-deck-input---full)), for tools that run a deck model of
+  skills, bonuses, scores and events ([the deck input](#the-deck-input-full)), for tools that run a deck model of
   their own.
 - `--no-deck`: do not run the deck model; every chart's `deck` is null. A full statistics build evaluates many
   complete lives per chart. `--workers N` sets the native worker count (default: every available processor; `0`: one thread).
@@ -36,8 +36,7 @@ nnnotes music-data (--master-files DIR | --apk-master | --decoded-master) [--ful
   compiled simulation inputs, so unchanged programs and runs can survive a change to the skill catalog. New
   shapes need their own measurements; changing a shape's numeric index does not by itself identify a new program.
   Every invocation still passes the complete current master data and charts to the native model, which constructs
-  the current header and assembles the requested statistics. Python does not reuse a chart-sized JSON result or
-  replace the model's dependency analysis with a table allowlist.
+  the current header and assembles the requested statistics.
   Cache records are isolated by cache schema and model source SHA-256. Each completed result is saved through a
   unique temporary file, a file sync and an atomic rename. Invalid or unreadable records are measured again;
   interrupted work retains its completed records. Concurrent processes may compute the same missing record, but
@@ -45,7 +44,7 @@ nnnotes music-data (--master-files DIR | --apk-master | --decoded-master) [--ful
   collection, and unused model-source directories can be removed to reclaim space. A record larger than 64 MiB is
   not persisted. The command's `deckStats` summary reports native requests, hits, completed computations, writes,
   invalid entries and written bytes; these count cache operations, not charts. Cache counters are not part of the
-  published music data. This cache does not import the previous Python chart cache.
+  published music data. Removing the cache changes the amount of work, not the bytes of the music data.
 - `--no-bgm`: do not read the cue sheets (every `bgm.length` is null).
 - `--jackets DIR`: also write every song's jacket, the Texture2D `Image/Jacket/<jacket>`, as `DIR/<jacket>.webp`
   (WebP quality 88, scaled down with Lanczos to at most 320 pixels on the longer side, without alpha when opaque); a
@@ -107,7 +106,7 @@ A **text** is an object with one string per language of `languages` (`{"ja": ...
 | `catalog.sha256` | SHA-256 of the remote catalog file the charts were read with |
 | `master.source` | `api` (`--master-files`, `--decoded-master`: the region's files) or `embedded` (`--apk-master`) |
 | `master.version` | the `version` of the master data manifest |
-| `master.tables.<Table>.sha256` | SHA-256 of each table's file as served, before decoding: the song tables (`MasterLiveMusic`, `MasterLiveMusicScore`, `MasterText`, `MasterBand`, `MasterCharacter`, `MasterTag`, `MasterLiveMusicCategory`, `MasterSound`, `MasterSoundCueSheet`, `MasterLiveScoreRank`), the tables of the Gekisou catalog (`MasterMemberCard`, `MasterSupportCard`, `MasterSupportCardRank`, `MasterGekisouSkill`, `MasterGekisouSkillEffect`, `MasterGekisouSupportSkill`, `MasterGekisouSupportSkillEffect`) and, when the deck model runs or with `--full`, the tables of [the deck input](#the-deck-input---full) |
+| `master.tables.<Table>.sha256` | SHA-256 of each table's file as served, before decoding: the song tables (`MasterLiveMusic`, `MasterLiveMusicScore`, `MasterText`, `MasterBand`, `MasterCharacter`, `MasterTag`, `MasterLiveMusicCategory`, `MasterSound`, `MasterSoundCueSheet`, `MasterLiveScoreRank`), the tables of the Gekisou catalog (`MasterMemberCard`, `MasterSupportCard`, `MasterSupportCardRank`, `MasterGekisouSkill`, `MasterGekisouSkillEffect`, `MasterGekisouSupportSkill`, `MasterGekisouSupportSkillEffect`) and, when the deck model runs or with `--full`, the tables of [the deck input](#the-deck-input-full) |
 | `exporter.name`, `exporter.version` | `nnnotes` and its version |
 | `exporter.chartFormat` | the format of the chart converter the notes come from, `nnnotes.live-score/1` |
 | `deck` | the deck model: `{name, version, source, commit, sourceSha256, format}`, `ournotes-deck`, the package version of its crate ournotes-sim, the repository, the git commit nnnotes is built with and the statistics format (`ournotes-deck.chart-stats/3`); null with `--no-deck` |
@@ -458,32 +457,16 @@ the replay and recommendation engines of `--replay-engine` and `--recommend-engi
 `build-info.json` names the release commit that `provenance.deck.commit` names; engines of another release are
 rejected.
 
-## Versions
-
-`format` names the major version. Within `nnnotes.music-data/2`, fields and tables are only added, never renamed,
-removed or given another meaning, and readers ignore keys they do not know. Readers must reject an unknown major
-version. This version carries `ournotes-deck.chart-stats/3` in `provenance.deck.format` and requires that exact
-statistics format from the extension module.
-
-`nnnotes.music-data/2` replaces the per-seed Gekisou statistics and sampled aptitude of `/1` with nominal
-expectations and outward numerical intervals. `seeds` becomes `expectation` plus separate `replaySeeds`; the
-aptitude `seedRule` becomes `law`, sampling flags disappear, checks use interval `expected`/`predicted` values, and
-Perfect-play range bonuses are explicit. These are changes of meaning as well as shape: an older reader must not
-interpret a radius as a standard error. Free Live `offSeeds`, chart facts and the optional `nnnotes.deck-data/1`
-input retain their existing semantics. The old aptitude sampling-cap CLI options are no longer accepted.
-
-The persistent statistics cache also starts a new format. The native cache uses model-source namespaces and
-fine-grained program/run identities; no old Python chart-cache entry is migrated or trusted. Removing a cache
-changes the amount of work, not the music data bytes.
-
-Deploy readers supporting `/2` and nominal expectations before publishing the new format. The reference page
-is pinned in `.github/workflows/music-data-region.yml`; any configured override must support the same format.
-The native release packages, Python producer and deployed consumers must move together as described in
-[the publication workflow](../.github/MUSIC_DATA.md#before-the-first-run).
-
 `--replay-dir OUT/replay --replay-engine PKG [--recommend-engine PKG]` writes normalized runtime inputs, the pinned
 model's WASM release packages (the replay engine and, optionally, the recommendation engine) and same-snapshot Snap
 label/reference-card metadata as described in [replay.md](replay.md). The music data stays compact and carries
 the SHA-bound `replay.manifestUrl` pointer; its manifest optionally references `snap-labels.json`. The selected
 decoded label tables retain names/templates, original per-level effects and artwork IDs. No encrypted master/chart
 blobs or native binary are included in this artifact bundle. Label metadata does not change the score model.
+
+## Versions
+
+`format` names the major version. Within `nnnotes.music-data/2`, fields and tables are only added, never renamed,
+removed or given another meaning, and readers ignore keys they do not know. Readers must reject an unknown major
+version. This version carries `ournotes-deck.chart-stats/3` in `provenance.deck.format` and requires that exact
+statistics format from the extension module.

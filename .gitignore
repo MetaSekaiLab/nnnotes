@@ -9,3 +9,4 @@ nnnotes.toml
 .env
 out/
 cache/
+/site/

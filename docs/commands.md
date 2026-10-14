@@ -1,4 +1,4 @@
-# Commands
+# Command outputs
 
 ```
 nnnotes <group> <command> [options]
@@ -561,7 +561,7 @@ SITE/assets/<sha256>.<ext>[.gz|.br]       content-addressed files shared by all 
   runs the chart silent on its own clock, and plays stories without their sounds; story videos keep their sound
   track).
 - `--workers`: parallel music processes (default a quarter of the CPUs, up to 8), model processes (default up
-  to 4) and story processes (default a quarter of the CPUs, up to 8); `1` builds in this process. `--read-workers`: chart read sets run at a time, each a Node.js process
+  to 4) and story processes (default a quarter of the CPUs, up to 8); `0` or `1` builds in this process. `--read-workers`: chart read sets run at a time, each a Node.js process
   (default half the CPUs, up to 16). With a player whose read-set script lists a chart's files from its plan
   (without stepping the chart) and serves many charts from one process, the plans run in one long-lived Node.js
   process per read-set slot, ended with the build; the full simulations that check a sample of the plans still run

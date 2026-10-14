@@ -29,7 +29,7 @@ def _choices(sub: argparse._SubParsersAction) -> dict[str, str]:
 
 
 def argument(a: argparse.Action) -> dict:
-    """An argument: its flags (or name), value name, help and the facts the help does not say."""
+    """An argument: its flags (or name), value name, help and its choices, default and repetition."""
     d = {"flags": list(a.option_strings) or [a.metavar or a.dest], "help": _help(a)}
     takes = a.nargs != 0
     if a.option_strings and takes:
@@ -92,10 +92,11 @@ def _usage(d: dict) -> str:
 
 
 def _facts(d: dict) -> str:
+    """The choices, default and repetition of an argument, those its help does not already state."""
     facts = []
     if "choices" in d:
         facts.append("one of " + ", ".join(f"`{c}`" for c in d["choices"]))
-    if "default" in d:
+    if "default" in d and "default" not in d["help"]:
         facts.append(f"default `{d['default']}`")
     if d.get("repeatable") and "repeatable" not in d["help"]:
         facts.append("repeatable")

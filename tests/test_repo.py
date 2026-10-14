@@ -1,4 +1,4 @@
-"""Repository metadata: the package page's readme and the commit message check."""
+"""Repository metadata: the readmes, the documentation site and the commit message check."""
 
 import re
 import tomllib
@@ -6,22 +6,55 @@ from pathlib import Path
 
 import pytest
 
+from nnnotes import schemas
+
 ROOT = Path(__file__).resolve().parents[1]
 REPO_BLOB = "https://github.com/MetaSekaiLab/nnnotes/blob/main/"
+DOCS_SITE = "https://metasekailab.github.io/nnnotes/"
 
 
-def test_package_readme_is_english_with_absolute_links():
-    meta = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]
-    assert meta["readme"] == "README.en.md"
-    text = (ROOT / meta["readme"]).read_text(encoding="utf-8")
-    links = re.findall(r"\]\(([^)\s]+)\)", text)
-    assert links
-    relative = [u for u in links if not re.match(r"https?://", u)]
-    assert relative == []  # a package index has no repository to resolve them in
-    for u in links:
+def links(text: str) -> list[str]:
+    return re.findall(r"\]\(([^)\s]+)\)", text)
+
+
+@pytest.mark.parametrize("name", ["README.md", "README.zh-CN.md"])
+def test_readmes_have_absolute_links(name):
+    text = (ROOT / name).read_text(encoding="utf-8")
+    found = links(text)
+    assert found
+    # a package index has no repository to resolve relative links in
+    assert [u for u in found if not re.match(r"https?://", u)] == []
+    for u in found:
         if u.startswith(REPO_BLOB):
             assert (ROOT / u[len(REPO_BLOB) :]).is_file(), u
-    assert (ROOT / "README.md").is_file()  # the repository's own page stays the Chinese one
+        if u.startswith(DOCS_SITE):
+            page = u[len(DOCS_SITE) :].split("#")[0].strip("/")
+            assert (ROOT / "docs" / f"{page or 'index'}.md").is_file(), u
+
+
+def test_the_package_page_is_the_english_readme():
+    meta = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]
+    assert meta["readme"] == "README.md"
+    assert meta["urls"]["Documentation"] == DOCS_SITE
+
+
+def test_the_translation_follows_the_readme():
+    def shape(name):
+        text = (ROOT / name).read_text(encoding="utf-8")
+        return [len(h) for h in re.findall(r"^(#+) ", text, re.M)], [u for u in links(text) if DOCS_SITE in u]
+
+    assert shape("README.zh-CN.md") == shape("README.md")
+
+
+def test_every_docs_page_is_in_the_site_navigation():
+    nav = re.findall(r"^\s+- [^:]+: ([\w-]+\.md)$", (ROOT / "mkdocs.yml").read_text(encoding="utf-8"), re.M)
+    assert sorted(nav) == sorted(p.name for p in (ROOT / "docs").glob("*.md"))
+    assert len(set(nav)) == len(nav)
+
+
+def test_the_schema_page_lists_every_schema():
+    text = (ROOT / "docs" / "schemas.md").read_text(encoding="utf-8")
+    assert re.findall(r"^\| `([\w-]+)` \|", text, re.M) == schemas.names()
 
 
 def workflow_triggers(text: str) -> list[str]:
@@ -53,7 +86,13 @@ def test_the_deck_pin_pull_request_gets_its_checks():
         assert f'gh workflow run {name} --repo "$GITHUB_REPOSITORY" --ref deck/update' in deck
 
 
-@pytest.mark.parametrize("name", ["README.md", "README.en.md"])
+@pytest.mark.parametrize("name", ["README.md", "README.zh-CN.md"])
 def test_determinism_is_stated_with_its_condition(name):
     text = (ROOT / name).read_text(encoding="utf-8")
     assert "Pillow" in text and "1e999" in text
+
+
+def test_the_changelog_starts_with_the_generated_header():
+    header = tomllib.loads((ROOT / "cliff.toml").read_text(encoding="utf-8"))["changelog"]["header"]
+    assert "Semantic Versioning" in header
+    assert (ROOT / "CHANGELOG.md").read_text(encoding="utf-8").startswith(header.rstrip("\n") + "\n\n## ")

@@ -1,6 +1,8 @@
 # Changelog
 
-All notable changes to this project are listed here. Versions follow [Semantic Versioning](https://semver.org/).
+All notable changes to this project are listed here. Versions follow [Semantic Versioning](https://semver.org/)
+over the command line (commands, options, exit statuses and `--json` reports), the configuration keys, the JSON
+schemas in `nnnotes.schemas` and the documented Python API. Before 1.0 a minor version can change any of them.
 
 ## [0.2.1](https://github.com/MetaSekaiLab/nnnotes/compare/v0.2.0...v0.2.1) - 2026-10-13
 
