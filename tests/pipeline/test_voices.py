@@ -15,8 +15,8 @@ import pytest
 from nnnotes.formats import acb
 from nnnotes.pipeline import contract, voices
 from nnnotes.pipeline.contract import Input, Task
+from nnnotes.pipeline.depot import Depot
 from nnnotes.pipeline.stages import Env, Pending, describe, execute, registry
-from nnnotes.pipeline.store import Store
 from nnnotes.pipeline.views import AddressIndex, ViewError
 from nnnotes.source import languages
 from tests.pipeline.test_views import FakeAddresses, addresses_doc, write_master
@@ -420,8 +420,8 @@ def audio_task(sheet: str, sheets=None) -> Task:
     return Task("cri.audio", 1, sha, {"flac": {"level": 8}}, {}, (Input("acb", sha, len(data)),))
 
 
-def audio_result(store, sheet: str, unsupported: bool = False, sheets=None) -> dict:
-    """A cri.audio result of a sheet, committed to `store` when given."""
+def audio_result(depot, sheet: str, unsupported: bool = False, sheets=None) -> dict:
+    """A cri.audio result of a sheet, committed to `depot` when given."""
     sheets = sheets or SHEETS
     t = (
         audio_task(sheet, sheets)
@@ -442,8 +442,8 @@ def audio_result(store, sheet: str, unsupported: bool = False, sheets=None) -> d
     for n, name, file, samples in stream_files(sheet, sheets):
         data = f"{sheet}/{file}".encode()
         content = (
-            store.add(data, "flac")
-            if store is not None
+            depot.add(data, "flac")
+            if depot is not None
             else {"sha256": contract.sha256(data), "size": len(data), "mediaType": "audio/flac", "ext": "flac"}
         )
         arts.append(
@@ -459,18 +459,18 @@ def audio_result(store, sheet: str, unsupported: bool = False, sheets=None) -> d
             )
         )
     res = contract.result(t, arts, [contract.item(t.id, "exported", artifacts=[a["id"] for a in arts], cls="ACB")])
-    if store is not None:
-        store.commit(res)
+    if depot is not None:
+        depot.commit(res)
     return res
 
 
-def audio(store=None, sheets=None) -> dict:
+def audio(depot=None, sheets=None) -> dict:
     sheets = sheets or SHEETS
     out = {
-        s: voices.sheet_audio(audio_result(store, s, sheets=sheets), acb.cue_streams(sheet_acb(s, sheets)))
+        s: voices.sheet_audio(audio_result(depot, s, sheets=sheets), acb.cue_streams(sheet_acb(s, sheets)))
         for s in sheets
     }
-    out["VoiceBroken"] = voices.sheet_audio(audio_result(store, "VoiceBroken", unsupported=True), None)
+    out["VoiceBroken"] = voices.sheet_audio(audio_result(depot, "VoiceBroken", unsupported=True), None)
     return out
 
 
@@ -696,7 +696,7 @@ def test_rules_are_checked():
 
 
 # ---------------------------------------------------------------- the stage
-def planning(store, tmp: Path, keys=KEYS, skip=(), sheets=None, tables=None, doc=None, results=None) -> Env:
+def planning(depot, tmp: Path, keys=KEYS, skip=(), sheets=None, tables=None, doc=None, results=None) -> Env:
     """An environment where link.addresses:main has run (the catalog keys `keys`, or the address table `doc`) and
     the cri.audio tasks of the decoded sheets have results; the raw ACBs are files under their catalog keys.
     `results(env)`: commits further results (unity.export) before the environment is returned."""
@@ -709,7 +709,7 @@ def planning(store, tmp: Path, keys=KEYS, skip=(), sheets=None, tables=None, doc
         p = tmp / "raw" / stable.replace("/", "_")
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_bytes(data)
-        sha, size = store.identify(p, "raw", stable)
+        sha, size = depot.identify(p, "raw", stable)
         raw[stable] = Input("raw", sha, size, f"{stable}_{'0' * 32}", ({"kind": "file", "path": str(p)},))
         deps[f"Cri/Sound/{sheet}"] = [stable]
     lid = {s: f"remote:{i}" for i, s in enumerate(sorted(raw))}
@@ -720,13 +720,13 @@ def planning(store, tmp: Path, keys=KEYS, skip=(), sheets=None, tables=None, doc
     ]
     cat = {"rawFiles": [{"stable": s, "locations": [lid[s]]} for s in sorted(raw)], "locations": locations}
     link = FakeAddresses(doc or addresses_doc({k: [] for k in keys}))
-    env = Env(store, {"catalogs": {"main": []}, "master": mdir, "views": ["voices"], "raw": raw, "index": cat})
+    env = Env(depot, {"catalogs": {"main": []}, "master": mdir, "views": ["voices"], "raw": raw, "index": cat})
     t = describe(link, "main", None, env)
-    execute(t, store, {link.name: link})
+    execute(t, depot, {link.name: link})
     env.done(t.id, t.key)
     for sheet in sheets:
         if sheet not in skip:
-            res = audio_result(store, sheet, sheets=sheets)
+            res = audio_result(depot, sheet, sheets=sheets)
             env.done(audio_task(sheet, sheets).id, res["key"])
     b = Task("cri.audio", 1, raw["cri_assets_cri/sound/voicebroken"].sha256, {}, {}, ())
     broken = contract.result(
@@ -738,7 +738,7 @@ def planning(store, tmp: Path, keys=KEYS, skip=(), sheets=None, tables=None, doc
             )
         ],
     )
-    store.commit(broken)
+    depot.commit(broken)
     env.done(b.id, broken["key"])
     if results is not None:
         results(env)
@@ -748,19 +748,19 @@ def planning(store, tmp: Path, keys=KEYS, skip=(), sheets=None, tables=None, doc
 def run_stage(env):
     stage = voices.VoiceStage()
     task = describe(stage, "main", None, env)
-    ex = execute(task, env.store, registry(stage))
-    res = env.store.result(task.key)
-    return stage, task, ex, res, contract.loads(env.store.read(res["artifacts"][0]["content"]["sha256"]))
+    ex = execute(task, env.depot, registry(stage))
+    res = env.depot.result(task.key)
+    return stage, task, ex, res, contract.loads(env.depot.read(res["artifacts"][0]["content"]["sha256"]))
 
 
 def test_stage_subjects_inputs_and_waits(tmp_path):
-    store = Store(tmp_path / "s")
+    depot = Depot(tmp_path / "s")
     stage = voices.VoiceStage()
     assert stage.name == "view.voices" and stage.version == 2
     assert stage.after == ("link.addresses", "unity.export", "cri.audio")
-    assert stage.subjects(Env(store, {"catalogs": {"main": []}, "master": None})) == []
-    assert stage.subjects(Env(store, {"catalogs": {"main": []}, "master": tmp_path, "views": ["cards"]})) == []
-    env = planning(store, tmp_path)
+    assert stage.subjects(Env(depot, {"catalogs": {"main": []}, "master": None})) == []
+    assert stage.subjects(Env(depot, {"catalogs": {"main": []}, "master": tmp_path, "views": ["cards"]})) == []
+    env = planning(depot, tmp_path)
     assert stage.subjects(env) == ["main"]
     task = describe(stage, "main", None, env)
     roles = sorted(i.role for i in task.inputs)
@@ -774,7 +774,7 @@ def test_stage_subjects_inputs_and_waits(tmp_path):
         "rules",
         "sheets",
     ]
-    sheets = contract.loads(store.read(task.input("sheets").sha256))
+    sheets = contract.loads(depot.read(task.input("sheets").sha256))
     assert sorted(sheets) == sorted([*SHEETS, "VoiceBroken"])
     assert sheets["VoiceSystem_01"] == {
         "task": audio_task("VoiceSystem_01").id,
@@ -782,7 +782,7 @@ def test_stage_subjects_inputs_and_waits(tmp_path):
     }
     assert sorted(task.context["audio"]) == sorted(stage.depends("main", env)[1:])
     assert stage.depends("main", env)[0] == "link.addresses:main"
-    waiting = Env(store, env.facts)
+    waiting = Env(depot, env.facts)
     for tid in env.tasks("link.addresses"):
         waiting.done(tid, env.key(tid))
     waiting.waiting(audio_task("VoiceSystem_01").id)
@@ -791,12 +791,12 @@ def test_stage_subjects_inputs_and_waits(tmp_path):
 
 
 def test_stage_document_equals_the_index_of_its_inputs(tmp_path):
-    store = Store(tmp_path / "s")
-    env = planning(store, tmp_path)
+    depot = Depot(tmp_path / "s")
+    env = planning(depot, tmp_path)
     stage, task, ex, res, doc = run_stage(env)
     assert (ex.status, ex.result_status) == ("ran", "ok") and res["items"] == []
     assert [a["id"] for a in res["artifacts"]] == ["view.voices:main#view"]
-    want = voices.build(voices.load_rules(), TABLES, index(), audio(store))
+    want = voices.build(voices.load_rules(), TABLES, index(), audio(depot))
     assert doc["rows"] == want["rows"] and doc["coverage"] == want["coverage"]
     assert sorted(doc["snapshot"]["tables"]) == voices.tables_of(stage.rules)
     assert doc["snapshot"]["sheets"]["VoiceBroken"]["status"] == "unsupported"
@@ -809,20 +809,20 @@ def test_stage_document_equals_the_index_of_its_inputs(tmp_path):
     }
     # described again: the same key; run again: the same bytes
     assert describe(voices.VoiceStage(), "main", None, env).key == task.key
-    again = execute(task, store, registry(stage), force=True)
-    assert again.status == "ran" and contract.encode(store.result(task.key)) == contract.encode(res)
+    again = execute(task, depot, registry(stage), force=True)
+    assert again.status == "ran" and contract.encode(depot.result(task.key)) == contract.encode(res)
     # the task crosses to another process as JSON
     same = contract.Task.from_json(json.loads(json.dumps(task.to_json())))
     assert same.key == task.key
 
 
 def test_stage_key_follows_the_audio_and_the_catalog(tmp_path):
-    store = Store(tmp_path / "s")
-    env = planning(store, tmp_path)
+    depot = Depot(tmp_path / "s")
+    env = planning(depot, tmp_path)
     key = describe(voices.VoiceStage(), "main", None, env).key
-    other = planning(Store(tmp_path / "t"), tmp_path / "t", keys=KEYS + ["Cri/Sound/VoiceGone"])
+    other = planning(Depot(tmp_path / "t"), tmp_path / "t", keys=KEYS + ["Cri/Sound/VoiceGone"])
     assert describe(voices.VoiceStage(), "main", None, other).key != key
-    fewer = planning(Store(tmp_path / "u"), tmp_path / "u", skip=("InitialVoice",))
+    fewer = planning(Depot(tmp_path / "u"), tmp_path / "u", skip=("InitialVoice",))
     k2 = describe(voices.VoiceStage(), "main", None, fewer).key
     assert k2 != key
     _, _, _, _, doc = run_stage(fewer)
@@ -841,12 +841,12 @@ class Paths:
 
 
 def test_derived_document_has_the_stream_paths(tmp_path):
-    store = Store(tmp_path / "s")
-    env = planning(store, tmp_path)
+    depot = Depot(tmp_path / "s")
+    env = planning(depot, tmp_path)
     stage, task, _, res, doc = run_stage(env)
     tid = audio_task("VoiceSystem_01").id
     placed = {f"{tid}#Growth_Alpha_RankUp_01.flac": "Cri/Sound/VoiceSystem_01/Growth_Alpha_RankUp_01.flac"}
-    out = stage.derived(task.id, res, store, Paths(placed))
+    out = stage.derived(task.id, res, depot, Paths(placed))
     assert [p for p, _ in out] == ["views/voices.json"]
     d = contract.loads(out[0][1])
     assert d["layout"] == "original"
@@ -875,18 +875,18 @@ class Catalog:
         return [k for k in KEYS if k.startswith(prefix)]
 
 
-def export_dir(tmp: Path, store) -> Path:
+def export_dir(tmp: Path, depot) -> Path:
     """An export directory: views/voices.json with paths and the stream files at them."""
     out = tmp / "out"
     placed = {}
-    doc = voices.build(voices.load_rules(), TABLES, index(), audio(store))
+    doc = voices.build(voices.load_rules(), TABLES, index(), audio(depot))
     for r in doc["rows"]:
         for s in (r.get("audio") or {}).get("streams", []):
             sheet = r["sound"]["sheet"]
             placed[s["artifact"]] = f"Cri/Sound/{sheet}/{s['file']}"
             f = out / placed[s["artifact"]]
             f.parent.mkdir(parents=True, exist_ok=True)
-            f.write_bytes(store.read(s["sha256"]))
+            f.write_bytes(depot.read(s["sha256"]))
     d = voices.with_paths(doc, Paths(placed))
     (out / "views").mkdir(parents=True)
     (out / "views" / "voices.json").write_bytes(contract.encode(d))

@@ -19,9 +19,9 @@ from nnnotes.pipeline import contract, objexport
 from nnnotes.pipeline.atoms import Impl, astc, estimate, gltf
 from nnnotes.pipeline.atoms.reader import UnityBundle
 from nnnotes.pipeline.contract import IncompatibleTask, Input, Task
+from nnnotes.pipeline.depot import Depot
 from nnnotes.pipeline.objexport import CONVERTERS, CROP, EXPORT, ExportStage, SpriteCropStage, export_atoms
 from nnnotes.pipeline.stages import Env, describe, execute, registry
-from nnnotes.pipeline.store import Store
 from tests.helpers.fakeunity import (
     F32,
     NORMAL,
@@ -573,9 +573,9 @@ def classes_of(name):
     return sorted({r.type.name for f in BUNDLES[name]().assets for r in f.objects.values()})
 
 
-def task_for(store, name, classes=None, params=None, scripts=None):
+def task_for(depot, name, classes=None, params=None, scripts=None):
     data = f"fake:{name}".encode()
-    sha = store.put(data)
+    sha = depot.put(data)
     stage = ExportStage(FAKE_READER)
     p = stage.normalize(dict(params or {}, classes=classes))
     return Task(
@@ -584,15 +584,15 @@ def task_for(store, name, classes=None, params=None, scripts=None):
         name,
         p,
         export_atoms(classes_of(name), FAKE_READER.id),
-        (Input("bundle", sha, len(data), f"{name}.bundle", ({"kind": "store"},)),),
+        (Input("bundle", sha, len(data), f"{name}.bundle", ({"kind": "depot"},)),),
         {"scripts": dict(SCRIPTS if scripts is None else scripts)},
     )
 
 
-def run(store, task):
+def run(depot, task):
     stage = ExportStage(FAKE_READER)
-    execute(task, store, registry(stage), force=True)
-    return store.result(task.key)
+    execute(task, depot, registry(stage), force=True)
+    return depot.result(task.key)
 
 
 def by_object(doc):
@@ -603,12 +603,12 @@ def art(doc, aid):
     return next(a for a in doc["artifacts"] if a["id"] == aid)
 
 
-def load(store, doc, aid):
-    return store.read(art(doc, aid)["content"]["sha256"])
+def load(depot, doc, aid):
+    return depot.read(art(doc, aid)["content"]["sha256"])
 
 
-def obj(store, doc, aid):
-    return contract.loads(load(store, doc, aid))
+def obj(depot, doc, aid):
+    return contract.loads(load(depot, doc, aid))
 
 
 def oid(pid, cab=CAB):
@@ -617,14 +617,14 @@ def oid(pid, cab=CAB):
 
 @pytest.fixture
 def exported(tmp_path):
-    store = Store(tmp_path / "store")
-    task = task_for(store, "all")
-    return store, task, run(store, task)
+    depot = Depot(tmp_path / "depot")
+    task = task_for(depot, "all")
+    return depot, task, run(depot, task)
 
 
 # ---------------------------------------------------------------- items
 def test_every_object_has_exactly_one_item(exported):
-    store, task, doc = exported
+    depot, task, doc = exported
     objects = [contract.object_id(f.name, pid) for f in bundle_all().assets for pid in f.objects]
     items = by_object(doc)
     assert sorted(items) == sorted(objects) and len(doc["items"]) == len(objects)
@@ -675,11 +675,11 @@ def test_every_object_has_exactly_one_item(exported):
     for a in doc["artifacts"]:
         owner, _role = contract.parse_artifact_id(a["id"])
         assert ("object" in a["provenance"]) == (not owner.startswith("unity.export:"))
-        assert store.has(a["content"]["sha256"], a["content"]["size"])
+        assert depot.has(a["content"]["sha256"], a["content"]["size"])
 
 
 def test_provenance_facts_and_atoms(exported):
-    store, task, doc = exported
+    depot, task, doc = exported
     a = art(doc, f"{oid(10)}#image")
     assert a["provenance"]["object"] == {
         "file": CAB,
@@ -706,8 +706,8 @@ def test_provenance_facts_and_atoms(exported):
 
 # ---------------------------------------------------------------- converters
 def test_textures(exported):
-    store, _task, doc = exported
-    png = load(store, doc, f"{oid(10)}#image")
+    depot, _task, doc = exported
+    png = load(depot, doc, f"{oid(10)}#image")
     img = Image.open(__import__("io").BytesIO(png))
     assert img.size == (W, H) and img.mode == "RGBA"
     expected = Image.frombytes("RGBA", (W, H), TEX_PIXELS).transpose(Image.Transpose.FLIP_TOP_BOTTOM)
@@ -725,15 +725,15 @@ def test_textures(exported):
         "exportedMips": [0],
         "mode": "RGBA",
     }
-    a = load(store, doc, f"{oid(15)}#image")
+    a = load(depot, doc, f"{oid(15)}#image")
     assert astc.parse_header(a) == {"block": (4, 4, 1), "size": (8, 8, 1)} and a[16:] == bytes(range(64))
     assert art(doc, f"{oid(15)}#image")["content"]["ext"] == "astc"
-    empty = obj(store, doc, f"{oid(14)}#json")
+    empty = obj(depot, doc, f"{oid(14)}#json")
     assert empty["m_Width"] == 0 and empty["image data"] == {"$hex": ""}
 
 
 def test_sprites_same_bundle(exported):
-    store, _task, doc = exported
+    depot, _task, doc = exported
     from nnnotes.pipeline.atoms import png, sprite
     from nnnotes.pipeline.atoms.mesh import arrays
     from nnnotes.pipeline.atoms.reader import mesh_input_from_typetree
@@ -754,11 +754,11 @@ def test_sprites_same_bundle(exported):
             100.0,
             canvas={"rect": tt["m_Rect"], "offset": src["textureRectOffset"], "pivot": tt["m_Pivot"]},
         )
-        assert load(store, doc, f"{oid(pid)}#image") == png.encode(want)
-        meta = obj(store, doc, f"{oid(pid)}#meta")
+        assert load(depot, doc, f"{oid(pid)}#image") == png.encode(want)
+        meta = obj(depot, doc, f"{oid(pid)}#meta")
         assert meta["image"]["texture"] == {"$ref": {"file": CAB, "pathId": 10, "class": "Texture2D", "name": "tex"}}
         assert meta["sprite"]["m_Name"] == tt["m_Name"]
-    meta = obj(store, doc, f"{oid(12)}#meta")
+    meta = obj(depot, doc, f"{oid(12)}#meta")
     assert meta["image"]["source"] == "atlas" and meta["image"]["atlas"]["$ref"]["pathId"] == 20
     assert meta["sprite"]["m_RD"]["m_VertexData"]["m_DataSize"]["$hex"]  # small: inline
     refs = art(doc, f"{oid(12)}#image")["semantics"]["refs"]
@@ -766,18 +766,18 @@ def test_sprites_same_bundle(exported):
 
 
 def test_sprite_with_its_atlas_elsewhere_gets_a_meta_only(exported):
-    store, _task, doc = exported
+    depot, _task, doc = exported
     assert by_object(doc)[oid(13)]["artifacts"] == [f"{oid(13)}#meta"]
     a = art(doc, f"{oid(13)}#meta")
     assert a["semantics"]["facts"] == {"crop": CROP, "atlas": f"{ATLAS_CAB}:99"}
-    meta = obj(store, doc, a["id"])
+    meta = obj(depot, doc, a["id"])
     assert meta["image"] == {"source": "atlas", "atlas": {"$ref": {"file": ATLAS_CAB, "pathId": 99}}, "stage": CROP}
     assert meta["object"]["name"] == "remote" and len(meta["mesh"]["positions"]) == 4
 
 
 def test_mesh(exported):
-    store, _task, doc = exported
-    d, body = gltf.read(load(store, doc, f"{oid(30)}#mesh"))
+    depot, _task, doc = exported
+    d, body = gltf.read(load(depot, doc, f"{oid(30)}#mesh"))
     (prim,) = d["meshes"][0]["primitives"]
     assert set(prim["attributes"]) == {"POSITION", "NORMAL", "TEXCOORD_0"} and prim["mode"] == 4
     pos = gltf.accessor_array(d, body, prim["attributes"]["POSITION"])
@@ -791,18 +791,18 @@ def test_mesh(exported):
 
 
 def test_text_and_fonts(exported):
-    store, _task, doc = exported
+    depot, _task, doc = exported
     a = art(doc, f"{oid(40)}#data")
-    assert load(store, doc, a["id"]) == b"hello\n" and a["content"]["ext"] == "txt"
-    assert load(store, doc, f"{oid(41)}#data") == b"\xff\xfe\x00bin"
+    assert load(depot, doc, a["id"]) == b"hello\n" and a["content"]["ext"] == "txt"
+    assert load(depot, doc, f"{oid(41)}#data") == b"\xff\xfe\x00bin"
     assert art(doc, f"{oid(41)}#data")["content"]["ext"] == "bin"
     f = art(doc, f"{oid(42)}#font")
-    assert load(store, doc, f["id"]) == _ttf() and f["content"]["ext"] == "ttf"
+    assert load(depot, doc, f["id"]) == _ttf() and f["content"]["ext"] == "ttf"
 
 
 def test_prefab(exported):
-    store, _task, doc = exported
-    p = obj(store, doc, f"{oid(60)}#prefab")
+    depot, _task, doc = exported
+    p = obj(depot, doc, f"{oid(60)}#prefab")
     assert p["name"] == "root" and [n["path"] for n in p["nodes"]] == ["root", "root/child"]
     root, child = p["nodes"]
     assert root["pathId"] == 60 and root["transformPathId"] == 61 and root["layer"] == 5
@@ -813,9 +813,9 @@ def test_prefab(exported):
     assert fields["tex"] == {"$ref": {"file": CAB, "pathId": 10, "class": "Texture2D", "name": "tex"}}
     assert fields["m_Script"] == {"$ref": {"file": "CAB-scripts", "pathId": 7}}
     assert math.isnan(fields["value"]) and fields["small"] == {"$hex": "616263"}
-    assert b'{"$float": "nan"}' in load(store, doc, f"{oid(60)}#prefab").replace(b"\n", b"").replace(
+    assert b'{"$float": "nan"}' in load(depot, doc, f"{oid(60)}#prefab").replace(b"\n", b"").replace(
         b" ", b""
-    ) or b'"$float"' in load(store, doc, f"{oid(60)}#prefab")
+    ) or b'"$float"' in load(depot, doc, f"{oid(60)}#prefab")
     (c,) = child["components"]
     assert c["fields"]["up"] == {"transform": "root"}
     assert c["fields"]["comp"] == {"component": "MonoBehaviour", "gameObject": "root", "class": "Behaviour"}
@@ -824,8 +824,8 @@ def test_prefab(exported):
 
 
 def test_scriptable_objects_blobs_and_strings(exported):
-    store, _task, doc = exported
-    m = obj(store, doc, f"{oid(70)}#json")
+    depot, _task, doc = exported
+    m = obj(depot, doc, f"{oid(70)}#json")
     assert m["$script"] == "A|Game|Local" and m["m_Name"] == "moc"
     blob = m["_bytes"]["$blob"]
     assert blob == {"sha256": contract.sha256(MOC), "size": len(MOC), "format": "moc3"}
@@ -835,19 +835,19 @@ def test_scriptable_objects_blobs_and_strings(exported):
         "format": "moc3",
         "facts": {"field": "_bytes"},
     }
-    assert load(store, doc, b["id"]) == MOC
+    assert load(depot, doc, b["id"]) == MOC
     assert m["text"] == {"$hex": b"caf".hex() + "c3"}
     assert by_object(doc)[oid(70)]["artifacts"] == [f"{oid(70)}#blob:_bytes", f"{oid(70)}#json"]
-    lost = obj(store, doc, f"{oid(71)}#json")
+    lost = obj(depot, doc, f"{oid(71)}#json")
     assert "$script" not in lost and lost["m_Script"] == {"$ref": {"file": "CAB-scripts", "pathId": 9}}
 
 
 def test_cue_sheets_held_in_the_bundle(exported):
-    store, _task, doc = exported
+    depot, _task, doc = exported
     from nnnotes.formats import cri
 
     a = art(doc, f"{oid(73)}#acb")
-    assert load(store, doc, a["id"]) == SPLIT_ACB == cri.split_acb(SPLIT_CHUNKS)
+    assert load(depot, doc, a["id"]) == SPLIT_ACB == cri.split_acb(SPLIT_CHUNKS)
     assert a["content"]["ext"] == "acb" and a["semantics"] == {
         "kind": "cri.acb",
         "format": "acb",
@@ -855,25 +855,25 @@ def test_cue_sheets_held_in_the_bundle(exported):
         "refs": [{"rel": "chunk", "object": oid(44)}, {"rel": "chunk", "object": oid(45)}],
     }
     assert by_object(doc)[oid(73)]["artifacts"] == [f"{oid(73)}#acb", f"{oid(73)}#json"]
-    assert obj(store, doc, f"{oid(73)}#json")["$script"] == "Assembly-CSharp|Fwk.Sound|SplitAcbData"
-    assert load(store, doc, f"{oid(44)}#data") == SPLIT_CHUNKS[0]  # the chunks stay exported
+    assert obj(depot, doc, f"{oid(73)}#json")["$script"] == "Assembly-CSharp|Fwk.Sound|SplitAcbData"
+    assert load(depot, doc, f"{oid(44)}#data") == SPLIT_CHUNKS[0]  # the chunks stay exported
     e = art(doc, f"{oid(74)}#acb")
-    assert load(store, doc, e["id"]) == EMBEDDED_ACB
+    assert load(depot, doc, e["id"]) == EMBEDDED_ACB
     assert e["semantics"]["facts"] == {"cueSheet": "se_test", "layout": "embedded"}
-    m = obj(store, doc, f"{oid(74)}#json")
+    m = obj(depot, doc, f"{oid(74)}#json")
     ref = m["references"]["RefIds"][0]
     assert ref["type"] == {"class": IMPL[2], "ns": IMPL[1], "asm": IMPL[0]}
     assert ref["data"]["data"] == {
         "$blob": {"sha256": contract.sha256(EMBEDDED_ACB), "size": len(EMBEDDED_ACB), "format": "acb"}
     }
     assert by_object(doc)[oid(74)]["artifacts"] == [f"{oid(74)}#acb", f"{oid(74)}#json"]  # no blob: artifact
-    small = run(store, task_for(store, "all", classes=["MonoBehaviour"], params={"blobMin": 1 << 20}))
-    assert load(store, small, f"{oid(74)}#acb") == EMBEDDED_ACB  # whatever its size
+    small = run(depot, task_for(depot, "all", classes=["MonoBehaviour"], params={"blobMin": 1 << 20}))
+    assert load(depot, small, f"{oid(74)}#acb") == EMBEDDED_ACB  # whatever its size
 
 
-def movie_task(store, converter=True):
+def movie_task(depot, converter=True):
     """The task of the movie bundle: converter cri.usm in its atoms, as uses() gives it for that bundle."""
-    t = task_for(store, "movie", scripts=USM_SCRIPTS)
+    t = task_for(depot, "movie", scripts=USM_SCRIPTS)
     atoms = {**t.atoms, "cri.usm": "cri.usm/1"} if converter else t.atoms
     return Task(t.stage, t.version, t.subject, t.params, dict(sorted(atoms.items())), t.inputs, t.context)
 
@@ -882,33 +882,33 @@ def test_movies_held_in_the_bundle(tmp_path):
     """A movie asset's USM bytes (CriSerializedBytesAssetImpl) are its `usm` artifact whatever their size; the cue
     sheet beside it keeps its `acb`. Without converter cri.usm the movie asset is exported as before (its bytes are
     not an ACB: the typetree with generic.error)."""
-    store = Store(tmp_path / "s")
-    doc = run(store, movie_task(store))
+    depot = Depot(tmp_path / "s")
+    doc = run(depot, movie_task(depot))
     m, a = "CAB-movie:2", "CAB-movie:3"
     usm = art(doc, f"{m}#usm")
-    assert load(store, doc, usm["id"]) == WARMUP and usm["content"]["ext"] == "usm"
+    assert load(depot, doc, usm["id"]) == WARMUP and usm["content"]["ext"] == "usm"
     assert usm["semantics"] == {"kind": "cri.usm", "format": "usm", "facts": {"movie": "warmup"}}
-    tree = obj(store, doc, f"{m}#json")
+    tree = obj(depot, doc, f"{m}#json")
     assert tree["$script"] == objexport.USM_ASSET_SCRIPT and tree["movieInfo"] == MOVIE_INFO
     assert tree["references"]["RefIds"][0]["data"]["data"] == {
         "$blob": {"sha256": contract.sha256(WARMUP), "size": len(WARMUP), "format": "usm"}
     }
     assert by_object(doc)[m]["status"] == "exported" and by_object(doc)[m]["artifacts"] == [f"{m}#json", f"{m}#usm"]
-    assert load(store, doc, f"{a}#acb") == EMBEDDED_ACB
-    old = run(store, movie_task(store, converter=False))
+    assert load(depot, doc, f"{a}#acb") == EMBEDDED_ACB
+    old = run(depot, movie_task(depot, converter=False))
     assert by_object(old)[m]["status"] == "generic" and by_object(old)[m]["reason"]["code"] == "generic.error"
-    assert f"{m}#usm" not in {x["id"] for x in old["artifacts"]} and load(store, old, f"{a}#acb") == EMBEDDED_ACB
+    assert f"{m}#usm" not in {x["id"] for x in old["artifacts"]} and load(depot, old, f"{a}#acb") == EMBEDDED_ACB
 
 
 def test_the_movie_converter_is_keyed_by_the_script_context(tmp_path):
-    store = Store(tmp_path / "s")
-    env = planning_env(store, ("all", "movie"), scripts=USM_SCRIPTS)
+    depot = Depot(tmp_path / "s")
+    env = planning_env(depot, ("all", "movie"), scripts=USM_SCRIPTS)
     stage = ExportStage(FAKE_READER)
     assert describe(stage, "movie", None, env).atoms["cri.usm"] == "cri.usm/1"
     assert "cri.usm" not in describe(stage, "all", None, env).atoms
     assert "cri.usm" not in describe(stage, "movie", {"classes": ["AssetBundle"]}, env).atoms
     assert "cri.usm" in stage.ATOMS
-    plain = planning_env(Store(tmp_path / "p"), ("movie",))
+    plain = planning_env(Depot(tmp_path / "p"), ("movie",))
     assert "cri.usm" not in describe(stage, "movie", None, plain).atoms
 
 
@@ -949,7 +949,7 @@ def test_acb_layouts(tmp_path):
 
 
 def test_a_split_sheet_with_a_missing_chunk_gives_the_typetree(tmp_path, monkeypatch):
-    store = Store(tmp_path / "s")
+    depot = Depot(tmp_path / "s")
     real = objexport.acb_asset
     monkeypatch.setattr(
         objexport,
@@ -958,21 +958,21 @@ def test_a_split_sheet_with_a_missing_chunk_gives_the_typetree(tmp_path, monkeyp
             dict(real(tt), chunks=[pptr(44), pptr(99, 1)]) if real(tt) and real(tt)["layout"] == "split" else real(tt)
         ),
     )
-    doc = run(store, task_for(store, "all", classes=["MonoBehaviour"]))
+    doc = run(depot, task_for(depot, "all", classes=["MonoBehaviour"]))
     item = by_object(doc)[oid(73)]
     assert item["status"] == "generic" and item["reason"]["code"] == "generic.error"
     assert "is not a TextAsset of the bundle" in item["reason"]["message"]
 
 
 def test_shader(exported):
-    store, _task, doc = exported
+    depot, _task, doc = exported
     from nnnotes.formats import shader
 
     env = bundle_all()
     r = env.assets[0].objects[51]
     text, recs, codes = shader._render(r, r.tt, "Test/Unlit")  # what `nnnotes shader` writes
-    assert load(store, doc, f"{oid(51)}#json") == text.encode("utf-8")
-    index = obj(store, doc, f"{oid(51)}#index")
+    assert load(depot, doc, f"{oid(51)}#json") == text.encode("utf-8")
+    index = obj(depot, doc, f"{oid(51)}#index")
     assert (
         index["name"] == "Test/Unlit"
         and [{k: v for k, v in x.items() if k != "role"} for x in index["variants"]] == recs
@@ -980,10 +980,10 @@ def test_shader(exported):
     assert [x["role"] for x in index["variants"]] == ["program:gles3/s0p0_vertex_0", "program:gles3/s0p0_fragment_0"]
     for x, code in zip(index["variants"], codes):
         a = art(doc, f"{oid(51)}#{x['role']}")
-        assert load(store, doc, a["id"]) == code and a["content"]["ext"] == "glsl"
+        assert load(depot, doc, a["id"]) == code and a["content"]["ext"] == "glsl"
         assert a["semantics"]["facts"]["keywords"] == x["keywords"]
     assert codes[0] == b"#ifdef VERTEX\nvoid main(){}\n#endif\n" and index["variants"][0]["keywords"] == ["KW_A"]
-    t = obj(store, doc, f"{oid(51)}#typetree")
+    t = obj(depot, doc, f"{oid(51)}#typetree")
     assert t["m_ParsedForm"]["m_Name"] == "Test/Unlit" and "$hex" in t["compressedBlob"]
     assert art(doc, f"{oid(51)}#json")["semantics"]["facts"] == {
         "name": "Test/Unlit",
@@ -993,33 +993,33 @@ def test_shader(exported):
 
 
 def test_clip_bindings_name_scripts_of_other_bundles(exported):
-    store, _task, doc = exported
-    clip = obj(store, doc, f"{oid(96)}#json")
+    depot, _task, doc = exported
+    clip = obj(depot, doc, f"{oid(96)}#json")
     (b,) = clip["bindings"]
     assert b["typeID"] == 114 and b["class"] == "Fader" and b["path"] == ""
     assert census_mod.script_refs(census_doc(open_fake(b"fake:all"))) == sorted(SCRIPTS) + ["CAB-scripts:9"]
 
 
 def test_material_clip_controller(exported):
-    store, _task, doc = exported
-    mat = obj(store, doc, f"{oid(50)}#json")
+    depot, _task, doc = exported
+    mat = obj(depot, doc, f"{oid(50)}#json")
     assert mat["shader"] == {"$ref": {"file": ATLAS_CAB, "pathId": 5}}
     assert mat["textures"]["_MainTex"]["texture"]["$ref"]["pathId"] == 10
-    assert mat["colors"]["_Color"]["g"] == INF and b"1e999" in load(store, doc, f"{oid(50)}#json")
-    clip = obj(store, doc, f"{oid(90)}#json")
+    assert mat["colors"]["_Color"]["g"] == INF and b"1e999" in load(depot, doc, f"{oid(50)}#json")
+    clip = obj(depot, doc, f"{oid(90)}#json")
     assert clip["clip"] == "clip" and clip["bindings"] == [
         {"path": "", "typeID": 4, "class": "Transform", "attribute": "m_LocalPosition", "curves": 3}
     ]
-    ctl = obj(store, doc, f"{oid(92)}#json")
+    ctl = obj(depot, doc, f"{oid(92)}#json")
     assert ctl["clips"] == [{"$ref": {"file": CAB, "pathId": 90, "class": "AnimationClip", "name": "clip"}}]
-    assert obj(store, doc, f"{oid(95)}#json")["m_Speed"] == INF
+    assert obj(depot, doc, f"{oid(95)}#json")["m_Speed"] == INF
 
 
 def test_loose_documents(exported):
-    store, task, doc = exported
-    s = obj(store, doc, "unity.export:all#scripts.json")
+    depot, task, doc = exported
+    s = obj(depot, doc, "unity.export:all#scripts.json")
     assert list(s["scripts"]) == [oid(80)] and s["scripts"][oid(80)]["m_ClassName"] == "Local"
-    b = obj(store, doc, "unity.export:all#bundle.json")
+    b = obj(depot, doc, "unity.export:all#bundle.json")
     assert b["files"] == [
         {
             "name": CAB,
@@ -1039,7 +1039,7 @@ def test_loose_documents(exported):
 
 
 def test_two_runs_are_identical(tmp_path):
-    a, b = Store(tmp_path / "a"), Store(tmp_path / "b")
+    a, b = Depot(tmp_path / "a"), Depot(tmp_path / "b")
     ta, tb = task_for(a, "all"), task_for(b, "all")
     assert ta.key == tb.key
     da, db = run(a, ta), run(b, tb)
@@ -1049,11 +1049,11 @@ def test_two_runs_are_identical(tmp_path):
 
 
 def test_key_follows_the_census_classes_and_params(tmp_path):
-    store = Store(tmp_path / "s")
-    t = task_for(store, "atlas")
+    depot = Depot(tmp_path / "s")
+    t = task_for(depot, "atlas")
     assert "mesh.glb" not in t.atoms and "mesh.arrays" in t.atoms  # sprites use mesh.arrays
     assert {"tex.png", "sprite.png", "generic.json", "bundle.json"} <= set(t.atoms)
-    assert task_for(store, "atlas", params={"png": {"level": 3}}).key != t.key
+    assert task_for(depot, "atlas", params={"png": {"level": 3}}).key != t.key
     assert export_atoms(["Texture2D"]) == export_atoms(["Texture2D", "Texture2D"])
     assert set(export_atoms(["Mesh"])) == {"reader", "sniff", "mesh.arrays", "gltf.write", "mesh.glb", "generic.json"}
     with pytest.raises(ValueError, match="png level"):
@@ -1064,66 +1064,66 @@ def test_key_follows_the_census_classes_and_params(tmp_path):
 
 
 def test_png_level_changes_bytes_not_pixels(tmp_path):
-    store = Store(tmp_path / "s")
-    d6 = run(store, task_for(store, "all", classes=["Texture2D"]))
-    d0 = run(store, task_for(store, "all", classes=["Texture2D"], params={"png": {"level": 0}}))
-    p6, p0 = load(store, d6, f"{oid(10)}#image"), load(store, d0, f"{oid(10)}#image")
+    depot = Depot(tmp_path / "s")
+    d6 = run(depot, task_for(depot, "all", classes=["Texture2D"]))
+    d0 = run(depot, task_for(depot, "all", classes=["Texture2D"], params={"png": {"level": 0}}))
+    p6, p0 = load(depot, d6, f"{oid(10)}#image"), load(depot, d0, f"{oid(10)}#image")
     assert p6 != p0
     io = __import__("io")
     assert Image.open(io.BytesIO(p6)).tobytes() == Image.open(io.BytesIO(p0)).tobytes()
 
 
 def test_blob_threshold(tmp_path):
-    store = Store(tmp_path / "s")
-    doc = run(store, task_for(store, "all", classes=["MonoBehaviour"], params={"blobMin": 1 << 20}))
-    m = obj(store, doc, f"{oid(70)}#json")
+    depot = Depot(tmp_path / "s")
+    doc = run(depot, task_for(depot, "all", classes=["MonoBehaviour"], params={"blobMin": 1 << 20}))
+    m = obj(depot, doc, f"{oid(70)}#json")
     assert m["_bytes"] == {"$hex": MOC.hex()}
 
 
 def test_class_selection(tmp_path):
-    store = Store(tmp_path / "s")
-    doc = run(store, task_for(store, "all", classes=["Sprite"]))
+    depot = Depot(tmp_path / "s")
+    doc = run(depot, task_for(depot, "all", classes=["Sprite"]))
     items = by_object(doc)
     assert set(items) == {oid(11), oid(12), oid(13)}  # textures decoded, not exported
     assert all(i["status"] == "exported" for i in items.values())
-    doc = run(store, task_for(store, "all", classes=["GameObject"]))
+    doc = run(depot, task_for(depot, "all", classes=["GameObject"]))
     assert set(by_object(doc)) == {oid(p) for p in (60, 61, 62, 63, 64, 65)}
 
 
 def test_scripts_come_from_the_context_only(tmp_path):
-    store = Store(tmp_path / "s")
-    doc = run(store, task_for(store, "all", classes=["MonoBehaviour"], scripts={}))
+    depot = Depot(tmp_path / "s")
+    doc = run(depot, task_for(depot, "all", classes=["MonoBehaviour"], scripts={}))
     items = by_object(doc)
     assert items[oid(70)]["reason"]["code"] == "script.unresolved"
     assert items[oid(62)]["reason"]["code"] == "script.unresolved"  # no hierarchy: one by one
 
 
 def test_a_converter_error_gives_the_typetree(tmp_path, monkeypatch):
-    store = Store(tmp_path / "s")
+    depot = Depot(tmp_path / "s")
     real = objexport.RefExporter.conv_material
 
     def broken(self, info):
         raise KeyError("m_SavedProperties")
 
     monkeypatch.setattr(objexport.RefExporter, "conv_material", broken)
-    doc = run(store, task_for(store, "all", classes=["Material"]))
+    doc = run(depot, task_for(depot, "all", classes=["Material"]))
     item = by_object(doc)[oid(50)]
     assert item["status"] == "generic" and item["reason"] == {
         "code": "generic.error",
         "message": "KeyError: 'm_SavedProperties'",
     }
-    assert obj(store, doc, f"{oid(50)}#json")["m_Name"] == "mat"
+    assert obj(depot, doc, f"{oid(50)}#json")["m_Name"] == "mat"
     monkeypatch.setattr(objexport.RefExporter, "conv_material", real)
 
 
 def test_a_broken_hierarchy_gives_its_objects_one_by_one(tmp_path, monkeypatch):
-    store = Store(tmp_path / "s")
+    depot = Depot(tmp_path / "s")
 
     def broken(self, o):
         raise RuntimeError("component failed")
 
     monkeypatch.setattr(objexport.RefExporter, "component", broken)
-    doc = run(store, task_for(store, "all", classes=["GameObject"]))
+    doc = run(depot, task_for(depot, "all", classes=["GameObject"]))
     items = by_object(doc)
     assert {i["status"] for i in items.values()} == {"generic"}
     assert all(i["reason"]["code"] == "generic.error" for i in items.values())
@@ -1131,7 +1131,7 @@ def test_a_broken_hierarchy_gives_its_objects_one_by_one(tmp_path, monkeypatch):
 
 
 def test_unreadable_objects_fail(tmp_path, monkeypatch):
-    store = Store(tmp_path / "s")
+    depot = Depot(tmp_path / "s")
     real = UnityBundle.typetree
 
     def typetree(self, o):
@@ -1140,17 +1140,17 @@ def test_unreadable_objects_fail(tmp_path, monkeypatch):
         return real(self, o)
 
     monkeypatch.setattr(UnityBundle, "typetree", typetree)
-    doc = run(store, task_for(store, "all", classes=["Animator"]))
+    doc = run(depot, task_for(depot, "all", classes=["Animator"]))
     (item,) = doc["items"]
     assert item["status"] == "failed" and item["reason"]["code"] == "failed.read" and doc["status"] == "partial"
 
 
 def test_task_with_other_atoms_is_refused(tmp_path):
-    store = Store(tmp_path / "s")
-    t = task_for(store, "all")
+    depot = Depot(tmp_path / "s")
+    t = task_for(depot, "all")
     bad = Task(t.stage, t.version, t.subject, t.params, {**t.atoms, "tex.png": "tex.png/0"}, t.inputs, t.context)
     with pytest.raises(IncompatibleTask, match="tex.png"):
-        execute(bad, store, registry(ExportStage(FAKE_READER)))
+        execute(bad, depot, registry(ExportStage(FAKE_READER)))
     missing = Task(
         t.stage,
         t.version,
@@ -1161,7 +1161,7 @@ def test_task_with_other_atoms_is_refused(tmp_path):
         t.context,
     )
     with pytest.raises(IncompatibleTask, match="mesh.glb"):
-        execute(missing, store, registry(ExportStage(FAKE_READER)))
+        execute(missing, depot, registry(ExportStage(FAKE_READER)))
 
 
 # ---------------------------------------------------------------- describing tasks
@@ -1206,57 +1206,57 @@ def census_doc(view: UnityBundle) -> dict:
     }
 
 
-def committed(store, env, task, role, doc, kind):
+def committed(depot, env, task, role, doc, kind):
     rec = contract.artifact(
         contract.artifact_id(task.id, role),
-        store.add(contract.encode(doc), "json"),
+        depot.add(contract.encode(doc), "json"),
         contract.provenance(task),
         {"kind": kind, "format": "json", "facts": {}},
     )
-    store.commit(contract.result(task, [rec], []))
+    depot.commit(contract.result(task, [rec], []))
     env.done(task.id, task.key)
 
 
-def planning_env(store, names=("all", "atlas"), selected=None, scripts=SCRIPTS):
+def planning_env(depot, names=("all", "atlas"), selected=None, scripts=SCRIPTS):
     names = tuple(sorted(set(names) | set(selected or ())))
     bundles = {}
     for n in names:
         data = f"fake:{n}".encode()
-        bundles[n] = Input("bundle", store.put(data), len(data), f"{n}.bundle", ({"kind": "store"},))
-    env = Env(store, {"bundles": bundles, "selected": sorted(selected if selected is not None else names)})
+        bundles[n] = Input("bundle", depot.put(data), len(data), f"{n}.bundle", ({"kind": "depot"},))
+    env = Env(depot, {"bundles": bundles, "selected": sorted(selected if selected is not None else names)})
     for n in names:
         t = Task(census_mod.CensusStage.name, 1, n, {}, {}, (bundles[n],))
         doc = census_doc(open_fake(f"fake:{n}".encode()))
         rec = contract.artifact(
             contract.artifact_id(t.id, "census"),
-            store.add(contract.encode(doc), "json"),
+            depot.add(contract.encode(doc), "json"),
             contract.provenance(t),
             {"kind": "unity.census", "format": "json", "facts": census_mod.facts(doc)},
         )
-        store.commit(contract.result(t, [rec], []))
+        depot.commit(contract.result(t, [rec], []))
         env.done(t.id, t.key)
     table = Task("link.scripts", 1, "all")
-    committed(store, env, table, "scripts", {"schema": "nnnotes.scripts/1", "scripts": scripts}, "link.scripts")
+    committed(depot, env, table, "scripts", {"schema": "nnnotes.scripts/1", "scripts": scripts}, "link.scripts")
     return env
 
 
 def test_describe_reads_the_census_and_the_script_table(tmp_path):
-    store = Store(tmp_path / "s")
-    env = planning_env(store)
+    depot = Depot(tmp_path / "s")
+    env = planning_env(depot)
     stage = ExportStage(FAKE_READER)
     assert stage.subjects(env) == ["all", "atlas"]
     # every closure bundle holding a SpriteAtlas joins a selection that holds sprites (a sprite reaches its
     # texture through its atlas' bundle); a selection without sprites stays as it is
-    assert stage.subjects(planning_env(Store(tmp_path / "t"), selected=["all"])) == ["all", "atlas"]
-    assert stage.subjects(planning_env(Store(tmp_path / "u"), selected=["plain"])) == ["plain"]
+    assert stage.subjects(planning_env(Depot(tmp_path / "t"), selected=["all"])) == ["all", "atlas"]
+    assert stage.subjects(planning_env(Depot(tmp_path / "u"), selected=["plain"])) == ["plain"]
     t = describe(stage, "all", None, env)
     assert t.atoms == export_atoms(classes_of("all"), FAKE_READER.id)
-    assert t.context == {"scripts": SCRIPTS} and t.key == task_for(store, "all").key
+    assert t.context == {"scripts": SCRIPTS} and t.key == task_for(depot, "all").key
     assert stage.depends("all", env) == ["unity.census:all", "link.scripts:all"]
     a = describe(stage, "atlas", None, env)
     assert a.context == {} and "mesh.glb" not in a.atoms
     assert t.cost.peak_bytes >= 72 << 20
-    fresh = Env(store, env.facts)
+    fresh = Env(depot, env.facts)
     from nnnotes.pipeline.stages import Pending
 
     fresh.waiting("unity.census:all")
@@ -1265,11 +1265,11 @@ def test_describe_reads_the_census_and_the_script_table(tmp_path):
 
 
 def test_class_selection_keeps_only_its_converters_in_the_key(tmp_path):
-    store = Store(tmp_path / "s")
-    env = planning_env(store)
+    depot = Depot(tmp_path / "s")
+    env = planning_env(depot)
     stage = ExportStage(FAKE_READER)
     full = describe(stage, "all", None, env)
-    assert full.key == describe(stage, "all", {"classes": None}, env).key == task_for(store, "all").key
+    assert full.key == describe(stage, "all", {"classes": None}, env).key == task_for(depot, "all").key
     meshes = describe(stage, "all", {"classes": ["Mesh"]}, env)
     assert meshes.atoms == export_atoms(["Mesh"], FAKE_READER.id) and meshes.params["classes"] == ["Mesh"]
     assert "tex.png" not in meshes.atoms and meshes.key != full.key
@@ -1278,45 +1278,45 @@ def test_class_selection_keeps_only_its_converters_in_the_key(tmp_path):
     assert env.params == {}  # set while describing only
     for classes in (["Mesh"], ["Sprite"], ["GameObject"], ["Material", "AnimationClip"]):
         t = describe(stage, "all", {"classes": classes}, env)
-        execute(t, store, registry(stage))
-        doc = store.result(t.key)
+        execute(t, depot, registry(stage))
+        doc = depot.result(t.key)
         assert doc["items"] and all(i["class"] in {*classes, "Transform", "MonoBehaviour"} for i in doc["items"])
 
 
-def crop_setup(store):
-    env = planning_env(store)
+def crop_setup(depot):
+    env = planning_env(depot)
     stage = ExportStage(FAKE_READER)
     for n in ("all", "atlas"):
         t = describe(stage, n, None, env)
-        execute(t, store, registry(stage))
+        execute(t, depot, registry(stage))
         env.done(t.id, t.key)
     return env
 
 
 def test_sprite_crop_equals_the_same_sprite_cropped_in_its_atlas_bundle(tmp_path):
-    store = Store(tmp_path / "s")
-    env = crop_setup(store)
+    depot = Depot(tmp_path / "s")
+    env = crop_setup(depot)
     stage = SpriteCropStage()
     assert stage.subjects(env) == ["atlas:99"]
     t = describe(stage, "atlas:99", None, env)
     assert [i.role for i in t.inputs] == ["atlas", f"sprite:{oid(13)}", f"texture:{ATLAS_CAB}:98"]
     assert stage.depends("atlas:99", env) == ["unity.export:all", "unity.export:atlas"]
     assert set(t.atoms) == {"png.encode", "sprite.crop"}
-    execute(t, store, registry(stage))
-    doc = store.result(t.key)
+    execute(t, depot, registry(stage))
+    doc = depot.result(t.key)
     (item,) = doc["items"]
     assert item == {"object": oid(13), "status": "exported", "artifacts": [f"{oid(13)}#image"], "class": "Sprite"}
     a = doc["artifacts"][0]
     assert a["provenance"]["object"]["name"] == "remote" and a["provenance"]["object"]["file"] == CAB
-    local = store.result(env.key("unity.export:atlas"))
+    local = depot.result(env.key("unity.export:atlas"))
     same = art(local, f"{ATLAS_CAB}:97#image")
     assert a["content"] == same["content"]  # the same bytes as a local crop
-    assert Image.open(__import__("io").BytesIO(store.read(a["content"]["sha256"]))).size == (8, 8)
+    assert Image.open(__import__("io").BytesIO(depot.read(a["content"]["sha256"]))).size == (8, 8)
 
 
 def test_sprite_crop_waits_for_exports(tmp_path):
-    store = Store(tmp_path / "s")
-    env = planning_env(store)
+    depot = Depot(tmp_path / "s")
+    env = planning_env(depot)
     env.waiting("unity.export:all")
     from nnnotes.pipeline.stages import Pending
 
@@ -1377,7 +1377,7 @@ def export_golden():
     classes the converter takes), and the whole bundle."""
 
     def fixture(classes):
-        return lambda store: task_for(store, "all", classes=classes)
+        return lambda depot: task_for(depot, "all", classes=classes)
 
     fixtures = {name: fixture(classes) for name, classes in CONVERTER_CLASSES.items()}
     fixtures["all"] = fixture(None)
@@ -1388,8 +1388,8 @@ def export_golden():
 def crop_golden():
     """Provider of tests/golden/sprite.crop.json."""
 
-    def fixture(store):
-        env = crop_setup(store)
+    def fixture(depot):
+        env = crop_setup(depot)
         return describe(SpriteCropStage(), "atlas:99", None, env)
 
     return {"stage": SpriteCropStage(), "fixtures": {"atlas": fixture}, "libraries": LIBRARIES}
@@ -1416,7 +1416,7 @@ def test_a_converter_change_without_a_version_bump_fails_its_golden(tmp_path, mo
 
     monkeypatch.setattr(objexport.RefExporter, "conv_font", changed)
     p = export_golden()
-    actual = golden(p["stage"], p["fixtures"], Store(tmp_path / "s"), p["libraries"])
+    actual = golden(p["stage"], p["fixtures"], Depot(tmp_path / "s"), p["libraries"])
     problems = golden_problems(expected, actual, p["stage"])
     assert "unity.export: fixture font: output changed without a version bump" in problems
     assert "unity.export: fixture all: output changed without a version bump" in problems

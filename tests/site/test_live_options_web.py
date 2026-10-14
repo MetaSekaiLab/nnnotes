@@ -161,7 +161,7 @@ def test_live_option_flag(tmp_path, capsys, monkeypatch):
     master = option_tables(write_master(tmp_path / "m"))
     monkeypatch.setenv("NNNOTES_SERVERS_ZZ_CDN", (tmp_path / "cdn").as_uri())
     base = [
-        "--cache",
+        "--depot",
         str(tmp_path / "c"),
         "--region",
         "zz",

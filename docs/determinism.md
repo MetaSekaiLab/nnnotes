@@ -19,7 +19,7 @@ fixes the bytes, what can change them, and how the tests hold it.
   textures, shaders and audio are converted from the stored data with fixed encoder settings.
 - **No clocks.** No output holds the time of a run or a path of the machine it ran on. A result of the asset export
   holds no input name, locator, timestamp or traceback; the measured cost of a task (CPU and wall seconds, memory) is
-  kept in the store's cost report, apart from the results.
+  kept in the depot's cost report, apart from the results.
 
 ## What can change the bytes
 
@@ -32,7 +32,7 @@ Another version of an encoder can write the same content as other bytes:
   while lossy formats depend on the encoder version.
 - zlib and brotli encode the compressed assets of a site.
 
-So the guarantee is per installation: pin the versions to reproduce a result exactly. The store keeps this visible:
+So the guarantee is per installation: pin the versions to reproduce a result exactly. The depot keeps this visible:
 a task's key includes the implementation ids of the atoms it uses, with the versions of the libraries they call, so
 another installation computes other keys instead of mixing results.
 
@@ -44,7 +44,7 @@ another installation computes other keys instead of mixing results.
   library versions of `.github/goldens-constraints.txt` and sets `GOLDENS_STRICT=1`; elsewhere a record made with
   other library versions is skipped.
 - **Two runs, one result.** The tests run exports twice over synthetic inputs and compare the bytes, and compare
-  one worker with several: a store built with four workers equals one built with one, and parallel audio decoding
+  one worker with several: a depot built with four workers equals one built with one, and parallel audio decoding
   equals sequential decoding.
 - **Writer tests.** The JSON writer's tests cover the non-finite literals, the NaN error and the line endings.
 

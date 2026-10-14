@@ -1,0 +1,74 @@
+"""The collection of the depot: what kept runs reach stays, the rest goes."""
+
+import os
+
+from nnnotes.pipeline import contract
+from nnnotes.pipeline.contract import Input, Task
+from nnnotes.pipeline.depot import Depot
+
+
+def commit(d: Depot, task: Task, payload: bytes) -> dict:
+    aid = contract.artifact_id(task.id, "data.bin")
+    art = contract.artifact(aid, d.add(payload, "bin"), contract.provenance(task), {"kind": "test"})
+    doc = contract.result(task, [art], [])
+    d.commit(doc)
+    return doc
+
+
+def write_run(d: Depot, selection, tasks, layouts=None, mtime=None) -> dict:
+    doc = contract.run_doc(
+        context={"region": "r"},
+        selection=selection,
+        params={},
+        stages={"t.x": 1},
+        tasks=[{"id": t.id, "key": t.key, "status": "ran"} for t in tasks],
+        layouts=layouts or {},
+        summary={},
+    )
+    p = d.write_run(doc)
+    if mtime is not None:
+        os.utime(p, ns=(mtime, mtime))
+    return doc
+
+
+def test_gc_keeps_what_the_kept_runs_reach(tmp_path):
+    d = Depot(tmp_path)
+    stored = d.put(b"a stored input")
+    new = Task("t.x", 1, "a", inputs=(Input("doc", stored, 14, None, ({"kind": "depot"},)),))
+    old = Task("t.x", 1, "b")
+    new_art = commit(d, new, b"new")["artifacts"][0]["content"]["sha256"]
+    old_art = commit(d, old, b"old")["artifacts"][0]["content"]["sha256"]
+    orphan = d.put(b"no result names it")
+    first = write_run(d, ["group:a"], [old], mtime=1_000_000_000)
+    latest = write_run(d, ["group:a"], [new], mtime=2_000_000_000)
+
+    counted = d.gc(keep=1, dry_run=True)
+    assert counted["runs"] == {"kept": 1, "removed": 1} and counted["contents"] == {"kept": 2, "removed": 2}
+    assert d.run(first["id"]) is not None and d.has(orphan)  # a dry run removes nothing
+
+    r = d.gc(keep=1)
+    assert r["runs"] == {"kept": 1, "removed": 1} and r["results"] == {"kept": 1, "removed": 1}
+    assert r["contents"] == {"kept": 2, "removed": 2}
+    assert d.run(first["id"]) is None and d.run(latest["id"]) is not None
+    assert d.result(new.key) is not None and d.result(old.key) is None
+    assert d.has(new_art) and d.has(stored) and not d.has(old_art) and not d.has(orphan)
+
+
+def test_gc_keeps_every_run_by_default_and_the_latest_of_a_selection(tmp_path):
+    d = Depot(tmp_path)
+    a, b = Task("t.x", 1, "a"), Task("t.x", 1, "b")
+    commit(d, a, b"a")
+    commit(d, b, b"b")
+    write_run(d, ["group:a"], [a], mtime=2_000_000_000)
+    latest = write_run(d, ["group:a"], [b], mtime=1_000_000_000)  # written last: the selection's latest run
+    assert d.gc()["results"] == {"kept": 2, "removed": 0}
+    r = d.gc(keep=1)
+    assert r["runs"] == {"kept": 2, "removed": 0} and d.latest_run(["group:a"]) == latest
+
+
+def test_gc_keeps_the_files_of_a_layout_a_run_names(tmp_path):
+    d = Depot(tmp_path)
+    placed = d.put(b"a derived file")
+    manifest = d.add(contract.encode({"files": [{"path": "x.json", "sha256": placed, "size": 14}]}), "json")
+    write_run(d, ["group:a"], [], layouts={"original": manifest["sha256"]})
+    assert d.gc()["contents"] == {"kept": 2, "removed": 0} and d.has(placed)

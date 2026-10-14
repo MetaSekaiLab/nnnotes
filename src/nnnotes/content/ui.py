@@ -397,9 +397,7 @@ def export_apk_library(
             "region": cfg.get("catalog", "region"),
             "client": {"versionName": manifest_version_name(manifest), "versionCode": manifest_version_code(manifest)},
         }
-    cat = Catalog(
-        catalog_data, cfg.require_path("paths", "cache"), bundle_key=lambda: Session(cfg).bundle_key(), apk=apk
-    )
+    cat = Catalog(catalog_data, Session(cfg).downloads(), bundle_key=lambda: Session(cfg).bundle_key(), apk=apk)
     keys = keys or cat.keys(prefix)
     if limit is not None:
         keys = keys[:limit]

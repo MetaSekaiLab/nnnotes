@@ -828,7 +828,7 @@ def _address_parts(env, tid: str) -> tuple:
     sha = env.artifact(tid, "addresses")["content"]["sha256"]
     hit = _address_cache.get(sha)
     if hit is None:
-        doc = contract.loads(env.store.read(sha))
+        doc = contract.loads(env.depot.read(sha))
         hit = (views.AddressIndex.from_addresses(doc), dict(doc.get("files") or {}))
         _address_cache.clear()
         _address_cache[sha] = hit
@@ -925,7 +925,7 @@ class VoiceStage(Stage):
             tuple((t, env.key(t)) for t in tids),
             tuple((t, env.key(t)) for t in exports),
             tuple(i.sha256 for i in masters),
-            id(env.store),
+            id(env.depot),
             id(env.facts.get("index")),
         )
         if self._memo is not None and self._memo[0] == sig:
@@ -978,21 +978,21 @@ class VoiceStage(Stage):
                 c = a["content"]
                 out.setdefault(asset, {})[part] = {"object": oid, "artifact": aid, "sha256": c["sha256"]}
                 contents.setdefault(
-                    c["sha256"], Input(f"adv:{c['sha256']}", c["sha256"], c["size"], None, ({"kind": "store"},))
+                    c["sha256"], Input(f"adv:{c['sha256']}", c["sha256"], c["size"], None, ({"kind": "depot"},))
                 )
                 read.add(tid)
         return dict(sorted(out.items())), [contents[k] for k in sorted(contents)], sorted(read)
 
     def inputs(self, subject: str, env) -> list[Input]:
         masters, subset, sheets, acbs, episodes, contents, _ = self._plan(subject, env)
-        store = env.store
+        depot = env.depot
         return (
             masters
             + [
-                views._stored(store, "addresses", contract.encode(subset)),
-                views._stored(store, "rules", self.rules_bytes),
-                views._stored(store, "sheets", contract.encode(sheets)),
-                views._stored(store, "episodes", contract.encode(episodes)),
+                views._stored(depot, "addresses", contract.encode(subset)),
+                views._stored(depot, "rules", self.rules_bytes),
+                views._stored(depot, "sheets", contract.encode(sheets)),
+                views._stored(depot, "episodes", contract.encode(episodes)),
             ]
             + acbs
             + contents
@@ -1005,7 +1005,7 @@ class VoiceStage(Stage):
             p = mdir / f"{t}.json"
             if not p.is_file():
                 raise views.ViewError(f"view {VIEW}: master table {t} is not in the master data")
-            sha, size = env.store.identify(p)
+            sha, size = env.depot.identify(p)
             out.append(Input(views.MASTER_ROLE + t, sha, size, p.name, ({"kind": "file", "path": str(p)},)))
         return out
 
@@ -1022,30 +1022,30 @@ class VoiceStage(Stage):
             + 12 * max(story, default=0),
         )
 
-    def run(self, task, store) -> Output:
-        rules = contract.loads(store.input_bytes(task.input("rules")))
+    def run(self, task, depot) -> Output:
+        rules = contract.loads(depot.input_bytes(task.input("rules")))
         check_rules(rules)
         if rules[VIEW]["version"] != task.version:
             raise views.ViewError(f"task {task.id}: its rules are not those of view {VIEW} version {task.version}")
         masters = [i for i in task.inputs if i.role.startswith(views.MASTER_ROLE)]
         tables = {
-            i.role[len(views.MASTER_ROLE) :]: views._cached_rows(i.sha256, functools.partial(store.input_bytes, i))
+            i.role[len(views.MASTER_ROLE) :]: views._cached_rows(i.sha256, functools.partial(depot.input_bytes, i))
             for i in masters
         }
-        index = views.AddressIndex.from_subset(contract.loads(store.input_bytes(task.input("addresses"))))
-        sheets = contract.loads(store.input_bytes(task.input("sheets")))
+        index = views.AddressIndex.from_subset(contract.loads(depot.input_bytes(task.input("addresses"))))
+        sheets = contract.loads(depot.input_bytes(task.input("sheets")))
         results = task.context.get("audio", {})
         roles = {i.role for i in task.inputs}
         cues: dict[str, dict] = {}
         audio = {}
         for sheet, s in sorted(sheets.items()):
             key = results.get(s["task"])
-            res = store.result(key) if key is not None else None
+            res = depot.result(key) if key is not None else None
             if res is None:
                 raise views.ViewError(f"task {task.id}: no result of {s['task']}")
             role = f"acb:{s['acb']}"
             if role in roles and s["acb"] not in cues:
-                cues[s["acb"]] = acb.cue_streams(store.input_bytes(task.input(role)))
+                cues[s["acb"]] = acb.cue_streams(depot.input_bytes(task.input(role)))
             audio[sheet] = sheet_audio(res, cues.get(s["acb"]))
         snapshot = {
             "tables": {i.role[len(views.MASTER_ROLE) :]: i.sha256 for i in masters},
@@ -1057,13 +1057,13 @@ class VoiceStage(Stage):
         if "episodes" in roles:
             snapshot["episodes"] = task.input("episodes").sha256
             column = rules[VIEW]["sound"]["sheet"]
-            for asset, parts in sorted(contract.loads(store.input_bytes(task.input("episodes"))).items()):
-                got = {p: store.input_bytes(task.input(f"adv:{x['sha256']}")) for p, x in parts.items()}
+            for asset, parts in sorted(contract.loads(depot.input_bytes(task.input("episodes"))).items()):
+                got = {p: depot.input_bytes(task.input(f"adv:{x['sha256']}")) for p, x in parts.items()}
                 story[asset] = storyvoices.episode(
                     got.get("script"), got.get("text"), got.get("sound"), got.get("sheets"), sheet_column=column
                 )
         doc = build(rules, tables, index, audio, snapshot, story)
-        content = store.add(contract.encode(doc), "json")
+        content = depot.add(contract.encode(doc), "json")
         facts = {
             "rows": len(doc["rows"]),
             "entries": counts(doc),
@@ -1078,13 +1078,13 @@ class VoiceStage(Stage):
         )
         return Output([rec], [])
 
-    def derived(self, task_id: str, result: dict, store, paths) -> list[tuple[str, bytes]]:
+    def derived(self, task_id: str, result: dict, depot, paths) -> list[tuple[str, bytes]]:
         """The voices document with the layout path of every stream, at views/voices.json."""
         aid = contract.artifact_id(task_id, views.VIEW_ROLE)
         rec = next((a for a in result["artifacts"] if a["id"] == aid), None)
         if rec is None:
             raise ValueError(f"result of {task_id} has no artifact {aid}")
-        doc = contract.loads(store.read(rec["content"]["sha256"]))
+        doc = contract.loads(depot.read(rec["content"]["sha256"]))
         subject = contract.parse_task_id(task_id, self.name)[1]
         return [(views.view_path(VIEW, subject), contract.encode(with_paths(doc, paths)))]
 

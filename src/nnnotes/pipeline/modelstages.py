@@ -163,18 +163,18 @@ APK_FROM_INPUTS = "<the task's inputs>"
 class TaskCatalog:
     """What the model extractors ask of a Catalog (live2d.extract_model through export.Exporter: fetch_key, entry,
     apk), answered from a task: its key, the internal id of the key's location and the bundles of the key's closure
-    in load order, each bundle read through the store (Store.open_input: its locators, checked against its content
+    in load order, each bundle read through the depot (Depot.open_input: its locators, checked against its content
     id). Another key is not in it (KeyError). `apk` is not None: the extractors need the APK's bundles, and those of
     the closure are inputs of the task like the others."""
 
-    def __init__(self, key: str, internal_id: str, bundles: list[Input], store):
-        self.key, self.internal_id, self.bundles, self.store = key, internal_id, list(bundles), store
+    def __init__(self, key: str, internal_id: str, bundles: list[Input], depot):
+        self.key, self.internal_id, self.bundles, self.depot = key, internal_id, list(bundles), depot
         self.apk = APK_FROM_INPUTS
 
     @classmethod
-    def from_task(cls, task, store) -> TaskCatalog:
+    def from_task(cls, task, depot) -> TaskCatalog:
         """The catalog of a live2d.model task: its subject, context internalId and inputs "bundle:<n>"."""
-        return cls(task.subject, task.context["internalId"], _ordered(task), store)
+        return cls(task.subject, task.context["internalId"], _ordered(task), depot)
 
     def _check(self, key: str) -> None:
         if key != self.key:
@@ -203,7 +203,7 @@ class TaskCatalog:
     def fetch_key(self, key: str) -> list[Path]:
         """The files of the closure's bundles, in load order."""
         self._check(key)
-        return [self.store.open_input(inp) for inp in self.bundles]
+        return [self.depot.open_input(inp) for inp in self.bundles]
 
 
 # ---------------------------------------------------------------- live2d.model
@@ -267,11 +267,11 @@ class Live2DStage(Stage):
         size = sum(i.size for i in inputs)
         return Cost(0.9 + size * 2.2e-7, (420 << 20) + 10 * size)
 
-    def run(self, task, store) -> Output:
+    def run(self, task, depot) -> Output:
         _check_atoms(task, self.ATOMS)
         from ..unity import live2d
 
-        cat = TaskCatalog.from_task(task, store)
+        cat = TaskCatalog.from_task(task, depot)
         arts = []
         with tempfile.TemporaryDirectory(prefix="nnnotes-live2d-") as d:
             # TaskCatalog answers the catalog calls of the model extractor
@@ -283,7 +283,7 @@ class Live2DStage(Stage):
                 arts.append(
                     contract.artifact(
                         contract.artifact_id(task.id, rel),
-                        store.add(p.read_bytes(), ext),
+                        depot.add(p.read_bytes(), ext),
                         contract.provenance(task),
                         {"kind": kind, "format": ext, "facts": facts},
                     )
@@ -301,14 +301,14 @@ def skeleton_index(env, selected) -> dict:
     pending = env.pending(CENSUS)
     if pending:
         raise Pending(pending[0])
-    table = contract.loads(env.store.read(env.input_of(SCRIPTS_TASK, "scripts").sha256))["scripts"]
+    table = contract.loads(env.depot.read(env.input_of(SCRIPTS_TASK, "scripts").sha256))["scripts"]
     scripts = {oid for oid, entry in table.items() if entry.rsplit("|", 1)[-1] == SKELETON_CLASS}
     files: dict[str, str] = {}
     externals: dict[str, list[str]] = {}
     subjects: dict[str, tuple] = {}
     for tid in env.tasks(CENSUS):
         stable = contract.parse_task_id(tid, CENSUS)[1]
-        doc = contract.loads(env.store.read(env.artifact(tid, "census")["content"]["sha256"]))
+        doc = contract.loads(env.depot.read(env.artifact(tid, "census")["content"]["sha256"]))
         for f in doc["files"]:
             files.setdefault(f["name"].casefold(), stable)
             externals.setdefault(f["name"].casefold(), [x["file"] for x in f["externals"]])
@@ -411,13 +411,13 @@ class SpineStage(Stage):
         size = sum(i.size for i in inputs)
         return Cost(0.27 + size * 1.9e-7, (440 << 20) + 20 * size)
 
-    def run(self, task, store) -> Output:
+    def run(self, task, depot) -> Output:
         _check_atoms(task, self.ATOMS)
         from ..content import spot
         from ..unity import reader as unity
 
         oid = task.context["object"]
-        paths = [store.open_input(i) for i in task.inputs if i.role.startswith("bundle:")]
+        paths = [depot.open_input(i) for i in task.inputs if i.role.startswith("bundle:")]
         env = unity.load_closure(paths)
         file, pid = contract.parse_object_id(oid)
         written: dict[str, bytes] = {}
@@ -446,7 +446,7 @@ class SpineStage(Stage):
             arts.append(
                 contract.artifact(
                     contract.artifact_id(task.id, name),
-                    store.add(data, ext),
+                    depot.add(data, ext),
                     contract.provenance(task),
                     {"kind": kind, "format": ext, "facts": facts},
                 )

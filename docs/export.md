@@ -1,7 +1,7 @@
 # Export stories and lives
 
 The `export` commands each write one subject as a directory or file. They read the catalog, fetch and decrypt the
-bundles they need into the cache, and need decoded master data where the subject is defined by it
+bundles they need into the depot, and need decoded master data where the subject is defined by it
 ([what each command needs](configuration.md#what-each-command-needs)). To export every object of many bundles at
 once, use [`export assets`](assets.md) instead.
 

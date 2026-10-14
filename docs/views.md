@@ -109,7 +109,7 @@ resolver's name).
 ## Stages
 
 `nnnotes.pipeline.views:stages` gives one stage per view, `view.<name>` (docs/stages.md), run by `nnnotes export assets
---views` and planned by `nnnotes store plan`:
+--views` and planned by `nnnotes depot plan`:
 
 - Subjects: the catalog subjects of `link.addresses` (the export command has one, `main`), when master data is set
   and the view is selected (the planning facts `master` and `views`).
@@ -132,7 +132,7 @@ resolver's name).
 ## Views
 ### `backgrounds`
 
-Profile backgrounds: the rows store full addresses. Table `MasterBackground`. Vars: `path` = `_assetPath`, `thumbnail`
+Profile backgrounds: the rows depot full addresses. Table `MasterBackground`. Vars: `path` = `_assetPath`, `thumbnail`
 = `_thumbnailAssetPath`. Names: `name` = `_nameTextId`, `description` = `_descriptionTextId`. Prefixes:
 `Image/Background/`, `thumbnail/Background/`.
 
@@ -331,7 +331,7 @@ Song jackets. Table `MasterLiveMusic`. Vars: `jacket` = `_jacketAssetName`. Name
 
 ### `login_bonuses`
 
-Login bonus sheets: the rows store full addresses. Table `MasterLoginBonus`. Vars: `sheet` = `_sheetImageAsset`,
+Login bonus sheets: the rows depot full addresses. Table `MasterLoginBonus`. Vars: `sheet` = `_sheetImageAsset`,
 `background` = `_backgroundImageAsset`. Names: `name` = `_nameTextID`. Prefixes: `LoginBonus/`.
 
 | Role | Address | Expect | Condition | Required |
@@ -399,7 +399,7 @@ Skill icons (a skill names its icon by id). Table `MasterSkillIcon`. Vars: `icon
 
 ### `spots`
 
-Home spots: the rows store full addresses. Table `MasterHomeSpot`. Vars: `thumbnail` = `_thumbnailAssetPath`,
+Home spots: the rows depot full addresses. Table `MasterHomeSpot`. Vars: `thumbnail` = `_thumbnailAssetPath`,
 `background` = `_backgroundAssetPath`, `situation` = `_situationAssetPath`. Names: `name` = `_nameTextId`. Prefixes:
 `Image/Spot/`.
 

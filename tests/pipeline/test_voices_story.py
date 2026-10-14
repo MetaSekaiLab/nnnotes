@@ -11,8 +11,8 @@ import pytest
 from nnnotes.content import advcommand, storyvoices
 from nnnotes.pipeline import contract, voices
 from nnnotes.pipeline.contract import Task
+from nnnotes.pipeline.depot import Depot
 from nnnotes.pipeline.stages import Pending, describe, execute, registry
-from nnnotes.pipeline.store import Store
 from nnnotes.pipeline.views import AddressIndex, Obj, ViewError
 from nnnotes.source import languages
 from tests.pipeline.test_views import addresses_doc
@@ -482,7 +482,7 @@ def test_story_rules_are_checked():
 
 
 # ---------------------------------------------------------------- the stage
-def export_results(store, env) -> dict:
+def export_results(depot, env) -> dict:
     """unity.export results holding the exported episode parts, one bundle per episode: {asset: {part: oid}}."""
     oids = {}
     for n, (asset, parts) in enumerate(sorted(EPISODES.items())):
@@ -495,7 +495,7 @@ def export_results(store, env) -> dict:
             arts.append(
                 contract.artifact(
                     contract.artifact_id(oid, role),
-                    store.add(data, "json" if part == "script" else "txt"),
+                    depot.add(data, "json" if part == "script" else "txt"),
                     contract.provenance(t),
                     {"kind": "unity.object", "format": "json"},
                 )
@@ -503,7 +503,7 @@ def export_results(store, env) -> dict:
             items.append(contract.item(oid, "exported", artifacts=[arts[-1]["id"]]))
             oids.setdefault(asset, {})[part] = oid
         res = contract.result(t, arts, items)
-        store.commit(res)
+        depot.commit(res)
         env.done(t.id, res["key"])
     return oids
 
@@ -527,24 +527,24 @@ def address_doc() -> dict:
     return doc
 
 
-def story_env(store, tmp_path):
+def story_env(depot, tmp_path):
     return planning(
-        store,
+        depot,
         tmp_path,
         keys=catalog_keys(),
         sheets=SHEETS2,
         tables=tables(),
         doc=address_doc(),
-        results=lambda env: export_results(store, env),
+        results=lambda env: export_results(depot, env),
     )
 
 
 def test_stage_reads_the_exported_episodes(tmp_path):
-    store = Store(tmp_path / "s")
-    env = story_env(store, tmp_path)
+    depot = Depot(tmp_path / "s")
+    env = story_env(depot, tmp_path)
     stage = voices.VoiceStage()
     task = describe(stage, "main", None, env)
-    eps = contract.loads(store.read(task.input("episodes").sha256))
+    eps = contract.loads(depot.read(task.input("episodes").sha256))
     assert sorted(eps) == sorted(EPISODES)
     assert sorted(eps["adv_script_x_02"]) == ["script", "sound"]
     x01 = eps["adv_script_x_01"]["script"]
@@ -557,44 +557,44 @@ def test_stage_reads_the_exported_episodes(tmp_path):
     assert sorted(i.role for i in task.inputs if i.role.startswith("adv:")) == sorted(f"adv:{s}" for s in shas)
     deps = stage.depends("main", env)
     assert sorted(d for d in deps if d.startswith("unity.export:")) == sorted(f"unity.export:adv_{a}" for a in EPISODES)
-    ex = execute(task, store, registry(stage))
+    ex = execute(task, depot, registry(stage))
     assert (ex.status, ex.result_status) == ("ran", "ok")
-    res = store.result(task.key)
-    doc = contract.loads(store.read(res["artifacts"][0]["content"]["sha256"]))
+    res = depot.result(task.key)
+    doc = contract.loads(depot.read(res["artifacts"][0]["content"]["sha256"]))
     want = voices.build(
-        RULES, tables(), AddressIndex({k: [] for k in catalog_keys()}), audio(store, SHEETS2), story=story()
+        RULES, tables(), AddressIndex({k: [] for k in catalog_keys()}), audio(depot, SHEETS2), story=story()
     )
     assert doc["rows"] == want["rows"] and doc["episodes"] == want["episodes"]
     assert doc["coverage"] == want["coverage"]
     assert doc["snapshot"]["episodes"] == task.input("episodes").sha256
     assert STORY_SHEET in doc["snapshot"]["sheets"]
     assert describe(voices.VoiceStage(), "main", None, env).key == task.key
-    again = execute(task, store, registry(stage), force=True)
-    assert again.status == "ran" and contract.encode(store.result(task.key)) == contract.encode(res)
+    again = execute(task, depot, registry(stage), force=True)
+    assert again.status == "ran" and contract.encode(depot.result(task.key)) == contract.encode(res)
 
 
 def test_stage_waits_for_the_exports(tmp_path):
-    store = Store(tmp_path / "s")
-    env = story_env(store, tmp_path)
+    depot = Depot(tmp_path / "s")
+    env = story_env(depot, tmp_path)
     env.waiting("unity.export:adv_adv_script_x_01")
     with pytest.raises(Pending, match="unity.export"):
         describe(voices.VoiceStage(), "main", None, env)
 
 
 def test_stage_without_exports_has_no_story_rows(tmp_path):
-    store = Store(tmp_path / "s")
-    env = planning(store, tmp_path, keys=catalog_keys(), sheets=SHEETS2, tables=tables(), doc=address_doc())
+    depot = Depot(tmp_path / "s")
+    env = planning(depot, tmp_path, keys=catalog_keys(), sheets=SHEETS2, tables=tables(), doc=address_doc())
     stage = voices.VoiceStage()
     task = describe(stage, "main", None, env)
     assert not [i for i in task.inputs if i.role.startswith("adv:")]
-    execute(task, store, registry(stage))
-    doc = contract.loads(store.read(store.result(task.key)["artifacts"][0]["content"]["sha256"]))
+    execute(task, depot, registry(stage))
+    doc = contract.loads(depot.read(depot.result(task.key)["artifacts"][0]["content"]["sha256"]))
     assert story_rows(doc) == []
     assert {e["status"] for e in doc["episodes"] if e["asset"] in EPISODES} == {"not-exported"}
 
 
 # ---------------------------------------------------------------- the command
-def export_dir(tmp_path, store):
+def export_dir(tmp_path, depot):
     out = tmp_path / "out"
     doc = build()
     placed = {}

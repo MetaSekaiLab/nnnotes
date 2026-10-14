@@ -70,30 +70,30 @@ _keys: dict[str, int] = {}  # boot data content id -> HCA keycode
 
 
 # ---------------------------------------------------------------- inputs shared by the stages
-def boot_input(store, apk) -> Input | None:
+def boot_input(depot, apk) -> Input | None:
     """The input "boot" of the CRI stages: the boot data of an APK (`assets/bin/Data/data.unity3d`, where the HCA
-    keycode is read), stored in `store` once; the APK is hashed once (store.identify memo) and its boot data is
+    keycode is read), stored in `depot` once; the APK is hashed once (depot.identify memo) and its boot data is
     remembered by the APK's content id. A path that is not an .apk / .zip is the boot data itself. None without an
     APK."""
     if apk is None:
         return None
     apk = Path(apk)
     if not apk.is_dir() and apk.suffix.lower() not in (".apk", ".zip", ".apks", ".xapk"):
-        sha, size = store.identify(apk)
+        sha, size = depot.identify(apk)
         return Input("boot", sha, size, apk.name, ({"kind": "file", "path": str(apk.resolve())},))
     if apk.is_dir():
         with ApkSet(apk) as z:
             data = z.read(BOOT_IN_APK)
-        sha = store.put(data)
-        return Input("boot", sha, len(data), "data.unity3d", ({"kind": "store"},))
-    apk_sha, _ = store.identify(apk)
+        sha = depot.put(data)
+        return Input("boot", sha, len(data), "data.unity3d", ({"kind": "depot"},))
+    apk_sha, _ = depot.identify(apk)
     name = f"boot:{apk_sha}"
-    known = store.named("files", name)
-    if known is None or not store.has(*known):
+    known = depot.named("files", name)
+    if known is None or not depot.has(*known):
         with ApkSet(apk) as z:
             data = z.read(BOOT_IN_APK)
-        known = store.identify(store.path(store.put(data)), "files", name)
-    return Input("boot", known[0], known[1], "data.unity3d", ({"kind": "store"},))
+        known = depot.identify(depot.path(depot.put(data)), "files", name)
+    return Input("boot", known[0], known[1], "data.unity3d", ({"kind": "depot"},))
 
 
 def _boot(env) -> Input:
@@ -103,14 +103,14 @@ def _boot(env) -> Input:
     return inp
 
 
-def hca_key(store, inp: Input) -> int:
+def hca_key(depot, inp: Input) -> int:
     """The HCA keycode in the boot data `inp` (crikey.find_key), read once per content and process."""
     with _lock:
         if inp.sha256 in _keys:
             return _keys[inp.sha256]
     from ..formats import crikey
 
-    key = crikey.find_key(store.open_input(inp))
+    key = crikey.find_key(depot.open_input(inp))
     with _lock:
         _keys[inp.sha256] = key
     return key
@@ -153,19 +153,19 @@ def _tool(which: str) -> str:
     return tool(which, "vgmstream-cli" if which == "vgmstream" else "ffmpeg")
 
 
-def _magic_of(store, inp: Input, name: str) -> bytes:
-    """The first 4 bytes of a raw file, from a local copy (the store, the cache, a file); one that is not fetched
+def _magic_of(depot, inp: Input, name: str) -> bytes:
+    """The first 4 bytes of a raw file, from a local copy (the depot, the cache, a file); one that is not fetched
     yet is Pending("fetch:<name>")."""
     with _lock:
         m = _magic.get(inp.sha256)
     if m is None:
-        from .store import InputMissing
+        from .depot import InputMissing
 
         local = Input(
             inp.role, inp.sha256, inp.size, inp.name, tuple(loc for loc in inp.locators if loc.get("kind") != "catalog")
         )
         try:
-            path = store.open_input(local)
+            path = depot.open_input(local)
         except InputMissing:
             raise Pending(f"fetch:{inp.name or name}") from None
         with open(path, "rb") as f:
@@ -187,7 +187,7 @@ def _raw(env) -> dict[str, tuple[Input, bytes]]:
                 raise Pending(f"fetch:{stable}")
             if isinstance(inp, Exception):
                 raise inp
-            out[stable] = (inp, _magic_of(env.store, inp, stable))
+            out[stable] = (inp, _magic_of(env.depot, inp, stable))
         except Pending as p:
             waiting.append(p)
     if waiting:
@@ -279,11 +279,11 @@ class _CriStage(Stage):
             )
 
     def _artifact(
-        self, task, store, role: str, data: bytes, ext: str, kind: str, fmt: str, facts: dict, media: str | None = None
+        self, task, depot, role: str, data: bytes, ext: str, kind: str, fmt: str, facts: dict, media: str | None = None
     ) -> dict:
         return contract.artifact(
             contract.artifact_id(task.id, role),
-            store.add(data, ext, media),
+            depot.add(data, ext, media),
             contract.provenance(task),
             {"kind": kind, "format": fmt, "facts": facts},
         )
@@ -353,11 +353,11 @@ class AudioStage(_CriStage):
                     a = raw[other][0]
                     e["awb"] = Input("awb", a.sha256, a.size, a.name, a.locators)
         for tid in tids:
-            for a in _export_artifacts(env.store, env.key(tid), ACB_KIND):
+            for a in _export_artifacts(env.depot, env.key(tid), ACB_KIND):
                 c = a["content"]
                 e = entry(c["sha256"])
                 if e["acb"] is None:
-                    e["acb"] = Input("acb", c["sha256"], c["size"], None, ({"kind": "store"},))
+                    e["acb"] = Input("acb", c["sha256"], c["size"], None, ({"kind": "depot"},))
                 e["depends"].add(tid)
                 sheet = (a["semantics"].get("facts") or {}).get("cueSheet")
                 if sheet:
@@ -378,7 +378,7 @@ class AudioStage(_CriStage):
         size = sum(i.size for i in inputs if i.role == "acb")
         return Cost(0.3 + size * 2.0e-6, (64 << 20) + 8 * size)
 
-    def run(self, task, store) -> Output:
+    def run(self, task, depot) -> Output:
         from ..formats import cri
 
         vgm, ff = _tool("vgmstream"), _tool("ffmpeg")
@@ -390,8 +390,8 @@ class AudioStage(_CriStage):
                     "unsupported.cri.awb_external", "the cue sheet's waveforms are streamed from an external AWB"
                 ),
             )
-        acb = store.input_bytes(task.input("acb"))
-        key = hca_key(store, task.input("boot"))
+        acb = depot.input_bytes(task.input("acb"))
+        key = hca_key(depot, task.input("boot"))
         level = int(task.params["flac"]["level"])
         with tempfile.TemporaryDirectory(prefix="nnnotes-cri-") as tmp:
             out = Path(tmp)
@@ -410,7 +410,7 @@ class AudioStage(_CriStage):
             arts = [
                 self._artifact(
                     task,
-                    store,
+                    depot,
                     s["file"],
                     (out / s["file"]).read_bytes(),
                     "flac",
@@ -423,7 +423,7 @@ class AudioStage(_CriStage):
             arts.append(
                 self._artifact(
                     task,
-                    store,
+                    depot,
                     "cues.json",
                     (out / "cues.json").read_bytes(),
                     "json",
@@ -435,7 +435,7 @@ class AudioStage(_CriStage):
             arts.append(
                 self._artifact(
                     task,
-                    store,
+                    depot,
                     "streams.json",
                     (out / "streams.json").read_bytes(),
                     "json",
@@ -447,11 +447,11 @@ class AudioStage(_CriStage):
         return self._item(task, arts)
 
 
-def _export_artifacts(store, key: str, kind: str) -> list[dict]:
+def _export_artifacts(depot, key: str, kind: str) -> list[dict]:
     """The artifact records of semantics kind `kind` (cri.acb, cri.usm) of a unity.export result (a result without the
     kind is not parsed)."""
     try:
-        data = store.result_path(key).read_bytes()
+        data = depot.result_path(key).read_bytes()
     except OSError:
         return []
     if f'"{kind}"'.encode() not in data:
@@ -521,9 +521,9 @@ class MovieStage(_CriStage):
                 e["names"] |= cat.keys.get(stable) or {stable}
         for tid in tids:
             bundle = contract.parse_task_id(tid, EXPORT)[1]
-            for a in _export_artifacts(env.store, env.key(tid), USM_KIND):
+            for a in _export_artifacts(env.depot, env.key(tid), USM_KIND):
                 c = a["content"]
-                e = entry(Input("usm", c["sha256"], c["size"], None, ({"kind": "store"},)))
+                e = entry(Input("usm", c["sha256"], c["size"], None, ({"kind": "depot"},)))
                 e["depends"].add(tid)
                 movie = (a["semantics"].get("facts") or {}).get("movie")
                 keys = {k for k in cat.bundle_keys.get(bundle, ()) if movie and k.rsplit("/", 1)[-1] == movie}
@@ -542,13 +542,13 @@ class MovieStage(_CriStage):
         size = sum(i.size for i in inputs if i.role == "usm")
         return Cost(0.3 + size * 1.1e-7, (96 << 20) + 12 * size)
 
-    def run(self, task, store) -> Output:
+    def run(self, task, depot) -> Output:
         from ..formats import usm
 
         ff, vgm = _tool("ffmpeg"), _tool("vgmstream")
         self._check_atoms(task, movie_atoms(ff, vgm))
-        movie = store.input_bytes(task.input("usm"))
-        key = hca_key(store, task.input("boot"))
+        movie = depot.input_bytes(task.input("usm"))
+        key = hca_key(depot, task.input("boot"))
         try:
             streams = usm.demux(movie, key)
         except usm.Unsupported as e:
@@ -556,7 +556,7 @@ class MovieStage(_CriStage):
         arts, why, tracks = [], None, []
         for s in streams:
             if s.kind == "subtitle":
-                made, problem = self._subtitle(task, store, s)
+                made, problem = self._subtitle(task, depot, s)
                 arts += made
                 if problem is None:
                     tracks.append(s)
@@ -573,7 +573,7 @@ class MovieStage(_CriStage):
                 kind = "audio.stream"
             else:
                 facts, kind = usm.video_facts(s), "video.stream" if s.kind == "video" else "video.alpha"
-            arts.append(self._artifact(task, store, f"{s.name}.{ext}", s.data, ext, kind, fmt, facts, media))
+            arts.append(self._artifact(task, depot, f"{s.name}.{ext}", s.data, ext, kind, fmt, facts, media))
             tracks.append(s)
         out_fmt = task.params["format"]
         with tempfile.TemporaryDirectory(prefix="nnnotes-usm-") as tmp:
@@ -591,11 +591,11 @@ class MovieStage(_CriStage):
             facts = {"tracks": [_track(s, out_fmt, reencoded) for s in tracks]}
             fmt, media = MOVIE_FORMATS[out_fmt]
             arts.append(
-                self._artifact(task, store, dst.name, dst.read_bytes(), out_fmt, "video.movie", fmt, facts, media)
+                self._artifact(task, depot, dst.name, dst.read_bytes(), out_fmt, "video.movie", fmt, facts, media)
             )
         return self._item(task, arts, why)
 
-    def _subtitle(self, task, store, s) -> tuple[list[dict], str | None]:
+    def _subtitle(self, task, depot, s) -> tuple[list[dict], str | None]:
         """The artifacts of a subtitle channel and why it is not a track (None when it is): the records as JSON, and
         as SubRip and WebVTT when every text is UTF-8; the bytes as stored (`.sbt`) when they are not records."""
         from ..core.jsonio import dumps
@@ -606,12 +606,12 @@ class MovieStage(_CriStage):
         except ValueError as e:
             return [
                 self._artifact(
-                    task, store, f"{s.name}.sbt", s.data, "sbt", "subtitle.stream", "sbt", {"channel": s.channel}
+                    task, depot, f"{s.name}.sbt", s.data, "sbt", "subtitle.stream", "sbt", {"channel": s.channel}
                 )
             ], f"{s.name}: {e}"
         facts = {"channel": s.channel, "records": len(records)}
         doc = dumps(usm.subtitle_json(s.channel, records), indent=1, ensure_ascii=False).encode()
-        arts = [self._artifact(task, store, f"{s.name}.json", doc, "json", "subtitle.records", "json", facts)]
+        arts = [self._artifact(task, depot, f"{s.name}.json", doc, "json", "subtitle.records", "json", facts)]
         try:
             srt, vtt = usm.subtitle_srt(records), usm.subtitle_webvtt(records)
         except UnicodeDecodeError:
@@ -619,7 +619,7 @@ class MovieStage(_CriStage):
         arts.append(
             self._artifact(
                 task,
-                store,
+                depot,
                 f"{s.name}.srt",
                 srt.encode(),
                 "srt",
@@ -631,7 +631,7 @@ class MovieStage(_CriStage):
         )
         arts.append(
             self._artifact(
-                task, store, f"{s.name}.vtt", vtt.encode(), "vtt", "subtitle.track", "webvtt", facts, "text/vtt"
+                task, depot, f"{s.name}.vtt", vtt.encode(), "vtt", "subtitle.track", "webvtt", facts, "text/vtt"
             )
         )
         return arts, None

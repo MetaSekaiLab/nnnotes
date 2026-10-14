@@ -8,11 +8,11 @@ import pytest
 
 from nnnotes.pipeline import contract, layout
 from nnnotes.pipeline.contract import Task
+from nnnotes.pipeline.depot import Depot
 from nnnotes.pipeline.layout import LayoutError, Source, escape_segment, unescape_path
-from nnnotes.pipeline.store import Store
 
 
-def bundle(store, subject, objects, loose=(), root=True):
+def bundle(depot, subject, objects, loose=(), root=True):
     """A unity.export-like result: objects [(file, pathId, class, name, container, {role: (bytes, ext)})], loose
     artifacts of no object [(role, bytes, ext)]."""
     task = Task("unity.export", 1, subject)
@@ -26,14 +26,14 @@ def bundle(store, subject, objects, loose=(), root=True):
         for role, (data, ext) in roles.items():
             aid = contract.artifact_id(oid, role)
             arts.append(
-                contract.artifact(aid, store.add(data, ext), contract.provenance(task, obj=obj), {"kind": "test"})
+                contract.artifact(aid, depot.add(data, ext), contract.provenance(task, obj=obj), {"kind": "test"})
             )
             ids.append(aid)
         items.append(contract.item(oid, "exported", artifacts=ids, cls=cls))
     for role, data, ext in loose:
         arts.append(
             contract.artifact(
-                contract.artifact_id(task.id, role), store.add(data, ext), contract.provenance(task), {"kind": "test"}
+                contract.artifact_id(task.id, role), depot.add(data, ext), contract.provenance(task), {"kind": "test"}
             )
         )
     return Source(task.id, contract.result(task, arts, items), f"_bundles/{subject}" if root else None)
@@ -60,7 +60,7 @@ def test_escaping_is_reversible_and_safe():
 
 
 def test_objects_of_one_container(tmp_path):
-    s = Store(tmp_path / "s")
+    s = Depot(tmp_path / "s")
     src = bundle(
         s,
         "card",
@@ -104,7 +104,7 @@ def test_objects_of_one_container(tmp_path):
 
 
 def test_the_primary_is_the_class_the_extension_names(tmp_path):
-    s = Store(tmp_path / "s")
+    s = Depot(tmp_path / "s")
     src = bundle(
         s,
         "b",
@@ -118,7 +118,7 @@ def test_the_primary_is_the_class_the_extension_names(tmp_path):
 
 
 def test_objects_without_container_and_artifacts_of_no_object(tmp_path):
-    s = Store(tmp_path / "s")
+    s = Depot(tmp_path / "s")
     src = bundle(
         s,
         "b1",
@@ -143,7 +143,7 @@ def test_objects_without_container_and_artifacts_of_no_object(tmp_path):
 
 
 def test_a_bundle_of_several_serialized_files_names_them(tmp_path):
-    s = Store(tmp_path / "s")
+    s = Depot(tmp_path / "s")
     src = bundle(
         s,
         "scene",
@@ -161,7 +161,7 @@ def test_a_bundle_of_several_serialized_files_names_them(tmp_path):
 
 
 def test_a_container_in_two_bundles_is_told_apart_by_bundle(tmp_path):
-    s = Store(tmp_path / "s")
+    s = Depot(tmp_path / "s")
     a = bundle(
         s,
         "group_a",
@@ -181,7 +181,7 @@ def test_a_container_in_two_bundles_is_told_apart_by_bundle(tmp_path):
 
 
 def test_the_catalog_case_and_case_collisions(tmp_path):
-    s = Store(tmp_path / "s")
+    s = Depot(tmp_path / "s")
     src = bundle(
         s,
         "b",
@@ -219,7 +219,7 @@ def test_equal_content_at_one_path_shares_the_file():
 
 
 def two_bundles(tmp_path):
-    s = Store(tmp_path / "s")
+    s = Depot(tmp_path / "s")
     a = bundle(
         s,
         "a",
@@ -245,8 +245,8 @@ def test_cas_and_original_derive_from_each_other(tmp_path):
         f"assets/{a['content']['sha256']}.{a['content']['ext']}" for src in sources for a in src.result["artifacts"]
     }
     orig, _ = layout.entries("original", sources)
-    w_cas = layout.materialize(tmp_path / "cas", "cas", {}, cas, layout.from_store(s))
-    w_orig = layout.materialize(tmp_path / "orig", "original", {}, orig, layout.from_store(s))
+    w_cas = layout.materialize(tmp_path / "cas", "cas", {}, cas, layout.from_depot(s))
+    w_orig = layout.materialize(tmp_path / "orig", "original", {}, orig, layout.from_depot(s))
     assert w_cas["manifest"]["schema"] == contract.LAYOUT and w_orig["write"] == len(orig)
     # original from cas + the records; cas from the original manifest alone
     layout.materialize(tmp_path / "orig2", "original", {}, orig, layout.from_layout(tmp_path / "cas"))
@@ -265,15 +265,15 @@ def test_materialize_is_incremental_and_touches_only_its_files(tmp_path):
     (out / "assets").mkdir(parents=True)
     (out / "notes.txt").write_text("mine")  # a file of the user
     orig, _ = layout.entries("original", sources)
-    first = layout.materialize(out, "original", {}, orig, layout.from_store(s))
+    first = layout.materialize(out, "original", {}, orig, layout.from_depot(s))
     assert layout.diff(out, orig) == {"write": 0, "remove": 0, "keep": len(orig)}
-    again = layout.materialize(out, "original", {}, orig, layout.from_store(s))
+    again = layout.materialize(out, "original", {}, orig, layout.from_depot(s))
     assert (again["write"], again["remove"], again["keep"]) == (0, 0, len(orig))
     assert again["sha256"] == first["sha256"]
     (out / "assets" / "t.png").unlink()  # damaged output is written again
     changed, _ = layout.entries("original", sources[:1])  # bundle b dropped
     assert layout.diff(out, changed) == {"write": 1, "remove": 1, "keep": len(changed) - 1}
-    w = layout.materialize(out, "original", {}, changed, layout.from_store(s))
+    w = layout.materialize(out, "original", {}, changed, layout.from_depot(s))
     assert (w["write"], w["remove"]) == (1, 1)
     assert not (out / "assets" / "text").exists() and (out / "notes.txt").read_text() == "mine"
     assert (out / "assets" / "t.png").exists() and not (out / layout.JOURNAL).exists()
@@ -286,7 +286,7 @@ def test_an_interrupted_run_is_reconciled(tmp_path):
     (out / "half").mkdir(parents=True)
     (out / "half" / "written.png").write_bytes(b"partial")  # written by a run that was interrupted
     (out / layout.JOURNAL).write_bytes(contract.encode({"write": ["half/written.png"], "remove": []}))
-    w = layout.materialize(out, "original", {}, orig, layout.from_store(s))
+    w = layout.materialize(out, "original", {}, orig, layout.from_depot(s))
     assert w["remove"] == 1 and not (out / "half").exists() and not (out / layout.JOURNAL).exists()
 
 
@@ -297,27 +297,27 @@ def test_a_file_that_is_not_the_layouts_is_never_overwritten(tmp_path):
     (out / "assets").mkdir(parents=True)
     (out / "assets" / "t.png").write_bytes(b"someone else's")
     with pytest.raises(LayoutError, match="not this layout's: assets/t.png"):
-        layout.materialize(out, "original", {}, orig, layout.from_store(s))
+        layout.materialize(out, "original", {}, orig, layout.from_depot(s))
     assert (out / "assets" / "t.png").read_bytes() == b"someone else's"
     (out / "assets" / "t.png").write_bytes(png("t")[0])  # the right content: adopted
-    w = layout.materialize(out, "original", {}, orig, layout.from_store(s))
+    w = layout.materialize(out, "original", {}, orig, layout.from_depot(s))
     assert w["write"] == len(orig)
 
 
 def test_hard_links(tmp_path):
     s, sources = two_bundles(tmp_path)
     cas, _ = layout.entries("cas", sources)
-    w = layout.materialize(tmp_path / "out", "cas", {}, cas, layout.from_store(s), link="hard")
+    w = layout.materialize(tmp_path / "out", "cas", {}, cas, layout.from_depot(s), link="hard")
     assert w["linked"] == w["write"] and w["copied"] == w["cloned"] == 0 and w["failed"] == []
     e = cas[0]
     assert os.path.samefile(tmp_path / "out" / e["path"], s.path(e["sha256"]))
-    assert os.stat(tmp_path / "out" / e["path"]).st_mode & 0o222 == 0  # the store object itself: read-only
+    assert os.stat(tmp_path / "out" / e["path"]).st_mode & 0o222 == 0  # the depot object itself: read-only
     if not (hasattr(os, "geteuid") and os.geteuid() == 0):  # (the superuser writes anyway)
         with pytest.raises(PermissionError):
             (tmp_path / "out" / e["path"]).write_bytes(b"edited")
     for bad in ("soft", "auto"):
         with pytest.raises(ValueError):
-            layout.materialize(tmp_path / "out", "cas", {}, cas, layout.from_store(s), link=bad)
+            layout.materialize(tmp_path / "out", "cas", {}, cas, layout.from_depot(s), link=bad)
 
 
 def _clone_by_copy(src, dst):
@@ -335,20 +335,20 @@ def _no(code):
 def test_the_probe_prefers_clone_then_hard_link_then_copy(tmp_path, monkeypatch):
     import errno
 
-    out, store = tmp_path / "out", tmp_path / "s" / "cas" / "sha256"
+    out, depot = tmp_path / "out", tmp_path / "s" / "cas" / "sha256"
     monkeypatch.setattr(layout, "clone", _clone_by_copy)
-    assert layout.probe(out, store)[0] == "clone" and layout.probe(out, store, "clone")[0] == "clone"
+    assert layout.probe(out, depot)[0] == "clone" and layout.probe(out, depot, "clone")[0] == "clone"
     monkeypatch.setattr(layout, "clone", _no(errno.EOPNOTSUPP))
-    how, why = layout.probe(out, store)
+    how, why = layout.probe(out, depot)
     assert how == "hard" and why.startswith("hard links: clone unsupported on this file system (")
     with pytest.raises(LayoutError, match="--link clone: clone unsupported"):
-        layout.probe(out, store, "clone")
+        layout.probe(out, depot, "clone")
     monkeypatch.setattr(layout.os, "link", _no(errno.EXDEV))
-    assert layout.probe(out, store) == ("copy", "copy: store on another file system")
-    with pytest.raises(LayoutError, match="--link hard: store on another file system"):
-        layout.probe(out, store, "hard")
-    assert layout.probe(out, store, "copy") == ("copy", "copy: as asked")
-    assert list(out.iterdir()) == [] and list(store.iterdir()) == []  # nothing left behind
+    assert layout.probe(out, depot) == ("copy", "copy: depot on another file system")
+    with pytest.raises(LayoutError, match="--link hard: depot on another file system"):
+        layout.probe(out, depot, "hard")
+    assert layout.probe(out, depot, "copy") == ("copy", "copy: as asked")
+    assert list(out.iterdir()) == [] and list(depot.iterdir()) == []  # nothing left behind
 
 
 def test_every_placement_gives_the_same_files_and_manifest(tmp_path, monkeypatch):
@@ -357,13 +357,13 @@ def test_every_placement_gives_the_same_files_and_manifest(tmp_path, monkeypatch
     monkeypatch.setattr(layout, "clone", _clone_by_copy)
     got = {}
     for how in layout.PLACEMENTS:
-        w = layout.materialize(tmp_path / how, "original", {}, orig, layout.from_store(s), link=how)
+        w = layout.materialize(tmp_path / how, "original", {}, orig, layout.from_depot(s), link=how)
         counts = {k: w[k] for k in ("cloned", "linked", "copied")}
         assert counts[{"clone": "cloned", "hard": "linked", "copy": "copied"}[how]] == w["write"] == len(orig)
         got[how] = (files(tmp_path / how), w["sha256"])
     assert got["clone"] == got["hard"] == got["copy"]
     (tmp_path / "copy" / orig[0]["path"]).write_bytes(b"a copy is writable")
-    assert all(os.stat(s.path(e["sha256"])).st_mode & 0o222 == 0 for e in orig)  # store objects: read-only
+    assert all(os.stat(s.path(e["sha256"])).st_mode & 0o222 == 0 for e in orig)  # depot objects: read-only
 
 
 def test_a_file_the_placement_cannot_make_is_reported_and_placed_next_time(tmp_path, monkeypatch):
@@ -374,29 +374,29 @@ def test_a_file_the_placement_cannot_make_is_reported_and_placed_next_time(tmp_p
     real = os.link
     victim = s.path(cas[0]["sha256"])
     monkeypatch.setattr(layout.os, "link", lambda a, b: _no(errno.EMLINK)() if Path(a) == victim else real(a, b))
-    w = layout.materialize(tmp_path / "out", "cas", {}, cas, layout.from_store(s), link="hard")
+    w = layout.materialize(tmp_path / "out", "cas", {}, cas, layout.from_depot(s), link="hard")
     assert [f["path"] for f in w["failed"]] == [cas[0]["path"]] and w["write"] == len(cas) - 1
     assert cas[0]["path"] not in {e["path"] for e in layout.read_manifest(tmp_path / "out")["entries"]}
     monkeypatch.setattr(layout.os, "link", real)
-    w = layout.materialize(tmp_path / "out", "cas", {}, cas, layout.from_store(s), link="hard")
+    w = layout.materialize(tmp_path / "out", "cas", {}, cas, layout.from_depot(s), link="hard")
     assert w["failed"] == [] and w["write"] == 1 and len(layout.read_manifest(tmp_path / "out")["entries"]) == len(cas)
 
 
 def test_a_layout_replaces_and_removes_its_read_only_files(tmp_path):
     s, sources = two_bundles(tmp_path)
     cas, _ = layout.entries("cas", sources)
-    layout.materialize(tmp_path / "out", "cas", {}, cas, layout.from_store(s), link="hard")
-    layout.materialize(tmp_path / "out", "cas", {}, cas[1:], layout.from_store(s), link="copy")  # remove one
+    layout.materialize(tmp_path / "out", "cas", {}, cas, layout.from_depot(s), link="hard")
+    layout.materialize(tmp_path / "out", "cas", {}, cas[1:], layout.from_depot(s), link="copy")  # remove one
     assert not (tmp_path / "out" / cas[0]["path"]).exists()
-    assert os.stat(s.path(cas[0]["sha256"])).st_mode & 0o222 == 0  # its store object stays read-only
+    assert os.stat(s.path(cas[0]["sha256"])).st_mode & 0o222 == 0  # its depot object stays read-only
     other = [dict(cas[1], path=cas[2]["path"])] + [e for e in cas[1:] if e["path"] != cas[2]["path"]]
-    layout.materialize(tmp_path / "out", "cas", {}, other, layout.from_store(s), link="copy")  # replace one
+    layout.materialize(tmp_path / "out", "cas", {}, other, layout.from_depot(s), link="copy")  # replace one
     assert (tmp_path / "out" / cas[2]["path"]).read_bytes() == s.read(cas[1]["sha256"])
     assert os.stat(s.path(cas[2]["sha256"])).st_mode & 0o222 == 0
 
 
 def test_an_objects_artifacts_from_several_results_are_placed_together(tmp_path):
-    s = Store(tmp_path / "s")
+    s = Depot(tmp_path / "s")
     export = bundle(
         s,
         "atlas_b",
@@ -421,16 +421,16 @@ def test_an_objects_artifacts_from_several_results_are_placed_together(tmp_path)
 
 
 def test_derivation_keeps_lower_case_extensions(tmp_path):
-    s = Store(tmp_path / "s")
+    s = Depot(tmp_path / "s")
     src = bundle(s, "b", [("CAB-1", 1, "Texture2D", "x", "Assets/X.PNG", {"image": png("x")})])
     orig, _ = layout.entries("original", [src])
     assert [e["path"] for e in orig] == ["Assets/X.PNG"]
-    layout.materialize(tmp_path / "o", "original", {}, orig, layout.from_store(s))
+    layout.materialize(tmp_path / "o", "original", {}, orig, layout.from_depot(s))
     assert layout.cas_from_manifest(layout.read_manifest(tmp_path / "o")) == layout.entries("cas", [src])[0]
 
 
 def test_objects_without_container_go_under_the_root_of_their_file(tmp_path):
-    s = Store(tmp_path / "s")
+    s = Depot(tmp_path / "s")
     export = bundle(s, "sprites_b", [("CAB-s", 3, "Sprite", "loose", None, {"meta": (b"{}", "json")})])
     crop = bundle(s, "atlas_a:7", [("CAB-s", 3, "Sprite", "loose", None, {"image": png("c")})])
     crop.root = "_tasks/sprite.crop/atlas_a:7"

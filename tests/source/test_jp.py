@@ -173,14 +173,14 @@ def test_authenticated_download_rotation_and_redaction(upstream):
     assert "Authorization" not in json.dumps(obs.source.to_dict())
 
 
-def test_truncated_download_is_not_cached(upstream, tmp_path):
+def test_truncated_download_is_not_kept(upstream, tmp_path):
     client = jp.Client(upstream.cfg, "jp")
     source = client.observe().source
     upstream.content_length = len(upstream.body) + 5
     cat = Catalog(cat_bytes(), tmp_path, source=source, client=client)
     with pytest.raises(gameapi.GameApiError, match="truncated"):
         cat.fetch_raw({"internal_id": jp.PLACEHOLDER + "audio/test.acb"})
-    assert cat.cached_raw({"internal_id": jp.PLACEHOLDER + "audio/test.acb"}) is None
+    assert cat.downloaded_raw({"internal_id": jp.PLACEHOLDER + "audio/test.acb"}) is None
 
 
 def test_declared_download_limit_is_checked(upstream):
@@ -246,16 +246,16 @@ def test_placeholder_rejects_unsafe_paths(path):
         location_kind(jp.PLACEHOLDER + path)
 
 
-def test_catalog_cache_source_and_offline_replay(upstream, tmp_path, monkeypatch):
+def test_catalog_download_source_and_offline_replay(upstream, tmp_path, monkeypatch):
     cfg = upstream.cfg
-    cfg._data["paths"] = {"cache": str(tmp_path / "cache")}
+    cfg._data["paths"] = {"depot": str(tmp_path / "depot")}
     cat = Session(cfg).catalog(bundles=False)
-    path = cat.cache_dir / "catalog_main.bin"
+    path = cat.download_dir / "catalog_main.bin"
     assert path.read_bytes() == upstream.body
     assert jp.read_source(path, upstream.body) == cat.source
-    assert cat.cache_dir != tmp_path / "cache"
+    assert cat.download_dir != tmp_path / "depot" / "downloads"
     assert cat.keys("Live/") == ["Live/MusicScore/0001/0001_00"]
-    record = catalogdb.CatalogDB(tmp_path / "store").add(upstream.body, source=cat.source.to_dict(), region="jp")
+    record = catalogdb.CatalogDB(tmp_path / "depot").add(upstream.body, source=cat.source.to_dict(), region="jp")
     assert upstream.credential not in json.dumps(record)
     cfg._data["paths"]["catalog"] = str(path)
     monkeypatch.setattr(jp.Client, "observe", lambda *a, **k: pytest.fail("offline read made an API call"))
@@ -267,27 +267,27 @@ def test_catalog_cache_source_and_offline_replay(upstream, tmp_path, monkeypatch
 
 def test_catalogdb_source_identity_and_fetcher(upstream, tmp_path):
     cfg = upstream.cfg
-    cfg._data["paths"] = {"cache": str(tmp_path / "cache")}
+    cfg._data["paths"] = {"depot": str(tmp_path / "depot")}
     client = jp.Client(cfg, "jp")
     source = client.observe().source
-    db = catalogdb.CatalogDB(tmp_path / "store")
+    db = catalogdb.CatalogDB(tmp_path / "depot")
     old = db.add(cat_bytes(), source=source.to_dict(), region="jp")
     new_source = {**source.to_dict(), "hash": "c" * 32}
     new = db.add(cat_bytes(), source=new_source, region="jp")
     assert old["id"] != new["id"] and old["labels"] != new["labels"]
     assert old["remote"] == new["remote"]
-    fetcher = CatalogFetcher(tmp_path / "store", tmp_path / "cache", cfg)
+    fetcher = CatalogFetcher(tmp_path / "depot", cfg)
     cat, _ = fetcher.catalog(old["id"])
-    assert cat.source == source and cat.cache_dir == source.cache_dir(tmp_path / "cache")
+    assert cat.source == source and cat.download_dir == source.download_dir(tmp_path / "depot" / "downloads")
 
 
-def test_apk_update_with_same_asset_snapshot_does_not_reuse_embedded_cache(tmp_path):
+def test_apk_update_with_same_asset_snapshot_does_not_reuse_embedded_downloads(tmp_path):
     from nnnotes.source.catalog import APK_AA_DIR, APK_CATALOG
 
     source = jp.Source("jp", "1.0", HASH, "https://cdn.invalid")
     apk = tmp_path / "base.apk"
-    cache = tmp_path / "cache"
-    db = catalogdb.CatalogDB(tmp_path / "store")
+    downloads = tmp_path / "depot" / "downloads"
+    db = catalogdb.CatalogDB(tmp_path / "depot")
     cfg = Config({"catalog": {"region": "jp"}, "paths": {"apk": str(apk)}}, environ={})
     from nnnotes.cli.assets import Workspace
 
@@ -298,14 +298,14 @@ def test_apk_update_with_same_asset_snapshot_does_not_reuse_embedded_cache(tmp_p
         )
         content = b"UnityFS\0" + bytes([revision])
         apk.write_bytes(zip_bytes({APK_CATALOG: local, APK_AA_DIR + "Android/local.bundle": content}))
-        cat = Catalog(cat_bytes(), source.cache_dir(cache), source=source, apk=apk)
+        cat = Catalog(cat_bytes(), source.download_dir(downloads), source=source, apk=apk)
         v = db.add(cat_bytes(), local, source=source.to_dict(), region="jp")
         workspace = Workspace.__new__(Workspace)
         workspace.version = v
-        rel = workspace._cache_rel("bundle", {"name": "local.bundle", "remote": False}, {})
+        rel = workspace._download_rel("bundle", {"name": "local.bundle", "remote": False}, {})
         assert cat.fetch(cat.resolve("Local")[0]).read_bytes() == content
-        assert (cache / rel).read_bytes() == content
-        fetcher = CatalogFetcher(tmp_path / "store", cache, cfg)
+        assert (downloads / rel).read_bytes() == content
+        fetcher = CatalogFetcher(tmp_path / "depot", cfg)
         replay, _ = fetcher.catalog(v["id"])
         assert replay.fetch(replay.resolve("Local")[0]).read_bytes() == content
     assert len(db.versions()) == 2
@@ -329,7 +329,7 @@ def test_remote_replay_does_not_open_the_apk(upstream, tmp_path, apk_state, kind
 
     cfg = upstream.cfg
     cfg._data["bundle"] = {"key": "00" * 16, "nonce_seed": "11"}
-    cfg._data["paths"] = {"cache": str(tmp_path / "cache")}
+    cfg._data["paths"] = {"depot": str(tmp_path / "depot")}
     apk = tmp_path / "base.apk"
     if apk_state != "unset":
         cfg._data["paths"]["apk"] = str(apk)
@@ -338,18 +338,18 @@ def test_remote_replay_does_not_open_the_apk(upstream, tmp_path, apk_state, kind
     elif apk_state == "broken":
         apk.write_bytes(b"not a zip")
     source = jp.Client(cfg, "jp").observe().source
-    db = catalogdb.CatalogDB(tmp_path / "store")
+    db = catalogdb.CatalogDB(tmp_path / "depot")
     record = db.add(cat_bytes(), local_catalog(), source=source.to_dict(), region="jp")
     entry = next(e for e in db.index(record)[kind] if e["remote"])
     upstream.body = b"UnityFS\0synthetic resource"
-    fetcher = CatalogFetcher(tmp_path / "store", tmp_path / "cache", cfg)
+    fetcher = CatalogFetcher(tmp_path / "depot", cfg)
     assert fetcher.fetch_location(record["id"], entry["location"]).read_bytes() == upstream.body
     assert len(upstream.seen) == 1
 
 
 @pytest.mark.parametrize("kind", ["bundles", "rawFiles"])
-@pytest.mark.parametrize("state", ["matching", "different", "no-catalog", "cached"])
-def test_local_replay_validates_only_on_cache_miss(tmp_path, kind, state):
+@pytest.mark.parametrize("state", ["matching", "different", "no-catalog", "downloaded"])
+def test_local_replay_validates_only_when_not_downloaded(tmp_path, kind, state):
     from nnnotes.source.catalog import APK_AA_DIR, APK_CATALOG
 
     source = jp.Source("jp", "1.0", HASH, "https://cdn.invalid")
@@ -359,20 +359,20 @@ def test_local_replay_validates_only_on_cache_miss(tmp_path, kind, state):
         members[APK_CATALOG] = local_catalog(2 if state == "different" else 1)
     apk.write_bytes(zip_bytes(members))
     cfg = Config({"catalog": {"region": "jp"}, "paths": {"apk": str(apk)}}, environ={})
-    db = catalogdb.CatalogDB(tmp_path / "store")
+    db = catalogdb.CatalogDB(tmp_path / "depot")
     record = db.add(cat_bytes(), local_catalog(), source=source.to_dict(), region="jp")
     entry = next(e for e in db.index(record)[kind] if not e["remote"])
-    fetcher = CatalogFetcher(tmp_path / "store", tmp_path / "cache", cfg)
+    fetcher = CatalogFetcher(tmp_path / "depot", cfg)
     if state in ("different", "no-catalog"):
         with pytest.raises(ConfigError, match="APK set it was imported with"):
             fetcher.fetch_location(record["id"], entry["location"])
         return
     expected = members[APK_AA_DIR + ("Android/local.bundle" if kind == "bundles" else "Android/local.acb")]
     assert fetcher.fetch_location(record["id"], entry["location"]).read_bytes() == expected
-    if state == "cached":
+    if state == "downloaded":
         apk.unlink()
         cfg._data["paths"].pop("apk")
-        replay = CatalogFetcher(tmp_path / "store", tmp_path / "cache", cfg)
+        replay = CatalogFetcher(tmp_path / "depot", cfg)
         assert replay.fetch_location(record["id"], entry["location"]).read_bytes() == expected
 
 
@@ -522,16 +522,16 @@ def test_jp_master_rejects_missing_or_malformed_file_lists(tmp_path, files):
     assert not (tmp_path / "MasterManifest.json").exists()
 
 
-def test_export_cache_locator_uses_source_namespace(tmp_path):
+def test_export_download_locator_uses_source_namespace(tmp_path):
     from nnnotes.cli.assets import Workspace
 
     source = jp.Source("jp", "1.0.0.300", HASH, "https://cdn.invalid")
     workspace = Workspace.__new__(Workspace)
     workspace.version = {"source": source.to_dict()}
-    rel = workspace._cache_rel("bundle", {"name": "same.bundle"}, {})
-    assert tmp_path / rel == source.cache_dir(tmp_path) / "bundles/same.bundle"
-    rel = workspace._cache_rel("raw", {}, {"internalId": jp.PLACEHOLDER + "audio/sample.acb"})
-    assert tmp_path / rel == source.cache_dir(tmp_path) / "raw/audio/sample.acb"
+    rel = workspace._download_rel("bundle", {"name": "same.bundle"}, {})
+    assert tmp_path / rel == source.download_dir(tmp_path) / "bundles/same.bundle"
+    rel = workspace._download_rel("raw", {}, {"internalId": jp.PLACEHOLDER + "audio/sample.acb"})
+    assert tmp_path / rel == source.download_dir(tmp_path) / "raw/audio/sample.acb"
 
 
 def test_music_data_preserves_asset_hash(tmp_path):

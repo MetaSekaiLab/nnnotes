@@ -286,7 +286,7 @@ def _lock_fetches(cat, lock) -> None:
         f = getattr(cat, name)
 
         def locked(x, _f=f, _name=name):
-            hit = cat.cached(x) if _name == "fetch" else cat.cached_raw(x)
+            hit = cat.downloaded(x) if _name == "fetch" else cat.downloaded_raw(x)
             if hit is not None:
                 return hit
             with lock:

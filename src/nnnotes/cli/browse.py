@@ -49,13 +49,14 @@ class Region:
 
 
 class Server(ThreadingHTTPServer):
-    """The browser's HTTP server: its regions, the bundle key, the cache, and the catalogs read so far."""
+    """The browser's HTTP server: its regions, the bundle key, the depot's downloads/, and the catalogs read so
+    far."""
 
-    def __init__(self, address, regions: list[Region], bundle_key: BundleKey, cache: Path):
+    def __init__(self, address, regions: list[Region], bundle_key: BundleKey, downloads: Path):
         super().__init__(address, Handler)
         self.regions = {r.name: r for r in regions}
         self.bundle_key = bundle_key
-        self.cache = Path(cache)
+        self.downloads = Path(downloads)
         self.catalogs: dict[tuple[str, str], tuple[dict, dict]] = {}
         self.jp_catalogs: dict[tuple[str, str], Catalog] = {}
 
@@ -87,12 +88,14 @@ class Handler(BaseHTTPRequestHandler):
         key = (region.name, language)
         if key not in self.server.catalogs:
             if region.config is not None and region.config.provider(region.name) == "jp":
-                cat = open_catalog(region.config, region.name, bundle_key=self.server.bundle_key)
+                cat = open_catalog(region.config, region.name, self.server.downloads, bundle_key=self.server.bundle_key)
                 self.server.catalogs[key] = browse(cat.entries)
                 self.server.jp_catalogs[key] = cat
                 return self.server.catalogs[key]
             version = Session(region.config).catalog_version(region.name) if region.config is not None else "main"
-            cat = Catalog.load(language, self.server.cache / "catalogs" / region.name, cdn=region.cdn, version=version)
+            cat = Catalog.load(
+                language, self.server.downloads / "catalogs" / region.name, cdn=region.cdn, version=version
+            )
             self.server.catalogs[key] = browse(cat.entries)
         return self.server.catalogs[key]
 
@@ -174,10 +177,10 @@ class Handler(BaseHTTPRequestHandler):
         self.listing(region.label + "/" + language + "/" + prefix, rows)
 
 
-def serve(regions: list[Region], bundle_key: BundleKey, cache: Path, port: int, host: str = "127.0.0.1") -> None:
-    """Browse the catalogs of `regions` and download decrypted bundles on `host:port` (catalogs cached under
-    <cache>/catalogs/<region>/)."""
-    server = Server((host, port), regions, bundle_key, cache)
+def serve(regions: list[Region], bundle_key: BundleKey, downloads: Path, port: int, host: str = "127.0.0.1") -> None:
+    """Browse the catalogs of `regions` and download decrypted bundles on `host:port` (catalogs downloaded into
+    `downloads`/catalogs/<region>/)."""
+    server = Server((host, port), regions, bundle_key, downloads)
     print(f"nnnotes catalog browse: serving on {host}:{port}", flush=True)
     try:
         server.serve_forever()

@@ -444,28 +444,28 @@ def apk_client(apk) -> dict:
     return {"versionName": manifest_version_name(data), "versionCode": manifest_version_code(data)}
 
 
-def catalog_info(cat, store_root=None) -> dict:
+def catalog_info(cat, depot_root=None) -> dict:
     """{resourceVersion, sha256} of a catalog's remote catalog file (resource_version)."""
     sha = hashlib.sha256(cat.sources()["remote"]).hexdigest()
     source = getattr(cat, "source", None)
     return {
         "resourceVersion": source.version
         if source
-        else (getattr(cat, "resource_version", None) or resource_version(store_root, sha)),
+        else (getattr(cat, "resource_version", None) or resource_version(depot_root, sha)),
         "sha256": sha,
         **({"resourceHash": source.hash} if source else {}),
     }
 
 
-def resource_version(store_root, remote_sha: str) -> str | None:
-    """The resource version recorded for the remote catalog `remote_sha` by the catalog versions of a store
+def resource_version(depot_root, remote_sha: str) -> str | None:
+    """The resource version recorded for the remote catalog `remote_sha` by the catalog versions of a depot
     (the latest import that has one), None when none is recorded. Read only."""
-    if store_root is None:
+    if depot_root is None:
         return None
     from ..pipeline.catalogdb import CatalogDB
 
     try:
-        versions = CatalogDB(store_root).versions()
+        versions = CatalogDB(depot_root).versions()
     except (OSError, ValueError):
         return None
     for v in reversed(versions):

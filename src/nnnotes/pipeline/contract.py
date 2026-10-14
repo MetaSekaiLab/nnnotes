@@ -56,7 +56,7 @@ ITEM_STATUSES = ("exported", "contained", "generic", "unsupported", "failed")
 RESULT_STATUSES = ("ok", "partial")
 RUN_TASK_STATUSES = ("hit", "ran", "failed")
 # locator kinds of a task input: where the bytes can be read (never part of the key)
-LOCATOR_KINDS = ("store", "cache", "file", "catalog")
+LOCATOR_KINDS = ("depot", "download", "file", "catalog")
 # an object's primary artifact is the one whose role comes first here; its other artifacts are secondary
 PRIMARY_ROLES = ("image", "mesh", "audio", "video", "font", "data", "prefab", "json")
 MEDIA_TYPES = {

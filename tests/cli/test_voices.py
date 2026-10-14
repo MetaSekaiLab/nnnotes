@@ -7,7 +7,7 @@ import pytest
 from nnnotes import cli
 from nnnotes.content import storyvoices
 from nnnotes.formats import cri
-from nnnotes.pipeline.store import Store
+from nnnotes.pipeline.depot import Depot
 from nnnotes.source.session import Session
 from tests.pipeline import test_voices as tv
 from tests.pipeline import test_voices_story as ts
@@ -47,7 +47,7 @@ def fake_decode(sheets=None):
 
 
 def test_list_search_summary(tmp_path, capsysbinary):
-    out = tv.export_dir(tmp_path, Store(tmp_path / "s"))
+    out = tv.export_dir(tmp_path, Depot(tmp_path / "s"))
     command(["voices", "list", "--from", str(out), "--character", "Alpha", "--category", "Talk.CharacterRankUp"])
     line = capsysbinary.readouterr().out.decode("utf-8")
     assert (
@@ -76,8 +76,8 @@ def test_without_an_export_the_content_is_built(tmp_path, capsysbinary, session)
 
 
 def test_get_copies_the_exported_files(tmp_path, capsysbinary):
-    store = Store(tmp_path / "s")
-    out = tv.export_dir(tmp_path, store)
+    depot = Depot(tmp_path / "s")
+    out = tv.export_dir(tmp_path, depot)
     dst = tmp_path / "got"
     command(["voices", "get", "MasterHomeSpot:10001", "-o", str(dst), "--from", str(out)])
     assert sorted(p.name for p in dst.iterdir()) == ["IntroRandom.flac", "IntroRandom_2.flac", "voice.json"]
@@ -114,7 +114,7 @@ def test_get_decodes_at_the_flac_level_given(tmp_path, capsysbinary, monkeypatch
     monkeypatch.setattr(cri, "acb_data", lambda cat, sheet: ({"acb": tv.sheet_acb(sheet)}, cri.RAW_ACB))
     monkeypatch.setattr(cri, "decode", decode)
     monkeypatch.setattr(Session, "catalog", lambda self, bundles=True, region=None: tv.Catalog())
-    out = tv.export_dir(tmp_path, Store(tmp_path / "s"))
+    out = tv.export_dir(tmp_path, Depot(tmp_path / "s"))
     command(["voices", "get", "101", "-o", str(tmp_path / "g"), "--from", str(out), "--flac-level", "5"])
     assert decode.calls == [("VoiceSystem_01", "flac", 5)]
     for argv, message in (
@@ -127,7 +127,7 @@ def test_get_decodes_at_the_flac_level_given(tmp_path, capsysbinary, monkeypatch
 
 
 def test_story_rows_are_filtered(tmp_path, capsysbinary):
-    out = ts.export_dir(tmp_path, Store(tmp_path / "s"))
+    out = ts.export_dir(tmp_path, Depot(tmp_path / "s"))
     command(
         ["voices", "list", "--from", str(out), "--source", "story", "--episode", "900001", "--status", "ok"],
         tv.Cfg("en"),
