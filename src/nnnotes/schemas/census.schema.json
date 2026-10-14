@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:nnnotes:schema:census",
-  "title": "nnnotes.census/1",
-  "description": "The census of one bundle (stage unity.census), read without decoding any object: its serialized files by name (Unity version, platform, type trees, externals, objects by path id with class, size, type hash, m_Name and m_Script), the other files of the bundle, its AssetBundle objects (container in stored order, dependencies, scene hashes), its MonoScripts, objects per class and the objects whose header could not be read. A function of the bundle's bytes.",
+  "title": "nnnotes.census/2",
+  "description": "The census of one bundle (stage unity.census), read without decoding any object: its serialized files by name (Unity version, platform, type trees, externals, objects by path id with class, size, type hash, m_Name, m_Script, the objects they reference and the hierarchy holding them), the other files of the bundle, its AssetBundle objects (container in stored order, dependencies, scene hashes), its MonoScripts, objects per class and the objects whose typetree could not be read. A function of the bundle's bytes.",
   "type": "object",
   "required": [
     "schema",
@@ -16,7 +16,7 @@
   ],
   "properties": {
     "schema": {
-      "const": "nnnotes.census/1"
+      "const": "nnnotes.census/2"
     },
     "files": {
       "type": "array",
@@ -151,7 +151,7 @@
                   ]
                 },
                 "bindingScripts": {
-                  "description": "An AnimationClip's MonoScripts named by its bindings (the MonoBehaviour fields it animates), sorted; present only when there are any (stage unity.census version 2).",
+                  "description": "An AnimationClip's MonoScripts named by its bindings (the MonoBehaviour fields it animates), sorted; present only when there are any.",
                   "type": "array",
                   "items": {
                     "anyOf": [
@@ -188,6 +188,21 @@
                     ]
                   },
                   "minItems": 1
+                },
+                "refs": {
+                  "description": "The object ids every reference in the object's typetree names, sorted, itself left out; present only when there are any.",
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^.+:-?[0-9]+$"
+                  },
+                  "minItems": 1,
+                  "uniqueItems": true
+                },
+                "unit": {
+                  "description": "The object id of the root GameObject of the hierarchy whose prefab holds the object (the objects of a hierarchy are converted together); present only for the objects of a hierarchy other than its root.",
+                  "type": "string",
+                  "pattern": "^.+:-?[0-9]+$"
                 }
               }
             }
@@ -387,7 +402,8 @@
             "type": "string"
           }
         }
-      }
+      },
+      "description": "The objects whose typetree could not be read: their records have no name, script or refs."
     }
   }
 }

@@ -24,7 +24,6 @@ from __future__ import annotations
 
 import io
 from collections import defaultdict
-from functools import cache
 
 from ..unity import scripttypes
 from ..unity.atoms import ATOMS as ATOM_REGISTRY
@@ -387,8 +386,8 @@ class ExportStage(Stage):
     (unity.census:<subject>) for the classes (the converters and atoms of its key) and the MonoScripts its objects
     reference, and the script table (link.scripts:all) for the entries of those: its context
     {"scripts": {object id: "assembly|namespace|class"}}, and for the MonoBehaviours of files that store no type trees
-    (the APK's built-in files) the type trees nnnotes ships for their classes: "typetrees" {script entry:
-    {"typeHash", "nodes"}}. Parameters: `blobMin` (bytes; byte arrays of this size or
+    (the APK's built-in files) the type trees nnnotes ships for their type hashes: "typetrees" {type hash: nodes}.
+    Parameters: `blobMin` (bytes; byte arrays of this size or
     more are blobs), `png.level` (zlib level of the PNG files). `reader`: another implementation of the reader atom
     (its id enters the keys)."""
 
@@ -467,12 +466,12 @@ class ExportStage(Stage):
 
     def context(self, subject: str, env) -> dict:
         doc = self.census(subject, env)
+        out = {}
         refs = census_mod.script_refs(doc)
-        if not refs:
-            return {}
-        table = self._docs.get(env.depot, env.input_of(SCRIPTS_TASK, "scripts").sha256)["scripts"]
-        out = {"scripts": link.script_context(table, refs)}
-        types = _script_types(doc, out["scripts"])
+        if refs:
+            table = self._docs.get(env.depot, env.input_of(SCRIPTS_TASK, "scripts").sha256)["scripts"]
+            out["scripts"] = link.script_context(table, refs)
+        types = _script_types(doc)
         if types:
             out["typetrees"] = types
         return out
@@ -501,25 +500,18 @@ class ExportStage(Stage):
         return Output(arts, items)
 
 
-@cache
-def _embedded(unity_version: str) -> dict:
-    return scripttypes.script_types(unity_version)
-
-
-def _script_types(doc: dict, scripts: dict) -> dict:
-    """{script entry: {"typeHash", "nodes"}} of the embedded type trees (nnnotes.unity.scripttypes, of each file's
-    Unity version) of the classes of the MonoBehaviours in the census' files that store no type trees ({} when it has
-    none)."""
+def _script_types(doc: dict) -> dict:
+    """{type hash: nodes} of the embedded type trees (nnnotes.unity.scripttypes, of each file's Unity version) of the
+    type hashes of the MonoBehaviours in the census' files that store no type trees ({} when it has none)."""
     out = {}
     for f in doc["files"]:
         if f["typetree"]:
             continue
-        types = _embedded(f["unityVersion"])
+        types = scripttypes.script_types(f["unityVersion"] or "")
         for o in f["objects"]:
-            s = o.get("script") if o["class"] == "MonoBehaviour" else None
-            entry = scripts.get(contract.object_id(s["file"], s["pathId"])) if s and s.get("file") else None
-            if entry in types and out.setdefault(entry, types[entry]) != types[entry]:
-                raise ValueError(f"{entry}: files of several Unity versions with different type trees of it")
+            h = o["typeHash"] if o["class"] == "MonoBehaviour" else None
+            if h in types:
+                out[h] = types[h]
     return dict(sorted(out.items()))
 
 

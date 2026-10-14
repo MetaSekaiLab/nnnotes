@@ -6,11 +6,12 @@ the caller gives: it stores the bytes and records the artifact "<owner>#<role>" 
 task-level name `owner`) and returns (artifact id, content record).
 
 Every object a document names by {"$ref"} is recorded in `seen` (by object id, other bundles' objects included):
-the objects an object's documents reference, which the caller clears before converting an object.
+the objects an object's documents reference, which the caller clears before converting an object. `references(key)`
+gives the objects an object's typetree references, read as tt(key, whole=False) reads it.
 
 A file that stores no type trees (a player build's own files) gives its MonoBehaviours only their header; they are
-read with the task's type tree of their script class (`typetrees`, nnnotes.unity.scripttypes), checked against the
-type hash the file stores and the object's size. One without such a tree is `unsupported.typetree` (TYPETREE): its
+read with the given type tree of the type hash the file stores for them (`typetrees`, nnnotes.unity.scripttypes),
+which must consume exactly the object's bytes. One without such a tree is `unsupported.typetree` (TYPETREE): its
 header is still read. Its other objects are read with the type trees of their classes UnityPy has for the file's
 Unity version; for a class whose tree reads the stored layout right only up to a field (PREFIXES, by the type hash
 the file stores) the typetree JSON is the fields up to it, also `unsupported.typetree`. The objects read in part are
@@ -190,8 +191,8 @@ class Capture:
 class BundleObjects:
     """The objects of one bundle (`view`, a reader atom's BundleView). `fns`: the atom functions by name; `scripts`:
     the script table entries the bundle's objects use ({MonoScript object id: "assembly|namespace|class"});
-    `typetrees`: the type trees of script classes for the files that store none ({script entry: {"typeHash",
-    "nodes"}}); `blob_min`: byte arrays of this size or more are blobs; `png_level`: the zlib level of PNG files."""
+    `typetrees`: the type trees of script classes for the files that store none ({type hash: nodes}); `blob_min`:
+    byte arrays of this size or more are blobs; `png_level`: the zlib level of PNG files."""
 
     def __init__(
         self,
@@ -216,7 +217,7 @@ class BundleObjects:
         self.stripped = frozenset(f for f in self.files if not view.stores_typetrees(f))
         self.partial: dict[tuple, str] = {}  # objects read in part -> why
         self._nodes: dict[tuple, object] = {}  # objects read with a type tree of `typetrees` -> its node
-        self._script_nodes: dict[str, object] = {}
+        self._script_nodes: dict[str, object] = {}  # type hash -> node
         self.containers: dict[tuple, str] = {}
         for path, file, pid in view.container():
             k = (file, int(pid))
@@ -306,22 +307,18 @@ class BundleObjects:
         except Exception as e:
             raise ReadError(message(e)) from None
         entry = self.mono_script(key, head)
-        t = self.typetrees.get(entry) if entry is not None else None
-        if entry is None or entry == NO_SCRIPT:
-            s = head.get("m_Script") or {}
-            why = f"script {s.get('m_FileID')}:{s.get('m_PathID')} is unknown and the file stores no type trees"
-        elif t is None:
-            why = f"the file stores no type trees and the task has none for {entry}"
-        elif t["typeHash"] != info.type_hash:
-            why = f"{entry}: the file's type hash {info.type_hash} is not the type tree's {t['typeHash']}"
+        what = entry if entry and entry != NO_SCRIPT else "its script"
+        rows = self.typetrees.get(info.type_hash) if info.type_hash else None
+        if rows is None:
+            why = f"the file stores no type trees and none is given for {what} (type hash {info.type_hash})"
         else:
-            node = self._script_nodes.get(entry)
+            node = self._script_nodes.get(info.type_hash)
             if node is None:
-                node = self._script_nodes[entry] = typetree_node(t["nodes"])
+                node = self._script_nodes[info.type_hash] = typetree_node(rows)
             try:
                 tt = r.read_typetree(node, check_read=True)
             except Exception as e:
-                why = f"{entry}: the type tree does not fit the object ({message(e)})"
+                why = f"the type tree of {what} does not fit the object ({message(e)})"
             else:
                 self._nodes[key] = node
                 self.partial.pop(key, None)
@@ -332,6 +329,57 @@ class BundleObjects:
             raise Unsupported(TYPETREE, why)
         self.partial[key] = why
         return head
+
+    def references(self, key: tuple, tt: dict | None = None) -> set[tuple]:
+        """The (file, pathId) of every object the object's typetree references (`tt`, as tt(key, whole=False) reads
+        it; read here when not given), itself and references with an unknown file index left out (ReadError when it
+        cannot be read)."""
+        r = self.readers[key]
+        tt = self.tt(key, whole=False) if tt is None else tt
+        out: set[tuple] = set()
+        self._pptrs(r, self._nodes.get(key) or r._get_typetree_node(), tt, out)
+        out.discard(key)
+        return out
+
+    def _pptrs(self, owner, node, v, out: set) -> None:
+        """Collect the targets of the references in `v` (read with `node`), as _walk finds them."""
+        if not self._special(node):
+            return
+        t = node.m_Type
+        if t.startswith("PPtr<"):
+            if isinstance(v, dict):
+                k = self.target(owner, v)
+                if k is not None:
+                    out.add(k)
+            return
+        if t == "TypelessData" or not isinstance(v, (dict, list, tuple)):
+            return
+        ch = node.m_Children
+        if t == "ReferencedObject" and isinstance(v, dict):
+            for k, x in v.items():
+                c = self._child(node, k)
+                if c is not None and c.m_Type == "ReferencedObjectData":
+                    rn = _ref_type_node(v, owner.assets_file)
+                    if rn is not None:
+                        self._pptrs(owner, rn, x, out)
+                elif c is not None:
+                    self._pptrs(owner, c, x, out)
+            return
+        if t != "string" and ch and ch[0].m_Type == "Array":
+            sub = ch[0].m_Children[1]
+            if sub.m_Type not in _BYTE_TYPES:
+                for x in v:
+                    self._pptrs(owner, sub, x, out)
+            return
+        if t == "pair":
+            self._pptrs(owner, ch[0], v[0], out)
+            self._pptrs(owner, ch[1], v[1], out)
+            return
+        if isinstance(v, dict):
+            for k, x in v.items():
+                c = self._child(node, k)
+                if c is not None:
+                    self._pptrs(owner, c, x, out)
 
     def _prefix(self, r, last: str) -> dict:
         """An object's typetree up to the field `last` (its class's tree cut after it)."""

@@ -8,16 +8,20 @@ MonoBehaviour there reads only its header. nnnotes ships the type trees of the c
     {"format": 1, "unityVersion", "gameVersion", "classes": {"assembly|namespace|class": {"typeHash", "nodes"}}}
 
 A class is keyed by the names its MonoScript stores (typetree_key); `nodes` are [level, type, name, meta flag] rows
-of Unity's layout and `typeHash` the hex type hash the serialized file stores for the class. A tree fits an object
-when the type hashes are equal and its read consumes exactly the object's serialized size.
+of Unity's layout and `typeHash` the hex type hash the serialized file stores for the class. The type hash is the
+hash of the class's serialized layout, so a stored object picks its tree by it alone (script_types); a tree fits the
+object when its read consumes exactly the object's serialized size. `types_id()` names the shipped trees (the files'
+contents), for the keys of the tasks that read with them.
 
 Nothing here imports UnityPy until typetree_node is called.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
+from functools import cache
 from importlib import resources
 
 __all__ = [
@@ -26,6 +30,7 @@ __all__ = [
     "load_typetrees",
     "script_entry",
     "script_types",
+    "types_id",
     "typetree_file",
     "typetree_key",
     "typetree_node",
@@ -66,13 +71,28 @@ def load_typetrees(unity_version: str) -> dict | None:
     return doc
 
 
-def script_types(unity_version: str) -> dict[str, dict]:
-    """{script table entry (script_entry): {"typeHash", "nodes"}} of the embedded typetrees of a Unity version ({}
-    when nnnotes has none for it)."""
+@cache
+def script_types(unity_version: str) -> dict[str, list]:
+    """{type hash: nodes} of the embedded typetrees of a Unity version ({} when nnnotes has none for it). Shared:
+    callers must not change it."""
     doc = load_typetrees(unity_version)
-    if doc is None:
-        return {}
-    return {script_entry(*k.split("|", 2)): v for k, v in sorted(doc["classes"].items())}
+    out: dict[str, list] = {}
+    for k, v in sorted((doc or {"classes": {}})["classes"].items()):
+        if out.setdefault(v["typeHash"], v["nodes"]) != v["nodes"]:
+            raise ValueError(f"typetree file {unity_version}.json: {k} and another class share a type hash")
+    return out
+
+
+@cache
+def types_id() -> str:
+    """The id of the shipped typetrees: the digest of every typetree file's name and bytes."""
+    h = hashlib.sha256()
+    folder = resources.files("nnnotes.unity").joinpath("typetrees")
+    for f in sorted((f for f in folder.iterdir() if f.name.endswith(".json")), key=lambda f: f.name):
+        data = f.read_bytes()
+        h.update(f"{f.name}/{len(data)}/".encode())
+        h.update(data)
+    return f"typetrees-{h.hexdigest()[:16]}/1"
 
 
 def typetree_node(rows: list):
