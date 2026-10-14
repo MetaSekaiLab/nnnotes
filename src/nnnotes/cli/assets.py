@@ -76,6 +76,7 @@ RECYCLE_RSS_MIN = 256 << 20  # but not below this
 REPORTS = "_reports"
 SELECT_KINDS = ("group", "key", "bundle")
 RAW_STAGES = ("cri.audio", "cri.movie")
+MASTER_STAGES = ("spot.scene",)  # stages that read master data (besides the views)
 EXPORT_STAGE = "unity.export"
 CATALOG_SUBJECT = "main"
 EXIT_FAILED, EXIT_USAGE, EXIT_ABORTED, EXIT_INCOMPATIBLE = 1, 2, 3, 4
@@ -108,6 +109,8 @@ STAGE_SOURCES = (
     StageSource("cri.movie", "nnnotes.pipeline.cristages:MovieStage", output=True),
     StageSource("live2d.model", "nnnotes.pipeline.modelstages:Live2DStage", output=True),
     StageSource("spine.skeleton", "nnnotes.pipeline.modelstages:SpineStage", output=True),
+    StageSource("room.scene", "nnnotes.pipeline.modelstages:RoomStage", output=True),
+    StageSource("spot.scene", "nnnotes.pipeline.modelstages:SpotStage", output=True),
     StageSource("link.artifacts", "nnnotes.pipeline.link:ArtifactsStage"),
     StageSource("view.", "nnnotes.pipeline.views:stages", output=True),
     StageSource("view.voices", "nnnotes.pipeline.voices:VoiceStage", output=True),
@@ -678,10 +681,11 @@ class Workspace:
             "catalogs": self.catalogs_fact(),
             "index": index,
             "selected": sel.selected,
-            "master": self.master() if any(n.startswith("view.") for n in pipeline) else None,
+            "master": self.master() if any(n.startswith("view.") or n in MASTER_STAGES for n in pipeline) else None,
             "views": sorted(n[5:] for n in pipeline if n.startswith("view.")),
             "bundles": inputs,
             "raw": Inputs({}),
+            "requests": {},
         }
         if any(n in pipeline for n in RAW_STAGES):
             from ..pipeline.cristages import boot_input
@@ -1128,8 +1132,9 @@ def subject_pipeline(stages: dict[str, Stage], want) -> list[str]:
 
 
 class SubjectRun:
-    """The stages of one command's subjects, run in this process: `run(want, params, keys=, files=)` runs the stages
-    `want` and those they read over the files the catalog keys `keys` load and the files `files` (key_selection);
+    """The stages of one command's subjects, run in this process: `run(want, params, keys=, files=, requests=)` runs
+    the stages `want` and those they read over the files the catalog keys `keys` load and the files `files`
+    (key_selection), with the subjects `requests` asks of the stages that take requests ({stage: [subject]});
     `result(task id)` is a task's result. The store, catalog and settings are those of `export assets`."""
 
     def __init__(self, args, cfg):
@@ -1143,13 +1148,14 @@ class SubjectRun:
     def index(self) -> dict:
         return self.ws.index()
 
-    def run(self, want, params: dict | None = None, *, keys=(), files=()):
+    def run(self, want, params: dict | None = None, *, keys=(), files=(), requests: dict | None = None):
         from ..pipeline.orchestrate import Orchestrator
 
         ws = self.ws
         ws.selection = key_selection(ws.index(), keys, files)
         pipeline = subject_pipeline(ws.installed.stages, want)
         facts = ws.facts(pipeline, fetch=True)
+        facts["requests"] = {stage: list(subjects) for stage, subjects in (requests or {}).items()}
         self.orch = Orchestrator(ws.store, ws.scheduled, workers=0, log=ws.log)
         self.last = self.orch.run(pipeline, params=params, facts=facts, context=ws.context(), selection=ws.selection)
         return self.last

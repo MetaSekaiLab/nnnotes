@@ -1,5 +1,5 @@
-"""The model stages: Live2D models and Spine skeletons, written by the extractors of `nnnotes export live2d` and
-`nnnotes export spot` (unchanged) from the bundles of their tasks.
+"""The model and scene stages: Live2D models, Spine skeletons, room scenes and Spots, written by the extractors of
+`nnnotes export live2d`, `nnnotes export room` and `nnnotes export spot` from the bundles of their tasks.
 
 live2d.model, one task per Live2D model key (Character/Live2D/<group>/<name>/model/<name>, the keys `nnnotes export
 live2d` takes) whose own bundle (the first dependency of the key's location) is selected:
@@ -24,12 +24,28 @@ SkeletonDataAsset) of a selected bundle; its subject is the asset's stable addre
                the atlas pages (PNG), as spot.write_skeleton writes them for `nnnotes export spot`
     item       the asset: exported (its artifacts), or failed with the writer's error
 
-Both tasks name their extractor as their one atom ("live2d.extract_model", "spot.write_skeleton"), whose id carries
-the versions of the libraries the files depend on; this module imports UnityPy only when a task runs.
+room.scene, one task per background key a command asks for (the fact "requests"):
+    inputs     "bundle:<n>": the bundles of the key's closure in load order, as live2d.model
+    artifacts  "room.scene:<key>#room.glb": the scene as room.extract_room writes it (facts: meshCount,
+               inactiveMeshes); "#room.json": its report, naming the scene room.glb
+
+spot.scene, one task per Spot id (MasterHomeSpot `_id`) a command asks for, with master data (the fact "master"):
+    inputs     "master:<Table>": the tables spot.extract reads (MasterHomeSpot, MasterStoryHomeSpotTapTalkEpisode,
+               MasterText); "bundle:<n>": the bundles of the Spot's situation key (`_situationAssetPath`) in load
+               order
+    context    {"resources": {key: [bundle names]}}: the closures of the situation and background keys
+               (`_backgroundAssetPath`) by bundle name, in load order (spot.json lists them)
+    artifacts  "spot.scene:<id>#spot.json" (facts: tapTargets, skeletons) and "#spine/<file>": the Spine files of
+               the situation, as spot.extract writes them
+
+Every task names its extractor as its one atom ("live2d.extract_model", "spot.write_skeleton", "room.extract_room",
+"spot.extract"), whose id carries the versions of the libraries the files depend on; this module imports UnityPy only
+when a task runs.
 """
 
 from __future__ import annotations
 
+import json
 import re
 import tempfile
 from pathlib import Path
@@ -42,6 +58,10 @@ from .stages import Output, Pending, Stage
 
 LIVE2D = "live2d.model"
 SPINE = "spine.skeleton"
+ROOM = "room.scene"
+SPOT = "spot.scene"
+MASTER_ROLE = "master:"
+SPOT_TABLES = ("MasterHomeSpot", "MasterStoryHomeSpotTapTalkEpisode", "MasterText")
 CENSUS = "unity.census"
 SCRIPTS = "link.scripts"
 SCRIPTS_TASK = contract.task_id(SCRIPTS, "all")
@@ -98,6 +118,20 @@ def _ordered(task, prefix: str = "bundle:") -> list[Input]:
     """The inputs "bundle:<n>" of a task by n."""
     ins = [i for i in task.inputs if i.role.startswith(prefix)]
     return sorted(ins, key=lambda i: int(i.role[len(prefix) :]))
+
+
+def requested(env, stage: str) -> list[str]:
+    """The subjects a command asks of `stage` (the fact "requests": {stage: [subject]}; none without it), sorted."""
+    return sorted(set(env.facts.get("requests", {}).get(stage, ())))
+
+
+def _artifact(task, store, name: str, data: bytes, kind: str, ext: str, facts: dict | None = None) -> dict:
+    return contract.artifact(
+        contract.artifact_id(task.id, name),
+        store.add(data, ext),
+        contract.provenance(task),
+        {"kind": kind, "format": ext, "facts": facts or {}},
+    )
 
 
 # ---------------------------------------------------------------- the catalog of a task
@@ -161,14 +195,26 @@ APK_FROM_INPUTS = "<the task's inputs>"
 
 
 class TaskCatalog:
-    """What the model extractors ask of a Catalog (live2d.extract_model through export.Exporter: fetch_key, entry,
-    apk), answered from a task: its key, the internal id of the key's location and the bundles of the key's closure
-    in load order, each bundle read through the store (Store.open_input: its locators, checked against its content
-    id). Another key is not in it (KeyError). `apk` is not None: the extractors need the APK's bundles, and those of
-    the closure are inputs of the task like the others."""
+    """What the extractors ask of a Catalog (live2d.extract_model through export.Exporter, room.extract_room,
+    spot.extract: fetch_key, resolve, entry, apk), answered from a task: its key, the internal id of the key's
+    location (None: the extractor does not ask) and the bundles of the key's closure in load order, each bundle read
+    through the store (Store.open_input: its locators, checked against its content id). `names` ({key: [bundle
+    names in load order]}) gives the names `resolve` lists for the key and for keys whose bundles the extractor only
+    names. Another key is not in it (KeyError). `apk` is not None: the extractors need the APK's bundles, and those
+    of the closure are inputs of the task like the others."""
 
-    def __init__(self, key: str, internal_id: str, bundles: list[Input], store):
+    def __init__(
+        self,
+        key: str,
+        internal_id: str | None,
+        bundles: list[Input],
+        store,
+        names: dict[str, list[str]] | None = None,
+    ):
         self.key, self.internal_id, self.bundles, self.store = key, internal_id, list(bundles), store
+        self.names = dict(names or {})
+        if key in self.names and len(self.names[key]) != len(self.bundles):
+            raise ValueError(f"{key}: {len(self.names[key])} bundle names for {len(self.bundles)} bundles")
         self.apk = APK_FROM_INPUTS
 
     @classmethod
@@ -188,17 +234,22 @@ class TaskCatalog:
 
     def entry(self, key: str) -> dict:
         self._check(key)
+        if self.internal_id is None:
+            raise KeyError(f"{key}: the task has no internal id")
         return {"primary_key": key, "internal_id": self.internal_id}
 
     def entries_for(self, key: str) -> list[dict]:
         return [self.entry(key)] if key == self.key else []
 
     def resolve(self, key: str) -> list[Bundle]:
-        """The closure as Bundles in load order: offset = the position, name = the input's file name (its content
-        id when it has none); internal_id is empty and remote True (a task has a file's content, not its place in
-        a catalog; every bundle is read from the inputs)."""
+        """The closure as Bundles in load order: offset = the position, name = its name in `names`, else the
+        input's file name (its content id when it has none); internal_id is empty and remote True (a task has a
+        file's content, not its place in a catalog; every bundle is read from the inputs)."""
+        if key != self.key and key in self.names:
+            return [Bundle(i, "", name, True) for i, name in enumerate(self.names[key])]
         self._check(key)
-        return [Bundle(i, "", inp.name or inp.sha256, True) for i, inp in enumerate(self.bundles)]
+        names = self.names.get(key) or [inp.name or inp.sha256 for inp in self.bundles]
+        return [Bundle(i, "", name, True) for i, name in enumerate(names)]
 
     def fetch_key(self, key: str) -> list[Path]:
         """The files of the closure's bundles, in load order."""
@@ -220,14 +271,9 @@ def _tree(root: Path) -> list[tuple[str, Path]]:
     return sorted((p.relative_to(root).as_posix(), p) for p in root.rglob("*") if p.is_file())
 
 
-class Live2DStage(Stage):
-    """live2d.model: a Live2D model key -> the files of `nnnotes export live2d` (module documentation). Subjects and
-    inputs come from the facts "index" (the catalog index), "selected" and "bundles" ({stable name: Input "bundle"})."""
-
-    name = LIVE2D
-    version = 1
-    ATOMS = {"live2d.extract_model": impl_id(LIBRARIES, 1)}
-    LAYOUT_ROOT = "{subject}"
+class _ClosureStage(Stage):
+    """A stage whose task reads the bundles of a key's closure in load order (inputs "bundle:<n>"), from the facts
+    "index" (the catalog index) and "bundles" ({stable name: Input "bundle"})."""
 
     def __init__(self):
         self._closures: Closures | None = None
@@ -244,19 +290,39 @@ class Live2DStage(Stage):
             self._closures = Closures(index)
         return self._closures
 
-    def subjects(self, env) -> list[str]:
-        c, selected = self.closures(env), set(env.fact("selected"))
-        return [k for k in c.keys() if MODEL_KEY.fullmatch(k) and c.own_bundle(k) in selected]
-
-    def inputs(self, subject: str, env) -> list[Input]:
-        bundles, what = env.fact("bundles"), f"{self.name} {subject}"
-        names = self.closures(env).closure_bundles(subject)
+    def closure_inputs(self, key: str, env, what: str) -> list[Input]:
+        """The inputs "bundle:<n>" of the bundles of `key`'s closure (n: the position in load order)."""
+        bundles = env.fact("bundles")
+        names = self.closures(env).closure_bundles(key)
         width = max(3, len(str(len(names) - 1)))
         out = []
         for i, stable in enumerate(names):
             inp = _fact_input(bundles, stable, what)
             out.append(Input(f"bundle:{i:0{width}d}", inp.sha256, inp.size, inp.name, inp.locators))
         return out
+
+    def closure_names(self, key: str, env) -> list[str]:
+        """The catalog names of the bundles of `key`'s closure, in load order."""
+        c = self.closures(env)
+        names = {b["stable"]: b["name"] for b in c.index["bundles"]}
+        return [names[stable] for stable in c.closure_bundles(key)]
+
+
+class Live2DStage(_ClosureStage):
+    """live2d.model: a Live2D model key -> the files of `nnnotes export live2d` (module documentation). Subjects and
+    inputs come from the facts "index" (the catalog index), "selected" and "bundles" ({stable name: Input "bundle"})."""
+
+    name = LIVE2D
+    version = 1
+    ATOMS = {"live2d.extract_model": impl_id(LIBRARIES, 1)}
+    LAYOUT_ROOT = "{subject}"
+
+    def subjects(self, env) -> list[str]:
+        c, selected = self.closures(env), set(env.fact("selected"))
+        return [k for k in c.keys() if MODEL_KEY.fullmatch(k) and c.own_bundle(k) in selected]
+
+    def inputs(self, subject: str, env) -> list[Input]:
+        return self.closure_inputs(subject, env, f"{self.name} {subject}")
 
     def context(self, subject: str, env) -> dict:
         return {"internalId": self.closures(env).entry(subject)["internalId"]}
@@ -279,15 +345,7 @@ class Live2DStage(Stage):
             for rel, p in _tree(Path(d)):
                 kind = live2d_kind(rel)
                 facts = {k: summary[k] for k in sorted(summary)} if kind == "live2d.model3" else {}
-                ext = _ext(rel)
-                arts.append(
-                    contract.artifact(
-                        contract.artifact_id(task.id, rel),
-                        store.add(p.read_bytes(), ext),
-                        contract.provenance(task),
-                        {"kind": kind, "format": ext, "facts": facts},
-                    )
-                )
+                arts.append(_artifact(task, store, rel, p.read_bytes(), kind, _ext(rel), facts))
         return Output(arts, [])
 
 
@@ -452,3 +510,118 @@ class SpineStage(Stage):
                 )
             )
         return Output(arts, [contract.item(oid, "exported", artifacts=[a["id"] for a in arts], cls="MonoBehaviour")])
+
+
+# ---------------------------------------------------------------- room.scene
+class RoomStage(_ClosureStage):
+    """room.scene: a background key -> the glTF scene of `nnnotes export room` and its report (module
+    documentation). Subjects: the keys of the catalog a command asks for (the fact "requests")."""
+
+    name = ROOM
+    version = 1
+    ATOMS = {"room.extract_room": impl_id(LIBRARIES, 1)}
+
+    def subjects(self, env) -> list[str]:
+        c = self.closures(env)
+        return [k for k in requested(env, self.name) if k in c.by_key]
+
+    def inputs(self, subject: str, env) -> list[Input]:
+        return self.closure_inputs(subject, env, f"{self.name} {subject}")
+
+    def estimate(self, subject: str, env, inputs: list[Input]) -> Cost:
+        """From the closure's bytes (the form of Live2DStage.estimate)."""
+        size = sum(i.size for i in inputs)
+        return Cost(1.0 + size * 3e-7, (480 << 20) + 12 * size)
+
+    def run(self, task, store) -> Output:
+        _check_atoms(task, self.ATOMS)
+        from ..content import room
+
+        cat = TaskCatalog(task.subject, None, _ordered(task), store)
+        with tempfile.TemporaryDirectory(prefix="nnnotes-room-") as d:
+            glb = Path(d) / "room.glb"
+            doc = room.extract_room(cat, task.subject, glb)  # pyright: ignore[reportArgumentType]
+            facts = {"meshCount": doc["meshCount"], "inactiveMeshes": doc["inactiveMeshes"]}
+            arts = [
+                _artifact(task, store, "room.glb", glb.read_bytes(), "room.glb", "glb", facts),
+                _artifact(task, store, "room.json", glb.with_suffix(".json").read_bytes(), "room.report", "json"),
+            ]
+        return Output(arts, [])
+
+
+# ---------------------------------------------------------------- spot.scene
+def _spot_row(rows: list[dict], spot_id: int) -> dict:
+    for r in rows:
+        if r.get("_id") == spot_id:
+            return r
+    raise ValueError(f"{SPOT}: no MasterHomeSpot row {spot_id}")
+
+
+class SpotStage(_ClosureStage):
+    """spot.scene: a Spot id -> spot.json and the Spine files of `nnnotes export spot` (module documentation).
+    Subjects: the ids a command asks for (the fact "requests"), when the fact "master" names the master data."""
+
+    name = SPOT
+    version = 1
+    ATOMS = {"spot.extract": impl_id(LIBRARIES, 1)}
+
+    def subjects(self, env) -> list[str]:
+        if env.facts.get("master") is None:
+            return []
+        return requested(env, self.name)
+
+    def master_inputs(self, subject: str, env) -> list[Input]:
+        mdir = Path(env.fact("master"))
+        out = []
+        for t in SPOT_TABLES:
+            p = mdir / f"{t}.json"
+            if not p.is_file():
+                raise ValueError(f"{self.name} {subject}: master table {t} is not in the master data")
+            sha, size = env.store.identify(p)
+            out.append(Input(MASTER_ROLE + t, sha, size, p.name, ({"kind": "file", "path": str(p)},)))
+        return out
+
+    def row(self, subject: str, env) -> dict:
+        p = Path(env.fact("master")) / f"{SPOT_TABLES[0]}.json"
+        return _spot_row(json.loads(p.read_bytes())["_allData"], int(subject))
+
+    def inputs(self, subject: str, env) -> list[Input]:
+        masters = self.master_inputs(subject, env)
+        key = self.row(subject, env)["_situationAssetPath"]
+        return masters + self.closure_inputs(key, env, f"{self.name} {subject}")
+
+    def context(self, subject: str, env) -> dict:
+        row = self.row(subject, env)
+        keys = (row["_backgroundAssetPath"], row["_situationAssetPath"])
+        return {"resources": {k: self.closure_names(k, env) for k in sorted(set(keys))}}
+
+    def estimate(self, subject: str, env, inputs: list[Input]) -> Cost:
+        """From the bytes of the closure and the tables (the form of Live2DStage.estimate)."""
+        size = sum(i.size for i in inputs)
+        return Cost(1.0 + size * 2e-7, (480 << 20) + 12 * size)
+
+    def run(self, task, store) -> Output:
+        _check_atoms(task, self.ATOMS)
+        from ..content import spot
+
+        spot_id = int(task.subject)
+        with tempfile.TemporaryDirectory(prefix="nnnotes-spot-") as d:
+            mdir, out = Path(d, "master"), Path(d, "out")
+            mdir.mkdir()
+            for i in task.inputs:
+                if i.role.startswith(MASTER_ROLE):
+                    (mdir / f"{i.role[len(MASTER_ROLE) :]}.json").write_bytes(store.input_bytes(i))
+            rows = json.loads((mdir / f"{SPOT_TABLES[0]}.json").read_bytes())["_allData"]
+            key = _spot_row(rows, spot_id)["_situationAssetPath"]
+            names = task.context["resources"]
+            cat = TaskCatalog(key, None, _ordered(task), store, names=names)
+            doc = spot.extract(cat, mdir, spot_id, out)  # pyright: ignore[reportArgumentType]
+            facts = {"tapTargets": len(doc["characters"]), "skeletons": len(doc["skeletons"])}
+            arts = []
+            for rel, p in _tree(out):
+                if rel == "spot.json":
+                    arts.append(_artifact(task, store, rel, p.read_bytes(), "spot.json", "json", facts))
+                else:
+                    ext = _ext(rel)
+                    arts.append(_artifact(task, store, rel, p.read_bytes(), "spine.file", ext))
+        return Output(arts, [])

@@ -1,6 +1,7 @@
 """The single-subject export commands run their stage through the store, as `export assets` does, and place the
 artifacts of the subject's task in the output directory."""
 
+import hashlib
 import json
 import zipfile
 
@@ -245,3 +246,167 @@ def test_export_shader_writes_the_first_shader_of_each_name_from_the_export_resu
     assert (out / "Game_Rim" / "gles3" / "s0p0_vertex_0.glsl").read_bytes() == b"// Game/Rim of CAB-a"
     assert json.loads(stdout) == {"count": 2, "names": ["Game/Glow", "Game/Rim"], "variants": 2}
     assert (out / "shaders.json").read_text(encoding="utf-8") == jsonio.dumps(records, indent=1, ensure_ascii=False)
+
+
+# ---------------------------------------------------------------- scenes: room.scene and spot.scene
+BG, SITUATION = "Spot/a/Background/b", "Spot/a/Situation/s"
+SCENE = {n: f"scene_{n}_{n * 32}.bundle" for n in ("b", "s", "c")}
+SCENE_SOURCES = (*SHADER_SOURCES, REAL["room.scene"], REAL["spot.scene"])
+SPOT_MASTER = {
+    "MasterHomeSpot": [
+        {"_id": 1, "_backgroundAssetPath": BG, "_situationAssetPath": SITUATION, "_nameTextId": 5},
+        {"_id": 2, "_backgroundAssetPath": "Spot/none", "_situationAssetPath": SITUATION, "_nameTextId": 5},
+    ],
+    "MasterText": [{"_id": 5, "ja": "Spot A"}],
+    "MasterStoryHomeSpotTapTalkEpisode": [],
+}
+
+
+def _digest(paths) -> bytes:
+    return hashlib.sha256(b"|".join(p.read_bytes() for p in paths)).hexdigest().encode()
+
+
+def fake_extract_room(calls):
+    def extract_room(cat, key, out_path):
+        calls.append(key)
+        out_path.write_bytes(b"glTF" + _digest(cat.fetch_key(key)))
+        doc = {"backgroundKey": key, "glb": out_path.name, "meshCount": 2, "inactiveMeshes": 1, "cutoff": [0.5, 1e-7]}
+        jsonio.write_json(out_path.with_suffix(".json"), doc)
+        return doc
+
+    return extract_room
+
+
+def fake_extract_spot(calls):
+    def extract(cat, md, spot_id, out_dir):
+        assert cat.apk is not None
+        calls.append(spot_id)
+        tables = {t: json.loads((md / f"{t}.json").read_bytes())["_allData"] for t in SPOT_MASTER}
+        assert tables == SPOT_MASTER
+        (sp,) = [r for r in tables["MasterHomeSpot"] if r["_id"] == spot_id]
+        (out_dir / "spine").mkdir(parents=True)
+        (out_dir / "spine" / "c1.skel").write_bytes(b"SKEL" + _digest(cat.fetch_key(sp["_situationAssetPath"])))
+        doc = {
+            "spotId": spot_id,
+            "name": tables["MasterText"][0]["ja"],
+            "characters": [1, 2],
+            "skeletons": [{"skeleton": "c1.skel"}],
+            "resources": {
+                "background": [b.name for b in cat.resolve(sp["_backgroundAssetPath"])],
+                "situation": [b.name for b in cat.resolve(sp["_situationAssetPath"])],
+            },
+        }
+        jsonio.write_json(out_dir / "spot.json", doc)
+        return doc
+
+    return extract
+
+
+def scene_settings(tmp_path) -> list[str]:
+    """A catalog whose keys BG and SITUATION load synthetic bundles with shaders (a shared one in both closures),
+    the master tables of the Spots and an APK."""
+    docs = {
+        "b": cdoc("CAB-b", [obj(1, "AssetBundle", "ab"), obj(4, "Shader", "Room/Wall")]),
+        "s": cdoc(
+            "CAB-s", [obj(1, "AssetBundle", "ab"), obj(6, "Shader", "Spine/Skin"), obj(2, "Shader", "Room/Wall")]
+        ),
+        "c": cdoc("CAB-c", [obj(1, "AssetBundle", "ab"), obj(3, "Shader", "Common/Unlit")]),
+    }
+    cache = tmp_path / "cache" / "bundles"
+    cache.mkdir(parents=True)
+    for n, doc in docs.items():
+        (cache / SCENE[n]).write_bytes(bundle_bytes(doc))
+    entries = [(BG, "Assets/Game/Spot/a/b.prefab", [2, 4]), (SITUATION, "Assets/Game/Spot/a/s.prefab", [3, 4])]
+    entries += [(SCENE[n], synth.remote(SCENE[n]), []) for n in ("b", "s", "c")]
+    catalog = tmp_path / "catalog_main_ja.bin"
+    catalog.write_bytes(synth.CatalogWriter().build(entries))
+    md = tmp_path / "master"
+    md.mkdir()
+    for name, rows in SPOT_MASTER.items():
+        (md / f"{name}.json").write_text(json.dumps({"_allData": rows}), encoding="utf-8")
+    apk = tmp_path / "base.apk"
+    with zipfile.ZipFile(apk, "w") as z:
+        z.writestr("assets/aa/catalog.bin", synth.CatalogWriter().build(APK))
+        z.writestr("assets/aa/Android/monoscripts.bundle", b"UnityFS scripts")
+    return [
+        "--catalog",
+        str(catalog),
+        "--cache",
+        str(tmp_path / "cache"),
+        "--region",
+        "zz",
+        "--language",
+        "ja",
+        "--master",
+        str(md),
+        "--apk",
+        str(apk),
+    ]
+
+
+def test_export_spot_places_the_spot_room_and_shader_results(tmp_path, capsys, monkeypatch):
+    from nnnotes.content import room, spot
+
+    rooms, spots = [], []
+    monkeypatch.setattr(assets, "STAGE_SOURCES", SCENE_SOURCES)
+    monkeypatch.setattr(room, "extract_room", fake_extract_room(rooms))
+    monkeypatch.setattr(spot, "extract", fake_extract_spot(spots))
+    base = scene_settings(tmp_path)
+    out = tmp_path / "out"
+    code, stdout, err = run([*base, "--json", "export", "spot", "1", "-o", str(out)], capsys)
+    assert code == 0, err
+    assert sorted(p.relative_to(out).as_posix() for p in out.rglob("*") if p.is_file()) == [
+        "room.glb",
+        "room.json",
+        "shaders/Common_Unlit.json",
+        "shaders/Common_Unlit/gles3/s0p0_vertex_0.glsl",
+        "shaders/Room_Wall.json",
+        "shaders/Room_Wall/gles3/s0p0_vertex_0.glsl",
+        "shaders/Spine_Skin.json",
+        "shaders/Spine_Skin/gles3/s0p0_vertex_0.glsl",
+        "shaders/shaders.json",
+        "spine/c1.skel",
+        "spot.json",
+    ]
+    cat = Catalog((tmp_path / "catalog_main_ja.bin").read_bytes(), tmp_path / "cache", apk=tmp_path / "base.apk")
+    doc = json.loads((out / "spot.json").read_bytes())
+    # the closures as the catalog resolves them: the names, and the bundles the extractors read in that order
+    names = {"background": [b.name for b in cat.resolve(BG)], "situation": [b.name for b in cat.resolve(SITUATION)]}
+    assert doc["resources"] == names
+    assert (out / "spine" / "c1.skel").read_bytes() == b"SKEL" + _digest(cat.fetch_key(SITUATION))
+    assert (out / "room.glb").read_bytes() == b"glTF" + _digest(cat.fetch_key(BG))
+    report = {"backgroundKey": BG, "glb": "room.glb", "meshCount": 2, "inactiveMeshes": 1, "cutoff": [0.5, 1e-7]}
+    assert (out / "room.json").read_text(encoding="utf-8") == jsonio.dumps(report, indent=1, ensure_ascii=False)
+    # the shaders of the background's closure, then the situation's (by path id): the first of each name
+    assert [b.name for b in cat.resolve(BG)] == [SCENE["c"], SCENE["b"]]
+    assert [b.name for b in cat.resolve(SITUATION)] == [SCENE["c"], SCENE["s"]]
+    records = json.loads((out / "shaders" / "shaders.json").read_bytes())
+    assert [(r["name"], r["source"]) for r in records] == [
+        ("Common/Unlit", SCENE["c"]),
+        ("Room/Wall", SCENE["b"]),
+        ("Spine/Skin", SCENE["s"]),
+    ]
+    assert json.loads(stdout) == {
+        "out": str(out),
+        "spot": {"skeletons": 1, "tapTargets": 2},
+        "room": {"meshes": 2, "inactiveMeshes": 1},
+        "shaders": {"shaders": 3, "variants": 3},
+    }
+    assert rooms == [BG] and spots == [1]
+    # the same Spot again and its room alone: hits of the store
+    code, _, err = run([*base, "export", "spot", "1", "-o", str(tmp_path / "again")], capsys)
+    assert code == 0 and rooms == [BG] and spots == [1], err
+    glb = tmp_path / "r" / "scene.glb"
+    code, stdout, err = run([*base, "--json", "export", "room", BG, "-o", str(glb)], capsys)
+    assert code == 0 and rooms == [BG], err
+    assert glb.read_bytes() == (out / "room.glb").read_bytes()
+    named = {**report, "glb": "scene.glb"}
+    assert glb.with_suffix(".json").read_text(encoding="utf-8") == jsonio.dumps(named, indent=1, ensure_ascii=False)
+    assert json.loads(stdout) == named
+
+
+def test_export_spot_names_a_key_of_the_spot_the_catalog_lacks(tmp_path, capsys, monkeypatch):
+    monkeypatch.setattr(assets, "STAGE_SOURCES", SCENE_SOURCES)
+    code, out, err = run([*scene_settings(tmp_path), "export", "spot", "2", "-o", str(tmp_path / "o")], capsys)
+    assert code == 2 and out == "", err
+    assert "nnnotes export spot: error: not a key of the catalog: Spot/none" in err

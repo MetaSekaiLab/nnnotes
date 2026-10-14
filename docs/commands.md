@@ -303,7 +303,9 @@ OUT/shaders/          shaders of the spot's bundles (as `export shader`)
 ```
 
 Needs `[paths] apk` and master data (`MasterHomeSpot`, `MasterText`, `MasterStoryHomeSpotTapTalkEpisode`). `room.glb` and
-`room.json` are the `export room` export of the spot's background.
+`room.json` are the `export room` export of the spot's background. The files are the results of the store's
+`spot.scene` task of the Spot, `room.scene` task of its background key and `unity.export` tasks (the class `Shader`)
+of the bundles of the background's and situation's closures ([stages](stages.md)).
 
 A reference the situation prefab leaves empty is written as null: a Spine character with no `_animation` has null
 `skeletonData`, `animation` and `world`, and a tap target with no `_focus` has a null `focusWorld`.
@@ -317,7 +319,7 @@ nnnotes export room KEY -o OUT.glb
 A spot background prefab as binary glTF: every mesh baked into prefab space, converted to glTF's right-handed space,
 textures embedded, materials translated from the shader's render state. Objects inactive in the prefab are kept with
 `extras.unityActive = false`. A summary (`meshCount`, materials, textures, samplers) is written next to it as
-`OUT.json`.
+`OUT.json`. The scene is the result of the store's `room.scene` task of the key.
 
 Materials and textures are told apart by serialized file and path id (the prefab's bundle and its dependencies can
 reuse a path id). Each texture is one glTF texture with its own sampler, and textures whose PNG bytes are equal share

@@ -4,6 +4,7 @@ sheet, the APK's UI library."""
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 from pathlib import Path
@@ -21,7 +22,6 @@ from .common import (
     fonts_arg,
     fonts_extra,
     group,
-    known_keys,
     known_row,
     live_option_arg,
     live_options,
@@ -143,23 +143,53 @@ def cmd_live2d(args, cfg):
     report(args, summary)
 
 
+def _facts(doc: dict, kind: str) -> dict:
+    """The facts of the one artifact of `kind` of a result."""
+    (facts,) = [a["semantics"]["facts"] for a in doc["artifacts"] if a["semantics"]["kind"] == kind]
+    return facts
+
+
+def _known_keys(args, index: dict, keys) -> None:
+    """A usage error (exit 2) naming the keys the catalog index does not have."""
+    known = {loc["primaryKey"] for loc in index["locations"]}
+    unknown = [k for k in keys if k not in known]
+    if unknown:
+        usage(args, f"not a key of the catalog: {', '.join(unknown)}")
+
+
 def cmd_spot(args, cfg):
-    from ..content import room, spot
-    from ..formats import shader
+    from ..pipeline import contract
+    from ..pipeline.modelstages import ROOM, SPOT, Closures
+    from ..pipeline.objexport import EXPORT
+    from ..source import master
 
     cfg.require_path("paths", "apk")  # the Spot / Spine component classes are read from the APK
     md = Session(cfg).master_dir()
     known_row(args, md, "MasterHomeSpot", args.spot_id, "spot")
-    cat = Session(cfg).catalog()
+    (row,) = [r for r in master.table(md, "MasterHomeSpot") if r["_id"] == args.spot_id]
+    bg, situation = row["_backgroundAssetPath"], row["_situationAssetPath"]
+    run = assets.SubjectRun(args, cfg)
+    index = run.index()
+    _known_keys(args, index, [bg, situation])
+    closures = Closures(index)
+    order = closures.closure_bundles(bg) + closures.closure_bundles(situation)
+    spot_id = str(args.spot_id)
+    run.run(
+        [SPOT, ROOM, EXPORT],
+        {EXPORT: {"classes": ["Shader"]}},
+        keys=[bg, situation],
+        requests={SPOT: [spot_id], ROOM: [bg]},
+    )
     out = Path(args.out)
-    doc = spot.extract(cat, md, args.spot_id, out)
-    bg = doc["master"]["_backgroundAssetPath"]
-    rm = room.extract_room(cat, bg, out / "room.glb")
-    bundles = cat.fetch_key(bg) + cat.fetch_key(doc["master"]["_situationAssetPath"])
-    s = shader.dump(bundles, out / "shaders")
+    doc = run.result(contract.task_id(SPOT, spot_id))
+    room_doc = run.result(contract.task_id(ROOM, bg))
+    assets.place(run.store, doc, out)
+    assets.place(run.store, room_doc, out)
+    s = _write_shaders(run, order, out / "shaders")
+    rm = _facts(room_doc, "room.glb")
     r = {
         "out": str(out),
-        "spot": {"tapTargets": len(doc["characters"]), "skeletons": len(doc["skeletons"])},
+        "spot": _facts(doc, "spot.json"),
         "room": {"meshes": rm["meshCount"], "inactiveMeshes": rm["inactiveMeshes"]},
         "shaders": {"shaders": s["count"], "variants": s["variants"]},
     }
@@ -175,39 +205,33 @@ def cmd_spot(args, cfg):
 
 
 def cmd_room(args, cfg):
-    from ..content import room
+    from ..pipeline import contract
+    from ..pipeline.modelstages import ROOM
 
-    cat = Session(cfg).catalog()
-    known_keys(args, cat, [args.key])
-    r = room.extract_room(cat, args.key, Path(args.out))
+    run = assets.SubjectRun(args, cfg)
+    _known_keys(args, run.index(), [args.key])
+    run.run([ROOM], keys=[args.key], requests={ROOM: [args.key]})
+    doc = run.result(contract.task_id(ROOM, args.key))
+    arts = {contract.parse_artifact_id(a["id"])[1]: a for a in doc["artifacts"]}
+    out = Path(args.out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    write_file(out, run.store.read(arts["room.glb"]["content"]["sha256"]))
+    r = json.loads(run.store.read(arts["room.json"]["content"]["sha256"]))
+    r["glb"] = out.name  # the report names the scene's file
+    write_json(out.with_suffix(".json"), r)
     report(args, r, lambda r: [f"{r['glb']}  ({r['meshCount']} meshes, {r['inactiveMeshes']} inactive)"])
 
 
-def cmd_shader(args, cfg):
+def _write_shaders(run, order: list[str], out: Path) -> dict:
+    """The shaders of the bundles `order` (stable names) from the results of their unity.export tasks (the class
+    Shader) into `out`: the first shader of each name, in bundle and object order, and shaders.json
+    (shader.write_index)."""
     from ..formats import shader
     from ..pipeline import contract
-    from ..pipeline.modelstages import Closures
     from ..pipeline.objexport import EXPORT
 
-    if not args.key:
-        cfg.require_path("paths", "apk")
-    run = assets.SubjectRun(args, cfg)
-    index = run.index()
-    if args.key:
-        if not any(loc["primaryKey"] == args.key for loc in index["locations"]):
-            usage(args, f"not a key of the catalog: {args.key}")
-        order = Closures(index).closure_bundles(args.key)  # the bundles of the key's closure, as the catalog loads them
-    else:
-        order = []
-        for s in args.apk_bundle:
-            names = [b["stable"] for b in index["bundles"] if not b["remote"] and s in b["name"]]
-            if len(names) != 1:
-                usage(args, f"--apk-bundle {s!r}: {len(names)} APK bundles match")
-            order += names
-    run.run([EXPORT], {EXPORT: {"classes": ["Shader"]}}, keys=[args.key] if args.key else (), files=order)
-    out = Path(args.out)
-    names = {b["stable"]: b["name"] for b in index["bundles"]}
-    records: list = []  # shaders.json: the first shader of each name, in bundle and object order
+    names = {b["stable"]: b["name"] for b in run.index()["bundles"]}
+    records: list = []
     for stable in order:
         doc = run.result(contract.task_id(EXPORT, stable))
         arts = {a["id"]: a for a in doc["artifacts"]}
@@ -230,7 +254,29 @@ def cmd_shader(args, cfg):
                 write_file(out.joinpath(*v["file"].split("/")), code)
                 variants.append({k: x for k, x in v.items() if k != "role"})
             records.append({"name": name, "source": names[stable], "parsed": f"{safe}.json", "variants": variants})
-    r = shader.write_index(records, out)
+    return shader.write_index(records, out)
+
+
+def cmd_shader(args, cfg):
+    from ..pipeline.modelstages import Closures
+    from ..pipeline.objexport import EXPORT
+
+    if not args.key:
+        cfg.require_path("paths", "apk")
+    run = assets.SubjectRun(args, cfg)
+    index = run.index()
+    if args.key:
+        _known_keys(args, index, [args.key])
+        order = Closures(index).closure_bundles(args.key)  # the bundles of the key's closure, as the catalog loads them
+    else:
+        order = []
+        for s in args.apk_bundle:
+            names = [b["stable"] for b in index["bundles"] if not b["remote"] and s in b["name"]]
+            if len(names) != 1:
+                usage(args, f"--apk-bundle {s!r}: {len(names)} APK bundles match")
+            order += names
+    run.run([EXPORT], {EXPORT: {"classes": ["Shader"]}}, keys=[args.key] if args.key else (), files=order)
+    r = _write_shaders(run, order, Path(args.out))
     report(args, r, lambda r: [f"{r['count']} shaders, {r['variants']} variants", *(f"  {n}" for n in r["names"])])
 
 

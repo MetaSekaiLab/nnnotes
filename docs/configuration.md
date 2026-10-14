@@ -167,8 +167,8 @@ story text); it is not a setting.
 | `export episode` | catalog, master data |
 | `export story` | catalog, `[catalog] language`, master data, `[paths] apk`, `ffmpeg` (audio and videos), `vgmstream` (not with `--no-audio`) |
 | `export live2d` | the store (`[paths] store` or `[paths] cache`), catalog, `[paths] apk` |
-| `export spot` | catalog, master data, `[paths] apk` |
-| `export room` | catalog |
+| `export spot` | the store, catalog, master data, `[paths] apk` |
+| `export room` | the store, catalog |
 | `export shader` | the store, catalog; `--apk-bundle` also `[paths] apk` |
 | `export audio` | the store, catalog, `[paths] apk`, `vgmstream`, `ffmpeg` (not for `--format wav`) |
 | `apk hca-key` | `[paths] apk` |
