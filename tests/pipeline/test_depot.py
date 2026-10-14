@@ -1,6 +1,7 @@
 """The content-addressed depot: write-once bytes, results as the commit point, input identities, runs."""
 
 import hashlib
+import json
 import multiprocessing as mp
 import os
 from pathlib import Path
@@ -116,8 +117,8 @@ def test_concurrent_writers_across_processes(tmp_path):
     assert len(list((tmp_path / "ac").rglob("*.json"))) == 10
     assert sum(p.is_file() for p in (tmp_path / "cas").rglob("*")) == 50  # 10 blobs, 40 shared
     assert not list(tmp_path.rglob("*.part"))
-    lines = (tmp_path / "inputs" / "files.jsonl").read_text(encoding="utf-8").splitlines()
-    assert lines and all(line.startswith("{") and line.endswith("}") for line in lines)
+    records = list((tmp_path / "inputs" / "paths").rglob("*.json"))
+    assert len(records) == 1 and json.loads(records[0].read_bytes())["path"] == str(Path(__file__).resolve())
 
 
 def test_identify_memoizes_by_path_size_and_mtime(tmp_path, monkeypatch):
@@ -135,9 +136,24 @@ def test_identify_memoizes_by_path_size_and_mtime(tmp_path, monkeypatch):
     f.write_bytes(b"abcd")
     os.utime(f, ns=(1, 1))
     assert fresh.identify(f) == (contract.sha256(b"abcd"), 4) and calls == [1]
-    with open(tmp_path / "s" / "inputs" / "files.jsonl", "a", encoding="utf-8") as g:
-        g.write('{"torn": ')  # a writer that died mid-line
-    assert Depot(tmp_path / "s").identify(f) == (contract.sha256(b"abcd"), 4)
+    assert Depot(tmp_path / "s").identify(f) == (contract.sha256(b"abcd"), 4) and calls == [1]
+    assert fresh.named("bundles", "in.bin") == (contract.sha256(b"abc"), 3)  # a name keeps what it was recorded as
+
+
+def test_identities_recorded_by_concurrent_threads_are_all_kept(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+
+    files = []
+    for i in range(64):
+        f = tmp_path / "in" / f"b{i}.bundle"
+        f.parent.mkdir(exist_ok=True)
+        f.write_bytes(f"bundle {i}".encode())
+        files.append(f)
+    s = Depot(tmp_path / "s")
+    with ThreadPoolExecutor(8) as pool:
+        list(pool.map(lambda f: s.identify(f, "bundles", f.name), files))
+    fresh = Depot(tmp_path / "s")
+    assert all(fresh.named("bundles", f.name) == (contract.sha256(f.read_bytes()), f.stat().st_size) for f in files)
 
 
 def test_open_input_tries_locators_in_order(tmp_path):
