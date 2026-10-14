@@ -1,0 +1,16 @@
+name: Feature request
+description: A new command, option or output
+labels: [enhancement]
+body:
+  - type: textarea
+    id: use
+    attributes:
+      label: What you want to do
+      description: the task, and what nnnotes would need to read or write for it
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: the command, option or output format you have in mind, if any

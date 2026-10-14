@@ -72,6 +72,7 @@ The [command reference](https://metasekailab.github.io/nnnotes/cli/) lists every
 - Reference: [commands](https://metasekailab.github.io/nnnotes/cli/),
   [command outputs](https://metasekailab.github.io/nnnotes/commands/),
   [JSON schemas](https://metasekailab.github.io/nnnotes/schemas/),
+  [Python API](https://metasekailab.github.io/nnnotes/api/),
   [contracts](https://metasekailab.github.io/nnnotes/contracts/), [stages](https://metasekailab.github.io/nnnotes/stages/),
   [views](https://metasekailab.github.io/nnnotes/views/).
 - Explanation: [architecture](https://metasekailab.github.io/nnnotes/architecture/),
@@ -88,6 +89,11 @@ line endings and non-finite numbers written as `1e999`. Other versions can encod
 [CHANGELOG.md](https://github.com/MetaSekaiLab/nnnotes/blob/main/CHANGELOG.md) lists the changes of every version.
 Versions follow [Semantic Versioning](https://semver.org/) over the command line, the configuration keys, the JSON
 schemas and the documented Python API.
+
+## Contributing
+
+Setup, checks and commit conventions are in
+[CONTRIBUTING.md](https://github.com/MetaSekaiLab/nnnotes/blob/main/CONTRIBUTING.md).
 
 ## License
 

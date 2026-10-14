@@ -1,0 +1,43 @@
+name: Bug report
+description: A command fails or writes a wrong result
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please leave out keys, server addresses, account data and game files: none of them is needed to report a bug.
+  - type: input
+    id: version
+    attributes:
+      label: nnnotes version
+      description: the output of `nnnotes --version`
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: operating system, Python version, and the vgmstream / FFmpeg / Node.js versions when the command uses them
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Command
+      description: the command you ran, with its options
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: What happened
+      description: the error message or the wrong output, and what you expected instead
+    validations:
+      required: true
+  - type: textarea
+    id: config
+    attributes:
+      label: Configuration check
+      description: the output of `nnnotes config check` (it lists where each setting comes from, never a value)
+      render: text
