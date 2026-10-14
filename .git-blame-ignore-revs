@@ -1,0 +1,3 @@
+# layout-only commits that git blame skips (git config blame.ignoreRevsFile .git-blame-ignore-revs)
+# style: format the code with ruff format
+a17eb11317532bd9608f5611d4d323743f8e95f7
