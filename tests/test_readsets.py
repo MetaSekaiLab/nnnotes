@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
-from nnnotes import web
+from nnnotes import sitefiles, web
 from nnnotes.config import ConfigError
 
 
@@ -286,7 +286,7 @@ def served(tmp_path, monkeypatch):
     """A player directory whose read-set script is FAKE_SERVER (run by this Python)."""
     player = tmp_path / "player"
     (player / "scripts").mkdir(parents=True)
-    (player / web.READ_SET_SCRIPT).write_text(FAKE_SERVER, encoding="utf-8")
+    (player / sitefiles.READ_SET_SCRIPT).write_text(FAKE_SERVER, encoding="utf-8")
     monkeypatch.setattr(web, "tool", lambda name, exe: sys.executable)
     servers = web.ReadSetServers(player, timeout=5)
     yield servers
@@ -425,7 +425,7 @@ def test_web_read_workers_flag_reaches_the_build(tmp_path, capsys, monkeypatch):
     )
     monkeypatch.setattr(web, "unknown_pairs", lambda cfg, pairs, regions=None: [])
     player = tmp_path / "p"
-    for rel in (web.READ_SET_SCRIPT, *web.PLAYER_BUNDLES, f"{web.PLAYER_PAGE_DIR}/index.html"):
+    for rel in (sitefiles.READ_SET_SCRIPT, *sitefiles.PLAYER_BUNDLES, f"{sitefiles.PLAYER_PAGE_DIR}/index.html"):
         (player / rel).parent.mkdir(parents=True, exist_ok=True)
         (player / rel).write_text("x", encoding="utf-8")
     cli.main(["web", str(tmp_path / "s"), "--player", str(player), "--pair", "7:hard", "--read-workers", "24"])

@@ -1,7 +1,7 @@
 """Live2D models -> the model part of an ournotes-player site (web.py builds the charts of the same site).
 
     <site>/models.json             model index: id, manifest path, key, listing facts, sizes
-    <site>/models/<id>.json        model manifest (format web.MANIFEST_FORMAT): every path of the model's files ->
+    <site>/models/<id>.json        model manifest (format sitefiles.MANIFEST_FORMAT): every path of the model's files ->
                                    {asset, size}, or, for a large JSON object, {parts: [[key, asset, size], ...], size}
                                    (as a chart manifest)
     <site>/assets/<sha256>.<ext>   content-addressed files, shared with the charts (the models share their shaders)
@@ -13,7 +13,8 @@ The files of one model (the paths in its manifest), only those the player reads 
     <name>.moc3                    the moc3 (as live2d.extract_runtime writes it)
     <name>.prefab.json             the whole prefab, clips, expressions and controllers inlined (the same)
     textures/*.png                 the atlas pages the drawables draw with (the same)
-    shaders/shaders.json           the shader index (shader.py layout, filtered as in the chart sites: web.collect),
+    shaders/shaders.json           the shader index (shader.py layout, filtered as in the chart sites:
+                                   sitefiles.collect),
     shaders/<shader>.json          the parsed forms and the GLES3 programs (GLSL ES 3.00) the drawables' materials
     shaders/<shader>/gles3/*.glsl  select by their keywords, each also with STORY_KEYWORDS (the keywords the story
                                    renderer adds to a character draw); the mask shader's only when a drawable is masked
@@ -57,26 +58,23 @@ from . import jsonio, languages, live2d, master
 from . import shader as shader_mod
 from .config import Config, usable_cpus, use
 from .export import Exporter
-from .web import (
+from .sitefiles import (
     MANIFEST_FORMAT,
     MODELS_DIR,
-    MODELS_INDEX,
     SHADER_PLATFORM,
     SHADER_TYPE,
-    SITE_FORMAT,
     Store,
     _dump,
     _lock_fetches,
     _log,
     check_player,
     collect,
-    entry_assets,
     entry_text,
     site_store,
     text_asset,
-    write_index,
     write_player,
 )
+from .siteindex import write_index
 
 LIVE2D_PREFIX = "Character/Live2D/"
 MODEL_KEY = re.compile(r"Character/Live2D/(?P<group>[^/]+)/(?P<name>[^/]+)/model/(?P=name)")
@@ -388,9 +386,9 @@ def source_entry(address: str, doc: dict, where: str) -> dict:
 
 class ModelDir:
     """The models of `root`: each model in <root>/<id>/, the files of a model manifest (read_files; the shader index
-    reduced to the listed GLES3 programs as web.collect reduces it) in the layout export_model writes. ensure exports
-    a model whose directory does not exist, or every model once when `force`; `built` / `skipped`: the ids (a model
-    another process installed meanwhile is skipped).
+    reduced to the listed GLES3 programs as sitefiles.collect reduces it) in the layout export_model writes. ensure
+    exports a model whose directory does not exist, or every model once when `force`; `built` / `skipped`: the ids (a
+    model another process installed meanwhile is skipped).
 
     Processes may share `root` (several `nnnotes story` at once): a model directory appears in one rename, whole, and
     the first process to install a model wins; the others drop their export (the same bytes: exports are
@@ -498,34 +496,6 @@ def outdated(site: Path, mid: str) -> str | None:
     return None
 
 
-# ---------------------------------------------------------------- index
-def write_models_index(site: Path) -> tuple[int, set[str]]:
-    """site/models.json from every model manifest present (no models directory: no models.json); returns the number
-    of models and the assets their manifests reference."""
-    site = Path(site)
-    mdir = site / MODELS_DIR
-    if not mdir.is_dir():
-        (site / MODELS_INDEX).unlink(missing_ok=True)
-        return 0, set()
-    models, used = [], set()
-    for p in sorted(mdir.glob("*.json")):
-        man = json.loads(p.read_text(encoding="utf-8"))
-        for e in man["files"].values():
-            used.update(entry_assets(e))
-        models.append(
-            {
-                "id": p.stem,
-                "manifest": f"{MODELS_DIR}/{p.name}",
-                "key": man["key"],
-                "files": len(man["files"]),
-                "bytes": sum(f["size"] for f in man["files"].values()),
-                **man["model"],
-            }
-        )
-    (site / MODELS_INDEX).write_bytes(_dump({"format": SITE_FORMAT, "models": models}))
-    return len(models), used
-
-
 # ---------------------------------------------------------------- per model (in a worker or in this process)
 _W: dict = {}
 
@@ -588,7 +558,7 @@ def build(
     written, models.json and charts.json rebuilt). The data comes from the settings `cfg` (each worker process opens
     its own), bundles from the CDN of `region` (default: [catalog] region), names from the master data of `region`
     when it is configured (master_names). `workers`: parallel model processes (default up to 4); `encoding`: the
-    stored encoding of the assets (web.site_store). Without `force`, an existing manifest that is not current
+    stored encoding of the assets (sitefiles.site_store). Without `force`, an existing manifest that is not current
     (`outdated`) is built again and listed in modelsRebuilt with the reason."""
     player_dir = check_player(player_dir)
     site = Path(out_dir).resolve()

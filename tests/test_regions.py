@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from nnnotes import languages, liveui, score, web
+from nnnotes import languages, liveui, score, sitefiles, siteindex, web
 from nnnotes.config import Config, ConfigError
 from nnnotes.session import Session
 
@@ -61,9 +61,9 @@ def write_master(d: Path, *, title="Song", extra_music=None, shop=0):
 
 def fake_player(root: Path) -> Path:
     for rel, text in {
-        web.READ_SET_SCRIPT: "// read set",
-        web.PLAYER_BUNDLES[0]: "/* bundle */",
-        f"{web.PLAYER_PAGE_DIR}/index.html": "<!-- @PLAYER_VERSION@ -->",
+        sitefiles.READ_SET_SCRIPT: "// read set",
+        sitefiles.PLAYER_BUNDLES[0]: "/* bundle */",
+        f"{sitefiles.PLAYER_PAGE_DIR}/index.html": "<!-- @PLAYER_VERSION@ -->",
     }.items():
         (root / rel).parent.mkdir(parents=True, exist_ok=True)
         (root / rel).write_text(text, encoding="utf-8")
@@ -131,13 +131,13 @@ def test_master_setting_per_region(tmp_path):
 
 def test_site_regions(tmp_path):
     cfg = config(tmp_path, {"tw": {"cdn": "x"}, "en": {"cdn": "y"}, "kr": {"cdn": "z"}}, catalog={"region": "en"})
-    assert web.site_regions(cfg) == ["en"]
-    assert web.site_regions(cfg, ["kr", "tw", "kr"]) == ["kr", "tw"]
-    assert web.site_regions(cfg, None, all_regions=True) == ["tw", "en", "kr"]
+    assert sitefiles.site_regions(cfg) == ["en"]
+    assert sitefiles.site_regions(cfg, ["kr", "tw", "kr"]) == ["kr", "tw"]
+    assert sitefiles.site_regions(cfg, None, all_regions=True) == ["tw", "en", "kr"]
     with pytest.raises(ConfigError, match="servers.jp.cdn"):
-        web.site_regions(cfg, ["jp"])
+        sitefiles.site_regions(cfg, ["jp"])
     with pytest.raises(ConfigError, match="catalog.region"):
-        web.site_regions(config(tmp_path, {"tw": {"cdn": "x"}}))
+        sitefiles.site_regions(config(tmp_path, {"tw": {"cdn": "x"}}))
 
 
 def test_region_masters(tmp_path):
@@ -145,14 +145,14 @@ def test_region_masters(tmp_path):
         (tmp_path / n).mkdir()
     servers = {"a": {"cdn": "x", "master": "a"}, "b": {"cdn": "y"}, "c": {"cdn": "z"}}
     cfg = config(tmp_path, servers, paths={"master": "p"})
-    assert web.region_masters(cfg, ["a", "b"]) == {"a": tmp_path / "a", "b": tmp_path / "p"}
+    assert sitefiles.region_masters(cfg, ["a", "b"]) == {"a": tmp_path / "a", "b": tmp_path / "p"}
     with pytest.raises(ConfigError, match="servers.c.master") as e:
-        web.region_masters(cfg, ["b", "c"])  # two regions on [paths] master
+        sitefiles.region_masters(cfg, ["b", "c"])  # two regions on [paths] master
     assert "NNNOTES_SERVERS_C_MASTER" in str(e.value)
     flagged = config(tmp_path, servers, overrides={("paths", "master"): str(tmp_path / "p")})
-    assert web.region_masters(flagged, ["a"]) == {"a": tmp_path / "p"}
+    assert sitefiles.region_masters(flagged, ["a"]) == {"a": tmp_path / "p"}
     with pytest.raises(ConfigError, match="--master names one directory"):
-        web.region_masters(flagged, ["a", "b"])
+        sitefiles.region_masters(flagged, ["a", "b"])
 
 
 # ---------------------------------------------------------------- region groups
@@ -189,9 +189,9 @@ def test_localized_texts():
 
 
 def chart_manifest(site: Path, music_id, difficulty, files, *, prefix="", regions=None, titles=None, language="en"):
-    store = web.Store(site)
+    store = sitefiles.Store(site)
     doc = {
-        "format": web.SITE_FORMAT,
+        "format": sitefiles.SITE_FORMAT,
         "musicId": music_id,
         "difficulty": difficulty,
         "audio": True,
@@ -210,7 +210,7 @@ def chart_manifest(site: Path, music_id, difficulty, files, *, prefix="", region
         doc["regions"] = regions
     path = web.manifest_file(site, f"{music_id}_{difficulty}", prefix)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(web._dump(doc))
+    path.write_bytes(sitefiles._dump(doc))
     return path
 
 
@@ -228,7 +228,7 @@ def test_index_with_regions_and_languages(tmp_path):
     )
     chart_manifest(tmp_path, 1, "easy", {"live.json": b"{}"}, regions=["tw"])
     meta = [{"id": "tw", "name": "Region A", "languages": ["zh-Hant", "en"]}, {"id": "en", "name": "en"}]
-    r = web.write_index(tmp_path, "zh-Hant", meta)
+    r = siteindex.write_index(tmp_path, "zh-Hant", meta)
     assert (r["charts"], r["assets"]) == (3, 2)
     index = json.loads((tmp_path / "charts.json").read_text(encoding="utf-8"))
     assert index["language"] == "zh-Hant"
@@ -241,8 +241,8 @@ def test_index_with_regions_and_languages(tmp_path):
     ]
     assert index["charts"][1]["titles"]["ko"] == "노래"
     # a later build merges its regions by id; a rewrite without metadata keeps them
-    web.write_index(tmp_path, None, [{"id": "kr", "name": "Region C"}, {"id": "tw", "name": "Region A2"}])
-    web.write_index(tmp_path)
+    siteindex.write_index(tmp_path, None, [{"id": "kr", "name": "Region C"}, {"id": "tw", "name": "Region A2"}])
+    siteindex.write_index(tmp_path)
     index = json.loads((tmp_path / "charts.json").read_text(encoding="utf-8"))
     assert [(g["id"], g["name"]) for g in index["regions"]] == [("tw", "Region A2"), ("en", "en"), ("kr", "Region C")]
     assert index["language"] == "zh-Hant"
@@ -250,7 +250,7 @@ def test_index_with_regions_and_languages(tmp_path):
 
 def test_index_of_a_site_without_regions_is_unchanged(tmp_path):
     chart_manifest(tmp_path, 2, "hard", {"live.json": b"{}"})
-    web.write_index(tmp_path)
+    siteindex.write_index(tmp_path)
     index = json.loads((tmp_path / "charts.json").read_text(encoding="utf-8"))
     assert sorted(index) == ["charts", "format"] and "regions" not in index["charts"][0]
 
@@ -266,8 +266,11 @@ def test_region_manifest_folds_into_the_shared_one(tmp_path):
     shared = json.loads(web.manifest_file(tmp_path, "1_expert").read_text(encoding="utf-8"))
     assert shared["regions"] == ["tw", "en", "kr"]
     assert web.add_regions(web.manifest_file(tmp_path, "1_easy"), ["tw"]) is False
-    assert web.merge_regions(None, ["a", "b"]) == ["a", "b"] and web.merge_regions(["b"], ["a", "b"]) == ["b", "a"]
-    assert [p.relative_to(tmp_path).as_posix() for p in web.chart_manifests(tmp_path)] == [
+    assert sitefiles.merge_regions(None, ["a", "b"]) == ["a", "b"] and sitefiles.merge_regions(["b"], ["a", "b"]) == [
+        "b",
+        "a",
+    ]
+    assert [p.relative_to(tmp_path).as_posix() for p in sitefiles.chart_manifests(tmp_path)] == [
         "charts/1_easy.json",
         "charts/1_expert.json",
         "charts/en/1_easy.json",

@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from nnnotes import cli, jsonio, live2d, web, webmodel
+from nnnotes import cli, jsonio, live2d, sitefiles, siteindex, web, webmodel
 from nnnotes import player as nnnotes_player
 from nnnotes.config import Config, ConfigError
 from nnnotes.session import Session
@@ -229,14 +229,14 @@ def test_story_keywords_select_the_story_programs_too():
 
 def test_ingest_writes_a_manifest_of_the_read_files(tmp_path):
     site = tmp_path / "site"
-    (site / web.MODELS_DIR).mkdir(parents=True)
+    (site / sitefiles.MODELS_DIR).mkdir(parents=True)
     mdir, summary = fake_model(tmp_path / "m")
-    r = webmodel.ingest(web.Store(site), site, "adv_model_a", KEY_A, mdir, summary)
+    r = webmodel.ingest(sitefiles.Store(site), site, "adv_model_a", KEY_A, mdir, summary)
     man = json.loads((site / "models" / "adv_model_a.json").read_text(encoding="utf-8"))
     assert r["ok"] and r["files"] == len(man["files"]) == 12 and sorted(man["files"]) == summary["files"]
-    assert man["format"] == web.MANIFEST_FORMAT == 3 and man["id"] == "adv_model_a" and man["key"] == KEY_A
+    assert man["format"] == sitefiles.MANIFEST_FORMAT == 3 and man["id"] == "adv_model_a" and man["key"] == KEY_A
     assert man["model"] == {"group": "001_adv", "canvas": {"width": 1.0}, "textures": 1, "nodes": 3}
-    index = json.loads(web.entry_text(site, man["files"]["shaders/shaders.json"]))
+    index = json.loads(sitefiles.entry_text(site, man["files"]["shaders/shaders.json"]))
     assert [(r["name"], [v["file"] for v in r["variants"]]) for r in index] == [
         (
             "S/Lit",
@@ -249,32 +249,32 @@ def test_ingest_writes_a_manifest_of_the_read_files(tmp_path):
         ),
         ("S/Mask", ["S_Mask/gles3/s0p0_vertex_0.glsl"]),
     ]
-    prefab = web.entry_text(site, man["files"]["m.prefab.json"])
+    prefab = sitefiles.entry_text(site, man["files"]["m.prefab.json"])
     assert json.loads(prefab)["canvas"] == {"width": 1.0} and b" " not in prefab
-    assert web.entry_text(site, man["files"]["m.moc3"]) == b"MOC3 bytes"
-    doc = json.loads(web.entry_text(site, man["files"]["model.json"]))
+    assert sitefiles.entry_text(site, man["files"]["m.moc3"]) == b"MOC3 bytes"
+    doc = json.loads(sitefiles.entry_text(site, man["files"]["model.json"]))
     assert doc["format"] == webmodel.MODEL_FORMAT == 2 and doc["motionSync"] is False
 
 
 def test_write_index_keeps_model_assets_and_writes_models_json(tmp_path):
     site = tmp_path / "site"
     (site / "charts").mkdir(parents=True)
-    (site / web.MODELS_DIR).mkdir()
-    store = web.Store(site)
+    (site / sitefiles.MODELS_DIR).mkdir()
+    store = sitefiles.Store(site)
     shared = store.put("livescene/shaders/x.glsl", b"#ifdef VERTEX\n#endif\n")
     chart = {"musicId": 1, "difficulty": "easy", "audio": False, "files": {"x.glsl": shared}, "chart": {}}
     (site / "charts" / "1_easy.json").write_text(json.dumps(chart), encoding="utf-8")
     webmodel.ingest(store, site, "adv_model_b", KEY_B, *fake_model(tmp_path / "b", "b", tex=b"tex b", masked=False))
     webmodel.ingest(store, site, "adv_model_a", KEY_A, *fake_model(tmp_path / "a", "a"))
     stale = store.put("old.json", b"[0]")
-    r = web.write_index(site)
+    r = siteindex.write_index(site)
     assert (r["charts"], r["models"], r["removedAssets"]) == (1, 2, 1)
     assert not (site / stale["asset"]).exists()
     for mf in (site / "models").glob("*.json"):
         for e in json.loads(mf.read_text(encoding="utf-8"))["files"].values():
-            assert all((site / a).is_file() for a in web.entry_assets(e))
+            assert all((site / a).is_file() for a in sitefiles.entry_assets(e))
     index = json.loads((site / "models.json").read_text(encoding="utf-8"))
-    assert index["format"] == web.SITE_FORMAT
+    assert index["format"] == sitefiles.SITE_FORMAT
     assert [m["id"] for m in index["models"]] == ["adv_model_a", "adv_model_b"]
     a = index["models"][0]
     assert a["manifest"] == "models/adv_model_a.json" and a["key"] == KEY_A and a["group"] == "001_adv"
@@ -289,33 +289,33 @@ def test_write_index_keeps_model_assets_and_writes_models_json(tmp_path):
     assert len(shared_glsl) == 1
     # removing a model's manifest frees its own assets on the next index
     (site / "models" / "adv_model_b.json").unlink()
-    r = web.write_index(site)
+    r = siteindex.write_index(site)
     assert r["models"] == 1 and r["removedAssets"] >= 1
 
 
 def test_no_models_directory_no_models_json(tmp_path):
     (tmp_path / "models.json").write_bytes(b"{}")
-    r = web.write_index(tmp_path)
+    r = siteindex.write_index(tmp_path)
     assert (r["charts"], r["models"]) == (0, 0)
     assert not (tmp_path / "models.json").exists()
     (tmp_path / "models").mkdir()
-    web.write_index(tmp_path)
+    siteindex.write_index(tmp_path)
     assert json.loads((tmp_path / "models.json").read_text(encoding="utf-8")) == {
-        "format": web.SITE_FORMAT,
+        "format": sitefiles.SITE_FORMAT,
         "models": [],
     }
 
 
 def test_reingest_json_covers_models(tmp_path):
     site = tmp_path / "site"
-    (site / web.MODELS_DIR).mkdir(parents=True)
-    store = web.Store(site)
+    (site / sitefiles.MODELS_DIR).mkdir(parents=True)
+    store = sitefiles.Store(site)
     loose = store.put("model.json", b'{ "a" : 1 }')
     doc = {"id": "m", "key": KEY_A, "model": {}, "files": {"model.json": loose}}
     (site / "models" / "m.json").write_text(json.dumps(doc), encoding="utf-8")
-    assert web.reingest_json(site) == {"changedEntries": 1}
+    assert sitefiles.reingest_json(site) == {"changedEntries": 1}
     man = json.loads((site / "models" / "m.json").read_text(encoding="utf-8"))
-    assert web.entry_text(site, man["files"]["model.json"]) == b'{"a":1}'
+    assert sitefiles.entry_text(site, man["files"]["model.json"]) == b'{"a":1}'
 
 
 LIVE2D_BUNDLE = "/* live2d bundle */\n"
@@ -323,17 +323,17 @@ LIVE2D_BUNDLE = "/* live2d bundle */\n"
 
 def fake_player(root, live2d=True, live2d_bundle=True):
     files = {
-        web.READ_SET_SCRIPT: "// read set\n",
-        web.PLAYER_BUNDLES[0]: "/* bundle */\n",
-        f"{web.PLAYER_PAGE_DIR}/index.html": '<script type="module" src="./chart-list.js"></script>\n',
-        f"{web.PLAYER_PAGE_DIR}/chart-list.js": 'import "../../src/element.js";\n',
+        sitefiles.READ_SET_SCRIPT: "// read set\n",
+        sitefiles.PLAYER_BUNDLES[0]: "/* bundle */\n",
+        f"{sitefiles.PLAYER_PAGE_DIR}/index.html": '<script type="module" src="./chart-list.js"></script>\n',
+        f"{sitefiles.PLAYER_PAGE_DIR}/chart-list.js": 'import "../../src/element.js";\n',
     }
     if live2d:
-        files[f"{web.LIVE2D_PAGE_DIR}/index.html"] = '<script type="module" src="./live2d.js"></script>\n'
-        files[f"{web.LIVE2D_PAGE_DIR}/live2d.js"] = "import '../../src/live2d/define.js'; // @PLAYER_VERSION@\n"
+        files[f"{sitefiles.LIVE2D_PAGE_DIR}/index.html"] = '<script type="module" src="./live2d.js"></script>\n'
+        files[f"{sitefiles.LIVE2D_PAGE_DIR}/live2d.js"] = "import '../../src/live2d/define.js'; // @PLAYER_VERSION@\n"
     if live2d_bundle:
-        files[web.LIVE2D_BUNDLES[0]] = LIVE2D_BUNDLE
-        files[web.LIVE2D_BUNDLES[0] + ".map"] = "{}"
+        files[sitefiles.LIVE2D_BUNDLES[0]] = LIVE2D_BUNDLE
+        files[sitefiles.LIVE2D_BUNDLES[0] + ".map"] = "{}"
     for rel, text in files.items():
         p = root / rel
         p.parent.mkdir(parents=True, exist_ok=True)
@@ -343,37 +343,37 @@ def fake_player(root, live2d=True, live2d_bundle=True):
 
 def test_write_player_copies_the_live2d_page(tmp_path):
     site = tmp_path / "site"
-    r = web.write_player(site, fake_player(tmp_path / "p"))
+    r = sitefiles.write_player(site, fake_player(tmp_path / "p"))
     assert (r["pageFiles"], r["live2dPageFiles"]) == (2, 2)
     version = hashlib.sha256(LIVE2D_BUNDLE.encode()).hexdigest()[:16]
-    page = site / web.LIVE2D_PAGE_SITE_DIR
+    page = site / sitefiles.LIVE2D_PAGE_SITE_DIR
     assert (page / "live2d.js").read_text(
         encoding="utf-8"
     ) == f"import './ournotes-player.live2d.element.min.js'; // {version}\n"
     assert (page / "ournotes-player.live2d.element.min.js").read_text(encoding="utf-8") == LIVE2D_BUNDLE
     assert (page / "ournotes-player.live2d.element.min.js.map").is_file()
     assert (site / "chart-list.js").read_text(encoding="utf-8") == 'import "./ournotes-player.element.min.js";\n'
-    r = web.write_player(tmp_path / "site2", fake_player(tmp_path / "p2", live2d=False, live2d_bundle=False))
-    assert r["live2dPageFiles"] == 0 and not (tmp_path / "site2" / web.LIVE2D_PAGE_SITE_DIR).exists()
+    r = sitefiles.write_player(tmp_path / "site2", fake_player(tmp_path / "p2", live2d=False, live2d_bundle=False))
+    assert r["live2dPageFiles"] == 0 and not (tmp_path / "site2" / sitefiles.LIVE2D_PAGE_SITE_DIR).exists()
     with pytest.raises(ConfigError, match="has the Live2D page but not"):
-        web.write_player(tmp_path / "site3", fake_player(tmp_path / "p3", live2d_bundle=False))
+        sitefiles.write_player(tmp_path / "site3", fake_player(tmp_path / "p3", live2d_bundle=False))
     player = fake_player(tmp_path / "p4")
-    (player / web.LIVE2D_PAGE_DIR / "extra.js").write_bytes(b'import "../../src/element.js";\n')
+    (player / sitefiles.LIVE2D_PAGE_DIR / "extra.js").write_bytes(b'import "../../src/element.js";\n')
     with pytest.raises(RuntimeError, match="beyond LIVE2D_PAGE_IMPORTS"):
-        web.write_player(tmp_path / "site4", player)
+        sitefiles.write_player(tmp_path / "site4", player)
 
 
 def test_player_pages_never_overwrite_site_data(tmp_path):
     player = fake_player(tmp_path / "p")
-    (player / web.PLAYER_PAGE_DIR / "models.json").write_bytes(b"{}")
+    (player / sitefiles.PLAYER_PAGE_DIR / "models.json").write_bytes(b"{}")
     with pytest.raises(RuntimeError, match="would overwrite the site data"):
-        web.write_player(tmp_path / "site", player)
+        sitefiles.write_player(tmp_path / "site", player)
 
 
 def put_manifest(site, mid, key, model=None, doc=None):
     """A model manifest with a model.json only (`doc`, default a current one: MODEL_FORMAT, motionSync)."""
     doc = {"format": webmodel.MODEL_FORMAT, "key": key, "motionSync": False} if doc is None else doc
-    entry = web.Store(site).put("model.json", json.dumps(doc).encode())
+    entry = sitefiles.Store(site).put("model.json", json.dumps(doc).encode())
     (site / "models").mkdir(parents=True, exist_ok=True)
     (site / "models" / f"{mid}.json").write_text(
         json.dumps({"key": key, "model": model or {}, "files": {"model.json": entry}}), encoding="utf-8"
@@ -765,10 +765,12 @@ def test_export_model_writes_model_json(tmp_path, monkeypatch, motion_sync):
 def site_with(tmp_path, *models):
     """A site with the model manifests of fake_model for each (key, motion_sync)."""
     site = tmp_path / "site"
-    (site / web.MODELS_DIR).mkdir(parents=True, exist_ok=True)
+    (site / sitefiles.MODELS_DIR).mkdir(parents=True, exist_ok=True)
     for key, ms in models:
         mid = webmodel.model_id(key)
-        webmodel.ingest(web.Store(site), site, mid, key, *fake_model(tmp_path / mid, mid, key=key, motion_sync=ms))
+        webmodel.ingest(
+            sitefiles.Store(site), site, mid, key, *fake_model(tmp_path / mid, mid, key=key, motion_sync=ms)
+        )
     return site
 
 
@@ -782,8 +784,10 @@ def test_site_models_read_model_json(tmp_path):
         src.ensure("Character/Live2D/g/c/model/c")
     # a model.json without motionSync (a model built before it had one)
     man = json.loads((site / "models" / "adv_model_b.json").read_text(encoding="utf-8"))
-    doc = {k: v for k, v in json.loads(web.entry_text(site, man["files"]["model.json"])).items() if k != "motionSync"}
-    man["files"]["model.json"] = web.Store(site).put("model.json", json.dumps({**doc, "format": 1}).encode())
+    doc = {
+        k: v for k, v in json.loads(sitefiles.entry_text(site, man["files"]["model.json"])).items() if k != "motionSync"
+    }
+    man["files"]["model.json"] = sitefiles.Store(site).put("model.json", json.dumps({**doc, "format": 1}).encode())
     (site / "models" / "adv_model_b.json").write_text(json.dumps(man), encoding="utf-8")
     with pytest.raises(RuntimeError, match="format 1 has no motionSync; export the model again"):
         src.ensure(KEY_B)

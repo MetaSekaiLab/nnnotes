@@ -7,7 +7,7 @@ import threading
 
 import pytest
 
-from nnnotes import web
+from nnnotes import sitefiles, web
 from nnnotes.config import ConfigError
 from nnnotes.liveoptions import LiveOptions, parse_specs, resolve
 
@@ -60,7 +60,7 @@ for line in sys.stdin:
 def test_servers_pass_the_settings(tmp_path, monkeypatch):
     player = tmp_path / "player"
     (player / "scripts").mkdir(parents=True)
-    (player / web.READ_SET_SCRIPT).write_text(ECHO_SERVER, encoding="utf-8")
+    (player / sitefiles.READ_SET_SCRIPT).write_text(ECHO_SERVER, encoding="utf-8")
     monkeypatch.setattr(web, "tool", lambda name, exe: sys.executable)
     servers = web.ReadSetServers(player, timeout=5)
     try:

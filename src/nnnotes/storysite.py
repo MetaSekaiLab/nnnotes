@@ -11,7 +11,7 @@ same site). The format is the player's docs/story-data-format.md.
     <site>/stories/<region>/<advId>.json
                                         the manifest of a region whose story inputs differ from the first region's
                                         (only where its files differ)
-    <site>/story/                       the player's story page and bundle (web.write_player)
+    <site>/story/                       the player's story page and bundle (sitefiles.write_player)
     <site>/assets/<sha256>.<ext>        content-addressed files, shared with the charts and models
 
 The Live2D models of the stories are the site's models (webmodel.py): a pre-pass reads the episodes of the stories to
@@ -25,8 +25,8 @@ with its encoder delay), then per language the story UI (advui.extract in that l
 (storyfonts: generated from the language's font file, or the game's font assets with fonts="game"); an Overlay story
 (MasterAdv._playbackMode 1) built with open fonts also gets its host screen (storyhost: host/ and per language
 ui/simple/, the manifest's `host`). The files the
-player reads are stored (shader directories: GLES3 programs only, as web.collect; cue sheets: cues.json and the files
-it names), scene.json and ui/ui.json split per top-level key whatever their size; files whose bytes are equal in
+player reads are stored (shader directories: GLES3 programs only, as sitefiles.collect; cue sheets: cues.json and the
+files it names), scene.json and ui/ui.json split per top-level key whatever their size; files whose bytes are equal in
 every language are common, the others go to their language's group (ui/fonts.json, ui/languages.json, the host talk
 window's ui/simple/fonts.json and the glyph pages always do). Stories run in parallel worker processes (catalog cache
 writes serialized by a lock); a story whose
@@ -51,12 +51,10 @@ from pathlib import Path
 
 from . import adv, advui, jsonio, languages, master, story, storyfonts, storyhost, webmodel
 from .config import Config, ConfigError, usable_cpus, use
-from .web import (
+from .sitefiles import (
     MODELS_DIR,
     SPLIT_KEY,
     STORIES_DIR,
-    STORIES_INDEX,
-    WEB_AUDIO,
     Store,
     _dump,
     _lock_fetches,
@@ -65,7 +63,6 @@ from .web import (
     check_player,
     collect,
     configure_caches,
-    entry_assets,
     join_parts,
     merge_regions,
     mp4_priming,
@@ -75,9 +72,11 @@ from .web import (
     site_regions,
     site_store,
     text_asset,
+    write_player,
 )
+from .siteindex import write_index, write_stories_index
+from .webaudio import WEB_AUDIO
 
-STORIES_FORMAT = "ournotes.stories/1"
 MANIFEST_FORMAT = "ournotes.story-manifest/2"
 FONT_SOURCES = storyfonts.SOURCES
 EMOJI_FONT = "emoji"  # the emoji font's key in --font / [paths] fonts
@@ -400,8 +399,8 @@ def _files(root: Path, sub: str = "") -> list[str]:
 
 def collect_story(dirs: dict, audio: bool, audio_format: str) -> tuple[dict, dict]:
     """The files of a story -> (common {path: text or bytes}, {language: {path: text or bytes}}): the story
-    directory (web.collect: shader directories reduced to their GLES3 programs), each cue sheet's cues.json and the
-    files it names (in the web format with its encoder delay when that is not FLAC), the videos, and per language
+    directory (sitefiles.collect: shader directories reduced to their GLES3 programs), each cue sheet's cues.json and
+    the files it names (in the web format with its encoder delay when that is not FLAC), the videos, and per language
     its ui/; ui/ files equal in every language are common (except LANGUAGE_FILES / LANGUAGE_DIRS)."""
     sdir = dirs["story"]
     rest = [p for p in _files(sdir) if not p.startswith(("audio/", "videos/", "ui/"))]
@@ -446,8 +445,8 @@ def collect_story(dirs: dict, audio: bool, audio_format: str) -> tuple[dict, dic
 
 
 def split_always(data: bytes) -> list[tuple[str, bytes]] | None:
-    """A minified JSON object -> [(key, value text)] (as web.split_json, whatever the size); None when it cannot be
-    split (not an object of two or more keys whose JSON text is the same in Python and JavaScript)."""
+    """A minified JSON object -> [(key, value text)] (as sitefiles.split_json, whatever the size); None when it cannot
+    be split (not an object of two or more keys whose JSON text is the same in Python and JavaScript)."""
     if not data.startswith(b"{"):
         return None
     obj = json.loads(data)
@@ -460,8 +459,8 @@ def split_always(data: bytes) -> list[tuple[str, bytes]] | None:
 
 
 def put_file(store: Store, path: str, data) -> dict:
-    """One file into the store: text through web.text_asset (SPLIT_ALWAYS files split per top-level key, other
-    JSON as web.Store.put_file), binary as is."""
+    """One file into the store: text through sitefiles.text_asset (SPLIT_ALWAYS files split per top-level key, other
+    JSON as sitefiles.Store.put_file), binary as is."""
     if isinstance(data, bytes):
         return store.put(path, data)
     b = text_asset(path, data)
@@ -479,21 +478,6 @@ def manifest_file(site: Path, adv_id: int, prefix: str = "") -> Path:
 def manifest_root(prefix: str = "") -> str:
     """The relative path from stories/<prefix><advId>.json to the site root."""
     return "../" * (1 + prefix.count("/"))
-
-
-def story_manifests(site: Path) -> list[Path]:
-    """Every story manifest: stories/*.json, then the region manifests stories/<region>/*.json."""
-    d = Path(site) / STORIES_DIR
-    return [*sorted(d.glob("*.json")), *sorted(d.glob("*/*.json"))]
-
-
-def manifest_assets(man: dict) -> set[str]:
-    """The assets a story manifest references: its common files and every language group's."""
-    used: set[str] = set()
-    for files in [man["files"], *(g["files"] for g in man["languages"].values())]:
-        for e in files.values():
-            used.update(entry_assets(e))
-    return used
 
 
 def ingest(store: Store, site: Path, adv_id: int, dirs: dict, job: dict, groups: list[dict]) -> dict:
@@ -646,69 +630,6 @@ def add_regions(path: Path, regions: list[str]) -> bool:
     return True
 
 
-# ---------------------------------------------------------------- index
-def write_stories_index(site: Path, language: str | None = None, regions: list[dict] | None = None) -> tuple[int, set]:
-    """site/stories.json from every story manifest present (no stories directory: no stories.json): entries in
-    advId, manifest order, `size` the decoded bytes of the common files, of each language group and of the files of
-    the referenced models (`models`; a model manifest not present counts none); `language` (default listing
-    language) and `regions` of this build, else those of the existing index. Returns the number of stories and the
-    assets they reference (in their manifests and in the model manifests they name)."""
-    site = Path(site)
-    index = site / STORIES_INDEX
-    if not (site / STORIES_DIR).is_dir():
-        index.unlink(missing_ok=True)
-        return 0, set()
-    old = {}
-    if index.is_file():
-        try:
-            old = json.loads(index.read_text(encoding="utf-8"))
-        except ValueError:
-            old = {}
-    models: dict[str, tuple[int, set]] = {}  # model manifest path -> (decoded bytes, assets)
-
-    def model(rel: str) -> tuple[int, set]:
-        if rel not in models:
-            f = site / rel
-            files = json.loads(f.read_text(encoding="utf-8"))["files"].values() if f.is_file() else []
-            models[rel] = (sum(e["size"] for e in files), {a for e in files for a in entry_assets(e)})
-        return models[rel]
-
-    entries, used = [], set()
-    for p in story_manifests(site):
-        man = json.loads(p.read_text(encoding="utf-8"))
-        used |= manifest_assets(man)
-        refs = [model(rel) for rel in (man.get("models") or {}).values()]
-        for _, assets in refs:
-            used |= assets
-        size = {
-            "common": sum(e["size"] for e in man["files"].values()),
-            "languages": {lang: sum(e["size"] for e in g["files"].values()) for lang, g in man["languages"].items()},
-            "models": sum(n for n, _ in refs),
-        }
-        e = {
-            "id": str(man["advId"]),
-            "manifest": p.relative_to(site).as_posix(),
-            "size": size,
-            "audio": man["audio"],
-            "audioFormat": man["audioFormat"],
-            "fonts": man["fonts"],
-            **man["story"],
-        }
-        if man.get("regions"):
-            e["regions"] = man["regions"]
-        entries.append(e)
-    entries.sort(key=lambda e: (e["advId"], e["manifest"]))
-    new = {r["id"]: r for r in regions or []}
-    recs = [new.pop(r["id"], r) for r in old.get("regions") or [] if isinstance(r, dict) and "id" in r]
-    recs += list(new.values())
-    known = {c for e in entries for c in [*e.get("titles", {}), *e.get("languages", [])]}
-    langs = [c for c in languages.LANGUAGES if c in known]
-    meta = {"language": language or old.get("language"), "languages": langs, "regions": recs}
-    doc = {"format": STORIES_FORMAT, **{k: v for k, v in meta.items() if v}, "stories": entries}
-    index.write_bytes(_dump(doc))
-    return len(entries), used
-
-
 # ---------------------------------------------------------------- build
 def font_files(cfg: Config, story_languages: list[str], flags: dict[str, str] | None = None) -> dict[str, str]:
     """{language: font file path} of the story languages and of the other languages that have one (the fallback
@@ -802,16 +723,15 @@ def build(
     """Add the stories `adv_ids` (MasterAdv ids; None: every story of every region's master data) to the site at
     `out_dir`, with the player of the ournotes-player checkout or package at `player_dir` (its page files are
     written, the indexes rebuilt). The data comes from the settings `cfg` (each worker process opens its own).
-    `audio_format`: web.WEB_AUDIO format of every waveform (`audio` False: none); `story_languages`: the language
+    `audio_format`: webaudio.WEB_AUDIO format of every waveform (`audio` False: none); `story_languages`: the language
     groups (default every language); `fonts`: "open" (glyphs from the font file of each language: `fonts_flags`
     {language: path}, else `[paths] fonts.<language>`; the emoji sprites from `fonts_flags` ["emoji"], else
     `[paths] fonts.emoji`, when given) or "game"; `regions`: as for web.build (module docstring);
     `workers`: parallel story processes (default a quarter of the CPUs, up to 8) and model processes (webmodel.build);
-    `encoding`: the stored encoding of the assets (web.site_store). The models the stories to build load are built
+    `encoding`: the stored encoding of the assets (sitefiles.site_store). The models the stories to build load are built
     first (module docstring; bundles from the CDN of the first region, names as webmodel.build gives them); the
     summary's `storyModels` holds that build's model lists."""
     from .tmpfont import require_extra
-    from .web import write_index, write_player
 
     player_dir = check_player(player_dir)
     if audio_format not in WEB_AUDIO:

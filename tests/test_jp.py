@@ -431,7 +431,7 @@ def test_per_region_apk_and_client_settings(tmp_path):
 @pytest.mark.parametrize("kind", ["--all-live2d", "--all-stories"])
 @pytest.mark.parametrize("region", ["jp", "tw"])
 def test_web_preflight_uses_the_selected_regions_apk(tmp_path, monkeypatch, kind, region):
-    from nnnotes import storysite, tmpfont, web, webmodel
+    from nnnotes import sitefiles, storysite, tmpfont, webmodel
 
     conf = tmp_path / "nnnotes.toml"
     default = "jp" if region == "tw" else "tw"
@@ -444,7 +444,7 @@ def test_web_preflight_uses_the_selected_regions_apk(tmp_path, monkeypatch, kind
     )
     (tmp_path / "target.apk").write_bytes(b"synthetic")
     monkeypatch.setattr(tmpfont, "require_extra", lambda *a, **kw: None)
-    monkeypatch.setattr(web, "check_player", lambda *a, **kw: tmp_path / "player")
+    monkeypatch.setattr(sitefiles, "check_player", lambda *a, **kw: tmp_path / "player")
     monkeypatch.setattr(Session, "catalog", lambda *a, **kw: object())
     monkeypatch.setattr(webmodel, "catalog_models", lambda *a, **kw: {})
     seen = []

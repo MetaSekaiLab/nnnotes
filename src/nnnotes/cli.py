@@ -609,7 +609,7 @@ def cmd_live(args, cfg):
 
 
 def cmd_web(args, cfg):
-    from . import liveoptions, storysite, web, webmodel
+    from . import liveoptions, sitefiles, siteindex, storysite, web, webmodel
 
     live_options = _live_options(args)
     charts, models = bool(args.pair or args.all), bool(args.live2d or args.all_live2d)
@@ -629,15 +629,15 @@ def cmd_web(args, cfg):
     out = Path(args.out)
     if args.player_only or args.reingest_json:
         r = {
-            **(web.reingest_json(out, args.compress) if args.reingest_json else {}),
-            **web.write_player(out, web.check_player(player)),
-            **web.write_index(out),
+            **(sitefiles.reingest_json(out, args.compress) if args.reingest_json else {}),
+            **sitefiles.write_player(out, sitefiles.check_player(player)),
+            **siteindex.write_index(out),
         }
     else:
-        web.check_player(player)
-        regions = (
-            web.site_regions(cfg, args.web_regions, args.all_regions) if args.web_regions or args.all_regions else None
-        )  # None: the one [catalog] region
+        sitefiles.check_player(player)
+        regions = None  # the one [catalog] region
+        if args.web_regions or args.all_regions:
+            regions = sitefiles.site_regions(cfg, args.web_regions, args.all_regions)
         if (stories or models) and regions and len({cfg.provider(r) for r in regions}) > 1:
             raise ConfigError("build JP stories/models in a separate site directory from international releases")
         if (stories or models) and regions:
@@ -651,7 +651,7 @@ def cmd_web(args, cfg):
             )
         if live_options:  # a value a region's master data does not have
             try:
-                for md in web.region_masters(cfg, web.site_regions(cfg, regions)).values():
+                for md in sitefiles.region_masters(cfg, sitefiles.site_regions(cfg, regions)).values():
                     liveoptions.resolve(live_options, md)
             except liveoptions.OptionSpecError as e:
                 args.usage(str(e))
