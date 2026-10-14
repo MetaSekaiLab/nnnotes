@@ -44,7 +44,7 @@ from pathlib import Path
 
 from ..formats.encoders import FLAC_LEVEL
 from ..unity.atoms import impl_id
-from . import builtins, contract
+from . import builtins, contract, units
 from .contract import Cost, IncompatibleTask, Input
 from .stages import Output, Pending, Stage
 
@@ -306,10 +306,7 @@ class AudioStage(_CriStage):
     def index(self, env) -> dict:
         """{content id: {acb, awb, depends, names}} of the raw ACBs and the ACB artifacts of the unity.export
         results."""
-        pending = env.pending(EXPORT)
-        if pending:
-            raise Pending(pending[0])
-        tids = env.tasks(EXPORT)
+        tids = _holders(env)
         raw = _raw(env)
         cat = self.catalog(env)
         sig = (tuple((s, i.sha256) for s, (i, _m) in raw.items()), tuple(env.key(t) for t in tids), id(cat))
@@ -426,6 +423,24 @@ class AudioStage(_CriStage):
         return self._item(task, arts)
 
 
+def _holders(env) -> list[str]:
+    """The unity.export tasks with a result whose unit is a MonoBehaviour outside any hierarchy (the units that may
+    hold an ACB or a USM); Pending while one has not run."""
+    pending = env.pending(EXPORT)
+    if pending:
+        raise Pending(pending[0])
+    tids = env.tasks(EXPORT)
+    if not tids:
+        return []
+    table = units.table(env)
+    out = []
+    for tid in tids:
+        u = table.units.get(contract.parse_task_id(tid, EXPORT)[1])
+        if u is not None and u.cls == "MonoBehaviour":
+            out.append(tid)
+    return out
+
+
 def _export_artifacts(depot, key: str, kind: str) -> list[dict]:
     """The artifact records of semantics kind `kind` (cri.acb, cri.usm) of a unity.export result (a result without the
     kind is not parsed)."""
@@ -480,10 +495,7 @@ class MovieStage(_CriStage):
 
     def index(self, env) -> dict:
         """{content id: {usm, depends, names}} of the raw USMs and the USM artifacts of the unity.export results."""
-        pending = env.pending(EXPORT)
-        if pending:
-            raise Pending(pending[0])
-        tids = env.tasks(EXPORT)
+        tids = _holders(env)
         raw = _raw(env)
         cat = self.catalog(env)
         sig = (tuple((s, i.sha256) for s, (i, _m) in raw.items()), tuple(env.key(t) for t in tids), id(cat))
@@ -499,7 +511,7 @@ class MovieStage(_CriStage):
                 e = entry(Input("usm", inp.sha256, inp.size, inp.name, inp.locators))
                 e["names"] |= cat.keys.get(stable) or {stable}
         for tid in tids:
-            bundle = contract.parse_task_id(tid, EXPORT)[1]
+            bundle = units.table(env).unit(contract.parse_task_id(tid, EXPORT)[1]).bundle
             for a in _export_artifacts(env.depot, env.key(tid), USM_KIND):
                 c = a["content"]
                 e = entry(Input("usm", c["sha256"], c["size"], None, ({"kind": "depot"},)))

@@ -27,20 +27,10 @@ the file after the bundle: the part of the file name after its CAB-<hex> prefix 
 "|<file>" ("apk/data.unity3d|level0:3").
 Objects that no container path names are not listed; `address_of` gives any object's address.
 
-link.artifacts (nnnotes.artifacts/1), one global task: the results of the stages that export objects (unity.export,
-sprite.crop) -> where each object went:
-    objects    {object id: [artifact ids]} of the objects with artifacts (exported, generic, unsupported with some)
-    contained  {object id: the artifact it is part of}
-    artifacts  {artifact id: {sha256, size, ext}}
-Its context names the results it reads ({"results": {task id: key}}); results are functions of their keys, so the
-table is a function of its key. With a layout manifest (its entries' ids) it gives every object's files. The task
-reads the results one at a time and writes the table's text entry by entry (encode_artifacts), so its memory is the
-table's entries, not the results nor the whole text.
 """
 
 from __future__ import annotations
 
-import json
 import re
 
 from ..unity import scripttypes
@@ -51,8 +41,6 @@ from .stages import Output, Pending, Stage
 
 SCRIPTS = "nnnotes.scripts/1"
 ADDRESSES = "nnnotes.addresses/1"
-ARTIFACTS = "nnnotes.artifacts/1"
-EXPORT_STAGES = ("unity.export", "sprite.crop")
 _CAB = re.compile(r"^CAB-[0-9a-f]+")
 
 
@@ -92,7 +80,9 @@ def file_tags(files) -> dict[str, str]:
     return tags
 
 
-def _path_address(stable: str, tags: dict, file: str, pid: int) -> str:
+def path_address(stable: str, tags: dict, file: str, pid: int) -> str:
+    """The path-id stable address of object `pid` of serialized file `file` of bundle `stable` (`tags`: file_tags of
+    the bundle's files)."""
     tag = tags.get(file, "|" + file) if tags else ""
     return contract.stable_address(stable + tag, path_id=pid)
 
@@ -124,7 +114,7 @@ def _container_addresses(stable: str, entries: list[dict], info: dict, tags: dic
             if name and len(same) == 1:
                 out.append((contract.stable_address(stable, path, name=name), e))
             else:
-                out.append((_path_address(stable, tags, e["file"], e["pathId"]), e))
+                out.append((path_address(stable, tags, e["file"], e["pathId"]), e))
     return out
 
 
@@ -233,7 +223,7 @@ def address_of(doc: dict, oid: str, container_objects: dict | None = None) -> st
     stable = doc["files"].get(file)
     if stable is None:
         return None
-    return _path_address(stable, file_tags(doc["bundles"][stable]["files"]), file, pid)
+    return path_address(stable, file_tags(doc["bundles"][stable]["files"]), file, pid)
 
 
 def reverse(doc: dict) -> dict[str, str]:
@@ -341,115 +331,5 @@ class AddressesStage(Stage):
             content,
             contract.provenance(task),
             {"kind": "link.addresses", "format": "json", "facts": facts},
-        )
-        return Output([rec], [])
-
-
-def artifact_table(results) -> tuple[dict, dict, dict]:
-    """The parts of the artifact table of results [(task id, result)], each result read once and not kept:
-    ({object id: set of artifact ids}, {object id: the artifact it is part of}, {artifact id: {sha256, size, ext}}),
-    unsorted. The ids an object is contained in repeat (every part of a prefab names it): one string each."""
-    objects, contained, arts, same = {}, {}, {}, {}
-    for _, doc in results:
-        for a in doc["artifacts"]:
-            c = a["content"]
-            arts[a["id"]] = {"sha256": c["sha256"], "size": c["size"], "ext": c["ext"]}
-        for it in doc["items"]:
-            if it.get("artifacts"):
-                objects.setdefault(it["object"], set()).update(it["artifacts"])
-            elif "in" in it:
-                contained[it["object"]] = same.setdefault(it["in"], it["in"])
-    return objects, contained, arts
-
-
-def artifacts(results) -> dict:
-    """The artifact table (nnnotes.artifacts/1) of results [(task id, result)]."""
-    objects, contained, arts = artifact_table(results)
-    return {
-        "schema": ARTIFACTS,
-        "objects": {o: sorted(v) for o, v in sorted(objects.items())},
-        "contained": dict(sorted(contained.items())),
-        "artifacts": dict(sorted(arts.items())),
-    }
-
-
-def encode_artifacts(objects: dict, contained: dict, arts: dict, chunk: int = 1 << 20):
-    """contract.encode(artifacts(...)) of the parts artifact_table gives, as byte strings of about `chunk` bytes:
-    the canonical text (keys sorted, indent 1, non-ASCII as is, one trailing newline) written entry by entry, so the
-    whole document is never built."""
-
-    def text(v) -> str:
-        return json.dumps(v, indent=1, ensure_ascii=False, sort_keys=True)
-
-    buf, size = ["{"], 0
-    tables = (
-        ("artifacts", arts, arts.get),
-        ("contained", contained, contained.get),
-        ("objects", objects, lambda k: sorted(objects[k])),
-    )
-    for i, (name, table, value) in enumerate(tables):
-        buf.append(("\n " if i == 0 else ",\n ") + text(name) + ": ")
-        if not table:
-            buf.append("{}")
-            continue
-        sep = "{\n  "
-        for k in sorted(table):
-            s = sep + text(k) + ": " + text(value(k)).replace("\n", "\n  ")
-            buf.append(s)
-            size += len(s)
-            sep = ",\n  "
-            if size >= chunk:
-                yield "".join(buf).encode("utf-8")
-                buf, size = [], 0
-        buf.append("\n }")
-    buf.append(",\n " + text("schema") + ": " + text(ARTIFACTS) + "\n}\n")
-    yield "".join(buf).encode("utf-8")
-
-
-class ArtifactsStage(Stage):
-    """link.artifacts: the results of the export stages (EXPORT_STAGES, those of the pipeline) -> the artifact table.
-    One subject ("all"); no inputs, context {"results": {task id: key}}. Waits for export tasks that have not run;
-    skips failed ones. Artifact "link.artifacts:all#artifacts"."""
-
-    name = "link.artifacts"
-    version = 1
-    after = ("unity.export",)
-
-    def subjects(self, env) -> list[str]:
-        return ["all"]
-
-    def _tasks(self, env) -> list[str]:
-        for stage in EXPORT_STAGES:
-            pending = env.pending(stage)
-            if pending:
-                raise Pending(pending[0])
-        return [t for stage in EXPORT_STAGES for t in env.tasks(stage)]
-
-    def depends(self, subject: str, env) -> list[str]:
-        return self._tasks(env)
-
-    def context(self, subject: str, env) -> dict:
-        return {"results": {t: env.key(t) for t in self._tasks(env)}}
-
-    def estimate(self, subject: str, env, inputs: list[Input]) -> Cost:
-        n = len(self._tasks(env))
-        return Cost(0.05 + 0.002 * n, (60 << 20) + 200_000 * n)
-
-    def run(self, task, depot) -> Output:
-        def results():
-            for tid, key in sorted(task.context.get("results", {}).items()):
-                doc = depot.result(key)
-                if doc is None:
-                    raise FileNotFoundError(f"result of {tid} ({key}) is not in the depot")
-                yield tid, doc
-
-        objects, contained, arts = artifact_table(results())
-        content = depot.add_chunks(encode_artifacts(objects, contained, arts), "json")
-        facts = {"objects": len(objects), "contained": len(contained), "artifacts": len(arts)}
-        rec = contract.artifact(
-            contract.artifact_id(task.id, "artifacts"),
-            content,
-            contract.provenance(task),
-            {"kind": "link.artifacts", "format": "json", "facts": facts},
         )
         return Output([rec], [])

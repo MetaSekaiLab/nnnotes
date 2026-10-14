@@ -10,11 +10,11 @@ import pytest
 
 from nnnotes.content import advcommand, storyvoices
 from nnnotes.pipeline import contract, voices
-from nnnotes.pipeline.contract import Task
 from nnnotes.pipeline.depot import Depot
 from nnnotes.pipeline.stages import Pending, describe, execute, registry
 from nnnotes.pipeline.views import AddressIndex, Obj, ViewError
 from nnnotes.source import languages
+from tests.helpers import units as unit_results
 from tests.pipeline.test_views import addresses_doc
 from tests.pipeline.test_voices import KEYS, SHEETS, TABLES, Paths, audio, audio_task, planning, row, text
 
@@ -483,28 +483,19 @@ def test_story_rules_are_checked():
 
 # ---------------------------------------------------------------- the stage
 def export_results(depot, env) -> dict:
-    """unity.export results holding the exported episode parts, one bundle per episode: {asset: {part: oid}}."""
+    """unity.export results holding the exported episode parts, one bundle per episode and a unit per part: {asset:
+    {part: oid}}."""
     oids = {}
     for n, (asset, parts) in enumerate(sorted(EPISODES.items())):
-        t = Task("unity.export", 1, f"adv_{asset}", {}, {}, ())
-        arts, items = [], []
-        for m, part in enumerate(sorted(parts), 1):
-            oid = contract.object_id(f"CAB-{n:04x}", 10 * n + m)
-            role = voices.STORY_OBJECTS[part][1]
-            data = part_bytes(asset, part)
-            arts.append(
-                contract.artifact(
-                    contract.artifact_id(oid, role),
-                    depot.add(data, "json" if part == "script" else "txt"),
-                    contract.provenance(t),
-                    {"kind": "unity.object", "format": "json"},
-                )
-            )
-            items.append(contract.item(oid, "exported", artifacts=[arts[-1]["id"]]))
-            oids.setdefault(asset, {})[part] = oid
-        res = contract.result(t, arts, items)
-        depot.commit(res)
-        env.done(t.id, res["key"])
+        file, bundle = f"CAB-{n:04x}", f"adv_{asset}"
+        pids = {part: 10 * n + m for m, part in enumerate(sorted(parts), 1)}
+        unit_results.add_census(env, bundle, file, [(pid, voices.STORY_OBJECTS[p][0]) for p, pid in pids.items()])
+        for part, pid in pids.items():
+            cls, role = voices.STORY_OBJECTS[part]
+            ext = "json" if part == "script" else "txt"
+            semantics = {"kind": "unity.object", "format": "json"}
+            unit_results.add_unit(env, bundle, file, pid, [(role, part_bytes(asset, part), ext, semantics)], cls)
+            oids.setdefault(asset, {})[part] = contract.object_id(file, pid)
     return oids
 
 
@@ -556,7 +547,8 @@ def test_stage_reads_the_exported_episodes(tmp_path):
     shas = {p["sha256"] for parts in eps.values() for p in parts.values()}
     assert sorted(i.role for i in task.inputs if i.role.startswith("adv:")) == sorted(f"adv:{s}" for s in shas)
     deps = stage.depends("main", env)
-    assert sorted(d for d in deps if d.startswith("unity.export:")) == sorted(f"unity.export:adv_{a}" for a in EPISODES)
+    parts = [f"unity.export:adv_{a}:{p['object'].split(':')[1]}" for a, ps in eps.items() for p in ps.values()]
+    assert sorted(d for d in deps if d.startswith("unity.export:")) == sorted(parts)  # the unit of each part
     ex = execute(task, depot, registry(stage))
     assert (ex.status, ex.result_status) == ("ran", "ok")
     res = depot.result(task.key)
@@ -576,7 +568,7 @@ def test_stage_reads_the_exported_episodes(tmp_path):
 def test_stage_waits_for_the_exports(tmp_path):
     depot = Depot(tmp_path / "s")
     env = story_env(depot, tmp_path)
-    env.waiting("unity.export:adv_adv_script_x_01")
+    env.waiting("unity.export:adv_adv_script_x_01:11")  # the unit of its script
     with pytest.raises(Pending, match="unity.export"):
         describe(voices.VoiceStage(), "main", None, env)
 

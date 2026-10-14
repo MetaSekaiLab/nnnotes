@@ -34,6 +34,7 @@ __all__ = [
     "NO_SCRIPT",
     "PREFIXES",
     "TYPETREE",
+    "BundleIndex",
     "BundleObjects",
     "Capture",
     "ReadError",
@@ -188,11 +189,37 @@ class Capture:
     facts: dict = field(default_factory=dict)
 
 
+class BundleIndex:
+    """What the converters read of a bundle that depends on its bytes alone (`view`, a reader atom's BundleView):
+    its objects and their readers, files, externals, Unity versions and container paths, with memos of names and
+    type tree nodes. The BundleObjects of the tasks of one bundle share it."""
+
+    def __init__(self, view):
+        self.view = view
+        self.infos = view.objects()
+        self.info = {(i.file, i.path_id): i for i in self.infos}
+        self.readers = {k: view.reader(i) for k, i in self.info.items()}
+        self.files = view.files()
+        self.ext_files = {f: [_file_name(p) for p in view.externals(f)] for f in self.files}
+        self.versions = {f: view.unity_version(f) for f in self.files}
+        self.stripped = frozenset(f for f in self.files if not view.stores_typetrees(f))
+        self.containers: dict[tuple, str] = {}
+        for path, file, pid in view.container():
+            k = (file, int(pid))
+            if k not in self.containers or path < self.containers[k]:
+                self.containers[k] = path
+        self.names: dict[tuple, str | None] = {}
+        self.special_memo: dict[int, tuple] = {}
+        self.children_memo: dict[int, tuple] = {}
+        self.heads: dict[int, tuple] = {}
+
+
 class BundleObjects:
-    """The objects of one bundle (`view`, a reader atom's BundleView). `fns`: the atom functions by name; `scripts`:
-    the script table entries the bundle's objects use ({MonoScript object id: "assembly|namespace|class"});
-    `typetrees`: the type trees of script classes for the files that store none ({type hash: nodes}); `blob_min`:
-    byte arrays of this size or more are blobs; `png_level`: the zlib level of PNG files."""
+    """The objects of one bundle (`view`, a reader atom's BundleView; `index`: its BundleIndex when one is shared).
+    `fns`: the atom functions by name; `scripts`: the script table entries the bundle's objects use ({MonoScript
+    object id: "assembly|namespace|class"}); `typetrees`: the type trees of script classes for the files that store
+    none ({type hash: nodes}); `blob_min`: byte arrays of this size or more are blobs; `png_level`: the zlib level of
+    PNG files."""
 
     def __init__(
         self,
@@ -204,30 +231,22 @@ class BundleObjects:
         png_level: int,
         emit: Emit,
         typetrees: dict | None = None,
+        index: BundleIndex | None = None,
     ):
+        idx = index if index is not None else BundleIndex(view)
+        if idx.view is not view:
+            raise ValueError("the index is of another view")
         self.view, self.fns, self.emit = view, fns, emit
         self.scripts, self.blob_min, self.png_level = dict(scripts), int(blob_min), int(png_level)
         self.typetrees = dict(typetrees or {})
-        self.infos = view.objects()
-        self.info = {(i.file, i.path_id): i for i in self.infos}
-        self.readers = {k: view.reader(i) for k, i in self.info.items()}
-        self.files = view.files()
-        self.ext_files = {f: [_file_name(p) for p in view.externals(f)] for f in self.files}
-        self.versions = {f: view.unity_version(f) for f in self.files}
-        self.stripped = frozenset(f for f in self.files if not view.stores_typetrees(f))
+        self.infos, self.info, self.readers = idx.infos, idx.info, idx.readers
+        self.files, self.ext_files, self.versions, self.stripped = idx.files, idx.ext_files, idx.versions, idx.stripped
+        self.containers, self.names = idx.containers, idx.names
+        self._special_memo, self._children_memo, self._heads = idx.special_memo, idx.children_memo, idx.heads
         self.partial: dict[tuple, str] = {}  # objects read in part -> why
         self._nodes: dict[tuple, object] = {}  # objects read with a type tree of `typetrees` -> its node
         self._script_nodes: dict[str, object] = {}  # type hash -> node
-        self.containers: dict[tuple, str] = {}
-        for path, file, pid in view.container():
-            k = (file, int(pid))
-            if k not in self.containers or path < self.containers[k]:
-                self.containers[k] = path
-        self.names: dict[tuple, str | None] = {}
         self._mono_scripts: dict[tuple, str | None] = {}
-        self._special_memo: dict[int, tuple] = {}
-        self._children_memo: dict[int, tuple] = {}
-        self._heads: dict[int, tuple] = {}
         self._captures: dict[str, Capture] = {}
         self._local: Callable[[tuple], dict | None] | None = None
         self.seen: set[str] = set()
