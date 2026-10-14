@@ -26,7 +26,6 @@ import io
 import json
 import math
 import re
-import struct
 import zlib
 from pathlib import Path
 from typing import Literal
@@ -38,6 +37,8 @@ from UnityPy.helpers import MeshHelper
 
 from ..core import cache
 from ..source.catalog import Catalog
+from .convert.animation import CLASS_ID, TRANSFORM_ATTR, controller_doc, streamed_frames
+from .convert.material import material_doc
 from .reader import (
     DEFAULT_RESOURCES,
     SceneGraph,
@@ -119,37 +120,6 @@ def _crc(s: str) -> int:
     return zlib.crc32(s.encode("utf-8"))
 
 
-FLT_MAX = 3.4028234663852886e38
-
-
-def streamed_frames(words: list[int]) -> list[list]:
-    """Mecanim StreamedClip data (uint32 words) -> [[time, [[curve, c0, c1, c2, c3], ...]], ...].
-
-    A frame holds the cubic segments that start at its time; a curve's value at t
-    comes from its last key at or before t: ((c0*x + c1)*x + c2)*x + c3, x = t - time.
-    The stream usually opens with a frame at -FLT_MAX (every curve, constant); clips
-    whose curves all start at t >= 0 open later. It closes with an empty frame at +inf,
-    which is dropped here (JSON has no infinity). An empty stream (no streamed
-    curves) gives no frames.
-    """
-    if not words:
-        return []
-    buf = struct.pack(f"<{len(words)}I", *words)
-    frames, i = [], 0
-    while i < len(buf):
-        t, n = struct.unpack_from("<fi", buf, i)
-        i += 8
-        keys = [list(struct.unpack_from("<i4f", buf, i + 20 * k)) for k in range(n)]
-        i += 20 * n
-        frames.append([t, keys])
-    if i != len(buf):
-        raise ValueError("streamed clip data does not end on a frame boundary")
-    last = frames.pop()
-    if last[0] != float("inf") or last[1]:
-        raise ValueError(f"streamed clip does not close with an empty +inf frame: {last[0]}")
-    return frames
-
-
 def flat_names(tt, prefix: str = "") -> list[str]:
     """Every field path of a typetree ("m_Color", "m_Color.r", "m_Enabled", ...); lists are leaves."""
     out = []
@@ -162,31 +132,6 @@ def flat_names(tt, prefix: str = "") -> list[str]:
 
 
 # --- clip bindings ------------------------------------------------------------
-# Unity class IDs (GenericBinding.typeID) -> class name
-CLASS_ID = {
-    1: "GameObject",
-    4: "Transform",
-    23: "MeshRenderer",
-    95: "Animator",
-    198: "ParticleSystem",
-    199: "ParticleSystemRenderer",
-    212: "SpriteRenderer",
-    224: "RectTransform",
-    225: "CanvasGroup",
-    114: "MonoBehaviour",
-    137: "SkinnedMeshRenderer",
-    120: "LineRenderer",
-    96: "TrailRenderer",
-    331: "SpriteMask",
-    222: "CanvasRenderer",
-}
-# Transform binding attribute -> (property, curve count) (GenericBinding, typeID 4)
-TRANSFORM_ATTR = {
-    1: ("m_LocalPosition", 3),
-    2: ("m_LocalRotation", 4),
-    3: ("m_LocalScale", 3),
-    4: ("localEulerAnglesRaw", 3),
-}
 # Animatable property names a binding can name (attribute = crc32 of the name) that are not field paths of a
 # component the exporter has seen: common component properties, RectTransform driven fields, and material
 # properties ("material.<name>[.<channel>]", renderer material property blocks).
@@ -824,24 +769,7 @@ class Exporter:
         }
 
     def material(self, o) -> dict:
-        tt = o.read_typetree()
-        sp = tt["m_SavedProperties"]
-        m = {
-            "material": tt["m_Name"],
-            "shader": self.ref(o, tt["m_Shader"]),
-            "keywords": tt.get("m_ValidKeywords", []),
-            "invalidKeywords": tt.get("m_InvalidKeywords", []),
-            "renderQueue": tt.get("m_CustomRenderQueue"),
-            "tags": dict(tt.get("stringTagMap", [])),
-            "disabledPasses": tt.get("disabledShaderPasses", []),
-            "textures": {
-                k: {"texture": self.ref(o, v["m_Texture"]), "scale": v["m_Scale"], "offset": v["m_Offset"]}
-                for k, v in sp["m_TexEnvs"]
-            },
-            "ints": dict(sp.get("m_Ints", [])),
-            "floats": dict(sp.get("m_Floats", [])),
-            "colors": dict(sp.get("m_Colors", [])),
-        }
+        m = material_doc(o.read_typetree(), lambda p: self.ref(o, p))
         self.material_props.update(m["floats"])
         self.material_props.update(m["colors"])
         return m
@@ -1505,102 +1433,15 @@ class Exporter:
         if k in self._done:
             return self._done[k]
         rec = self.controller_record(o)
-        tt, tos = rec["tt"], rec["tos"]
         registry = self.clip_format == "livenotes"
-        cid = _rid(o, tt["m_Name"]) if registry else tt["m_Name"]
+        cid = _rid(o, rec["name"]) if registry else rec["name"]
         ref = {"controller": cid}
         self._done[k] = ref
-        clips = [self.ref(o, c) for c in tt["m_AnimationClips"]]
-        c = tt["m_Controller"]
-        machines = []
-        for sm in c["m_StateMachineArray"]:
-            sm = sm["data"]
-            states = []
-            for st in sm["m_StateConstantArray"]:
-                st = st["data"]
-                trees = []
-                for bt in st["m_BlendTreeConstantArray"]:
-                    nodes = bt["data"]["m_NodeArray"]
-                    trees.append(
-                        [
-                            {
-                                "clip": n["data"]["m_ClipID"],
-                                "duration": n["data"]["m_Duration"],
-                                "blendType": n["data"]["m_BlendType"],
-                                "children": n["data"]["m_ChildIndices"],
-                            }
-                            for n in nodes
-                        ]
-                    )
-                states.append(
-                    {
-                        "name": tos.get(st["m_NameID"], st["m_NameID"]),
-                        "path": tos.get(st["m_FullPathID"]),
-                        "speed": st["m_Speed"],
-                        "cycleOffset": st["m_CycleOffset"],
-                        "loop": st["m_Loop"],
-                        "writeDefaultValues": st["m_WriteDefaultValues"],
-                        "mirror": st["m_Mirror"],
-                        "speedParam": tos.get(st["m_SpeedParamID"], st["m_SpeedParamID"]),
-                        "timeParam": tos.get(st["m_TimeParamID"], st["m_TimeParamID"]),
-                        "blendTrees": trees,
-                        "transitions": [self._transition(t["data"], tos) for t in st["m_TransitionConstantArray"]],
-                    }
-                )
-            machines.append(
-                {
-                    "defaultState": sm["m_DefaultState"],
-                    "states": states,
-                    "anyStateTransitions": [
-                        self._transition(t["data"], tos) for t in sm["m_AnyStateTransitionConstantArray"]
-                    ],
-                }
-            )
-        layers = [
-            {
-                "name": tos.get(layer["data"]["m_Binding"]),
-                "stateMachine": layer["data"]["m_StateMachineIndex"],
-                "defaultWeight": layer["data"]["m_DefaultWeight"],
-                "blending": layer["data"]["(int&)m_LayerBlendingMode"],
-            }
-            for layer in c["m_LayerArray"]
-        ]
-        vals = c["m_Values"]["data"]["m_ValueArray"] if "data" in c["m_Values"] else []
-        params = [{"name": tos.get(v["m_ID"], v["m_ID"]), "type": v["m_Type"], "index": v["m_Index"]} for v in vals]
-        body = {
-            "name": tt["m_Name"],
-            "clips": clips,
-            "layers": layers,
-            "stateMachines": machines,
-            "parameters": params,
-            "defaultValues": self.value(o, c["m_DefaultValues"]),
-        }
+        body = controller_doc(rec["tt"], lambda p: self.ref(o, p), lambda v: self.value(o, v))
         if registry:
             self.controllers[cid] = body
             return ref
         return {**ref, **body}
-
-    @staticmethod
-    def _transition(t: dict, tos: dict) -> dict:
-        return {
-            "destination": t["m_DestinationState"],
-            "name": tos.get(t["m_ID"], t["m_ID"]),
-            "duration": t["m_TransitionDuration"],
-            "offset": t["m_TransitionOffset"],
-            "exitTime": t["m_ExitTime"],
-            "hasExitTime": t["m_HasExitTime"],
-            "fixedDuration": t["m_HasFixedDuration"],
-            "canTransitionToSelf": t["m_CanTransitionToSelf"],
-            "conditions": [
-                {
-                    "mode": x["data"]["m_ConditionMode"],
-                    "event": tos.get(x["data"]["m_EventID"], x["data"]["m_EventID"]),
-                    "threshold": x["data"]["m_EventThreshold"],
-                    "exitTime": x["data"]["m_ExitTime"],
-                }
-                for x in t["m_ConditionConstantArray"]
-            ],
-        }
 
     def controller_states(self, o) -> dict:
         """A single-layer AnimatorController without transitions, blend trees or parameter-driven states

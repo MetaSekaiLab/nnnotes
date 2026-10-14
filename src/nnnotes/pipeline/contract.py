@@ -2,12 +2,8 @@
 
 Everything here is a public format (docs/contracts.md, JSON Schemas in nnnotes.schemas):
 
-    canon/1        UTF-8, LF, one trailing newline, non-ASCII as is. Contract documents: keys sorted, indent 1.
-                   Object documents (typetree JSON): the object's own field order, indent 1. Non-finite floats as
-                   `1e999` / `-1e999` (jsonio), NaN as {"$float": "nan"}.
-    content id     sha256 of the bytes (hex).
-    key hash       sha256 of the compact canonical text (ASCII only, keys sorted) of a JSON value.
-    object id      "<serialized file>:<pathId>" (CAB-2f1e...:-4153...; built-in files keep their name:
+    canon/1        the canonical JSON of every document (nnnotes.core.canon, with the content id and the key hash)
+    object id     "<serialized file>:<pathId>" (CAB-2f1e...:-4153...; built-in files keep their name:
                    "unity default resources:10"). A bundle's serialized file name changes with its content, so an
                    object id names one content version; stable_address names the object across versions.
     artifact id    "<object id>#<role>" for an object's artifact, "<stage>:<subject>#<role>" for any other.
@@ -28,19 +24,25 @@ versions in the run manifest), so identical bundles of two regions or catalog ve
 
 from __future__ import annotations
 
-import hashlib
-import json
 import re
 from dataclasses import dataclass, field
 from functools import cached_property
 
-from ..core import jsonio
+from ..core.canon import CANON as CANON
+from ..core.canon import NAN as NAN
+from ..core.canon import digest as digest
+from ..core.canon import dumps as dumps
+from ..core.canon import encode as encode
+from ..core.canon import encode_chunks as encode_chunks
+from ..core.canon import is_sha256 as is_sha256
+from ..core.canon import key_text as key_text
+from ..core.canon import loads as loads
+from ..core.canon import sha256 as sha256
 from ..core.media import MEDIA_TYPES as MEDIA_TYPES
 from ..core.media import media_type as media_type
 from ..unity.ids import object_id as object_id
 from ..unity.ids import parse_object_id as parse_object_id
 
-CANON = "canon/1"
 TASK = "nnnotes.task/1"
 ARTIFACT = "nnnotes.artifact/1"
 RESULT = "nnnotes.result/1"
@@ -54,7 +56,6 @@ CATALOG_INDEX = "nnnotes.catalog-index/1"
 CENSUS = "nnnotes.census/1"
 VIEW = "nnnotes.view/1"
 
-NAN = {"$float": "nan"}
 # item statuses of a result: every object a task covers has exactly one
 ITEM_STATUSES = ("exported", "contained", "generic", "unsupported", "failed")
 RESULT_STATUSES = ("ok", "partial")
@@ -63,102 +64,8 @@ RUN_TASK_STATUSES = ("hit", "ran", "failed")
 LOCATOR_KINDS = ("depot", "download", "file", "catalog")
 # an object's primary artifact is the one whose role comes first here; its other artifacts are secondary
 PRIMARY_ROLES = ("image", "mesh", "audio", "video", "font", "data", "prefab", "json")
-_SHA256 = re.compile(r"[0-9a-f]{64}")
 _EXT = re.compile(r"[0-9a-z]+")
 _BUNDLE_SUFFIX = re.compile(r"(_[0-9a-f]{32})?\.bundle$")
-
-
-# ---------------------------------------------------------------- canonical JSON
-def _tag_nan(v):
-    """`v` with every NaN replaced by {"$float": "nan"}; containers are copied only where something changed."""
-    if isinstance(v, float):
-        return dict(NAN) if v != v else v
-    if isinstance(v, dict):
-        out = None
-        for k, x in v.items():
-            y = _tag_nan(x)
-            if y is not x:
-                if out is None:
-                    out = dict(v)
-                out[k] = y
-        return v if out is None else out
-    if isinstance(v, (list, tuple)):
-        out = None
-        for i, x in enumerate(v):
-            y = _tag_nan(x)
-            if y is not x:
-                if out is None:
-                    out = list(v)
-                out[i] = y
-        return v if out is None else out
-    return v
-
-
-def _text(obj, **kw) -> str:
-    try:
-        return jsonio.dumps(obj, **kw)
-    except ValueError:
-        tagged = _tag_nan(obj)
-        if tagged is obj:
-            raise  # not a NaN: the writer's own error
-    return jsonio.dumps(tagged, **kw)
-
-
-def dumps(obj, *, sort_keys: bool = True) -> str:
-    """The canon/1 text of a document: keys sorted (`sort_keys=False` keeps the document's order, for object
-    documents), indent 1, non-ASCII as is, one trailing newline."""
-    return _text(obj, indent=1, ensure_ascii=False, sort_keys=sort_keys) + "\n"
-
-
-def encode(obj, *, sort_keys: bool = True) -> bytes:
-    """dumps() as UTF-8 bytes."""
-    return dumps(obj, sort_keys=sort_keys).encode("utf-8")
-
-
-def encode_chunks(obj, size: int = 1 << 20):
-    """encode(obj) as byte strings of about `size` bytes, made as they are written (a large document's text is
-    never whole in memory, nor the encoder's list of its pieces). Raises ValueError, possibly after some chunks,
-    for a document with a non-finite number: encode() writes those."""
-    enc = json.JSONEncoder(indent=1, ensure_ascii=False, sort_keys=True, allow_nan=False)
-    buf, n = [], 0
-    for piece in enc.iterencode(obj):
-        buf.append(piece)
-        n += len(piece)
-        if n >= size:
-            yield "".join(buf).encode("utf-8")
-            buf, n = [], 0
-    buf.append("\n")
-    yield "".join(buf).encode("utf-8")
-
-
-def _untag(d: dict):
-    return float("nan") if d == NAN else d
-
-
-def loads(text):
-    """A canon/1 (or any JSON) document: {"$float": "nan"} reads back as NaN, 1e999 as infinity."""
-    if isinstance(text, (bytes, bytearray)):
-        text = bytes(text).decode("utf-8")
-    return json.loads(text, object_hook=_untag)
-
-
-def key_text(value) -> str:
-    """The compact canonical text a key hash is taken of: keys sorted, ASCII only, no whitespace."""
-    return _text(value, separators=(",", ":"), ensure_ascii=True, sort_keys=True)
-
-
-def digest(value) -> str:
-    """The key hash of a JSON value (sha256 hex of key_text)."""
-    return hashlib.sha256(key_text(value).encode("ascii")).hexdigest()
-
-
-def sha256(data) -> str:
-    """The content id of bytes."""
-    return hashlib.sha256(data).hexdigest()
-
-
-def is_sha256(s) -> bool:
-    return isinstance(s, str) and _SHA256.fullmatch(s) is not None
 
 
 # ---------------------------------------------------------------- identities

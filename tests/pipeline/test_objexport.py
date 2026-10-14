@@ -18,10 +18,11 @@ from nnnotes.pipeline import census as census_mod
 from nnnotes.pipeline import contract, objexport
 from nnnotes.pipeline.contract import IncompatibleTask, Input, Task
 from nnnotes.pipeline.depot import Depot
-from nnnotes.pipeline.objexport import CONVERTERS, CROP, EXPORT, ExportStage, SpriteCropStage, export_atoms
+from nnnotes.pipeline.objexport import CROP, EXPORT, ExportStage, SpriteCropStage
 from nnnotes.pipeline.stages import Env, describe, execute, registry
 from nnnotes.unity.atoms import Impl, astc, estimate, gltf
 from nnnotes.unity.atoms.reader import UnityBundle
+from nnnotes.unity.convert import CONVERTERS, REASONS, USM_ASSET_SCRIPT, export_atoms, files, material, mono, prefab
 from tests.helpers.fakeunity import (
     F32,
     NORMAL,
@@ -544,7 +545,7 @@ def bundle_plain() -> FakeEnvironment:
 
 
 # a movie asset holding its USM (script 13), beside a cue sheet asset
-USM_SCRIPTS = {**SCRIPTS, "CAB-scripts:13": objexport.USM_ASSET_SCRIPT}
+USM_SCRIPTS = {**SCRIPTS, "CAB-scripts:13": USM_ASSET_SCRIPT}
 WARMUP = b"CRID" + bytes(range(256)) * 2
 MOVIE_INFO = {"numAlphaStreams": 0, "width": 64, "height": 64, "codecType": 1, "numAudioStreams": 0}
 
@@ -889,7 +890,7 @@ def test_movies_held_in_the_bundle(tmp_path):
     assert load(depot, doc, usm["id"]) == WARMUP and usm["content"]["ext"] == "usm"
     assert usm["semantics"] == {"kind": "cri.usm", "format": "usm", "facts": {"movie": "warmup"}}
     tree = obj(depot, doc, f"{m}#json")
-    assert tree["$script"] == objexport.USM_ASSET_SCRIPT and tree["movieInfo"] == MOVIE_INFO
+    assert tree["$script"] == USM_ASSET_SCRIPT and tree["movieInfo"] == MOVIE_INFO
     assert tree["references"]["RefIds"][0]["data"]["data"] == {
         "$blob": {"sha256": contract.sha256(WARMUP), "size": len(WARMUP), "format": "usm"}
     }
@@ -915,7 +916,7 @@ def test_the_movie_converter_is_keyed_by_the_script_context(tmp_path):
 def test_acb_layouts(tmp_path):
     from nnnotes.formats import cri
 
-    assert objexport.acb_asset({"_cueSheetName": "x", "_chunks": []})["layout"] == "split"
+    assert mono.acb_asset({"_cueSheetName": "x", "_chunks": []})["layout"] == "split"
     t = {
         "m_Name": "s",
         "implementation": {"rid": 5},
@@ -926,18 +927,18 @@ def test_acb_layouts(tmp_path):
             ]
         },
     }
-    assert objexport.acb_asset(t) == {
+    assert mono.acb_asset(t) == {
         "layout": "embedded",
         "cueSheet": "s",
         "ref": 1,
         "impl": t["references"]["RefIds"][1],
     }
     assert (
-        objexport.acb_asset(
+        mono.acb_asset(
             {"implementation": {"rid": 5}, "references": {"RefIds": [{"rid": 5, "type": {"class": "Other"}}]}}
         )
         is None
-        and objexport.acb_asset({"m_Name": "x"}) is None
+        and mono.acb_asset({"m_Name": "x"}) is None
     )
     assert cri.embedded_acb(t, t["references"]["RefIds"][1]) == b"@UTF"
     with pytest.raises(NotImplementedError, match="external AWB"):
@@ -950,9 +951,9 @@ def test_acb_layouts(tmp_path):
 
 def test_a_split_sheet_with_a_missing_chunk_gives_the_typetree(tmp_path, monkeypatch):
     depot = Depot(tmp_path / "s")
-    real = objexport.acb_asset
+    real = mono.acb_asset
     monkeypatch.setattr(
-        objexport,
+        mono,
         "acb_asset",
         lambda tt: (
             dict(real(tt), chunks=[pptr(44), pptr(99, 1)]) if real(tt) and real(tt)["layout"] == "split" else real(tt)
@@ -996,7 +997,18 @@ def test_clip_bindings_name_scripts_of_other_bundles(exported):
     depot, _task, doc = exported
     clip = obj(depot, doc, f"{oid(96)}#json")
     (b,) = clip["bindings"]
-    assert b["typeID"] == 114 and b["class"] == "Fader" and b["path"] == ""
+    assert b == {
+        "pathCrc": 0,
+        "attributeCrc": 77,
+        "typeID": 114,
+        "class": "MonoBehaviour",
+        "customType": 0,
+        "pptr": False,
+        "int": False,
+        "serializeReference": False,
+        "script": {"$ref": {"file": "CAB-scripts", "pathId": 12}},
+        "scriptClass": "Assembly-CSharp|Game|Fader",
+    }
     assert census_mod.script_refs(census_doc(open_fake(b"fake:all"))) == sorted(SCRIPTS) + ["CAB-scripts:9"]
 
 
@@ -1007,10 +1019,38 @@ def test_material_clip_controller(exported):
     assert mat["textures"]["_MainTex"]["texture"]["$ref"]["pathId"] == 10
     assert mat["colors"]["_Color"]["g"] == INF and b"1e999" in load(depot, doc, f"{oid(50)}#json")
     clip = obj(depot, doc, f"{oid(90)}#json")
-    assert clip["clip"] == "clip" and clip["bindings"] == [
-        {"path": "", "typeID": 4, "class": "Transform", "attribute": "m_LocalPosition", "curves": 3}
+    assert list(clip) == [
+        "name",
+        "sampleRate",
+        "wrapMode",
+        "startTime",
+        "stopTime",
+        "loopTime",
+        "cycleOffset",
+        "events",
+        "bindings",
+        "streamed",
+        "dense",
+        "constant",
+        "pptrCurveMapping",
+    ]
+    assert clip["name"] == "clip" and clip["constant"] == [0.5, 1.0, 2.0] and clip["streamed"]["frames"] == []
+    assert clip["bindings"] == [
+        {
+            "pathCrc": 0,
+            "attributeCrc": 1,
+            "typeID": 4,
+            "class": "Transform",
+            "customType": 0,
+            "pptr": False,
+            "int": False,
+            "serializeReference": False,
+            "attribute": "m_LocalPosition",
+            "curves": 3,
+        }
     ]
     ctl = obj(depot, doc, f"{oid(92)}#json")
+    assert list(ctl) == ["name", "clips", "layers", "stateMachines", "parameters", "defaultValues"]
     assert ctl["clips"] == [{"$ref": {"file": CAB, "pathId": 90, "class": "AnimationClip", "name": "clip"}}]
     assert obj(depot, doc, f"{oid(95)}#json")["m_Speed"] == INF
 
@@ -1100,12 +1140,11 @@ def test_scripts_come_from_the_context_only(tmp_path):
 
 def test_a_converter_error_gives_the_typetree(tmp_path, monkeypatch):
     depot = Depot(tmp_path / "s")
-    real = objexport.RefExporter.conv_material
 
-    def broken(self, info):
+    def broken(tt, ref):
         raise KeyError("m_SavedProperties")
 
-    monkeypatch.setattr(objexport.RefExporter, "conv_material", broken)
+    monkeypatch.setattr(material, "material_doc", broken)
     doc = run(depot, task_for(depot, "all", classes=["Material"]))
     item = by_object(doc)[oid(50)]
     assert item["status"] == "generic" and item["reason"] == {
@@ -1113,16 +1152,15 @@ def test_a_converter_error_gives_the_typetree(tmp_path, monkeypatch):
         "message": "KeyError: 'm_SavedProperties'",
     }
     assert obj(depot, doc, f"{oid(50)}#json")["m_Name"] == "mat"
-    monkeypatch.setattr(objexport.RefExporter, "conv_material", real)
 
 
 def test_a_broken_hierarchy_gives_its_objects_one_by_one(tmp_path, monkeypatch):
     depot = Depot(tmp_path / "s")
 
-    def broken(self, o):
+    def broken(*args):
         raise RuntimeError("component failed")
 
-    monkeypatch.setattr(objexport.RefExporter, "component", broken)
+    monkeypatch.setattr(prefab, "_component", broken)
     doc = run(depot, task_for(depot, "all", classes=["GameObject"]))
     items = by_object(doc)
     assert {i["status"] for i in items.values()} == {"generic"}
@@ -1337,9 +1375,14 @@ def test_modules_import_without_unitypy():
 def test_every_reason_code_and_converter_is_documented():
     doc = (ROOT / "docs" / "stages.md").read_text(encoding="utf-8")
     documented = set(re.findall(r"^\| `([a-z_]+(?:\.[A-Za-z_]+)+)` \|", doc, re.M))
-    pipeline = ROOT / "src" / "nnnotes" / "pipeline"
-    sources = [pipeline / "objexport.py", *sorted((pipeline / "atoms").glob("*.py"))]
-    raised = set(objexport.REASONS)
+    src = ROOT / "src" / "nnnotes"
+    sources = [
+        src / "pipeline" / "objexport.py",
+        *sorted((src / "unity" / "convert").glob("*.py")),
+        *sorted((src / "unity" / "atoms").glob("*.py")),
+    ]
+    assert len(sources) > 10
+    raised = set(REASONS)
     for p in sources:
         text = p.read_text(encoding="utf-8")
         raised |= set(re.findall(r'Unsupported\(\s*"([^"]+)"', text))
@@ -1407,14 +1450,17 @@ def test_a_converter_change_without_a_version_bump_fails_its_golden(tmp_path, mo
     expected = contract.loads((ROOT / "tests" / "golden" / "unity.export.json").read_bytes())
     if library_versions(expected["libraries"]) != expected["libraries"]:
         pytest.skip("golden record of other library versions")
-    real = objexport.RefExporter.conv_font
 
-    def changed(self, info):
-        ids = real(self, info)
-        self.staged[-1]["semantics"]["facts"]["extra"] = 1
-        return ids
+    def changed(ctx, info):
+        emit = ctx.emit
+        ctx.emit = lambda *a, **k: emit(*a[:6], {**a[6], "extra": 1}, *a[7:], **k)
+        try:
+            files.font(ctx, info)
+        finally:
+            ctx.emit = emit
 
-    monkeypatch.setattr(objexport.RefExporter, "conv_font", changed)
+    simple = tuple((cls, conv, changed if conv == "font" else fn) for cls, conv, fn in objexport._SIMPLE)
+    monkeypatch.setattr(objexport, "_SIMPLE", simple)
     p = export_golden()
     actual = golden(p["stage"], p["fixtures"], Depot(tmp_path / "s"), p["libraries"])
     problems = golden_problems(expected, actual, p["stage"])

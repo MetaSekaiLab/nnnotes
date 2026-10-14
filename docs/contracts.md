@@ -17,6 +17,8 @@ stays).
 
 ## canon/1
 
+The canonical JSON (`nnnotes.core.canon`) of every document nnnotes writes:
+
 - UTF-8, LF line endings, one trailing newline, non-ASCII characters as they are.
 - Contract documents (everything on this page): object keys sorted, indent 1.
 - Object documents (the JSON of one Unity object): the object's own field order, indent 1.

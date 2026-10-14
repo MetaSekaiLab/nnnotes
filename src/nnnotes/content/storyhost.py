@@ -39,7 +39,8 @@ from ..core.jsonio import dumps, write_json
 from ..formats import shader as shader_mod
 from ..source import languages, master
 from ..unity import fontsettings, textstyle, tmpfont
-from ..unity.export import RECT_PROPS, Exporter, TexelPacker, streamed_frames
+from ..unity.convert.animation import streamed_frames
+from ..unity.export import RECT_PROPS, Exporter, TexelPacker
 from ..unity.reader import SceneGraph, deref, mesh_arrays, referent, script_class
 from . import advui, room, spot, storyfonts
 

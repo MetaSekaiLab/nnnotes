@@ -12,10 +12,10 @@ subpackage of `nnnotes` and imports only the layers below it.
 | Products | `nnnotes.site`, `nnnotes.musicdata` | the ournotes-player site (charts, models, stories, indexes); the music data file and its deck statistics |
 | Pipeline | `nnnotes.pipeline` | stages, task descriptions and results, the content-addressed depot, plans, layouts, the catalog versions, the views of the master data |
 | Content | `nnnotes.content` | the game's subjects as exports: ADV episodes and stories, lives and scores, spots, rooms, the UI library |
-| Unity objects | `nnnotes.unity` | bundle reading, object ids, the atoms (the pure functions objects are converted with: texture decoding, sprite images, mesh arrays, glTF, PNG, file sniffing), the typetree exporter, the player data, Live2D prefabs, text styles and TextMesh Pro fonts |
+| Unity objects | `nnnotes.unity` | bundle reading, object ids, the atoms (the pure functions objects are converted with: texture decoding, sprite images, mesh arrays, glTF, PNG, file sniffing), the converters (one per Unity class, `nnnotes.unity.convert`), the typetree exporter, the player data, Live2D prefabs, text styles and TextMesh Pro fonts |
 | File formats | `nnnotes.formats` | formats read from bytes: CRI ACB/AWB and HCA, USM movies, CRI Lips data, shaders, motions |
 | Sources | `nnnotes.source` | the configuration, the APK, Addressables catalogs and bundles, the game API, master data, languages, `Session` |
-| Core | `nnnotes.core` | the one JSON writer, media types, the process caches and the downloads cache |
+| Core | `nnnotes.core` | the one JSON writer, canonical JSON and its hashes, media types, the process caches and the downloads cache |
 
 The order is a contract: the `layers` contract of [import-linter](https://import-linter.readthedocs.io/) in
 `pyproject.toml` fails the build when a module imports a layer above its own, and `nnnotes.site` and
