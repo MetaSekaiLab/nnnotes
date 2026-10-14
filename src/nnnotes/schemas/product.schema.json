@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:nnnotes:schema:product",
+  "title": "nnnotes.product/1",
+  "description": "The manifest of a product in a product layout: its files and the files of the objects it uses, each a content-addressed asset whose path is relative to the directory above the manifest's.",
+  "type": "object",
+  "required": [
+    "schema",
+    "product",
+    "subject",
+    "files",
+    "objects"
+  ],
+  "properties": {
+    "schema": {
+      "const": "nnnotes.product/1"
+    },
+    "product": {
+      "$ref": "urn:nnnotes:schema:common#/$defs/stageName"
+    },
+    "subject": {
+      "type": "string"
+    },
+    "files": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/asset"
+      }
+    },
+    "objects": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "class": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "files": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/$defs/asset"
+            }
+          },
+          "in": {
+            "type": "string"
+          }
+        },
+        "oneOf": [
+          {
+            "required": [
+              "files"
+            ]
+          },
+          {
+            "required": [
+              "in"
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "$defs": {
+    "asset": {
+      "type": "object",
+      "required": [
+        "asset",
+        "size"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "asset": {
+          "type": "string",
+          "pattern": "^assets/[0-9a-f]{64}\\.[0-9a-z]+$"
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    }
+  }
+}

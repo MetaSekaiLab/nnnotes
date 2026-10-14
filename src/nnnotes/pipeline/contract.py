@@ -55,6 +55,8 @@ COST = "nnnotes.cost/1"
 CATALOG_INDEX = "nnnotes.catalog-index/1"
 CENSUS = "nnnotes.census/2"
 VIEW = "nnnotes.view/1"
+OBJECTS = "nnnotes.objects/1"
+PRODUCT = "nnnotes.product/1"
 
 # item statuses of a result: every object a task covers has exactly one
 ITEM_STATUSES = ("exported", "contained", "generic", "unsupported", "failed")
