@@ -23,7 +23,7 @@ def cmd_verify(args, cfg):
 
 def cmd_gc(args, cfg):
     from ..core.downloads import exclusive
-    from ..pipeline.depot import Depot
+    from ..pipeline.depot import open_depot
 
     if args.keep is not None and args.keep < 1:
         usage(args, "--keep must be at least 1")
@@ -34,17 +34,20 @@ def cmd_gc(args, cfg):
                 f"nnnotes depot gc: another command uses the depot ({root / 'leases'}); "
                 "gc runs when no other command does"
             )
-        r = Depot(root).gc(keep=args.keep, dry_run=args.dry_run)
-    report(
-        args,
-        r,
-        lambda r: [
-            f"{'would remove' if args.dry_run else 'removed'}: {r['runs']['removed']} runs, "
+        depot = open_depot(cfg)
+        if args.remote and depot.remote is None:
+            usage(args, "--remote: the depot has no remote (setting depot.remote)")
+        r = depot.gc(keep=args.keep, dry_run=args.dry_run, remote=args.remote)
+
+    def lines(r: dict, where: str = "") -> list[str]:
+        return [
+            f"{where}{'would remove' if args.dry_run else 'removed'}: {r['runs']['removed']} runs, "
             f"{r['results']['removed']} results, {r['contents']['removed']} contents "
             f"({r['bytesRemoved'] / 1e6:.1f} MB)",
-            f"kept: {r['runs']['kept']} runs, {r['results']['kept']} results, {r['contents']['kept']} contents",
-        ],
-    )
+            f"{where}kept: {r['runs']['kept']} runs, {r['results']['kept']} results, {r['contents']['kept']} contents",
+        ]
+
+    report(args, r, lambda r: lines(r) + (lines(r["remote"], "remote ") if "remote" in r else []))
 
 
 def register(sub) -> None:
@@ -81,3 +84,8 @@ def register(sub) -> None:
         help="keep the N latest runs of each selection (default: every run; the latest run of a selection is kept)",
     )
     c.add_argument("--dry-run", action="store_true", help="count what would be removed, remove nothing")
+    c.add_argument(
+        "--remote",
+        action="store_true",
+        help="also collect the depot's remote, by its runs (its results and contents younger than a day stay)",
+    )

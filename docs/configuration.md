@@ -111,6 +111,11 @@ exist when they are given.
 | `[paths] fonts.<language>` | `NNNOTES_PATHS_FONTS_<LANGUAGE>` (e.g. `NNNOTES_PATHS_FONTS_ZH_HANT`) | `--font <language>=PATH` (of `site build`) | font file (OpenType or TrueType) the story text of a language is drawn with (`--fonts open`); also read for the other story languages whose game fonts fall back to that language's font |
 | `[paths] fonts.emoji` | `NNNOTES_PATHS_FONTS_EMOJI` | `--font emoji=PATH` (of `site build`) | colour emoji font (PNG bitmap glyphs: CBDT or sbix) the stories' emoji sprites are drawn from (`--fonts open`); Noto Color Emoji (SIL Open Font License 1.1) is the tested font. Optional: without it the sprites keep their layout with empty glyphs, listed in `ui/fonts.json` `coverage.sprites.missing` |
 | `[depot] downloads` | `NNNOTES_DEPOT_DOWNLOADS` | — | how much of the depot's downloaded bundles and raw files to keep once no command uses the depot: a size (`500MB`, `20GiB`; units B, KB, MB, GB, TB and KiB, MiB, GiB, TiB), `all`, or `0` (unset) ([commands.md](commands.md#downloads)) |
+| `[depot] remote` | `NNNOTES_DEPOT_REMOTE` | — | a remote of the depot shared by the machines that use it: `s3://<bucket>/<prefix>` (S3-compatible object storage; `pip install 'nnnotes[remote]'`) or `file:///<directory>` ([contracts.md](contracts.md#depot-remote)) |
+| `[depot] endpoint` | `NNNOTES_DEPOT_ENDPOINT` | — | endpoint URL of the S3-compatible object storage; unset: AWS S3 |
+| `[depot] access_key_id` | `NNNOTES_DEPOT_ACCESS_KEY_ID` | — | access key id of the object storage; unset: boto3 looks for credentials itself (`AWS_ACCESS_KEY_ID`, `~/.aws`) |
+| `[depot] secret_access_key` | `NNNOTES_DEPOT_SECRET_ACCESS_KEY` | — | secret access key of the object storage |
+| `[depot] signing_region` | `NNNOTES_DEPOT_SIGNING_REGION` | — | region the requests to the object storage are signed for; unset: `us-east-1` |
 | `[export] link` | `NNNOTES_EXPORT_LINK` | `--link` (of `export assets`) | how `export assets` makes the layout files from the depot: `auto` (unset), `clone`, `hard` or `copy` ([assets.md](assets.md)) |
 
 Hex values are case-insensitive; a `0x` prefix and surrounding whitespace are ignored. All values are TOML strings

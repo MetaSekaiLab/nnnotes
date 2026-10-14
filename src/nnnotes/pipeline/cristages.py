@@ -92,7 +92,7 @@ def boot_input(depot, apk) -> Input | None:
     if known is None or not depot.has(*known):
         with ApkSet(apk) as z:
             data = z.read(BOOT_IN_APK)
-        known = depot.identify(depot.path(depot.put(data)), "files", name)
+        known = depot.identify(depot.local(depot.put(data)), "files", name)
     return Input("boot", known[0], known[1], "data.unity3d", ({"kind": "depot"},))
 
 

@@ -25,6 +25,11 @@ Records that change (input identities, the latest run of a selection) are one fi
 The files of cas/ are read-only (a layout may hard-link them: an edit of such a file fails instead of changing the
 depot).
 Only costs/, runs/ and inputs/ hold non-deterministic data; cas/ and ac/ are a function of the tasks run.
+
+A depot may have a remote (pipeline.remote): object storage or a directory shared by the machines that use it, with
+the same keys as the files above (cas/, ac/, inputs/<kind>/, runs/). The local depot is its cache: a content,
+result, input identity or run it lacks is read from the remote and kept, and what it adds goes to the remote as well
+(the bytes of a result before the result). downloads/, inputs/paths/, catalogs/, costs/ and run logs stay local.
 """
 
 from __future__ import annotations
@@ -40,8 +45,11 @@ from ..core.cache import temp_path
 from ..core.downloads import touch
 from . import contract
 from .contract import Input
+from .remote import Remote, open_remote
 
 INPUT_KINDS = ("bundles", "raw", "files")
+REMOTE_GRACE = 24 * 3600  # `gc(remote=True)` keeps results and contents of the remote younger than this (seconds)
+DONE = ("ran", "hit")  # the statuses of a run's tasks whose results are committed
 
 
 class InputMissing(FileNotFoundError):
@@ -151,26 +159,62 @@ def _record_path(directory: Path, key: str) -> Path:
 
 class Depot:
     """A depot directory. `fetch(input, locator) -> Path`: how a "catalog" locator is fetched (none: such locators
-    are skipped)."""
+    are skipped). `remote`: the depot's remote (None: a local depot)."""
 
-    def __init__(self, root, *, fetch=None):
+    def __init__(self, root, *, fetch=None, remote: Remote | None = None):
         self.root = Path(root)
         self.fetch = fetch
+        self.remote = remote
         self.written = self.reused = 0
-        self._have: set[str] = set()  # content ids this depot object wrote or found
+        self._have: set[str] = set()  # content ids this depot object wrote or found, here or on the remote
+        self._sizes: dict[str, int] = {}  # remote key -> size, of the objects known to be on the remote
+        self._listed: set[str] = set()  # task keys whose results the remote holds (the latest runs read from it)
         self._hashed: dict[str, dict] = {}  # path -> its record (inputs/paths)
         self._names: dict[tuple[str, str], tuple[str, int]] = {}  # (kind, name) -> (sha256, size)
         self._docs: dict[str, dict] = {}  # the documents document() decoded last
         self._lock = threading.Lock()
 
     def __getstate__(self):  # a depot crosses to worker processes as its settings
-        return {"root": self.root, "fetch": self.fetch}
+        return {"root": self.root, "fetch": self.fetch, "remote": self.remote}
 
     def __setstate__(self, state):
-        self.__init__(state["root"], fetch=state["fetch"])
+        self.__init__(state["root"], fetch=state["fetch"], remote=state["remote"])
 
     def __repr__(self) -> str:
-        return f"Depot({str(self.root)!r})"
+        more = f", remote={self.remote.url!r}" if self.remote is not None else ""
+        return f"Depot({str(self.root)!r}{more})"
+
+    def _key(self, p: Path) -> str:
+        """The remote key of a file of the depot: its path below the root."""
+        return p.relative_to(self.root).as_posix()
+
+    def _on_remote(self, key: str, size: int | None = None) -> bool:
+        """Whether the remote holds the object `key` (of `size`)."""
+        n = self._sizes.get(key)
+        if n is None:
+            n = self.remote.size(key) if self.remote is not None else None
+            if n is None:
+                return False
+            self._sizes[key] = n
+        return size is None or n == size
+
+    def _push(self, sha: str, size: int) -> None:
+        """Copy a content of this depot to the remote unless the remote holds it."""
+        if self.remote is not None:
+            p = self.path(sha)
+            key = self._key(p)
+            if not self._on_remote(key, size):
+                self.remote.put_file(key, p)
+                self._sizes[key] = size
+
+    def _fetch_record(self, p: Path) -> bytes | None:
+        """The bytes of a record file of the depot, read from the remote (and kept) when only the remote holds it."""
+        data = _read(p)
+        if data is None and self.remote is not None:
+            data = self.remote.get(self._key(p))
+            if data is not None:
+                _write(p, data, lambda q: True)
+        return data
 
     @property
     def downloads(self) -> Path:
@@ -189,17 +233,32 @@ class Depot:
         return self.root / "cas" / "sha256" / sha[:2] / sha
 
     def has(self, sha: str, size: int | None = None) -> bool:
+        """Whether the depot or its remote holds the content (of `size`)."""
         if sha in self._have:
             return True
         p = self.path(sha)
         try:
             n = p.stat().st_size
         except OSError:
-            return False
-        if size is not None and n != size:
-            return False
+            if not self._on_remote(self._key(p), size):
+                return False
+        else:
+            if size is not None and n != size:
+                return False
         self._have.add(sha)
         return True
+
+    def local(self, sha: str) -> Path:
+        """The file of a content in this depot, read from the remote first when only the remote holds it."""
+        p = self.path(sha)
+        if self.remote is not None and not p.is_file():
+            data = self.remote.get(self._key(p))
+            if data is None:
+                raise FileNotFoundError(f"content {sha} is not in the depot or its remote")
+            if contract.sha256(data) != sha:
+                raise RuntimeError(f"content {sha} of the remote differs from its id")
+            _write(p, data, lambda q: q.stat().st_size == len(data), read_only=True)
+        return p
 
     def put(self, data) -> str:
         """Store bytes; their content id. Write-once: bytes already stored are not written again."""
@@ -207,12 +266,12 @@ class Depot:
         sha = contract.sha256(data)
         if self.has(sha, len(data)):
             self.reused += 1
-            return sha
-        if _write(self.path(sha), data, lambda p: p.stat().st_size == len(data), read_only=True):
+        elif _write(self.path(sha), data, lambda p: p.stat().st_size == len(data), read_only=True):
             self.written += 1
         else:
             self.reused += 1
         self._have.add(sha)
+        self._push(sha, len(data))
         return sha
 
     def put_file(self, src) -> tuple[str, int]:
@@ -221,6 +280,7 @@ class Depot:
         sha, size = self.identify(src)
         if self.has(sha, size):
             self.reused += 1
+            self._push(sha, size)
             return sha, size
         dst = self.path(sha)
         dst.parent.mkdir(parents=True, exist_ok=True)
@@ -241,6 +301,7 @@ class Depot:
         if _replace(tmp, dst, lambda p: p.stat().st_size == size):
             self.written += 1
         self._have.add(sha)
+        self._push(sha, size)
         return sha, size
 
     def add(self, data, ext: str, media: str | None = None) -> dict:
@@ -277,11 +338,12 @@ class Depot:
             else:
                 self.reused += 1
             self._have.add(sha)
+        self._push(sha, size)
         ext = ext.lower().lstrip(".")
         return {"sha256": sha, "size": size, "mediaType": media or contract.media_type(ext), "ext": ext}
 
     def read(self, sha: str) -> bytes:
-        return self.path(sha).read_bytes()
+        return self.local(sha).read_bytes()
 
     def document(self, sha: str) -> dict:
         """The JSON document stored as `sha`, decoded; the last two decoded are kept (a catalog index is read at
@@ -304,7 +366,7 @@ class Depot:
 
     def result(self, key: str) -> dict | None:
         """The committed result of a task key, or None."""
-        data = _read(self.result_path(key))
+        data = self._fetch_record(self.result_path(key))
         return None if data is None else contract.loads(data)
 
     def committed(self, key: str, task: str) -> dict:
@@ -315,7 +377,8 @@ class Depot:
         return doc
 
     def has_result(self, key: str) -> bool:
-        return self.result_path(key).is_file()
+        p = self.result_path(key)
+        return p.is_file() or key in self._listed or self._on_remote(self._key(p))
 
     def commit(self, doc: dict) -> bool:
         """Write a result entry, after checking that the bytes of every artifact it names are stored. Write-once: an
@@ -326,6 +389,7 @@ class Depot:
             c = a["content"]
             if not self.has(c["sha256"], c["size"]):
                 raise RuntimeError(f"result {doc['key']}: bytes of {a['id']} ({c['sha256']}) are not stored")
+            self._push(c["sha256"], c["size"])
         data = contract.encode(doc)
         dst = self.result_path(doc["key"])
 
@@ -337,9 +401,16 @@ class Depot:
                 raise DepotConflict(f"result {doc['key']} differs from the one in the depot ({dst})")
             return True
 
-        if same(dst):
-            return False
-        return _write(dst, data, same)
+        here = same(dst)
+        if self.remote is not None:
+            key = self._key(dst)
+            old = self.remote.get(key)
+            if old is None:
+                self.remote.put(key, data)
+            elif old != data:
+                raise DepotConflict(f"result {doc['key']} differs from the one in the depot's remote")
+            self._sizes[key] = len(data)
+        return False if here else _write(dst, data, same)
 
     # ---------------------------------------------------------------- inputs
     def identify(self, path, kind: str = "files", name: str | None = None) -> tuple[str, int]:
@@ -364,8 +435,11 @@ class Depot:
             self._hashed[key] = rec
         hit = (rec["sha256"], rec["size"])
         if name is not None and self.named(kind, name) != hit:
-            doc = {"name": name, "sha256": hit[0], "size": hit[1]}
-            _write(_record_path(self.root / "inputs" / kind, name), contract.encode(doc))
+            doc = contract.encode({"name": name, "sha256": hit[0], "size": hit[1]})
+            rec_path = _record_path(self.root / "inputs" / kind, name)
+            _write(rec_path, doc)
+            if self.remote is not None:
+                self.remote.put(self._key(rec_path), doc)
             with self._lock:
                 self._names[(kind, name)] = hit
         return hit
@@ -375,7 +449,7 @@ class Depot:
         with self._lock:
             hit = self._names.get((kind, name))
         if hit is None:
-            data = _read(_record_path(self.root / "inputs" / kind, name))
+            data = self._fetch_record(_record_path(self.root / "inputs" / kind, name))
             if data is None:
                 return None
             doc = json.loads(data)
@@ -393,7 +467,7 @@ class Depot:
             try:
                 if kind == "depot":
                     if self.has(inp.sha256, inp.size):
-                        return self.path(inp.sha256)
+                        return self.local(inp.sha256)
                     tried.append("depot: absent")
                     continue
                 if kind == "catalog":
@@ -494,25 +568,34 @@ class Depot:
         if log is not None:
             text = "".join(json.dumps(line, ensure_ascii=False, sort_keys=True) + "\n" for line in log)
             write_file(p.with_name(f"{doc['id']}.log.jsonl"), text.encode("utf-8"))
-        write_file(self._selection_path(doc["selection"]), (doc["id"] + "\n").encode("ascii"))
+        pointer = self._selection_path(doc["selection"])
+        write_file(pointer, (doc["id"] + "\n").encode("ascii"))
+        if self.remote is not None:
+            self.remote.put(self._key(p), contract.encode(doc))
+            self.remote.put(self._key(pointer), (doc["id"] + "\n").encode("ascii"))
         return p
 
     def _selection_path(self, selection) -> Path:
         return self.root / "runs" / "selections" / contract.digest(list(selection))
 
     def run(self, run_id: str) -> dict | None:
-        try:
-            return contract.loads(self.run_path(run_id).read_bytes())
-        except OSError:
-            return None
+        data = self._fetch_record(self.run_path(run_id))
+        return None if data is None else contract.loads(data)
 
     def latest_run(self, selection) -> dict | None:
-        """The latest run manifest written for `selection`, or None."""
-        try:
-            rid = self._selection_path(selection).read_text(encoding="ascii").strip()
-        except OSError:
-            return None
-        return self.run(rid)
+        """The latest run manifest written for `selection` (by any machine of the remote), or None. The results of
+        the tasks of a run read from the remote are known to be on the remote (gc keeps them)."""
+        pointer = self._selection_path(selection)
+        data = self.remote.get(self._key(pointer)) if self.remote is not None else None
+        shared = data is not None
+        if data is None:
+            data = _read(pointer)
+            if data is None:
+                return None
+        doc = self.run(data.decode("ascii").strip())
+        if shared and doc is not None:
+            self._listed.update(t["key"] for t in doc.get("tasks") or () if t.get("key") and t.get("status") in DONE)
+        return doc
 
     def write_cost(self, key: str, cost: dict) -> None:
         write_file(self.root / "costs" / f"{key}.json", contract.encode(cost))
@@ -524,53 +607,51 @@ class Depot:
             return None
 
     # ---------------------------------------------------------------- collection
-    def gc(self, *, keep: int | None = None, dry_run: bool = False) -> dict:
+    def gc(
+        self, *, keep: int | None = None, dry_run: bool = False, remote: bool = False, grace: float = REMOTE_GRACE
+    ) -> dict:
         """Remove what no kept run reaches. The kept runs: of each selection the `keep` latest by the time their
         manifest was written (None: every run), and always the run the selection names as its latest. A kept run
         reaches the results of its tasks, the contents those results name (their artifacts, and the inputs their key
         parts name when the depot holds them) and the layout manifests it names with the contents they list.
-        Removed: the other runs (manifest and log), results and their measured costs, and contents. `dry_run`: count
-        only. -> {"runs", "results", "contents": {"kept", "removed"}, "bytesRemoved"}."""
+        Removed: the other runs (manifest and log), results and their measured costs, and contents. `remote`: the
+        remote's runs, results and contents too, by the runs of the remote; its results and contents younger than
+        `grace` seconds stay (a run of another machine may be writing them). `dry_run`: count only.
+        -> {"runs", "results", "contents": {"kept", "removed"}, "bytesRemoved"}, and "remote": the same."""
+        out = self._gc_local(keep, dry_run)
+        if remote:
+            if self.remote is None:
+                raise ValueError("the depot has no remote")
+            out["remote"] = self._gc_remote(self.remote, keep, dry_run, grace)
+        return out
+
+    def _gc_local(self, keep: int | None, dry_run: bool) -> dict:
         runs_dir = self.root / "runs"
-        manifests = sorted(p for p in runs_dir.glob("*.json") if p.is_file())
         latest = set()
         for p in (runs_dir / "selections").glob("*"):
             try:
                 latest.add(p.read_text(encoding="ascii").strip())
             except OSError:
                 continue
-        by_selection: dict[str, list[tuple[int, Path, dict]]] = {}
-        for p in manifests:
+        runs = []
+        for p in sorted(p for p in runs_dir.glob("*.json") if p.is_file()):
             try:
-                doc = contract.loads(p.read_bytes())
+                runs.append((p.stat().st_mtime_ns, p, contract.loads(p.read_bytes())))
             except (OSError, ValueError):
                 continue
-            sel = contract.digest(list(doc.get("selection") or ()))
-            by_selection.setdefault(sel, []).append((p.stat().st_mtime_ns, p, doc))
-        kept, dropped = [], []
-        for runs in by_selection.values():
-            runs.sort(key=lambda r: r[0], reverse=True)
-            for i, (_, p, doc) in enumerate(runs):
-                (kept if keep is None or i < keep or doc.get("id") in latest else dropped).append((p, doc))
-        keys: set[str] = set()
-        shas: set[str] = set()
-        for _, doc in kept:
-            for t in doc.get("tasks") or ():
-                if t.get("key"):
-                    keys.add(t["key"])
-            for sha in (doc.get("layouts") or {}).values():
-                shas.add(sha)
-                if self.has(sha):
-                    _collect_shas(contract.loads(self.read(sha)), shas)
-        for key in keys:
-            res = self.result(key)
-            if res is None:
-                continue
-            shas.update(a["content"]["sha256"] for a in res.get("artifacts", ()))
-            shas.update(sha for _, sha in (res.get("keyParts") or {}).get("inputs", ()))
-        removed_bytes = 0
+        kept, dropped = _kept_runs(runs, latest, keep)
+
+        def result(key: str) -> dict | None:
+            data = _read(self.result_path(key))
+            return None if data is None else contract.loads(data)
+
+        def document(sha: str) -> dict | None:
+            p = self.path(sha)
+            return contract.loads(p.read_bytes()) if p.is_file() else None
+
+        keys, shas = _reach([doc for _, _, doc in kept], result, document)
         out: dict = {"runs": {"kept": len(kept), "removed": len(dropped)}}
-        for p, _ in dropped:
+        for _, p, _ in dropped:
             if not dry_run:
                 p.unlink(missing_ok=True)
                 p.with_name(p.name[: -len(".json")] + ".log.jsonl").unlink(missing_ok=True)
@@ -585,7 +666,7 @@ class Depot:
                 p.unlink(missing_ok=True)
                 (self.root / "costs" / f"{key}.json").unlink(missing_ok=True)
         out["results"] = {"kept": n_kept, "removed": n_removed}
-        n_kept = n_removed = 0
+        n_kept = n_removed = removed_bytes = 0
         for p in sorted((self.root / "cas" / "sha256").glob("*/*")):
             if p.name in shas:
                 n_kept += 1
@@ -598,6 +679,108 @@ class Depot:
         out["contents"] = {"kept": n_kept, "removed": n_removed}
         out["bytesRemoved"] = removed_bytes
         return out
+
+    def _gc_remote(self, remote: Remote, keep: int | None, dry_run: bool, grace: float) -> dict:
+        now = time.time()
+        latest, runs = set(), []
+        for key, _, mtime in remote.list("runs/"):
+            data = remote.get(key)
+            if data is None:
+                continue
+            if key.startswith("runs/selections/"):
+                latest.add(data.decode("ascii").strip())
+            elif key.endswith(".json"):
+                runs.append((mtime, key, contract.loads(data)))
+        kept, dropped = _kept_runs(runs, latest, keep)
+        keys, shas = _reach(
+            [doc for _, _, doc in kept],
+            self.result,
+            lambda sha: contract.loads(self.read(sha)) if self.has(sha) else None,
+        )
+        out: dict = {"runs": {"kept": len(kept), "removed": len(dropped)}}
+        gone = [key for _, key, _ in dropped]
+        counts = {}
+        removed_bytes = 0
+        for part, prefix in (("results", "ac/"), ("contents", "cas/sha256/")):
+            n_kept = n_removed = 0
+            for key, size, mtime in remote.list(prefix):
+                name = key.rsplit("/", 1)[-1]
+                reached = name[: -len(".json")] in keys if part == "results" else name in shas
+                if reached or now - mtime < grace:
+                    n_kept += 1
+                    continue
+                n_removed += 1
+                gone.append(key)
+                if part == "contents":
+                    removed_bytes += size
+            counts[part] = {"kept": n_kept, "removed": n_removed}
+        if not dry_run:
+            remote.delete(gone)
+            for key in gone:
+                self._sizes.pop(key, None)
+            self._have.clear()
+            self._listed.clear()
+        out.update(counts)
+        out["bytesRemoved"] = removed_bytes
+        return out
+
+
+def open_depot(cfg, *, fetch=None) -> Depot:
+    """The depot of a configuration: `[paths] depot`, with the remote `[depot] remote` names (its `endpoint`,
+    `access_key_id`, `secret_access_key` and `signing_region`) when it is set."""
+    from ..source.config import ConfigError
+    from ..source.session import Session
+
+    root = Session(cfg).depot_root()
+    url = cfg.get("depot", "remote")
+    if not url:
+        return Depot(root, fetch=fetch)
+    try:
+        remote = open_remote(
+            url,
+            endpoint=cfg.get("depot", "endpoint"),
+            key_id=cfg.get("depot", "access_key_id"),
+            secret=cfg.get("depot", "secret_access_key"),
+            region=cfg.get("depot", "signing_region"),
+        )
+    except ValueError as e:
+        raise ConfigError(f"setting depot.remote: {e}") from None
+    return Depot(root, fetch=fetch, remote=remote)
+
+
+def _kept_runs(runs: list, latest: set[str], keep: int | None) -> tuple[list, list]:
+    """(kept, dropped) of runs (time, handle, manifest): of each selection the `keep` latest by time (None: every
+    run), and the runs `latest` names."""
+    by_selection: dict[str, list] = {}
+    for r in runs:
+        by_selection.setdefault(contract.digest(list(r[2].get("selection") or ())), []).append(r)
+    kept, dropped = [], []
+    for rs in by_selection.values():
+        rs.sort(key=lambda r: r[0], reverse=True)
+        for i, r in enumerate(rs):
+            (kept if keep is None or i < keep or r[2].get("id") in latest else dropped).append(r)
+    return kept, dropped
+
+
+def _reach(runs: list[dict], result, document) -> tuple[set[str], set[str]]:
+    """(task keys, content ids) that run manifests reach: their tasks' results with the contents those name, and
+    their layout manifests with the contents they list. `result(key)`, `document(sha)`: None when absent."""
+    keys: set[str] = set()
+    shas: set[str] = set()
+    for doc in runs:
+        keys.update(t["key"] for t in doc.get("tasks") or () if t.get("key"))
+        for sha in (doc.get("layouts") or {}).values():
+            shas.add(sha)
+            manifest = document(sha)
+            if manifest is not None:
+                _collect_shas(manifest, shas)
+    for key in keys:
+        res = result(key)
+        if res is None:
+            continue
+        shas.update(a["content"]["sha256"] for a in res.get("artifacts", ()))
+        shas.update(sha for _, sha in (res.get("keyParts") or {}).get("inputs", ()))
+    return keys, shas
 
 
 def _collect_shas(doc, out: set[str]) -> None:

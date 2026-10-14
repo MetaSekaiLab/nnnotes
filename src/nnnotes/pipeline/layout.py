@@ -367,8 +367,8 @@ def paths(entries_: list[dict]) -> dict[str, str]:
 
 # ---------------------------------------------------------------- writing
 def from_depot(depot):
-    """A byte source reading the depot's cas/."""
-    return depot.path
+    """A byte source reading the depot's cas/ (a content only its remote holds is read from the remote first)."""
+    return depot.local
 
 
 def from_layout(directory):
