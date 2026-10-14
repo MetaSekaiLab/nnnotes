@@ -1,7 +1,7 @@
 import pytest
 import synth
 
-from nnnotes import census, contract, link
+from nnnotes import catalogdb, census, contract, link
 from nnnotes.catalogdb import CatalogDB, IndexStage, index
 from nnnotes.contract import Input
 from nnnotes.stages import Env, Pending, describe, execute, registry
@@ -227,7 +227,7 @@ def test_diff_addresses():
     card["assetBundles"][0]["container"] = card["assetBundles"][0]["container"][:4]  # pathId 9 gone
     card["files"][0]["objects"][1]["byteSize"] = 999  # the texture changed
     new = link.addresses(idx, docs)
-    d = link.diff_addresses(old, new)
+    d = catalogdb.diff_addresses(old, new)
     # pathId 9 is gone, so the name of 8 is no longer shared: 8 is addressed by its name now
     assert d["removed"] == ["card_a:8", "card_a:9"] and d["added"] == ["card_a/assets/game/card/a.png[dup]"]
     (ch,) = d["changed"]
@@ -237,7 +237,7 @@ def test_diff_addresses():
         "card_a/assets/game/card/a.png[A_square]",
     ]
     assert d["summary"] == {"added": 1, "removed": 2, "changed": 1, "rebuilt": 2, "unchanged": 0}
-    assert link.diff_addresses(old, old)["summary"]["unchanged"] == 5
+    assert catalogdb.diff_addresses(old, old)["summary"]["unchanged"] == 5
 
 
 # ---------------------------------------------------------------- stages

@@ -50,7 +50,6 @@ SCRIPTS = "nnnotes.scripts/1"
 ADDRESSES = "nnnotes.addresses/1"
 ARTIFACTS = "nnnotes.artifacts/1"
 EXPORT_STAGES = ("unity.export", "sprite.crop")
-OBJECT_FIELDS = ("object", "class", "name", "byteSize", "typeHash")
 _CAB = re.compile(r"^CAB-[0-9a-f]+")
 
 
@@ -239,30 +238,6 @@ def reverse(doc: dict) -> dict[str, str]:
     out: dict[str, str] = {}
     for addr, o in doc["objects"].items():
         out.setdefault(o["object"], addr)
-    return out
-
-
-def diff_addresses(old: dict, new: dict) -> dict:
-    """The objects of two address tables compared by stable address: added, removed, changed (class, name, size or
-    type hash differ), rebuilt (only the object id differs: its bundle changed), unchanged (a count)."""
-    a, b = old["objects"], new["objects"]
-    changed, rebuilt, same = [], [], 0
-    for addr in sorted(set(a) & set(b)):
-        fields = [f for f in OBJECT_FIELDS if a[addr].get(f) != b[addr].get(f)]
-        if not fields:
-            same += 1
-        elif fields == ["object"]:
-            rebuilt.append({"address": addr, "old": a[addr]["object"], "new": b[addr]["object"]})
-        else:
-            changed.append({"address": addr, "fields": fields, "old": a[addr], "new": b[addr]})
-    out = {
-        "added": sorted(set(b) - set(a)),
-        "removed": sorted(set(a) - set(b)),
-        "changed": changed,
-        "rebuilt": rebuilt,
-        "unchanged": same,
-    }
-    out["summary"] = {k: (v if isinstance(v, int) else len(v)) for k, v in out.items()}
     return out
 
 
