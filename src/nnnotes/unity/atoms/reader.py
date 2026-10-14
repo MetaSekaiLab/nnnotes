@@ -2,7 +2,8 @@
 
 `BundleView` is what a stage reads a bundle through; `UnityBundle` is the reference implementation (UnityPy, the
 bundle loaded alone from its bytes: references into other bundles are not followed, resource files inside the
-bundle -- `.resS` -- are read). Objects are named by `ObjectInfo` (serialized file name and path id), never by
+bundle -- `.resS` -- are read). A serialized file outside a bundle (one of the APK's built-in files) is read the same
+way, under the name it is given. Objects are named by `ObjectInfo` (serialized file name and path id), never by
 library objects, so another implementation can stand in.
 
 `texture_input` and `mesh_input` collect exactly what `texture.decode` and `mesh.arrays` need: a Texture2D's image
@@ -67,6 +68,11 @@ class BundleView(Protocol):
 
     def unity_version(self, file: str) -> str:
         """The Unity version a serialized file was written by."""
+        ...
+
+    def stores_typetrees(self, file: str) -> bool:
+        """Whether a serialized file stores the type trees of its objects (a player build's own files do not: its
+        script classes read only their header)."""
         ...
 
     def texture_input(self, obj: ObjectInfo) -> TextureInput: ...
@@ -266,6 +272,9 @@ class UnityBundle:
         v = getattr(f, "unity_version", None)
         return v if isinstance(v, str) else ".".join(str(x) for x in f.version)
 
+    def stores_typetrees(self, file: str) -> bool:
+        return bool(getattr(self._files[file], "_enable_type_tree", True))
+
     def texture_input(self, obj: ObjectInfo) -> TextureInput:
         r = self._reader(obj)
         tex = r.read()
@@ -306,11 +315,12 @@ class UnityBundle:
         )
 
 
-def open_bundle(data: bytes) -> UnityBundle:
-    """The BundleView of a bundle's bytes (decrypted UnityFS), loaded alone."""
+def open_bundle(data: bytes, name: str | None = None) -> UnityBundle:
+    """The BundleView of a bundle's bytes (decrypted UnityFS), loaded alone; of a serialized file's bytes with its
+    `name`."""
     from ..reader import load_bytes
 
-    return UnityBundle(load_bytes(bytes(data)))
+    return UnityBundle(load_bytes(bytes(data), name))
 
 
 def cost(facts: dict) -> dict:

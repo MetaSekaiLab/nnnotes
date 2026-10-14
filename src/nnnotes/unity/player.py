@@ -3,10 +3,8 @@
 `assets/bin/Data/data.unity3d` holds the global managers (graphics, quality,
 player settings) and `globalgamemanagers.assets` with the URP pipeline assets,
 renderer data, renderer features and post-process data. IL2CPP player builds
-strip script typetrees there, so MonoBehaviours are read with typetrees that
-ship with nnnotes: `typetrees/<Unity version>.json`, generated from the game's
-managed assembly stubs by `scripts/gen_typetrees.py`. Each entry records the
-type hash the serialized file stores for its class; a class without an entry,
+strip script typetrees there, so MonoBehaviours are read with the typetrees
+that ship with nnnotes (nnnotes.unity.scripttypes); a class without an entry,
 a different type hash or a read that does not consume exactly the object's
 serialized size raises UnsupportedVersion. `unity default resources`
 (built-in meshes) is read from the APK as well.
@@ -16,10 +14,7 @@ from __future__ import annotations
 
 import copy
 import io
-import json
-import re
 import struct
-from importlib import resources
 from pathlib import Path
 from typing import cast
 
@@ -30,61 +25,16 @@ from UnityPy.helpers.TypeTreeNode import TypeTreeNode
 from ..source.apkset import MANIFEST_IN_APK, ApkSet, manifest_version_name
 from ..source.config import ConfigError
 from .reader import DEFAULT_RESOURCES, deref, external_path, is_pptr
+from .scripttypes import load_typetrees, typetree_key, typetree_node
 
 DATA_IN_APK = "assets/bin/Data/data.unity3d"
 DEFAULT_RESOURCES_IN_APK = "assets/bin/Data/Resources/unity default resources"
 COLOR_SPACE = {0: "Gamma", 1: "Linear"}
 HEADER = ("m_GameObject", "m_Script", "m_Enabled")
-TYPETREE_FORMAT = 1
 
 
 class UnsupportedVersion(ConfigError):
     """The APK's boot data has a MonoBehaviour class that nnnotes has no matching typetree for."""
-
-
-# ---------------------------------------------------------------- embedded typetrees
-def typetree_key(assembly: str, namespace: str, cls: str) -> str:
-    """Key of a class in a typetree file: `assembly|namespace|class`, as its MonoScript names them."""
-    return f"{assembly}|{namespace}|{cls}"
-
-
-def typetree_file(unity_version: str):
-    """The embedded typetree file of a Unity version (an importlib.resources Traversable; it may not exist)."""
-    return resources.files("nnnotes.unity").joinpath("typetrees", f"{unity_version}.json")
-
-
-def load_typetrees(unity_version: str) -> dict | None:
-    """The embedded typetrees of a Unity version, or None when nnnotes has none for it."""
-    if not re.fullmatch(r"[0-9A-Za-z.]+", unity_version or ""):
-        return None
-    f = typetree_file(unity_version)
-    if not f.is_file():
-        return None
-    doc = json.loads(f.read_text(encoding="utf-8"))
-    if doc.get("format") != TYPETREE_FORMAT or doc.get("unityVersion") != unity_version:
-        raise ValueError(f"typetree file {unity_version}.json: unexpected format or Unity version")
-    return doc
-
-
-def typetree_node(rows: list) -> TypeTreeNode:
-    """TypeTreeNode from [level, type, name, meta flag] rows (byte size and version 0, as generated)."""
-    return TypeTreeNode.from_list([TypeTreeNode(lv, ty, nm, 0, 0, m_MetaFlag=mf) for lv, ty, nm, mf in rows])
-
-
-def dump_typetrees(doc: dict) -> str:
-    """Text of a typetree file: sorted keys, one class per line, LF."""
-    head = {k: v for k, v in doc.items() if k != "classes"}
-    lines = [json.dumps(head, sort_keys=True, ensure_ascii=False, separators=(",", ":"))[:-1] + ',"classes":{']
-    items = sorted(doc["classes"].items())
-    for i, (k, v) in enumerate(items):
-        lines.append(
-            json.dumps(k, ensure_ascii=False)
-            + ":"
-            + json.dumps(v, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
-            + ("," if i + 1 < len(items) else "")
-        )
-    lines.append("}}")
-    return "\n".join(lines) + "\n"
 
 
 class PlayerData:

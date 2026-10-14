@@ -19,7 +19,8 @@ Facts the stages read while their tasks are described (stages.Env):
     catalogs   {"main": [Input remote, Input apk]}: the catalog version's files in <depot>/catalogs/
     index      the catalog index document (nnnotes.catalog-index/1)
     bundles    {stable bundle name: Input "bundle"} of the selected bundles and their dependencies (a bundle whose
-               bytes are not known yet: a Pending "fetch:<file name>")
+               bytes are not known yet: a Pending "fetch:<file name>"), and of the APK's built-in files
+               (`apk/data.unity3d`, `apk/Resources/unity default resources`: pipeline.builtins)
     selected   the selected bundles' stable names, sorted (the subjects of the export stages)
     raw        {stable raw file name: Input "raw"} of the selected raw files (only with a stage that reads them;
                export fetches them while the stages before run, and reading the fact waits for that)
@@ -31,7 +32,8 @@ Selection (--select, repeatable; the union; none: everything): `group:G` the bun
 stable name up to `_assets_`, else up to its first `_`), `key:PREFIX` the bundles and raw files the catalog keys
 under PREFIX load (their dependency closure), `bundle:GLOB` bundles and raw files whose stable name matches. The
 census also covers the bundles the selected ones depend on (the dependencies of the keys they hold: a key's first
-dependency is its own bundle), so script and atlas references resolve.
+dependency is its own bundle), so script and atlas references resolve. With `[paths] apk` the census always covers
+the APK's built-in files; everything and `bundle:GLOB` (`bundle:apk/*`) select them.
 
 Task cost estimates (scheduling only: never part of a key) are each stage's estimate scaled per stage by the
 costs measured in earlier runs (<depot>/costs/calibration.json, updated after every export).
@@ -193,14 +195,16 @@ class Selection:
     raw: list  # stable names of the selected raw files
 
 
-def select(index: dict, selection: list[str]) -> Selection:
-    """The bundles and raw files a selection names in a catalog index (module documentation)."""
+def select(index: dict, selection: list[str], builtin=()) -> Selection:
+    """The bundles and raw files a selection names in a catalog index, and of the built-in subjects `builtin`
+    (module documentation)."""
     from ..pipeline import catalogdb
 
     bundles = sorted(b["stable"] for b in index["bundles"])
     raws = sorted(r["stable"] for r in index["rawFiles"])
+    builtin = sorted(builtin)
     if selection == ["all"]:
-        return Selection(bundles, bundles, raws)
+        return Selection(sorted(bundles + builtin), sorted(bundles + builtin), raws)
     files = catalogdb.file_refs(index)
     reach = catalogdb.closures(index)
     chosen: set = set()
@@ -223,8 +227,10 @@ def select(index: dict, selection: list[str]) -> Selection:
             and files.get(loc["dependencies"][0]) in chosen
         ):
             deps |= reach[loc["id"]]
+    globs = [v for k, _, v in (s.partition(":") for s in selection) if k == "bundle"]
+    own = [s for s in builtin if any(fnmatch.fnmatchcase(s, g) for g in globs)]
     pick = lambda s, kind: sorted(n for k, n in s if k == kind)  # noqa: E731
-    return Selection(pick(chosen, "bundle"), pick(deps, "bundle"), pick(chosen, "raw"))
+    return Selection(sorted(pick(chosen, "bundle") + own), sorted(pick(deps, "bundle") + builtin), pick(chosen, "raw"))
 
 
 # ---------------------------------------------------------------- settings
@@ -669,11 +675,18 @@ class Workspace:
         """The planning facts (module documentation). `fetch`: fetch the files whose content is not known yet
         (else they are Pending); what cannot be read is in problems() (after wait()). `background`: the raw files
         are fetched while the caller goes on (the fact waits for them when it is read)."""
+        from ..pipeline import builtins
+
         index = self.index()
-        sel = select(index, self.selection)
+        try:
+            builtin = builtins.inputs(self.depot, self.apk)
+        except (OSError, zipfile.BadZipFile):
+            raise ConfigError(f"setting paths.apk: {self.apk} is not a readable APK") from None
+        sel = select(index, self.selection, builtin)
         self._problems = []
         bundles = {b["stable"]: b for b in index["bundles"]}
-        inputs = self._inputs("bundle", [bundles[s] for s in sel.census], fetch)
+        inputs = self._inputs("bundle", [bundles[s] for s in sel.census if s not in builtin], fetch)
+        inputs = inputs.plus(builtin)
         sel.selected = [s for s in sel.selected if s in inputs]  # files that cannot be read: problems()
         facts = {
             "catalogs": self.catalogs_fact(),
@@ -696,7 +709,7 @@ class Workspace:
                 facts["raw"] = Later(self._later)
             else:
                 facts["raw"] = job[0](*job[1:])
-            facts["boot"] = boot_input(self.depot, self.apk)
+            facts["boot"] = boot_input(builtin)
         self.selected = sel
         self._facts, self._names = facts, {}
         return facts
@@ -1048,6 +1061,10 @@ class Inputs(Mapping):
         """The subjects not fetched yet."""
         return [k for k, v in self._items.items() if isinstance(v, Pending)]
 
+    def plus(self, items: dict) -> Inputs:
+        """These inputs and `items` ({subject: Input})."""
+        return Inputs({**self._items, **items})
+
 
 class Later(Mapping):
     """A mapping a background job makes (Future): reading it waits for the job."""
@@ -1138,7 +1155,7 @@ def _write_report(d: Path, name: str, doc) -> Path:
 
 
 def cmd_export(args, cfg):
-    from ..pipeline import layout
+    from ..pipeline import builtins, layout
     from ..pipeline.orchestrate import Orchestrator, failure
 
     try:
@@ -1176,9 +1193,12 @@ def cmd_export(args, cfg):
     ws.run_index()
     facts = ws.facts(pipeline, fetch=True, background=True)
     sel = ws.selected
+    own = sum(1 for s in sel.census if builtins.is_builtin(s))
+    picked = sum(1 for s in sel.selected if builtins.is_builtin(s))
     ws.log(
-        f"{len(sel.selected)} bundles selected ({len(sel.census)} with their dependencies), "
-        f"{len(sel.raw)} raw files"
+        f"{len(sel.selected) - picked} bundles selected ({len(sel.census) - own} with their dependencies), "
+        + (f"{picked} of the APK's {own} built-in files, " if own else "")
+        + f"{len(sel.raw)} raw files"
         + (" (fetched while the bundle stages run)" if isinstance(facts["raw"], Later) else "")
         + f"; {sum(p['kind'] == 'bundle' for p in ws.problems())} bundles not readable"
     )

@@ -3,10 +3,11 @@ nnnotes).
 
 nnnotes reads a few MonoBehaviours of the APK's boot data (`assets/bin/Data/data.unity3d`): the URP pipeline
 assets, renderer data, renderer features and post-process data, DOTween and TextMeshPro settings, and the sound
-and app-config defaults. IL2CPP player builds strip script typetrees from that data, so nnnotes ships the
-typetrees of exactly these classes (CLASSES below) in `src/nnnotes/unity/typetrees/<Unity version>.json`, one file per
-Unity version. Each entry holds the typetree nodes as [level, type, name, meta flag] rows and the type hash the
-serialized file records for the class; the file also records the game version it was generated from.
+and app-config defaults (the `apk/data.unity3d` tasks of `unity.export`, and PlayerData). IL2CPP player builds
+strip script typetrees from that data, so nnnotes ships the typetrees of exactly these classes (CLASSES below) in
+`src/nnnotes/unity/typetrees/<Unity version>.json`, one file per Unity version (read by nnnotes.unity.scripttypes).
+Each entry holds the typetree nodes as [level, type, name, meta flag] rows and the type hash the serialized file
+records for the class; the file also records the game version it was generated from.
 
 The rows have the node layout Unity itself serializes for a MonoBehaviour (as in the typetrees of asset bundles
 built with them): root type `MonoBehaviour`; a `string` is `string / Array / int size / char data`; built-in
@@ -34,7 +35,7 @@ yet", regenerate the file from the new APK:
    not read back stops the script without writing anything.
 3. When a new game version keeps the Unity version, the file is replaced; a new Unity version adds a file. Keep
    the older files while the game versions they describe are still in use.
-4. When code starts reading another MonoBehaviour class with `PlayerData.mono`, add the class to CLASSES and
+4. When code starts reading another MonoBehaviour class of these files, add the class to CLASSES and
    regenerate.
 """
 
@@ -47,7 +48,8 @@ from pathlib import Path
 
 from UnityPy.helpers.TypeTreeGenerator import TypeTreeGenerator
 
-from nnnotes.unity.player import TYPETREE_FORMAT, PlayerData, dump_typetrees, typetree_key, typetree_node
+from nnnotes.unity.player import PlayerData
+from nnnotes.unity.scripttypes import TYPETREE_FORMAT, dump_typetrees, typetree_key, typetree_node
 
 # (assembly, namespace, class) as the MonoScript objects name them
 CLASSES = (
