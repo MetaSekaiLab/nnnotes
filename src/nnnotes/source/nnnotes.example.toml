@@ -77,6 +77,11 @@ node = ""
 # ournotes-player checkout (built) or installed package for `nnnotes site build` (flag --player)
 player = ""
 
+[depot]
+# how much of <depot>/downloads (decrypted bundles, raw CDN files) to keep once no command uses the depot: a size such
+# as 20GiB or 500MB, or all; empty: 0 (the last command to end removes them; they are downloaded again when needed)
+downloads = ""
+
 [export]
 # how `nnnotes export assets` makes the layout files from the depot: auto (a clone where the file system makes them, else
 # a hard link to the read-only depot object, else a copy), clone, hard or copy; empty: auto (flag --link)

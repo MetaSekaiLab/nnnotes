@@ -149,7 +149,7 @@ def test_catalog_listing(catalog_file, tmp_path, capsys):
 
 def test_missing_settings_exit_2_and_name_the_setting(catalog_file, tmp_path, cdn, capsys, monkeypatch):
     base = ["--catalog", str(catalog_file), "--depot", str(tmp_path / "depot")]
-    code, out, err = run(base + ["bundle", "pull", "Char/A"], capsys)
+    code, out, err = run(base + ["bundle", "pull", "Char/A", "-o", str(tmp_path / "b")], capsys)
     assert code == 2 and out == ""
     assert err.strip() == (
         "nnnotes: a_01.bundle is not downloaded: setting catalog.region is not set: give it "
@@ -157,13 +157,13 @@ def test_missing_settings_exit_2_and_name_the_setting(catalog_file, tmp_path, cd
         "NNNOTES_CATALOG_REGION or --region (no config file was found: `nnnotes config init` "
         "writes one to fill in)"
     )
-    code, _, err = run(base + ["--region", "zz", "bundle", "pull", "Char/A"], capsys)
+    code, _, err = run(base + ["--region", "zz", "bundle", "pull", "Char/A", "-o", str(tmp_path / "b")], capsys)
     assert code == 2 and "servers.zz.cdn" in err and "NNNOTES_SERVERS_ZZ_CDN" in err
     monkeypatch.setenv("NNNOTES_SERVERS_ZZ_CDN", cdn)
-    code, _, err = run(base + ["--region", "zz", "bundle", "pull", "Char/A"], capsys)
+    code, _, err = run(base + ["--region", "zz", "bundle", "pull", "Char/A", "-o", str(tmp_path / "b")], capsys)
     assert code == 2 and "bundle.key" in err and "NNNOTES_BUNDLE_KEY" in err
     assert cdn not in err and len(err.strip().splitlines()) == 1
-    code, _, err = run(["bundle", "pull", "Char/A"], capsys)
+    code, _, err = run(["bundle", "pull", "Char/A", "-o", str(tmp_path / "b")], capsys)
     assert code == 2 and "paths.depot" in err and "NNNOTES_PATHS_DEPOT" in err and "--depot" in err
 
 
@@ -183,6 +183,8 @@ def test_malformed_setting_names_setting_not_value(catalog_file, tmp_path, cdn, 
             "bundle",
             "pull",
             "Char/A",
+            "-o",
+            str(tmp_path / "b"),
         ],
         capsys,
     )
@@ -199,7 +201,8 @@ def test_missing_path_on_disk(tmp_path, capsys):
     assert code == 2 and "setting paths.catalog: file" in err
 
 
-def test_pull_from_config_file(catalog_file, tmp_path, cdn, capsys):
+def test_pull_from_config_file(catalog_file, tmp_path, cdn, capsys, monkeypatch):
+    monkeypatch.delenv("NNNOTES_DEPOT_DOWNLOADS")  # the default budget: 0
     conf = tmp_path / "conf" / "nnnotes.toml"
     conf.parent.mkdir()
     conf.write_text(
@@ -209,12 +212,17 @@ def test_pull_from_config_file(catalog_file, tmp_path, cdn, capsys):
         f'[paths]\ncatalog = "../{catalog_file.name}"\ndepot = "depot"\n',
         encoding="utf-8",
     )
-    code, out, err = run(["--config", str(conf), "bundle", "pull", "Char/A", "Char/B"], capsys)
+    code, out, err = run(
+        ["--config", str(conf), "bundle", "pull", "Char/A", "Char/B", "-o", str(tmp_path / "out")], capsys
+    )
     assert code == 0, err
-    pulled = tmp_path / "conf" / "depot" / "downloads" / "bundles" / "a_01.bundle"
+    pulled = tmp_path / "out" / "a_01.bundle"
     assert pulled.read_bytes() == synth.fake_bundle("a_01.bundle")
     assert [Path(line).resolve() for line in out.splitlines()] == [pulled.resolve()] * 2
     assert KEY_HEX not in out + err
+    downloads = tmp_path / "conf" / "depot" / "downloads"
+    assert not (downloads / "bundles").exists()  # [depot] downloads unset: removed when the command ends
+    assert not list((tmp_path / "conf" / "depot" / "leases").iterdir())
 
 
 def test_master_decode_command(tmp_path, capsys, monkeypatch):
@@ -359,7 +367,7 @@ def data(catalog_file, tmp_path, cdn, monkeypatch):
 @pytest.mark.parametrize(
     "argv, message",
     [
-        (["bundle", "pull", "Char/A", "Nope/1", "Nope/2"], "not a key of the catalog: Nope/1, Nope/2"),
+        (["bundle", "pull", "Char/A", "Nope/1", "Nope/2", "-o", "b"], "not a key of the catalog: Nope/1, Nope/2"),
         (["export", "room", "Nope/1", "-o", "r.glb"], "not a key of the catalog: Nope/1"),
         (["export", "shader", "--key", "Nope/1", "-o", "s"], "not a key of the catalog: Nope/1"),
         (["export", "shader", "--apk-bundle", "zz", "-o", "s"], "--apk-bundle 'zz': 0 APK bundles match"),

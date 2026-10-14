@@ -40,8 +40,8 @@ setting's value. Details in [configuration.md](configuration.md#writing-the-conf
 
 ## Downloads
 
-`bundle pull` and every extractor read the game files from the depot's `downloads/` directory (`[paths] depot`),
-which keeps the files under their own names:
+The commands read the game files from the depot's `downloads/` directory (`[paths] depot`), which keeps the files
+under their own names:
 
 ```
 <depot>/downloads/catalog_main_<language>.bin   the main catalog (explicit main or no API/version pin)
@@ -52,8 +52,26 @@ which keeps the files under their own names:
                                                 versioned catalog, bundles and raw files of one CDN and version
 ```
 
-Files already downloaded are not downloaded again. When `[paths] apk` is set, the APK's own catalog is merged with
-the region's and bundles that ship inside the APK are read from it.
+A file is downloaded when a command first needs it and read from `downloads/` while it is there. When `[paths] apk`
+is set, the APK's own catalog is merged with the region's and bundles that ship inside the APK are read from it.
+
+The bundles and raw files are a cache bounded by `[depot] downloads`. Every command that reads the depot holds a
+lease in `<depot>/leases/` while it runs; when the last running command ends, the bundles and raw files used least
+recently are removed until the rest fit the budget:
+
+| `[depot] downloads` | kept once no command runs |
+|---|---|
+| unset or `0` | no bundles or raw files |
+| a size, e.g. `20GiB` | the most recently used ones, up to that size |
+| `all` | every one |
+
+Catalog files are kept. A removed file is downloaded again when a command needs its bytes. The depot records the
+identity (sha256 and size) of every bundle and raw file it reads, so `export assets` plans with files whose name
+carries the catalog's hash without downloading them again.
+
+Commands may run at the same time on one depot: no command removes downloads while another one holds a lease, and a
+command that starts while one trims waits for it. The lease of a process that ended without releasing it is dropped
+by the next command; a lease written on another host counts for a day.
 
 For international regions with a configured API, catalog-based commands discover `resource_version` first and
 download `catalog_<resource_version>_<language>.bin`. `catalog fetch` labels the bytes with the version used to
@@ -83,11 +101,11 @@ it, decrypted; `bundles/<bundle key>` lists every bundle directly.
 ## bundle pull
 
 ```
-nnnotes bundle pull KEY [KEY ...]
+nnnotes bundle pull KEY [KEY ...] -o DIR
 ```
 
-Fetches the bundle closure (the key's location and all its dependencies) of each key into the depot's downloads and
-prints the path of every bundle.
+Fetches the bundle closure (the key's location and all its dependencies) of each key, copies the decrypted bundles
+to `DIR` under their file names, and prints the path of every copied bundle.
 
 ## servers
 

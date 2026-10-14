@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from ..core.downloads import parse_budget
 from . import gameapi
 from .addressables import BundleKey
 from .catalog import Catalog
@@ -56,6 +57,14 @@ class Session:
     def downloads(self) -> Path:
         """The directory of the depot that holds the downloaded game files (its downloads/ directory)."""
         return self.depot_root() / "downloads"
+
+    def downloads_budget(self) -> int | None:
+        """`[depot] downloads`: the bytes of bundles and raw files the downloads keep once no command uses the depot
+        (None: all; unset: 0)."""
+        try:
+            return parse_budget(self.cfg.get("depot", "downloads"))
+        except ValueError as error:
+            raise ConfigError(f"setting depot.downloads: {error}") from None
 
     def apk(self, region: str | None = None) -> Path:
         """`[paths] apk` of `region`, required."""

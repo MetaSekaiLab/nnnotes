@@ -1,7 +1,13 @@
 """The collection of the depot: what kept runs reach stays, the rest goes."""
 
+import json
 import os
+import socket
+import time
 
+import pytest
+
+from nnnotes import cli
 from nnnotes.pipeline import contract
 from nnnotes.pipeline.contract import Input, Task
 from nnnotes.pipeline.depot import Depot
@@ -72,3 +78,19 @@ def test_gc_keeps_the_files_of_a_layout_a_run_names(tmp_path):
     manifest = d.add(contract.encode({"files": [{"path": "x.json", "sha256": placed, "size": 14}]}), "json")
     write_run(d, ["group:a"], [], layouts={"original": manifest["sha256"]})
     assert d.gc()["contents"] == {"kept": 2, "removed": 0} and d.has(placed)
+
+
+def test_the_gc_command_runs_only_when_no_other_command_does(tmp_path, capsys):
+    d = Depot(tmp_path)
+    orphan = d.put(b"no run reaches it")
+    other = tmp_path / "leases" / "other.json"
+    other.parent.mkdir()
+    other.write_text(json.dumps({"host": socket.gethostname() + "-other", "pid": 1, "started": time.time()}))
+    argv = ["--depot", str(tmp_path), "depot", "gc", "--json"]
+    with pytest.raises(SystemExit, match="another command uses the depot"):
+        cli.main(argv)
+    assert d.path(orphan).exists()
+    other.unlink()
+    cli.main(argv)
+    assert json.loads(capsys.readouterr().out)["contents"]["removed"] == 1 and not d.path(orphan).exists()
+    assert not list((tmp_path / "leases").iterdir())

@@ -46,7 +46,7 @@ nnnotes site build -o out/site --all --player path/to/ournotes-player
 | `servers` | 游戏 API 的服务器列表：各区服及其 CDN 与 API 根地址 |
 | `catalog keys\|browse` | 区服 catalog 的资源键；在本地网页中浏览 catalog 与资源包 |
 | `catalog versions\|import\|fetch\|diff` | depot 中保存的 catalog 版本，以及两个版本之间的变化 |
-| `bundle pull` | 下载并解密资源键的依赖闭包到 depot |
+| `bundle pull` | 下载资源键的依赖闭包，把解密后的 bundle 复制到指定目录 |
 | `master version\|download\|decode` | 区服当前的 masterdata 版本、下载，以及解码为 JSON |
 | `export assets` | 经内容寻址的 depot，把所选资源包中的每个对象导出为通用格式 |
 | `export episode\|story\|live\|live2d\|spot\|room\|shader\|audio\|ui` | 单个对象：ADV 剧情集、完整剧情、谱面、Live2D 模型、据点、房间、着色器、cue sheet、UI 库 |

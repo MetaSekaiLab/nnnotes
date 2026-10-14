@@ -32,6 +32,7 @@ import time
 from pathlib import Path
 
 from ..core.cache import temp_path
+from ..core.downloads import touch
 from . import contract
 from .contract import Input
 
@@ -426,6 +427,7 @@ class Depot:
                     p = Path(self.fetch(inp, loc))
                 elif kind == "download":
                     p = self.downloads / loc["path"]
+                    touch(p)
                 else:
                     p = Path(loc["path"])
                 if not p.is_file() or p.stat().st_size != inp.size:
