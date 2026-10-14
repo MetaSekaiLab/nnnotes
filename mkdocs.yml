@@ -41,6 +41,7 @@ nav:
       - Commands: cli.md
       - Command outputs: commands.md
       - JSON schemas: schemas.md
+      - Python API: api.md
       - Contracts: contracts.md
       - Stages: stages.md
       - Views: views.md
@@ -62,6 +63,24 @@ markdown_extensions:
   - pymdownx.highlight
   - pymdownx.inlinehilite
   - pymdownx.superfences
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]
+          options:
+            docstring_style: null
+            filters: public
+            heading_level: 3
+            members_order: source
+            separate_signature: true
+            show_root_heading: true
+            show_root_full_path: true
+            show_source: false
+            show_signature_annotations: true
+            show_symbol_type_heading: true
 
 validation:
   links:

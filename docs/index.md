@@ -26,8 +26,9 @@ configuration, and the exports stay in the local directories you choose.
 
 - **Reference**
 
-    [Commands](cli.md), [command outputs](commands.md), [JSON schemas](schemas.md), [contracts](contracts.md),
-    [stages](stages.md), [views](views.md), [replay data](replay.md), [UI library](ui.md).
+    [Commands](cli.md), [command outputs](commands.md), [JSON schemas](schemas.md), [Python API](api.md),
+    [contracts](contracts.md), [stages](stages.md), [views](views.md), [replay data](replay.md),
+    [UI library](ui.md).
 
 - **Explanation**
 

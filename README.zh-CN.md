@@ -70,6 +70,7 @@ nnnotes site build -o out/site --all --player path/to/ournotes-player
 - 参考：[命令](https://metasekailab.github.io/nnnotes/cli/)、
   [命令输出](https://metasekailab.github.io/nnnotes/commands/)、
   [JSON schema](https://metasekailab.github.io/nnnotes/schemas/)、
+  [Python API](https://metasekailab.github.io/nnnotes/api/)、
   [契约](https://metasekailab.github.io/nnnotes/contracts/)、[stage](https://metasekailab.github.io/nnnotes/stages/)、
   [视图](https://metasekailab.github.io/nnnotes/views/)。
 - 原理：[架构](https://metasekailab.github.io/nnnotes/architecture/)、
@@ -84,6 +85,11 @@ Pillow 写出的 PNG 像素相同，字节可能不同）。
 
 每个版本的改动见 [CHANGELOG.md](https://github.com/MetaSekaiLab/nnnotes/blob/main/CHANGELOG.md)。版本号遵循
 [语义化版本](https://semver.org/lang/zh-CN/)，约束的接口是命令行、配置键、JSON schema 和文档中的 Python API。
+
+## 参与贡献
+
+开发环境、检查与提交规范见
+[CONTRIBUTING.md](https://github.com/MetaSekaiLab/nnnotes/blob/main/CONTRIBUTING.md)。
 
 ## License
 

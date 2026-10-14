@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Documentation
+    url: https://metasekailab.github.io/nnnotes/
+    about: Configuration, commands, output formats and the Python API
