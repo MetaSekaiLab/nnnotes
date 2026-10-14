@@ -1305,14 +1305,14 @@ def _document(args, cfg, common, episodes=()) -> tuple[dict, Path | None]:
             args.usage(f"{f}: not a voices document")
         return doc, (f.parent.parent if not p.is_file() else None)
     rules = load_rules()
-    tables = views.MasterTables(common.master_dir(cfg))
-    cat = common.open_catalog(cfg, bundles=False)
+    tables = views.MasterTables(common.session(cfg).master_dir())
+    cat = common.session(cfg).catalog(bundles=False)
     prefixes = [SHEET_PREFIX] + ([rules[VIEW]["story"]["key"].split("{", 1)[0]] if "story" in rules[VIEW] else [])
     index = views.AddressIndex({k: [] for p in prefixes for k in cat.keys(p)})
     story = {}
     assets = _story_ids(tables, rules, episodes) if episodes and "story" in rules[VIEW] else {}
     if assets:
-        full = common.open_catalog(cfg)
+        full = common.session(cfg).catalog()
         column = rules[VIEW]["sound"]["sheet"]
         for asset in sorted(assets):
             got = storyvoices.load_episode(full, story_keys(rules, asset))
@@ -1405,7 +1405,7 @@ def _decode_one(cfg, common, sheet: str, cue: str, fmt: str, level: int, dst: Pa
     from . import cri
 
     cfg.require_path("paths", "apk")
-    cat = common.open_catalog(cfg)
+    cat = common.session(cfg).catalog()
     files, _ = cri.acb_data(cat, sheet)
     c = acb.cue_streams(files["acb"]).get(cue)
     if c is None:
@@ -1465,7 +1465,7 @@ def cmd_get(args, cfg, common) -> None:
 
 
 def register(sub, common) -> None:
-    """The `voices` command (common: open_catalog(cfg, bundles=...), master_dir(cfg))."""
+    """The `voices` command (common.session(cfg): the data sources, a session.Session)."""
     c = sub.add_parser(
         "voices", help="character voices of the master data and the story episodes: list, search, summary, get one"
     )

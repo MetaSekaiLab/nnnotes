@@ -6,8 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from nnnotes import cli, languages, liveui, score, web
+from nnnotes import languages, liveui, score, web
 from nnnotes.config import Config, ConfigError
+from nnnotes.session import Session
 
 LANGS = list(languages.LANGUAGES)
 
@@ -116,16 +117,16 @@ def test_master_setting_per_region(tmp_path):
     servers = {"a": {"cdn": "x", "master": "a"}, "b": {"cdn": "y"}}
     cfg = config(tmp_path, servers, paths={"master": "p"}, catalog={"region": "a"})
     assert cfg.master("a") == ("servers.a", "master") and cfg.master("b") == ("paths", "master")
-    assert cli.master_dir(cfg) == tmp_path / "a"  # [catalog] region
-    assert cli.master_dir(cfg, "b") == tmp_path / "p"
+    assert Session(cfg).master_dir() == tmp_path / "a"  # [catalog] region
+    assert Session(cfg).master_dir("b") == tmp_path / "p"
     flagged = config(tmp_path, servers, paths={"master": "p"}, overrides={("paths", "master"): str(tmp_path / "flag")})
     assert flagged.origin("paths", "master") == "flag"
-    assert cli.master_dir(flagged, "a") == tmp_path / "flag"  # the flag names the directory of this run
+    assert Session(flagged).master_dir("a") == tmp_path / "flag"  # the flag names the directory of this run
     none = config(tmp_path, {"a": {"cdn": "x"}})
     with pytest.raises(ConfigError, match="paths.master"):
-        cli.master_dir(none, "a")
+        Session(none).master_dir("a")
     env = Config({"servers": {"a": {"cdn": "x"}}}, environ={"NNNOTES_SERVERS_A_MASTER": str(tmp_path / "a")})
-    assert cli.master_dir(env, "a") == tmp_path / "a"
+    assert Session(env).master_dir("a") == tmp_path / "a"
 
 
 def test_site_regions(tmp_path):

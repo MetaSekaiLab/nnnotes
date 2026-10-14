@@ -19,6 +19,7 @@ from test_voices import simple_acb
 
 from nnnotes import cli, deckdata, musicdata, schemas, score
 from nnnotes.master import MasterKey
+from nnnotes.session import Session
 
 KEY = MasterKey(synth.MASTER_KEY, synth.MASTER_IV)
 ROOT = Path(__file__).resolve().parents[1]
@@ -1255,7 +1256,7 @@ def test_command(tmp_path, capsys, monkeypatch):
     assert code == 2 and "master.key" in err
     monkeypatch.setenv("NNNOTES_MASTER_KEY", synth.MASTER_KEY.hex())
     monkeypatch.setenv("NNNOTES_MASTER_IV", synth.MASTER_IV.hex())
-    monkeypatch.setattr(cli, "open_catalog", lambda cfg, **kw: FakeCatalog(CHARTS))
+    monkeypatch.setattr(Session, "catalog", lambda self, **kw: FakeCatalog(CHARTS))
     monkeypatch.setattr(score, "fetch_chart", lambda cat, name: cat.charts[name])
     base = ["--region", "xx", "--cache", str(tmp_path / "cache"), "music-data", "--master-files", str(d), "--no-bgm"]
     code, stdout, err = run(base + ["--no-deck", "-o", str(out)], capsys)
@@ -1289,7 +1290,7 @@ def test_command_decoded_master(tmp_path, capsys, monkeypatch):
     out = tmp_path / "o" / "music.json"
     code, _, err = run(["--region", "xx", "music-data", "--decoded-master", "--no-deck", "-o", str(out)], capsys)
     assert code == 2 and "paths.master" in err
-    monkeypatch.setattr(cli, "open_catalog", lambda cfg, **kw: FakeCatalog(CHARTS))
+    monkeypatch.setattr(Session, "catalog", lambda self, **kw: FakeCatalog(CHARTS))
     monkeypatch.setattr(score, "fetch_chart", lambda cat, name: cat.charts[name])
     fake = FakeDeck()
     real = musicdata.Deck

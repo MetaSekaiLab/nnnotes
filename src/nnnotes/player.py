@@ -25,13 +25,12 @@ from pathlib import Path
 import UnityPy
 from UnityPy.helpers.TypeTreeNode import TypeTreeNode
 
-from .apkset import ApkSet
+from .apkset import MANIFEST_IN_APK, ApkSet, manifest_version_name
 from .config import ConfigError
 from .unity import DEFAULT_RESOURCES, deref, external_path, is_pptr
 
 DATA_IN_APK = "assets/bin/Data/data.unity3d"
 DEFAULT_RESOURCES_IN_APK = "assets/bin/Data/Resources/unity default resources"
-MANIFEST_IN_APK = "AndroidManifest.xml"
 COLOR_SPACE = {0: "Gamma", 1: "Linear"}
 HEADER = ("m_GameObject", "m_Script", "m_Enabled")
 TYPETREE_FORMAT = 1
@@ -84,71 +83,6 @@ def dump_typetrees(doc: dict) -> str:
         )
     lines.append("}}")
     return "\n".join(lines) + "\n"
-
-
-def _manifest_attribute(data: bytes, attribute: str) -> tuple[str | None, int | None, int | None] | None:
-    """An attribute of the <manifest> element of a binary AndroidManifest.xml: (its string, None when it has no
-    string value; the Res_value data type; the Res_value data). None when absent or unreadable."""
-    try:
-        pos, strings = 8, []
-        while pos + 8 <= len(data):
-            typ, hsize, size = struct.unpack_from("<HHI", data, pos)
-            if typ == 0x0001:  # string pool
-                count, _styles, flags, start = struct.unpack_from("<IIII", data, pos + 8)
-                for off in struct.unpack_from(f"<{count}I", data, pos + hsize):
-                    q = pos + start + off
-                    if flags & 0x100:  # UTF-8: UTF-16 length, UTF-8 length, bytes
-                        q += 2 if data[q] & 0x80 else 1
-                        n = data[q]
-                        q += 1
-                        if n & 0x80:
-                            n = ((n & 0x7F) << 8) | data[q]
-                            q += 1
-                        strings.append(data[q : q + n].decode("utf-8"))
-                    else:  # UTF-16LE: length in code units, chars
-                        (n,) = struct.unpack_from("<H", data, q)
-                        q += 2
-                        if n & 0x8000:
-                            n = ((n & 0x7FFF) << 16) | struct.unpack_from("<H", data, q)[0]
-                            q += 2
-                        strings.append(data[q : q + 2 * n].decode("utf-16-le"))
-            elif typ == 0x0102:  # start element
-                _ns, name, astart, asize, acount = struct.unpack_from("<IIHHH", data, pos + 16)
-                if strings[name] == "manifest":
-                    for i in range(acount):
-                        a = pos + 16 + astart + i * asize
-                        _ans, aname, raw = struct.unpack_from("<III", data, a)
-                        if strings[aname] == attribute:
-                            text = strings[raw] if raw != 0xFFFFFFFF else None
-                            if a + 20 > len(data):  # no typed value
-                                return text, None, None
-                            _vsize, _res0, vtype, value = struct.unpack_from("<HBBI", data, a + 12)
-                            return text, vtype, value
-                    return None
-            if size < 8:
-                return None
-            pos += size
-    except (IndexError, struct.error, UnicodeDecodeError):
-        return None
-    return None
-
-
-def manifest_version_name(data: bytes) -> str | None:
-    """`android:versionName` of a binary AndroidManifest.xml (None when absent or unreadable)."""
-    a = _manifest_attribute(data, "versionName")
-    return a[0] if a is not None else None
-
-
-def manifest_version_code(data: bytes) -> int | None:
-    """`android:versionCode` of a binary AndroidManifest.xml: an integer (decimal or hex type), or a string of
-    digits (None when absent or unreadable)."""
-    a = _manifest_attribute(data, "versionCode")
-    if a is None:
-        return None
-    text, vtype, value = a
-    if vtype in (0x10, 0x11):  # TYPE_INT_DEC, TYPE_INT_HEX
-        return value
-    return int(text) if text is not None and text.isdecimal() else None
 
 
 class PlayerData:

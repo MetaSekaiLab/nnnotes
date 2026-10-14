@@ -19,6 +19,7 @@ from nnnotes.apkset import ApkSet
 from nnnotes.catalog import Catalog, file_name, location_kind
 from nnnotes.cli_assets import CatalogFetcher
 from nnnotes.config import Config, ConfigError
+from nnnotes.session import Session
 
 HASH = "a" * 32
 MASTER = "1.0.0.100/" + "b" * 32
@@ -103,12 +104,12 @@ def upstream(server):
 
 
 def test_version_headers_and_master_without_asset(upstream):
-    result = gameapi.master_version(upstream.cfg, "jp")
+    result = Session(upstream.cfg).master_version("jp")
     assert (result.version, result.resource_version, result.resource_hash) == (MASTER, "1.0.0.300", HASH)
     assert upstream.grpc.seen[0].metadata["x-client-version"] == "1.0.4"
     assert upstream.grpc.seen[0].method == gameapi.VERSION_METHOD
     upstream.asset = False
-    result = gameapi.master_version(upstream.cfg, "jp")
+    result = Session(upstream.cfg).master_version("jp")
     assert result.version == MASTER and result.resource_version == "" and result.resource_hash is None
 
 
@@ -130,7 +131,7 @@ def test_api_root_defaults_to_https(api, monkeypatch):
 
     monkeypatch.setattr(gameapi, "call", call)
     configfile.validate(configfile.resolve("servers.jp.api")[0], api)
-    assert jp.Session(cfg, "jp").observe().version.version == MASTER
+    assert jp.Client(cfg, "jp").observe().version.version == MASTER
     assert calls == [jp.origin("https://" + api.strip())]
 
 
@@ -139,7 +140,7 @@ def test_api_origin_restrictions_still_apply(api, monkeypatch):
     cfg = Config({"catalog": {"region": "jp"}, "servers": {"jp": {"api": api}}}, environ={})
     monkeypatch.setattr(gameapi, "call", lambda *a, **kw: pytest.fail("invalid origin reached the API"))
     with pytest.raises(ConfigError):
-        jp.Session(cfg, "jp").observe()
+        jp.Client(cfg, "jp").observe()
 
 
 def test_live_selection_numeric_and_no_fallback():
@@ -159,41 +160,41 @@ def test_live_selection_numeric_and_no_fallback():
 
 
 def test_authenticated_download_rotation_and_redaction(upstream):
-    session = jp.Session(upstream.cfg, "jp")
-    obs = session.observe()
+    client = jp.Client(upstream.cfg, "jp")
+    obs = client.observe()
     assert upstream.credential not in repr(obs)
     upstream.credential = "synthetic-rotated"
-    assert session.get(obs.source.catalog_url, source=obs.source) == upstream.body
+    assert client.get(obs.source.catalog_url, source=obs.source) == upstream.body
     assert len(upstream.seen) == 2 and len(upstream.grpc.seen) == 2
     assert upstream.seen[-1][1]["User-Agent"] == "OurNotes/1.0.4"
     assert "Authorization" not in json.dumps(obs.source.to_dict())
 
 
 def test_truncated_download_is_not_cached(upstream, tmp_path):
-    session = jp.Session(upstream.cfg, "jp")
-    source = session.observe().source
+    client = jp.Client(upstream.cfg, "jp")
+    source = client.observe().source
     upstream.content_length = len(upstream.body) + 5
-    cat = Catalog(cat_bytes(), tmp_path, source=source, session=session)
+    cat = Catalog(cat_bytes(), tmp_path, source=source, client=client)
     with pytest.raises(gameapi.GameApiError, match="truncated"):
         cat.fetch_raw({"internal_id": jp.PLACEHOLDER + "audio/test.acb"})
     assert cat.cached_raw({"internal_id": jp.PLACEHOLDER + "audio/test.acb"}) is None
 
 
 def test_declared_download_limit_is_checked(upstream):
-    session = jp.Session(upstream.cfg, "jp")
-    source = session.observe().source
+    client = jp.Client(upstream.cfg, "jp")
+    source = client.observe().source
     upstream.content_length = 10000
     with pytest.raises(gameapi.GameApiError, match="size limit"):
-        session.get(source.catalog_url, source=source, limit=1000)
+        client.get(source.catalog_url, source=source, limit=1000)
 
 
 @pytest.mark.parametrize("status", [302, 429, 500, 403])
 def test_download_does_not_follow_redirects_or_loop(upstream, status):
-    session = jp.Session(upstream.cfg, "jp")
-    obs = session.observe()
+    client = jp.Client(upstream.cfg, "jp")
+    obs = client.observe()
     upstream.status = status
     with pytest.raises(gameapi.GameApiError, match=f"HTTP {status}") as error:
-        session.get(obs.source.catalog_url, source=obs.source)
+        client.get(obs.source.catalog_url, source=obs.source)
     expected = 2 if status == 403 else 1
     assert len(upstream.seen) == expected and len(upstream.grpc.seen) == expected
     assert upstream.credential not in str(error.value) and upstream.cdn not in str(error.value)
@@ -202,17 +203,17 @@ def test_download_does_not_follow_redirects_or_loop(upstream, status):
 def test_unapproved_origin_fails_before_download(upstream):
     upstream.cdn_override = "https://elsewhere.invalid"
     with pytest.raises(gameapi.GameApiError, match="CDN differs"):
-        jp.Session(upstream.cfg, "jp").observe()
+        jp.Client(upstream.cfg, "jp").observe()
     assert not upstream.seen
 
 
 def test_hash_only_change_does_not_rebind_old_catalog(upstream):
-    session = jp.Session(upstream.cfg, "jp")
-    old = session.observe().source
+    client = jp.Client(upstream.cfg, "jp")
+    old = client.observe().source
     upstream.hash = "c" * 32
-    session.observe()
+    client.observe()
     with pytest.raises(gameapi.GameApiError, match="assets changed"):
-        session.get(old.catalog_url, source=old)
+        client.get(old.catalog_url, source=old)
     assert not upstream.seen
 
 
@@ -245,7 +246,7 @@ def test_placeholder_rejects_unsafe_paths(path):
 def test_catalog_cache_source_and_offline_replay(upstream, tmp_path, monkeypatch):
     cfg = upstream.cfg
     cfg._data["paths"] = {"cache": str(tmp_path / "cache")}
-    cat = cli.open_catalog(cfg, bundles=False)
+    cat = Session(cfg).catalog(bundles=False)
     path = cat.cache_dir / "catalog_main.bin"
     assert path.read_bytes() == upstream.body
     assert jp.read_source(path, upstream.body) == cat.source
@@ -254,18 +255,18 @@ def test_catalog_cache_source_and_offline_replay(upstream, tmp_path, monkeypatch
     record = catalogdb.CatalogDB(tmp_path / "store").add(upstream.body, source=cat.source.to_dict(), region="jp")
     assert upstream.credential not in json.dumps(record)
     cfg._data["paths"]["catalog"] = str(path)
-    monkeypatch.setattr(jp.Session, "observe", lambda *a, **k: pytest.fail("offline read made an API call"))
-    assert cli.open_catalog(cfg, bundles=False).keys() == cat.keys()
+    monkeypatch.setattr(jp.Client, "observe", lambda *a, **k: pytest.fail("offline read made an API call"))
+    assert Session(cfg).catalog(bundles=False).keys() == cat.keys()
     path.write_bytes(b"changed")
     with pytest.raises(ConfigError, match="matching"):
-        cli.open_catalog(cfg, bundles=False)
+        Session(cfg).catalog(bundles=False)
 
 
 def test_catalogdb_source_identity_and_fetcher(upstream, tmp_path):
     cfg = upstream.cfg
     cfg._data["paths"] = {"cache": str(tmp_path / "cache")}
-    session = jp.Session(cfg, "jp")
-    source = session.observe().source
+    client = jp.Client(cfg, "jp")
+    source = client.observe().source
     db = catalogdb.CatalogDB(tmp_path / "store")
     old = db.add(cat_bytes(), source=source.to_dict(), region="jp")
     new_source = {**source.to_dict(), "hash": "c" * 32}
@@ -333,7 +334,7 @@ def test_remote_replay_does_not_open_the_apk(upstream, tmp_path, apk_state, kind
         apk.write_bytes(zip_bytes({APK_CATALOG: local_catalog(2)}))
     elif apk_state == "broken":
         apk.write_bytes(b"not a zip")
-    source = jp.Session(cfg, "jp").observe().source
+    source = jp.Client(cfg, "jp").observe().source
     db = catalogdb.CatalogDB(tmp_path / "store")
     record = db.add(cat_bytes(), local_catalog(), source=source.to_dict(), region="jp")
     entry = next(e for e in db.index(record)[kind] if e["remote"])
@@ -444,7 +445,7 @@ def test_web_preflight_uses_the_selected_regions_apk(tmp_path, monkeypatch, kind
     (tmp_path / "target.apk").write_bytes(b"synthetic")
     monkeypatch.setattr(tmpfont, "require_extra", lambda *a, **kw: None)
     monkeypatch.setattr(web, "check_player", lambda *a, **kw: tmp_path / "player")
-    monkeypatch.setattr(cli, "open_catalog", lambda *a, **kw: object())
+    monkeypatch.setattr(Session, "catalog", lambda *a, **kw: object())
     monkeypatch.setattr(webmodel, "catalog_models", lambda *a, **kw: {})
     seen = []
 

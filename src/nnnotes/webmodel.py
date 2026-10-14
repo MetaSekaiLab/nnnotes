@@ -183,11 +183,11 @@ def master_names(cfg: Config, region: str | None = None, log=None) -> dict[str, 
     section, key = cfg.master(region or cfg.get("catalog", "region"))
     if cfg.path(section, key) is None:
         return None
-    from .cli import master_dir
+    from .session import Session
 
     code = cfg.get("catalog", "language")
     try:
-        return model_names(master_dir(cfg, region), languages.check(code) if code else None)
+        return model_names(Session(cfg).master_dir(region), languages.check(code) if code else None)
     except FileNotFoundError as e:
         (log or _log)(f"model names left out: {Path(e.filename).name if e.filename else e} not in the master data")
         return None
@@ -531,9 +531,11 @@ _W: dict = {}
 
 
 def _open(cfg: Config, region: str | None = None):
-    from .cli import open_catalog, player_data
+    from .player import PlayerData
+    from .session import Session
 
-    return open_catalog(cfg, region=region), player_data(cfg, region)
+    session = Session(cfg)
+    return session.catalog(region=region), PlayerData(session.apk(region))
 
 
 def _worker_init(cfg: Config, lock, job: dict) -> None:
@@ -597,9 +599,9 @@ def build(
     log = log or _log
     t0 = time.time()
     if models is None:
-        from .cli import open_catalog
+        from .session import Session
 
-        models = catalog_models(open_catalog(cfg, bundles=False, region=region))
+        models = catalog_models(Session(cfg).catalog(bundles=False, region=region))
     todo, skipped, rebuilt = [], [], []
     for mid, key in sorted(models.items()):
         if model_id(key) != mid:

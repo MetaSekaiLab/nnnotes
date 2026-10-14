@@ -7,8 +7,9 @@ from types import SimpleNamespace as NS
 import pytest
 from PIL import Image
 
-from nnnotes import cli, ui
+from nnnotes import cli, player, ui
 from nnnotes.config import Config
+from nnnotes.session import Session
 
 KEY = "EmbUI/Example/Box"
 
@@ -164,7 +165,8 @@ def test_cli_selects_the_jp_split_apk_and_keeps_public_provenance(tmp_path, expo
     with zipfile.ZipFile(apk / "split_Unity.apk", "w") as z:
         z.writestr(catalog.APK_CATALOG, b"synthetic catalog")
     monkeypatch.setattr(catalog, "Catalog", Catalog)
-    monkeypatch.setattr(cli, "player_data", lambda cfg: None)
+    monkeypatch.setattr(Session, "apk", lambda self, region=None: None)
+    monkeypatch.setattr(player, "PlayerData", lambda apk: None)
     cfg = Config(
         {
             "catalog": {"region": "jp"},

@@ -16,7 +16,7 @@ import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
-from .addressables import REMOTE_PREFIX, BundleKey, decrypt, parse, parse_locations, remote_path
+from .addressables import REMOTE_PREFIX, BundleKey, decrypt, parse, parse_locations, relative_path, remote_path
 from .apkset import ApkSet
 from .cache import write_atomic as _write_atomic
 from .config import ConfigError, apk_missing, check_catalog_version
@@ -49,8 +49,6 @@ def file_name(internal_id: str) -> str:
     """The name of a bundle or raw file location: its path below the platform directory (`Android/`), which for a
     bundle is its bare file name."""
     if internal_id.startswith(REMOTE_PREFIX):
-        from .jp import relative_path
-
         path = relative_path(internal_id[len(REMOTE_PREFIX) :])
         return path.rsplit("/", 1)[-1] if path.endswith(".bundle") else path
     rel = remote_path(internal_id)
@@ -90,7 +88,7 @@ class Catalog:
         bundle_key=None,
         apk: Path | None = None,
         source=None,
-        session=None,
+        client=None,
         apk_catalog: bytes | None = None,
         resource_version: str | None = None,
     ):
@@ -98,7 +96,7 @@ class Catalog:
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.apk = Path(apk) if apk else None
-        self.source, self.session = source, session
+        self.source, self.client = source, client
         self.resource_version = resource_version
         self._sources = {"remote": catalog_bytes}
         self._locations: list[dict] | None = None
@@ -348,9 +346,9 @@ class Catalog:
 
     def _download(self, url):
         if self.source is not None:
-            if self.session is None:
-                raise ConfigError("JP downloads require a configured JP session")
-            return self.session.get(url, source=self.source)
+            if self.client is None:
+                raise ConfigError("JP downloads require a configured JP client")
+            return self.client.get(url, source=self.source)
         return download(url)
 
     def fetch_key(self, key: str, skip=frozenset()) -> list[Path]:

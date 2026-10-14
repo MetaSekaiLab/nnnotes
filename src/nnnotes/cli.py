@@ -60,12 +60,12 @@ from pathlib import Path
 os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
 
 from . import __version__, cli_assets, voices
-from .addressables import BundleKey
 from .catalog import Catalog
 from .compress import DEFAULT_ENCODING, ENCODINGS
 from .config import DEFAULT_FILE, ENV_CONFIG, Config, ConfigError, config_files, find_file, use, user_file
 from .gameapi import GameApiError
 from .jsonio import dumps, write_json
+from .session import Session
 from .webaudio import DEFAULT_AUDIO_FORMAT, WEB_AUDIO
 
 DIFFICULTY_CHOICES = ("easy", "normal", "hard", "expert")
@@ -100,67 +100,6 @@ def load_config(args) -> Config:
     return use(cfg)
 
 
-def bundle_key(cfg: Config) -> BundleKey:
-    return BundleKey(cfg.hex("bundle", "key", 16), cfg.hex("bundle", "nonce_seed"))
-
-
-def _existing(cfg: Config, section: str, key: str, kind: str = "file") -> Path | None:
-    p = cfg.path(section, key)
-    if key == "apk" and p is not None and p.is_dir():
-        return p
-    if p is not None and not (p.is_file() if kind == "file" else p.is_dir()):
-        raise ConfigError(f"setting {section}.{key}: {kind} {p} not found")
-    return p
-
-
-def open_catalog(cfg: Config, bundles: bool = True, region: str | None = None) -> Catalog:
-    """The catalog of [catalog] language (merged with the APK's when [paths] apk is set), fetching from the CDN of
-    `region` (default: [catalog] region). International versioned catalogs are isolated by CDN root and resource
-    version. `bundles`: bundles will be fetched; else only the catalog is read. Explicit files bypass discovery.
-    Version pins bypass the API but need the CDN root to identify the cache; legacy main keeps lazy CDN lookup.
-    The bundle key is only read for a missing encrypted bundle."""
-    if region:
-        cfg = cfg.for_region(region)
-    cache = cfg.require_path("paths", "cache")
-    catbin = _existing(cfg, "paths", "catalog")
-    apk = _existing(cfg, "paths", "apk")
-    if cfg.provider() == "jp":
-        from .jp import open_catalog as jp_catalog
-
-        return jp_catalog(
-            cfg, cfg.region(), catalog_file=catbin, bundle_key=(lambda: bundle_key(cfg)) if bundles else None, apk=apk
-        )
-    language = cfg.require("catalog", "language") if catbin is None else None
-    cdn = (lambda: cfg.cdn(region or cfg.region())) if bundles or catbin is None else None
-    key = (lambda: bundle_key(cfg)) if bundles else None
-    if catbin is not None:
-        return Catalog(catbin.read_bytes(), cache, cdn=cdn, bundle_key=key, apk=apk)
-    return Catalog.load(language, cache, cdn=cdn, bundle_key=key, apk=apk, version=cfg.catalog_version())
-
-
-def master_dir(cfg: Config, region: str | None = None) -> Path:
-    """The decoded master data of `region` (default: [catalog] region when it is set): the --master flag, else
-    [servers.<region>] master, else [paths] master."""
-    section, key = cfg.master(region or cfg.get("catalog", "region"))
-    cfg.require_path(section, key)
-    return _existing(cfg, section, key, "directory")
-
-
-def player_data(cfg: Config, region: str | None = None):
-    from .player import PlayerData
-
-    if region:
-        cfg = cfg.for_region(region)
-    cfg.require_path("paths", "apk")
-    return PlayerData(_existing(cfg, "paths", "apk"))
-
-
-def master_key(cfg: Config):
-    from .master import MasterKey
-
-    return MasterKey(cfg.hex("master", "key", 32), cfg.hex("master", "iv", 32))
-
-
 def known_keys(args, cat: Catalog, keys) -> None:
     """A usage error (exit 2) naming the keys the catalog does not have."""
     unknown = [k for k in keys if not cat.has(k)]
@@ -191,7 +130,7 @@ def _print_json(r) -> None:
 
 # ---------------------------------------------------------------- commands
 def cmd_catalog(args, cfg):
-    cat = open_catalog(cfg, bundles=False)
+    cat = Session(cfg).catalog(bundles=False)
     ks = cat.keys(args.prefix)
     for k in ks[: args.limit]:
         print(k)
@@ -199,7 +138,7 @@ def cmd_catalog(args, cfg):
 
 
 def cmd_browse(args, cfg):
-    from .addressables import Region, serve
+    from .browse import Region, serve
 
     names = cfg.regions()
     if not names:
@@ -213,11 +152,11 @@ def cmd_browse(args, cfg):
         if not langs:
             raise cfg.missing(f"servers.{r}", "languages")
         regions.append(Region(r, cfg.get(f"servers.{r}", "name") or r, cfg.cdn(r), langs, cfg))
-    serve(regions, bundle_key(cfg), cfg.require_path("paths", "cache"), args.port, args.host)
+    serve(regions, Session(cfg).bundle_key(), cfg.require_path("paths", "cache"), args.port, args.host)
 
 
 def cmd_pull(args, cfg):
-    cat = open_catalog(cfg)
+    cat = Session(cfg).catalog()
     known_keys(args, cat, args.keys)
     for key in args.keys:
         for p in cat.fetch_key(key):
@@ -227,7 +166,7 @@ def cmd_pull(args, cfg):
 def cmd_master_decode(args, cfg):
     from . import master
 
-    key = master_key(cfg)
+    key = Session(cfg).master_key()
     files = master.input_files(args.inputs)
     if not files:
         raise SystemExit("nnnotes: no master data files (*.bin) among the inputs")
@@ -410,7 +349,7 @@ def cmd_master_version(args, cfg):
 
     region = cfg.region()
     try:
-        v = gameapi.master_version(cfg, region)
+        v = Session(cfg).master_version(region)
     except gameapi.GameApiError as e:
         sys.exit(f"nnnotes: {e}")
     result = {"region": region, "masterVersion": v.version, "resourceVersion": v.resource_version}
@@ -426,21 +365,21 @@ def cmd_master_download(args, cfg):
     cdn = cfg.cdn(region)
     try:
         if cfg.provider(region) == "jp":
-            from .jp import Session, master_version
+            from .jp import Client, master_version
 
-            session = Session(cfg, region)
-            observation = session.observe()
+            client = Client(cfg, region)
+            observation = client.observe()
             version = observation.version.version if args.latest else master_version(args.version)
             r = master.download(
                 observation.cdn,
                 version,
                 Path(args.out),
                 workers=args.workers,
-                get=lambda url: session.get(url, master=version),
+                get=lambda url: client.get(url, master=version),
                 strict=True,
             )
         else:
-            version = gameapi.master_version(cfg, region).version if args.latest else args.version
+            version = Session(cfg).master_version(region).version if args.latest else args.version
             r = master.download(cdn, version, Path(args.out), workers=args.workers)
     except (gameapi.GameApiError, master.DownloadError) as e:
         sys.exit(f"nnnotes: {e}")
@@ -452,9 +391,9 @@ def cmd_master_download(args, cfg):
 def cmd_adv(args, cfg):
     from . import adv
 
-    md = master_dir(cfg)
+    md = Session(cfg).master_dir()
     known_row(args, md, "MasterAdv", args.adv_id, "episode")
-    cat = open_catalog(cfg)
+    cat = Session(cfg).catalog()
     doc = adv.to_json(adv.extract(cat, md, args.adv_id))
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -466,7 +405,7 @@ def cmd_live2d(args, cfg):
     from . import live2d, webmodel
 
     cfg.require_path("paths", "apk")  # the Cubism component classes are read from the APK
-    cat = open_catalog(cfg)
+    cat = Session(cfg).catalog()
     try:  # a model id or a model key
         (key,) = webmodel.catalog_models(cat, [args.key]).values()
     except ValueError as e:
@@ -479,9 +418,9 @@ def cmd_spot(args, cfg):
     from . import room, shader, spot
 
     cfg.require_path("paths", "apk")  # the Spot / Spine component classes are read from the APK
-    md = master_dir(cfg)
+    md = Session(cfg).master_dir()
     known_row(args, md, "MasterHomeSpot", args.spot_id, "spot")
-    cat = open_catalog(cfg)
+    cat = Session(cfg).catalog()
     out = Path(args.out)
     doc = spot.extract(cat, md, args.spot_id, out)
     print(f"{out}/spot.json  ({len(doc['characters'])} tap targets, {len(doc['skeletons'])} skeletons)")
@@ -496,7 +435,7 @@ def cmd_spot(args, cfg):
 def cmd_room(args, cfg):
     from . import room
 
-    cat = open_catalog(cfg)
+    cat = Session(cfg).catalog()
     known_keys(args, cat, [args.key])
     r = room.extract_room(cat, args.key, Path(args.out))
     print(f"{r['glb']}  ({r['meshCount']} meshes, {r['inactiveMeshes']} inactive)")
@@ -505,7 +444,7 @@ def cmd_room(args, cfg):
 def cmd_shader(args, cfg):
     from . import shader
 
-    cat = open_catalog(cfg)
+    cat = Session(cfg).catalog()
     if args.key:
         known_keys(args, cat, [args.key])
         bundles = cat.fetch_key(args.key)
@@ -529,7 +468,7 @@ def cmd_audio(args, cfg):
 
     flac = _flac_options(args)
     cfg.require_path("paths", "apk")  # the HCA keycode is read from the APK
-    cat = open_catalog(cfg)
+    cat = Session(cfg).catalog()
     if not cat.has(f"Cri/Sound/{args.cue_sheet}"):
         args.usage(f"cue sheet {args.cue_sheet}: no key Cri/Sound/{args.cue_sheet} in the catalog")
     out = Path(args.out)
@@ -541,7 +480,7 @@ def cmd_crikey(args, cfg):
     from . import crikey
 
     cfg.require_path("paths", "apk")
-    k = crikey.find_key(_existing(cfg, "paths", "apk"))
+    k = crikey.find_key(Session(cfg).path("paths", "apk"))
     print(f"HCA keycode found ({len(str(k))} digits)" if k else "no HCA keycode (decryption disabled)")
     if args.write and k:
         d = Path(args.write)
@@ -550,7 +489,9 @@ def cmd_crikey(args, cfg):
 
 
 def cmd_player(args, cfg):
-    g = player_data(cfg).graphics()
+    from .player import PlayerData
+
+    g = PlayerData(Session(cfg).apk()).graphics()
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     write_json(out, g)
@@ -559,6 +500,7 @@ def cmd_player(args, cfg):
 
 def cmd_story(args, cfg):
     from . import languages, story, webmodel
+    from .player import PlayerData
 
     if args.fonts == "game":
         from .tmpfont import require_extra
@@ -572,10 +514,10 @@ def cmd_story(args, cfg):
     except ValueError:
         args.usage(f"--models {models}: not on the drive of {out} (story.json names it relative to the story)")
     languages.check(cfg.require("catalog", "language"))  # the story UI's language (advui reads the setting)
-    md = master_dir(cfg)
+    md = Session(cfg).master_dir()
     known_row(args, md, "MasterAdv", args.adv_id, "episode")
-    cat = open_catalog(cfg)
-    player = player_data(cfg)
+    cat = Session(cfg).catalog()
+    player = PlayerData(Session(cfg).apk())
     source = webmodel.ModelDir(cat, player, models, force=args.force)
     r = story.build(
         cat,
@@ -627,13 +569,14 @@ def _live_options(args) -> dict:
 
 def cmd_live(args, cfg):
     from . import languages, live, liveoptions
+    from .player import PlayerData
     from .web import all_pairs
 
     _fonts_extra(args.fonts)
     request = _live_options(args)
     flac = _flac_options(args)
     language = languages.check(cfg.require("catalog", "language"))
-    md = master_dir(cfg)
+    md = Session(cfg).master_dir()
     known_row(args, md, "MasterLiveMusic", args.music_id, "music")
     if (args.music_id, args.difficulty) not in all_pairs(md):
         args.usage(f"music {args.music_id}: no {args.difficulty} chart (no MasterLiveMusicScore row)")
@@ -641,7 +584,7 @@ def cmd_live(args, cfg):
         options = liveoptions.resolve(request, md)
     except liveoptions.OptionSpecError as e:
         args.usage(str(e))
-    cat = open_catalog(cfg)
+    cat = Session(cfg).catalog()
     try:  # an unknown --leader-card, a --band without its scene keys
         live.resolve_band(cat, md, args.music_id, band=args.band, leader_card=args.leader_card)
     except (KeyError, ValueError) as e:
@@ -649,7 +592,7 @@ def cmd_live(args, cfg):
     r = live.build(
         cat,
         md,
-        player_data(cfg),
+        PlayerData(Session(cfg).apk()),
         args.music_id,
         args.difficulty,
         Path(args.out),
@@ -716,7 +659,7 @@ def cmd_web(args, cfg):
         if models:
             cfg.require_path("paths", "apk")  # the Cubism component classes and mask materials: the APK
             try:
-                selected = webmodel.catalog_models(open_catalog(cfg, bundles=False, **base), args.live2d)
+                selected = webmodel.catalog_models(Session(cfg).catalog(bundles=False, **base), args.live2d)
             except ValueError as e:
                 args.usage(str(e))
             r.update(
@@ -799,7 +742,7 @@ def cmd_music_data(args, cfg):
 
     if args.apk_master:
         cfg.require_path("paths", "apk")  # the master data files ship in the APK
-    apk = _existing(cfg, "paths", "apk")
+    apk = Session(cfg).path("paths", "apk")
     try:
         deck = (
             None
@@ -811,11 +754,11 @@ def cmd_music_data(args, cfg):
         if args.apk_master:
             src, region = deckdata.apk_master(apk), deckdata.EMBEDDED
         elif args.decoded_master:  # decoded elsewhere: no master key
-            src, region = deckdata.decoded_master(master_dir(cfg)), cfg.region()
+            src, region = deckdata.decoded_master(Session(cfg).master_dir()), cfg.region()
         else:
             src, region = deckdata.master_files(Path(args.master_files)), cfg.region()
-        key = None if src.decoded else master_key(cfg)
-        cat = open_catalog(cfg)
+        key = None if src.decoded else Session(cfg).master_key()
+        cat = Session(cfg).catalog()
         r = musicdata.export(
             Path(args.out),
             src,
@@ -1268,8 +1211,8 @@ def build_parser() -> argparse.ArgumentParser:
     _out(c, "output file (.json, or .json.gz for gzip)")
     c.set_defaults(func=cmd_music_data, usage=c.error)
 
-    cli_assets.register(sub, argparse.Namespace(open_catalog=open_catalog, print_json=_print_json))
-    voices.register(sub, argparse.Namespace(open_catalog=open_catalog, master_dir=master_dir))
+    cli_assets.register(sub, argparse.Namespace(session=Session, print_json=_print_json))
+    voices.register(sub, argparse.Namespace(session=Session))
     c = sub.add_parser("ui", help="export an offline UI prefab library for ournotes-player/ui")
     _out(c, "UI data directory outside the source repositories")
     c.add_argument("--key", action="append", help="exact APK catalog key (repeatable)")

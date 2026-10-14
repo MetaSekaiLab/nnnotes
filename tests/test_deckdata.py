@@ -13,7 +13,7 @@ import numpy as np
 import pytest
 import synth
 
-from nnnotes import cli, deckdata, jsonio, master, player, score
+from nnnotes import apkset, cli, deckdata, jsonio, master, score
 from nnnotes.catalogdb import CatalogDB
 from nnnotes.master import MasterKey
 
@@ -501,14 +501,14 @@ def manifest_xml(attrs: list[tuple[str, int, int, str | None]]) -> bytes:
 
 def test_manifest_version_code():
     both = manifest_xml([("versionCode", 0x10, 25, None), ("versionName", 0x03, 3, "1.2.3")])
-    assert player.manifest_version_code(both) == 25 and player.manifest_version_name(both) == "1.2.3"
-    assert player.manifest_version_code(manifest_xml([("versionCode", 0x11, 0x1F, None)])) == 31
-    assert player.manifest_version_code(manifest_xml([("versionCode", 0x03, 0, "42")])) == 42
+    assert apkset.manifest_version_code(both) == 25 and apkset.manifest_version_name(both) == "1.2.3"
+    assert apkset.manifest_version_code(manifest_xml([("versionCode", 0x11, 0x1F, None)])) == 31
+    assert apkset.manifest_version_code(manifest_xml([("versionCode", 0x03, 0, "42")])) == 42
     none = manifest_xml([("versionName", 0x03, 0, "1.0")])
-    assert player.manifest_version_code(none) is None and player.manifest_version_name(none) == "1.0"
-    assert player.manifest_version_code(b"\0" * 4) is None
+    assert apkset.manifest_version_code(none) is None and apkset.manifest_version_name(none) == "1.0"
+    assert apkset.manifest_version_code(b"\0" * 4) is None
     old = synth.axml(["manifest", "versionName", "7.1"], 2)  # a string attribute only
-    assert player.manifest_version_name(old) == "7.1" and player.manifest_version_code(old) is None
+    assert apkset.manifest_version_name(old) == "7.1" and apkset.manifest_version_code(old) is None
 
 
 def test_apk_master_and_client(tmp_path):
