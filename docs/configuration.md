@@ -103,7 +103,7 @@ exist when they are given.
 | `[paths] catalog` | `NNNOTES_PATHS_CATALOG` | `--catalog` | a catalog `.bin` file to read instead of discovering/downloading a catalog; explicit files stay usable offline |
 | `[paths] depot` | `NNNOTES_PATHS_DEPOT` | `--depot` | depot directory (created when missing): the downloaded game files, the results of the stages, catalog versions and runs ([commands.md](commands.md#downloads), [contracts.md](contracts.md#depot)) |
 | `[paths] master` | `NNNOTES_PATHS_MASTER` | `--master` | decoded master data directory, one `<Table>.json` per table; the flag overrides `[servers.<region>] master` |
-| `[paths] apk` | `NNNOTES_PATHS_APK` | `--apk` | the game's `base.apk` (the story export reads the CRI Lips library from it, or from `split_config.arm64_v8a.apk` next to it) |
+| `[paths] apk` | `NNNOTES_PATHS_APK` | `--apk` | the game's `base.apk` (the story export reads the CRI Lips library from it, or from `split_config.arm64_v8a.apk` next to it; the asset export its built-in Unity files) |
 | `[paths] ffmpeg` | `NNNOTES_PATHS_FFMPEG` | `--ffmpeg` | `ffmpeg` executable; unset: `ffmpeg` on `PATH` |
 | `[paths] vgmstream` | `NNNOTES_PATHS_VGMSTREAM` | `--vgmstream` | `vgmstream-cli` executable; unset: `vgmstream-cli` on `PATH` |
 | `[paths] node` | `NNNOTES_PATHS_NODE` | `--node` | Node.js executable; unset: `node` on `PATH` |
@@ -183,7 +183,7 @@ story text); it is not a setting.
 | `site build --live2d` / `--all-live2d` | catalog (bundles from the CDN of the site's first region), `[paths] apk`, `[paths] player`; not `node`; master data only for the model names (optional: without it `models.json` has no names) |
 | `site build --player-only` / `--reingest-json` | `[paths] player` |
 | `music-data` | catalog, `[master] key` + `iv` (not with `--decoded-master`); `--master-files` also `[catalog] region`; `--apk-master` also `[paths] apk`; `--decoded-master` also `[catalog] region` and master data with its `MasterManifest.json`; `[paths] apk` (optional otherwise) for the client version |
-| `export assets`, `depot plan` | catalog (bundles are fetched into the depot); `[paths] apk` for the bundles inside the APK (without it they are reported as `source.absent`); master data for `--views`; with `--stored-catalog` a catalog version of the depot instead of the current catalog |
+| `export assets`, `depot plan` | catalog (bundles are fetched into the depot); `[paths] apk` for the bundles inside the APK (without it they are reported as `source.absent`) and its built-in Unity files ([stages.md](stages.md#the-apks-built-in-files)); master data for `--views`; with `--stored-catalog` a catalog version of the depot instead of the current catalog |
 | `depot run` | the depot; `--fetch` also what fetching needs (region, `cdn`, bundle key, `[paths] apk`) |
 | `catalog versions` / `import` / `diff`, `depot verify` | the depot; `import` reads the APK's catalog from `[paths] apk` when it is set |
 | `catalog fetch` | the depot, `[catalog] region` and `language`, that region's `cdn`; its `api` (optional) for the resource version label |

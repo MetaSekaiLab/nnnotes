@@ -12,17 +12,8 @@ from UnityPy.streams.EndianBinaryReader import EndianBinaryReader
 
 from nnnotes import cli
 from nnnotes.source.config import ConfigError
-from nnnotes.unity.player import (
-    HEADER,
-    TYPETREE_FORMAT,
-    PlayerData,
-    UnsupportedVersion,
-    dump_typetrees,
-    load_typetrees,
-    manifest_version_name,
-    typetree_key,
-    typetree_node,
-)
+from nnnotes.unity.player import HEADER, PlayerData, UnsupportedVersion, manifest_version_name
+from nnnotes.unity.scripttypes import TYPETREE_FORMAT, dump_typetrees, load_typetrees, typetree_key, typetree_node
 from tests.helpers import synth
 
 TYPETREE_DIR = resources.files("nnnotes.unity").joinpath("typetrees")

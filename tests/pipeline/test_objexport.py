@@ -560,10 +560,62 @@ def bundle_movie() -> FakeEnvironment:
     return env
 
 
-BUNDLES = {"all": bundle_all, "atlas": bundle_atlas, "plain": bundle_plain, "movie": bundle_movie}
+# a player's own file: no type trees; MonoBehaviours whose classes have a shipped type tree (one of another type
+# hash), and none
+PLAYER = "globalgamemanagers.assets"
+PLAYER_HASH, OTHER_HASH = "a1" * 16, "b2" * 16
+SETTINGS, IMAGE, CHANGED = "Fwk|Fwk.Sound|SoundVolumeSettings", "UnityEngine.UI|UnityEngine.UI|Image", "Game|Game|Moved"
+PLAYER_SCRIPTS = {f"{PLAYER}:50": SETTINGS, f"{PLAYER}:51": IMAGE, f"{PLAYER}:52": CHANGED}
+SETTINGS_ROWS = [
+    [0, "MonoBehaviour", "Base", 0],
+    [1, "PPtr<GameObject>", "m_GameObject", 0],
+    [2, "int", "m_FileID", 0],
+    [2, "SInt64", "m_PathID", 0],
+    [1, "UInt8", "m_Enabled", 0x4000],
+    [1, "PPtr<MonoScript>", "m_Script", 0],
+    [2, "int", "m_FileID", 0],
+    [2, "SInt64", "m_PathID", 0],
+    [1, "string", "m_Name", 0],
+    [1, "PPtr<Texture2D>", "target", 0],
+    [2, "int", "m_FileID", 0],
+    [2, "SInt64", "m_PathID", 0],
+    [1, "float", "volume", 0],
+]
+PLAYER_TYPETREES = {
+    SETTINGS: {"typeHash": PLAYER_HASH, "nodes": SETTINGS_ROWS},
+    CHANGED: {"typeHash": OTHER_HASH, "nodes": SETTINGS_ROWS},
+}
 
 
-def open_fake(data: bytes) -> UnityBundle:
+def bundle_player() -> FakeEnvironment:
+    env = FakeEnvironment()
+    f = env.file(PLAYER, externals=["Library/unity default resources"], typetrees=False)
+    h = bytes.fromhex(PLAYER_HASH)
+    settings = {"productGUID": "00", "m_ActiveColorSpace": 1, "m_MTRendering": True}
+    f.add(1, "PlayerSettings", settings, type_hash=bytes.fromhex("936fd1913a4f0b5da2ce7cadb0ce9666"), short_read=True)
+    f.add(6, "PlayerSettings", settings, type_hash=h, short_read=True)
+    f.add(2, "MonoBehaviour", _mono(0, pptr(50), "volume", target=pptr(10, 1), volume=0.5), type_hash=h)
+    f.add(3, "MonoBehaviour", _mono(20, pptr(51), "", m_Sprite=pptr(10, 1)), type_hash=h)
+    f.add(4, "MonoBehaviour", _mono(0, pptr(52), "moved", target=pptr(0), volume=1.0), type_hash=h)
+    f.add(5, "MonoBehaviour", _mono(0, pptr(51), "image", m_Sprite=pptr(10, 1)), type_hash=h)
+    f.add(20, "GameObject", _go("Canvas", [21, 3]))
+    f.add(21, "Transform", _transform(20))
+    for pid, entry in ((50, SETTINGS), (51, IMAGE), (52, CHANGED)):
+        asm, ns, cls = entry.split("|")
+        f.add(pid, "MonoScript", {"m_Name": cls, "m_ClassName": cls, "m_Namespace": ns, "m_AssemblyName": asm})
+    return env
+
+
+BUNDLES = {
+    "all": bundle_all,
+    "atlas": bundle_atlas,
+    "plain": bundle_plain,
+    "movie": bundle_movie,
+    "player": bundle_player,
+}
+
+
+def open_fake(data: bytes, name: str | None = None) -> UnityBundle:
     return UnityBundle(BUNDLES[bytes(data).decode().removeprefix("fake:")]())
 
 
@@ -574,7 +626,7 @@ def classes_of(name):
     return sorted({r.type.name for f in BUNDLES[name]().assets for r in f.objects.values()})
 
 
-def task_for(depot, name, classes=None, params=None, scripts=None):
+def task_for(depot, name, classes=None, params=None, scripts=None, typetrees=None):
     data = f"fake:{name}".encode()
     sha = depot.put(data)
     stage = ExportStage(FAKE_READER)
@@ -586,7 +638,7 @@ def task_for(depot, name, classes=None, params=None, scripts=None):
         p,
         export_atoms(classes_of(name), FAKE_READER.id),
         (Input("bundle", sha, len(data), f"{name}.bundle", ({"kind": "depot"},)),),
-        {"scripts": dict(SCRIPTS if scripts is None else scripts)},
+        {"scripts": dict(SCRIPTS if scripts is None else scripts), **({"typetrees": typetrees} if typetrees else {})},
     )
 
 
@@ -1268,7 +1320,7 @@ def census_doc(view: UnityBundle) -> dict:
                 continue
             classes[o.class_name] = classes.get(o.class_name, 0) + 1
             rec = {"pathId": o.path_id, "classId": o.class_id, "class": o.class_name}
-            tt = view.typetree(o)
+            tt = view.reader(o).read_typetree(check_read=False)  # a header read, as the census'
             ext = view.externals(f)
 
             def ref(s):
@@ -1286,7 +1338,9 @@ def census_doc(view: UnityBundle) -> dict:
             if bindings:
                 rec["bindingScripts"] = [ref(b) for b in bindings]
             objs.append(rec)
-        files.append({"name": f, "objects": objs})
+        files.append(
+            {"name": f, "unityVersion": view.unity_version(f), "typetree": view.stores_typetrees(f), "objects": objs}
+        )
     return {
         "schema": contract.CENSUS,
         "files": files,
@@ -1355,6 +1409,68 @@ def test_describe_reads_the_census_and_the_script_table(tmp_path):
     fresh.waiting("unity.census:all")
     with pytest.raises(Pending):
         describe(stage, "all", None, fresh)
+
+
+def test_files_without_type_trees_read_their_scripts_with_the_shipped_ones(tmp_path):
+    depot = Depot(tmp_path / "s")
+    doc = run(depot, task_for(depot, "player", scripts=PLAYER_SCRIPTS, typetrees=PLAYER_TYPETREES))
+    items = by_object(doc)
+
+    def p(pid):
+        return oid(pid, PLAYER)
+
+    def script(pid, cls):
+        return {"$ref": {"file": PLAYER, "pathId": pid, "class": "MonoScript", "name": cls}}
+
+    assert items[p(2)]["status"] == "exported"
+    assert obj(depot, doc, f"{p(2)}#json") == {
+        "$script": SETTINGS,
+        "m_GameObject": None,
+        "m_Enabled": 1,
+        "m_Script": script(50, "SoundVolumeSettings"),
+        "m_Name": "volume",
+        "target": {"$ref": {"file": "unity default resources", "pathId": 10}},
+        "volume": 0.5,
+    }
+    assert items[p(2)]["refs"] == [p(50), "unity default resources:10"]
+    # a class without a shipped type tree, or with one of another type hash: its header, and the reason
+    for pid, why in ((5, f"has none for {IMAGE}"), (4, f"type hash {PLAYER_HASH} is not the type tree's")):
+        assert items[p(pid)]["status"] == "generic"
+        assert items[p(pid)]["reason"]["code"] == "unsupported.typetree" and why in items[p(pid)]["reason"]["message"]
+    assert obj(depot, doc, f"{p(5)}#json") == {
+        "m_GameObject": None,
+        "m_Enabled": 1,
+        "m_Script": script(51, "Image"),
+        "m_Name": "image",
+    }
+    # a hierarchy keeps its components' headers and says so
+    assert art(doc, f"{p(20)}#json")["semantics"]["issues"] == [
+        {
+            "code": "unsupported.typetree",
+            "message": "1 components read in part (their file stores no type tree that fits)",
+        }
+    ]
+    # a class whose type tree reads the stored layout right up to a known field (by its type hash): those fields
+    assert items[p(1)]["status"] == "generic" and items[p(1)]["reason"]["code"] == "unsupported.typetree"
+    assert "read up to m_ActiveColorSpace" in items[p(1)]["reason"]["message"]
+    assert obj(depot, doc, f"{p(1)}#json") == {"productGUID": "00", "m_ActiveColorSpace": 1}
+    assert items[p(6)]["status"] == "failed" and items[p(6)]["reason"]["code"] == "failed.read"
+    (component,) = obj(depot, doc, f"{p(20)}#json")["nodes"][0]["components"]
+    assert component["script"] == IMAGE and set(component["fields"]) == {"m_Enabled", "m_Script", "m_Name"}
+    assert items[p(3)]["status"] == "contained"
+
+
+def test_the_context_holds_the_shipped_type_trees_of_its_scripts(tmp_path):
+    from nnnotes.unity import scripttypes
+
+    shipped = scripttypes.load_typetrees("6000.3.12f1")["classes"]["DOTween.dll|DG.Tweening.Core|DOTweenSettings"]
+    entry = "DOTween|DG.Tweening.Core|DOTweenSettings"  # as the script table names it
+    env = planning_env(Depot(tmp_path / "s"), names=("player",), scripts={**PLAYER_SCRIPTS, f"{PLAYER}:50": entry})
+    t = describe(ExportStage(FAKE_READER), "player", None, env)
+    assert t.context["typetrees"] == {entry: shipped}
+    assert (
+        "typetrees" not in describe(ExportStage(FAKE_READER), "all", None, planning_env(Depot(tmp_path / "t"))).context
+    )
 
 
 def test_class_selection_keeps_only_its_converters_in_the_key(tmp_path):

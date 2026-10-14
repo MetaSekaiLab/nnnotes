@@ -92,12 +92,22 @@ def _install_blob_memo() -> bool:
 _install_blob_memo()
 
 
-def load(path: str | Path) -> UnityPy.environment.Environment:
-    return UnityPy.load(str(path))
+def load(path: str | Path, name: str | None = None) -> UnityPy.environment.Environment:
+    """The environment of a bundle file or a serialized file (load_bytes)."""
+    if name is None:
+        return UnityPy.load(str(path))
+    return load_bytes(Path(path).read_bytes(), name)
 
 
-def load_bytes(data: bytes) -> UnityPy.environment.Environment:
-    return UnityPy.load(io.BytesIO(data))
+def load_bytes(data: bytes, name: str | None = None) -> UnityPy.environment.Environment:
+    """The environment of a bundle's bytes, or of a serialized file's: `name` names a serialized file outside a bundle
+    (`unity default resources`; references into it name it so), which UnityPy would name after the stream. A
+    bundle's files keep their own names."""
+    if name is None:
+        return UnityPy.load(io.BytesIO(data))
+    env = UnityPy.Environment()
+    env.load_file(io.BytesIO(data), name=name)
+    return env
 
 
 _closures = threading.local()

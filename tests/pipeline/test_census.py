@@ -295,8 +295,8 @@ def test_census_stage(tmp_path, monkeypatch):
     bundle.write_bytes(b"UnityFS\0 not really")
     loaded = []
 
-    def load(path):
-        loaded.append(str(path))
+    def load(path, name=None):
+        loaded.append((str(path), name))
         return scene_bundle()[0]
 
     monkeypatch.setattr(unity, "load", load)
@@ -316,10 +316,15 @@ def test_census_stage(tmp_path, monkeypatch):
     assert rec["id"] == "unity.census:x#census" and rec["semantics"]["facts"]["objects"] == 7
     assert rec["provenance"]["inputs"] == [{"role": "bundle", "sha256": sha}]
     assert contract.loads(depot.read(rec["content"]["sha256"])) == census.census_env(scene_bundle()[0])
-    assert loaded == [str(bundle)]
+    assert loaded == [(str(bundle), None)]  # a catalog bundle: its files keep their names
     assert execute(task, depot, registry(stage)).status == "hit" and len(loaded) == 1
     with pytest.raises(ValueError, match="expected 'bundle'"):
         describe(stage, "x", None, Env(depot, {"bundles": {"x": Input("other", sha, size)}}))
     for waiting in (None, Pending("fetch:x_1.bundle")):
         with pytest.raises(Pending, match="fetch:x"):
             describe(stage, "x", None, Env(depot, {"bundles": {"x": waiting}}))
+    # a serialized file of the APK outside a bundle is loaded under the name references into it use
+    own = "apk/Resources/unity default resources"
+    task = describe(stage, own, None, Env(depot, {"bundles": {own: inp}}))
+    assert execute(task, depot, registry(stage)).status == "ran"
+    assert loaded[-1] == (str(bundle), "unity default resources")

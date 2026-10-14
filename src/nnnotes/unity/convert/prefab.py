@@ -10,7 +10,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from types import SimpleNamespace
 
-from .objects import NO_SCRIPT, BundleObjects, ReadError, encode_object, message
+from .objects import NO_SCRIPT, TYPETREE, BundleObjects, ReadError, encode_object, message
 
 __all__ = ["Hierarchies", "Root", "hierarchies", "prefab"]
 
@@ -132,7 +132,7 @@ def _subtree(ctx: BundleObjects, h: Hierarchies, f: str, g, root_tf: int):
 
 def _component(ctx: BundleObjects, h: Hierarchies, o, root: tuple, unresolved: list) -> dict:
     key = ctx.key(o)
-    tt = ctx.tt(key)
+    tt = ctx.tt(key, whole=False)
     out = {"type": o.type.name, "pathId": key[1]}
     if o.type.name == "MonoBehaviour":
         entry = ctx.mono_script(key, tt)
@@ -184,10 +184,13 @@ def prefab(ctx: BundleObjects, info, h: Hierarchies, root: Root) -> None:
     if info.file in h.scene_of:
         doc["scene"] = h.scene_of[info.file]
     doc["nodes"] = nodes
-    issues = (
-        [("script.unresolved", f"{len(unresolved)} MonoBehaviours whose script is not in the task's script table")]
-        if unresolved
-        else []
-    )
+    issues = []
+    if unresolved:
+        issues.append(
+            ("script.unresolved", f"{len(unresolved)} MonoBehaviours whose script is not in the task's script table")
+        )
+    partial = sum(1 for k in root.members if k in ctx.partial)
+    if partial:
+        issues.append((TYPETREE, f"{partial} components read in part (their file stores no type tree that fits)"))
     facts = {"nodes": len(nodes), "objects": len(root.members)}
     ctx.emit(key, "json", encode_object(doc), "json", "prefab", "json", facts, issues=issues)

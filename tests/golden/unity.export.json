@@ -7,7 +7,7 @@
   "cri.usm": "cri.usm/1",
   "data": "data/2",
   "font": "font/2",
-  "generic.json": "generic.json/1",
+  "generic.json": "generic.json/2",
   "gltf.write": "numpy-2.4.6/1",
   "material.json": "material.json/1",
   "mesh.arrays": "numpy-2.4.6/1",
@@ -26,68 +26,68 @@
  },
  "fixtures": {
   "all": {
-   "key": "10585d61586a4362e7e5a3c8857a9b583fac363abb5874e760d767fde9cb7d30",
-   "result": "3bd7b57ee922de132411cb8d027a00421fed5c5a595cdb3eef3e3cb5982b7374"
+   "key": "bfa791aaeaa8744197413dca21b95285355376a687dcb4a5b511410b4761bd28",
+   "result": "d9f811e5ca222529d22d1c5e2ec9cd89328d0229eac92b7e01d0cb59dbc56077"
   },
   "bundle.json": {
-   "key": "fb99b80d44ff61bf4b90ea87e40a632c0f34372ddebd60dd00f74368c5f6b94d",
-   "result": "169b9bab48a8cb6423de878430b6291bf56999a5d640e9893dc2a1eeda9b93f9"
+   "key": "019bd61d3b8989c2f59289354d72d3857ed37cab1d90316359e6702ebab8a515",
+   "result": "f1516133579ff990af232a7b6d8b6303104c59997d20905f16aa280403d3a09e"
   },
   "clip.json": {
-   "key": "535034c7ce7875a3ea19ebadbb4d12bca912621d38982cd47097cb1c66ff62c5",
-   "result": "fad3849534a5ad3892f968f567c88efa426088232df6e26a8f646757592fa135"
+   "key": "a9f5fb2a87fbcb197a5bc37f1c520b7b5a4a6fd5b5ad38b1198e9f8601dc223b",
+   "result": "6448026702f2239970f8041906335b3a2302a4463536d2f0394daa36906d9c79"
   },
   "controller.json": {
-   "key": "522f6cefe4102041b197c0feda95de6668a7e88ab548b0d682ef26b492079fd1",
-   "result": "f17bc2432ad36b87f17e3fffec59eab429a803d23f0bc63db018ba2d99a847db"
+   "key": "472e6426b3af184e4fb17ccc0a147bd7b6fc9e5fc49f32d0ab2c2d79238417e1",
+   "result": "c43f0d2de335f10063d20f2d208b54cf7da37863860441a22781bce35f0cb1cc"
   },
   "cri.usm": {
-   "key": "8d1d45652a6a631253b3bad7f096af988fcc3894831a8fe5e7ec90b939bc3427",
-   "result": "9a0ca28ce190fc8b5c03fc108b657825c1361a05b416894d2f9c55402cae62fd"
+   "key": "72cba01cb4fe8fa95d052a2fd17380eaacdd722dc0e5fc802bce8a301560e7a0",
+   "result": "9fecf00c65642c4ebb635839f79d9001cf4308b367711c2acaf82fa53326cff5"
   },
   "data": {
-   "key": "98f3c28baedd007e88d9a48adccdad2a1970e63df6e487917cf1c6823feb651d",
-   "result": "a2c0972bc1c388038dedb9b70f4a8a6d67b58dfca0faac3c438610df125c7234"
+   "key": "1b44691876cbf5e28032ac2858d9616a8445e2357c543291e2806506c8c0a0b4",
+   "result": "cdaf30aeb760eef66ec41e029940a800af4d72b0ca0c4545c9c911b6c94fd331"
   },
   "font": {
-   "key": "c1a50c8ae58a104313d93a7296464812f98c82d8c9aa516589b9d6e5cb89bffa",
-   "result": "d18d119de09ed000abca438357e72951a18d576c2b26b76932adf9621f67d2bd"
+   "key": "7d5549079bee9a0778d9d698545f21bfd0fea5466e0efa160661cfb527a83ea9",
+   "result": "d58abbc2a1b9990fadca993ac0502dc2d586b79e4947bfd1b6fb0a9f7bbc41b0"
   },
   "generic.json": {
-   "key": "3f111bf015cc23af61fb457ad94be8c3479259d2e8ec2388390580161179afde",
-   "result": "a79ea2404c179705d54adb9c08f917acedd070bffccc01ba72da3f68af522cd4"
+   "key": "22deb0da7906ad444ca282fb2a8f993106268f748f2fab35357c049e5b020410",
+   "result": "a41f325a63c894bfe54aba013c1ee7aa6d674fddd49715c5e3898b7f40e6559c"
   },
   "material.json": {
-   "key": "fd0603efb48c4582fa8664efcc44be7e238dc6168846dd5528ac6ec350732903",
-   "result": "373545644b49d9047bae346a78186d7bd0b1b5158d17a393b42050e505209e32"
+   "key": "b8b07211d9dbc578b3541a0e59653b01506a211426cc70b6e0aa2e82a948167e",
+   "result": "09085e48baebbda4a78a076e5dc66eeb19ae1f53710ec9f9b3553bb86dfdefde"
   },
   "mesh.glb": {
-   "key": "d14c16a5c18145cc039a4568b4c8561b0120644c2de1e1abd1dd1be1f17917f0",
-   "result": "650489a1a9d4e52ae66bc44a101ad5c127e9aa836c8d69e4c08c662e70c73b47"
+   "key": "1c9b9a873c782e16650ef40cc0a41c17d37da55e05da6d44f47c488cc12d5027",
+   "result": "58304a1fd371109dbc38f99cd578ad8238453e769ae8c9d8562e1e187e2df1bc"
   },
   "mono.json": {
-   "key": "5820ec6ca51a697d9ad2f3ed1ee5c8a849fd8f813b053f335b86b1b95082abd8",
-   "result": "cdabce4d56148f552c87738a9208fd36d0cc581590d7e5eb92f8e5b522de2266"
+   "key": "f2109d87be61d8cf5b0b527326d2cdc474785104091c55e770a18b31cd967b23",
+   "result": "02bc065f80513aad7e9afc21704d0f9591e0f110c9ff6fd818f357fe139686f8"
   },
   "prefab.json": {
-   "key": "8994f1ef92388d443797f11c65a61a6346acf01ff0dc8bfbd36dc2fb2d2d23d2",
-   "result": "368986bcb1df65ea7fb906e01fe49b814c35e41212a079cdfcc5b70d5ed06559"
+   "key": "583e77337b68385457bb1f7ec789c943d69729706adc18b47d59354bd04fcf94",
+   "result": "3751c24516ea904f342e272234e57357b4c5d03ef6e90637c5c8bffbbca78d2a"
   },
   "scripts.json": {
-   "key": "aafda4c0fe111458f3b48e85b8f60d0e9234dd250590591966a8ac3305d99ef9",
-   "result": "a2644c8fe5f8198b3771374f10ad01b91a9b111d74aff79b85a9b9b2e071e2c5"
+   "key": "6e6a37fb9135463601b78a8a5f699996221242585bcc31c63863158ca0a3f9dd",
+   "result": "9e9b03c721f1f163ed6e81c202b767a7af84be95e662d4d3b5a9b8d46bfe3392"
   },
   "shader.json": {
-   "key": "a71aa982ce0da9929eaf721a1db903ac0565e1232c94a1d451cdf818f2c59f31",
-   "result": "fef75615b20f6dc056a4934606d1f094159e219b87482b5efae95c407d0f6d55"
+   "key": "f3c2c279ab2ed59a70932b19111c4f248593ec3ca9e0677b9402c38cb8505d03",
+   "result": "dac4f3d4f225dd3659ac78ab0b344daaa64e1a0a6f7dfe759f3ab49ffe3b3c43"
   },
   "sprite.png": {
-   "key": "d42d38c45711b2de94fc4509b0dd8d919d01d123091f09d54e177df7e4cf751d",
-   "result": "5c6d4968cbc56a1eefb9c8c94b380487f9876f591e33acbef40bb735edbb70b9"
+   "key": "d35fe9220f41f10d16b8506f48f31774e9303a8ce6e7b2deba3eb2b26edc56d9",
+   "result": "ebe1ea68a2fb3289366624724ec4a9335ff6e42156ce4003c7669106e3981482"
   },
   "tex.png": {
-   "key": "a5af40387bb2c9fe6ba31415af4e4028163eab23bd4114ad4384b57159ae1318",
-   "result": "54d91ffc00400f162f677f9e1525e34698b33dc439560b4372dffcd09a8dd73b"
+   "key": "1408f5b984cbcc1c74d23e3c6ef518288f2d112b6b2e4007aecb7f811ddfc809",
+   "result": "fec1a912d37045add008ea5c12941ea9c6e9eeb0cc0adb6b4d5be81c89ac26eb"
   }
  },
  "libraries": {

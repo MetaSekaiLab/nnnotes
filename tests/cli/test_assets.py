@@ -123,6 +123,25 @@ def bundle_bytes(doc: dict) -> bytes:
     return b"UnityFS\0" + contract.encode(doc)
 
 
+def builtin_census() -> dict:
+    """The census of a player's data.unity3d: files without type trees and AssetBundle objects."""
+    doc = cdoc("globalgamemanagers.assets", [obj(2, "Shader", "Blit")])
+    head = dict(doc["files"][0], typetree=False)
+    files = [head, dict(head, name="unity_builtin_extra", objects=[obj(7, "Shader", "UI_Default")])]
+    return dict(doc, files=files, assetBundles=[], classes={"Shader": 2}, objects=2)
+
+
+def builtin_apk(path, extra=()) -> Path:
+    """An APK holding the player's data.unity3d (builtin_census) and `extra` members {name: bytes}."""
+    import zipfile
+
+    with zipfile.ZipFile(path, "w") as z:
+        z.writestr("assets/bin/Data/data.unity3d", bundle_bytes(builtin_census()))
+        for n, data in dict(extra).items():
+            z.writestr(n, data)
+    return path
+
+
 def catalog_bytes(extra=()) -> bytes:
     remote = {n: synth.remote(NAMES[n]) for n in NAMES}
     entries = [(NAMES[n], remote[n], []) for n in ("card_1", "card_2", "shared", "bg_x")] + list(extra)
@@ -199,7 +218,7 @@ class FakeExport(Stage):
         scripts = contract.loads(depot.input_bytes(task.input("scripts")))["scripts"]
         if any(o["class"] == "Crash" for f in doc["files"] for o in f["objects"]):
             raise ConfigError("setting paths.tool is not set")
-        container = {(e["file"], e["pathId"]): e["path"] for e in doc["assetBundles"][0]["container"]}
+        container = {(e["file"], e["pathId"]): e["path"] for b in doc["assetBundles"] for e in b["container"]}
         only = task.params["classes"]
         arts, items, first = [], [], None
         for f in doc["files"]:
@@ -328,6 +347,60 @@ def test_select_adds_the_dependencies_to_the_census():
     s = assets.select(idx, ["bundle:bg_*"])
     assert s.selected == s.census == [stable["bg_x"]]
     assert assets.select(idx, ["all"]).selected == sorted(stable.values())
+
+
+def test_select_always_census_the_built_in_files():
+    from nnnotes.pipeline.catalogdb import index
+
+    idx = index(catalog_bytes())
+    stable = {n: contract.stable_bundle_name(NAMES[n]) for n in NAMES}
+    own = ["apk/data.unity3d", "apk/Resources/unity default resources"]
+    s = assets.select(idx, ["all"], own)
+    assert s.selected == s.census == sorted([*stable.values(), *own])
+    s = assets.select(idx, ["group:bg"], own)
+    assert s.selected == [stable["bg_x"]] and s.census == sorted([stable["bg_x"], *own])
+    s = assets.select(idx, ["bundle:apk/data*"], own)
+    assert s.selected == ["apk/data.unity3d"] and s.census == sorted(own)
+
+
+def test_the_built_in_files_of_the_apk_are_exported(tmp_path, capsys, fake, monkeypatch):
+    monkeypatch.setattr("nnnotes.pipeline.catalogdb.apk_version", lambda apk: None)
+    d = setup_data(tmp_path, censuses(broken=False))
+    apk = builtin_apk(tmp_path / "base.apk", {"assets/aa/catalog.bin": synth.CatalogWriter().build([])})
+    base = [*flags(d), "--apk", apk, "depot", "plan", "--depot", tmp_path / "s", "--json"]
+    code, out, err = nn(capsys, *base, "--select", "group:bg")
+    ids = {n["id"] for n in json.loads(out)["nodes"]}
+    assert "unity.census:apk/data.unity3d" in ids and "unity.export:apk/data.unity3d" not in ids
+    code, out, err = nn(
+        capsys,
+        *flags(d),
+        "--apk",
+        apk,
+        "export",
+        "assets",
+        "-o",
+        tmp_path / "o",
+        "--depot",
+        tmp_path / "s",
+        "--workers",
+        "0",
+    )
+    assert code == 0, err
+    root = tmp_path / "o" / "_bundles" / "apk" / "data.unity3d"
+    assert (root / "unity_builtin_extra" / "Shader" / "UI_Default~7.json").is_file()
+    assert (root / "globalgamemanagers.assets" / "Shader" / "Blit~2.json").is_file()
+    run = contract.loads((tmp_path / "o" / assets.REPORTS / "run.json").read_bytes())
+    depot = Depot(tmp_path / "s")
+    key = {t["id"]: t["key"] for t in run["tasks"]}["link.addresses:main"]
+    rec = depot.result(key)["artifacts"][0]
+    table = contract.loads(depot.read(rec["content"]["sha256"]))
+    assert table["files"]["unity_builtin_extra"] == table["files"]["globalgamemanagers.assets"] == "apk/data.unity3d"
+    assert table["bundles"]["apk/data.unity3d"] == {
+        "name": "data.unity3d",
+        "files": ["globalgamemanagers.assets", "unity_builtin_extra"],
+        "assetBundleName": None,
+        "keys": [],
+    }
 
 
 # ---------------------------------------------------------------- export
@@ -1196,7 +1269,6 @@ class RawCopy(Stage):
 
 def raw_apk(tmp_path, monkeypatch):
     """An APK with one raw file (a CRI sheet of the APK's catalog) and the CRI stage stand-in; -> (apk, name)."""
-    import zipfile
 
     monkeypatch.setattr(
         assets,
@@ -1205,11 +1277,10 @@ def raw_apk(tmp_path, monkeypatch):
     )
     monkeypatch.setattr("nnnotes.pipeline.catalogdb.apk_version", lambda apk: None)
     name = "cri_assets_embcri/sound/initialse_" + "ab" * 16
-    apk = tmp_path / "base.apk"
-    with zipfile.ZipFile(apk, "w") as z:
-        z.writestr("assets/aa/catalog.bin", synth.CatalogWriter().build([("Cri/Initial/se", synth.local(name), [])]))
-        z.writestr("assets/aa/Android/" + name, b"@UTF sheet")
-        z.writestr("assets/bin/Data/data.unity3d", b"boot")
+    catalog = synth.CatalogWriter().build([("Cri/Initial/se", synth.local(name), [])])
+    apk = builtin_apk(
+        tmp_path / "base.apk", {"assets/aa/catalog.bin": catalog, "assets/aa/Android/" + name: b"@UTF sheet"}
+    )
     return apk, name
 
 

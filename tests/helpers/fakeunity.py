@@ -62,6 +62,7 @@ CLASS_IDS = {
     "Animator": 95,
     "MonoBehaviour": 114,
     "MonoScript": 115,
+    "PlayerSettings": 129,
     "Font": 128,
     "AssetBundle": 142,
     "AnimatorController": 91,
@@ -501,6 +502,9 @@ def node_of(
     raise TypeError(f"{name}: no node for {type(value).__name__}")
 
 
+HEADER_FIELDS = ("m_GameObject", "m_Enabled", "m_Script", "m_Name")  # a MonoBehaviour's own fields
+
+
 class FakeObjectReader:
     def __init__(
         self,
@@ -515,8 +519,10 @@ class FakeObjectReader:
         platform: int = ANDROID,
         node=None,
         bytes_fields=(),
+        short_read: bool = False,
     ):
         self.assets_file, self.path_id, self.tt, self.obj, self.raw = assets_file, path_id, tt, obj, raw
+        self.short_read = short_read  # its class's tree reads fewer bytes than it has: a checked whole read fails
         self.class_id = CLASS_IDS[class_name]
         self.type = SimpleNamespace(name=class_name, value=self.class_id)
         self.byte_size = len(raw)
@@ -525,18 +531,30 @@ class FakeObjectReader:
         self.typetree_reads = 0
         self._node, self._bytes_fields = node, tuple(bytes_fields)
 
+    def _stripped(self) -> bool:
+        """A MonoBehaviour of a file that stores no type trees: its class's own tree reads its header only."""
+        return self.type.name == "MonoBehaviour" and not self.assets_file._enable_type_tree
+
     def read_typetree(self, nodes=None, wrap: bool = False, check_read: bool = True):
-        """The typetree (a copy); with a cut node (UnityPy's head reads) only the fields the node names."""
+        """The typetree (a copy); with a cut node (UnityPy's head reads) only the fields the node names. A stripped
+        MonoBehaviour read with a tree that does not name all its fields fails the size check."""
         self.typetree_reads += 1
         tt = copy.deepcopy(self.tt)
+        if nodes is None and self._stripped():
+            nodes = self._get_typetree_node()
+        if nodes is None and check_read and self.short_read:
+            raise ValueError("Expected to read 996 bytes, but only read 992 bytes")
         if nodes is not None:
             names = [c.m_Name for c in nodes.m_Children]
+            if check_read and self._stripped() and set(tt) - set(names):
+                raise ValueError(f"Expected to read {len(self.raw) or 100} bytes, but only read 16 bytes")
             tt = {k: v for k, v in tt.items() if k in names}
         return tt
 
     def _get_typetree_node(self, node=None):
         if self._node is None:
-            self._node = node_of(self.tt, "Base", self.type.name, self._bytes_fields)
+            tt = {k: v for k, v in self.tt.items() if k in HEADER_FIELDS} if self._stripped() else self.tt
+            self._node = node_of(tt, "Base", self.type.name, self._bytes_fields)
         return self._node
 
     def peek_name(self):
@@ -560,8 +578,11 @@ class FakeResource:
 
 
 class FakeSerializedFile:
-    def __init__(self, name: str, environment, externals=(), version=VERSION, unity_version="6000.3.12f1"):
+    def __init__(
+        self, name: str, environment, externals=(), version=VERSION, unity_version="6000.3.12f1", typetrees=True
+    ):
         self.name, self.environment, self.version, self.unity_version = name, environment, version, unity_version
+        self._enable_type_tree = typetrees
         self.objects: dict[int, FakeObjectReader] = {}
         self.externals = [SimpleNamespace(path=p) for p in externals]
         self.container = SimpleNamespace(container=[])
@@ -585,8 +606,8 @@ class FakeEnvironment:
         self.resources: dict[str, bytes] = {}
         self.lookups: list[str] = []
 
-    def file(self, name: str, externals=()) -> FakeSerializedFile:
-        f = FakeSerializedFile(name, self, externals)
+    def file(self, name: str, externals=(), typetrees: bool = True) -> FakeSerializedFile:
+        f = FakeSerializedFile(name, self, externals, typetrees=typetrees)
         self.assets.append(f)
         return f
 
