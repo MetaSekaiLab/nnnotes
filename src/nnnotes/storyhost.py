@@ -606,7 +606,7 @@ def background(cat, key: str, situation_name: str, ex: Exporter) -> dict:
     graph = SceneGraph(env)
     mf_by_go, mr_by_go = room.mesh_components(env)
     rendered = {go for _, go in mr_by_go}  # SceneGraph: a GameObject path id is in one file only
-    root_go = container_go(env, cat._entry(key)["internal_id"]).path_id
+    root_go = container_go(env, cat.entry(key)["internal_id"]).path_id
     root = graph.tf_of_go[root_go]
     spot_bg, volumes = [], []
     for o in env.objects:
@@ -870,7 +870,7 @@ def home_host(cat, master_dir, player, host: dict, hdir: Path, keys: dict) -> di
     room_doc = room.extract_room(cat, bg_key, sdir / "room.glb")
     ex = Exporter(cat, hdir, player=player, textures="deferred", inline_meshes=False)
     sit_env = UnityPy.load(*[str(p) for p in cat.fetch_key(sit_key)])
-    sit_go = container_go(sit_env, cat._entry(sit_key)["internal_id"])
+    sit_go = container_go(sit_env, cat.entry(sit_key)["internal_id"])
     sit_name = sit_go.read_typetree()["m_Name"]
     sit_graph = SceneGraph(sit_env)
     sit_lights = [

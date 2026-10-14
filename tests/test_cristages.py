@@ -1,6 +1,6 @@
 """cri.audio and cri.movie on synthetic data: subjects by content (raw files and the ACB artifacts of unity.export),
 the ACB / AWB pairing, the key's source, the tools' ids, the artifacts equal to cri.decode's files and to
-advvideo.demux's streams, the unsupported forms, laziness, the documentation and the golden records' providers."""
+usm.demux's streams, the unsupported forms, laziness, the documentation and the golden records' providers."""
 
 import json
 import re
@@ -12,8 +12,8 @@ from pathlib import Path
 from unittest import mock
 
 import pytest
-from test_advvideo import ADX, HCA, KEY, MPEG1, VP9, audio_header, build, chunk, rand, sbt, video_header
 from test_speed_exact import FakeTools
+from test_usm import ADX, HCA, KEY, MPEG1, VP9, audio_header, build, chunk, rand, sbt, video_header
 
 from nnnotes import cache, contract, cri, crikey, cristages
 from nnnotes.contract import IncompatibleTask, Input, Task
@@ -30,7 +30,7 @@ MOVIE_ATOMS = {"usm.demux", "movie.mux", "hca.decode"}
 
 
 def usm_file(audio=True, extra=(), streams=()):
-    """A VP9 movie (with its ADX audio) plus `streams` (test_advvideo.build entries) and `extra` chunks."""
+    """A VP9 movie (with its ADX audio) plus `streams` (test_usm.build entries) and `extra` chunks."""
     base = [(b"@SFV", 0, None, VP9, "video")] + ([(b"@SFA", 0, None, ADX, "audio")] if audio else [])
     return build([*base, *streams], extra=extra), VP9
 
@@ -348,7 +348,7 @@ def test_a_task_of_other_tools_is_incompatible(tmp_path, tools):
 
 # ---------------------------------------------------------------- cri.movie
 def test_movie_streams_as_stored_and_the_mkv(tmp_path, tools):
-    from nnnotes import advvideo
+    from nnnotes import usm
 
     store = Store(tmp_path / "s")
     data, frames = usm_file()
@@ -364,7 +364,7 @@ def test_movie_streams_as_stored_and_the_mkv(tmp_path, tools):
     with fake_tools(key=KEY):
         t, doc = run(stage, env, sha)
     assert t.params == {"format": "mkv", "flac": {"level": 8}} and set(t.atoms) == MOVIE_ATOMS
-    video, audio = advvideo.demux(data, KEY)
+    video, audio = usm.demux(data, KEY)
     assert load(store, doc, f"{t.id}#video.ivf") == video.data == b"".join(frames)
     assert load(store, doc, f"{t.id}#audio.adx") == audio.data
     assert art(doc, f"{t.id}#video.ivf")["semantics"] == {
@@ -372,7 +372,7 @@ def test_movie_streams_as_stored_and_the_mkv(tmp_path, tools):
         "format": "ivf",
         "facts": {"codec": "vp9", "width": 320, "height": 180, "frameRate": [30, 1], "frames": 3},
     }
-    assert art(doc, f"{t.id}#audio.adx")["semantics"]["facts"] == advvideo.adx_info(audio.data)
+    assert art(doc, f"{t.id}#audio.adx")["semantics"]["facts"] == usm.adx_info(audio.data)
     mkv = art(doc, f"{t.id}#movie.mkv")
     assert mkv["content"]["mediaType"] == "video/x-matroska" and mkv["semantics"]["facts"] == {
         "tracks": [
@@ -416,7 +416,7 @@ EVERY = [
 def test_movie_every_stream_kind(tmp_path, tools):
     """MPEG-1 video and alpha, two ADX channels, an HCA channel (decoded by vgmstream with the key) and two subtitle
     channels: every stream as stored, the subtitles as JSON / SubRip / WebVTT, every track in the Matroska file."""
-    from nnnotes import advvideo
+    from nnnotes import usm
 
     store = Store(tmp_path / "s")
     data = build(EVERY)
@@ -441,7 +441,7 @@ def test_movie_every_stream_kind(tmp_path, tools):
         ]
     )
     assert doc["items"][0]["status"] == "exported"
-    streams = {s.name: s for s in advvideo.demux(data, KEY)}
+    streams = {s.name: s for s in usm.demux(data, KEY)}
     assert load(store, doc, f"{t.id}#alpha.m1v") == streams["alpha"].data == b"".join(MPEG1)
     assert load(store, doc, f"{t.id}#audio_2.hca") == b"".join(HCA)
     alpha = art(doc, f"{t.id}#alpha.m1v")
@@ -591,7 +591,7 @@ def test_movie_parameters():
 def test_stage_modules_import_nothing_heavy():
     code = (
         "import sys; import nnnotes.cristages as c; c.AudioStage().normalize(None); "
-        "print(sorted(m for m in ('UnityPy', 'numpy', 'PIL', 'nnnotes.cri', 'nnnotes.advvideo', 'nnnotes.export')"
+        "print(sorted(m for m in ('UnityPy', 'numpy', 'PIL', 'nnnotes.cri', 'nnnotes.usm', 'nnnotes.export')"
         " if m in sys.modules))"
     )
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, cwd=ROOT, check=True)
@@ -601,7 +601,7 @@ def test_stage_modules_import_nothing_heavy():
 def test_reason_codes_and_stages_are_documented():
     doc = (ROOT / "docs" / "stages.md").read_text(encoding="utf-8")
     documented = set(re.findall(r"^\| `([a-z_]+(?:\.[A-Za-z_]+)+)` \|", doc, re.M))
-    text = "".join((ROOT / "src" / "nnnotes" / f).read_text(encoding="utf-8") for f in ("cristages.py", "advvideo.py"))
+    text = "".join((ROOT / "src" / "nnnotes" / f).read_text(encoding="utf-8") for f in ("cristages.py", "usm.py"))
     raised = set(cristages.REASONS) | set(re.findall(r'"(unsupported\.[a-z_.]+)"', text))
     assert raised - documented == set() and raised == set(cristages.REASONS)
     usm_codes = {c for c in documented if c.startswith("unsupported.usm.")}

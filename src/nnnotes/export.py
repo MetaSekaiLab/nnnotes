@@ -1720,12 +1720,12 @@ class Exporter:
     def key_object(self, key: str):
         """The object an addressable key names (its bundle's container asset)."""
         env, _ = self.load(key)
-        return self._container_asset(env, self.cat._entry(key)["internal_id"])
+        return self._container_asset(env, self.cat.entry(key)["internal_id"])
 
     def prefab(self, key: str, loaded=None) -> dict:
         """A prefab or scene as a node list; `loaded` = (env, graph) from load(key)."""
         env, graph = loaded or self.load(key)
-        iid = self.cat._entry(key)["internal_id"]
+        iid = self.cat.entry(key)["internal_id"]
         if iid.endswith(".unity"):
             scene_files = set()
             for o in env.objects:
@@ -1762,7 +1762,7 @@ class Exporter:
         """Any addressable key by its container asset: prefab or scene (node list), ScriptableObject,
         AnimatorController, AnimationClip, SpriteAtlas, Material, Texture2D, Sprite, Mesh; other kinds as
         {object, value} (typetree with references resolved)."""
-        iid = self.cat._entry(key)["internal_id"]
+        iid = self.cat.entry(key)["internal_id"]
         if iid.endswith(".unity"):
             return self.prefab(key)
         env, graph = self.load(key)

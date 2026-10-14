@@ -414,7 +414,7 @@ class RoomCatalog:
     def fetch_key(self, key):
         return []
 
-    def _entry(self, key):
+    def entry(self, key):
         return {"internal_id": PREFAB}
 
 

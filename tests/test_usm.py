@@ -1,5 +1,5 @@
-"""advvideo: USM masks, demux of every stream kind, subtitles, the movie files' ffmpeg arguments and the video index
-(synthetic data, made-up key)."""
+"""usm: USM masks, demux of every stream kind, subtitles, the movie files' ffmpeg arguments; advvideo: the video
+index (synthetic data, made-up key)."""
 
 import json
 import random
@@ -10,11 +10,11 @@ from pathlib import Path
 
 import pytest
 
-from nnnotes import advvideo
-from nnnotes.advvideo import Stream
+from nnnotes import advvideo, usm
+from nnnotes.usm import Stream
 
 KEY = 0x0123456789ABCDEF  # made up
-M1, M2, AM = advvideo.masks(KEY)
+M1, M2, AM = usm.masks(KEY)
 
 
 def ref_unmask_video(payload, m1, m2):
@@ -178,39 +178,39 @@ def sbt(language, unit, start, duration, text, nul=1):
 
 # ---------------------------------------------------------------- masks
 def test_masks():
-    m1, m2, am = advvideo.masks(KEY)
+    m1, m2, am = usm.masks(KEY)
     assert len(m1) == len(m2) == len(am) == 32
     assert bytes(x ^ 0xFF for x in m1) == m2
     assert am[1::2] == b"URUCURUCURUCURUC"
     assert am[0::2] == m2[0::2]
-    assert advvideo.masks(KEY) == (m1, m2, am) and advvideo.masks(KEY + 1) != (m1, m2, am)
+    assert usm.masks(KEY) == (m1, m2, am) and usm.masks(KEY + 1) != (m1, m2, am)
 
 
 @pytest.mark.parametrize("size", [0, 0x40, 0x23F, 0x240, 0x241, 0x260, 0x1000, 0x1017])
 def test_unmask_video_matches_the_byte_loop(size):
     data = rand(size, size)
-    assert advvideo.unmask_video(data, M1, M2) == ref_unmask_video(data, M1, M2)
+    assert usm.unmask_video(data, M1, M2) == ref_unmask_video(data, M1, M2)
     if size >= 0x240:
-        assert advvideo.unmask_video(data, M1, M2) != data
-        assert advvideo.unmask_video(mask_video(data), M1, M2) == data
+        assert usm.unmask_video(data, M1, M2) != data
+        assert usm.unmask_video(mask_video(data), M1, M2) == data
     else:
-        assert advvideo.unmask_video(data, M1, M2) == data
+        assert usm.unmask_video(data, M1, M2) == data
 
 
 @pytest.mark.parametrize("size", [0x100, 0x140, 0x141, 0x800])
 def test_unmask_audio(size):
     data = rand(size, size + 1)
-    assert advvideo.unmask_audio(mask_audio(data), AM) == data
+    assert usm.unmask_audio(mask_audio(data), AM) == data
 
 
 # ---------------------------------------------------------------- demux
 def test_demux_video_and_adx_without_headers():
     """VP9 in IVF and ADX recognised from their bytes; both unmasked."""
-    streams = advvideo.demux(build([(b"@SFV", 0, None, VP9, "video"), (b"@SFA", 0, None, ADX, "audio")]), KEY)
+    streams = usm.demux(build([(b"@SFV", 0, None, VP9, "video"), (b"@SFA", 0, None, ADX, "audio")]), KEY)
     assert [(s.name, s.codec, s.header) for s in streams] == [("video", "vp9", {}), ("audio", "adx", {})]
     assert streams[0].data == b"".join(VP9) and streams[1].data == b"".join(ADX)
-    assert advvideo.adx_info(streams[1].data) == {"codec": "adx", "channels": 2, "sampleRate": 48000, "samples": 640}
-    assert advvideo.video_facts(streams[0]) == {
+    assert usm.adx_info(streams[1].data) == {"codec": "adx", "channels": 2, "sampleRate": 48000, "samples": 640}
+    assert usm.video_facts(streams[0]) == {
         "codec": "vp9",
         "width": 320,
         "height": 180,
@@ -233,7 +233,7 @@ def test_demux_every_kind_and_channel():
             (b"@SFA", 2, audio_header(4), HCA, None),
         ]
     )
-    streams = advvideo.demux(data, KEY)
+    streams = usm.demux(data, KEY)
     assert [(s.name, s.codec) for s in streams] == [
         ("video", "mpeg1"),
         ("alpha", "mpeg1"),
@@ -246,7 +246,7 @@ def test_demux_every_kind_and_channel():
     assert by["video"].data == by["alpha"].data == b"".join(MPEG1)
     assert by["audio_1"].data == b"".join(ADX) and by["audio_2"].data == b"".join(HCA)
     assert by["subtitle"].data == subs
-    assert advvideo.video_facts(by["alpha"]) == {
+    assert usm.video_facts(by["alpha"]) == {
         "codec": "mpeg1",
         "width": 320,
         "height": 184,
@@ -256,8 +256,8 @@ def test_demux_every_kind_and_channel():
         "frameRate": [30000, 1000],
         "alphaType": 1,
     }
-    assert advvideo.display_size(by["video"]) == (320, 180)
-    assert advvideo.hca_info(by["audio_2"].data) == {
+    assert usm.display_size(by["video"]) == (320, 180)
+    assert usm.hca_info(by["audio_2"].data) == {
         "codec": "hca",
         "channels": 2,
         "sampleRate": 48000,
@@ -268,11 +268,11 @@ def test_demux_every_kind_and_channel():
 
 
 def test_demux_h264_and_recognition_without_headers():
-    streams = advvideo.demux(build([(b"@SFV", 0, video_header(5), H264, "video")]), KEY)
+    streams = usm.demux(build([(b"@SFV", 0, video_header(5), H264, "video")]), KEY)
     assert [(s.codec, s.data) for s in streams] == [("h264", b"".join(H264))]
     for parts, codec in ((H264, "h264"), (MPEG1, "mpeg1"), ([bytes(6) + MPEG1[0]] + MPEG1[1:], "mpeg1")):
-        assert advvideo.demux(build([(b"@SFV", 0, None, parts, "video")]), KEY)[0].codec == codec
-    assert advvideo.demux(build([(b"@SFA", 0, None, HCA, None)]), KEY)[0].codec == "hca"
+        assert usm.demux(build([(b"@SFV", 0, None, parts, "video")]), KEY)[0].codec == codec
+    assert usm.demux(build([(b"@SFA", 0, None, HCA, None)]), KEY)[0].codec == "hca"
 
 
 @pytest.mark.parametrize(
@@ -287,18 +287,18 @@ def test_demux_h264_and_recognition_without_headers():
     ],
 )
 def test_demux_unsupported(streams, code):
-    with pytest.raises(advvideo.Unsupported) as e:
-        advvideo.demux(build(streams), KEY)
+    with pytest.raises(usm.Unsupported) as e:
+        usm.demux(build(streams), KEY)
     assert e.value.code == code
 
 
 def test_demux_rejects_other_files():
     with pytest.raises(ValueError):
-        advvideo.demux(b"RIFF" + bytes(60), KEY)
+        usm.demux(b"RIFF" + bytes(60), KEY)
     with pytest.raises(ValueError):
-        list(advvideo.chunks(build([(b"@SFV", 0, None, VP9, "video")])[:-5]))
+        list(usm.chunks(build([(b"@SFV", 0, None, VP9, "video")])[:-5]))
     with pytest.raises(NotImplementedError):
-        advvideo.adx_info(b"HCA\x00" + bytes(60))
+        usm.adx_info(b"HCA\x00" + bytes(60))
 
 
 def slices(n, seed):
@@ -327,13 +327,13 @@ def test_streams_stored_plain_beside_masked_ones(kind, parts, mask):
     sig = b"@SFA" if kind == "adx" else b"@SFV"
     header = None if kind == "adx" else video_header({"mpeg1": 1, "vp9": 9}[kind])
     for stored in (mask, None):
-        (s,) = advvideo.demux(build([(sig, 0, header, parts, stored)]), KEY)
+        (s,) = usm.demux(build([(sig, 0, header, parts, stored)]), KEY)
         assert s.codec == kind and s.data == b"".join(parts)
 
 
 def test_key_zero_means_plain_streams():
     data = build([(b"@SFV", 0, None, VP9, "video"), (b"@SFA", 0, None, ADX, "audio")], key=False)
-    assert [s.data for s in advvideo.demux(data, 0)] == [b"".join(VP9), b"".join(ADX)]
+    assert [s.data for s in usm.demux(data, 0)] == [b"".join(VP9), b"".join(ADX)]
 
 
 def test_adx_frames_drop_the_end_of_stream_block():
@@ -342,14 +342,14 @@ def test_adx_frames_drop_the_end_of_stream_block():
     head = adx(samples=100, channels=2)
     frames = rand(4 * 18 * 2, 11)  # ceil(100 / 32) = 4 frames per channel
     end = bytes([0x80, 0x01]) + struct.pack(">H", 14) + bytes(14)
-    assert advvideo.adx_frames(head + frames + end) == head + frames
-    assert advvideo.adx_frames(head + frames) == head + frames
+    assert usm.adx_frames(head + frames + end) == head + frames
+    assert usm.adx_frames(head + frames) == head + frames
     with pytest.raises(ValueError, match="not an end-of-stream block"):
-        advvideo.adx_frames(head + frames + end[:-1] + bytes([1]))
+        usm.adx_frames(head + frames + end[:-1] + bytes([1]))
     with pytest.raises(ValueError, match="not an end-of-stream block"):
-        advvideo.adx_frames(head + frames + rand(18, 12))
+        usm.adx_frames(head + frames + rand(18, 12))
     with pytest.raises(ValueError, match="header counts"):
-        advvideo.adx_frames(head + frames[:-1])
+        usm.adx_frames(head + frames[:-1])
 
 
 # ---------------------------------------------------------------- subtitles
@@ -359,23 +359,23 @@ def test_subtitle_records_and_text_forms():
         + sbt(1, 30, 3, 45, "first", nul=2)
         + sbt(1, 1000, 5000, 0, "\n", nul=0)
     )
-    recs = advvideo.subtitle_records(data)
+    recs = usm.subtitle_records(data)
     assert [(r["language"], r["timeUnit"], r["start"], r["duration"], r["text"], r["terminator"]) for r in recs] == [
         (1, 1000, 2000, 1000, b"second <b> & a\r\nline", 1),
         (1, 30, 3, 45, b"first", 2),
         (1, 1000, 5000, 0, b"\n", 0),
     ]
-    assert advvideo.subtitle_srt(recs) == (
+    assert usm.subtitle_srt(recs) == (
         "1\n00:00:00,100 --> 00:00:01,600\nfirst\n\n"
         "2\n00:00:02,000 --> 00:00:03,000\nsecond <b> & a\nline\n\n"
         "3\n00:00:05,000 --> 00:00:05,000\n \n \n\n"
     )
-    assert advvideo.subtitle_webvtt(recs) == (
+    assert usm.subtitle_webvtt(recs) == (
         "WEBVTT\n\n00:00:00.100 --> 00:00:01.600\nfirst\n\n"
         "00:00:02.000 --> 00:00:03.000\nsecond &lt;b&gt; &amp; a\nline\n\n"
         "00:00:05.000 --> 00:00:05.000\n \n \n\n"
     )
-    doc = advvideo.subtitle_json(3, recs + advvideo.subtitle_records(sbt(2, 1000, 0, 1, b"\x82\xa0")))
+    doc = usm.subtitle_json(3, recs + usm.subtitle_records(sbt(2, 1000, 0, 1, b"\x82\xa0")))
     assert doc["channel"] == 3 and doc["records"][0] == {
         "language": 1,
         "timeUnit": 1000,
@@ -393,7 +393,7 @@ def test_subtitle_records_and_text_forms():
         "terminator": 1,
     }
     with pytest.raises(UnicodeDecodeError):
-        advvideo.subtitle_srt(advvideo.subtitle_records(sbt(0, 1000, 0, 1, b"\x82\xa0")))
+        usm.subtitle_srt(usm.subtitle_records(sbt(0, 1000, 0, 1, b"\x82\xa0")))
 
 
 @pytest.mark.parametrize(
@@ -406,7 +406,7 @@ def test_subtitle_records_and_text_forms():
 )
 def test_subtitle_records_reject_other_bytes(data, match):
     with pytest.raises(ValueError, match=match):
-        advvideo.subtitle_records(data)
+        usm.subtitle_records(data)
 
 
 # ---------------------------------------------------------------- movie files
@@ -422,10 +422,10 @@ def test_stream_inputs(tmp_path, monkeypatch):
         Path(args[args.index("-o") + 1]).write_bytes(b"RIFF")
         return subprocess.CompletedProcess(args, 0, b"", b"")
 
-    monkeypatch.setattr(advvideo.subprocess, "run", fake_run)
+    monkeypatch.setattr(usm.subprocess, "run", fake_run)
     w = tmp_path / "w"
-    assert advvideo.stream_input(stream("video", "vp9", b"ivf"), w) == ["-f", "ivf", "-i", str(w / "video.ivf")]
-    assert advvideo.stream_input(stream("alpha", "mpeg1", channel=1), w) == [
+    assert usm.stream_input(stream("video", "vp9", b"ivf"), w) == ["-f", "ivf", "-i", str(w / "video.ivf")]
+    assert usm.stream_input(stream("alpha", "mpeg1", channel=1), w) == [
         "-fflags",
         "+genpts",
         "-f",
@@ -433,7 +433,7 @@ def test_stream_inputs(tmp_path, monkeypatch):
         "-i",
         str(w / "alpha_1.m1v"),
     ]
-    assert advvideo.stream_input(stream("video", "h264", header=video_header(5, rate=(24000, 1001))), w) == [
+    assert usm.stream_input(stream("video", "h264", header=video_header(5, rate=(24000, 1001))), w) == [
         "-fflags",
         "+genpts",
         "-f",
@@ -443,16 +443,16 @@ def test_stream_inputs(tmp_path, monkeypatch):
         "-i",
         str(w / "video.h264"),
     ]
-    with pytest.raises(advvideo.Unsupported):
-        advvideo.stream_input(stream("video", "h264"), w)
+    with pytest.raises(usm.Unsupported):
+        usm.stream_input(stream("video", "h264"), w)
     head = adx(samples=100)
-    assert advvideo.stream_input(stream("audio", "adx", head + rand(4 * 36, 1)), w) == [
+    assert usm.stream_input(stream("audio", "adx", head + rand(4 * 36, 1)), w) == [
         "-f",
         "adx",
         "-i",
         str(w / "audio.adx"),
     ]
-    assert advvideo.stream_input(stream("audio", "hca", b"hca", 2), w, KEY, "vgm") == [
+    assert usm.stream_input(stream("audio", "hca", b"hca", 2), w, KEY, "vgm") == [
         "-f",
         "wav",
         "-i",
@@ -460,7 +460,7 @@ def test_stream_inputs(tmp_path, monkeypatch):
     ]
     assert calls == [["vgm", "-i", "-o", str(w / "audio_2.wav"), str(w / "audio_2.hca")]]
     assert (w / ".hcakey").read_bytes() == struct.pack(">Q", KEY)
-    assert advvideo.stream_input(stream("subtitle", "sbt", sbt(0, 1000, 0, 10, "hi")), w) == [
+    assert usm.stream_input(stream("subtitle", "sbt", sbt(0, 1000, 0, 10, "hi")), w) == [
         "-f",
         "srt",
         "-i",
@@ -478,7 +478,7 @@ def test_mkv_arguments():
         stream("subtitle", "sbt"),
     ]
     inputs = {s.name: ["-i", s.name] for s in streams}
-    assert advvideo.mkv_args(streams, inputs, Path("m.mkv"), 5) == [
+    assert usm.mkv_args(streams, inputs, Path("m.mkv"), 5) == [
         "-hide_banner",
         "-y",
         "-loglevel",
@@ -525,7 +525,7 @@ def test_mkv_arguments():
         "matroska",
         "m.mkv",
     ]
-    silent = advvideo.mkv_args([stream("video", "vp9")], {"video": ["-i", "v"]}, Path("m.mkv"), 8)
+    silent = usm.mkv_args([stream("video", "vp9")], {"video": ["-i", "v"]}, Path("m.mkv"), 8)
     assert "-c:a" not in silent and "-c:s" not in silent
 
 
@@ -538,14 +538,14 @@ def test_webm_arguments():
         stream("audio", "adx", channel=1),
         stream("subtitle", "sbt"),
     ]
-    picked = advvideo.webm_streams(streams)
-    assert [s.name for s in picked] == ["video", "audio"] and not advvideo.webm_reencoded(picked)
+    picked = usm.webm_streams(streams)
+    assert [s.name for s in picked] == ["video", "audio"] and not usm.webm_reencoded(picked)
     inputs = {
         "video": ["-f", "ivf", "-i", "video.ivf"],
         "audio": ["-f", "adx", "-i", "audio.adx"],
         "alpha": ["-fflags", "+genpts", "-f", "mpegvideo", "-i", "alpha.m1v"],
     }
-    assert advvideo.webm_args(picked, inputs, Path("m.webm")) == [
+    assert usm.webm_args(picked, inputs, Path("m.webm")) == [
         "-hide_banner",
         "-y",
         "-loglevel",
@@ -580,9 +580,9 @@ def test_webm_arguments():
     ]
     video = stream("video", "vp9", header=video_header(9, 928, 580, disp=(928, 580)))
     alpha = stream("alpha", "mpeg1", header=video_header(1, 928, 584, disp=(928, 580), alpha_type=1))
-    picked = advvideo.webm_streams([video, alpha, stream("alpha", "mpeg1", channel=1)])
-    assert [s.name for s in picked] == ["video", "alpha"] and advvideo.webm_reencoded(picked)
-    assert advvideo.webm_args(picked, inputs, Path("m.webm")) == [
+    picked = usm.webm_streams([video, alpha, stream("alpha", "mpeg1", channel=1)])
+    assert [s.name for s in picked] == ["video", "alpha"] and usm.webm_reencoded(picked)
+    assert usm.webm_args(picked, inputs, Path("m.webm")) == [
         "-hide_banner",
         "-y",
         "-loglevel",
@@ -626,7 +626,7 @@ def test_webm_arguments():
     ]
     prime = [stream("video", "mpeg1", header=video_header(1, 1280, 720)), stream("audio", "hca")]
     inputs = {"video": ["-i", "video.m1v"], "audio": ["-i", "audio.wav"]}
-    assert advvideo.webm_args(prime, inputs, Path("m.webm")) == [
+    assert usm.webm_args(prime, inputs, Path("m.webm")) == [
         "-hide_banner",
         "-y",
         "-loglevel",
@@ -687,11 +687,11 @@ def test_story_export_keeps_its_command(tmp_path, monkeypatch):
         },
         "assetInfo": {"loop": 0},
     }
-    usm = tmp_path / "m.usm"
-    usm.write_bytes(
+    movie = tmp_path / "m.usm"
+    movie.write_bytes(
         build([(b"@SFV", 0, None, VP9, "video"), (b"@SFA", 0, None, [adx(samples=100) + rand(4 * 36, 1)], "audio")])
     )
-    monkeypatch.setattr(advvideo, "usm_asset", lambda cat, key: (info, usm))
+    monkeypatch.setattr(advvideo, "usm_asset", lambda cat, key: (info, movie))
     monkeypatch.setattr("nnnotes.config.tool", lambda name, exe: name)
     calls = []
 
@@ -700,7 +700,7 @@ def test_story_export_keeps_its_command(tmp_path, monkeypatch):
         Path(args[-1]).write_bytes(b"webm")
         return subprocess.CompletedProcess(args, 0, "", "")
 
-    monkeypatch.setattr(advvideo.subprocess, "run", fake_run)
+    monkeypatch.setattr(usm.subprocess, "run", fake_run)
     work = tmp_path / "videos" / "_work"
     rec = advvideo.export(None, "Cri/Video/adv/m/m", tmp_path / "videos" / "m.webm", KEY, work)
     assert calls == [
@@ -757,7 +757,7 @@ def test_story_export_keeps_its_command(tmp_path, monkeypatch):
         "source": {"codec": "adx", "channels": 2, "sampleRate": 48000, "samples": 100},
     }
     assert not work.exists()
-    usm.write_bytes(
+    movie.write_bytes(
         build(
             [(b"@SFV", 0, video_header(9), VP9, "video"), (b"@ALP", 0, video_header(1, alpha_type=1), MPEG1, "video")]
         )
@@ -849,10 +849,10 @@ def test_real_streams_through_ffmpeg(tmp_path):
     if "libx264" in enc:
         h264 = make(["-c:v", "libx264", "-bf", "0", "-f", "h264"], "v.h264")
         streams.append((b"@SFV", 1, video_header(5, 64, 48, (25, 1), 5), [h264[:0x300], h264[0x300:]], "video"))
-    got = advvideo.demux(build(streams), KEY)
+    got = usm.demux(build(streams), KEY)
     work, mkv = tmp_path / "w", tmp_path / "m.mkv"
-    inputs = {s.name: advvideo.stream_input(s, work) for s in got}
-    advvideo.run_ffmpeg(FFMPEG, advvideo.mkv_args(got, inputs, mkv, 8), "mkv")
+    inputs = {s.name: usm.stream_input(s, work) for s in got}
+    usm.run_ffmpeg(FFMPEG, usm.mkv_args(got, inputs, mkv, 8), "mkv")
 
     def md5s(*args):
         r = subprocess.run(
@@ -866,7 +866,7 @@ def test_real_streams_through_ffmpeg(tmp_path):
     for i, s in enumerate(got):
         assert md5s("-i", str(mkv), "-map", f"0:v:{i}") == md5s(*inputs[s.name]) and len(md5s(*inputs[s.name])) == 5
     webm = tmp_path / "m.webm"
-    advvideo.write_webm(got, webm, tmp_path / "w2", FFMPEG)
+    usm.write_webm(got, webm, tmp_path / "w2", FFMPEG)
     r = subprocess.run(
         [
             FFMPEG,

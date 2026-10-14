@@ -1444,7 +1444,7 @@ def cmd_get(args, cfg, common) -> None:
         print(f"nnnotes: {r['id']}: {r['status']}" + (f" ({r['detail']})" if r.get("detail") else ""), file=sys.stderr)
         sys.exit(1)
     else:
-        from .cristages import FLAC_LEVEL
+        from .encoders import FLAC_LEVEL
 
         try:
             written = _decode_one(cfg, common, sheet, cue, args.format, FLAC_LEVEL, dst)

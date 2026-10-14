@@ -29,7 +29,7 @@ from pathlib import Path
 
 from . import liveaudio, livenotes, livescene, liveui, score
 from .catalog import Catalog
-from .cristages import FLAC_LEVEL
+from .encoders import FLAC_LEVEL
 from .jsonio import write_json
 from .liveoptions import LiveOptions
 from .player import PlayerData

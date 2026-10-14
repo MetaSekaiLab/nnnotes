@@ -18,7 +18,7 @@ import pytest
 from PIL import Image
 from UnityPy.helpers.TypeTreeNode import TypeTreeNode
 
-from nnnotes import cache, cri, export, jsonio, shader, unity
+from nnnotes import cache, cri, encoders, export, jsonio, shader, unity
 from nnnotes.export import Exporter, TexelPacker
 from nnnotes.unity import SceneGraph
 
@@ -501,7 +501,7 @@ def tools(tmp_path, monkeypatch):
     return fake
 
 
-def ref_decode(sheet, out_dir: Path, fmt, level=cri.FLAC_LEVEL):
+def ref_decode(sheet, out_dir: Path, fmt, level=encoders.FLAC_LEVEL):
     """The sequential decode as it was (same tool calls)."""
     vgm, ffmpeg = cri.tool("vgmstream", ""), cri.tool("ffmpeg", "")
     work = out_dir / "_work"
@@ -586,7 +586,7 @@ def test_decode_also_encodes_from_the_same_samples(tmp_path, tools):
     assert sorted(f for f in files if f.endswith(".m4a")) == ["a.m4a", "a_3.m4a", "b.m4a", "c.m4a", "c_5.m4a"]
     assert json.loads(files["cues.json"])["a"]["file"] == "a.flac"  # manifests name the first file
     wav = b"RIFF" + b"1" * 100
-    assert files["a.m4a"] == "|".join(cri.encode_args("w", "d", args)[6:-1]).encode() + wav
+    assert files["a.m4a"] == "|".join(encoders.encode_args("w", "d", args)[6:-1]).encode() + wav
     assert {k: v.name for k, v in got.items()} == {"a": "a.flac", "b": "b.flac", "c": "c.flac"}
     n = len(tools.calls)
     cri.decode(None, "S", tmp_path / "y", key=0, also=(".m4a", args))
