@@ -1,6 +1,6 @@
 """Japanese release: anonymous Version discovery and snapshot-bound CDN downloads.
 
-Addresses and client versions come from Config. Credentials remain in a Session, never in
+Addresses and client versions come from Config. Credentials remain in a Client, never in
 source metadata, cache records, task descriptions or exception messages.
 """
 
@@ -15,9 +15,12 @@ import threading
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from urllib.parse import quote, unquote, urlsplit
+from urllib.parse import urlsplit
 
 from . import gameapi
+from .addressables import parse_header, relative_path
+from .cache import write_atomic
+from .catalog import Catalog
 from .config import ConfigError
 
 PLACEHOLDER = "{Fwk.Resource.RemoteAssetDir}/"
@@ -99,23 +102,6 @@ def origin(value):
         ) from None
 
 
-def relative_path(value):
-    decoded = unquote(value)
-    if (
-        not value
-        or value.startswith("/")
-        or "\\" in decoded
-        or "%" in decoded
-        or any(ord(c) < 32 for c in decoded)
-        or any(p in ("", ".", "..") for p in decoded.split("/"))
-        or "?" in value
-        or "#" in value
-        or ":" in value
-    ):
-        raise ValueError("invalid JP resource path")
-    return quote(decoded, safe="/!$&'()+,;=@[]-._~")
-
-
 @dataclass(frozen=True)
 class Source:
     provider: str
@@ -169,7 +155,7 @@ class Observation:
     user_agent: str = field(repr=False)
 
 
-class Session:
+class Client:
     def __init__(self, cfg, region):
         self.cfg, self.region = cfg.for_region(region), region
         self._observation = None
@@ -299,16 +285,13 @@ def write_source(path, data, source):
 
 
 def open_catalog(cfg, region, *, catalog_file=None, bundle_key=None, apk=None):
-    from .addressables import parse_header
-    from .cache import write_atomic
-    from .catalog import Catalog
 
-    session = Session(cfg, region)
+    client = Client(cfg, region)
     if catalog_file is not None:
         data = Path(catalog_file).read_bytes()
         source = read_source(catalog_file, data)
     else:
-        source = session.observe().source
+        source = client.observe().source
         if source is None:
             raise gameapi.GameApiError("JP Version: no Android asset version applies to this client")
         path = source.cache_dir(cfg.require_path("paths", "cache")) / "catalog_main.bin"
@@ -316,14 +299,14 @@ def open_catalog(cfg, region, *, catalog_file=None, bundle_key=None, apk=None):
             data = path.read_bytes()
             if not sidecar(path).exists():
                 # Interrupted between the two atomic writes: fetch the same snapshot again.
-                data = session.get(source.catalog_url, source=source, limit=CATALOG_LIMIT)
+                data = client.get(source.catalog_url, source=source, limit=CATALOG_LIMIT)
                 parse_header(data)
                 write_atomic(path, data)
                 write_source(path, data, source)
             elif read_source(path, data) != source:
                 raise ConfigError("JP cached catalog source differs from the selected version")
         else:
-            data = session.get(source.catalog_url, source=source, limit=CATALOG_LIMIT)
+            data = client.get(source.catalog_url, source=source, limit=CATALOG_LIMIT)
             parse_header(data)
             path.parent.mkdir(parents=True, exist_ok=True)
             write_atomic(path, data)
@@ -334,5 +317,5 @@ def open_catalog(cfg, region, *, catalog_file=None, bundle_key=None, apk=None):
         bundle_key=bundle_key,
         apk=apk,
         source=source,
-        session=session,
+        client=client,
     )

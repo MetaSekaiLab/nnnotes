@@ -309,12 +309,12 @@ class CatalogFetcher:
                 region = region or cfg.get("catalog", "region")
                 if region:
                     cfg = cfg.for_region(region)
-                source, session, cache = None, None, self.cache
+                source, client, cache = None, None, self.cache
                 if v.get("source") is not None:
-                    from .jp import Session, Source
+                    from .jp import Client, Source
 
                     source = Source.from_dict(v["source"])
-                    session = Session(cfg, cfg.region())
+                    client = Client(cfg, cfg.region())
                     cache = source.cache_dir(cache)
                 cat = Catalog(
                     remote,
@@ -323,7 +323,7 @@ class CatalogFetcher:
                     bundle_key=lambda: _bundle_key(cfg),
                     apk_catalog=apk,
                     source=source,
-                    session=session,
+                    client=client,
                 )
                 # Replay imported offsets; the current APK is needed only for uncached local files.
                 cat.apk = cfg.path("paths", "apk")
@@ -517,7 +517,7 @@ class Workspace:
                 self.args.usage(f"--catalog-version {ref}: {e.args[0] if e.args else e}")
             remote, apk = self.db.catalog_bytes(v)
             return v, remote, apk
-        cat = self.common.open_catalog(self.cfg, bundles=False)
+        cat = self.common.session(self.cfg).catalog(bundles=False)
         src = cat.sources()
         remote, apk = src["remote"], src.get("apk")
         source = cat.source.to_dict() if getattr(cat, "source", None) else None
@@ -1565,7 +1565,7 @@ def cmd_catalogs_fetch(args, cfg, common):
         return
     cdn = cfg.cdn(region)
     language = cfg.require("catalog", "language")
-    version = cfg.catalog_version(region)
+    version = common.session(cfg).catalog_version(region)
     filename = Catalog.cache_file(language, Path("."), version=version).name
     try:
         data, hash_text = catalogdb.fetch(cdn, language, version=version)
@@ -1649,10 +1649,11 @@ def cmd_store_verify(args, cfg, common):
 
 # ---------------------------------------------------------------- parser
 def default_common():
-    """The helpers of the command line the handlers use (open_catalog, print_json)."""
+    """The helpers of the command line the handlers use (session: the data sources of a Config; print_json)."""
     from . import cli
+    from .session import Session
 
-    return SimpleNamespace(open_catalog=cli.open_catalog, print_json=cli._print_json)
+    return SimpleNamespace(session=Session, print_json=cli._print_json)
 
 
 def _gib(s: str) -> float:

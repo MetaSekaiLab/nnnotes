@@ -375,11 +375,11 @@ def export_library(
 
 
 def command(args, cfg):
-    from .apkset import ApkSet
+    from .apkset import MANIFEST_IN_APK, ApkSet, manifest_version_code, manifest_version_name
     from .catalog import APK_CATALOG, Catalog
-    from .cli import bundle_key, player_data
     from .config import ConfigError
-    from .player import MANIFEST_IN_APK, manifest_version_code, manifest_version_name
+    from .player import PlayerData
+    from .session import Session
 
     if args.limit is not None and args.limit < 1:
         args.usage("--limit must be positive")
@@ -394,7 +394,9 @@ def command(args, cfg):
             "region": cfg.get("catalog", "region"),
             "client": {"versionName": manifest_version_name(manifest), "versionCode": manifest_version_code(manifest)},
         }
-    cat = Catalog(catalog_data, cfg.require_path("paths", "cache"), bundle_key=lambda: bundle_key(cfg), apk=apk)
+    cat = Catalog(
+        catalog_data, cfg.require_path("paths", "cache"), bundle_key=lambda: Session(cfg).bundle_key(), apk=apk
+    )
     keys = args.key or cat.keys(args.prefix)
     if args.limit is not None:
         keys = keys[: args.limit]
@@ -405,7 +407,7 @@ def command(args, cfg):
         index = export_library(
             cat,
             args.out,
-            player=player_data(cfg),
+            player=PlayerData(Session(cfg).apk()),
             keys=keys,
             dependencies=not args.no_dependencies,
             force=args.force,

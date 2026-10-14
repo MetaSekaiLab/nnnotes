@@ -12,6 +12,7 @@ import synth
 
 from nnnotes import cli, gameapi
 from nnnotes.config import Config, ConfigError
+from nnnotes.session import Session
 
 API = "https://api.example.test"
 CDN_A, CDN_B = "https://cdn-a.example.test/prod/a1", "https://cdn-b.example.test/prod/a1"
@@ -345,7 +346,7 @@ def test_master_version_reads_the_region_settings(monkeypatch):
         return version_response("0123abcd", "1.0.0.7")
 
     monkeypatch.setattr(gameapi, "call", fake_call)
-    v = gameapi.master_version(cfg(SERVERS_ZZ_API=API, CLIENT_VERSION="1.2.3"), "zz")
+    v = Session(cfg(SERVERS_ZZ_API=API, CLIENT_VERSION="1.2.3")).master_version("zz")
     assert v.version == "0123abcd"
     assert calls == [(API, gameapi.VERSION_METHOD, b"", "1.2.3", "[servers.zz] api")]
 

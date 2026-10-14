@@ -496,9 +496,11 @@ def stored_text(store: Store, path: str, s: str, memo: str | None = None) -> dic
 def open_data(cfg: Config, region: str | None = None):
     """Catalog (fetching from the CDN of `region`), the master dir of `region` and PlayerData from the settings (as
     the command line opens them; `region` None: [catalog] region)."""
-    from .cli import master_dir, open_catalog, player_data
+    from .player import PlayerData
+    from .session import Session
 
-    return open_catalog(cfg, region=region), master_dir(cfg, region), player_data(cfg, region)
+    session = Session(cfg)
+    return session.catalog(region=region), session.master_dir(region), PlayerData(session.apk(region))
 
 
 def _lock_fetches(cat, lock) -> None:
@@ -561,9 +563,9 @@ def unknown_pairs(cfg: Config, pairs, regions=None) -> list[tuple[int, str]]:
 
 
 def region_masters(cfg: Config, regions: list[str]) -> dict[str, Path]:
-    """{region: decoded master dir} (cli.master_dir). With more than one region the --master flag is refused and
+    """{region: decoded master dir} (Session.master_dir). With more than one region the --master flag is refused and
     at most one region may use [paths] master (the others need their own `[servers.<region>] master`)."""
-    from .cli import master_dir
+    from .session import Session
 
     if len(regions) > 1 and cfg.origin("paths", "master") == "flag":
         raise ConfigError(
@@ -573,7 +575,7 @@ def region_masters(cfg: Config, regions: list[str]) -> dict[str, Path]:
     shared = [r for r in regions if cfg.master(r) == ("paths", "master")]
     if len(shared) > 1:
         raise cfg.missing(f"servers.{shared[1]}", "master")
-    return {r: master_dir(cfg, r) for r in regions}
+    return {r: Session(cfg).master_dir(r) for r in regions}
 
 
 def chart_inputs(master: Path) -> str:

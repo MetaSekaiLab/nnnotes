@@ -29,7 +29,7 @@ from urllib.parse import urlsplit
 
 import grpc
 
-from .apkset import ApkSet
+from .apkset import MANIFEST_IN_APK, ApkSet, manifest_version_name
 from .config import Config, ConfigError, describe
 
 VERSION_METHOD = "/app.masterdata.MasterdataService/Version"
@@ -275,8 +275,6 @@ def api_root(cfg: Config, section: str) -> str:
 
 def apk_version_name(apk: Path) -> str | None:
     """`versionName` of the APK's AndroidManifest.xml (None when the APK has none)."""
-    from .player import MANIFEST_IN_APK, manifest_version_name
-
     try:
         with ApkSet(apk) as z:
             data = z.read(MANIFEST_IN_APK) if MANIFEST_IN_APK in z.namelist() else None
@@ -312,17 +310,6 @@ def client_version(cfg: Config, region: str | None = None) -> str:
     if not v or not v.isascii() or not v.isprintable():
         raise ConfigError(f"{what}: must be printable ASCII")
     return v
-
-
-def master_version(cfg: Config, region: str, *, timeout: float = TIMEOUT) -> MasterVersion:
-    """The master data version region `region` serves now (its `[servers.<region>] api`)."""
-    section = f"servers.{region}"
-    if cfg.provider(region) == "jp":
-        from .jp import Session
-
-        return Session(cfg, region).observe(timeout=timeout).version
-    root = api_root(cfg, section)
-    return fetch_master_version(root, client_version(cfg, region), timeout=timeout, setting=f"[{section}] api")
 
 
 def server_list(cfg: Config, *, timeout: float = TIMEOUT) -> list[Server]:

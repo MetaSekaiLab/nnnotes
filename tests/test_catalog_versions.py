@@ -10,8 +10,9 @@ from types import SimpleNamespace
 import pytest
 import synth
 
-from nnnotes import addressables, catalog, catalogdb, cli, configfile, deckdata, gameapi
+from nnnotes import browse, catalog, catalogdb, cli, configfile, deckdata, gameapi
 from nnnotes.config import Config, ConfigError
+from nnnotes.session import Session
 
 MODEL = "Character/Live2D/test/new/model/new"
 EPISODE = "Adv/Episode/event_new/event_new"
@@ -53,18 +54,18 @@ def test_auto_discovery_ignores_stale_main_and_advances_resource_version(tmp_pat
         assert url.endswith(f"catalog_{publication.resource_version}_en.bin")
         return binary(MODEL, EPISODE, publication.version)
 
-    monkeypatch.setattr(gameapi, "master_version", version)
+    monkeypatch.setattr(Session, "master_version", version)
     monkeypatch.setattr(catalog, "download", download)
-    first = cli.open_catalog(cfg, bundles=False)
+    first = Session(cfg).catalog(bundles=False)
     assert first.has(EPISODE) and catalog_models(first) == {"new": MODEL}
     assert first.resource_version == "1.0.0.201"
     assert deckdata.catalog_info(first)["resourceVersion"] == "1.0.0.201"
     assert seen[0] == "version" and len(seen) == 2
     # An unchanged version reuses its catalog; a new version gets new bytes.
-    assert cli.open_catalog(cfg, bundles=False).has("master-one")
+    assert Session(cfg).catalog(bundles=False).has("master-one")
     assert len(seen) == 3
     publication = gameapi.MasterVersion("master-two", "1.0.0.202")
-    second = cli.open_catalog(cfg, bundles=False)
+    second = Session(cfg).catalog(bundles=False)
     assert second.has("master-two") and not second.has("master-one")
     assert first.cache_dir != second.cache_dir
     assert all("catalog_main" not in request for request in seen)
@@ -72,13 +73,13 @@ def test_auto_discovery_ignores_stale_main_and_advances_resource_version(tmp_pat
 
 def test_explicit_version_cache_is_offline_and_cdn_scoped(tmp_path, monkeypatch):
     cfg = config(tmp_path, version="1.0.0.201")
-    monkeypatch.setattr(gameapi, "master_version", lambda *args: pytest.fail("pin called Version"))
+    monkeypatch.setattr(Session, "master_version", lambda *args: pytest.fail("pin called Version"))
     monkeypatch.setattr(catalog, "download", lambda url: binary("First"))
-    first = cli.open_catalog(cfg, bundles=False)
+    first = Session(cfg).catalog(bundles=False)
     monkeypatch.setattr(catalog, "download", lambda url: pytest.fail("cached pin downloaded"))
-    assert cli.open_catalog(cfg, bundles=False).has("First")
+    assert Session(cfg).catalog(bundles=False).has("First")
     monkeypatch.setattr(catalog, "download", lambda url: binary("Other region"))
-    other = cli.open_catalog(config(tmp_path, version="1.0.0.201", region="en"), bundles=False)
+    other = Session(config(tmp_path, version="1.0.0.201", region="en")).catalog(bundles=False)
     assert other.has("Other region") and first.cache_dir != other.cache_dir
 
 
@@ -93,8 +94,8 @@ def test_explicit_catalog_file_stays_offline(tmp_path, monkeypatch):
         },
         environ={},
     )
-    monkeypatch.setattr(gameapi, "master_version", lambda *args: pytest.fail("explicit file called Version"))
-    assert cli.open_catalog(cfg, bundles=False).has("Offline")
+    monkeypatch.setattr(Session, "master_version", lambda *args: pytest.fail("explicit file called Version"))
+    assert Session(cfg).catalog(bundles=False).has("Offline")
 
 
 def test_missing_versioned_catalog_does_not_fall_back_to_main(tmp_path, monkeypatch):
@@ -110,7 +111,7 @@ def test_missing_versioned_catalog_does_not_fall_back_to_main(tmp_path, monkeypa
 
     monkeypatch.setattr(catalog, "download", missing)
     with pytest.raises(urllib.error.HTTPError):
-        cli.open_catalog(cfg, bundles=False)
+        Session(cfg).catalog(bundles=False)
     assert len(urls) == 1 and "catalog_1.0.0.201_en.bin" in urls[0]
     assert not list((cache / "international").rglob("*.bin"))
 
@@ -119,29 +120,29 @@ def test_failed_discovery_does_not_claim_main_is_current(tmp_path, monkeypatch):
     def fail(*args):
         raise gameapi.GameApiError("unavailable")
 
-    monkeypatch.setattr(gameapi, "master_version", fail)
+    monkeypatch.setattr(Session, "master_version", fail)
     monkeypatch.setattr(catalog, "download", lambda url: pytest.fail("fallback download"))
     with pytest.raises(gameapi.GameApiError, match="unavailable"):
-        cli.open_catalog(config(tmp_path), bundles=False)
+        Session(config(tmp_path)).catalog(bundles=False)
 
 
 def test_configured_main_never_queries_api_or_invents_resource_version(tmp_path, monkeypatch):
     cfg = config(tmp_path, version="main")
-    monkeypatch.setattr(gameapi, "master_version", lambda *args: pytest.fail("explicit main queried API"))
+    monkeypatch.setattr(Session, "master_version", lambda *args: pytest.fail("explicit main queried API"))
     urls = []
     monkeypatch.setattr(catalog, "download", lambda url: urls.append(url) or binary("Old"))
-    cat = cli.open_catalog(cfg, bundles=False)
+    cat = Session(cfg).catalog(bundles=False)
     assert cat.has("Old") and cat.resource_version is None
     assert urls[0].endswith("catalog_main_en.bin")
 
 
 def test_version_precedence(tmp_path, monkeypatch):
-    monkeypatch.setattr(gameapi, "master_version", lambda *args: pytest.fail("pin queried API"))
+    monkeypatch.setattr(Session, "master_version", lambda *args: pytest.fail("pin queried API"))
     data = {"catalog": {"region": "tw", "version": "1.0.0.1"}, "servers": {"tw": {"catalog_version": "1.0.0.2"}}}
-    assert Config(data, environ={}).catalog_version() == "1.0.0.2"
+    assert Session(Config(data, environ={})).catalog_version() == "1.0.0.2"
     cfg = Config(data, environ={}, overrides={("catalog", "version"): "1.0.0.3"})
-    assert cfg.catalog_version() == "1.0.0.3"
-    assert config(tmp_path, api=False).catalog_version() == "main"
+    assert Session(cfg).catalog_version() == "1.0.0.3"
+    assert Session(config(tmp_path, api=False)).catalog_version() == "main"
 
 
 def test_build_workers_inherit_the_version_pin(tmp_path, monkeypatch):
@@ -153,12 +154,12 @@ def test_build_workers_inherit_the_version_pin(tmp_path, monkeypatch):
     monkeypatch.setenv("NNNOTES_SERVERS_TW_API", "https://unavailable.example")
     monkeypatch.setenv("NNNOTES_PATHS_CACHE", str(tmp_path / "cache"))
     monkeypatch.setattr(catalog, "download", lambda url: binary(MODEL, EPISODE))
-    assert cli.open_catalog(Config.load(), bundles=False).has(MODEL)
+    assert Session(Config.load()).catalog(bundles=False).has(MODEL)
     command = [
         sys.executable,
         "-c",
-        "from nnnotes.config import Config; from nnnotes.cli import open_catalog; "
-        "from nnnotes.webmodel import catalog_models; c=open_catalog(Config.load(), bundles=False); "
+        "from nnnotes.config import Config; from nnnotes.session import Session; "
+        "from nnnotes.webmodel import catalog_models; c=Session(Config.load()).catalog(bundles=False); "
         "assert 'new' in catalog_models(c); print(c.resource_version)",
     ]
     child = subprocess.run(command, env=os.environ.copy(), text=True, capture_output=True, check=True)
@@ -168,7 +169,7 @@ def test_build_workers_inherit_the_version_pin(tmp_path, monkeypatch):
 @pytest.mark.parametrize("version", ["../bad", "/absolute", "1/2", "1\\2", "1%2f2", "1?x", "1#x", "v\n"])
 def test_invalid_version_cannot_be_used_as_a_path(tmp_path, version):
     with pytest.raises(ConfigError):
-        config(tmp_path, version=version).catalog_version()
+        Session(config(tmp_path, version=version)).catalog_version()
     with pytest.raises(ValueError):
         catalog.Catalog.cache_file("en", tmp_path, version=version)
     with pytest.raises(ValueError):
@@ -176,16 +177,16 @@ def test_invalid_version_cannot_be_used_as_a_path(tmp_path, version):
 
 
 def test_empty_api_version_fails_before_download(tmp_path, monkeypatch):
-    monkeypatch.setattr(gameapi, "master_version", lambda *args: gameapi.MasterVersion("master", ""))
+    monkeypatch.setattr(Session, "master_version", lambda *args: gameapi.MasterVersion("master", ""))
     monkeypatch.setattr(catalog, "download", lambda url: pytest.fail("missing version downloaded"))
     with pytest.raises(ConfigError, match="servers.tw.api"):
-        cli.open_catalog(config(tmp_path), bundles=False)
+        Session(config(tmp_path)).catalog(bundles=False)
 
 
 def test_bad_download_is_not_installed_in_cache(tmp_path, monkeypatch):
     monkeypatch.setattr(catalog, "download", lambda url: b"not a catalog")
     with pytest.raises(ValueError):
-        cli.open_catalog(config(tmp_path, version="1.0.0.201"), bundles=False)
+        Session(config(tmp_path, version="1.0.0.201")).catalog(bundles=False)
     assert not list((tmp_path / "cache").rglob("*.bin"))
 
 
@@ -204,7 +205,7 @@ def test_fetch_queries_version_before_downloading_and_labels_matching_bytes(tmp_
         assert language == "en" and version == "1.0.0.201"
         return data, "catalog-hash"
 
-    monkeypatch.setattr(gameapi, "master_version", observe)
+    monkeypatch.setattr(Session, "master_version", observe)
     monkeypatch.setattr(catalogdb, "fetch", fetch)
     cli.main(["--region", "tw", "--language", "en", "--cache", str(tmp_path / "cache"), "catalogs", "fetch"])
     assert events == ["version", "1.0.0.201"]
@@ -226,12 +227,12 @@ def test_fetch_downloads_matching_bin_and_hash(tmp_path):
 
 def test_browser_uses_the_same_selector(tmp_path, monkeypatch):
     cfg = config(tmp_path)
-    monkeypatch.setattr(gameapi, "master_version", lambda *args: gameapi.MasterVersion("master", "1.0.0.201"))
+    monkeypatch.setattr(Session, "master_version", lambda *args: gameapi.MasterVersion("master", "1.0.0.201"))
     calls = []
     monkeypatch.setattr(catalog, "download", lambda url: calls.append(url) or binary(MODEL))
-    handler = addressables.Handler.__new__(addressables.Handler)
+    handler = browse.Handler.__new__(browse.Handler)
     handler.server = SimpleNamespace(catalogs={}, cache=tmp_path / "cache", bundle_key=None)
-    handler.catalog(addressables.Region("tw", "TW", cfg.cdn("tw"), ["en"], cfg), "en")
+    handler.catalog(browse.Region("tw", "TW", cfg.cdn("tw"), ["en"], cfg), "en")
     assert len(calls) == 1 and calls[0].endswith("catalog_1.0.0.201_en.bin")
 
 
@@ -250,4 +251,4 @@ def test_catalog_release_flag_is_distinct_from_stored_catalog_version(tmp_path):
         ]
     )
     assert args.catalog_release == "1.0.0.201" and args.catalog_version == "stored-label"
-    assert cli.load_config(args).catalog_version() == "1.0.0.201"
+    assert Session(cli.load_config(args)).catalog_version() == "1.0.0.201"

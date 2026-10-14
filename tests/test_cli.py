@@ -424,11 +424,13 @@ def test_flac_level_is_checked(data, argv, message, capsys):
 def test_flac_level_reaches_the_decode(data, tmp_path, capsys, monkeypatch):
     from types import SimpleNamespace
 
-    from nnnotes import cri, live, story
+    from nnnotes import cri, live, player, story
+    from nnnotes.session import Session
 
     seen = []
-    monkeypatch.setattr(cli, "open_catalog", lambda cfg: SimpleNamespace(has=lambda key: True))
-    monkeypatch.setattr(cli, "player_data", lambda cfg: None)
+    monkeypatch.setattr(Session, "catalog", lambda self: SimpleNamespace(has=lambda key: True))
+    monkeypatch.setattr(Session, "apk", lambda self, region=None: None)
+    monkeypatch.setattr(player, "PlayerData", lambda apk: None)
     monkeypatch.setattr(cri, "decode", lambda *a, **kw: seen.append(kw.get("flac_level")) or [])
     monkeypatch.setattr(story, "build", lambda *a, **kw: seen.append(kw["audio_options"].get("flac_level")) or {})
     monkeypatch.setattr(live, "resolve_band", lambda *a, **kw: None)

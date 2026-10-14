@@ -3,7 +3,8 @@ import zipfile
 import pytest
 import synth
 
-from nnnotes.addressables import BundleKey, browse, decrypt, parse, remote_path
+from nnnotes.addressables import BundleKey, decrypt, parse, remote_path
+from nnnotes.browse import browse
 from nnnotes.catalog import APK_OFFSET_BASE, Catalog
 
 KEY = BundleKey(synth.BUNDLE_KEY, synth.BUNDLE_SEED)

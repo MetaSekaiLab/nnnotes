@@ -7,7 +7,9 @@ from types import SimpleNamespace
 import pytest
 
 from nnnotes import cli, jsonio, live2d, web, webmodel
+from nnnotes import player as nnnotes_player
 from nnnotes.config import Config, ConfigError
+from nnnotes.session import Session
 
 KEY_A = "Character/Live2D/001_adv/adv_model_a/model/adv_model_a"
 KEY_B = "Character/Live2D/sub_x/adv_model_b/model/adv_model_b"
@@ -478,7 +480,7 @@ class FakeCatalog:
 @pytest.mark.parametrize("failed, code", [([], 0), ([{"id": "adv_model_b", "stage": "export", "error": "x"}], 1)])
 def test_web_builds_models_then_charts(tmp_path, capsys, monkeypatch, failed, code):
     calls = []
-    monkeypatch.setattr(cli, "open_catalog", lambda cfg, bundles=True: FakeCatalog())
+    monkeypatch.setattr(Session, "catalog", lambda self, bundles=True, region=None: FakeCatalog())
 
     def fake_models(out, models, cfg, player, **kw):
         calls.append(("models", models, kw))
@@ -520,7 +522,7 @@ def test_web_builds_models_then_charts(tmp_path, capsys, monkeypatch, failed, co
 
 
 def test_web_unknown_model_is_a_usage_error(tmp_path, capsys, monkeypatch):
-    monkeypatch.setattr(cli, "open_catalog", lambda cfg, bundles=True: FakeCatalog())
+    monkeypatch.setattr(Session, "catalog", lambda self, bundles=True, region=None: FakeCatalog())
     (tmp_path / "base.apk").write_bytes(b"")
     code, _, err = run(
         [
@@ -893,8 +895,9 @@ def test_story_command_exports_its_models_next_to_the_story(tmp_path, capsys, mo
     from nnnotes import story
 
     player = fake_export(monkeypatch)
-    monkeypatch.setattr(cli, "open_catalog", lambda cfg: None)
-    monkeypatch.setattr(cli, "player_data", lambda cfg: player)
+    monkeypatch.setattr(Session, "catalog", lambda self, bundles=True, region=None: None)
+    monkeypatch.setattr(Session, "apk", lambda self, region=None: None)
+    monkeypatch.setattr(nnnotes_player, "PlayerData", lambda apk: player)
 
     def fake_build(cat, md, pl, adv_id, out_dir, *, models, **kw):
         index = {"models": {KEY_A: models.ensure(KEY_A)["id"]}, **models.story_fields(out_dir)}

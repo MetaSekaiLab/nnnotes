@@ -10,6 +10,7 @@ import struct
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from test_views import FakeAddresses, addresses_doc, write_master
@@ -926,7 +927,9 @@ def test_command_list_search_summary(tmp_path, capsysbinary):
 
 def test_command_without_an_export_builds_the_content(tmp_path, capsysbinary):
     mdir = write_master(tmp_path / "m", TABLES)
-    common = argparse.Namespace(master_dir=lambda cfg: mdir, open_catalog=lambda cfg, bundles=True: Catalog())
+    common = argparse.Namespace(
+        session=lambda cfg: SimpleNamespace(master_dir=lambda: mdir, catalog=lambda bundles=True: Catalog())
+    )
     command(["voices", "list", "--character", "1", "--category", "character-rank-up", "--json"], common)
     rows = json.loads(capsysbinary.readouterr().out)
     assert [(r["id"], r["status"]) for r in rows] == [("MasterTalk:561", "not-exported")]
@@ -971,7 +974,9 @@ def test_get_without_an_export_decodes_the_one_sheet(tmp_path, capsysbinary, mon
 
     monkeypatch.setattr(cri, "acb_data", lambda cat, sheet: ({"acb": sheet_acb(sheet)}, cri.RAW_ACB))
     monkeypatch.setattr(cri, "decode", decode)
-    common = argparse.Namespace(master_dir=lambda cfg: mdir, open_catalog=lambda cfg, bundles=True: Catalog())
+    common = argparse.Namespace(
+        session=lambda cfg: SimpleNamespace(master_dir=lambda: mdir, catalog=lambda bundles=True: Catalog())
+    )
     dst = tmp_path / "got"
     command(["voices", "get", "MasterCharacterVoice:1", "-o", str(dst)], common)
     assert calls == [("VoiceSystem_02", "flac", 8)]

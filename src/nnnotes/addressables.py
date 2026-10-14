@@ -20,15 +20,9 @@ import hashlib
 import io
 import struct
 from dataclasses import dataclass, field
-from html import escape
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from pathlib import Path
-from urllib.parse import quote, unquote, urlsplit
-from urllib.request import urlopen
+from urllib.parse import quote, unquote
 
 from Crypto.Cipher import AES
-
-from . import __version__
 
 UNITYFS = b"UnityFS\0"
 ENCRYPTED_BYTES = 16384  # only the first 16 KiB of a bundle are encrypted
@@ -75,11 +69,27 @@ def decrypt(data: bytes, filename: str, key: BundleKey) -> bytes:
     return aes.decrypt(data[:ENCRYPTED_BYTES]) + data[ENCRYPTED_BYTES:]
 
 
+def relative_path(value):
+    """A JP remote asset path (below the CDN base), checked and quoted; ValueError when it is not one."""
+    decoded = unquote(value)
+    if (
+        not value
+        or value.startswith("/")
+        or "\\" in decoded
+        or "%" in decoded
+        or any(ord(c) < 32 for c in decoded)
+        or any(p in ("", ".", "..") for p in decoded.split("/"))
+        or "?" in value
+        or "#" in value
+        or ":" in value
+    ):
+        raise ValueError("invalid JP resource path")
+    return quote(decoded, safe="/!$&'()+,;=@[]-._~")
+
+
 def remote_path(internal_id: str) -> str | None:
     """The path below the CDN base of a remote location (an absolute URL: everything after its host), else None."""
     if internal_id.startswith(REMOTE_PREFIX):
-        from .jp import relative_path
-
         return "/" + relative_path(internal_id[len(REMOTE_PREFIX) :])
     scheme, sep, rest = internal_id.partition("://")
     if not sep or not scheme.isalpha():
@@ -338,169 +348,3 @@ def parse_locations(data: bytes) -> list[dict]:
             }
         )
     return out
-
-
-# ---------------------------------------------------------------- local browser
-def browse(entries: list[dict]) -> tuple[dict, dict]:
-    """(remote bundles by offset, {asset path or `bundles/<key>`: bundle offsets}) of a parsed catalog."""
-    bundles = {
-        e["offset"]: e
-        for e in entries
-        if remote_path(e["internal_id"]) is not None and e["internal_id"].endswith(".bundle")
-    }
-    files: dict[str, set] = {}
-    for entry in entries:
-        if entry["internal_id"].startswith("Assets/"):
-            ids = [i for i in entry["dependencies"] if i in bundles]
-            if ids:
-                files.setdefault(entry["primary_key"], set()).update(ids)
-    for ident, entry in bundles.items():
-        files["bundles/" + entry["primary_key"]] = {ident}
-    return bundles, files
-
-
-@dataclass
-class Region:
-    """One region of the browser: label, CDN base and catalog languages."""
-
-    name: str
-    label: str
-    cdn: str = field(repr=False)
-    languages: list[str]
-    config: object = field(default=None, repr=False)
-
-
-class Handler(BaseHTTPRequestHandler):
-    """/ -> regions, /<region>/ -> languages, /<region>/<language>/<dir>/ -> listing,
-    /<region>/<language>/download/<offset> -> the decrypted bundle."""
-
-    def listing(self, label: str, rows) -> None:
-        title = f"nnnotes {__version__} /" + label
-        data = (
-            '<!doctype html><meta charset="utf-8"><title>'
-            + escape(title)
-            + "</title><h1>"
-            + escape(title)
-            + "</h1><hr><ul>"
-            + "\n".join(sorted(rows))
-            + "</ul><hr>"
-        ).encode()
-        self.send_response(200)
-        self.send_header("Content-Type", "text/html; charset=utf-8")
-        self.send_header("Content-Length", str(len(data)))
-        self.end_headers()
-        self.wfile.write(data)
-
-    def catalog(self, region: Region, language: str):
-        key = (region.name, language)
-        if key not in self.server.catalogs:
-            if region.config is not None and region.config.provider(region.name) == "jp":
-                from .jp import open_catalog
-
-                cat = open_catalog(region.config, region.name, bundle_key=self.server.bundle_key)
-                self.server.catalogs[key] = browse(cat.entries)
-                self.server.jp_catalogs[key] = cat
-                return self.server.catalogs[key]
-            from .catalog import Catalog
-
-            version = region.config.catalog_version(region.name) if region.config is not None else "main"
-            cat = Catalog.load(language, self.server.cache / "catalogs" / region.name, cdn=region.cdn, version=version)
-            self.server.catalogs[key] = browse(cat.entries)
-        return self.server.catalogs[key]
-
-    def do_GET(self):
-        regions: dict[str, Region] = self.server.regions
-        path = unquote(urlsplit(self.path).path)
-        parts = path.strip("/").split("/") if path.strip("/") else []
-        if not parts:
-            self.listing("", [f'<li><a href="/{quote(r.name)}/">{escape(r.label)}/</a></li>' for r in regions.values()])
-            return
-        region = regions.get(parts[0])
-        if region is None:
-            self.send_error(404)
-            return
-        if len(parts) == 1:
-            self.listing(
-                region.label + "/",
-                ['<li><a href="/">../</a></li>']
-                + [
-                    f'<li><a href="/{quote(region.name)}/{quote(lang)}/">{escape(lang)}/</a></li>'
-                    for lang in region.languages
-                ],
-            )
-            return
-        language = parts[1]
-        if language not in region.languages:
-            self.send_error(404)
-            return
-        from .config import ConfigError
-        from .gameapi import GameApiError
-
-        try:
-            bundles, files = self.catalog(region, language)
-        except (GameApiError, ConfigError, ValueError):
-            self.send_error(502, "Catalog could not be loaded")
-            return
-        base = f"/{quote(region.name)}/{quote(language)}/"
-        if len(parts) > 2 and parts[2] == "download":
-            ident = parts[3] if len(parts) == 4 else ""
-            if not ident.isdecimal() or int(ident) not in bundles:
-                self.send_error(404)
-                return
-            entry = bundles[int(ident)]
-            name = entry["internal_id"].rsplit("/", 1)[1]
-            try:
-                cat = getattr(self.server, "jp_catalogs", {}).get((region.name, language))
-                if cat is not None:
-                    from .catalog import Bundle
-
-                    data = cat.fetch(Bundle(int(ident), entry["internal_id"], name, True)).read_bytes()
-                else:
-                    with urlopen(region.cdn + remote_path(entry["internal_id"]), timeout=60) as response:
-                        data = decrypt(response.read(), name, self.server.bundle_key)
-            except (GameApiError, ConfigError, ValueError):
-                self.send_error(502, "Resource could not be downloaded")
-                return
-            self.send_response(200)
-            self.send_header("Content-Type", "application/octet-stream")
-            self.send_header("Content-Disposition", "attachment; filename*=UTF-8''" + quote(name))
-            self.send_header("Content-Length", str(len(data)))
-            self.end_headers()
-            self.wfile.write(data)
-            return
-        prefix = "/".join(parts[2:])
-        prefix += "/" if prefix else ""
-        parent = base + prefix.rstrip("/").rsplit("/", 1)[0] + "/" if "/" in prefix.rstrip("/") else base
-        if not prefix:
-            parent = f"/{quote(region.name)}/"
-        rows = {f'<li><a href="{quote(parent)}">../</a></li>'}
-        for name, ids in files.items():
-            if not name.startswith(prefix):
-                continue
-            tail = name[len(prefix) :]
-            if "/" in tail:
-                directory = prefix + tail.split("/")[0] + "/"
-                rows.add(f'<li><a href="{base}{quote(directory)}">{escape(tail.split("/")[0])}/</a></li>')
-            else:
-                for ident in sorted(ids):
-                    label = tail if len(ids) == 1 else tail + " — " + bundles[ident]["primary_key"]
-                    rows.add(f'<li><a href="{base}download/{ident}">{escape(label)}</a></li>')
-        self.listing(region.label + "/" + language + "/" + prefix, rows)
-
-
-def serve(regions: list[Region], bundle_key: BundleKey, cache: Path, port: int, host: str = "127.0.0.1") -> None:
-    """Browse the catalogs of `regions` and download decrypted bundles on `host:port` (catalogs cached under
-    <cache>/catalogs/<region>/)."""
-    server = ThreadingHTTPServer((host, port), Handler)
-    server.regions = {r.name: r for r in regions}
-    server.bundle_key = bundle_key
-    server.cache = Path(cache)
-    server.catalogs = {}
-    server.jp_catalogs = {}
-    print(f"nnnotes browse: serving on {host}:{port}", flush=True)
-    try:
-        server.serve_forever()
-    except KeyboardInterrupt:
-        pass
-    finally:
-        server.server_close()

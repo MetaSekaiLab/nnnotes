@@ -423,7 +423,7 @@ def catalog_fetch(cat) -> Callable[[str], bytes]:
 # ---------------------------------------------------------------- provenance
 def apk_client(apk) -> dict:
     """{versionName, versionCode} of an APK's AndroidManifest.xml (None when absent)."""
-    from .player import MANIFEST_IN_APK, manifest_version_code, manifest_version_name
+    from .apkset import MANIFEST_IN_APK, manifest_version_code, manifest_version_name
 
     try:
         with ApkSet(apk) as z:

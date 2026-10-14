@@ -293,24 +293,16 @@ class Config:
         """CDN base of a region, without a trailing slash."""
         return self.require(f"servers.{region}", "cdn").rstrip("/")
 
-    def catalog_version(self, region: str | None = None) -> str:
-        """International selector: flag, regional/global pin, API resource_version, else legacy main."""
+    def catalog_pin(self, region: str | None = None) -> tuple[str, str, str] | None:
+        """The pinned resource version of an international catalog, (value, section, key) of the setting that pins
+        it: the --catalog-release flag, else `[servers.<region>] catalog_version`, else `[catalog] version`; None
+        when nothing pins it (session.Session.catalog_version asks the API then)."""
         region = region or self.get("catalog", "region")
         section, key = "catalog", "version"
         if region and self.origin(section, key) != "flag" and self.has(f"servers.{region}", "catalog_version"):
             section, key = f"servers.{region}", "catalog_version"
         value = self.get(section, key)
-        if value is None and region and self.has(f"servers.{region}", "api"):
-            from .gameapi import master_version
-
-            value = master_version(self, region).resource_version
-            section, key = f"servers.{region}", "api"
-        elif value is None:
-            value = "main"
-        try:
-            return check_catalog_version(value)
-        except ValueError as error:
-            raise ConfigError(f"setting {section}.{key}: {error}") from None
+        return (value, section, key) if value is not None else None
 
     def master(self, region: str | None) -> tuple[str, str]:
         """The setting that names the decoded master data of `region`: the --master flag, else
