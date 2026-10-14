@@ -33,6 +33,7 @@ A sheet's ACB / AWB bytes are read once per bundle closure and process; a decode
 bucket "cuesheets": ACB bytes, HCA key, format, FLAC level and the tools' files), so a sheet that several
 lives or episodes play (note SE, cheers) is decoded once and its files are written again from there.
 """
+
 from __future__ import annotations
 
 import json
@@ -48,12 +49,12 @@ import numpy as np
 from .addressables import remote_path
 from .catalog import Catalog
 from .config import tool, usable_cpus
-from .cristages import FLAC_LEVEL                           # ffmpeg -compression_level of the flac output
+from .cristages import FLAC_LEVEL  # ffmpeg -compression_level of the flac output
 from . import cache, crikey
 from .jsonio import dumps, write_json
 
 DECODED = cache.bucket("cuesheets", salt=cache.source_salt(__file__), disk=True)
-SHEETS = cache.bucket("acb", max_item=128 << 20)           # (cue sheet, bundle closure) -> ACB / AWB bytes, layout
+SHEETS = cache.bucket("acb", max_item=128 << 20)  # (cue sheet, bundle closure) -> ACB / AWB bytes, layout
 _keys: dict[tuple, int] = {}
 _keys_lock = threading.Lock()
 
@@ -74,6 +75,7 @@ def hca_key(apk) -> int:
 def default_workers() -> int:
     """Parallel stream decodes of one sheet: a quarter of the CPUs, 1 to 4."""
     return max(1, min(4, usable_cpus() // 4))
+
 
 ACB_SIGNATURE = b"@UTF"
 SPLIT_ACB = "SplitAcbData (chunks joined, XOR-masked)"
@@ -109,6 +111,7 @@ def _bundle_asset(cat: Catalog, cue_sheet: str):
     MonoBehaviour named like the sheet whose `implementation` managed reference is a CriSerializedBytesAssetImpl.
     SplitAcbData wins when a closure held both."""
     import UnityPy
+
     embedded = None
     for p in cat.fetch_key(f"Cri/Sound/{cue_sheet}"):
         env = UnityPy.load(str(p))
@@ -198,8 +201,22 @@ def layout(cat: Catalog, cue_sheet: str) -> str:
 def encode_args(src: Path, dst: Path, args: list[str]) -> list[str]:
     """ffmpeg arguments (after the executable) of a bit-exact encode: no metadata, bitexact container and codec
     flags, then `args` (codec options)."""
-    return ["-hide_banner", "-loglevel", "error", "-y", "-i", str(src), "-map_metadata", "-1",
-            "-fflags", "+bitexact", "-flags:a", "+bitexact", *args, str(dst)]
+    return [
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-y",
+        "-i",
+        str(src),
+        "-map_metadata",
+        "-1",
+        "-fflags",
+        "+bitexact",
+        "-flags:a",
+        "+bitexact",
+        *args,
+        str(dst),
+    ]
 
 
 def _check_format(fmt: str, also) -> None:
@@ -209,9 +226,17 @@ def _check_format(fmt: str, also) -> None:
         raise ValueError(f"also: {also[0]} is the format of the first file")
 
 
-def decode(cat: Catalog, cue_sheet: str, out_dir: Path, key: int | None = None,
-           fmt: str = "flac", *, flac_level: int = FLAC_LEVEL, workers: int | None = None,
-           also: tuple[str, list[str]] | None = None) -> dict[str, Path]:
+def decode(
+    cat: Catalog,
+    cue_sheet: str,
+    out_dir: Path,
+    key: int | None = None,
+    fmt: str = "flac",
+    *,
+    flac_level: int = FLAC_LEVEL,
+    workers: int | None = None,
+    also: tuple[str, list[str]] | None = None,
+) -> dict[str, Path]:
     """Decode every stream of a cue sheet. Returns {streamName: file of its first stream}.
 
     flac (default) keeps the decoded PCM bit-exact (`flac_level`: ffmpeg's compression level; any level decodes to
@@ -232,36 +257,69 @@ def decode(cat: Catalog, cue_sheet: str, out_dir: Path, key: int | None = None,
     files, _ = acb_data(cat, cue_sheet)
     if "awb" in files:
         raise NotImplementedError(f"cue sheet {cue_sheet}: external AWB (streamed waveforms) not supported")
-    ck = DECODED.key(cue_sheet, files["acb"], int(key), fmt,
-                     int(flac_level) if fmt == "flac" else None, cache.file_id(vgm),
-                     cache.file_id(ffmpeg) if ffmpeg else None, None if also is None else [also[0], list(also[1])])
+    ck = DECODED.key(
+        cue_sheet,
+        files["acb"],
+        int(key),
+        fmt,
+        int(flac_level) if fmt == "flac" else None,
+        cache.file_id(vgm),
+        cache.file_id(ffmpeg) if ffmpeg else None,
+        None if also is None else [also[0], list(also[1])],
+    )
     hit = DECODED.get(ck)
     if hit is not None:
         return _replay(hit, out_dir)
-    d = decode_acb_bytes(files["acb"], None, key, fmt, out_dir, name=cue_sheet, flac_level=flac_level,
-                         workers=workers, also=also, vgmstream=vgm, ffmpeg=ffmpeg)
+    d = decode_acb_bytes(
+        files["acb"],
+        None,
+        key,
+        fmt,
+        out_dir,
+        name=cue_sheet,
+        flac_level=flac_level,
+        workers=workers,
+        also=also,
+        vgmstream=vgm,
+        ffmpeg=ffmpeg,
+    )
     if cache.enabled():
-        meta_json = {"files": d.files, "result": {k: v.name for k, v in d.result.items()},
-                     "cues": dumps(d.cues, indent=1, ensure_ascii=True),
-                     "streams": dumps(d.streams, indent=1, ensure_ascii=True)}
-        DECODED.put(ck, cache.pack(json.dumps(meta_json).encode("utf-8"),
-                                   [(out_dir / f).read_bytes() for f in d.files]))
+        meta_json = {
+            "files": d.files,
+            "result": {k: v.name for k, v in d.result.items()},
+            "cues": dumps(d.cues, indent=1, ensure_ascii=True),
+            "streams": dumps(d.streams, indent=1, ensure_ascii=True),
+        }
+        DECODED.put(
+            ck, cache.pack(json.dumps(meta_json).encode("utf-8"), [(out_dir / f).read_bytes() for f in d.files])
+        )
     return d.result
 
 
 class Decoded(NamedTuple):
     """What decode_acb_bytes wrote: {streamName: file of its first stream}, the values of cues.json and
     streams.json, and the names of the stream files (with the `also` files), sorted."""
+
     result: dict
     cues: dict
     streams: list
     files: list
 
 
-def decode_acb_bytes(acb: bytes, awb: bytes | None, key: int, fmt: str = "flac", out_dir: Path = Path("."), *,
-                     name: str = "sheet", flac_level: int = FLAC_LEVEL, workers: int | None = None,
-                     also: tuple[str, list[str]] | None = None, vgmstream: str | None = None,
-                     ffmpeg: str | None = None) -> Decoded:
+def decode_acb_bytes(
+    acb: bytes,
+    awb: bytes | None,
+    key: int,
+    fmt: str = "flac",
+    out_dir: Path = Path("."),
+    *,
+    name: str = "sheet",
+    flac_level: int = FLAC_LEVEL,
+    workers: int | None = None,
+    also: tuple[str, list[str]] | None = None,
+    vgmstream: str | None = None,
+    ffmpeg: str | None = None,
+) -> Decoded:
     """Decode every stream of an ACB (its waveforms in its memory AWB) into out_dir as decode does: one file per
     stream, cues.json, streams.json. `awb`: an external AWB (refused: vgmstream opening the ACB lists only its
     memory waveforms). `key`: the HCA keycode; `name`: the stem of the ACB file vgmstream reads (the stream names
@@ -302,7 +360,7 @@ def decode_acb_bytes(acb: bytes, awb: bytes | None, key: int, fmt: str = "flac",
         cue = info.get("stream name")
         if not cue:
             raise RuntimeError(f"{name} stream {i}: no cue name")
-        stem = cue if cue not in seen else f"{cue}_{i}"             # layered waveforms share a name
+        stem = cue if cue not in seen else f"{cue}_{i}"  # layered waveforms share a name
         if stem in stems:
             raise RuntimeError(f"{name} stream {i}: file name {stem} already used")
         seen.add(cue)
@@ -314,11 +372,11 @@ def decode_acb_bytes(acb: bytes, awb: bytes | None, key: int, fmt: str = "flac",
         wav = work / f"{stem}.wav"
         # -i: one pass of the stream (no loop repetition / fade); loop points
         # go to the manifest so a player can loop sample-exactly.
-        subprocess.run([vgm, "-i", "-s", str(i), "-o", str(wav), str(acb_file)],
-                       check=True, capture_output=True)
+        subprocess.run([vgm, "-i", "-s", str(i), "-o", str(wav), str(acb_file)], check=True, capture_output=True)
         if also is not None:
-            r = subprocess.run([ffmpeg, *encode_args(wav, out_dir / f"{stem}{also[0]}", also[1])],
-                               capture_output=True, text=True)
+            r = subprocess.run(
+                [ffmpeg, *encode_args(wav, out_dir / f"{stem}{also[0]}", also[1])], capture_output=True, text=True
+            )
             if r.returncode != 0:
                 raise RuntimeError(f"ffmpeg {also[0]} failed on {name} stream {i}: {r.stderr[-2000:]}")
         if fmt == "wav":
@@ -326,10 +384,11 @@ def decode_acb_bytes(acb: bytes, awb: bytes | None, key: int, fmt: str = "flac",
             shutil.move(str(wav), dst)
         else:
             dst = out_dir / f"{stem}.{fmt}"
-            codec = {"flac": ["-c:a", "flac", "-compression_level", str(int(flac_level))],
-                     "ogg": ["-c:a", "libvorbis", "-q:a", "5"]}[fmt]
-            subprocess.run([ffmpeg, "-y", "-loglevel", "error", "-i", str(wav), *codec, str(dst)],
-                           check=True)
+            codec = {
+                "flac": ["-c:a", "flac", "-compression_level", str(int(flac_level))],
+                "ogg": ["-c:a", "libvorbis", "-q:a", "5"],
+            }[fmt]
+            subprocess.run([ffmpeg, "-y", "-loglevel", "error", "-i", str(wav), *codec, str(dst)], check=True)
             wav.unlink()
         return dst
 
@@ -339,9 +398,12 @@ def decode_acb_bytes(acb: bytes, awb: bytes | None, key: int, fmt: str = "flac",
     manifest: dict[str, dict] = {}
     streams: list[dict] = []
     for (i, info, cue, _), dst in zip(plan, dsts):
-        entry = {"file": dst.name, "sampleRate": _samples(info.get("sample rate")),
-                 "channels": _samples(info.get("channels")),
-                 "samples": _samples(info.get("stream total samples"))}
+        entry = {
+            "file": dst.name,
+            "sampleRate": _samples(info.get("sample rate")),
+            "channels": _samples(info.get("channels")),
+            "samples": _samples(info.get("stream total samples")),
+        }
         if "loop start" in info:
             entry["loopStart"] = _samples(info["loop start"])
             entry["loopEnd"] = _samples(info["loop end"])

@@ -32,7 +32,7 @@ def test_cbc_round_trip():
     data = bytes(range(256)) * 3 + b"tail"
     ct = synth.rijndael256_cbc_encrypt(data, synth.MASTER_KEY, synth.MASTER_IV)
     pt = master.decrypt_cbc(ct, synth.MASTER_KEY, synth.MASTER_IV)
-    assert pt[:len(data)] == data and pt[len(data):] == bytes([pt[-1]]) * pt[-1]
+    assert pt[: len(data)] == data and pt[len(data) :] == bytes([pt[-1]]) * pt[-1]
     with pytest.raises(ValueError, match="multiple of 32"):
         master.decrypt_cbc(ct[:-1], synth.MASTER_KEY, synth.MASTER_IV)
 
@@ -67,7 +67,7 @@ def test_decode_files(tmp_path):
     assert r["decoded"] == 2 and [f["file"] for f in r["failed"]] == ["MasterBad.bin"]
     data = (tmp_path / "json" / "MasterB.json").read_bytes()
     assert json.loads(data) == TABLE
-    assert b"\r" not in data and "テスト".encode("utf-8") in data           # UTF-8, LF, not escaped
+    assert b"\r" not in data and "テスト".encode("utf-8") in data  # UTF-8, LF, not escaped
     assert not (tmp_path / "json" / "MasterBad.json").exists()
     with pytest.raises(FileNotFoundError):
         master.input_files([tmp_path / "absent"])
@@ -97,10 +97,12 @@ def test_download_rejects_path_names(tmp_path):
 
 def test_international_manifest_survives_worker_exception(tmp_path):
     manifest = json.dumps({"version": "v", "files": [{"name": "MasterA.bin", "hash": ""}]}).encode()
+
     def get(url):
         if url.endswith("MasterManifest.json"):
             return manifest
         raise master.DownloadError("connection failed")
+
     with pytest.raises(master.DownloadError):
         master.download("https://cdn.invalid", "v", tmp_path, get=get)
     assert (tmp_path / "MasterManifest.json").read_bytes() == manifest
@@ -108,16 +110,28 @@ def test_international_manifest_survives_worker_exception(tmp_path):
 
 # ---------------------------------------------------------------- the stored JSON
 def test_table_json_is_the_json_rule():
-    finite = {"_allData": [{"_id": 1, "_name": "テスト\n\"q\"", "_v": 0.1, "_w": -2.5e-12, "_big": 1e300, "_n": None,
-                            "_list": [1, 2.0, True, {"_x": []}], "_s": " "}]}
+    finite = {
+        "_allData": [
+            {
+                "_id": 1,
+                "_name": 'テスト\n"q"',
+                "_v": 0.1,
+                "_w": -2.5e-12,
+                "_big": 1e300,
+                "_n": None,
+                "_list": [1, 2.0, True, {"_x": []}],
+                "_s": " ",
+            }
+        ]
+    }
     text = json.dumps(finite, ensure_ascii=False).encode("utf-8")
-    assert master.table_json(text) == json.dumps(finite, ensure_ascii=False, indent=1)      # byte-identical
+    assert master.table_json(text) == json.dumps(finite, ensure_ascii=False, indent=1)  # byte-identical
     # Python's own `Infinity` tokens (not JSON) come out as the project's out-of-range literals
     inf = b'{"_allData": [{"_id": 1, "_a": Infinity, "_b": [-Infinity, 1.5]}]}'
     out = master.table_json(inf)
     assert "Infinity" not in out and '"_a": 1e999' in out and "-1e999" in out
     assert json.loads(out) == {"_allData": [{"_id": 1, "_a": float("inf"), "_b": [float("-inf"), 1.5]}]}
-    assert master.table_json(out.encode("utf-8")) == out                                  # stable
+    assert master.table_json(out.encode("utf-8")) == out  # stable
     with pytest.raises(ValueError, match=r"NaN at /_allData\[0\]/_c"):
         master.table_json(b'{"_allData": [{"_c": NaN}]}')
 
@@ -126,12 +140,14 @@ def test_decode_files_reports_a_nan_table(tmp_path):
     src = tmp_path / "bin"
     src.mkdir()
     plain = gzip.compress(b'{"_allData": [{"_id": 1, "_v": NaN}]}', mtime=0)
-    (src / "MasterNaN.bin").write_bytes(bytes(64) + synth.rijndael256_cbc_encrypt(plain, synth.MASTER_KEY,
-                                                                                  synth.MASTER_IV))
+    (src / "MasterNaN.bin").write_bytes(
+        bytes(64) + synth.rijndael256_cbc_encrypt(plain, synth.MASTER_KEY, synth.MASTER_IV)
+    )
     (src / "MasterInf.bin").write_bytes(synth.master_file({"_allData": [{"_id": 1, "_v": float("inf")}]}))
     r = master.decode_files(master.input_files([src]), tmp_path / "json", KEY)
     assert r["decoded"] == 1 and r["failed"] == [
-        {"file": "MasterNaN.bin", "error": "ValueError: NaN at /_allData[0]/_v (no JSON representation)"}]
+        {"file": "MasterNaN.bin", "error": "ValueError: NaN at /_allData[0]/_v (no JSON representation)"}
+    ]
     assert '"_v": 1e999' in (tmp_path / "json" / "MasterInf.json").read_text(encoding="utf-8")
 
 

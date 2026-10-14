@@ -1,4 +1,5 @@
 """Small synthetic APK sets: expansion reuse, invalidation and reader lifetimes."""
+
 from concurrent.futures import ThreadPoolExecutor
 import os
 from pathlib import Path
@@ -19,10 +20,14 @@ def clear_expansions():
 
 
 def package(path, payload=b"asset"):
-    path.write_bytes(zip_bytes({
-        "base.apk": zip_bytes({"AndroidManifest.xml": b"base"}),
-        "split_data.apk": zip_bytes({"asset": payload, "AndroidManifest.xml": b"split"}),
-    }))
+    path.write_bytes(
+        zip_bytes(
+            {
+                "base.apk": zip_bytes({"AndroidManifest.xml": b"base"}),
+                "split_data.apk": zip_bytes({"asset": payload, "AndroidManifest.xml": b"split"}),
+            }
+        )
+    )
     return path
 
 
@@ -31,10 +36,12 @@ def test_repeated_and_concurrent_opens_expand_once(tmp_path, monkeypatch, suffix
     source = package(tmp_path / ("game" + suffix))
     copy = Mock(wraps=apkset.shutil.copyfileobj)
     monkeypatch.setattr(apkset.shutil, "copyfileobj", copy)
+
     def read(_):
         with apkset.ApkSet(source) as archive:
             assert archive.read("AndroidManifest.xml") == b"base"
             return archive.read("asset")
+
     with ThreadPoolExecutor(4) as pool:
         assert list(pool.map(read, range(8))) == [b"asset"] * 8
     assert read(None) == b"asset"
@@ -80,15 +87,19 @@ def test_failed_expansion_is_cleaned_and_can_be_retried(tmp_path, monkeypatch):
     source = package(tmp_path / "game.apks")
     directories = []
     make_dir = apkset.tempfile.TemporaryDirectory
+
     def temporary(**kwargs):
         directory = make_dir(**kwargs)
         directories.append(Path(directory.name))
         return directory
+
     monkeypatch.setattr(apkset.tempfile, "TemporaryDirectory", temporary)
     copy = apkset.shutil.copyfileobj
+
     def fail(stream, target):
         copy(stream, target)
         raise OSError("synthetic copy failure")
+
     monkeypatch.setattr(apkset.shutil, "copyfileobj", fail)
     with pytest.raises(OSError, match="synthetic copy failure"):
         with apkset.ApkSet(source):
@@ -102,11 +113,16 @@ def test_failed_expansion_is_cleaned_and_can_be_retried(tmp_path, monkeypatch):
 
 def test_cached_apk_bundle_does_not_reexpand_the_archive(tmp_path, monkeypatch):
     source = tmp_path / "game.apks"
-    source.write_bytes(zip_bytes({
-        "base.apk": zip_bytes({"AndroidManifest.xml": b"base"}),
-        "split_data.apk": zip_bytes({APK_CATALOG: cat_bytes(),
-                                     APK_AA_DIR + "Android/local.bundle": b"UnityFS\0local"}),
-    }))
+    source.write_bytes(
+        zip_bytes(
+            {
+                "base.apk": zip_bytes({"AndroidManifest.xml": b"base"}),
+                "split_data.apk": zip_bytes(
+                    {APK_CATALOG: cat_bytes(), APK_AA_DIR + "Android/local.bundle": b"UnityFS\0local"}
+                ),
+            }
+        )
+    )
     cat = Catalog(cat_bytes(), tmp_path / "cache", apk=source)
     copy = Mock(wraps=apkset.shutil.copyfileobj)
     monkeypatch.setattr(apkset.shutil, "copyfileobj", copy)

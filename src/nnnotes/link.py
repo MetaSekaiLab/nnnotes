@@ -35,6 +35,7 @@ table is a function of its key. With a layout manifest (its entries' ids) it giv
 reads the results one at a time and writes the table's text entry by entry (encode_artifacts), so its memory is the
 table's entries, not the results nor the whole text.
 """
+
 from __future__ import annotations
 
 import json
@@ -55,7 +56,7 @@ _CAB = re.compile(r"^CAB-[0-9a-f]+")
 
 # ---------------------------------------------------------------- scripts
 def script_entry(s: dict) -> str:
-    """"assembly|namespace|class" of a census MonoScript record."""
+    """ "assembly|namespace|class" of a census MonoScript record."""
     asm = s.get("assembly") or ""
     if asm.endswith(".dll"):
         asm = asm[:-4]
@@ -108,8 +109,10 @@ def _container_addresses(stable: str, entries: list[dict], info: dict, tags: dic
     def cls(e):
         return (info.get((e["file"], e["pathId"])) or {}).get("class")
 
-    order = sorted({(e["file"], e["pathId"]): e for e in members}.values(),
-                   key=lambda e: (cls(e) not in classes, e["file"], e["pathId"]))
+    order = sorted(
+        {(e["file"], e["pathId"]): e for e in members}.values(),
+        key=lambda e: (cls(e) not in classes, e["file"], e["pathId"]),
+    )
     out = [(contract.stable_address(stable, path), order[0])]
     names: dict[str, list[dict]] = {}
     for e in order[1:]:
@@ -143,8 +146,7 @@ def addresses(index: dict, censuses) -> dict:
             owners.setdefault(n, set()).add(stable)
         found = [a["assetBundleName"] for a in doc["assetBundles"] if a["assetBundleName"]]
         if b.get("bundleName") and found and b["bundleName"] + ".bundle" not in found:
-            problems["bundleNames"].append({"bundle": stable, "catalog": b["bundleName"] + ".bundle",
-                                            "census": found})
+            problems["bundleNames"].append({"bundle": stable, "catalog": b["bundleName"] + ".bundle", "census": found})
         g: dict[str, list[dict]] = {}
         for e in census.container(doc):
             g.setdefault(e["path"].casefold(), []).append(e)
@@ -153,8 +155,12 @@ def addresses(index: dict, censuses) -> dict:
             if (file, o["pathId"]) in wanted:
                 info[(file, o["pathId"])] = o
         groups[stable], tags_of[stable] = g, file_tags(names)
-        bundles[stable] = {"name": b["name"], "files": names, "assetBundleName": found[0] if found else None,
-                           "keys": set()}
+        bundles[stable] = {
+            "name": b["name"],
+            "files": names,
+            "assetBundleName": found[0] if found else None,
+            "keys": set(),
+        }
     cab = {n: min(s) for n, s in owners.items()}
     problems["files"] = [{"file": n, "bundles": sorted(s)} for n, s in sorted(owners.items()) if len(s) > 1]
     problems["bundleNames"].sort(key=lambda p: p["bundle"])
@@ -163,8 +169,13 @@ def addresses(index: dict, censuses) -> dict:
         for _, entries in sorted(g.items()):
             for addr, e in _container_addresses(stable, entries, info, tags_of[stable]):
                 o = info.get((e["file"], e["pathId"])) or {}
-                objects[addr] = {"object": contract.object_id(e["file"], e["pathId"]), "class": o.get("class"),
-                                 "name": o.get("name"), "byteSize": o.get("byteSize"), "typeHash": o.get("typeHash")}
+                objects[addr] = {
+                    "object": contract.object_id(e["file"], e["pathId"]),
+                    "class": o.get("class"),
+                    "name": o.get("name"),
+                    "byteSize": o.get("byteSize"),
+                    "typeHash": o.get("typeHash"),
+                }
     keys: dict[str, list[dict]] = {}
     for loc in index["locations"]:
         entry = {"location": loc["id"], "type": loc["type"], "internalId": loc["internalId"]}
@@ -181,8 +192,9 @@ def addresses(index: dict, censuses) -> dict:
             home = next((s for s in in_bundles if folded in groups.get(s, {})), None)
             if home is not None:
                 entry["bundle"] = home
-                entry["objects"] = [contract.object_id(e["file"], e["pathId"]) for e in groups[home][folded]
-                                    if e["file"] is not None]
+                entry["objects"] = [
+                    contract.object_id(e["file"], e["pathId"]) for e in groups[home][folded] if e["file"] is not None
+                ]
                 bundles[home]["keys"].add(loc["primaryKey"])
             else:
                 entry["bundle"] = in_bundles[0] if in_bundles else None
@@ -197,11 +209,15 @@ def addresses(index: dict, censuses) -> dict:
         b["keys"] = sorted(b["keys"])
     problems["keys"] = sorted(set(problems["keys"]))
     cats = index["catalogs"]
-    return {"schema": ADDRESSES,
-            "catalog": {n: cats[n]["sha256"] if n in cats else None for n in catalogdb.CATALOG_NAMES},
-            "bundles": dict(sorted(bundles.items())), "files": dict(sorted(cab.items())),
-            "keys": dict(sorted(keys.items())),
-            "objects": dict(sorted(objects.items())), "problems": problems}
+    return {
+        "schema": ADDRESSES,
+        "catalog": {n: cats[n]["sha256"] if n in cats else None for n in catalogdb.CATALOG_NAMES},
+        "bundles": dict(sorted(bundles.items())),
+        "files": dict(sorted(cab.items())),
+        "keys": dict(sorted(keys.items())),
+        "objects": dict(sorted(objects.items())),
+        "problems": problems,
+    }
 
 
 def address_of(doc: dict, oid: str, container_objects: dict | None = None) -> str | None:
@@ -239,8 +255,13 @@ def diff_addresses(old: dict, new: dict) -> dict:
             rebuilt.append({"address": addr, "old": a[addr]["object"], "new": b[addr]["object"]})
         else:
             changed.append({"address": addr, "fields": fields, "old": a[addr], "new": b[addr]})
-    out = {"added": sorted(set(b) - set(a)), "removed": sorted(set(a) - set(b)), "changed": changed,
-           "rebuilt": rebuilt, "unchanged": same}
+    out = {
+        "added": sorted(set(b) - set(a)),
+        "removed": sorted(set(a) - set(b)),
+        "changed": changed,
+        "rebuilt": rebuilt,
+        "unchanged": same,
+    }
     out["summary"] = {k: (v if isinstance(v, int) else len(v)) for k, v in out.items()}
     return out
 
@@ -257,6 +278,7 @@ def _read(store, task, role: str) -> dict:
 class ScriptsStage(Stage):
     """link.scripts: the censuses that hold MonoScripts -> the script table. One subject ("all"); inputs "census:<bundle
     subject>". Waits for census tasks that have not run; skips failed ones. Artifact "link.scripts:all#scripts"."""
+
     name = "link.scripts"
     version = 1
     after = ("unity.census",)
@@ -268,8 +290,11 @@ class ScriptsStage(Stage):
         pending = env.pending(census.CensusStage.name)
         if pending:
             raise Pending(pending[0])
-        return [_census_input(env, tid) for tid in env.tasks(census.CensusStage.name)
-                if env.artifact(tid, "census")["semantics"]["facts"].get("scripts")]
+        return [
+            _census_input(env, tid)
+            for tid in env.tasks(census.CensusStage.name)
+            if env.artifact(tid, "census")["semantics"]["facts"].get("scripts")
+        ]
 
     def estimate(self, subject: str, env, inputs: list[Input]) -> Cost:
         size = sum(i.size for i in inputs)
@@ -278,8 +303,12 @@ class ScriptsStage(Stage):
     def run(self, task, store) -> Output:
         doc = scripts(_read(store, task, i.role) for i in task.inputs)
         content = store.add(contract.encode(doc), "json")
-        rec = contract.artifact(contract.artifact_id(task.id, "scripts"), content, contract.provenance(task),
-                                {"kind": "link.scripts", "format": "json", "facts": {"scripts": len(doc["scripts"])}})
+        rec = contract.artifact(
+            contract.artifact_id(task.id, "scripts"),
+            content,
+            contract.provenance(task),
+            {"kind": "link.scripts", "format": "json", "facts": {"scripts": len(doc["scripts"])}},
+        )
         return Output([rec], [])
 
 
@@ -288,6 +317,7 @@ class AddressesStage(Stage):
     bundles (inputs "census:<stable name>") -> the address table. Subjects: those of catalog.index (the fact
     "catalogs"). Waits for census tasks of its bundles that have not run; skips failed ones. Artifact
     "link.addresses:<subject>#addresses"."""
+
     name = "link.addresses"
     version = 1
     after = ("catalog.index", "unity.census")
@@ -311,14 +341,23 @@ class AddressesStage(Stage):
 
     def run(self, task, store) -> Output:
         idx = _read(store, task, "index")
-        docs = ((i.role.split(":", 1)[1], _read(store, task, i.role)) for i in task.inputs
-                if i.role.startswith("census:"))
+        docs = (
+            (i.role.split(":", 1)[1], _read(store, task, i.role)) for i in task.inputs if i.role.startswith("census:")
+        )
         doc = addresses(idx, docs)
         content = store.add(contract.encode(doc), "json")
-        facts = {"bundles": len(doc["bundles"]), "keys": len(doc["keys"]), "objects": len(doc["objects"]),
-                 "problems": {k: len(v) for k, v in doc["problems"].items()}}
-        rec = contract.artifact(contract.artifact_id(task.id, "addresses"), content, contract.provenance(task),
-                                {"kind": "link.addresses", "format": "json", "facts": facts})
+        facts = {
+            "bundles": len(doc["bundles"]),
+            "keys": len(doc["keys"]),
+            "objects": len(doc["objects"]),
+            "problems": {k: len(v) for k, v in doc["problems"].items()},
+        }
+        rec = contract.artifact(
+            contract.artifact_id(task.id, "addresses"),
+            content,
+            contract.provenance(task),
+            {"kind": "link.addresses", "format": "json", "facts": facts},
+        )
         return Output([rec], [])
 
 
@@ -342,20 +381,28 @@ def artifact_table(results) -> tuple[dict, dict, dict]:
 def artifacts(results) -> dict:
     """The artifact table (nnnotes.artifacts/1) of results [(task id, result)]."""
     objects, contained, arts = artifact_table(results)
-    return {"schema": ARTIFACTS, "objects": {o: sorted(v) for o, v in sorted(objects.items())},
-            "contained": dict(sorted(contained.items())), "artifacts": dict(sorted(arts.items()))}
+    return {
+        "schema": ARTIFACTS,
+        "objects": {o: sorted(v) for o, v in sorted(objects.items())},
+        "contained": dict(sorted(contained.items())),
+        "artifacts": dict(sorted(arts.items())),
+    }
 
 
 def encode_artifacts(objects: dict, contained: dict, arts: dict, chunk: int = 1 << 20):
     """contract.encode(artifacts(...)) of the parts artifact_table gives, as byte strings of about `chunk` bytes:
     the canonical text (keys sorted, indent 1, non-ASCII as is, one trailing newline) written entry by entry, so the
     whole document is never built."""
+
     def text(v) -> str:
         return json.dumps(v, indent=1, ensure_ascii=False, sort_keys=True)
 
     buf, size = ["{"], 0
-    tables = (("artifacts", arts, arts.get), ("contained", contained, contained.get),
-              ("objects", objects, lambda k: sorted(objects[k])))
+    tables = (
+        ("artifacts", arts, arts.get),
+        ("contained", contained, contained.get),
+        ("objects", objects, lambda k: sorted(objects[k])),
+    )
     for i, (name, table, value) in enumerate(tables):
         buf.append(("\n " if i == 0 else ",\n ") + text(name) + ": ")
         if not table:
@@ -379,6 +426,7 @@ class ArtifactsStage(Stage):
     """link.artifacts: the results of the export stages (EXPORT_STAGES, those of the pipeline) -> the artifact table.
     One subject ("all"); no inputs, context {"results": {task id: key}}. Waits for export tasks that have not run;
     skips failed ones. Artifact "link.artifacts:all#artifacts"."""
+
     name = "link.artifacts"
     version = 1
     after = ("unity.export",)
@@ -410,9 +458,14 @@ class ArtifactsStage(Stage):
                 if doc is None:
                     raise FileNotFoundError(f"result of {tid} ({key}) is not in the store")
                 yield tid, doc
+
         objects, contained, arts = artifact_table(results())
         content = store.add_chunks(encode_artifacts(objects, contained, arts), "json")
         facts = {"objects": len(objects), "contained": len(contained), "artifacts": len(arts)}
-        rec = contract.artifact(contract.artifact_id(task.id, "artifacts"), content, contract.provenance(task),
-                                {"kind": "link.artifacts", "format": "json", "facts": facts})
+        rec = contract.artifact(
+            contract.artifact_id(task.id, "artifacts"),
+            content,
+            contract.provenance(task),
+            {"kind": "link.artifacts", "format": "json", "facts": facts},
+        )
         return Output([rec], [])

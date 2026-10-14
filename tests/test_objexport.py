@@ -2,6 +2,7 @@
 object gets exactly one item, the converters' artifacts, references, byte arrays and float forms, the generic
 fallback with its reason codes, class selection, determinism, the cross-bundle sprite crop, and the golden records'
 providers."""
+
 import json
 import math
 import re
@@ -13,8 +14,22 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from fakeunity import (F32, NORMAL, POSITION, UV0, FakeEnvironment, FakeTexture2D, mesh_tt, pptr, quad, rect,
-                       render_data, rgba_bytes, sprite_tt, submesh)
+from fakeunity import (
+    F32,
+    NORMAL,
+    POSITION,
+    UV0,
+    FakeEnvironment,
+    FakeTexture2D,
+    mesh_tt,
+    pptr,
+    quad,
+    rect,
+    render_data,
+    rgba_bytes,
+    sprite_tt,
+    submesh,
+)
 from nnnotes import census as census_mod, contract, objexport
 from nnnotes.atoms import Impl, astc, estimate, gltf
 from nnnotes.atoms.reader import UnityBundle
@@ -25,10 +40,14 @@ from nnnotes.store import Store
 
 ROOT = Path(__file__).resolve().parents[1]
 CAB, ATLAS_CAB = "CAB-a", "CAB-atlas"
-SCRIPTS = {f"{CAB}:80": "A|Game|Local", "CAB-scripts:7": "Assembly-CSharp|Game|Behaviour",
-           "CAB-scripts:8": "Assembly-CSharp||Holder", "CAB-scripts:10": "Assembly-CSharp|Fwk.Sound|SplitAcbData",
-           "CAB-scripts:11": "CriMw.CriWare.Assets.Runtime|CriWare.Assets|CriAtomAcbAsset",
-           "CAB-scripts:12": "Assembly-CSharp|Game|Fader"}
+SCRIPTS = {
+    f"{CAB}:80": "A|Game|Local",
+    "CAB-scripts:7": "Assembly-CSharp|Game|Behaviour",
+    "CAB-scripts:8": "Assembly-CSharp||Holder",
+    "CAB-scripts:10": "Assembly-CSharp|Fwk.Sound|SplitAcbData",
+    "CAB-scripts:11": "CriMw.CriWare.Assets.Runtime|CriWare.Assets|CriAtomAcbAsset",
+    "CAB-scripts:12": "Assembly-CSharp|Game|Fader",
+}
 INF = float("inf")
 
 
@@ -39,10 +58,17 @@ def _sprite_mesh(r):
 
 
 def _atlas_entry(tex_pid, tr, raw=3):
-    return {"texture": pptr(tex_pid), "alphaTexture": pptr(), "textureRect": tr,
-            "textureRectOffset": {"x": 0.0, "y": 0.0}, "atlasRectOffset": {"x": 0.0, "y": 0.0},
-            "uvTransform": {"x": 100.0, "y": 0.0, "z": 100.0, "w": 0.0}, "downscaleMultiplier": 1.0,
-            "settingsRaw": raw, "secondaryTextures": []}
+    return {
+        "texture": pptr(tex_pid),
+        "alphaTexture": pptr(),
+        "textureRect": tr,
+        "textureRectOffset": {"x": 0.0, "y": 0.0},
+        "atlasRectOffset": {"x": 0.0, "y": 0.0},
+        "uvTransform": {"x": 100.0, "y": 0.0, "z": 100.0, "w": 0.0},
+        "downscaleMultiplier": 1.0,
+        "settingsRaw": raw,
+        "secondaryTextures": [],
+    }
 
 
 def _key(n):
@@ -50,14 +76,24 @@ def _key(n):
 
 
 def _transform(go, children=(), father=0):
-    return {"m_GameObject": pptr(go), "m_LocalRotation": {"x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0},
-            "m_LocalPosition": {"x": 1.0, "y": 2.0, "z": 3.0}, "m_LocalScale": {"x": 1.0, "y": 1.0, "z": 1.0},
-            "m_Children": [pptr(c) for c in children], "m_Father": pptr(father)}
+    return {
+        "m_GameObject": pptr(go),
+        "m_LocalRotation": {"x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0},
+        "m_LocalPosition": {"x": 1.0, "y": 2.0, "z": 3.0},
+        "m_LocalScale": {"x": 1.0, "y": 1.0, "z": 1.0},
+        "m_Children": [pptr(c) for c in children],
+        "m_Father": pptr(father),
+    }
 
 
 def _go(name, comps):
-    return {"m_Component": [{"component": pptr(c)} for c in comps], "m_Layer": 5, "m_Name": name, "m_Tag": 0,
-            "m_IsActive": True}
+    return {
+        "m_Component": [{"component": pptr(c)} for c in comps],
+        "m_Layer": 5,
+        "m_Name": name,
+        "m_Tag": 0,
+        "m_IsActive": True,
+    }
 
 
 def _mono(go, script, name="", **fields):
@@ -65,17 +101,48 @@ def _mono(go, script, name="", **fields):
 
 
 def _clip():
-    return {"m_Name": "clip", "m_Legacy": False, "m_Compressed": False, "m_SampleRate": 60.0, "m_WrapMode": 0,
-            "m_MuscleClip": {"m_StartTime": 0.0, "m_StopTime": 1.0, "m_LoopTime": 0, "m_CycleOffset": 0.0,
-                             "m_Clip": {"data": {
-                                 "m_StreamedClip": {"data": [], "curveCount": 0},
-                                 "m_DenseClip": {"m_FrameCount": 0, "m_CurveCount": 0, "m_SampleRate": 60.0,
-                                                 "m_BeginTime": 0.0, "m_SampleArray": []},
-                                 "m_ConstantClip": {"data": [0.5, 1.0, 2.0]}}}},
-            "m_ClipBindingConstant": {"genericBindings": [
-                {"path": 0, "attribute": 1, "script": pptr(), "typeID": 4, "customType": 0, "isPPtrCurve": 0,
-                 "isIntCurve": 0, "isSerializeReferenceCurve": 0}], "pptrCurveMapping": []},
-            "m_Events": []}
+    return {
+        "m_Name": "clip",
+        "m_Legacy": False,
+        "m_Compressed": False,
+        "m_SampleRate": 60.0,
+        "m_WrapMode": 0,
+        "m_MuscleClip": {
+            "m_StartTime": 0.0,
+            "m_StopTime": 1.0,
+            "m_LoopTime": 0,
+            "m_CycleOffset": 0.0,
+            "m_Clip": {
+                "data": {
+                    "m_StreamedClip": {"data": [], "curveCount": 0},
+                    "m_DenseClip": {
+                        "m_FrameCount": 0,
+                        "m_CurveCount": 0,
+                        "m_SampleRate": 60.0,
+                        "m_BeginTime": 0.0,
+                        "m_SampleArray": [],
+                    },
+                    "m_ConstantClip": {"data": [0.5, 1.0, 2.0]},
+                }
+            },
+        },
+        "m_ClipBindingConstant": {
+            "genericBindings": [
+                {
+                    "path": 0,
+                    "attribute": 1,
+                    "script": pptr(),
+                    "typeID": 4,
+                    "customType": 0,
+                    "isPPtrCurve": 0,
+                    "isIntCurve": 0,
+                    "isSerializeReferenceCurve": 0,
+                }
+            ],
+            "pptrCurveMapping": [],
+        },
+        "m_Events": [],
+    }
 
 
 def _fade_clip():
@@ -84,8 +151,17 @@ def _fade_clip():
     clip["m_Name"] = "fade"
     clip["m_MuscleClip"]["m_Clip"]["data"]["m_ConstantClip"]["data"] = [0.25]
     clip["m_ClipBindingConstant"]["genericBindings"] = [
-        {"path": 0, "attribute": 77, "script": pptr(12, 2), "typeID": 114, "customType": 0, "isPPtrCurve": 0,
-         "isIntCurve": 0, "isSerializeReferenceCurve": 0}]
+        {
+            "path": 0,
+            "attribute": 77,
+            "script": pptr(12, 2),
+            "typeID": 114,
+            "customType": 0,
+            "isPPtrCurve": 0,
+            "isIntCurve": 0,
+            "isSerializeReferenceCurve": 0,
+        }
+    ]
     return clip
 
 
@@ -101,10 +177,20 @@ def _embedded_acb_asset(f, pid: int, name: str, acb: bytes, script: int = 11, **
     CriSerializedBytesAssetImpl holding `acb`, with UnityPy's managed reference nodes; `fields` after `implementation`
     (by default an ACB asset's `awb`)."""
     from fakeunity import node_of
-    tt = _mono(0, pptr(script, 2), name, implementation={"rid": 1000}, **(fields or {"awb": pptr()}),
-               references={"version": 2, "RefIds": [{"rid": 1000, "type": {"class": IMPL[2], "ns": IMPL[1],
-                                                                             "asm": IMPL[0]},
-                                                     "data": {"data": list(acb)}}]})
+
+    tt = _mono(
+        0,
+        pptr(script, 2),
+        name,
+        implementation={"rid": 1000},
+        **(fields or {"awb": pptr()}),
+        references={
+            "version": 2,
+            "RefIds": [
+                {"rid": 1000, "type": {"class": IMPL[2], "ns": IMPL[1], "asm": IMPL[0]}, "data": {"data": list(acb)}}
+            ],
+        },
+    )
     node = node_of(tt, "Base", "MonoBehaviour", ("data",))
     refs = next(c for c in node.m_Children if c.m_Name == "references")
     refs.m_Type = "ManagedReferencesRegistry"
@@ -113,8 +199,15 @@ def _embedded_acb_asset(f, pid: int, name: str, acb: bytes, script: int = 11, **
     for c in item.m_Children:
         c.m_Type = {"type": "ReferencedManagedType", "data": "ReferencedObjectData"}.get(c.m_Name, c.m_Type)
     from types import SimpleNamespace
-    f.ref_types.append(SimpleNamespace(m_AssemblyName=IMPL[0], m_NameSpace=IMPL[1], m_ClassName=IMPL[2],
-                                       node=node_of({"data": list(acb)}, "data", IMPL[2], ("data",))))
+
+    f.ref_types.append(
+        SimpleNamespace(
+            m_AssemblyName=IMPL[0],
+            m_NameSpace=IMPL[1],
+            m_ClassName=IMPL[2],
+            node=node_of({"data": list(acb)}, "data", IMPL[2], ("data",)),
+        )
+    )
     return f.add(pid, "MonoBehaviour", tt, node=node)
 
 
@@ -131,6 +224,7 @@ def _shader_blob():
         for k in keywords:
             out += struct.pack("<i", len(k)) + k + b"\0" * (-len(k) % 4)
         return out + struct.pack("<i", len(text)) + text
+
     entries = [code(b"#ifdef VERTEX\nvoid main(){}\n#endif\n", [b"KW_A"]), code(b"#ifdef FRAGMENT\n#endif\n")]
     table, body = struct.pack("<i", len(entries)), b""
     at = 4 + 12 * len(entries)
@@ -139,31 +233,73 @@ def _shader_blob():
         body += e
     raw = table + body
     gles3 = ShaderGpuProgramType.kShaderGpuProgramGLES3.value
-    prog = lambda i, kws: {"m_PlayerSubPrograms": [[{"m_BlobIndex": i, "m_KeywordIndices": kws,  # noqa: E731
-                                                     "m_GpuProgramType": gles3}]]}
-    parsed = {"m_Name": "Test/Unlit", "m_PropInfo": {"m_Props": [{"m_Name": "_Color", "m_DefValue[0]": 1.0}]},
-              "m_KeywordNames": ["KW_A", "KW_B"], "m_FallbackName": "",
-              "m_SubShaders": [{"m_Tags": {"tags": [("Queue", "Geometry")]}, "m_LOD": 100, "m_Passes": [
-                  {"m_Name": "", "m_State": {"m_Name": "MAIN", "m_ZWrite": {"val": 1.0}}, "m_Tags": {"tags": []},
-                   "progVertex": prog(0, [0]), "progFragment": prog(1, [])}]}]}
+    prog = lambda i, kws: {
+        "m_PlayerSubPrograms": [
+            [
+                {
+                    "m_BlobIndex": i,
+                    "m_KeywordIndices": kws,  # noqa: E731
+                    "m_GpuProgramType": gles3,
+                }
+            ]
+        ]
+    }
+    parsed = {
+        "m_Name": "Test/Unlit",
+        "m_PropInfo": {"m_Props": [{"m_Name": "_Color", "m_DefValue[0]": 1.0}]},
+        "m_KeywordNames": ["KW_A", "KW_B"],
+        "m_FallbackName": "",
+        "m_SubShaders": [
+            {
+                "m_Tags": {"tags": [("Queue", "Geometry")]},
+                "m_LOD": 100,
+                "m_Passes": [
+                    {
+                        "m_Name": "",
+                        "m_State": {"m_Name": "MAIN", "m_ZWrite": {"val": 1.0}},
+                        "m_Tags": {"tags": []},
+                        "progVertex": prog(0, [0]),
+                        "progFragment": prog(1, []),
+                    }
+                ],
+            }
+        ],
+    }
     return lz4.block.compress(raw, store_size=False), len(raw), parsed
 
 
 def _controller(clip_pid):
-    return {"m_Name": "ctl", "m_Controller": {"m_LayerArray": [], "m_StateMachineArray": [],
-                                               "m_Values": {"data": {"m_ValueArray": []}},
-                                               "m_DefaultValues": {"data": {"m_BoolValues": [True]}}},
-            "m_TOS": [], "m_AnimationClips": [pptr(clip_pid)]}
+    return {
+        "m_Name": "ctl",
+        "m_Controller": {
+            "m_LayerArray": [],
+            "m_StateMachineArray": [],
+            "m_Values": {"data": {"m_ValueArray": []}},
+            "m_DefaultValues": {"data": {"m_BoolValues": [True]}},
+        },
+        "m_TOS": [],
+        "m_AnimationClips": [pptr(clip_pid)],
+    }
 
 
 def _material():
-    return {"m_Name": "mat", "m_Shader": pptr(5, 1), "m_ValidKeywords": ["K"], "m_InvalidKeywords": [],
-            "m_CustomRenderQueue": -1, "stringTagMap": [], "disabledShaderPasses": [],
-            "m_SavedProperties": {
-                "m_TexEnvs": [("_MainTex", {"m_Texture": pptr(10), "m_Scale": {"x": 1.0, "y": 1.0},
-                                            "m_Offset": {"x": 0.0, "y": 0.0}})],
-                "m_Ints": [], "m_Floats": [("_Cutoff", 0.5)],
-                "m_Colors": [("_Color", {"r": 1.0, "g": INF, "b": 0.0, "a": 1.0})]}}
+    return {
+        "m_Name": "mat",
+        "m_Shader": pptr(5, 1),
+        "m_ValidKeywords": ["K"],
+        "m_InvalidKeywords": [],
+        "m_CustomRenderQueue": -1,
+        "stringTagMap": [],
+        "disabledShaderPasses": [],
+        "m_SavedProperties": {
+            "m_TexEnvs": [
+                ("_MainTex", {"m_Texture": pptr(10), "m_Scale": {"x": 1.0, "y": 1.0}, "m_Offset": {"x": 0.0, "y": 0.0}})
+            ],
+            "m_Ints": [],
+            "m_Floats": [("_Cutoff", 0.5)],
+            "m_Colors": [("_Color", {"r": 1.0, "g": INF, "b": 0.0, "a": 1.0})],
+        },
+    }
 
 
 def _ttf(n=40):
@@ -172,11 +308,16 @@ def _ttf(n=40):
 
 
 def _asset_bundle(entries):
-    return {"m_Name": "b", "m_PreloadTable": [pptr(10)],
-            "m_Container": [(path, {"preloadIndex": 0, "preloadSize": 1, "asset": pptr(pid)})
-                            for path, pid in entries],
-            "m_MainAsset": {"preloadIndex": 0, "preloadSize": 0, "asset": pptr()}, "m_Dependencies": [],
-            "m_AssetBundleName": "b.bundle", "m_IsStreamedSceneAssetBundle": False, "m_SceneHashes": []}
+    return {
+        "m_Name": "b",
+        "m_PreloadTable": [pptr(10)],
+        "m_Container": [(path, {"preloadIndex": 0, "preloadSize": 1, "asset": pptr(pid)}) for path, pid in entries],
+        "m_MainAsset": {"preloadIndex": 0, "preloadSize": 0, "asset": pptr()},
+        "m_Dependencies": [],
+        "m_AssetBundleName": "b.bundle",
+        "m_IsStreamedSceneAssetBundle": False,
+        "m_SceneHashes": [],
+    }
 
 
 W, H = 32, 24
@@ -187,36 +328,100 @@ MOC = b"MOC3" + bytes(range(256)) * 20
 def bundle_all() -> FakeEnvironment:
     env = FakeEnvironment()
     f = env.file(CAB, externals=["archive:/CAB-atlas/CAB-atlas", "archive:/CAB-scripts/CAB-scripts"])
-    f.add(1, "AssetBundle", _asset_bundle([("assets/x/tex.png", 10), ("assets/x/tex.png", 11),
-                                           ("assets/x/readme.txt", 40), ("assets/p/root.prefab", 60)]))
-    for path, pid in (("assets/x/tex.png", 10), ("assets/x/tex.png", 11), ("assets/x/readme.txt", 40),
-                      ("assets/p/root.prefab", 60)):
+    f.add(
+        1,
+        "AssetBundle",
+        _asset_bundle(
+            [
+                ("assets/x/tex.png", 10),
+                ("assets/x/tex.png", 11),
+                ("assets/x/readme.txt", 40),
+                ("assets/p/root.prefab", 60),
+            ]
+        ),
+    )
+    for path, pid in (
+        ("assets/x/tex.png", 10),
+        ("assets/x/tex.png", 11),
+        ("assets/x/readme.txt", 40),
+        ("assets/p/root.prefab", 60),
+    ):
         f.contain(path, pid)
     tex = FakeTexture2D(TEX_PIXELS, W, H, 4, "tex")
-    f.add(10, "Texture2D", {"m_Name": "tex", "m_Width": W, "m_Height": H, "m_TextureFormat": 4, "m_MipCount": 1,
-                            "image data": TEX_PIXELS}, obj=tex)
+    f.add(
+        10,
+        "Texture2D",
+        {"m_Name": "tex", "m_Width": W, "m_Height": H, "m_TextureFormat": 4, "m_MipCount": 1, "image data": TEX_PIXELS},
+        obj=tex,
+    )
     r1 = rect(2, 3, 12, 10)
     pos, idx = _sprite_mesh(r1)
     f.add(11, "Sprite", sprite_tt("square", r1, render_data(pptr(10), r1, 66, pos, idx)))
     r2 = rect(16, 4, 10, 12)
     pos2, idx2 = _sprite_mesh(r2)
-    f.add(12, "Sprite", sprite_tt("packed", r2, render_data(pptr(), r2, 3, pos2, idx2), atlas=pptr(20),
-                                  atlas_tags=["atlas"], key=((5, 2, 3, 4), 0)))
-    f.add(20, "SpriteAtlas", {"m_Name": "atlas", "m_PackedSprites": [pptr(12)], "m_PackedSpriteNamesToIndex":
-                              ["packed"], "m_RenderDataMap": [(_key(5), _atlas_entry(10, r2))], "m_Tag": "atlas",
-                              "m_IsVariant": False})
+    f.add(
+        12,
+        "Sprite",
+        sprite_tt(
+            "packed",
+            r2,
+            render_data(pptr(), r2, 3, pos2, idx2),
+            atlas=pptr(20),
+            atlas_tags=["atlas"],
+            key=((5, 2, 3, 4), 0),
+        ),
+    )
+    f.add(
+        20,
+        "SpriteAtlas",
+        {
+            "m_Name": "atlas",
+            "m_PackedSprites": [pptr(12)],
+            "m_PackedSpriteNamesToIndex": ["packed"],
+            "m_RenderDataMap": [(_key(5), _atlas_entry(10, r2))],
+            "m_Tag": "atlas",
+            "m_IsVariant": False,
+        },
+    )
     r3 = rect(0, 0, 8, 8)
     pos3, idx3 = _sprite_mesh(r3)
-    f.add(13, "Sprite", sprite_tt("remote", r3, render_data(pptr(), r3, 3, pos3, idx3), atlas=pptr(99, 1),
-                                  atlas_tags=["remote"], key=((9, 2, 3, 4), 0)))
-    f.add(14, "Texture2D", {"m_Name": "empty", "m_Width": 0, "m_Height": 0, "m_TextureFormat": 4,
-                            "m_MipCount": 1, "image data": b""}, obj=FakeTexture2D(b"", 0, 0, 4, "empty"))
+    f.add(
+        13,
+        "Sprite",
+        sprite_tt(
+            "remote",
+            r3,
+            render_data(pptr(), r3, 3, pos3, idx3),
+            atlas=pptr(99, 1),
+            atlas_tags=["remote"],
+            key=((9, 2, 3, 4), 0),
+        ),
+    )
+    f.add(
+        14,
+        "Texture2D",
+        {"m_Name": "empty", "m_Width": 0, "m_Height": 0, "m_TextureFormat": 4, "m_MipCount": 1, "image data": b""},
+        obj=FakeTexture2D(b"", 0, 0, 4, "empty"),
+    )
     hdr = bytes(range(64))
-    f.add(15, "Texture2D", {"m_Name": "hdr", "m_Width": 8, "m_Height": 8, "m_TextureFormat": 66, "m_MipCount": 2,
-                            "image data": hdr}, obj=FakeTexture2D(hdr + b"\1" * 16, 8, 8, 66, "hdr"))
+    f.add(
+        15,
+        "Texture2D",
+        {"m_Name": "hdr", "m_Width": 8, "m_Height": 8, "m_TextureFormat": 66, "m_MipCount": 2, "image data": hdr},
+        obj=FakeTexture2D(hdr + b"\1" * 16, 8, 8, 66, "hdr"),
+    )
     tri_pos = np.array([[0, 0, 0], [1, 0, 0], [0, 1, 0]], np.float32)
-    f.add(30, "Mesh", mesh_tt("tri", 3, {POSITION: (F32, 3, tri_pos), NORMAL: (F32, 3, np.tile([0, 0, 1], (3, 1))),
-                                         UV0: (F32, 2, tri_pos[:, :2])}, [0, 1, 2], [submesh(0, 3)]))
+    f.add(
+        30,
+        "Mesh",
+        mesh_tt(
+            "tri",
+            3,
+            {POSITION: (F32, 3, tri_pos), NORMAL: (F32, 3, np.tile([0, 0, 1], (3, 1))), UV0: (F32, 2, tri_pos[:, :2])},
+            [0, 1, 2],
+            [submesh(0, 3)],
+        ),
+    )
     f.add(31, "Mesh", mesh_tt("none", 0, {}))
     f.add(40, "TextAsset", {"m_Name": "readme", "m_Script": "hello\n"})
     f.add(41, "TextAsset", {"m_Name": "raw", "m_Script": b"\xff\xfe\x00bin".decode("utf-8", "surrogateescape")})
@@ -226,17 +431,29 @@ def bundle_all() -> FakeEnvironment:
     # a hierarchy: root (60/61) with a behaviour (62), child (63/64) with a behaviour (65)
     f.add(60, "GameObject", _go("root", [61, 62]))
     f.add(61, "Transform", _transform(60, [64]))
-    f.add(62, "MonoBehaviour", _mono(60, pptr(7, 2), target=pptr(63), tex=pptr(10), value=float("nan"),
-                                     small=list(b"abc")), bytes_fields=("small",))
+    f.add(
+        62,
+        "MonoBehaviour",
+        _mono(60, pptr(7, 2), target=pptr(63), tex=pptr(10), value=float("nan"), small=list(b"abc")),
+        bytes_fields=("small",),
+    )
     f.add(63, "GameObject", _go("child", [64, 65]))
     f.add(64, "Transform", _transform(63, father=61))
     f.add(65, "MonoBehaviour", _mono(63, pptr(8, 2), up=pptr(61), comp=pptr(62), far=pptr(3, 2)))
-    f.add(70, "MonoBehaviour", _mono(0, pptr(80), "moc", _bytes=list(MOC), text="caf\udcc3"),
-          bytes_fields=("_bytes",))
+    f.add(70, "MonoBehaviour", _mono(0, pptr(80), "moc", _bytes=list(MOC), text="caf\udcc3"), bytes_fields=("_bytes",))
     f.add(71, "MonoBehaviour", _mono(0, pptr(9, 2), "lost"))
     f.add(72, "MonoBehaviour", _mono(0, pptr(), "noscript"))
-    f.add(80, "MonoScript", {"m_Name": "Local", "m_ExecutionOrder": 0, "m_ClassName": "Local",
-                             "m_Namespace": "Game", "m_AssemblyName": "A.dll"})
+    f.add(
+        80,
+        "MonoScript",
+        {
+            "m_Name": "Local",
+            "m_ExecutionOrder": 0,
+            "m_ClassName": "Local",
+            "m_Namespace": "Game",
+            "m_AssemblyName": "A.dll",
+        },
+    )
     f.add(90, "AnimationClip", _clip())
     legacy = _clip()
     legacy.update(m_Name="legacy", m_Legacy=True)
@@ -248,16 +465,36 @@ def bundle_all() -> FakeEnvironment:
     f.add(96, "AnimationClip", _fade_clip())
     for pid, chunk in ((44, SPLIT_CHUNKS[0]), (45, SPLIT_CHUNKS[1])):
         f.add(pid, "TextAsset", {"m_Name": f"chunk{pid}", "m_Script": chunk.decode("utf-8", "surrogateescape")})
-    f.add(73, "MonoBehaviour", _mono(0, pptr(10, 2), "bgm_test", _cueSheetName="bgm_test",
-                                     _chunks=[pptr(44), pptr(45)]))
+    f.add(
+        73, "MonoBehaviour", _mono(0, pptr(10, 2), "bgm_test", _cueSheetName="bgm_test", _chunks=[pptr(44), pptr(45)])
+    )
     _embedded_acb_asset(f, 74, "se_test", EMBEDDED_ACB)
     blob, size, parsed = _shader_blob()
     from types import SimpleNamespace
-    f.add(51, "Shader", {"m_ParsedForm": parsed, "platforms": [9], "offsets": [[0]], "compressedLengths": [[len(blob)]],
-                         "decompressedLengths": [[size]], "compressedBlob": list(blob), "m_Dependencies": [],
-                         "m_NonModifiableTextures": [], "m_ShaderIsBaked": True},
-          obj=SimpleNamespace(compressedBlob=blob, platforms=[9], offsets=[[0]], compressedLengths=[[len(blob)]],
-                              decompressedLengths=[[size]]), bytes_fields=("compressedBlob",))
+
+    f.add(
+        51,
+        "Shader",
+        {
+            "m_ParsedForm": parsed,
+            "platforms": [9],
+            "offsets": [[0]],
+            "compressedLengths": [[len(blob)]],
+            "decompressedLengths": [[size]],
+            "compressedBlob": list(blob),
+            "m_Dependencies": [],
+            "m_NonModifiableTextures": [],
+            "m_ShaderIsBaked": True,
+        },
+        obj=SimpleNamespace(
+            compressedBlob=blob,
+            platforms=[9],
+            offsets=[[0]],
+            compressedLengths=[[len(blob)]],
+            decompressedLengths=[[size]],
+        ),
+        bytes_fields=("compressedBlob",),
+    )
     return env
 
 
@@ -268,17 +505,39 @@ def bundle_atlas() -> FakeEnvironment:
     f.add(1, "AssetBundle", _asset_bundle([("assets/atlas/a.spriteatlas", 99)]))
     f.contain("assets/atlas/a.spriteatlas", 99)
     px = rgba_bytes(W, H, seed=9)
-    f.add(98, "Texture2D", {"m_Name": "page", "m_Width": W, "m_Height": H, "m_TextureFormat": 4, "m_MipCount": 1,
-                            "image data": px}, obj=FakeTexture2D(px, W, H, 4, "page"))
+    f.add(
+        98,
+        "Texture2D",
+        {"m_Name": "page", "m_Width": W, "m_Height": H, "m_TextureFormat": 4, "m_MipCount": 1, "image data": px},
+        obj=FakeTexture2D(px, W, H, 4, "page"),
+    )
     tr = rect(3, 5, 8, 8)
-    f.add(99, "SpriteAtlas", {"m_Name": "remote", "m_PackedSprites": [pptr(13, 0), pptr(97)],
-                              "m_PackedSpriteNamesToIndex": ["remote", "copy"],
-                              "m_RenderDataMap": [(_key(9), _atlas_entry(98, tr, raw=3 | (1 << 2)))],
-                              "m_Tag": "remote", "m_IsVariant": False})
+    f.add(
+        99,
+        "SpriteAtlas",
+        {
+            "m_Name": "remote",
+            "m_PackedSprites": [pptr(13, 0), pptr(97)],
+            "m_PackedSpriteNamesToIndex": ["remote", "copy"],
+            "m_RenderDataMap": [(_key(9), _atlas_entry(98, tr, raw=3 | (1 << 2)))],
+            "m_Tag": "remote",
+            "m_IsVariant": False,
+        },
+    )
     r3 = rect(0, 0, 8, 8)
     pos3, idx3 = _sprite_mesh(r3)
-    f.add(97, "Sprite", sprite_tt("remote", r3, render_data(pptr(), r3, 3, pos3, idx3), atlas=pptr(99),
-                                  atlas_tags=["remote"], key=((9, 2, 3, 4), 0)))
+    f.add(
+        97,
+        "Sprite",
+        sprite_tt(
+            "remote",
+            r3,
+            render_data(pptr(), r3, 3, pos3, idx3),
+            atlas=pptr(99),
+            atlas_tags=["remote"],
+            key=((9, 2, 3, 4), 0),
+        ),
+    )
     return env
 
 
@@ -325,9 +584,15 @@ def task_for(store, name, classes=None, params=None, scripts=None):
     sha = store.put(data)
     stage = ExportStage(FAKE_READER)
     p = stage.normalize(dict(params or {}, classes=classes))
-    return Task(EXPORT, 1, name, p, export_atoms(classes_of(name), FAKE_READER.id),
-                (Input("bundle", sha, len(data), f"{name}.bundle", ({"kind": "store"},)),),
-                {"scripts": dict(SCRIPTS if scripts is None else scripts)})
+    return Task(
+        EXPORT,
+        1,
+        name,
+        p,
+        export_atoms(classes_of(name), FAKE_READER.id),
+        (Input("bundle", sha, len(data), f"{name}.bundle", ({"kind": "store"},)),),
+        {"scripts": dict(SCRIPTS if scripts is None else scripts)},
+    )
 
 
 def run(store, task):
@@ -371,20 +636,44 @@ def test_every_object_has_exactly_one_item(exported):
     assert sorted(items) == sorted(objects) and len(doc["items"]) == len(objects)
     status = {o: (i["status"], (i.get("reason") or {}).get("code")) for o, i in items.items()}
     assert status == {
-        oid(1): ("contained", None), oid(10): ("exported", None), oid(11): ("exported", None),
-        oid(12): ("exported", None), oid(13): ("exported", None), oid(14): ("generic", "empty.texture"),
-        oid(15): ("exported", None), oid(20): ("exported", None), oid(30): ("exported", None),
-        oid(31): ("generic", "empty.mesh"), oid(40): ("exported", None), oid(41): ("exported", None),
-        oid(42): ("exported", None), oid(43): ("generic", "no_data.font"), oid(50): ("exported", None),
-        oid(60): ("exported", None), oid(61): ("contained", None), oid(62): ("contained", None),
-        oid(63): ("contained", None), oid(64): ("contained", None), oid(65): ("contained", None),
-        oid(70): ("exported", None), oid(71): ("generic", "script.unresolved"),
-        oid(72): ("generic", "script.missing"), oid(80): ("contained", None), oid(90): ("exported", None),
-        oid(91): ("generic", "generic.clip.legacy"), oid(92): ("exported", None),
-        oid(93): ("generic", "generic.controller.override"), oid(94): ("unsupported", "unsupported.class.AudioClip"),
-        oid(95): ("exported", None), oid(96): ("exported", None), oid(44): ("exported", None),
-        oid(45): ("exported", None), oid(73): ("exported", None), oid(74): ("exported", None),
-        oid(51): ("exported", None)}
+        oid(1): ("contained", None),
+        oid(10): ("exported", None),
+        oid(11): ("exported", None),
+        oid(12): ("exported", None),
+        oid(13): ("exported", None),
+        oid(14): ("generic", "empty.texture"),
+        oid(15): ("exported", None),
+        oid(20): ("exported", None),
+        oid(30): ("exported", None),
+        oid(31): ("generic", "empty.mesh"),
+        oid(40): ("exported", None),
+        oid(41): ("exported", None),
+        oid(42): ("exported", None),
+        oid(43): ("generic", "no_data.font"),
+        oid(50): ("exported", None),
+        oid(60): ("exported", None),
+        oid(61): ("contained", None),
+        oid(62): ("contained", None),
+        oid(63): ("contained", None),
+        oid(64): ("contained", None),
+        oid(65): ("contained", None),
+        oid(70): ("exported", None),
+        oid(71): ("generic", "script.unresolved"),
+        oid(72): ("generic", "script.missing"),
+        oid(80): ("contained", None),
+        oid(90): ("exported", None),
+        oid(91): ("generic", "generic.clip.legacy"),
+        oid(92): ("exported", None),
+        oid(93): ("generic", "generic.controller.override"),
+        oid(94): ("unsupported", "unsupported.class.AudioClip"),
+        oid(95): ("exported", None),
+        oid(96): ("exported", None),
+        oid(44): ("exported", None),
+        oid(45): ("exported", None),
+        oid(73): ("exported", None),
+        oid(74): ("exported", None),
+        oid(51): ("exported", None),
+    }
     assert items[oid(61)]["in"] == f"{oid(60)}#prefab" and items[oid(80)]["in"] == "unity.export:all#scripts.json"
     assert items[oid(1)]["in"] == "unity.export:all#bundle.json"
     assert items[oid(94)]["artifacts"] == [f"{oid(94)}#json"]
@@ -398,11 +687,23 @@ def test_every_object_has_exactly_one_item(exported):
 def test_provenance_facts_and_atoms(exported):
     store, task, doc = exported
     a = art(doc, f"{oid(10)}#image")
-    assert a["provenance"]["object"] == {"file": CAB, "pathId": 10, "classId": 28, "class": "Texture2D",
-                                         "name": "tex", "unityVersion": "6000.3.12f1",
-                                         "container": "assets/x/tex.png"}
-    assert set(a["provenance"]["atoms"]) == {"reader", "sniff", "texture.decode", "png.encode", "astc.container",
-                                             "tex.png"}
+    assert a["provenance"]["object"] == {
+        "file": CAB,
+        "pathId": 10,
+        "classId": 28,
+        "class": "Texture2D",
+        "name": "tex",
+        "unityVersion": "6000.3.12f1",
+        "container": "assets/x/tex.png",
+    }
+    assert set(a["provenance"]["atoms"]) == {
+        "reader",
+        "sniff",
+        "texture.decode",
+        "png.encode",
+        "astc.container",
+        "tex.png",
+    }
     assert a["provenance"]["inputs"] == [{"role": "bundle", "sha256": task.inputs[0].sha256}]
     g = art(doc, f"{oid(95)}#json")
     assert set(g["provenance"]["atoms"]) == {"reader", "sniff", "generic.json"}
@@ -418,11 +719,18 @@ def test_textures(exported):
     expected = Image.frombytes("RGBA", (W, H), TEX_PIXELS).transpose(Image.Transpose.FLIP_TOP_BOTTOM)
     assert img.tobytes() == expected.tobytes()
     from nnnotes.export import texture_png
+
     tex = bundle_all().assets[0].objects[10].obj
-    assert png == texture_png(tex)                                         # the other commands' bytes
+    assert png == texture_png(tex)  # the other commands' bytes
     facts = art(doc, f"{oid(10)}#image")["semantics"]["facts"]
-    assert facts == {"width": W, "height": H, "textureFormat": "RGBA32", "mipCount": 1, "exportedMips": [0],
-                     "mode": "RGBA"}
+    assert facts == {
+        "width": W,
+        "height": H,
+        "textureFormat": "RGBA32",
+        "mipCount": 1,
+        "exportedMips": [0],
+        "mode": "RGBA",
+    }
     a = load(store, doc, f"{oid(15)}#image")
     assert astc.parse_header(a) == {"block": (4, 4, 1), "size": (8, 8, 1)} and a[16:] == bytes(range(64))
     assert art(doc, f"{oid(15)}#image")["content"]["ext"] == "astc"
@@ -436,6 +744,7 @@ def test_sprites_same_bundle(exported):
     from nnnotes.atoms.mesh import arrays
     from nnnotes.atoms.reader import mesh_input_from_typetree
     from nnnotes.atoms.texture import TextureInput, decode
+
     env = bundle_all()
     f = env.assets[0]
     image = decode(TextureInput(TEX_PIXELS, W, H, 4, f.version, 13, b""))
@@ -443,15 +752,21 @@ def test_sprites_same_bundle(exported):
         tt = f.objects[pid].tt
         src = tt["m_RD"] if pid == 11 else f.objects[20].tt["m_RenderDataMap"][0][1]
         mesh = arrays(mesh_input_from_typetree(tt, f.version)) if not (src["settingsRaw"] >> 1) & 1 else None
-        want = sprite.crop(image, src["textureRect"], src["settingsRaw"], mesh, 100.0,
-                           canvas={"rect": tt["m_Rect"], "offset": src["textureRectOffset"], "pivot": tt["m_Pivot"]})
+        want = sprite.crop(
+            image,
+            src["textureRect"],
+            src["settingsRaw"],
+            mesh,
+            100.0,
+            canvas={"rect": tt["m_Rect"], "offset": src["textureRectOffset"], "pivot": tt["m_Pivot"]},
+        )
         assert load(store, doc, f"{oid(pid)}#image") == png.encode(want)
         meta = obj(store, doc, f"{oid(pid)}#meta")
         assert meta["image"]["texture"] == {"$ref": {"file": CAB, "pathId": 10, "class": "Texture2D", "name": "tex"}}
         assert meta["sprite"]["m_Name"] == tt["m_Name"]
     meta = obj(store, doc, f"{oid(12)}#meta")
     assert meta["image"]["source"] == "atlas" and meta["image"]["atlas"]["$ref"]["pathId"] == 20
-    assert meta["sprite"]["m_RD"]["m_VertexData"]["m_DataSize"]["$hex"]                  # small: inline
+    assert meta["sprite"]["m_RD"]["m_VertexData"]["m_DataSize"]["$hex"]  # small: inline
     refs = art(doc, f"{oid(12)}#image")["semantics"]["refs"]
     assert refs == [{"rel": "texture", "object": oid(10)}, {"rel": "atlas", "object": oid(20)}]
 
@@ -473,9 +788,12 @@ def test_mesh(exported):
     assert set(prim["attributes"]) == {"POSITION", "NORMAL", "TEXCOORD_0"} and prim["mode"] == 4
     pos = gltf.accessor_array(d, body, prim["attributes"]["POSITION"])
     assert pos.tolist() == [[0, 0, 0], [1, 0, 0], [0, 1, 0]]
-    assert art(doc, f"{oid(30)}#mesh")["semantics"]["facts"] == {"vertexCount": 3, "submeshes": 1,
-                                                                 "channels": ["position", "normal", "uv0"],
-                                                                 "skinned": False}
+    assert art(doc, f"{oid(30)}#mesh")["semantics"]["facts"] == {
+        "vertexCount": 3,
+        "submeshes": 1,
+        "channels": ["position", "normal", "uv0"],
+        "skinned": False,
+    }
 
 
 def test_text_and_fonts(exported):
@@ -501,8 +819,9 @@ def test_prefab(exported):
     assert fields["tex"] == {"$ref": {"file": CAB, "pathId": 10, "class": "Texture2D", "name": "tex"}}
     assert fields["m_Script"] == {"$ref": {"file": "CAB-scripts", "pathId": 7}}
     assert math.isnan(fields["value"]) and fields["small"] == {"$hex": "616263"}
-    assert b'{"$float": "nan"}' in load(store, doc, f"{oid(60)}#prefab").replace(b"\n", b"").replace(b" ", b"") \
-        or b'"$float"' in load(store, doc, f"{oid(60)}#prefab")
+    assert b'{"$float": "nan"}' in load(store, doc, f"{oid(60)}#prefab").replace(b"\n", b"").replace(
+        b" ", b""
+    ) or b'"$float"' in load(store, doc, f"{oid(60)}#prefab")
     (c,) = child["components"]
     assert c["fields"]["up"] == {"transform": "root"}
     assert c["fields"]["comp"] == {"component": "MonoBehaviour", "gameObject": "root", "class": "Behaviour"}
@@ -517,8 +836,11 @@ def test_scriptable_objects_blobs_and_strings(exported):
     blob = m["_bytes"]["$blob"]
     assert blob == {"sha256": contract.sha256(MOC), "size": len(MOC), "format": "moc3"}
     b = art(doc, f"{oid(70)}#blob:_bytes")
-    assert b["content"]["ext"] == "moc3" and b["semantics"] == {"kind": "blob", "format": "moc3",
-                                                                "facts": {"field": "_bytes"}}
+    assert b["content"]["ext"] == "moc3" and b["semantics"] == {
+        "kind": "blob",
+        "format": "moc3",
+        "facts": {"field": "_bytes"},
+    }
     assert load(store, doc, b["id"]) == MOC
     assert m["text"] == {"$hex": "caf".encode().hex() + "c3"}
     assert by_object(doc)[oid(70)]["artifacts"] == [f"{oid(70)}#blob:_bytes", f"{oid(70)}#json"]
@@ -529,25 +851,30 @@ def test_scriptable_objects_blobs_and_strings(exported):
 def test_cue_sheets_held_in_the_bundle(exported):
     store, _task, doc = exported
     from nnnotes import cri
+
     a = art(doc, f"{oid(73)}#acb")
     assert load(store, doc, a["id"]) == SPLIT_ACB == cri.split_acb(SPLIT_CHUNKS)
     assert a["content"]["ext"] == "acb" and a["semantics"] == {
-        "kind": "cri.acb", "format": "acb", "facts": {"cueSheet": "bgm_test", "layout": "split", "chunks": 2},
-        "refs": [{"rel": "chunk", "object": oid(44)}, {"rel": "chunk", "object": oid(45)}]}
+        "kind": "cri.acb",
+        "format": "acb",
+        "facts": {"cueSheet": "bgm_test", "layout": "split", "chunks": 2},
+        "refs": [{"rel": "chunk", "object": oid(44)}, {"rel": "chunk", "object": oid(45)}],
+    }
     assert by_object(doc)[oid(73)]["artifacts"] == [f"{oid(73)}#acb", f"{oid(73)}#json"]
     assert obj(store, doc, f"{oid(73)}#json")["$script"] == "Assembly-CSharp|Fwk.Sound|SplitAcbData"
-    assert load(store, doc, f"{oid(44)}#data") == SPLIT_CHUNKS[0]                  # the chunks stay exported
+    assert load(store, doc, f"{oid(44)}#data") == SPLIT_CHUNKS[0]  # the chunks stay exported
     e = art(doc, f"{oid(74)}#acb")
     assert load(store, doc, e["id"]) == EMBEDDED_ACB
     assert e["semantics"]["facts"] == {"cueSheet": "se_test", "layout": "embedded"}
     m = obj(store, doc, f"{oid(74)}#json")
     ref = m["references"]["RefIds"][0]
     assert ref["type"] == {"class": IMPL[2], "ns": IMPL[1], "asm": IMPL[0]}
-    assert ref["data"]["data"] == {"$blob": {"sha256": contract.sha256(EMBEDDED_ACB), "size": len(EMBEDDED_ACB),
-                                             "format": "acb"}}
-    assert by_object(doc)[oid(74)]["artifacts"] == [f"{oid(74)}#acb", f"{oid(74)}#json"]   # no blob: artifact
+    assert ref["data"]["data"] == {
+        "$blob": {"sha256": contract.sha256(EMBEDDED_ACB), "size": len(EMBEDDED_ACB), "format": "acb"}
+    }
+    assert by_object(doc)[oid(74)]["artifacts"] == [f"{oid(74)}#acb", f"{oid(74)}#json"]  # no blob: artifact
     small = run(store, task_for(store, "all", classes=["MonoBehaviour"], params={"blobMin": 1 << 20}))
-    assert load(store, small, f"{oid(74)}#acb") == EMBEDDED_ACB                  # whatever its size
+    assert load(store, small, f"{oid(74)}#acb") == EMBEDDED_ACB  # whatever its size
 
 
 def movie_task(store, converter=True):
@@ -569,8 +896,9 @@ def test_movies_held_in_the_bundle(tmp_path):
     assert usm["semantics"] == {"kind": "cri.usm", "format": "usm", "facts": {"movie": "warmup"}}
     tree = obj(store, doc, f"{m}#json")
     assert tree["$script"] == objexport.USM_ASSET_SCRIPT and tree["movieInfo"] == MOVIE_INFO
-    assert tree["references"]["RefIds"][0]["data"]["data"] == {"$blob": {"sha256": contract.sha256(WARMUP),
-                                                                         "size": len(WARMUP), "format": "usm"}}
+    assert tree["references"]["RefIds"][0]["data"]["data"] == {
+        "$blob": {"sha256": contract.sha256(WARMUP), "size": len(WARMUP), "format": "usm"}
+    }
     assert by_object(doc)[m]["status"] == "exported" and by_object(doc)[m]["artifacts"] == [f"{m}#json", f"{m}#usm"]
     assert load(store, doc, f"{a}#acb") == EMBEDDED_ACB
     old = run(store, movie_task(store, converter=False))
@@ -592,13 +920,31 @@ def test_the_movie_converter_is_keyed_by_the_script_context(tmp_path):
 
 def test_acb_layouts(tmp_path):
     from nnnotes import cri
+
     assert objexport.acb_asset({"_cueSheetName": "x", "_chunks": []})["layout"] == "split"
-    t = {"m_Name": "s", "implementation": {"rid": 5}, "references": {"RefIds": [
-        {"rid": 4, "type": {"class": IMPL[2]}}, {"rid": 5, "type": {"class": IMPL[2]}, "data": {"data": b"@UTF"}}]}}
-    assert objexport.acb_asset(t) == {"layout": "embedded", "cueSheet": "s", "ref": 1, "impl": t["references"]
-                                      ["RefIds"][1]}
-    assert objexport.acb_asset({"implementation": {"rid": 5}, "references": {"RefIds": [
-        {"rid": 5, "type": {"class": "Other"}}]}}) is None and objexport.acb_asset({"m_Name": "x"}) is None
+    t = {
+        "m_Name": "s",
+        "implementation": {"rid": 5},
+        "references": {
+            "RefIds": [
+                {"rid": 4, "type": {"class": IMPL[2]}},
+                {"rid": 5, "type": {"class": IMPL[2]}, "data": {"data": b"@UTF"}},
+            ]
+        },
+    }
+    assert objexport.acb_asset(t) == {
+        "layout": "embedded",
+        "cueSheet": "s",
+        "ref": 1,
+        "impl": t["references"]["RefIds"][1],
+    }
+    assert (
+        objexport.acb_asset(
+            {"implementation": {"rid": 5}, "references": {"RefIds": [{"rid": 5, "type": {"class": "Other"}}]}}
+        )
+        is None
+        and objexport.acb_asset({"m_Name": "x"}) is None
+    )
     assert cri.embedded_acb(t, t["references"]["RefIds"][1]) == b"@UTF"
     with pytest.raises(NotImplementedError, match="external AWB"):
         cri.embedded_acb({**t, "awb": pptr(3)}, t["references"]["RefIds"][1], "s")
@@ -611,9 +957,13 @@ def test_acb_layouts(tmp_path):
 def test_a_split_sheet_with_a_missing_chunk_gives_the_typetree(tmp_path, monkeypatch):
     store = Store(tmp_path / "s")
     real = objexport.acb_asset
-    monkeypatch.setattr(objexport, "acb_asset", lambda tt: (dict(real(tt), chunks=[pptr(44), pptr(99, 1)])
-                                                            if real(tt) and real(tt)["layout"] == "split"
-                                                            else real(tt)))
+    monkeypatch.setattr(
+        objexport,
+        "acb_asset",
+        lambda tt: (
+            dict(real(tt), chunks=[pptr(44), pptr(99, 1)]) if real(tt) and real(tt)["layout"] == "split" else real(tt)
+        ),
+    )
     doc = run(store, task_for(store, "all", classes=["MonoBehaviour"]))
     item = by_object(doc)[oid(73)]
     assert item["status"] == "generic" and item["reason"]["code"] == "generic.error"
@@ -623,13 +973,16 @@ def test_a_split_sheet_with_a_missing_chunk_gives_the_typetree(tmp_path, monkeyp
 def test_shader(exported):
     store, _task, doc = exported
     from nnnotes import shader
+
     env = bundle_all()
     r = env.assets[0].objects[51]
-    text, recs, codes = shader._render(r, r.tt, "Test/Unlit")                  # what `nnnotes shader` writes
+    text, recs, codes = shader._render(r, r.tt, "Test/Unlit")  # what `nnnotes shader` writes
     assert load(store, doc, f"{oid(51)}#json") == text.encode("utf-8")
     index = obj(store, doc, f"{oid(51)}#index")
-    assert index["name"] == "Test/Unlit" and [{k: v for k, v in x.items() if k != "role"}
-                                               for x in index["variants"]] == recs
+    assert (
+        index["name"] == "Test/Unlit"
+        and [{k: v for k, v in x.items() if k != "role"} for x in index["variants"]] == recs
+    )
     assert [x["role"] for x in index["variants"]] == ["program:gles3/s0p0_vertex_0", "program:gles3/s0p0_fragment_0"]
     for x, code in zip(index["variants"], codes):
         a = art(doc, f"{oid(51)}#{x['role']}")
@@ -638,8 +991,11 @@ def test_shader(exported):
     assert codes[0] == b"#ifdef VERTEX\nvoid main(){}\n#endif\n" and index["variants"][0]["keywords"] == ["KW_A"]
     t = obj(store, doc, f"{oid(51)}#typetree")
     assert t["m_ParsedForm"]["m_Name"] == "Test/Unlit" and "$hex" in t["compressedBlob"]
-    assert art(doc, f"{oid(51)}#json")["semantics"]["facts"] == {"name": "Test/Unlit", "variants": 2,
-                                                                  "platforms": ["gles3"]}
+    assert art(doc, f"{oid(51)}#json")["semantics"]["facts"] == {
+        "name": "Test/Unlit",
+        "variants": 2,
+        "platforms": ["gles3"],
+    }
 
 
 def test_clip_bindings_name_scripts_of_other_bundles(exported):
@@ -657,8 +1013,9 @@ def test_material_clip_controller(exported):
     assert mat["textures"]["_MainTex"]["texture"]["$ref"]["pathId"] == 10
     assert mat["colors"]["_Color"]["g"] == INF and b"1e999" in load(store, doc, f"{oid(50)}#json")
     clip = obj(store, doc, f"{oid(90)}#json")
-    assert clip["clip"] == "clip" and clip["bindings"] == [{"path": "", "typeID": 4, "class": "Transform",
-                                                            "attribute": "m_LocalPosition", "curves": 3}]
+    assert clip["clip"] == "clip" and clip["bindings"] == [
+        {"path": "", "typeID": 4, "class": "Transform", "attribute": "m_LocalPosition", "curves": 3}
+    ]
     ctl = obj(store, doc, f"{oid(92)}#json")
     assert ctl["clips"] == [{"$ref": {"file": CAB, "pathId": 90, "class": "AnimationClip", "name": "clip"}}]
     assert obj(store, doc, f"{oid(95)}#json")["m_Speed"] == INF
@@ -669,12 +1026,22 @@ def test_loose_documents(exported):
     s = obj(store, doc, "unity.export:all#scripts.json")
     assert list(s["scripts"]) == [oid(80)] and s["scripts"][oid(80)]["m_ClassName"] == "Local"
     b = obj(store, doc, "unity.export:all#bundle.json")
-    assert b["files"] == [{"name": CAB, "unityVersion": "6000.3.12f1",
-                           "externals": ["archive:/CAB-atlas/CAB-atlas", "archive:/CAB-scripts/CAB-scripts"]}]
+    assert b["files"] == [
+        {
+            "name": CAB,
+            "unityVersion": "6000.3.12f1",
+            "externals": ["archive:/CAB-atlas/CAB-atlas", "archive:/CAB-scripts/CAB-scripts"],
+        }
+    ]
     ab = b["assetBundles"][oid(1)]
-    assert ab["m_Container"][0] == ["assets/x/tex.png", {"preloadIndex": 0, "preloadSize": 1,
-                                                          "asset": {"$ref": {"file": CAB, "pathId": 10,
-                                                                             "class": "Texture2D", "name": "tex"}}}]
+    assert ab["m_Container"][0] == [
+        "assets/x/tex.png",
+        {
+            "preloadIndex": 0,
+            "preloadSize": 1,
+            "asset": {"$ref": {"file": CAB, "pathId": 10, "class": "Texture2D", "name": "tex"}},
+        },
+    ]
 
 
 def test_two_runs_are_identical(tmp_path):
@@ -690,12 +1057,11 @@ def test_two_runs_are_identical(tmp_path):
 def test_key_follows_the_census_classes_and_params(tmp_path):
     store = Store(tmp_path / "s")
     t = task_for(store, "atlas")
-    assert "mesh.glb" not in t.atoms and "mesh.arrays" in t.atoms                  # sprites use mesh.arrays
+    assert "mesh.glb" not in t.atoms and "mesh.arrays" in t.atoms  # sprites use mesh.arrays
     assert {"tex.png", "sprite.png", "generic.json", "bundle.json"} <= set(t.atoms)
     assert task_for(store, "atlas", params={"png": {"level": 3}}).key != t.key
     assert export_atoms(["Texture2D"]) == export_atoms(["Texture2D", "Texture2D"])
-    assert set(export_atoms(["Mesh"])) == {"reader", "sniff", "mesh.arrays", "gltf.write", "mesh.glb",
-                                           "generic.json"}
+    assert set(export_atoms(["Mesh"])) == {"reader", "sniff", "mesh.arrays", "gltf.write", "mesh.glb", "generic.json"}
     with pytest.raises(ValueError, match="png level"):
         ExportStage().normalize({"png": {"level": 11}})
     with pytest.raises(ValueError, match="unknown parameters"):
@@ -724,7 +1090,7 @@ def test_class_selection(tmp_path):
     store = Store(tmp_path / "s")
     doc = run(store, task_for(store, "all", classes=["Sprite"]))
     items = by_object(doc)
-    assert set(items) == {oid(11), oid(12), oid(13)}                   # textures decoded, not exported
+    assert set(items) == {oid(11), oid(12), oid(13)}  # textures decoded, not exported
     assert all(i["status"] == "exported" for i in items.values())
     doc = run(store, task_for(store, "all", classes=["GameObject"]))
     assert set(by_object(doc)) == {oid(p) for p in (60, 61, 62, 63, 64, 65)}
@@ -735,7 +1101,7 @@ def test_scripts_come_from_the_context_only(tmp_path):
     doc = run(store, task_for(store, "all", classes=["MonoBehaviour"], scripts={}))
     items = by_object(doc)
     assert items[oid(70)]["reason"]["code"] == "script.unresolved"
-    assert items[oid(62)]["reason"]["code"] == "script.unresolved"             # no hierarchy: one by one
+    assert items[oid(62)]["reason"]["code"] == "script.unresolved"  # no hierarchy: one by one
 
 
 def test_a_converter_error_gives_the_typetree(tmp_path, monkeypatch):
@@ -748,8 +1114,10 @@ def test_a_converter_error_gives_the_typetree(tmp_path, monkeypatch):
     monkeypatch.setattr(objexport.RefExporter, "conv_material", broken)
     doc = run(store, task_for(store, "all", classes=["Material"]))
     item = by_object(doc)[oid(50)]
-    assert item["status"] == "generic" and item["reason"] == {"code": "generic.error",
-                                                               "message": "KeyError: 'm_SavedProperties'"}
+    assert item["status"] == "generic" and item["reason"] == {
+        "code": "generic.error",
+        "message": "KeyError: 'm_SavedProperties'",
+    }
     assert obj(store, doc, f"{oid(50)}#json")["m_Name"] == "mat"
     monkeypatch.setattr(objexport.RefExporter, "conv_material", real)
 
@@ -789,8 +1157,15 @@ def test_task_with_other_atoms_is_refused(tmp_path):
     bad = Task(t.stage, t.version, t.subject, t.params, {**t.atoms, "tex.png": "tex.png/0"}, t.inputs, t.context)
     with pytest.raises(IncompatibleTask, match="tex.png"):
         execute(bad, store, registry(ExportStage(FAKE_READER)))
-    missing = Task(t.stage, t.version, t.subject, t.params, {k: v for k, v in t.atoms.items() if k != "mesh.glb"},
-                   t.inputs, t.context)
+    missing = Task(
+        t.stage,
+        t.version,
+        t.subject,
+        t.params,
+        {k: v for k, v in t.atoms.items() if k != "mesh.glb"},
+        t.inputs,
+        t.context,
+    )
     with pytest.raises(IncompatibleTask, match="mesh.glb"):
         execute(missing, store, registry(ExportStage(FAKE_READER)))
 
@@ -812,22 +1187,38 @@ def census_doc(view: UnityBundle) -> dict:
             def ref(s):
                 file = f if not s["m_FileID"] else ext[s["m_FileID"] - 1].rsplit("/", 1)[-1]
                 return {"file": file, "pathId": s["m_PathID"]}
+
             s = tt.get("m_Script")
             if isinstance(s, dict) and s.get("m_PathID"):
                 rec["script"] = ref(s)
-            bindings = [b["script"] for b in (tt.get("m_ClipBindingConstant") or {}).get("genericBindings", ())
-                        if b["script"].get("m_PathID")]
+            bindings = [
+                b["script"]
+                for b in (tt.get("m_ClipBindingConstant") or {}).get("genericBindings", ())
+                if b["script"].get("m_PathID")
+            ]
             if bindings:
                 rec["bindingScripts"] = [ref(b) for b in bindings]
             objs.append(rec)
         files.append({"name": f, "objects": objs})
-    return {"schema": contract.CENSUS, "files": files, "resources": [], "assetBundles": [], "scripts": [],
-            "classes": dict(sorted(classes.items())), "objects": sum(classes.values()), "errors": []}
+    return {
+        "schema": contract.CENSUS,
+        "files": files,
+        "resources": [],
+        "assetBundles": [],
+        "scripts": [],
+        "classes": dict(sorted(classes.items())),
+        "objects": sum(classes.values()),
+        "errors": [],
+    }
 
 
 def committed(store, env, task, role, doc, kind):
-    rec = contract.artifact(contract.artifact_id(task.id, role), store.add(contract.encode(doc), "json"),
-                            contract.provenance(task), {"kind": kind, "format": "json", "facts": {}})
+    rec = contract.artifact(
+        contract.artifact_id(task.id, role),
+        store.add(contract.encode(doc), "json"),
+        contract.provenance(task),
+        {"kind": kind, "format": "json", "facts": {}},
+    )
     store.commit(contract.result(task, [rec], []))
     env.done(task.id, task.key)
 
@@ -842,9 +1233,12 @@ def planning_env(store, names=("all", "atlas"), selected=None, scripts=SCRIPTS):
     for n in names:
         t = Task(census_mod.CensusStage.name, 1, n, {}, {}, (bundles[n],))
         doc = census_doc(open_fake(f"fake:{n}".encode()))
-        rec = contract.artifact(contract.artifact_id(t.id, "census"), store.add(contract.encode(doc), "json"),
-                                contract.provenance(t), {"kind": "unity.census", "format": "json",
-                                                         "facts": census_mod.facts(doc)})
+        rec = contract.artifact(
+            contract.artifact_id(t.id, "census"),
+            store.add(contract.encode(doc), "json"),
+            contract.provenance(t),
+            {"kind": "unity.census", "format": "json", "facts": census_mod.facts(doc)},
+        )
         store.commit(contract.result(t, [rec], []))
         env.done(t.id, t.key)
     table = Task("link.scripts", 1, "all")
@@ -870,6 +1264,7 @@ def test_describe_reads_the_census_and_the_script_table(tmp_path):
     assert t.cost.peak_bytes >= 72 << 20
     fresh = Env(store, env.facts)
     from nnnotes.stages import Pending
+
     fresh.waiting("unity.census:all")
     with pytest.raises(Pending):
         describe(stage, "all", None, fresh)
@@ -886,7 +1281,7 @@ def test_class_selection_keeps_only_its_converters_in_the_key(tmp_path):
     assert "tex.png" not in meshes.atoms and meshes.key != full.key
     assert describe(stage, "all", {"classes": ["Mesh", "Nothing"]}, env).atoms == meshes.atoms
     assert describe(stage, "all", {"classes": ["Nothing"]}, env).atoms == export_atoms([], FAKE_READER.id)
-    assert env.params == {}                                                     # set while describing only
+    assert env.params == {}  # set while describing only
     for classes in (["Mesh"], ["Sprite"], ["GameObject"], ["Material", "AnimationClip"]):
         t = describe(stage, "all", {"classes": classes}, env)
         execute(t, store, registry(stage))
@@ -921,7 +1316,7 @@ def test_sprite_crop_equals_the_same_sprite_cropped_in_its_atlas_bundle(tmp_path
     assert a["provenance"]["object"]["name"] == "remote" and a["provenance"]["object"]["file"] == CAB
     local = store.result(env.key("unity.export:atlas"))
     same = art(local, f"{ATLAS_CAB}:97#image")
-    assert a["content"] == same["content"]                                  # the same bytes as a local crop
+    assert a["content"] == same["content"]  # the same bytes as a local crop
     assert Image.open(__import__("io").BytesIO(store.read(a["content"]["sha256"]))).size == (8, 8)
 
 
@@ -930,13 +1325,16 @@ def test_sprite_crop_waits_for_exports(tmp_path):
     env = planning_env(store)
     env.waiting("unity.export:all")
     from nnnotes.stages import Pending
+
     with pytest.raises(Pending):
         SpriteCropStage().subjects(env)
 
 
 def test_modules_import_without_unitypy():
-    code = ("import sys; import nnnotes.objexport as o; o.ExportStage().ATOMS; o.SpriteCropStage().ATOMS; "
-            "print(sorted(m for m in ('UnityPy', 'PIL', 'nnnotes.export') if m in sys.modules))")
+    code = (
+        "import sys; import nnnotes.objexport as o; o.ExportStage().ATOMS; o.SpriteCropStage().ATOMS; "
+        "print(sorted(m for m in ('UnityPy', 'PIL', 'nnnotes.export') if m in sys.modules))"
+    )
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, cwd=ROOT, check=True)
     assert out.stdout.strip() == "[]"
 
@@ -951,8 +1349,7 @@ def test_every_reason_code_and_converter_is_documented():
         text = p.read_text(encoding="utf-8")
         raised |= set(re.findall(r'Unsupported\(\s*"([^"]+)"', text))
         raised |= set(re.findall(r'_fallback\([^,]+,\s*"([^"]+)"', text))
-        raised |= set(re.findall(r'\(\s*"((?:partial|unsupported|empty|no_data|generic|script|failed)\.[^"]+)",',
-                                 text))
+        raised |= set(re.findall(r'\(\s*"((?:partial|unsupported|empty|no_data|generic|script|failed)\.[^"]+)",', text))
     assert raised - documented - set(CONVERTERS) == set()
     for name, version in CONVERTERS.items():
         assert f"`{name}/{version}`" in doc, name
@@ -961,20 +1358,32 @@ def test_every_reason_code_and_converter_is_documented():
 
 
 # ---------------------------------------------------------------- golden records
-CONVERTER_CLASSES = {"tex.png": ["Texture2D"], "sprite.png": ["Sprite"], "mesh.glb": ["Mesh"],
-                     "prefab.json": ["GameObject"], "material.json": ["Material"], "clip.json": ["AnimationClip"],
-                     "controller.json": ["AnimatorController", "AnimatorOverrideController"],
-                     "mono.json": ["MonoBehaviour"], "data": ["TextAsset"], "font": ["Font"], "shader.json": ["Shader"],
-                     "scripts.json": ["MonoScript"], "bundle.json": ["AssetBundle"],
-                     "generic.json": ["Animator", "AudioClip", "SpriteAtlas"]}
+CONVERTER_CLASSES = {
+    "tex.png": ["Texture2D"],
+    "sprite.png": ["Sprite"],
+    "mesh.glb": ["Mesh"],
+    "prefab.json": ["GameObject"],
+    "material.json": ["Material"],
+    "clip.json": ["AnimationClip"],
+    "controller.json": ["AnimatorController", "AnimatorOverrideController"],
+    "mono.json": ["MonoBehaviour"],
+    "data": ["TextAsset"],
+    "font": ["Font"],
+    "shader.json": ["Shader"],
+    "scripts.json": ["MonoScript"],
+    "bundle.json": ["AssetBundle"],
+    "generic.json": ["Animator", "AudioClip", "SpriteAtlas"],
+}
 LIBRARIES = ["Pillow", "UnityPy", "astc-encoder-py", "numpy", "texture2ddecoder"]
 
 
 def export_golden():
     """Provider of tests/golden/unity.export.json: one fixture per converter (the synthetic bundle with the
     classes the converter takes), and the whole bundle."""
+
     def fixture(classes):
         return lambda store: task_for(store, "all", classes=classes)
+
     fixtures = {name: fixture(classes) for name, classes in CONVERTER_CLASSES.items()}
     fixtures["all"] = fixture(None)
     fixtures["cri.usm"] = movie_task
@@ -983,20 +1392,23 @@ def export_golden():
 
 def crop_golden():
     """Provider of tests/golden/sprite.crop.json."""
+
     def fixture(store):
         env = crop_setup(store)
         return describe(SpriteCropStage(), "atlas:99", None, env)
+
     return {"stage": SpriteCropStage(), "fixtures": {"atlas": fixture}, "libraries": LIBRARIES}
 
 
 def test_golden_providers_cover_every_converter():
     p = export_golden()
     assert set(p["fixtures"]) == set(CONVERTERS) | {"all"}
-    assert json.dumps(CONVERTER_CLASSES)                                        # every converter named once
+    assert json.dumps(CONVERTER_CLASSES)  # every converter named once
 
 
 def test_a_converter_change_without_a_version_bump_fails_its_golden(tmp_path, monkeypatch):
     from nnnotes.stages import golden, golden_problems, library_versions
+
     expected = contract.loads((ROOT / "tests" / "golden" / "unity.export.json").read_bytes())
     if library_versions(expected["libraries"]) != expected["libraries"]:
         pytest.skip("golden record of other library versions")

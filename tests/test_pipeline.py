@@ -1,4 +1,5 @@
 """The web build's stage pipeline and ingest memos (synthetic stages; no game data, no Node)."""
+
 import json
 import threading
 import time
@@ -97,7 +98,7 @@ def test_stored_text_memo_matches_put_file(tmp_path):
 def test_store_remembers_names(tmp_path):
     s = web.Store(tmp_path)
     a = s.put("a.png", b"123")
-    (tmp_path / a["asset"]).unlink()           # a name this store wrote is not looked up again
+    (tmp_path / a["asset"]).unlink()  # a name this store wrote is not looked up again
     assert s.put("b.png", b"123") == a and (s.written, s.reused) == (1, 1)
     assert web.Store(tmp_path).put("c.png", b"123") == a and (tmp_path / a["asset"]).is_file()
 
@@ -113,7 +114,7 @@ def test_read_set_cached(tmp_path, monkeypatch):
     monkeypatch.setattr(web, "read_set", lambda d, p, mode="full": calls.append(d) or ["live.json"])
     assert web.read_set_cached(live, tmp_path) == ["live.json"]
     cache.clear()
-    assert web.read_set_cached(live, tmp_path) == ["live.json"] and len(calls) == 1      # from the disk layer
+    assert web.read_set_cached(live, tmp_path) == ["live.json"] and len(calls) == 1  # from the disk layer
     (live / "sub" / "x.png").write_bytes(b"png2")
     web.read_set_cached(live, tmp_path)
     assert len(calls) == 2
@@ -136,13 +137,17 @@ def test_web_audio_takes_the_encoding_made_with_the_decode(tmp_path, monkeypatch
     web._web_audio(live, text, binary, "aac", tmp_path, {})
     assert binary == {"audio/S/m.m4a": b"pre-encoded"}
     assert json.loads(text["audio/live-audio.json"])["sounds"]["5"]["layers"][0] == {
-        "file": "audio/S/m.m4a", "samples": 10, "encoderDelay": 1024}
+        "file": "audio/S/m.m4a",
+        "samples": 10,
+        "encoderDelay": 1024,
+    }
     assert json.loads(text["live.json"])["audio"] == {"file": "audio/S/m.m4a", "cues": {"m": "audio/S/m.m4a"}}
 
 
 def test_catalog_cached(tmp_path):
     from nnnotes.catalog import Bundle, Catalog
     import synth
+
     cat = Catalog(synth.CatalogWriter().build([("k", synth.remote("b_1.bundle"), [])]), tmp_path)
     b = Bundle(1, synth.remote("b_1.bundle"), "b_1.bundle", True)
     assert cat.cached(b) is None
@@ -157,7 +162,7 @@ def test_catalog_cached(tmp_path):
 
 
 def test_pipeline_window_keeps_the_read_set_slots_busy():
-    assert web.pipeline_window(12, 14) == 16            # 12 extracting + 4 musics (16 charts) waiting for read sets
+    assert web.pipeline_window(12, 14) == 16  # 12 extracting + 4 musics (16 charts) waiting for read sets
     assert web.pipeline_window(4, 22) == 10
-    assert web.pipeline_window(1, 1) == 3               # at least 2 beyond the extraction processes
+    assert web.pipeline_window(1, 1) == 3  # at least 2 beyond the extraction processes
     assert web.pipeline_window(8, 16) == 12

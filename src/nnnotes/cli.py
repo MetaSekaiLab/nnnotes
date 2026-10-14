@@ -45,6 +45,7 @@ summaries are printed as UTF-8 whatever the console encoding.
     nnnotes catalogs list | import <catalog.bin> | fetch | diff <old> <new>
     nnnotes store verify
 """
+
 from __future__ import annotations
 
 import argparse
@@ -89,10 +90,11 @@ FLAG_SETTINGS = {
 # ---------------------------------------------------------------- settings -> data
 def load_config(args) -> Config:
     overrides = {k: getattr(args, dest, None) for k, (dest, _) in FLAG_SETTINGS.items()}
-    cfg = Config.load(getattr(args, "config", None), overrides=overrides,
-                      flags={k: flag for k, (_, flag) in FLAG_SETTINGS.items()})
+    cfg = Config.load(
+        getattr(args, "config", None), overrides=overrides, flags={k: flag for k, (_, flag) in FLAG_SETTINGS.items()}
+    )
     if getattr(args, "func", None) is cmd_config_check:
-        return use(cfg)                         # diagnose raw settings before applying runtime defaults
+        return use(cfg)  # diagnose raw settings before applying runtime defaults
     if cfg.provider() == "jp" and not cfg.has("catalog", "language"):
         cfg = cfg.for_region(cfg.region())
     return use(cfg)
@@ -124,8 +126,10 @@ def open_catalog(cfg: Config, bundles: bool = True, region: str | None = None) -
     apk = _existing(cfg, "paths", "apk")
     if cfg.provider() == "jp":
         from .jp import open_catalog as jp_catalog
-        return jp_catalog(cfg, cfg.region(), catalog_file=catbin,
-                          bundle_key=(lambda: bundle_key(cfg)) if bundles else None, apk=apk)
+
+        return jp_catalog(
+            cfg, cfg.region(), catalog_file=catbin, bundle_key=(lambda: bundle_key(cfg)) if bundles else None, apk=apk
+        )
     language = cfg.require("catalog", "language") if catbin is None else None
     cdn = (lambda: cfg.cdn(region or cfg.region())) if bundles or catbin is None else None
     key = (lambda: bundle_key(cfg)) if bundles else None
@@ -144,6 +148,7 @@ def master_dir(cfg: Config, region: str | None = None) -> Path:
 
 def player_data(cfg: Config, region: str | None = None):
     from .player import PlayerData
+
     if region:
         cfg = cfg.for_region(region)
     cfg.require_path("paths", "apk")
@@ -152,6 +157,7 @@ def player_data(cfg: Config, region: str | None = None):
 
 def master_key(cfg: Config):
     from .master import MasterKey
+
     return MasterKey(cfg.hex("master", "key", 32), cfg.hex("master", "iv", 32))
 
 
@@ -165,11 +171,13 @@ def known_keys(args, cat: Catalog, keys) -> None:
 def known_row(args, md: Path, table: str, row_id: int, what: str) -> None:
     """A usage error (exit 2) naming `row_id` when the master table `table` has no row with that `_id`."""
     from .master import has_row
+
     try:
         found = has_row(md, table, row_id)
     except FileNotFoundError:
-        raise ConfigError(f"master data {md}: no {table}.json (a directory written by `nnnotes master decode`)") \
-            from None
+        raise ConfigError(
+            f"master data {md}: no {table}.json (a directory written by `nnnotes master decode`)"
+        ) from None
     if not found:
         args.usage(f"{what} {row_id}: no {table} row with this id")
 
@@ -192,10 +200,13 @@ def cmd_catalog(args, cfg):
 
 def cmd_browse(args, cfg):
     from .addressables import Region, serve
+
     names = cfg.regions()
     if not names:
-        raise ConfigError("no region configured: add a [servers.<region>] table with `cdn` to the config file "
-                          "(or set NNNOTES_SERVERS_<REGION>_CDN)")
+        raise ConfigError(
+            "no region configured: add a [servers.<region>] table with `cdn` to the config file "
+            "(or set NNNOTES_SERVERS_<REGION>_CDN)"
+        )
     regions = []
     for r in names:
         langs = cfg.get_list(f"servers.{r}", "languages")
@@ -215,6 +226,7 @@ def cmd_pull(args, cfg):
 
 def cmd_master_decode(args, cfg):
     from . import master
+
     key = master_key(cfg)
     files = master.input_files(args.inputs)
     if not files:
@@ -239,21 +251,26 @@ def _config_target(args, default: Path | None) -> Path:
     if args.user:
         target = user_file()
         if target is None:
-            raise ConfigError("no per-user config directory: the environment sets neither APPDATA (Windows) nor "
-                              "XDG_CONFIG_HOME / HOME")
+            raise ConfigError(
+                "no per-user config directory: the environment sets neither APPDATA (Windows) nor "
+                "XDG_CONFIG_HOME / HOME"
+            )
         return target
     if default is not None:
         return default
     target = find_file(args.config)
     if target is None:
-        raise ConfigError("no config file is read (`nnnotes config path`): name one with --file or --user, or "
-                          "write one with `nnnotes config init`")
+        raise ConfigError(
+            "no config file is read (`nnnotes config path`): name one with --file or --user, or "
+            "write one with `nnnotes config init`"
+        )
     return target
 
 
 def _config_value(args, name: str, text: str, stdin_used: list):
     """(section, key, value) of `name` = `text` (`-`: read from standard input, once), checked."""
     from . import configfile
+
     setting, section = configfile.resolve(name)
     if text == "-":
         if stdin_used:
@@ -261,6 +278,7 @@ def _config_value(args, name: str, text: str, stdin_used: list):
         stdin_used.append(name)
         if setting.secret and _tty():
             import getpass
+
             text = getpass.getpass(f"[{section}] {setting.key} (hidden): ")
         else:
             text = sys.stdin.readline().rstrip("\r\n")
@@ -273,17 +291,19 @@ def _config_value(args, name: str, text: str, stdin_used: list):
 def _config_note(target: Path) -> None:
     read = find_file()
     if read is None or read.absolute() != target.absolute():
-        print(f"# the commands read {read.absolute() if read else 'no config file'} first (`nnnotes config path`)",
-              file=sys.stderr)
+        print(
+            f"# the commands read {read.absolute() if read else 'no config file'} first (`nnnotes config path`)",
+            file=sys.stderr,
+        )
 
 
 def cmd_config_init(args, cfg):
     from . import configfile
+
     named = next((f for n, f in config_files(args.config)[:2] if f is not None), None)
     target = _config_target(args, named or Path(DEFAULT_FILE))
     if target.exists() and not args.force:
-        raise ConfigError(f"config file {target} exists (--force overwrites it; `nnnotes config set` edits one "
-                          f"value)")
+        raise ConfigError(f"config file {target} exists (--force overwrites it; `nnnotes config set` edits one value)")
     values, regions, stdin_used = [], [], []
     for item in args.set or []:
         name, sep, text = item.partition("=")
@@ -302,16 +322,19 @@ def cmd_config_init(args, cfg):
             sys.exit(1)
     configfile.write(target, configfile.render(values, regions))
     print(target.absolute())
-    print(f"# {len(values)} settings written, the others empty; `nnnotes config check` shows the status of each",
-          file=sys.stderr)
+    print(
+        f"# {len(values)} settings written, the others empty; `nnnotes config check` shows the status of each",
+        file=sys.stderr,
+    )
     _config_note(target)
 
 
 def _config_edit(args, value_text: str | None) -> None:
     from . import configfile
+
     target = _config_target(args, None)
     text = target.read_text(encoding="utf-8") if target.exists() else configfile.template().decode("utf-8")
-    if value_text is None:                      # unset: an empty value
+    if value_text is None:  # unset: an empty value
         setting, section = configfile.resolve(args.name)
         section, key, value = section, setting.key, [] if setting.kind == "list" else ""
     else:
@@ -331,6 +354,7 @@ def cmd_config_unset(args, cfg):
 
 def cmd_config_check(args, cfg):
     from . import configfile
+
     r = configfile.check(cfg)
     if args.json:
         _print_json(r)
@@ -347,6 +371,7 @@ def cmd_config_check(args, cfg):
 
 def cmd_config_path(args, cfg):
     from . import configfile
+
     files, read = [], None
     for name, file in config_files(args.config):
         if file is None:
@@ -359,7 +384,7 @@ def cmd_config_path(args, cfg):
             state = "found, not read"
         files.append({"name": name, "path": str(file.absolute()) if file is not None else None, "state": state})
         if read is None and file is not None and name in ("--config", ENV_CONFIG):
-            break                               # a named file that is missing stops every command
+            break  # a named file that is missing stops every command
     if args.json:
         _print_json({"schema": configfile.PATHS, "files": files, "read": str(read.absolute()) if read else None})
         return
@@ -371,6 +396,7 @@ def cmd_config_path(args, cfg):
 
 def cmd_servers(args, cfg):
     from . import gameapi
+
     try:
         servers = gameapi.server_list(cfg)
     except gameapi.GameApiError as e:
@@ -381,6 +407,7 @@ def cmd_servers(args, cfg):
 
 def cmd_master_version(args, cfg):
     from . import gameapi
+
     region = cfg.region()
     try:
         v = gameapi.master_version(cfg, region)
@@ -394,16 +421,24 @@ def cmd_master_version(args, cfg):
 
 def cmd_master_download(args, cfg):
     from . import gameapi, master
+
     region = cfg.region()
     cdn = cfg.cdn(region)
     try:
         if cfg.provider(region) == "jp":
             from .jp import Session, master_version
+
             session = Session(cfg, region)
             observation = session.observe()
             version = observation.version.version if args.latest else master_version(args.version)
-            r = master.download(observation.cdn, version, Path(args.out), workers=args.workers,
-                                get=lambda url: session.get(url, master=version), strict=True)
+            r = master.download(
+                observation.cdn,
+                version,
+                Path(args.out),
+                workers=args.workers,
+                get=lambda url: session.get(url, master=version),
+                strict=True,
+            )
         else:
             version = gameapi.master_version(cfg, region).version if args.latest else args.version
             r = master.download(cdn, version, Path(args.out), workers=args.workers)
@@ -416,6 +451,7 @@ def cmd_master_download(args, cfg):
 
 def cmd_adv(args, cfg):
     from . import adv
+
     md = master_dir(cfg)
     known_row(args, md, "MasterAdv", args.adv_id, "episode")
     cat = open_catalog(cfg)
@@ -428,9 +464,10 @@ def cmd_adv(args, cfg):
 
 def cmd_live2d(args, cfg):
     from . import live2d, webmodel
-    cfg.require_path("paths", "apk")                 # the Cubism component classes are read from the APK
+
+    cfg.require_path("paths", "apk")  # the Cubism component classes are read from the APK
     cat = open_catalog(cfg)
-    try:                                             # a model id or a model key
+    try:  # a model id or a model key
         (key,) = webmodel.catalog_models(cat, [args.key]).values()
     except ValueError as e:
         args.usage(str(e))
@@ -440,7 +477,8 @@ def cmd_live2d(args, cfg):
 
 def cmd_spot(args, cfg):
     from . import spot, room, shader
-    cfg.require_path("paths", "apk")                 # the Spot / Spine component classes are read from the APK
+
+    cfg.require_path("paths", "apk")  # the Spot / Spine component classes are read from the APK
     md = master_dir(cfg)
     known_row(args, md, "MasterHomeSpot", args.spot_id, "spot")
     cat = open_catalog(cfg)
@@ -457,6 +495,7 @@ def cmd_spot(args, cfg):
 
 def cmd_room(args, cfg):
     from . import room
+
     cat = open_catalog(cfg)
     known_keys(args, cat, [args.key])
     r = room.extract_room(cat, args.key, Path(args.out))
@@ -465,6 +504,7 @@ def cmd_room(args, cfg):
 
 def cmd_shader(args, cfg):
     from . import shader
+
     cat = open_catalog(cfg)
     if args.key:
         known_keys(args, cat, [args.key])
@@ -476,7 +516,7 @@ def cmd_shader(args, cfg):
         for s in args.apk_bundle:
             try:
                 bundles.append(cat.apk_bundle(s))
-            except KeyError as e:                    # none or several bundles match
+            except KeyError as e:  # none or several bundles match
                 args.usage(f"--apk-bundle {e.args[0]}")
     r = shader.dump(bundles, Path(args.out))
     print(f"{r['count']} shaders, {r['variants']} variants")
@@ -486,8 +526,9 @@ def cmd_shader(args, cfg):
 
 def cmd_audio(args, cfg):
     from . import cri
+
     flac = _flac_options(args)
-    cfg.require_path("paths", "apk")                 # the HCA keycode is read from the APK
+    cfg.require_path("paths", "apk")  # the HCA keycode is read from the APK
     cat = open_catalog(cfg)
     if not cat.has(f"Cri/Sound/{args.cue_sheet}"):
         args.usage(f"cue sheet {args.cue_sheet}: no key Cri/Sound/{args.cue_sheet} in the catalog")
@@ -498,6 +539,7 @@ def cmd_audio(args, cfg):
 
 def cmd_crikey(args, cfg):
     from . import crikey
+
     cfg.require_path("paths", "apk")
     k = crikey.find_key(_existing(cfg, "paths", "apk"))
     print(f"HCA keycode found ({len(str(k))} digits)" if k else "no HCA keycode (decryption disabled)")
@@ -512,14 +554,15 @@ def cmd_player(args, cfg):
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     write_json(out, g)
-    print(f"{out}  ({g['colorSpace']}, {len(g['qualityLevels'])} quality levels, "
-          f"{len(g['renderers'])} renderers)")
+    print(f"{out}  ({g['colorSpace']}, {len(g['qualityLevels'])} quality levels, {len(g['renderers'])} renderers)")
 
 
 def cmd_story(args, cfg):
     from . import languages, story, webmodel
+
     if args.fonts == "game":
         from .tmpfont import require_extra
+
         require_extra("--fonts game")
     flac = _flac_options(args)
     out = Path(os.path.abspath(args.out))
@@ -528,14 +571,24 @@ def cmd_story(args, cfg):
         os.path.relpath(models, out)
     except ValueError:
         args.usage(f"--models {models}: not on the drive of {out} (story.json names it relative to the story)")
-    languages.check(cfg.require("catalog", "language"))   # the story UI's language (advui reads the setting)
+    languages.check(cfg.require("catalog", "language"))  # the story UI's language (advui reads the setting)
     md = master_dir(cfg)
     known_row(args, md, "MasterAdv", args.adv_id, "episode")
     cat = open_catalog(cfg)
     player = player_data(cfg)
     source = webmodel.ModelDir(cat, player, models, force=args.force)
-    r = story.build(cat, md, player, args.adv_id, out, audio_format=args.format, audio=not args.no_audio,
-                    fonts=args.fonts, models=source, audio_options=flac)
+    r = story.build(
+        cat,
+        md,
+        player,
+        args.adv_id,
+        out,
+        audio_format=args.format,
+        audio=not args.no_audio,
+        fonts=args.fonts,
+        models=source,
+        audio_options=flac,
+    )
     _print_json({**r, "modelsBuilt": source.built, "modelsSkipped": source.skipped})
 
 
@@ -558,12 +611,14 @@ def _fonts_extra(fonts: str) -> None:
     """`--fonts game` needs the optional `fonts` dependencies."""
     if fonts == "game":
         from .tmpfont import require_extra
+
         require_extra("--fonts game")
 
 
 def _live_options(args) -> dict:
     """The --live-option specs as a request (liveoptions.parse_specs); a malformed spec is a usage error."""
     from .liveoptions import OptionSpecError, parse_specs
+
     try:
         return parse_specs(args.live_option)
     except OptionSpecError as e:
@@ -573,6 +628,7 @@ def _live_options(args) -> dict:
 def cmd_live(args, cfg):
     from . import languages, live, liveoptions
     from .web import all_pairs
+
     _fonts_extra(args.fonts)
     request = _live_options(args)
     flac = _flac_options(args)
@@ -586,24 +642,39 @@ def cmd_live(args, cfg):
     except liveoptions.OptionSpecError as e:
         args.usage(str(e))
     cat = open_catalog(cfg)
-    try:                                             # an unknown --leader-card, a --band without its scene keys
+    try:  # an unknown --leader-card, a --band without its scene keys
         live.resolve_band(cat, md, args.music_id, band=args.band, leader_card=args.leader_card)
     except (KeyError, ValueError) as e:
         args.usage(e.args[0] if e.args else type(e).__name__)
-    r = live.build(cat, md, player_data(cfg), args.music_id, args.difficulty, Path(args.out),
-                   audio_format=args.format, band=args.band, leader_card=args.leader_card, language=language,
-                   fonts=args.fonts, options=options, **flac)
+    r = live.build(
+        cat,
+        md,
+        player_data(cfg),
+        args.music_id,
+        args.difficulty,
+        Path(args.out),
+        audio_format=args.format,
+        band=args.band,
+        leader_card=args.leader_card,
+        language=language,
+        fonts=args.fonts,
+        options=options,
+        **flac,
+    )
     _print_json(r)
 
 
 def cmd_web(args, cfg):
     from . import liveoptions, storysite, web, webmodel
+
     live_options = _live_options(args)
     charts, models = bool(args.pair or args.all), bool(args.live2d or args.all_live2d)
     stories = bool(args.story or args.all_stories)
     if not (charts or models or stories or args.player_only or args.reingest_json):
-        args.usage("one of the arguments --pair --all --live2d --all-live2d --story --all-stories --player-only "
-                   "--reingest-json is required")
+        args.usage(
+            "one of the arguments --pair --all --live2d --all-live2d --story --all-stories --player-only "
+            "--reingest-json is required"
+        )
     if models and (args.player_only or args.reingest_json):
         args.usage("--player-only and --reingest-json build nothing: leave out --live2d / --all-live2d")
     if stories and (args.player_only or args.reingest_json):
@@ -613,12 +684,16 @@ def cmd_web(args, cfg):
     player = cfg.path("paths", "player")
     out = Path(args.out)
     if args.player_only or args.reingest_json:
-        r = {**(web.reingest_json(out, args.compress) if args.reingest_json else {}),
-             **web.write_player(out, web.check_player(player)), **web.write_index(out)}
+        r = {
+            **(web.reingest_json(out, args.compress) if args.reingest_json else {}),
+            **web.write_player(out, web.check_player(player)),
+            **web.write_index(out),
+        }
     else:
         web.check_player(player)
-        regions = (web.site_regions(cfg, args.web_regions, args.all_regions)
-                   if args.web_regions or args.all_regions else None)   # None: the one [catalog] region
+        regions = (
+            web.site_regions(cfg, args.web_regions, args.all_regions) if args.web_regions or args.all_regions else None
+        )  # None: the one [catalog] region
         if (stories or models) and regions and len({cfg.provider(r) for r in regions}) > 1:
             raise ConfigError("build JP stories/models in a separate site directory from international releases")
         if (stories or models) and regions:
@@ -626,9 +701,11 @@ def cmd_web(args, cfg):
         base = {"region": regions[0]} if regions else {}
         unknown = web.unknown_pairs(cfg, args.pair, regions) if args.pair else []
         if unknown:
-            args.usage(f"chart{'s' if len(unknown) > 1 else ''} {', '.join(f'{m}:{d}' for m, d in unknown)}: no "
-                       f"MasterLiveMusicScore row in the master data of the site's region(s)")
-        if live_options:                             # a value a region's master data does not have
+            args.usage(
+                f"chart{'s' if len(unknown) > 1 else ''} {', '.join(f'{m}:{d}' for m, d in unknown)}: no "
+                f"MasterLiveMusicScore row in the master data of the site's region(s)"
+            )
+        if live_options:  # a value a region's master data does not have
             try:
                 for md in web.region_masters(cfg, web.site_regions(cfg, regions)).values():
                     liveoptions.resolve(live_options, md)
@@ -637,64 +714,125 @@ def cmd_web(args, cfg):
         r = {}
         encoding = args.compress
         if models:
-            cfg.require_path("paths", "apk")         # the Cubism component classes and mask materials: the APK
+            cfg.require_path("paths", "apk")  # the Cubism component classes and mask materials: the APK
             try:
                 selected = webmodel.catalog_models(open_catalog(cfg, bundles=False, **base), args.live2d)
             except ValueError as e:
                 args.usage(str(e))
-            r.update(webmodel.build(out, selected, cfg, player, force=args.force, tmp_dir=args.tmp,
-                                    workers=args.workers, encoding=encoding, **base))
+            r.update(
+                webmodel.build(
+                    out,
+                    selected,
+                    cfg,
+                    player,
+                    force=args.force,
+                    tmp_dir=args.tmp,
+                    workers=args.workers,
+                    encoding=encoding,
+                    **base,
+                )
+            )
         if charts:
             _fonts_extra(args.fonts)
-            r.update(web.build(out, None if args.all else args.pair, cfg, player, args.format,
-                               audio=not args.no_audio, force=args.force, tmp_dir=args.tmp, workers=args.workers,
-                               band=args.band, leader_card=args.leader_card, regions=regions, fonts=args.fonts,
-                               read_workers=args.read_workers, live_options=live_options,
-                               encoding=args.compress))
+            r.update(
+                web.build(
+                    out,
+                    None if args.all else args.pair,
+                    cfg,
+                    player,
+                    args.format,
+                    audio=not args.no_audio,
+                    force=args.force,
+                    tmp_dir=args.tmp,
+                    workers=args.workers,
+                    band=args.band,
+                    leader_card=args.leader_card,
+                    regions=regions,
+                    fonts=args.fonts,
+                    read_workers=args.read_workers,
+                    live_options=live_options,
+                    encoding=args.compress,
+                )
+            )
         if stories:
             from .tmpfont import require_extra
+
             require_extra("--story / --all-stories")  # the font assets of the story text (open and game)
-            cfg.require_path("paths", "apk")         # the ADV settings and UI are embedded content of the APK
+            cfg.require_path("paths", "apk")  # the ADV settings and UI are embedded content of the APK
             unknown = storysite.unknown_stories(cfg, args.story, regions) if args.story else []
             if unknown:
                 noun = "stories" if len(unknown) > 1 else "story"
-                args.usage(f"{noun} {', '.join(map(str, unknown))}: no MasterAdv row in the master data of the "
-                           f"site's region(s)")
-            r.update(storysite.build(out, args.story, cfg, player, args.format, audio=not args.no_audio,
-                                     force=args.force, tmp_dir=args.tmp, workers=args.workers, regions=regions,
-                                     story_languages=args.story_languages, fonts=args.fonts,
-                                     fonts_flags=dict(args.font or []), encoding=encoding))
+                args.usage(
+                    f"{noun} {', '.join(map(str, unknown))}: no MasterAdv row in the master data of the "
+                    f"site's region(s)"
+                )
+            r.update(
+                storysite.build(
+                    out,
+                    args.story,
+                    cfg,
+                    player,
+                    args.format,
+                    audio=not args.no_audio,
+                    force=args.force,
+                    tmp_dir=args.tmp,
+                    workers=args.workers,
+                    regions=regions,
+                    story_languages=args.story_languages,
+                    fonts=args.fonts,
+                    fonts_flags=dict(args.font or []),
+                    encoding=encoding,
+                )
+            )
     _print_json(r)
-    if (r.get("failed") or r.get("modelsFailed") or r.get("storiesFailed")
-            or (r.get("storyModels") or {}).get("modelsFailed")):
+    if (
+        r.get("failed")
+        or r.get("modelsFailed")
+        or r.get("storiesFailed")
+        or (r.get("storyModels") or {}).get("modelsFailed")
+    ):
         sys.exit(1)
 
 
 def cmd_music_data(args, cfg):
     from . import deckdata, musicdata
+
     if args.apk_master:
-        cfg.require_path("paths", "apk")             # the master data files ship in the APK
+        cfg.require_path("paths", "apk")  # the master data files ship in the APK
     apk = _existing(cfg, "paths", "apk")
     try:
-        deck = None if args.no_deck else musicdata.Deck(
-            seeds=args.seeds, workers=args.workers, aptitude=not args.no_gekisou_aptitude,
-            cache=args.stats_cache)
+        deck = (
+            None
+            if args.no_deck
+            else musicdata.Deck(
+                seeds=args.seeds, workers=args.workers, aptitude=not args.no_gekisou_aptitude, cache=args.stats_cache
+            )
+        )
         if args.apk_master:
             src, region = deckdata.apk_master(apk), deckdata.EMBEDDED
-        elif args.decoded_master:                    # decoded elsewhere: no master key
+        elif args.decoded_master:  # decoded elsewhere: no master key
             src, region = deckdata.decoded_master(master_dir(cfg)), cfg.region()
         else:
             src, region = deckdata.master_files(Path(args.master_files)), cfg.region()
         key = None if src.decoded else master_key(cfg)
         cat = open_catalog(cfg)
-        r = musicdata.export(Path(args.out), src, key, deckdata.catalog_fetch(cat),
-                             None if args.no_bgm else musicdata.catalog_bgm(cat), region=region,
-                             client=deckdata.apk_client(apk) if apk is not None else {},
-                             catalog=deckdata.catalog_info(cat, cli_assets.store_root(args, cfg)),
-                             deck=deck, full=args.full,
-                             jacket=musicdata.catalog_jacket(cat) if args.jackets else None,
-                             jackets_dir=args.jackets, replay_dir=args.replay_dir, replay_engine=args.replay_engine,
-                             recommend_engine=args.recommend_engine)
+        r = musicdata.export(
+            Path(args.out),
+            src,
+            key,
+            deckdata.catalog_fetch(cat),
+            None if args.no_bgm else musicdata.catalog_bgm(cat),
+            region=region,
+            client=deckdata.apk_client(apk) if apk is not None else {},
+            catalog=deckdata.catalog_info(cat, cli_assets.store_root(args, cfg)),
+            deck=deck,
+            full=args.full,
+            jacket=musicdata.catalog_jacket(cat) if args.jackets else None,
+            jackets_dir=args.jackets,
+            replay_dir=args.replay_dir,
+            replay_engine=args.replay_engine,
+            recommend_engine=args.recommend_engine,
+        )
     except (deckdata.DeckDataError, musicdata.MusicDataError) as e:
         sys.exit(f"nnnotes: {e}")
     _print_json(r)
@@ -710,50 +848,69 @@ def parse_pair(s: str) -> tuple[int, str]:
 
 def parse_languages(s: str) -> list[str]:
     from .languages import LANGUAGES
+
     codes = [c.strip() for c in s.split(",") if c.strip()]
     if not codes or any(c not in LANGUAGES for c in codes):
         raise argparse.ArgumentTypeError(f"{s}: expected languages from {', '.join(LANGUAGES)}, comma-separated")
     return codes
 
 
-EMOJI_FONT = "emoji"                        # --font emoji=<file>, as storysite.EMOJI_FONT
+EMOJI_FONT = "emoji"  # --font emoji=<file>, as storysite.EMOJI_FONT
 
 
 def parse_font(s: str) -> tuple[str, str]:
     from .languages import LANGUAGES
+
     lang, sep, path = s.partition("=")
     if not sep or (lang not in LANGUAGES and lang != EMOJI_FONT) or not path:
-        raise argparse.ArgumentTypeError(f"{s}: expected <language>=<font file> or {EMOJI_FONT}=<emoji font file>, "
-                                         f"language one of {', '.join(LANGUAGES)}")
+        raise argparse.ArgumentTypeError(
+            f"{s}: expected <language>=<font file> or {EMOJI_FONT}=<emoji font file>, "
+            f"language one of {', '.join(LANGUAGES)}"
+        )
     return lang, path
 
 
 def _live_option_arg(c) -> None:
-    c.add_argument("--live-option", action="append", metavar="OPTION[=VALUES]",
-                   help="also export the files of a Live option's variants (repeatable): MirrorChart, "
-                        "MeasureLineDisplay, NoteDesignId, NoteEffectId, LiveQuality, NoteSePatternId (every value "
-                        "of the master data, or =v,v...), defaults (the option defaults and ranges only) or all")
+    c.add_argument(
+        "--live-option",
+        action="append",
+        metavar="OPTION[=VALUES]",
+        help="also export the files of a Live option's variants (repeatable): MirrorChart, "
+        "MeasureLineDisplay, NoteDesignId, NoteEffectId, LiveQuality, NoteSePatternId (every value "
+        "of the master data, or =v,v...), defaults (the option defaults and ranges only) or all",
+    )
 
 
 def _band_args(c) -> None:
     g = c.add_mutually_exclusive_group()
-    g.add_argument("--band", type=int, help="band of the LightWeight background and start timeline "
-                                            "(default: band of the music's first vocal character)")
+    g.add_argument(
+        "--band",
+        type=int,
+        help="band of the LightWeight background and start timeline "
+        "(default: band of the music's first vocal character)",
+    )
     g.add_argument("--leader-card", type=int, help="deck centre MasterMemberCard id (its character's band)")
 
 
 def _fonts_arg(c) -> None:
-    c.add_argument("--fonts", default="open", choices=("open", "game"),
-                   help="start canvas text: open (default): layout and style only, no font data (your fonts are not "
-                        "used); game: also the game's TMP fonts (needs the 'fonts' extra)")
+    c.add_argument(
+        "--fonts",
+        default="open",
+        choices=("open", "game"),
+        help="start canvas text: open (default): layout and style only, no font data (your fonts are not "
+        "used); game: also the game's TMP fonts (needs the 'fonts' extra)",
+    )
 
 
 def _audio_args(c) -> None:
     """--format and --flac-level of a command that decodes cue sheets."""
     c.add_argument("--format", default="flac", choices=AUDIO_CHOICES, help="audio file format (default flac)")
-    c.add_argument("--flac-level", type=int, metavar="N",
-                   help="FLAC compression level 0-12 of --format flac (default 8; every level decodes to the same "
-                        "samples)")
+    c.add_argument(
+        "--flac-level",
+        type=int,
+        metavar="N",
+        help="FLAC compression level 0-12 of --format flac (default 8; every level decodes to the same samples)",
+    )
 
 
 def _out(c, what: str, required: bool = True) -> None:
@@ -762,6 +919,7 @@ def _out(c, what: str, required: bool = True) -> None:
 
 def cmd_ui(args, cfg):
     from . import ui
+
     ui.command(args, cfg)
 
 
@@ -770,10 +928,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--version", action="version", version=f"nnnotes {__version__}")
     p.add_argument("--config", help="TOML config file (else NNNOTES_CONFIG, else ./nnnotes.toml)")
     p.add_argument("--region", help="region: a [servers.<region>] table ([catalog] region)")
-    p.add_argument("--language", help="catalog and client language: ja, en, zh-Hant, zh-Hans or ko "
-                                      "([catalog] language)")
+    p.add_argument(
+        "--language", help="catalog and client language: ja, en, zh-Hant, zh-Hans or ko ([catalog] language)"
+    )
     p.add_argument("--catalog", help="catalog .bin file ([paths] catalog; else downloaded into the cache)")
-    p.add_argument("--catalog-release", help="pin an international resource version ([catalog] version; else API discovery when configured, otherwise main)")
+    p.add_argument(
+        "--catalog-release",
+        help="pin an international resource version ([catalog] version; else API discovery when configured, otherwise main)",
+    )
     p.add_argument("--cache", help="cache directory ([paths] cache)")
     p.add_argument("--master", help="decoded master data directory ([paths] master)")
     p.add_argument("--apk", help="base.apk ([paths] apk)")
@@ -788,31 +950,50 @@ def build_parser() -> argparse.ArgumentParser:
     def target(m, what):
         g = m.add_mutually_exclusive_group()
         g.add_argument("--file", help=f"the config file to {what}")
-        g.add_argument("--user", action="store_true",
-                       help=f"{what} the per-user config file, read from any directory (`config path` shows it)")
+        g.add_argument(
+            "--user",
+            action="store_true",
+            help=f"{what} the per-user config file, read from any directory (`config path` shows it)",
+        )
 
-    m = csub.add_parser("init", help="write a config file from the template: the values are asked in a terminal, "
-                                     "else taken from --set (the other settings empty)")
+    m = csub.add_parser(
+        "init",
+        help="write a config file from the template: the values are asked in a terminal, "
+        "else taken from --set (the other settings empty)",
+    )
     target(m, f"write (default: the file --config or NNNOTES_CONFIG names, else ./{DEFAULT_FILE})")
-    m.add_argument("--set", action="append", metavar="SECTION.KEY=VALUE",
-                   help="a value to write (repeatable; no questions then): VALUE - reads it from standard input; a "
-                        "list comma-separated; a path is written absolute")
+    m.add_argument(
+        "--set",
+        action="append",
+        metavar="SECTION.KEY=VALUE",
+        help="a value to write (repeatable; no questions then): VALUE - reads it from standard input; a "
+        "list comma-separated; a path is written absolute",
+    )
     m.add_argument("--no-input", action="store_true", help="ask nothing, also in a terminal")
     m.add_argument("--force", action="store_true", help="overwrite an existing file")
     m.set_defaults(func=cmd_config_init, reads_config=False, usage=m.error)
-    m = csub.add_parser("set", help="set one value of the config file the commands read (or of --file / --user; "
-                                    "a missing one is made from the template); comments and other lines stay")
+    m = csub.add_parser(
+        "set",
+        help="set one value of the config file the commands read (or of --file / --user; "
+        "a missing one is made from the template); comments and other lines stay",
+    )
     m.add_argument("name", metavar="SECTION.KEY", help="the setting: bundle.key, servers.tw.cdn, paths.fonts.ja, ...")
-    m.add_argument("value", help="the value (a list comma-separated); - reads it from standard input, without echo "
-                                 "for the keys in a terminal")
+    m.add_argument(
+        "value",
+        help="the value (a list comma-separated); - reads it from standard input, without echo "
+        "for the keys in a terminal",
+    )
     target(m, "edit")
     m.set_defaults(func=cmd_config_set, reads_config=False, usage=m.error)
     m = csub.add_parser("unset", help="empty one value of the config file (an empty value counts as unset)")
     m.add_argument("name", metavar="SECTION.KEY", help="the setting")
     target(m, "edit")
     m.set_defaults(func=cmd_config_unset, reads_config=False, usage=m.error)
-    m = csub.add_parser("check", help="every setting: where it comes from and whether it is valid, never its value; "
-                                      "exit status 1 when one is invalid, not found or unknown")
+    m = csub.add_parser(
+        "check",
+        help="every setting: where it comes from and whether it is valid, never its value; "
+        "exit status 1 when one is invalid, not found or unknown",
+    )
     m.add_argument("--json", action="store_true", help="the report as JSON (nnnotes.config-check/1)")
     m.set_defaults(func=cmd_config_check)
     m = csub.add_parser("path", help="the config files looked up, in order, and the one the commands read")
@@ -821,8 +1002,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     c = sub.add_parser("catalog", help="list addressable keys")
     c.add_argument("--prefix", default="", help="only the keys that start with this prefix")
-    c.add_argument("--limit", type=int, default=200, help="print at most N keys (default 200; the total goes "
-                                                          "to stderr)")
+    c.add_argument(
+        "--limit", type=int, default=200, help="print at most N keys (default 200; the total goes to stderr)"
+    )
     c.set_defaults(func=cmd_catalog)
 
     c = sub.add_parser("browse", help="browse the configured regions' catalogs and bundles in a local web page")
@@ -860,18 +1042,24 @@ def build_parser() -> argparse.ArgumentParser:
     _out(c, "output .json file")
     c.set_defaults(func=cmd_adv, usage=c.error)
 
-    c = sub.add_parser("story", help="ADV episode -> story dir (episode, audio, scene, UI, media, videos) + its Live2D "
-                                     "models")
+    c = sub.add_parser(
+        "story", help="ADV episode -> story dir (episode, audio, scene, UI, media, videos) + its Live2D models"
+    )
     c.add_argument("adv_id", type=int, help="MasterAdv id of the episode")
     _out(c, "output directory")
-    c.add_argument("--models", metavar="DIR",
-                   help="directory of the Live2D models, one <model id>/ each (default: OUT/../live2d)")
+    c.add_argument(
+        "--models", metavar="DIR", help="directory of the Live2D models, one <model id>/ each (default: OUT/../live2d)"
+    )
     c.add_argument("--force", action="store_true", help="export the models again whose directory exists")
     _audio_args(c)
     c.add_argument("--no-audio", action="store_true", help="do not decode the cue sheets")
-    c.add_argument("--fonts", default="open", choices=("open", "game"),
-                   help="open (default): text layout and style only, no font data; game: also the game's TMP fonts "
-                        "(needs the 'fonts' extra)")
+    c.add_argument(
+        "--fonts",
+        default="open",
+        choices=("open", "game"),
+        help="open (default): text layout and style only, no font data; game: also the game's TMP fonts "
+        "(needs the 'fonts' extra)",
+    )
     c.set_defaults(func=cmd_story, usage=c.error)
 
     c = sub.add_parser("live2d", help="Live2D model -> runtime model dir")
@@ -912,8 +1100,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     c = sub.add_parser("live", help="live (music + difficulty) -> self-contained live dir")
     c.add_argument("music_id", type=int, help="MasterLiveMusic id")
-    c.add_argument("--difficulty", default="expert", choices=DIFFICULTY_CHOICES,
-                   help="chart difficulty (default expert)")
+    c.add_argument(
+        "--difficulty", default="expert", choices=DIFFICULTY_CHOICES, help="chart difficulty (default expert)"
+    )
     _audio_args(c)
     _fonts_arg(c)
     _band_args(c)
@@ -921,91 +1110,160 @@ def build_parser() -> argparse.ArgumentParser:
     _out(c, "output directory")
     c.set_defaults(func=cmd_live, usage=c.error)
 
-    c = sub.add_parser("web", help="live charts, Live2D models and stories -> static site for ournotes-player "
-                                   "(shared player + per-chart / per-model / per-story data)")
+    c = sub.add_parser(
+        "web",
+        help="live charts, Live2D models and stories -> static site for ournotes-player "
+        "(shared player + per-chart / per-model / per-story data)",
+    )
     c.add_argument("out", help="site directory")
     c.add_argument("--player", help="ournotes-player checkout (built) or installed package ([paths] player)")
     g = c.add_mutually_exclusive_group()
     g.add_argument("--pair", type=parse_pair, action="append", help="<musicId>:<difficulty> (repeatable)")
     g.add_argument("--all", action="store_true", help="every MasterLiveMusic x difficulty")
-    g.add_argument("--player-only", action="store_true",
-                   help="rewrite the player files, charts.json and models.json only")
+    g.add_argument(
+        "--player-only", action="store_true", help="rewrite the player files, charts.json and models.json only"
+    )
     g.add_argument("--reingest-json", action="store_true", help="store every chart's and model's JSON files again")
     m = c.add_mutually_exclusive_group()
-    m.add_argument("--live2d", action="append", metavar="MODEL",
-                   help="Live2D model id or key Character/Live2D/<group>/<name>/model/<name> (repeatable)")
+    m.add_argument(
+        "--live2d",
+        action="append",
+        metavar="MODEL",
+        help="Live2D model id or key Character/Live2D/<group>/<name>/model/<name> (repeatable)",
+    )
     m.add_argument("--all-live2d", action="store_true", help="every Live2D model of the catalog")
     c.add_argument("--format", default=DEFAULT_AUDIO_FORMAT, choices=tuple(WEB_AUDIO), help="BGM format")
     c.add_argument("--no-audio", action="store_true", help="export no audio files")
-    c.add_argument("--compress", default=DEFAULT_ENCODING, choices=ENCODINGS,
-                   help="encoding of the compressible assets (JSON, shaders, moc3, ...) where it makes them "
-                        "smaller: gzip (default), br (brotli) or none")
-    c.add_argument("--force", action="store_true",
-                   help="rebuild charts, models and stories whose manifest exists (stories: also their models)")
+    c.add_argument(
+        "--compress",
+        default=DEFAULT_ENCODING,
+        choices=ENCODINGS,
+        help="encoding of the compressible assets (JSON, shaders, moc3, ...) where it makes them "
+        "smaller: gzip (default), br (brotli) or none",
+    )
+    c.add_argument(
+        "--force",
+        action="store_true",
+        help="rebuild charts, models and stories whose manifest exists (stories: also their models)",
+    )
     c.add_argument("--tmp", help="directory for the temporary live and model builds (default <site>.tmp)")
-    c.add_argument("--workers", type=int,
-                   help="parallel music / model processes (default a quarter of the CPUs, up to 8 / up to 4; "
-                        "1 = this process)")
-    c.add_argument("--read-workers", type=int,
-                   help="chart read sets run at a time (default half the CPUs, up to 16)")
+    c.add_argument(
+        "--workers",
+        type=int,
+        help="parallel music / model processes (default a quarter of the CPUs, up to 8 / up to 4; 1 = this process)",
+    )
+    c.add_argument("--read-workers", type=int, help="chart read sets run at a time (default half the CPUs, up to 16)")
     t = c.add_mutually_exclusive_group()
-    t.add_argument("--story", type=int, action="append", metavar="ADV_ID",
-                   help="story episode: its MasterAdv id (repeatable)")
+    t.add_argument(
+        "--story", type=int, action="append", metavar="ADV_ID", help="story episode: its MasterAdv id (repeatable)"
+    )
     t.add_argument("--all-stories", action="store_true", help="every story episode (MasterAdv) of the master data")
-    c.add_argument("--story-languages", type=parse_languages, metavar="LANGS",
-                   help="languages of the stories' text, comma-separated (default: ja,en,zh-Hant,zh-Hans,ko)")
-    c.add_argument("--font", type=parse_font, action="append", metavar="LANG=PATH",
-                   help="font file the story text of a language is drawn with (repeatable; [paths] fonts.<lang>); "
-                        "emoji=PATH: the colour emoji font the emoji sprites are drawn from ([paths] fonts.emoji)")
+    c.add_argument(
+        "--story-languages",
+        type=parse_languages,
+        metavar="LANGS",
+        help="languages of the stories' text, comma-separated (default: ja,en,zh-Hant,zh-Hans,ko)",
+    )
+    c.add_argument(
+        "--font",
+        type=parse_font,
+        action="append",
+        metavar="LANG=PATH",
+        help="font file the story text of a language is drawn with (repeatable; [paths] fonts.<lang>); "
+        "emoji=PATH: the colour emoji font the emoji sprites are drawn from ([paths] fonts.emoji)",
+    )
     r = c.add_mutually_exclusive_group()
-    r.add_argument("--region", dest="web_regions", action="append", metavar="REGION",
-                   help="a region the site serves: a [servers.<region>] table (repeatable; the first is the base; "
-                        "default: [catalog] region)")
+    r.add_argument(
+        "--region",
+        dest="web_regions",
+        action="append",
+        metavar="REGION",
+        help="a region the site serves: a [servers.<region>] table (repeatable; the first is the base; "
+        "default: [catalog] region)",
+    )
     r.add_argument("--all-regions", action="store_true", help="every configured region")
-    c.add_argument("--fonts", default="open", choices=("open", "game"),
-                   help="text of the start canvas and the stories: open (default): the start canvas has layout and "
-                        "style only, the stories glyphs from your font files (--font); game: the game's TMP fonts "
-                        "(needs the 'fonts' extra)")
+    c.add_argument(
+        "--fonts",
+        default="open",
+        choices=("open", "game"),
+        help="text of the start canvas and the stories: open (default): the start canvas has layout and "
+        "style only, the stories glyphs from your font files (--font); game: the game's TMP fonts "
+        "(needs the 'fonts' extra)",
+    )
     _band_args(c)
     _live_option_arg(c)
     c.set_defaults(func=cmd_web, usage=c.error)
 
-    c = sub.add_parser("music-data", help="every live song and chart: metadata in every language, chart facts and "
-                                          "the deck model's chart statistics -> one JSON file")
+    c = sub.add_parser(
+        "music-data",
+        help="every live song and chart: metadata in every language, chart facts and "
+        "the deck model's chart statistics -> one JSON file",
+    )
     g = c.add_mutually_exclusive_group(required=True)
-    g.add_argument("--master-files", metavar="DIR",
-                   help="master data files as served: MasterManifest.json and the .bin files it lists "
-                        "(`master download`)")
+    g.add_argument(
+        "--master-files",
+        metavar="DIR",
+        help="master data files as served: MasterManifest.json and the .bin files it lists (`master download`)",
+    )
     g.add_argument("--apk-master", action="store_true", help="the master data files of base.apk ([paths] apk)")
-    g.add_argument("--decoded-master", action="store_true",
-                   help="decoded master data ([paths] master or --master) with the MasterManifest.json of the files "
-                        "it was decoded from; no master key")
-    c.add_argument("--full", action="store_true",
-                   help="also write the deck model's input: every chart's runtime notes and the master data tables "
-                        "about cards, skills, bonuses, scores and events")
-    c.add_argument("--no-deck", action="store_true",
-                   help="do not run the deck model (every chart's deck is null)")
-    c.add_argument("--seeds", type=int, default=8, metavar="N",
-                   help="replay seeds for a chart with a luck range (default 8); expectations do not use sampling")
-    c.add_argument("--workers", type=int, metavar="N",
-                   help="threads measuring charts (default: every processor)")
-    c.add_argument("--no-gekisou-aptitude", action="store_true",
-                   help="leave out the charts' Gekisou aptitude (every gekisouAptitude is null)")
-    c.add_argument("--stats-cache", type=Path, metavar="DIR",
-                   help="reuse native simulation programs and runs in DIR across builds; "
-                        "completed cache entries survive interrupted builds")
-    c.add_argument("--no-bgm", action="store_true",
-                   help="do not read the BGM cue sheets (every song's bgm.length is null)")
-    c.add_argument("--replay-dir", metavar="DIR",
-                   help="write canonical runtime DeckData, per-chart inputs and replay manifest under the output directory")
-    c.add_argument("--replay-engine", metavar="PKG",
-                   help="the deck model's replay WASM release package (ournotes-replay-wasm-vVERSION.tar.gz or its "
-                        "directory); its web JS/WASM and build-info.json are copied into --replay-dir")
-    c.add_argument("--recommend-engine", metavar="PKG",
-                   help="the deck model's recommendation WASM release package (ournotes-recommend-wasm-vVERSION.tar.gz "
-                        "or its directory); its web JS/WASM and build-info.json are copied into --replay-dir")
-    c.add_argument("--jackets", metavar="DIR",
-                   help="also write every song's jacket as DIR/<jacket>.webp (at most 320 px on the longer side)")
+    g.add_argument(
+        "--decoded-master",
+        action="store_true",
+        help="decoded master data ([paths] master or --master) with the MasterManifest.json of the files "
+        "it was decoded from; no master key",
+    )
+    c.add_argument(
+        "--full",
+        action="store_true",
+        help="also write the deck model's input: every chart's runtime notes and the master data tables "
+        "about cards, skills, bonuses, scores and events",
+    )
+    c.add_argument("--no-deck", action="store_true", help="do not run the deck model (every chart's deck is null)")
+    c.add_argument(
+        "--seeds",
+        type=int,
+        default=8,
+        metavar="N",
+        help="replay seeds for a chart with a luck range (default 8); expectations do not use sampling",
+    )
+    c.add_argument("--workers", type=int, metavar="N", help="threads measuring charts (default: every processor)")
+    c.add_argument(
+        "--no-gekisou-aptitude",
+        action="store_true",
+        help="leave out the charts' Gekisou aptitude (every gekisouAptitude is null)",
+    )
+    c.add_argument(
+        "--stats-cache",
+        type=Path,
+        metavar="DIR",
+        help="reuse native simulation programs and runs in DIR across builds; "
+        "completed cache entries survive interrupted builds",
+    )
+    c.add_argument(
+        "--no-bgm", action="store_true", help="do not read the BGM cue sheets (every song's bgm.length is null)"
+    )
+    c.add_argument(
+        "--replay-dir",
+        metavar="DIR",
+        help="write canonical runtime DeckData, per-chart inputs and replay manifest under the output directory",
+    )
+    c.add_argument(
+        "--replay-engine",
+        metavar="PKG",
+        help="the deck model's replay WASM release package (ournotes-replay-wasm-vVERSION.tar.gz or its "
+        "directory); its web JS/WASM and build-info.json are copied into --replay-dir",
+    )
+    c.add_argument(
+        "--recommend-engine",
+        metavar="PKG",
+        help="the deck model's recommendation WASM release package (ournotes-recommend-wasm-vVERSION.tar.gz "
+        "or its directory); its web JS/WASM and build-info.json are copied into --replay-dir",
+    )
+    c.add_argument(
+        "--jackets",
+        metavar="DIR",
+        help="also write every song's jacket as DIR/<jacket>.webp (at most 320 px on the longer side)",
+    )
     _out(c, "output file (.json, or .json.gz for gzip)")
     c.set_defaults(func=cmd_music_data, usage=c.error)
 

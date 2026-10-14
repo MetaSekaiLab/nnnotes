@@ -27,6 +27,7 @@ bindings with crc32 keys, path candidates and curve counts).
 Only the music row, the slice and the jacket sprite depend on the music: `band_part` exports the rest once for a
 band and `music_part` completes it for each music of that band (the same document as `extract`).
 """
+
 from __future__ import annotations
 
 import json
@@ -47,8 +48,8 @@ LANE_SKIN_PARTS = ("lane_base", "lane_tap_area", "out_side_line")
 # asset keys exported whole ({band} = the band of the LightWeight background and the start timeline). The timeline
 # prefab's PlayableDirector carries its TimelineAsset (Band/{b}/timeline/live_start_timeline_asset) inline.
 ASSET_KEYS = {
-    "startTimeline": "Band/{band}/timeline/live_start_playable_timeline",   # LiveStartTimelineLoadStep
-    "laneLinePrefab": "EmbLive/Prefabs/LiveGame/lane_line",          # LiveLaneLineView._linePrefab (inner lines)
+    "startTimeline": "Band/{band}/timeline/live_start_playable_timeline",  # LiveStartTimelineLoadStep
+    "laneLinePrefab": "EmbLive/Prefabs/LiveGame/lane_line",  # LiveLaneLineView._linePrefab (inner lines)
 }
 # Animator each AnimationTrack of the start timeline plays on (LiveStartTimelineDirector.BindTimelineTrack, by
 # track name): a field of the scene's LiveStartTimelineDirector, or for LiveGameLaneEffect the timeline prefab's
@@ -73,27 +74,40 @@ SPRITE_KEYS = {
 SCENE_DRAWN_TEXTURE_NODES = ("Live/RenderCanvas/LightWeightBackgroundShadowImage",)
 # shaders the live screen finds by name (GraphicsSettings always-included, APK player data):
 # LightWeight composite and blur, MV/VJ video
-PLAYER_SHADERS = ("Hidden/CompositeRectBlit", "Hidden/SimpleGaussianBlur", "Sirius/Live/LiveSofdecPrimeYuv",
-                  "Sirius/Live/LiveSofdecPrimeYuv_Android", "UI/Default")
+PLAYER_SHADERS = (
+    "Hidden/CompositeRectBlit",
+    "Hidden/SimpleGaussianBlur",
+    "Sirius/Live/LiveSofdecPrimeYuv",
+    "Sirius/Live/LiveSofdecPrimeYuv_Android",
+    "UI/Default",
+)
 # URP renderer indices used by the scene's live cameras
 LIVE_RENDERERS = (2, 3, 4, 5)
 # option items the render path reads
-OPTION_ITEMS = {k: OPTION_ITEM_TYPES[k] for k in (3, 6, 104, 105, 106, 107, 108, 109, 110, 115, 200, 201, 202,
-                                                  203, 300, 301, 302, 305, 306, 307, 308, 600)}
+OPTION_ITEMS = {
+    k: OPTION_ITEM_TYPES[k]
+    for k in (3, 6, 104, 105, 106, 107, 108, 109, 110, 115, 200, 201, 202, 203, 300, 301, 302, 305, 306, 307, 308, 600)
+}
 
 
 def master_rows(master: Path, music_id: int) -> dict:
     music = next(r for r in master_table(master, "MasterLiveMusic") if r["_id"] == music_id)
-    opts = {r["_optionItemType"]: r["_valueString"] for r in master_table(master, "MasterOptionDefault")
-            if r["_presetId"] == 1 and r["_optionItemType"] in OPTION_ITEMS}
+    opts = {
+        r["_optionItemType"]: r["_valueString"]
+        for r in master_table(master, "MasterOptionDefault")
+        if r["_presetId"] == 1 and r["_optionItemType"] in OPTION_ITEMS
+    }
     return {
         "liveMusic": music,
         "liveQualitySettings": master_table(master, "MasterLiveQualitySettings"),
         "liveLaneSkin": master_table(master, "MasterLiveLaneSkin"),
         "liveStageVideo": master_table(master, "MasterLiveStageVideo"),
         "optionDefaultsPreset1": {OPTION_ITEMS[k]: {"id": k, "value": v} for k, v in sorted(opts.items())},
-        "optionRanges": {OPTION_ITEMS[r["_optionItemType"]]: [r["_minValue"], r["_maxValue"]]
-                         for r in master_table(master, "MasterOptionRange") if r["_optionItemType"] in OPTION_ITEMS},
+        "optionRanges": {
+            OPTION_ITEMS[r["_optionItemType"]]: [r["_minValue"], r["_maxValue"]]
+            for r in master_table(master, "MasterOptionRange")
+            if r["_optionItemType"] in OPTION_ITEMS
+        },
     }
 
 
@@ -102,11 +116,16 @@ def master_rows(master: Path, music_id: int) -> dict:
 # (None, Lane4, Lane6, Lane8, Lane12)
 SPLIT_MAIN = (0, 4, 6, 8, 12)
 SPLIT_SUB = (12, 12, 12, 0, 0)
-LANE_COUNT = 24            # LiveDataCreator.CreateBootData passes 0x18
+LANE_COUNT = 24  # LiveDataCreator.CreateBootData passes 0x18
 # LiveBootDataCreator.CreateViewData: arguments of LiveSettingCreator.CreateLaneViewSettings
-LANE_VIEW = {"size": (1920.0, 1080.0), "topRange": 0.05, "bottomRange": 1.0,
-             "judgementScreenBottomPosition": 2.24, "topPosition": 0.0}
-REF_ASPECT = 1.7777778     # LiveGameView.FullInitialize
+LANE_VIEW = {
+    "size": (1920.0, 1080.0),
+    "topRange": 0.05,
+    "bottomRange": 1.0,
+    "judgementScreenBottomPosition": 2.24,
+    "topPosition": 0.0,
+}
+REF_ASPECT = 1.7777778  # LiveGameView.FullInitialize
 REF_FOV = 54.0
 
 
@@ -137,21 +156,21 @@ def derive_lane(nodes: list, options: dict) -> dict:
     llv = _comp(_node(nodes, "LiveGameView/root/LiveGameLane/lines"), "LiveLaneLineView")
     jr = _node(nodes, "LiveGameView/root/LiveGameLane/judgement_root")
     n = LANE_COUNT
-    width = float(np.float32(lv["_laneWidth"]))          # double field, passed on as (float)
+    width = float(np.float32(lv["_laneWidth"]))  # double field, passed on as (float)
     length = lv["_lineLength"]
     unit = width / n
-    judge_z = jr["localPosition"]["z"]                   # parents are identity: world z of position 0
+    judge_z = jr["localPosition"]["z"]  # parents are identity: world z of position 0
     split = int(options["GuidelineCount"])
     main, sub = SPLIT_MAIN[split], SPLIT_SUB[split]
     settings = {s["LineType"]: s for s in llv["_settings"]}
     lines = []
-    for i in range(n + 1):                               # LiveLaneLineView.UpdateProperties
+    for i in range(n + 1):  # LiveLaneLineView.UpdateProperties
         if i == 0 or i == n:
-            t = 1                                        # GetSettings: OutSide
+            t = 1  # GetSettings: OutSide
         elif main and i % (n // main) == 0:
-            t = 0                                        # Normal
+            t = 0  # Normal
         elif sub and i % (n // sub) == 0:
-            t = 2                                        # Space
+            t = 2  # Space
         else:
             lines.append({"index": i, "active": False})
             continue
@@ -167,17 +186,31 @@ def derive_lane(nodes: list, options: dict) -> dict:
             x -= st["LineWidthFrom"] * 0.5
         elif i == n:
             x += st["LineWidthFrom"] * 0.5
-        lines.append({"index": i, "active": True, "type": ("Normal", "OutSide", "Space")[t],
-                      "start": [x, 0.0, z0], "end": [x, 0.0, z0 + ln],
-                      "startWidth": st["LineWidthFrom"], "endWidth": to_w,
-                      "gradient": st["LineColor"], "alphaControlled": t != 1})
+        lines.append(
+            {
+                "index": i,
+                "active": True,
+                "type": ("Normal", "OutSide", "Space")[t],
+                "start": [x, 0.0, z0],
+                "end": [x, 0.0, z0 + ln],
+                "startWidth": st["LineWidthFrom"],
+                "endWidth": to_w,
+                "gradient": st["LineColor"],
+                "alphaControlled": t != 1,
+            }
+        )
     return {
-        "laneCount": n, "laneWidth": width, "unitWidth": unit, "lineLength": length,
+        "laneCount": n,
+        "laneWidth": width,
+        "unitWidth": unit,
+        "lineLength": length,
         "judgementZ": judge_z,
         "unitCentersX": [unit * (i + 0.5) - width * 0.5 for i in range(n)],
         "spawnRoots": [[unit * (i + 0.5) - width * 0.5, 0.0, length] for i in range(n)],
         "judgementPositions": [[unit * (i + 0.5) - width * 0.5, 0.0, judge_z] for i in range(n)],
-        "splitCountType": split, "splitBorderMainCount": main, "splitBorderSubCount": sub,
+        "splitCountType": split,
+        "splitBorderMainCount": main,
+        "splitBorderSubCount": sub,
         "lines": lines,
         "lineAlpha": min(max(int(options["GuidelineOpacity"]) / 100.0, 0.0), 1.0),
         "laneBaseAlpha": min(max(int(options["LaneOpacity"]) / 100.0, 0.0), 1.0),
@@ -215,8 +248,12 @@ def lane_2d(lane_count: int = LANE_COUNT) -> dict:
     s2 = (rb[1] - rt[1]) / (rb[0] - rt[0])
     c1 = lt[1] - lt[0] * s1
     sx = ((rt[1] - rt[0] * s2) - c1) / (s1 - s2)
-    return {"vertices": [lt, rt, lb, rb], "judgementPositions": jp, "spawnPosition": [sx, c1 + s1 * sx],
-            "pixelsPerUnit": 100.0}
+    return {
+        "vertices": [lt, rt, lb, rb],
+        "judgementPositions": jp,
+        "spawnPosition": [sx, c1 + s1 * sx],
+        "pixelsPerUnit": 100.0,
+    }
 
 
 # --- extraction -------------------------------------------------------------
@@ -236,8 +273,12 @@ def bind_timeline(ex: Exporter, doc: dict, key: str) -> dict:
     scene_graph = ex.load(SCENE_KEY)[1]
     dir_json = _component(tl["nodes"], "PlayableDirector")
     dir_path = next(n["path"] for n in tl["nodes"] if any(c is dir_json for c in n["components"]))
-    directors = [o for o in env.objects if o.type.name == "PlayableDirector"
-                 and tl_graph.path(tl_graph.tf_of_go[o.read_typetree()["m_GameObject"]["m_PathID"]]) == dir_path]
+    directors = [
+        o
+        for o in env.objects
+        if o.type.name == "PlayableDirector"
+        and tl_graph.path(tl_graph.tf_of_go[o.read_typetree()["m_GameObject"]["m_PathID"]]) == dir_path
+    ]
     if len(directors) != 1:
         raise RuntimeError(f"{key}: {len(directors)} PlayableDirectors at {dir_path}")
     asset_o = ex.deref(directors[0], directors[0].read_typetree()["m_PlayableAsset"])
@@ -250,8 +291,9 @@ def bind_timeline(ex: Exporter, doc: dict, key: str) -> dict:
                 raise RuntimeError(f"{key}: track {name} with clips has no known binding")
             continue
         where, cls, field = TIMELINE_TRACK_ANIMATORS[name]
-        nodes, graph, owner = ((doc["scene"]["nodes"], scene_graph, SCENE_KEY) if where == "scene"
-                               else (tl["nodes"], tl_graph, key))
+        nodes, graph, owner = (
+            (doc["scene"]["nodes"], scene_graph, SCENE_KEY) if where == "scene" else (tl["nodes"], tl_graph, key)
+        )
         ref = _component(nodes, cls)[field]
         if not ref or ref.get("component") != "Animator":
             raise RuntimeError(f"{cls}.{field}: {ref}")
@@ -309,8 +351,17 @@ class SharedSceneMismatch(RuntimeError):
     """A music's scene cannot be composed from its band's part (see music_part); export it whole."""
 
 
-def _export(cat, player, base: Path, rows: dict | None, band: int, skin: str, extra_keys: dict | None,
-            slice_: dict | None, jacket: str | None):
+def _export(
+    cat,
+    player,
+    base: Path,
+    rows: dict | None,
+    band: int,
+    skin: str,
+    extra_keys: dict | None,
+    slice_: dict | None,
+    jacket: str | None,
+):
     """The export sequence of extract (jacket None: without the jacket sprite, the slice and the music rows left as
     placeholders for music_part). -> (exporter, doc, shader index, shader summary, timeline counts, dropped)."""
     ex = Exporter(cat, base, player=player, clip_format="livescene", defer_writes=True)
@@ -323,17 +374,25 @@ def _export(cat, player, base: Path, rows: dict | None, band: int, skin: str, ex
     keys.update(extra_keys or {})
     doc["assets"] = {name: ex.export_key(key.format(band=band)) for name, key in keys.items()}
     timeline = bind_timeline(ex, doc, keys["startTimeline"].format(band=band))
-    doc["sprites"] = {name: ex.key_sprite(key.format(band=band, jacket=jacket))
-                      for name, key in SPRITE_KEYS.items() if jacket is not None or name != "jacket"}
+    doc["sprites"] = {
+        name: ex.key_sprite(key.format(band=band, jacket=jacket))
+        for name, key in SPRITE_KEYS.items()
+        if jacket is not None or name != "jacket"
+    }
     if rows:
         doc["master"] = rows if jacket is not None else None
         opts = {k: v["value"] for k, v in rows["optionDefaultsPreset1"].items()}
         doc["derived"] = {
             "lane": derive_lane(doc["scene"]["nodes"], opts),
-            "fovRule": {"refFov": REF_FOV, "refAspect": REF_ASPECT,
-                        "source": "LiveGameView.FullInitialize / CalcVerticalFovKeepingHorizontal",
-                        "examples": {f"{w}x{h}": vertical_fov(w, h)
-                                     for w, h in ((2340, 1080), (1920, 1080), (1440, 1080), (2048, 1536))}}}
+            "fovRule": {
+                "refFov": REF_FOV,
+                "refAspect": REF_ASPECT,
+                "source": "LiveGameView.FullInitialize / CalcVerticalFovKeepingHorizontal",
+                "examples": {
+                    f"{w}x{h}": vertical_fov(w, h) for w, h in ((2340, 1080), (1920, 1080), (1440, 1080), (2048, 1536))
+                },
+            },
+        }
     for name in PLAYER_SHADERS:
         ex.add_shader(player.shader(name))
     rl = graphics["pipelines"][graphics["defaultPipeline"]]["m_RendererDataList"]
@@ -344,12 +403,16 @@ def _export(cat, player, base: Path, rows: dict | None, band: int, skin: str, ex
     doc["postTextures"] = {}
     for rn in renderers:
         if graphics["renderers"][rn].get("postProcessData"):
-            doc["postTextures"][rn] = {"filmGrainTex": [ex.texture(o) for o in player.post_textures(rn, "filmGrainTex")]}
+            doc["postTextures"][rn] = {
+                "filmGrainTex": [ex.texture(o) for o in player.post_textures(rn, "filmGrainTex")]
+            }
     index, summary = ex.dump_shaders(base / "shaders")
     doc["shaders"] = {"index": "shaders/shaders.json", "names": summary["names"], "cameraRenderers": renderers}
-    doc["convention"] = ("Unity space (left-handed, Y up); transforms are local TRS; "
-                         "quaternions (x,y,z,w); colours in the project's Gamma space")
-    ex.resolve_pending()        # bindings whose target hierarchy / component class was exported after the clip
+    doc["convention"] = (
+        "Unity space (left-handed, Y up); transforms are local TRS; "
+        "quaternions (x,y,z,w); colours in the project's Gamma space"
+    )
+    ex.resolve_pending()  # bindings whose target hierarchy / component class was exported after the clip
     dropped = _drop_scene_textures(doc, base, unlink=False)
     ex.write_textures(skip=dropped)
     return ex, doc, index, summary, timeline, dropped
@@ -357,14 +420,29 @@ def _export(cat, player, base: Path, rows: dict | None, band: int, skin: str, ex
 
 def _summary(doc: dict, index: list, summary: dict, textures: int, dropped: list, timeline) -> dict:
     gles3 = sum(1 for r in index for v in r["variants"] if v["platform"] == "gles3")
-    return {"scene": "livescene/scene.json", "nodes": len(doc["scene"]["nodes"]),
-            "assets": list(doc["assets"]), "textures": textures - len(dropped), "droppedTextures": len(dropped),
-            "shaders": summary["count"], "variants": summary["variants"], "gles3Variants": gles3,
-            "timelineBindings": timeline}
+    return {
+        "scene": "livescene/scene.json",
+        "nodes": len(doc["scene"]["nodes"]),
+        "assets": list(doc["assets"]),
+        "textures": textures - len(dropped),
+        "droppedTextures": len(dropped),
+        "shaders": summary["count"],
+        "variants": summary["variants"],
+        "gles3Variants": gles3,
+        "timelineBindings": timeline,
+    }
 
 
-def extract(cat, player, out_dir: Path, master: Path | None = None, music_id: int = 100001,
-            band: int | None = None, band_choice: dict | None = None, extra_keys: dict | None = None) -> dict:
+def extract(
+    cat,
+    player,
+    out_dir: Path,
+    master: Path | None = None,
+    music_id: int = 100001,
+    band: int | None = None,
+    band_choice: dict | None = None,
+    extra_keys: dict | None = None,
+) -> dict:
     """Write <out_dir>/livescene/scene.json (+ textures/, shaders/) and return a summary.
 
     `band`: the band of the LightWeight background (LightWeightBackgroundLoadStep.<LoadAsync>d__3:
@@ -376,8 +454,10 @@ def extract(cat, player, out_dir: Path, master: Path | None = None, music_id: in
     rows = master_rows(master, music_id) if master else None
     if band is None:
         if rows:
-            raise ValueError(f"music {music_id}: no band given; the LightWeight background and the start timeline "
-                             "take the band of the deck centre (SelfMemberList[2]), see live.resolve_band")
+            raise ValueError(
+                f"music {music_id}: no band given; the LightWeight background and the start timeline "
+                "take the band of the deck centre (SelfMemberList[2]), see live.resolve_band"
+            )
         band = 1
     skin = lane_skin(rows) if rows else "skin001"
     base = out_dir / "livescene"
@@ -386,8 +466,9 @@ def extract(cat, player, out_dir: Path, master: Path | None = None, music_id: in
     if band_choice:
         slice_["bandChoice"] = band_choice
     jacket = rows["liveMusic"]["_jacketAssetName"] if rows else "jkt_001_100001"
-    ex, doc, index, summary, timeline, dropped = _export(cat, player, base, rows, band, skin, extra_keys, slice_,
-                                                         jacket)
+    ex, doc, index, summary, timeline, dropped = _export(
+        cat, player, base, rows, band, skin, extra_keys, slice_, jacket
+    )
     write_json(base / "scene.json", doc)
     return _summary(doc, index, summary, len(ex.textures), dropped, timeline)
 
@@ -395,8 +476,9 @@ def extract(cat, player, out_dir: Path, master: Path | None = None, music_id: in
 BAND_DOC = "band.json"
 
 
-def band_part(cat, player, out_dir: Path, master: Path, music_id: int, band: int,
-              extra_keys: dict | None = None) -> dict:
+def band_part(
+    cat, player, out_dir: Path, master: Path, music_id: int, band: int, extra_keys: dict | None = None
+) -> dict:
     """What `extract` writes for any music of `band`: <out_dir>/livescene/ (textures, shaders; no scene.json) and
     <out_dir>/band.json (the document with the slice, the jacket sprite and the music rows left out). `music_id`:
     any music of the band (the option rows it reads are the same for every music)."""
@@ -404,10 +486,15 @@ def band_part(cat, player, out_dir: Path, master: Path, music_id: int, band: int
     rows = master_rows(master, music_id)
     base = out_dir / "livescene"
     base.mkdir(parents=True, exist_ok=True)
-    ex, doc, index, summary, timeline, dropped = _export(cat, player, base, rows, band, lane_skin(rows),
-                                                         extra_keys, None, None)
-    part = {"band": band, "doc": doc, "summary": _summary(doc, index, summary, len(ex.textures), dropped, timeline),
-            "textures": sorted({r["texture"] for r in _records(doc["scene"])})}
+    ex, doc, index, summary, timeline, dropped = _export(
+        cat, player, base, rows, band, lane_skin(rows), extra_keys, None, None
+    )
+    part = {
+        "band": band,
+        "doc": doc,
+        "summary": _summary(doc, index, summary, len(ex.textures), dropped, timeline),
+        "textures": sorted({r["texture"] for r in _records(doc["scene"])}),
+    }
     write_json(out_dir / BAND_DOC, part)
     return part
 
@@ -418,13 +505,15 @@ def _records(v) -> list:
     return out
 
 
-def music_part(cat, player, out_dir: Path, part: dict, master: Path, music_id: int, band_choice: dict | None = None
-               ) -> dict:
+def music_part(
+    cat, player, out_dir: Path, part: dict, master: Path, music_id: int, band_choice: dict | None = None
+) -> dict:
     """<out_dir>/livescene/scene.json of one music from its band's part (band_part; the part's livescene/ files
     already in <out_dir>/livescene): the document extract writes. Raises SharedSceneMismatch when the jacket's
     bundle closure holds shaders or a hierarchy (extract would dump or resolve against them) or the jacket texture
     is one of the scene's (extract would keep it)."""
     from .export import Exporter as _Exporter
+
     out_dir = Path(out_dir)
     band = part["band"]
     rows = master_rows(master, music_id)

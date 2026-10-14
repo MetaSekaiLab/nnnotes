@@ -37,6 +37,7 @@ yet", regenerate the file from the new APK:
 4. When code starts reading another MonoBehaviour class with `PlayerData.mono`, add the class to CLASSES and
    regenerate.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -46,7 +47,7 @@ from pathlib import Path
 
 from UnityPy.helpers.TypeTreeGenerator import TypeTreeGenerator
 
-from nnnotes.player import (TYPETREE_FORMAT, PlayerData, dump_typetrees, typetree_key, typetree_node)
+from nnnotes.player import TYPETREE_FORMAT, PlayerData, dump_typetrees, typetree_key, typetree_node
 
 # (assembly, namespace, class) as the MonoScript objects name them
 CLASSES = (
@@ -70,13 +71,22 @@ CLASSES = (
 )
 DEFAULT_OUT = Path(__file__).resolve().parents[1] / "src" / "nnnotes" / "typetrees"
 
-ALIGN = 0x4000                  # TransferMetaFlags.kAlignBytesFlag
+ALIGN = 0x4000  # TransferMetaFlags.kAlignBytesFlag
 # the MonoBehaviour header: field -> meta flag
 HEADER = {"m_GameObject": 0, "m_Enabled": ALIGN, "m_Script": 0, "m_Name": 0}
 # built-in structs the generator names after their C# type -> the native type name Unity serializes
-NATIVE_TYPES = {"Bounds": "AABB", "Color": "ColorRGBA", "Color32": "ColorRGBA", "LayerMask": "BitField",
-                "Quaternion": "Quaternionf", "Rect": "Rectf", "Vector2": "Vector2f", "Vector2Int": "int2_storage",
-                "Vector3": "Vector3f", "Vector4": "Vector4f"}
+NATIVE_TYPES = {
+    "Bounds": "AABB",
+    "Color": "ColorRGBA",
+    "Color32": "ColorRGBA",
+    "LayerMask": "BitField",
+    "Quaternion": "Quaternionf",
+    "Rect": "Rectf",
+    "Vector2": "Vector2f",
+    "Vector2Int": "int2_storage",
+    "Vector3": "Vector3f",
+    "Vector4": "Vector4f",
+}
 # built-in structs whose C# and native names agree (their arrays are `vector`s too)
 NATIVE_STRUCTS = {*NATIVE_TYPES, "AnimationCurve", "Gradient"}
 # built-in structs the generator leaves without fields -> their fields
@@ -137,7 +147,7 @@ def _normalize(node: _Node) -> None:
     if node.type == "managedReference":
         raise ValueError(f"{node.name}: [SerializeReference] fields are not supported")
     parts = _array_parts(node)
-    if node.type == "PropertyName":              # ExposedReference name: string { string id }
+    if node.type == "PropertyName":  # ExposedReference name: string { string id }
         (inner,) = node.children
         _normalize(inner)
         node.type = "string"
@@ -150,10 +160,10 @@ def _normalize(node: _Node) -> None:
     if parts is not None:
         arr, elem = parts
         if node.type == "vector" or elem.type in NATIVE_STRUCTS or elem.type == "string":
-            node.type = "vector"                 # arrays of primitives, strings, PPtrs and built-in structs
+            node.type = "vector"  # arrays of primitives, strings, PPtrs and built-in structs
             _flag(node, elem.type in BYTE_TYPES)
             _flag(arr, not elem.type.startswith("PPtr<"))
-        elif node.type == elem.type:             # an array of a serializable class keeps the class name
+        elif node.type == elem.type:  # an array of a serializable class keeps the class name
             _flag(arr, False)
         else:
             raise ValueError(f"{node.name}: array container {node.type} of {elem.type}")
@@ -170,13 +180,13 @@ def unity_rows(rows: list) -> list:
     """Generated [level, type, name, meta flag] rows in the layout Unity serializes MonoBehaviour typetrees with
     (see the module docstring). Raises ValueError on what that layout is not known for."""
     root = _tree(rows)
-    names = [c.name for c in root.children[:len(HEADER)]]
+    names = [c.name for c in root.children[: len(HEADER)]]
     if names != list(HEADER):
         raise ValueError(f"unexpected MonoBehaviour header {names}")
     root.type, root.flags = "MonoBehaviour", 0
     for c in root.children:
         _normalize(c)
-    for c in root.children[:len(HEADER)]:
+    for c in root.children[: len(HEADER)]:
         c.flags = HEADER[c.name]
         for k in c.children:
             if c.type.startswith("PPtr<"):
@@ -189,7 +199,7 @@ def objects_by_class(player: PlayerData) -> dict[tuple[str, str, str], list]:
     for o in player._by_type.get("MonoBehaviour", []):
         try:
             k = player.script(o)
-        except Exception:            # script in a file outside the boot data, or no script
+        except Exception:  # script in a file outside the boot data, or no script
             continue
         out.setdefault(k, []).append(o)
     return out
@@ -204,8 +214,12 @@ def generate(player: PlayerData, gen: TypeTreeGenerator, game_version: str) -> d
         if not objs:
             raise SystemExit(f"{name} ({asm}): no object of this class in the boot data")
         try:
-            rows = unity_rows([[n.m_Level, n.m_Type, n.m_Name, n.m_MetaFlag]
-                               for n in gen.get_nodes(asm if asm.endswith(".dll") else f"{asm}.dll", name)])
+            rows = unity_rows(
+                [
+                    [n.m_Level, n.m_Type, n.m_Name, n.m_MetaFlag]
+                    for n in gen.get_nodes(asm if asm.endswith(".dll") else f"{asm}.dll", name)
+                ]
+            )
         except ValueError as e:
             raise SystemExit(f"{name} ({asm}): {e}")
         node = typetree_node(rows)
@@ -218,8 +232,12 @@ def generate(player: PlayerData, gen: TypeTreeGenerator, game_version: str) -> d
             except Exception as e:
                 raise SystemExit(f"{name} ({asm}): generated typetree does not read object {o.path_id}: {e}")
         classes[typetree_key(asm, ns, cls)] = {"typeHash": hashes.pop(), "nodes": rows}
-    return {"format": TYPETREE_FORMAT, "unityVersion": player.unity_version, "gameVersion": game_version,
-            "classes": classes}
+    return {
+        "format": TYPETREE_FORMAT,
+        "unityVersion": player.unity_version,
+        "gameVersion": game_version,
+        "classes": classes,
+    }
 
 
 def main(argv=None) -> None:
@@ -227,8 +245,13 @@ def main(argv=None) -> None:
     p.add_argument("apk", type=Path, help="base.apk of the game version")
     g = p.add_mutually_exclusive_group(required=True)
     g.add_argument("--dll", type=Path, help="folder of managed assembly stubs (e.g. Il2CppDumper DummyDll)")
-    g.add_argument("--il2cpp", nargs=2, type=Path, metavar=("LIBIL2CPP", "METADATA"),
-                   help="libil2cpp.so and global-metadata.dat of the same game version")
+    g.add_argument(
+        "--il2cpp",
+        nargs=2,
+        type=Path,
+        metavar=("LIBIL2CPP", "METADATA"),
+        help="libil2cpp.so and global-metadata.dat of the same game version",
+    )
     p.add_argument("--game-version", help="game version to record (default: the APK manifest's versionName)")
     p.add_argument("-o", "--out", type=Path, default=DEFAULT_OUT, help="output directory")
     args = p.parse_args(argv)
@@ -246,8 +269,10 @@ def main(argv=None) -> None:
     args.out.mkdir(parents=True, exist_ok=True)
     out = args.out / f"{player.unity_version}.json"
     out.write_bytes(dump_typetrees(doc).encode("utf-8"))
-    print(f"{out}  ({len(doc['classes'])} classes, Unity {player.unity_version}, game version {game_version})",
-          file=sys.stderr)
+    print(
+        f"{out}  ({len(doc['classes'])} classes, Unity {player.unity_version}, game version {game_version})",
+        file=sys.stderr,
+    )
 
 
 if __name__ == "__main__":

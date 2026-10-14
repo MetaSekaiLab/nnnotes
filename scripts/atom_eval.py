@@ -48,6 +48,7 @@ Statuses: equal, differ, refused (the candidate raised where the reference gave 
 result where the reference refused), absent, reference-error. Output: one JSON document (-o); m1 and m3 also write
 one JSON line per bundle next to it (<out>.jsonl).
 """
+
 from __future__ import annotations
 
 import argparse
@@ -69,7 +70,7 @@ from pathlib import Path
 
 try:
     import resource
-except ImportError:                             # not POSIX: CPU from os.times, no peak memory
+except ImportError:  # not POSIX: CPU from os.times, no peak memory
     resource = None
 
 HERE = Path(__file__).resolve().parent
@@ -133,6 +134,7 @@ def check_clean_env() -> None:
 def load_impl(spec: str):
     """The Impl named by module:attribute (an Impl, or a callable returning one)."""
     from nnnotes.atoms import Impl
+
     module, sep, attr = spec.partition(":")
     if not sep or not module or not attr:
         raise SystemExit(f"{spec!r}: expected module:attribute")
@@ -145,6 +147,7 @@ def load_impl(spec: str):
 
 def parse_atoms(items) -> list[tuple[str, str]]:
     from nnnotes.atoms import ATOMS
+
     out = []
     for it in items or ():
         name, sep, spec = it.partition("=")
@@ -190,8 +193,7 @@ def bundle_list(root: Path, listing: str | None) -> list[tuple[str, int]]:
 def write_json(path, doc) -> None:
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps(doc, indent=1, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8",
-                 newline="\n")
+    p.write_text(json.dumps(doc, indent=1, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8", newline="\n")
 
 
 def pool_map(fn, jobs, workers: int, init=None, initargs=(), maxtasks: int | None = 40, on_result=None):
@@ -221,6 +223,7 @@ def pool_map(fn, jobs, workers: int, init=None, initargs=(), maxtasks: int | Non
 def image_diff(a, b) -> tuple[str, str | None]:
     """("equal", None) when mode, size and pixels are equal, else ("differ", what)."""
     import numpy as np
+
     if a.mode != b.mode:
         return "differ", f"mode {a.mode} vs {b.mode}"
     if a.size != b.size:
@@ -235,19 +238,25 @@ def image_diff(a, b) -> tuple[str, str | None]:
 def rgba_diff(a, b) -> dict:
     """Per-channel differences of two same-size RGBA images: max over RGB and A, share of RGB values off by > 1."""
     import numpy as np
+
     x = np.asarray(a.convert("RGBA"), np.int16)
     y = np.asarray(b.convert("RGBA"), np.int16)
     if x.shape != y.shape:
         return {"shape": [list(x.shape), list(y.shape)]}
     d = np.abs(x - y)
     rgb = d[..., :3]
-    return {"rgbMax": int(rgb.max()), "alphaMax": int(d[..., 3].max()),
-            "rgbOffBy2": round(float((rgb > 1).mean()), 6), "rgbOff": round(float((rgb > 0).mean()), 6)}
+    return {
+        "rgbMax": int(rgb.max()),
+        "alphaMax": int(d[..., 3].max()),
+        "rgbOffBy2": round(float((rgb > 1).mean()), 6),
+        "rgbOff": round(float((rgb > 0).mean()), 6),
+    }
 
 
 def png_roundtrip(data: bytes, want) -> tuple[str, str | None]:
     """Whether PNG `data` decodes to exactly `want` (mode and pixels)."""
     from PIL import Image
+
     im = Image.open(io.BytesIO(data))
     im.load()
     return image_diff(im, want)
@@ -291,6 +300,7 @@ def deep_diff(a, b, path: str = "") -> str | None:
 
 def _arr_eq(x, y) -> bool:
     import numpy as np
+
     x, y = np.asarray(x), np.asarray(y)
     if x.dtype != y.dtype or x.shape != y.shape:
         return False
@@ -302,6 +312,7 @@ def _arr_eq(x, y) -> bool:
 def mesh_diff(a, b) -> list[str]:
     """What differs between two MeshArrays (empty when equal): kinds like missing:<channel>, dtype:<channel>."""
     import numpy as np
+
     out = []
     if a.vertex_count != b.vertex_count:
         out.append("vertexCount")
@@ -327,13 +338,15 @@ def mesh_diff(a, b) -> list[str]:
                 out.append("primitives:topology")
                 break
             if (pa.indices is None) != (pb.indices is None) or (
-                    pa.indices is not None and not np.array_equal(np.asarray(pa.indices), np.asarray(pb.indices))):
+                pa.indices is not None and not np.array_equal(np.asarray(pa.indices), np.asarray(pb.indices))
+            ):
                 out.append("primitives:indices")
                 break
     if (a.skin is None) != (b.skin is None):
         out.append("skin:presence")
-    elif a.skin is not None and not (_arr_eq(a.skin.joints, b.skin.joints)
-                                     and _arr_eq(a.skin.weights.data, b.skin.weights.data)):
+    elif a.skin is not None and not (
+        _arr_eq(a.skin.joints, b.skin.joints) and _arr_eq(a.skin.weights.data, b.skin.weights.data)
+    ):
         out.append("skin:values")
     if not _arr_eq(a.bind_poses, b.bind_poses):
         out.append("bindPoses")
@@ -364,10 +377,14 @@ class Tally:
         self.stats[check][key][name] += value
 
     def dump(self) -> dict:
-        return {"counts": {c: {k: dict(v) for k, v in d.items()} for c, d in self.counts.items()},
-                "stats": {c: {k: {n: (round(x, 6) if isinstance(x, float) else x) for n, x in v.items()}
-                              for k, v in d.items()} for c, d in self.stats.items()},
-                "examples": {c: {k: dict(v) for k, v in d.items()} for c, d in self.examples.items()}}
+        return {
+            "counts": {c: {k: dict(v) for k, v in d.items()} for c, d in self.counts.items()},
+            "stats": {
+                c: {k: {n: (round(x, 6) if isinstance(x, float) else x) for n, x in v.items()} for k, v in d.items()}
+                for c, d in self.stats.items()
+            },
+            "examples": {c: {k: dict(v) for k, v in d.items()} for c, d in self.examples.items()},
+        }
 
 
 def merge(total: dict, rec: dict) -> None:
@@ -397,6 +414,7 @@ def merge(total: dict, rec: dict) -> None:
 def cmd_sample(a) -> dict:
     from nnnotes import contract
     from nnnotes.cli_assets import bundle_group
+
     root = Path(a.dir)
     items = bundle_list(root, a.bundles)
     base = {n: n.rsplit("/", 1)[-1] for n, _ in items}
@@ -408,14 +426,21 @@ def cmd_sample(a) -> dict:
     why: dict[str, list[str]] = defaultdict(list)
     for g in sorted(groups):
         why[rng.choice(sorted(groups[g]))].append("group")
-    for n, _ in sorted(items, key=lambda x: (-x[1], x[0]))[:a.largest]:
+    for n, _ in sorted(items, key=lambda x: (-x[1], x[0]))[: a.largest]:
         why[n].append("largest")
     rest = sorted(n for n, _ in items if n not in why)
     for n in rng.sample(rest, min(a.random, len(rest))):
         why[n].append("random")
-    doc = {"seed": a.seed, "population": len(items), "groups": len(groups), "largest": a.largest,
-           "random": a.random, "bundles": sorted(why), "why": {n: why[n] for n in sorted(why)},
-           "bytes": sum(s for n, s in items if n in why)}
+    doc = {
+        "seed": a.seed,
+        "population": len(items),
+        "groups": len(groups),
+        "largest": a.largest,
+        "random": a.random,
+        "bundles": sorted(why),
+        "why": {n: why[n] for n in sorted(why)},
+        "bytes": sum(s for n, s in items if n in why),
+    }
     if a.out:
         write_json(a.out, doc)
     log("sample", len(doc["bundles"]), "bundles of", len(items), "in", len(groups), "groups")
@@ -425,6 +450,7 @@ def cmd_sample(a) -> dict:
 # ---------------------------------------------------------------- m1
 def m1_init(cfg: dict) -> None:
     from nnnotes.atoms import resolve
+
     G.clear()
     G.update(cfg)
     G["dir"] = Path(cfg["dir"])
@@ -435,12 +461,13 @@ def m1_init(cfg: dict) -> None:
     for name, spec in cfg["atoms"]:
         cand[name].append(load_impl(spec))
     G["cand"] = dict(cand)
-    from PIL import Image                       # load the PNG codec before anything is timed
+    from PIL import Image  # load the PNG codec before anything is timed
+
     tiny = Image.new("RGBA", (2, 2))
     for p in [G["ref"]["png.encode"], *G["cand"].get("png.encode", [])]:
         try:
             p.fn(tiny, 6)
-        except Exception:                       # noqa: BLE001 (a candidate that needs its own images)
+        except Exception:  # noqa: BLE001 (a candidate that needs its own images)
             pass
 
 
@@ -451,13 +478,14 @@ def _key(info) -> tuple:
 def _call(fn, *args):
     """(result, None) or (None, refusal) where refusal is the Unsupported code or the error's message."""
     from nnnotes.atoms import Unsupported
+
     try:
         return fn(*args), None
     except Unsupported as e:
         return None, e.code
     except NotImplementedError as e:
         return None, "absent: " + str(e)[:100]
-    except Exception as e:                      # noqa: BLE001
+    except Exception as e:  # noqa: BLE001
         return None, message(e)
 
 
@@ -467,7 +495,7 @@ def _facet(fn, *args):
         return fn(*args), None
     except NotImplementedError:
         return None, "absent"
-    except Exception as e:                      # noqa: BLE001
+    except Exception as e:  # noqa: BLE001
         return None, message(e)
 
 
@@ -475,21 +503,41 @@ def check_objects(T: Tally, ref, cv, bundle: str) -> None:
     for facet, fr, fc in (("files", ref.files, cv.files), ("container", ref.container, cv.container)):
         a, _ = _facet(fr)
         b, err = _facet(fc)
-        T.add("objects", facet, "absent" if err == "absent" else "refused" if err else
-              "equal" if a == b else "differ", bundle, err)
+        T.add(
+            "objects",
+            facet,
+            "absent" if err == "absent" else "refused" if err else "equal" if a == b else "differ",
+            bundle,
+            err,
+        )
     for f in ref.files():
         a, _ = _facet(ref.externals, f)
         b, err = _facet(cv.externals, f)
-        T.add("objects", "externals", "absent" if err == "absent" else "refused" if err else
-              "equal" if a == b else "differ", f"{bundle}:{f}", err)
+        T.add(
+            "objects",
+            "externals",
+            "absent" if err == "absent" else "refused" if err else "equal" if a == b else "differ",
+            f"{bundle}:{f}",
+            err,
+        )
         a, _ = _facet(ref.unity_version, f)
         b, err = _facet(cv.unity_version, f)
-        T.add("objects", "unityVersion", "absent" if err == "absent" else "refused" if err else
-              "equal" if a == b else "differ", f"{bundle}:{f}", err)
+        T.add(
+            "objects",
+            "unityVersion",
+            "absent" if err == "absent" else "refused" if err else "equal" if a == b else "differ",
+            f"{bundle}:{f}",
+            err,
+        )
     rc = {_key(i): i for i in ref.objects()}
     cc = {_key(i): i for i in cv.objects()}
-    T.add("objects", "set", "equal" if rc.keys() == cc.keys() else "differ", bundle,
-          f"{len(rc.keys() - cc.keys())} only in the reference, {len(cc.keys() - rc.keys())} only in the candidate")
+    T.add(
+        "objects",
+        "set",
+        "equal" if rc.keys() == cc.keys() else "differ",
+        bundle,
+        f"{len(rc.keys() - cc.keys())} only in the reference, {len(cc.keys() - rc.keys())} only in the candidate",
+    )
     for k, i in rc.items():
         c = cc.get(k)
         if c is None:
@@ -498,12 +546,21 @@ def check_objects(T: Tally, ref, cv, bundle: str) -> None:
         T.add("objects", "classId", "equal" if i.class_id == c.class_id else "differ", i.id)
         T.add("objects", "byteSize", "equal" if i.byte_size == c.byte_size else "differ", i.id)
         if i.type_hash is not None:
-            T.add("objects", "typeHash", "absent" if c.type_hash is None else
-                  "equal" if i.type_hash == c.type_hash else "differ", i.id)
+            T.add(
+                "objects",
+                "typeHash",
+                "absent" if c.type_hash is None else "equal" if i.type_hash == c.type_hash else "differ",
+                i.id,
+            )
         ra, _ = _facet(ref.raw, i)
         rb, err = _facet(cv.raw, c)
-        T.add("objects", "raw", "absent" if err == "absent" else "refused" if err else
-              "equal" if ra == rb else "differ", i.id, err)
+        T.add(
+            "objects",
+            "raw",
+            "absent" if err == "absent" else "refused" if err else "equal" if ra == rb else "differ",
+            i.id,
+            err,
+        )
 
 
 def _census_facets(T: Tally, section: str, ra: dict, rb: dict | None, oid: str, skip=()) -> None:
@@ -523,13 +580,14 @@ def _census_facets(T: Tally, section: str, ra: dict, rb: dict | None, oid: str, 
 def check_census(T: Tally, ref, cv, bundle: str, data: bytes) -> None:
     from nnnotes import census
     from nnnotes.unity import load_bytes
+
     if not hasattr(cv, "census"):
         T.add("census", "document", "absent", bundle)
         return
     t0 = time.process_time()
     try:
-        a = census.census_env(load_bytes(data))           # timed from the bytes: the open is part of the census
-    except Exception as e:                      # noqa: BLE001
+        a = census.census_env(load_bytes(data))  # timed from the bytes: the open is part of the census
+    except Exception as e:  # noqa: BLE001
         T.add("census", "document", "reference-error", bundle, message(e))
         return
     T.stat("census", "document", "referenceCpu", time.process_time() - t0)
@@ -550,8 +608,7 @@ def check_census(T: Tally, ref, cv, bundle: str, data: bytes) -> None:
     for sec, key in (("assetBundles", ("file", "pathId")), ("scripts", ("file", "pathId"))):
         bm = {tuple(x.get(k) for k in key): x for x in b.get(sec, ())}
         for x in a.get(sec, ()):
-            _census_facets(T, sec, x, bm.get(tuple(x.get(k) for k in key)), f"{x['file']}:{x['pathId']}",
-                           skip=key)
+            _census_facets(T, sec, x, bm.get(tuple(x.get(k) for k in key)), f"{x['file']}:{x['pathId']}", skip=key)
     for sec in ("resources", "classes", "objects", "errors"):
         if sec not in b:
             T.add("census", sec, "absent", bundle)
@@ -573,8 +630,13 @@ def check_typetree(T: Tally, ref, cv, infos, cmap) -> None:
         a, rerr = _call(ref.typetree, i)
         T.stat("typetree", i.class_name, "referenceCpu", time.process_time() - t0)
         if not compare:
-            T.add("typetree", i.class_name, "refused.both" if err and rerr else "extra" if rerr else
-                  "refused" if err else "read", i.id, err or rerr)
+            T.add(
+                "typetree",
+                i.class_name,
+                "refused.both" if err and rerr else "extra" if rerr else "refused" if err else "read",
+                i.id,
+                err or rerr,
+            )
             continue
         if rerr and err:
             T.add("typetree", i.class_name, "refused.both", i.id, err)
@@ -614,12 +676,18 @@ def check_text(T: Tally, ref, cv, infos, cmap) -> None:
             def fn(o, field=field):
                 v = cv.typetree(o).get(field)
                 return v.encode("utf-8", "surrogateescape") if isinstance(v, str) else bytes(v or b"")
+
         t0 = time.process_time()
         got, err = _call(fn, c)
         T.stat("text", i.class_name, "candidateCpu", time.process_time() - t0)
         T.stat("text", i.class_name, "bytes", len(want))
-        T.add("text", i.class_name, "refused" if err else "equal" if got == want else "differ", i.id,
-              err or (None if got == want else f"{len(want)} vs {len(got)} bytes"))
+        T.add(
+            "text",
+            i.class_name,
+            "refused" if err else "equal" if got == want else "differ",
+            i.id,
+            err or (None if got == want else f"{len(want)} vs {len(got)} bytes"),
+        )
 
 
 def hdr_reference(inp):
@@ -632,6 +700,7 @@ def hdr_reference(inp):
     import numpy as np
     from PIL import Image
     from nnnotes.atoms.texture import ASTC_BLOCKS
+
     bx, by = ASTC_BLOCKS[int(inp.format)]
     w, h = int(inp.width), int(inp.height)
     n = -(-w // bx) * -(-h // by) * 16
@@ -646,12 +715,15 @@ def hdr_reference(inp):
 def _hdr_library_image(inp):
     """What the reference's library returns for an HDR ASTC texture (the reference atom refuses it)."""
     from UnityPy.export.Texture2DConverter import parse_image_data
-    return parse_image_data(inp.data, inp.width, inp.height, int(inp.format), tuple(inp.version), inp.platform,
-                            inp.platform_blob, True)
+
+    return parse_image_data(
+        inp.data, inp.width, inp.height, int(inp.format), tuple(inp.version), inp.platform, inp.platform_blob, True
+    )
 
 
 def check_textures(T: Tally, ref, cv, infos, cmap, checks) -> None:
     from nnnotes.atoms.texture import format_name, is_hdr_astc
+
     ref_dec, ref_png = G["ref"]["texture.decode"], G["ref"]["png.encode"]
     decs, pngs = G["cand"].get("texture.decode", []), G["cand"].get("png.encode", [])
     det_inputs = []
@@ -660,7 +732,7 @@ def check_textures(T: Tally, ref, cv, infos, cmap, checks) -> None:
             continue
         try:
             rin = ref.texture_input(i)
-        except Exception as e:                  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001
             T.add("texture", "?", "reference-error", i.id, message(e))
             continue
         fmt = format_name(rin.format)
@@ -699,15 +771,25 @@ def check_textures(T: Tally, ref, cv, infos, cmap, checks) -> None:
                     lib, lerr = _call(_hdr_library_image, rin)
                     if lib is not None:
                         rd = rgba_diff(lib, indep)
-                        T.add("texture.hdr", f"{fmt} | reference library", "equal" if not any(
-                            rd.get(k) for k in ("rgbMax", "alphaMax", "shape")) else "differ", i.id, json.dumps(rd))
+                        T.add(
+                            "texture.hdr",
+                            f"{fmt} | reference library",
+                            "equal" if not any(rd.get(k) for k in ("rgbMax", "alphaMax", "shape")) else "differ",
+                            i.id,
+                            json.dumps(rd),
+                        )
                     for d, img in zip(decs, cimgs):
                         if img is None:
                             T.add("texture.hdr", f"{fmt} | {d.id}", "refused", i.id)
                             continue
                         rd = rgba_diff(img, indep)
-                        T.add("texture.hdr", f"{fmt} | {d.id}", "equal" if not any(
-                            rd.get(k) for k in ("rgbMax", "alphaMax", "shape")) else "differ", i.id, json.dumps(rd))
+                        T.add(
+                            "texture.hdr",
+                            f"{fmt} | {d.id}",
+                            "equal" if not any(rd.get(k) for k in ("rgbMax", "alphaMax", "shape")) else "differ",
+                            i.id,
+                            json.dumps(rd),
+                        )
                         for k in ("rgbMax", "alphaMax"):
                             if k in rd:
                                 T.stat("texture.hdr", f"{fmt} | {d.id}", f"max:{k}", rd[k])
@@ -784,7 +866,7 @@ def check_mesh(T: Tally, ref, cv, infos, cmap) -> None:
             t0 = time.process_time()
             a = ref_arr.fn(rin)
             T.stat("mesh", "Mesh", "referenceCpu", time.process_time() - t0)
-        except Exception as e:                  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001
             rerr = message(e)
         c = cmap.get(_key(i)) if cv is not None else None
         cin = rin
@@ -816,6 +898,7 @@ def check_mesh(T: Tally, ref, cv, infos, cmap) -> None:
 
 def check_sprite(T: Tally, ref, cv, infos, cmap) -> None:
     from UnityPy.export.SpriteHelper import get_image_from_sprite
+
     for i in infos:
         if i.class_name != "Sprite":
             continue
@@ -824,7 +907,7 @@ def check_sprite(T: Tally, ref, cv, infos, cmap) -> None:
             want = get_image_from_sprite(ref.reader(i).read())
             want = want if want.mode == "RGBA" else want.convert("RGBA")
             rerr = None
-        except Exception as e:                  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001
             want, rerr = None, message(e)
         if c is None:
             T.add("sprite", "Sprite", "absent", i.id)
@@ -869,7 +952,7 @@ def m1_bundle(job) -> dict:
             check_textures(T, ref, cv, infos, cmap, checks)
         if "mesh" in checks and G["cand"].get("mesh.arrays"):
             check_mesh(T, ref, cv, infos, cmap)
-    except Exception as e:                      # noqa: BLE001
+    except Exception as e:  # noqa: BLE001
         rec["error"] = message(e)
         rec["trace"] = traceback.format_exc()[-1200:]
     rec.update(T.dump())
@@ -880,8 +963,7 @@ def m1_bundle(job) -> dict:
 
 
 def run_m1(cfg: dict, items, workers: int, jsonl: Path | None = None) -> dict:
-    total = {"counts": {}, "stats": {}, "examples": {}, "errors": [], "bundles": 0, "seconds": 0.0,
-             "maxRssKb": 0}
+    total = {"counts": {}, "stats": {}, "examples": {}, "errors": [], "bundles": 0, "seconds": 0.0, "maxRssKb": 0}
     fo = open(jsonl, "w", encoding="utf-8", newline="\n") if jsonl else None
 
     def take(r):
@@ -892,9 +974,14 @@ def run_m1(cfg: dict, items, workers: int, jsonl: Path | None = None) -> dict:
             total["errors"].append({"bundle": r["bundle"], "error": r["error"], "trace": r.get("trace")})
         merge(total, r)
         if fo:
-            fo.write(json.dumps({k: r[k] for k in ("bundle", "size", "seconds", "cpu", "rssKb", "counts")
-                                 if k in r} | ({"error": r["error"]} if r.get("error") else {}),
-                                ensure_ascii=False) + "\n")
+            fo.write(
+                json.dumps(
+                    {k: r[k] for k in ("bundle", "size", "seconds", "cpu", "rssKb", "counts") if k in r}
+                    | ({"error": r["error"]} if r.get("error") else {}),
+                    ensure_ascii=False,
+                )
+                + "\n"
+            )
 
     order = sorted(items, key=lambda x: -x[1])
     try:
@@ -912,18 +999,25 @@ def cmd_m1(a) -> dict:
     if bad:
         raise SystemExit(f"unknown checks {bad}")
     atoms = parse_atoms(a.atom)
-    cfg = {"dir": a.dir, "atoms": atoms, "checks": checks, "threads": a.threads,
-           "reference_reader": a.reference_reader}
-    m1_init(cfg)                                # fail early on a bad spec; ids for the report
+    cfg = {"dir": a.dir, "atoms": atoms, "checks": checks, "threads": a.threads, "reference_reader": a.reference_reader}
+    m1_init(cfg)  # fail early on a bad spec; ids for the report
     ids = {n: [i.id for i in v] for n, v in G["cand"].items()}
     ref_ids = {n: i.id for n, i in G["ref"].items()}
     items = bundle_list(Path(a.dir), a.bundles)
     log("m1", len(items), "bundles, checks", ",".join(checks), "candidates", ids)
     t0 = time.perf_counter()
     total = run_m1(cfg, items, a.workers, Path(a.out).with_suffix(".jsonl") if a.out else None)
-    doc = {"command": "m1", "checks": list(checks), "reference": ref_ids, "candidates": ids,
-           "bundles": len(items), "wall": round(time.perf_counter() - t0, 1), "workers": a.workers, **total,
-           "versions": versions()}
+    doc = {
+        "command": "m1",
+        "checks": list(checks),
+        "reference": ref_ids,
+        "candidates": ids,
+        "bundles": len(items),
+        "wall": round(time.perf_counter() - t0, 1),
+        "workers": a.workers,
+        **total,
+        "versions": versions(),
+    }
     if a.out:
         write_json(a.out, doc)
     return doc
@@ -931,6 +1025,7 @@ def cmd_m1(a) -> dict:
 
 def versions() -> dict:
     from importlib import metadata
+
     out = {"python": sys.version.split()[0]}
     for d in ("nnnotes", "UnityPy", "Pillow", "numpy", "texture2ddecoder", "astc-encoder-py", "unity-rs"):
         try:
@@ -943,6 +1038,7 @@ def versions() -> dict:
 # ---------------------------------------------------------------- prepare (base store)
 def _identify(job):
     from nnnotes.store import Store
+
     root, store, name = job
     s, size = Store(store).identify(Path(root) / name)
     return name, s, size
@@ -951,6 +1047,7 @@ def _identify(job):
 def _census_task(task):
     from nnnotes import census
     from nnnotes.stages import execute
+
     ex = execute(task, G["store"], {"unity.census": census.CensusStage()})
     return task.subject, task.key, ex.status
 
@@ -960,13 +1057,15 @@ def cmd_prepare(a) -> dict:
     from nnnotes.contract import Input
     from nnnotes.stages import Env, describe, execute
     from nnnotes.store import Store
+
     check_clean_env()
     root, base = Path(a.dir).resolve(), Path(a.base)
     items = bundle_list(root, a.bundles)
     store = Store(base)
     t0 = time.perf_counter()
-    ids = pool_map(_identify, [(str(root), str(base), n) for n, _ in sorted(items, key=lambda x: -x[1])],
-                   a.workers, maxtasks=None)
+    ids = pool_map(
+        _identify, [(str(root), str(base), n) for n, _ in sorted(items, key=lambda x: -x[1])], a.workers, maxtasks=None
+    )
     names = {n: n.rsplit("/", 1)[-1] for n, _ in items}
     stable, collisions = contract.stable_bundle_names(names.values())
     inputs, subj_name = {}, {}
@@ -982,10 +1081,17 @@ def cmd_prepare(a) -> dict:
         env.done(t.id, t.key)
     st = describe(link.ScriptsStage(), "all", None, env)
     execute(st, store, {"link.scripts": link.ScriptsStage()})
-    doc = {"dir": str(root), "bundles": {s: {"name": subj_name[s], "sha256": inputs[s].sha256,
-                                             "size": inputs[s].size} for s in sorted(inputs)},
-           "census": {t.subject: t.key for t in tasks}, "scripts": st.key, "collisions": collisions,
-           "statuses": dict(Counter(r[2] for r in res)), "wall": round(time.perf_counter() - t0, 1)}
+    doc = {
+        "dir": str(root),
+        "bundles": {
+            s: {"name": subj_name[s], "sha256": inputs[s].sha256, "size": inputs[s].size} for s in sorted(inputs)
+        },
+        "census": {t.subject: t.key for t in tasks},
+        "scripts": st.key,
+        "collisions": collisions,
+        "statuses": dict(Counter(r[2] for r in res)),
+        "wall": round(time.perf_counter() - t0, 1),
+    }
     write_json(base / PREPARED, doc)
     log("prepared", len(inputs), "bundles into", base)
     return doc
@@ -996,10 +1102,19 @@ def _prepared_env(base: Path):
     from nnnotes.contract import Input
     from nnnotes.stages import Env
     from nnnotes.store import Store
+
     prep = json.loads((base / PREPARED).read_text(encoding="utf-8"))
     root = Path(prep["dir"])
-    inputs = {s: Input("bundle", b["sha256"], b["size"], b["name"].rsplit("/", 1)[-1],
-                       ({"kind": "file", "path": str(root / b["name"])},)) for s, b in prep["bundles"].items()}
+    inputs = {
+        s: Input(
+            "bundle",
+            b["sha256"],
+            b["size"],
+            b["name"].rsplit("/", 1)[-1],
+            ({"kind": "file", "path": str(root / b["name"])},),
+        )
+        for s, b in prep["bundles"].items()
+    }
     env = Env(Store(base), {"bundles": inputs})
     for s, k in prep["census"].items():
         env.done(f"unity.census:{s}", k)
@@ -1010,6 +1125,7 @@ def _prepared_env(base: Path):
 def _new_store(base: Path, path: Path):
     """A run store that knows the base store's input identities (so inputs are not hashed again)."""
     from nnnotes.store import Store
+
     path.mkdir(parents=True, exist_ok=True)
     src = base / "inputs"
     if src.is_dir():
@@ -1023,11 +1139,13 @@ def _new_store(base: Path, path: Path):
 def _stage(name: str):
     from nnnotes import census
     from nnnotes.objexport import ExportStage
+
     return {"unity.export": ExportStage, "unity.census": census.CensusStage}[name]()
 
 
 def _run_task(task, store, stage_name: str) -> dict:
     from nnnotes.stages import execute
+
     hwm = reset_hwm()
     u0, s0 = cpu_now()
     t0 = time.perf_counter()
@@ -1035,11 +1153,17 @@ def _run_task(task, store, stage_name: str) -> dict:
     try:
         ex = execute(task, store, {stage_name: _stage(stage_name)}, force=True)
         rec.update(status=ex.status, result=ex.result_status)
-    except Exception as e:                      # noqa: BLE001
+    except Exception as e:  # noqa: BLE001
         rec.update(status="error", error=message(e), trace=traceback.format_exc()[-1200:])
     u1, s1 = cpu_now()
-    rec.update(wall=round(time.perf_counter() - t0, 4), user=round(u1 - u0, 4), sys=round(s1 - s0, 4),
-               hwmKb=status_kb("VmHWM"), hwmReset=hwm, pid=os.getpid())
+    rec.update(
+        wall=round(time.perf_counter() - t0, 4),
+        user=round(u1 - u0, 4),
+        sys=round(s1 - s0, 4),
+        hwmKb=status_kb("VmHWM"),
+        hwmReset=hwm,
+        pid=os.getpid(),
+    )
     return rec
 
 
@@ -1049,10 +1173,11 @@ def _m3_worker(task) -> dict:
 
 def _apply_atoms(atoms) -> None:
     from nnnotes.atoms import env_name, resolve
+
     for name, spec in atoms:
         os.environ[env_name(name)] = spec
     for name, _ in atoms:
-        resolve(name)                           # import the candidate now (shared by forked workers)
+        resolve(name)  # import the candidate now (shared by forked workers)
 
 
 def _import_stage_modules() -> dict:
@@ -1065,6 +1190,7 @@ def _import_stage_modules() -> dict:
 
 def _describe_all(stage_name: str, subjects, params, env):
     from nnnotes.stages import describe
+
     stage = _stage(stage_name)
     return [describe(stage, s, params, env) for s in subjects]
 
@@ -1084,14 +1210,20 @@ def summarize_runs(recs: list) -> dict:
         per_worker[r["pid"]] = max(per_worker.get(r["pid"], 0), r["hwmKb"])
     hwm = sorted(r["hwmKb"] for r in ok)
     cpu = [r["user"] + r["sys"] for r in ok]
-    return {"tasks": len(recs), "ok": len(ok), "errors": [{k: r.get(k) for k in ("subject", "error", "trace")}
-                                                         for r in bad][:20],
-            "results": dict(Counter(r.get("result") for r in ok)),
-            "taskCpu": round(sum(cpu), 2), "taskUser": round(sum(r["user"] for r in ok), 2),
-            "taskSys": round(sum(r["sys"] for r in ok), 2), "taskWall": round(sum(r["wall"] for r in ok), 2),
-            "hwmMedianKb": hwm[len(hwm) // 2] if hwm else None, "hwmMaxKb": hwm[-1] if hwm else None,
-            "workerPeakKb": sorted(per_worker.values(), reverse=True)[:32],
-            "hwmReset": all(r.get("hwmReset") for r in ok)}
+    return {
+        "tasks": len(recs),
+        "ok": len(ok),
+        "errors": [{k: r.get(k) for k in ("subject", "error", "trace")} for r in bad][:20],
+        "results": dict(Counter(r.get("result") for r in ok)),
+        "taskCpu": round(sum(cpu), 2),
+        "taskUser": round(sum(r["user"] for r in ok), 2),
+        "taskSys": round(sum(r["sys"] for r in ok), 2),
+        "taskWall": round(sum(r["wall"] for r in ok), 2),
+        "hwmMedianKb": hwm[len(hwm) // 2] if hwm else None,
+        "hwmMaxKb": hwm[-1] if hwm else None,
+        "workerPeakKb": sorted(per_worker.values(), reverse=True)[:32],
+        "hwmReset": all(r.get("hwmReset") for r in ok),
+    }
 
 
 def cmd_m3(a) -> dict:
@@ -1125,13 +1257,23 @@ def cmd_m3(a) -> dict:
         if fo:
             fo.close()
     c1 = os.times()
-    doc = {"command": "m3", "stage": a.stage, "mode": "pool", "workers": a.workers, "maxtasks": a.maxtasks,
-           "atoms": dict(atoms), "params": params, "store": str(out_store.resolve()),
-           "taskAtoms": tasks[0].atoms if tasks else None,
-           "wall": round(time.perf_counter() - t0, 2),
-           "childrenCpu": round((c1.children_user - c0.children_user) + (c1.children_system - c0.children_system), 2),
-           "importInParent": imp, **summarize_runs(recs),
-           "taskKeys": {r["subject"]: r["key"] for r in recs}, "versions": versions()}
+    doc = {
+        "command": "m3",
+        "stage": a.stage,
+        "mode": "pool",
+        "workers": a.workers,
+        "maxtasks": a.maxtasks,
+        "atoms": dict(atoms),
+        "params": params,
+        "store": str(out_store.resolve()),
+        "taskAtoms": tasks[0].atoms if tasks else None,
+        "wall": round(time.perf_counter() - t0, 2),
+        "childrenCpu": round((c1.children_user - c0.children_user) + (c1.children_system - c0.children_system), 2),
+        "importInParent": imp,
+        **summarize_runs(recs),
+        "taskKeys": {r["subject"]: r["key"] for r in recs},
+        "versions": versions(),
+    }
     if a.out:
         write_json(a.out, doc)
     log("m3 done", doc["wall"], "s wall,", doc["taskCpu"], "task CPU-s")
@@ -1142,8 +1284,17 @@ def m3_fresh(a, base, out_store, atoms, params, prep, subjects) -> dict:
     """One new process per bundle: its wall, user + system CPU and peak RSS (wait4), and inside it the import
     time and the task's own cost."""
     _new_store(base, out_store)
-    cmd = [sys.executable, str(Path(__file__).resolve()), "m3-one", "--base", str(base), "--store", str(out_store),
-           "--stage", a.stage]
+    cmd = [
+        sys.executable,
+        str(Path(__file__).resolve()),
+        "m3-one",
+        "--base",
+        str(base),
+        "--store",
+        str(out_store),
+        "--stage",
+        a.stage,
+    ]
     for n, s in atoms:
         cmd += ["--atom", f"{n}={s}"]
     for p in a.param or ():
@@ -1179,9 +1330,15 @@ def m3_fresh(a, base, out_store, atoms, params, prep, subjects) -> dict:
             f.close()
             os.unlink(f.name)
         p.returncode = os.waitstatus_to_exitcode(status)
-        rec = {"subject": s, "size": sizes[s], "exit": p.returncode, "processWall": round(time.perf_counter() - start, 4),
-               "processUser": round(ru.ru_utime, 4), "processSys": round(ru.ru_stime, 4),
-               "processMaxRssKb": ru.ru_maxrss}
+        rec = {
+            "subject": s,
+            "size": sizes[s],
+            "exit": p.returncode,
+            "processWall": round(time.perf_counter() - start, 4),
+            "processUser": round(ru.ru_utime, 4),
+            "processSys": round(ru.ru_stime, 4),
+            "processMaxRssKb": ru.ru_maxrss,
+        }
         try:
             rec.update(json.loads(out.decode("utf-8").strip().splitlines()[-1]))
         except (ValueError, IndexError):
@@ -1197,18 +1354,29 @@ def m3_fresh(a, base, out_store, atoms, params, prep, subjects) -> dict:
     ok = [r for r in recs if r.get("status") in ("ran", "hit")]
     bad = [r for r in recs if r.get("status") not in ("ran", "hit")]
     rss = sorted(r["processMaxRssKb"] for r in ok)
-    doc = {"command": "m3", "stage": a.stage, "mode": "fresh", "workers": a.workers, "atoms": dict(atoms),
-           "params": params, "store": str(out_store.resolve()), "wall": round(time.perf_counter() - t0, 2),
-           "tasks": len(recs), "ok": len(ok),
-           "errors": [{k: r.get(k) for k in ("subject", "error", "trace")} for r in bad][:20],
-           "processCpu": round(sum(r["processUser"] + r["processSys"] for r in ok), 2),
-           "processWall": round(sum(r["processWall"] for r in ok), 2),
-           "importWall": round(sum(r["imports"]["wall"] for r in ok), 2),
-           "importCpu": round(sum(r["imports"]["cpu"] for r in ok), 2),
-           "taskCpu": round(sum(r["user"] + r["sys"] for r in ok), 2),
-           "taskWall": round(sum(r["wall"] for r in ok), 2),
-           "processMaxRssMedianKb": rss[len(rss) // 2] if rss else None, "processMaxRssMaxKb": rss[-1] if rss else None,
-           "taskKeys": {r["subject"]: r.get("key") for r in recs}, "versions": versions()}
+    doc = {
+        "command": "m3",
+        "stage": a.stage,
+        "mode": "fresh",
+        "workers": a.workers,
+        "atoms": dict(atoms),
+        "params": params,
+        "store": str(out_store.resolve()),
+        "wall": round(time.perf_counter() - t0, 2),
+        "tasks": len(recs),
+        "ok": len(ok),
+        "errors": [{k: r.get(k) for k in ("subject", "error", "trace")} for r in bad][:20],
+        "processCpu": round(sum(r["processUser"] + r["processSys"] for r in ok), 2),
+        "processWall": round(sum(r["processWall"] for r in ok), 2),
+        "importWall": round(sum(r["imports"]["wall"] for r in ok), 2),
+        "importCpu": round(sum(r["imports"]["cpu"] for r in ok), 2),
+        "taskCpu": round(sum(r["user"] + r["sys"] for r in ok), 2),
+        "taskWall": round(sum(r["wall"] for r in ok), 2),
+        "processMaxRssMedianKb": rss[len(rss) // 2] if rss else None,
+        "processMaxRssMaxKb": rss[-1] if rss else None,
+        "taskKeys": {r["subject"]: r.get("key") for r in recs},
+        "versions": versions(),
+    }
     if a.out:
         write_json(a.out, doc)
     log("m3 fresh done", doc["wall"], "s wall")
@@ -1232,6 +1400,7 @@ def cmd_m3_one(a) -> None:
     (task,) = _describe_all(a.stage, [a.subject], parse_params(a.param) or None, env)
     describe_cost = {"wall": round(time.perf_counter() - t0, 4), "cpu": round(time.process_time() - cd, 4)}
     from nnnotes.store import Store
+
     rec = _run_task(task, Store(a.store), a.stage)
     rec.update(imports=imp, describe=describe_cost, processCpuInside=round(time.process_time() - c0, 4))
     print(json.dumps(rec, ensure_ascii=False))
@@ -1240,12 +1409,14 @@ def cmd_m3_one(a) -> None:
 # ---------------------------------------------------------------- imports
 def cmd_imports(a) -> dict:
     sets = [m.split(",") for m in (a.module or ["numpy,PIL.Image,nnnotes.objexport,nnnotes.export"])]
-    code = ("import resource, sys, time, json\n"
-            "t = time.perf_counter(); c = time.process_time()\n"
-            "for m in sys.argv[1].split(','): __import__(m)\n"
-            "r = resource.getrusage(resource.RUSAGE_SELF)\n"
-            "print(json.dumps({'wall': time.perf_counter() - t, 'cpu': time.process_time() - c, "
-            "'maxRssKb': r.ru_maxrss}))\n")
+    code = (
+        "import resource, sys, time, json\n"
+        "t = time.perf_counter(); c = time.process_time()\n"
+        "for m in sys.argv[1].split(','): __import__(m)\n"
+        "r = resource.getrusage(resource.RUSAGE_SELF)\n"
+        "print(json.dumps({'wall': time.perf_counter() - t, 'cpu': time.process_time() - c, "
+        "'maxRssKb': r.ru_maxrss}))\n"
+    )
     env = dict(os.environ)
     env["PYTHONPATH"] = os.pathsep.join([str(HERE), env.get("PYTHONPATH", "")]).strip(os.pathsep)
     out = {}
@@ -1265,9 +1436,15 @@ def cmd_imports(a) -> dict:
         def med(k):
             v = sorted(x[k] for x in good)
             return round(v[len(v) // 2], 4) if v else None
-        out[",".join(mods)] = {"n": len(good), "wall": med("wall"), "cpu": med("cpu"), "maxRssKb": med("maxRssKb"),
-                               "processWall": med("processWall"),
-                               "errors": [x["error"] for x in rows if "error" in x][:2]}
+
+        out[",".join(mods)] = {
+            "n": len(good),
+            "wall": med("wall"),
+            "cpu": med("cpu"),
+            "maxRssKb": med("maxRssKb"),
+            "processWall": med("processWall"),
+            "errors": [x["error"] for x in rows if "error" in x][:2],
+        }
     doc = {"command": "imports", "repeat": a.repeat, "sets": out, "versions": versions()}
     if a.out:
         write_json(a.out, doc)
@@ -1292,9 +1469,16 @@ def compare_results(ra: dict, rb: dict, read_a, read_b, T: Tally, subject: str) 
             T.add("items", cls, "missing", o)
             continue
         same = (x["status"], (x.get("reason") or {}).get("code")) == (y["status"], (y.get("reason") or {}).get("code"))
-        T.add("items", cls, "equal" if same else "differ", o,
-              None if same else f"{x['status']}/{(x.get('reason') or {}).get('code')} vs "
-                                f"{y['status']}/{(y.get('reason') or {}).get('code')}")
+        T.add(
+            "items",
+            cls,
+            "equal" if same else "differ",
+            o,
+            None
+            if same
+            else f"{x['status']}/{(x.get('reason') or {}).get('code')} vs "
+            f"{y['status']}/{(y.get('reason') or {}).get('code')}",
+        )
     for o in ib.keys() - ia.keys():
         T.add("items", ib[o].get("class", "?"), "extra", o)
     aa = {x["id"]: x for x in ra.get("artifacts", ())}
@@ -1311,6 +1495,7 @@ def compare_results(ra: dict, rb: dict, read_a, read_b, T: Tally, subject: str) 
             continue
         if x["content"].get("ext") == "png" and y["content"].get("ext") == "png":
             from PIL import Image
+
             ia_ = Image.open(io.BytesIO(read_a(x["content"]["sha256"])))
             ib_ = Image.open(io.BytesIO(read_b(y["content"]["sha256"])))
             st, what = image_diff(ia_, ib_)
@@ -1340,6 +1525,7 @@ def _compare_job(job) -> dict:
 
 def cmd_compare(a) -> dict:
     from nnnotes.store import Store
+
     ra, rb = (json.loads(Path(p).read_text(encoding="utf-8")) for p in (a.run_a, a.run_b))
     G.update(sa=Store(ra["store"]), sb=Store(rb["store"]))
     ta, tb = ra["taskKeys"], rb["taskKeys"]
@@ -1347,9 +1533,13 @@ def cmd_compare(a) -> dict:
     total = {"counts": {}, "stats": {}, "examples": {}}
     for r in pool_map(_compare_job, jobs, a.workers, maxtasks=None):
         merge(total, r)
-    doc = {"command": "compare", "a": {k: ra.get(k) for k in ("atoms", "params", "store", "workers", "mode")},
-           "b": {k: rb.get(k) for k in ("atoms", "params", "store", "workers", "mode")}, "subjects": len(jobs),
-           **total}
+    doc = {
+        "command": "compare",
+        "a": {k: ra.get(k) for k in ("atoms", "params", "store", "workers", "mode")},
+        "b": {k: rb.get(k) for k in ("atoms", "params", "store", "workers", "mode")},
+        "subjects": len(jobs),
+        **total,
+    }
     if a.out:
         write_json(a.out, doc)
     return doc
@@ -1405,8 +1595,15 @@ def main(argv=None) -> int:
     p.add_argument("run_b")
     common(p, bundles=False)
     a = ap.parse_args(argv)
-    fn = {"sample": cmd_sample, "m1": cmd_m1, "prepare": cmd_prepare, "m3": cmd_m3, "m3-one": cmd_m3_one,
-          "imports": cmd_imports, "compare": cmd_compare}[a.cmd]
+    fn = {
+        "sample": cmd_sample,
+        "m1": cmd_m1,
+        "prepare": cmd_prepare,
+        "m3": cmd_m3,
+        "m3-one": cmd_m3_one,
+        "imports": cmd_imports,
+        "compare": cmd_compare,
+    }[a.cmd]
     doc = fn(a)
     if doc is not None and not getattr(a, "out", None):
         print(json.dumps(doc, indent=1, ensure_ascii=False, sort_keys=True))

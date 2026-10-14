@@ -21,6 +21,7 @@ No shader is filtered by name; a viewer decides what it reimplements.
 A Shader object's dump depends on its serialized bytes only: it is made once per process (cache bucket
 "shaders", keyed by the object's bytes, type and Unity version) and written again from there.
 """
+
 from __future__ import annotations
 
 import json
@@ -39,8 +40,14 @@ DUMPS = cache.bucket("shaders", salt=cache.source_salt(__file__, "UnityPy"), dis
 
 # UnityEngine.Rendering ShaderCompilerPlatform value -> tag
 PLATFORM = {
-    0: "gl", 4: "d3d11", 5: "gles20", 9: "gles3", 14: "metal",
-    15: "glcore", 18: "vulkan", 19: "switch",
+    0: "gl",
+    4: "d3d11",
+    5: "gles20",
+    9: "gles3",
+    14: "metal",
+    15: "glcore",
+    18: "vulkan",
+    19: "switch",
 }
 # which GPU program types belong to which platform
 PLATFORM_TYPES = {
@@ -50,8 +57,7 @@ PLATFORM_TYPES = {
     18: {"SPIRV"},
     14: {"MetalVS", "MetalFS"},
 }
-TEXT_TYPES = {"GLES", "GLES3", "GLES31", "GLES31AEP", "GLCore32", "GLCore41", "GLCore43",
-              "MetalVS", "MetalFS"}
+TEXT_TYPES = {"GLES", "GLES3", "GLES31", "GLES31AEP", "GLCore32", "GLCore41", "GLCore43", "MetalVS", "MetalFS"}
 STAGES = ("progVertex", "progFragment", "progGeometry", "progHull", "progDomain")
 
 
@@ -73,13 +79,13 @@ def _blob_table(raw: bytes) -> list[bytes]:
     out = []
     for i in range(n):
         off, length, _seg = struct.unpack_from("<3i", raw, 4 + 12 * i)
-        out.append(raw[off:off + length])
+        out.append(raw[off : off + length])
     return out
 
 
 def _code_of(entry: bytes) -> bytes:
     """Program bytes of a code blob entry."""
-    pos = 4 + 4 + 16                           # version, programType, 4 x int
+    pos = 4 + 4 + 16  # version, programType, 4 x int
     nkw = struct.unpack_from("<i", entry, pos)[0]
     pos += 4
     for _ in range(nkw):
@@ -87,7 +93,7 @@ def _code_of(entry: bytes) -> bytes:
         pos += 4 + n
         pos = (pos + 3) & ~3
     n = struct.unpack_from("<i", entry, pos)[0]
-    return entry[pos + 4:pos + 4 + n]
+    return entry[pos + 4 : pos + 4 + n]
 
 
 def platform_blobs(shader) -> dict[int, list[bytes]]:
@@ -97,8 +103,8 @@ def platform_blobs(shader) -> dict[int, list[bytes]]:
     for i in range(n):
         off = _entry(shader.offsets, i)
         raw = CompressionHelper.decompress_lz4(
-            blob[off:off + _entry(shader.compressedLengths, i)],
-            _entry(shader.decompressedLengths, i))
+            blob[off : off + _entry(shader.compressedLengths, i)], _entry(shader.decompressedLengths, i)
+        )
         out[shader.platforms[i]] = _blob_table(raw)
     return out
 
@@ -130,12 +136,21 @@ def _parsed_summary(tt: dict) -> dict:
         "name": pf.get("m_Name"),
         "properties": pf.get("m_PropInfo", {}).get("m_Props", []),
         "keywords": pf.get("m_KeywordNames", []),
-        "subShaders": [{
-            "tags": ss.get("m_Tags"), "lod": ss.get("m_LOD"),
-            "passes": [{"name": ps.get("m_State", {}).get("m_Name") or ps.get("m_Name"),
-                        "tags": ps.get("m_Tags"), "state": ps.get("m_State")}
-                       for ps in ss["m_Passes"]],
-        } for ss in pf["m_SubShaders"]],
+        "subShaders": [
+            {
+                "tags": ss.get("m_Tags"),
+                "lod": ss.get("m_LOD"),
+                "passes": [
+                    {
+                        "name": ps.get("m_State", {}).get("m_Name") or ps.get("m_Name"),
+                        "tags": ps.get("m_Tags"),
+                        "state": ps.get("m_State"),
+                    }
+                    for ps in ss["m_Passes"]
+                ],
+            }
+            for ss in pf["m_SubShaders"]
+        ],
         "fallback": pf.get("m_FallbackName"),
     }
 
@@ -147,10 +162,21 @@ def _render(o, tt: dict, name: str) -> tuple[str, list[dict], list[bytes]]:
     recs, codes = [], []
     for plat, si, pi, stage, n, t, kws, code in variants(tt, platform_blobs(o.read())):
         tag = PLATFORM.get(plat, str(plat))
-        ext = "glsl" if t in TEXT_TYPES and not t.startswith("Metal") else "metal" if t.startswith("Metal") else "vkprog"
+        ext = (
+            "glsl" if t in TEXT_TYPES and not t.startswith("Metal") else "metal" if t.startswith("Metal") else "vkprog"
+        )
         fn = f"s{si}p{pi}_{stage}_{n}.{ext}"
-        recs.append({"file": f"{safe}/{tag}/{fn}", "platform": tag, "subShader": si, "pass": pi, "stage": stage,
-                     "type": t, "keywords": kws})
+        recs.append(
+            {
+                "file": f"{safe}/{tag}/{fn}",
+                "platform": tag,
+                "subShader": si,
+                "pass": pi,
+                "stage": stage,
+                "type": t,
+                "keywords": kws,
+            }
+        )
         codes.append(bytes(code))
     return text, recs, codes
 
@@ -158,8 +184,9 @@ def _render(o, tt: dict, name: str) -> tuple[str, list[dict], list[bytes]]:
 def _dump_key(o) -> str:
     st = o.serialized_type
     type_hash = bytes(st.old_type_hash) if st is not None and st.old_type_hash else b""
-    return DUMPS.key(o.get_raw_data(), type_hash, int(o.class_id), o.assets_file.unity_version,
-                     int(getattr(o, "platform", 0) or 0))
+    return DUMPS.key(
+        o.get_raw_data(), type_hash, int(o.class_id), o.assets_file.unity_version, int(getattr(o, "platform", 0) or 0)
+    )
 
 
 def dump_objects(shaders, out_dir: Path, source: str, index: list | None = None) -> list:
@@ -185,18 +212,18 @@ def dump_objects(shaders, out_dir: Path, source: str, index: list | None = None)
             if name in done:
                 continue
             text, recs, codes = _render(o, tt, name)
-            if named:                                  # a name from the path id is not a function of the bytes
+            if named:  # a name from the path id is not a function of the bytes
                 DUMPS.put(k, cache.pack(json.dumps([name, text, recs], ensure_ascii=False).encode("utf-8"), codes))
         if name in done:
             continue
         done.add(name)
         safe = _safe(name)
-        (out_dir / f"{safe}.json").write_text(text, encoding="utf-8", newline="\n")      # as write_json writes it
+        (out_dir / f"{safe}.json").write_text(text, encoding="utf-8", newline="\n")  # as write_json writes it
         rec = {"name": name, "source": source, "parsed": f"{safe}.json", "variants": []}
         for v, code in zip(recs, codes):
             pdir = out_dir / v["file"].rsplit("/", 1)[0]
             pdir.mkdir(parents=True, exist_ok=True)
-            (out_dir / v["file"]).write_bytes(code)   # the program text or binary exactly as the game stores it
+            (out_dir / v["file"]).write_bytes(code)  # the program text or binary exactly as the game stores it
             rec["variants"].append(v)
         index.append(rec)
     return index
@@ -204,14 +231,16 @@ def dump_objects(shaders, out_dir: Path, source: str, index: list | None = None)
 
 def write_index(index: list, out_dir: Path) -> dict:
     write_json(Path(out_dir) / "shaders.json", index)
-    return {"count": len(index), "names": sorted(r["name"] for r in index),
-            "variants": sum(len(r["variants"]) for r in index)}
+    return {
+        "count": len(index),
+        "names": sorted(r["name"] for r in index),
+        "variants": sum(len(r["variants"]) for r in index),
+    }
 
 
 def dump(bundles: list, out_dir: Path) -> dict:
     index: list = []
     for bpath in bundles:
         env = UnityPy.load(str(bpath))
-        dump_objects([o for o in env.objects if o.type.name == "Shader"], out_dir,
-                     Path(bpath).name, index)
+        dump_objects([o for o in env.objects if o.type.name == "Shader"], out_dir, Path(bpath).name, index)
     return write_index(index, out_dir)

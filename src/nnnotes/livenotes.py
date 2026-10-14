@@ -25,6 +25,7 @@ controllers in registries referenced by id; binding paths and attributes left as
 and SpriteAtlases. Clip binding paths that point into the Live scene's UI subtrees
 are named from that scene (`add_path_source`), which is not exported here.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -40,28 +41,82 @@ from .player import PlayerData
 from .score import master_table
 
 # --- keys ------------------------------------------------------------------
-NOTE_VIEWS = ["tap", "flick", "flick_left", "flick_right", "trace", "slide", "slide_end",
-              "connection", "guide", "slide_combo", "slide_combo_skip", "none"]
+NOTE_VIEWS = [
+    "tap",
+    "flick",
+    "flick_left",
+    "flick_right",
+    "trace",
+    "slide",
+    "slide_end",
+    "connection",
+    "guide",
+    "slide_combo",
+    "slide_combo_skip",
+    "none",
+]
 PREFABS = {f"{v}_note_view": f"EmbLive/Prefabs/LiveGame/{v}_note_view" for v in NOTE_VIEWS}
-PREFABS.update({
-    "slide_line_view": "EmbLive/Prefabs/LiveGame/slide_line_view",
-    "guide_line_view": "EmbLive/Prefabs/LiveGame/guide_line_view",
-    "pair_note_line": "EmbLive/Prefabs/LiveGame/PairNoteLine/LiveGamePairNoteView",
-    "note_groove_loop": "EmbLive/Prefabs/LiveGame/Effect/note_groove_loop",
-    "judge_effect_view": "EmbLive/Prefabs/UILiveNoteJudgeEffectView",
-})
+PREFABS.update(
+    {
+        "slide_line_view": "EmbLive/Prefabs/LiveGame/slide_line_view",
+        "guide_line_view": "EmbLive/Prefabs/LiveGame/guide_line_view",
+        "pair_note_line": "EmbLive/Prefabs/LiveGame/PairNoteLine/LiveGamePairNoteView",
+        "note_groove_loop": "EmbLive/Prefabs/LiveGame/Effect/note_groove_loop",
+        "judge_effect_view": "EmbLive/Prefabs/UILiveNoteJudgeEffectView",
+    }
+)
 
 # --- defaults (fresh profile) -------------------------------------------------
 # MasterOptionDefault preset 1 (CurrentPresetIndex 0 -> Preset1); item types from App.Options.OptionItemType.
-OPTION_ITEMS = {k: OPTION_ITEM_TYPES[k] for k in (1, 4, 6, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109,
-                                                  112, 113, 117, 119, 200, 205, 206, 207, 208, 300, 301, 302,
-                                                  305, 306, 307, 308, 309, 310)}
-LIVE_SETTING_KEYS = ["note_speed_min", "note_speed_max", "note_speed_view_min", "note_speed_view_max",
-                     "note_slide_combo_rhythmic_unit", "stop_in_vain_time_ms_diff",
-                     "slide_offset_min_note_lane_width", "slide_offset_max_note_lane_width",
-                     "note_overlap_lane_buffer"]
-DEFAULT_SKIN = "skin001"          # MasterLiveNoteSkin._id 1 (NoteDesignId default 1)
-DEFAULT_EFFECT = "effect001"      # MasterLiveNoteEffectSkin._id 1 (NoteEffectId default 1)
+OPTION_ITEMS = {
+    k: OPTION_ITEM_TYPES[k]
+    for k in (
+        1,
+        4,
+        6,
+        100,
+        101,
+        102,
+        103,
+        104,
+        105,
+        106,
+        107,
+        108,
+        109,
+        112,
+        113,
+        117,
+        119,
+        200,
+        205,
+        206,
+        207,
+        208,
+        300,
+        301,
+        302,
+        305,
+        306,
+        307,
+        308,
+        309,
+        310,
+    )
+}
+LIVE_SETTING_KEYS = [
+    "note_speed_min",
+    "note_speed_max",
+    "note_speed_view_min",
+    "note_speed_view_max",
+    "note_slide_combo_rhythmic_unit",
+    "stop_in_vain_time_ms_diff",
+    "slide_offset_min_note_lane_width",
+    "slide_offset_max_note_lane_width",
+    "note_overlap_lane_buffer",
+]
+DEFAULT_SKIN = "skin001"  # MasterLiveNoteSkin._id 1 (NoteDesignId default 1)
+DEFAULT_EFFECT = "effect001"  # MasterLiveNoteEffectSkin._id 1 (NoteEffectId default 1)
 
 # Catalog key families exported whole (every key under the prefix): the note effect settings of the NoteEffectId
 # option's set ({effect}; LiveAddressablePath.GetLiveNoteEffectSkinAssetPath) and the lane effect settings, whose
@@ -73,7 +128,7 @@ KEY_PREFIXES = [
     f"Effect/Live/LaneEffect/{LANE_EFFECT}/",
 ]
 SINGLE_KEYS = [
-    "EmbLive/Animation/Combo/UILiveCombo",              # UIComboCounterView's animator controller
+    "EmbLive/Animation/Combo/UILiveCombo",  # UIComboCounterView's animator controller
     "Live/UiSpriteAssets/LiveComboSpriteAsset",
     "Live/UiSpriteAssets/LiveJudgementSpriteAsset",
 ]
@@ -84,13 +139,18 @@ def settings(master: Path | None, options: LiveOptions = LiveOptions()) -> dict:
     (`skins`: NoteDesignId -> MasterLiveNoteSkin._assetName) and effect sets (`effects`: NoteEffectId ->
     MasterLiveNoteEffectSkin._assetName; also when only other qualities are offered, whose effect set name the
     player derives from it), and with its option tables the items of PLAYER_ITEMS as well."""
-    out: dict = {"skin": DEFAULT_SKIN, "effect": DEFAULT_EFFECT, "laneCount": LANE_COUNT,
-                 "laneSize": list(LANE_VIEW["size"]), "laneTopRange": LANE_VIEW["topRange"],
-                 "laneBottomRange": LANE_VIEW["bottomRange"],
-                 "judgementScreenBottomPosition": LANE_VIEW["judgementScreenBottomPosition"],
-                 "laneTopPosition": LANE_VIEW["topPosition"],
-                 "noteViewProgress": {"base": 1.065, "exponentScale": 45.0},
-                 "tiltCenterLane": 11.5}
+    out: dict = {
+        "skin": DEFAULT_SKIN,
+        "effect": DEFAULT_EFFECT,
+        "laneCount": LANE_COUNT,
+        "laneSize": list(LANE_VIEW["size"]),
+        "laneTopRange": LANE_VIEW["topRange"],
+        "laneBottomRange": LANE_VIEW["bottomRange"],
+        "judgementScreenBottomPosition": LANE_VIEW["judgementScreenBottomPosition"],
+        "laneTopPosition": LANE_VIEW["topPosition"],
+        "noteViewProgress": {"base": 1.065, "exponentScale": 45.0},
+        "tiltCenterLane": 11.5,
+    }
     if master is None:
         return out
     items = OPTION_ITEMS
@@ -101,19 +161,27 @@ def settings(master: Path | None, options: LiveOptions = LiveOptions()) -> dict:
         if r["_presetId"] == 1 and r["_optionItemType"] in items:
             opts[items[r["_optionItemType"]]] = r["_valueString"]
     out["optionDefaults"] = opts
-    out["optionRanges"] = {items.get(r["_optionItemType"], r["_optionItemType"]): [r["_minValue"], r["_maxValue"]]
-                           for r in master_table(master, "MasterOptionRange") if r["_optionItemType"] in items}
+    out["optionRanges"] = {
+        items.get(r["_optionItemType"], r["_optionItemType"]): [r["_minValue"], r["_maxValue"]]
+        for r in master_table(master, "MasterOptionRange")
+        if r["_optionItemType"] in items
+    }
     ls = {r["_key"]: r["_value"] for r in master_table(master, "MasterLiveSettings")}
     out["liveSettings"] = {k: ls[k] for k in LIVE_SETTING_KEYS if k in ls}
     skins = {r["_id"]: r["_assetName"] for r in master_table(master, "MasterLiveNoteSkin")}
     effects = {r["_id"]: r["_assetName"] for r in master_table(master, "MasterLiveNoteEffectSkin")}
     out["skin"] = skins[int(opts["NoteDesignId"])]
     out["effect"] = effects[int(opts["NoteEffectId"])]
-    out["judgementSprites"] = {r["_noteSimulateJudgement"]: r["_spriteName"]
-                               for r in master_table(master, "MasterLiveJudgementSprite")}
-    out["noteDisplayTimeMs"] = display_time_ms(float(opts["NoteSpeed"]), float(ls["note_speed_min"]),
-                                               float(ls["note_speed_max"]), float(ls["note_speed_view_min"]),
-                                               float(ls["note_speed_view_max"]))
+    out["judgementSprites"] = {
+        r["_noteSimulateJudgement"]: r["_spriteName"] for r in master_table(master, "MasterLiveJudgementSprite")
+    }
+    out["noteDisplayTimeMs"] = display_time_ms(
+        float(opts["NoteSpeed"]),
+        float(ls["note_speed_min"]),
+        float(ls["note_speed_max"]),
+        float(ls["note_speed_view_min"]),
+        float(ls["note_speed_view_max"]),
+    )
     if options.designs:
         out["skins"] = {str(i): skins[i] for i in options.designs}
     if options.effects or options.qualities:
@@ -138,18 +206,24 @@ SCENE_SUBTREES = ("UILiveCombo", "UILiveJudgement")
 # The bar line view (MeasureLineDisplay): the scene's LiveAllNoteView -> _barLineView (LiveAllBarLineView) ->
 # _container (LiveBarLineViewContainer) -> _elementPrefab (LiveBarLineView, the prefab the container instantiates)
 NOTE_VIEW = ("LiveGameView/LiveGameCamera/screen_root/LiveGameAllNoteView", "LiveAllNoteView")
-BAR_LINE_CHAIN = (("_barLineView", "LiveAllBarLineView"), ("_container", "LiveBarLineViewContainer"),
-                  ("_elementPrefab", "LiveBarLineView"))
+BAR_LINE_CHAIN = (
+    ("_barLineView", "LiveAllBarLineView"),
+    ("_container", "LiveBarLineViewContainer"),
+    ("_elementPrefab", "LiveBarLineView"),
+)
 BAR_LINE_VIEW = "bar_line_view"
 
 
-TMP_FONT_NOTE = ("not exported: the note highway draws no TextMeshPro text with default options (the judge view's "
-                 "fast / slow and assist texts stay hidden)")
+TMP_FONT_NOTE = (
+    "not exported: the note highway draws no TextMeshPro text with default options (the judge view's "
+    "fast / slow and assist texts stay hidden)"
+)
 
 
 def _drop_tmp_fonts(doc: dict, root: Path) -> list[str]:
     """Reduce the font asset and material of every TextMeshProUGUI record to a name stub and delete the texture
     files no record references any more (the TMP font atlases). Returns the deleted files."""
+
     def walk(v):
         if isinstance(v, dict):
             if v.get("class") == "TextMeshProUGUI" and "m_fontAsset" in v:
@@ -157,13 +231,17 @@ def _drop_tmp_fonts(doc: dict, root: Path) -> list[str]:
                 if isinstance(fa, dict):
                     v["m_fontAsset"] = {"asset": fa.get("asset"), "name": fa.get("name"), "note": TMP_FONT_NOTE}
                 if isinstance(mat, dict):
-                    v["m_sharedMaterial"] = {"material": mat.get("material"), "shader": mat.get("shader"),
-                                             "note": TMP_FONT_NOTE}
+                    v["m_sharedMaterial"] = {
+                        "material": mat.get("material"),
+                        "shader": mat.get("shader"),
+                        "note": TMP_FONT_NOTE,
+                    }
             for x in v.values():
                 walk(x)
         elif isinstance(v, list):
             for x in v:
                 walk(x)
+
     walk(doc)
     used: set[str] = set()
 
@@ -177,6 +255,7 @@ def _drop_tmp_fonts(doc: dict, root: Path) -> list[str]:
         elif isinstance(v, list):
             for x in v:
                 refs(x)
+
     refs(doc)
     dropped = []
     for f in sorted((root / "textures").glob("*.png")):
@@ -222,8 +301,11 @@ def bar_line_prefab(ex: Exporter) -> dict:
     owners = [o for o in env.objects if o.type.name == "GameObject" and o.path_id in gos]
     if len(gos) != 1 or len(owners) != 1:
         raise RuntimeError(f"{SCENE_KEY}: {len(gos)} GameObjects at {path}")
-    hits = [c for c in (ex.deref(owners[0], p) for p in comps)
-            if c is not None and c.type.name == "MonoBehaviour" and ex.script_class(c) == cls]
+    hits = [
+        c
+        for c in (ex.deref(owners[0], p) for p in comps)
+        if c is not None and c.type.name == "MonoBehaviour" and ex.script_class(c) == cls
+    ]
     if len(hits) != 1:
         raise RuntimeError(f"{SCENE_KEY}: {len(hits)} {cls} at {path}")
     o, tt = _mono(ex, hits[0], cls)
@@ -232,12 +314,16 @@ def bar_line_prefab(ex: Exporter) -> dict:
     root = graph.tf_of_go.get(tt["m_GameObject"]["m_PathID"])
     if root is None or graph.tf[root]["m_Father"]["m_PathID"]:
         raise RuntimeError(f"{SCENE_KEY}: the bar line view is not a prefab root of the scene's bundles")
-    return {"key": SCENE_KEY, "reference": ".".join(f for f, _ in BAR_LINE_CHAIN),
-            "nodes": ex.hierarchy(env, graph, root)}
+    return {
+        "key": SCENE_KEY,
+        "reference": ".".join(f for f, _ in BAR_LINE_CHAIN),
+        "nodes": ex.hierarchy(env, graph, root),
+    }
 
 
-def extract(cat: Catalog, player: PlayerData, out_dir: Path, master: Path | None = None,
-            options: LiveOptions = LiveOptions()) -> dict:
+def extract(
+    cat: Catalog, player: PlayerData, out_dir: Path, master: Path | None = None, options: LiveOptions = LiveOptions()
+) -> dict:
     """livenotes/ for the default options, plus the files of the variants `options` offers (the module
     docstring). The variants' objects are exported after the default ones."""
     out_dir = Path(out_dir)
@@ -260,6 +346,7 @@ def extract(cat: Catalog, player: PlayerData, out_dir: Path, master: Path | None
                 assets[k] = ex.export_key(k)
             except NotImplementedError as e:
                 failures[k] = str(e)
+
     export(keys)
     other_skins = [n for n in doc["settings"].get("skins", {}).values() if n != skin]
     if other_skins:
@@ -268,7 +355,7 @@ def extract(cat: Catalog, player: PlayerData, out_dir: Path, master: Path | None
     for effect, light in options.effect_sets(names):
         if not cat.has(effect_settings_key(effect)):
             if light:
-                continue                  # the game loads the set itself at quality Low (LiveOptions.effect_sets)
+                continue  # the game loads the set itself at quality Low (LiveOptions.effect_sets)
             raise KeyError(f"effect set {effect}: {effect_settings_key(effect)} not in the catalog")
         export([k for k in effect_keys(cat, effect) if k not in assets and k not in failures])
     if options.bar_lines:
@@ -283,9 +370,19 @@ def extract(cat: Catalog, player: PlayerData, out_dir: Path, master: Path | None
     dropped = _drop_tmp_fonts(doc, root)
     _, shader_summary = ex.dump_shaders(root / "shaders")
     doc["shaders"] = {"index": "shaders/shaders.json", "names": shader_summary["names"]}
-    doc["convention"] = ("Unity space (left-handed, Y up); transforms are local TRS; quaternions (x,y,z,w); "
-                         "colours as serialized (project colour space: see player.json)")
+    doc["convention"] = (
+        "Unity space (left-handed, Y up); transforms are local TRS; quaternions (x,y,z,w); "
+        "colours as serialized (project colour space: see player.json)"
+    )
     write_json(root / "notes.json", doc)
-    return {"prefabs": len(doc["prefabs"]), "assets": len(assets), "clips": len(ex.clips),
-            "controllers": len(ex.controllers), "textures": len(ex.textures) - len(dropped), "droppedFontTextures": dropped,
-            "failures": failures, "unresolvedBindings": unresolved, **shader_summary}
+    return {
+        "prefabs": len(doc["prefabs"]),
+        "assets": len(assets),
+        "clips": len(ex.clips),
+        "controllers": len(ex.controllers),
+        "textures": len(ex.textures) - len(dropped),
+        "droppedFontTextures": dropped,
+        "failures": failures,
+        "unresolvedBindings": unresolved,
+        **shader_summary,
+    }

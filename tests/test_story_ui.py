@@ -1,6 +1,7 @@
 """The story UI export (advui.py) on synthetic prefab nodes and episode rows: the records of the screen canvases,
 views, camera and video buttons, the widget's canvases, the texts whose characters the game fonts keep, the
 AdvMasterIdSettings texts, the chat window texts and the emoji sequence table. Nothing here comes from game data."""
+
 import json
 
 import pytest
@@ -11,74 +12,172 @@ WHITE = {"spriteRef": "cab:1", "name": "WhiteRect"}
 
 
 def image(sprite=WHITE, material=None):
-    return {"type": "MonoBehaviour", "class": "Image", "m_Enabled": 1, "m_Color": {"r": 1.0, "g": 1.0, "b": 1.0, "a": 1.0},
-            "m_Type": 0, "m_PreserveAspect": 0, "m_FillCenter": 1, "m_FillMethod": 4, "m_FillAmount": 1.0,
-            "m_UseSpriteMesh": 0, "m_PixelsPerUnitMultiplier": 1.0, "m_Maskable": 1, "m_Sprite": sprite,
-            "m_Material": material}
+    return {
+        "type": "MonoBehaviour",
+        "class": "Image",
+        "m_Enabled": 1,
+        "m_Color": {"r": 1.0, "g": 1.0, "b": 1.0, "a": 1.0},
+        "m_Type": 0,
+        "m_PreserveAspect": 0,
+        "m_FillCenter": 1,
+        "m_FillMethod": 4,
+        "m_FillAmount": 1.0,
+        "m_UseSpriteMesh": 0,
+        "m_PixelsPerUnitMultiplier": 1.0,
+        "m_Maskable": 1,
+        "m_Sprite": sprite,
+        "m_Material": material,
+    }
 
 
 def canvas(camera=None, mode=1, order=302):
-    return {"type": "Canvas", "m_Enabled": 1, "m_RenderMode": mode, "m_SortingOrder": order,
-            "m_VertexColorAlwaysGammaSpace": True, "m_AdditionalShaderChannelsFlag": 25, "m_OverrideSorting": False,
-            "m_PixelPerfect": False, "m_PlaneDistance": 100.0, "m_Camera": camera}
+    return {
+        "type": "Canvas",
+        "m_Enabled": 1,
+        "m_RenderMode": mode,
+        "m_SortingOrder": order,
+        "m_VertexColorAlwaysGammaSpace": True,
+        "m_AdditionalShaderChannelsFlag": 25,
+        "m_OverrideSorting": False,
+        "m_PixelPerfect": False,
+        "m_PlaneDistance": 100.0,
+        "m_Camera": camera,
+    }
 
 
 def scaler(cls):
-    c = {"type": "MonoBehaviour", "class": cls, "m_Enabled": 1, "m_UiScaleMode": 1, "m_ReferencePixelsPerUnit": 100.0,
-         "m_ScaleFactor": 1.0, "m_ReferenceResolution": {"x": 1920.0, "y": 1080.0}, "m_ScreenMatchMode": 0,
-         "m_MatchWidthOrHeight": 0.0}
+    c = {
+        "type": "MonoBehaviour",
+        "class": cls,
+        "m_Enabled": 1,
+        "m_UiScaleMode": 1,
+        "m_ReferencePixelsPerUnit": 100.0,
+        "m_ScaleFactor": 1.0,
+        "m_ReferenceResolution": {"x": 1920.0, "y": 1080.0},
+        "m_ScreenMatchMode": 0,
+        "m_MatchWidthOrHeight": 0.0,
+    }
     if cls == "ClampedCanvasScaler":
         c["_maxAspectThreshold"] = 2.1666667461395264
     return c
 
 
 def test_canvases_keep_their_records_and_add_the_camera_plane():
-    base = {"m_Enabled", "m_RenderMode", "m_SortingOrder", "m_VertexColorAlwaysGammaSpace",
-            "m_AdditionalShaderChannelsFlag", "m_OverrideSorting", "m_PixelPerfect"}
+    base = {
+        "m_Enabled",
+        "m_RenderMode",
+        "m_SortingOrder",
+        "m_VertexColorAlwaysGammaSpace",
+        "m_AdditionalShaderChannelsFlag",
+        "m_OverrideSorting",
+        "m_PixelPerfect",
+    }
     front = advui._layout_components({"components": [canvas(), scaler("CanvasScaler")]})
-    assert set(front["canvas"]) == base | {"m_PlaneDistance"}      # screen space - camera without a camera
+    assert set(front["canvas"]) == base | {"m_PlaneDistance"}  # screen space - camera without a camera
     assert "class" not in front["canvasScaler"]
     overlay = advui._layout_components({"components": [canvas(mode=0)]})
     assert set(overlay["canvas"]) == base
-    still = advui._layout_components({"components": [
-        canvas({"component": "Camera", "gameObject": "W/VideoAndStillCamera"}), scaler("ClampedCanvasScaler")]})
+    still = advui._layout_components(
+        {
+            "components": [
+                canvas({"component": "Camera", "gameObject": "W/VideoAndStillCamera"}),
+                scaler("ClampedCanvasScaler"),
+            ]
+        }
+    )
     assert still["canvas"]["camera"] == "W/VideoAndStillCamera" and still["canvas"]["m_PlaneDistance"] == 100.0
     assert still["canvasScaler"]["class"] == "ClampedCanvasScaler"
     assert still["canvasScaler"]["_maxAspectThreshold"] == pytest.approx(2.1666667)
 
 
 def test_views_raw_images_buttons_and_safe_area_anchors():
-    rec = advui._layout_components({"components": [
-        {"type": "MonoBehaviour", "class": "AdvStillView", "m_Enabled": 1,
-         "_overlay": {"component": "MonoBehaviour", "gameObject": "S/V/Overlay", "class": "Image"},
-         "_background": {"component": "MonoBehaviour", "gameObject": "S/V/Background", "class": "Image"},
-         "_target": {"transform": "S/V/Target"}},
-        {"type": "MonoBehaviour", "class": "RawImage", "m_Enabled": 1, "m_Color": {"r": 1.0, "g": 1.0, "b": 1.0, "a": 1.0},
-         "m_UVRect": {"x": 0.0, "y": 0.0, "width": 1.0, "height": 1.0}, "m_RaycastTarget": 0, "m_Maskable": 0,
-         "m_Texture": None, "m_Material": None},
-        {"type": "MonoBehaviour", "class": "UISafeAreaEdgeAnchor", "m_Enabled": 1,
-         "_left": {"_target": 1, "_anchor": 0, "_offset": 0.0}, "_right": {"_target": 1, "_anchor": 2, "_offset": 0.0},
-         "_top": {"_target": 1, "_anchor": 2, "_offset": 0.0}, "_bottom": {"_target": 1, "_anchor": 0, "_offset": 0.0}},
-        {"type": "MonoBehaviour", "class": "ButtonImageState", "_normaledSprite": {"spriteRef": "cab:2", "name": "stop"},
-         "_selectedSprite": {"spriteRef": "cab:3", "name": "play"},
-         "_target": {"component": "MonoBehaviour", "gameObject": "M/Pause/Icon", "class": "Image"}},
-    ]})
-    assert rec["stillView"] == {"enabled": 1, "_overlay": "S/V/Overlay", "_background": "S/V/Background",
-                                "_target": "S/V/Target"}
+    rec = advui._layout_components(
+        {
+            "components": [
+                {
+                    "type": "MonoBehaviour",
+                    "class": "AdvStillView",
+                    "m_Enabled": 1,
+                    "_overlay": {"component": "MonoBehaviour", "gameObject": "S/V/Overlay", "class": "Image"},
+                    "_background": {"component": "MonoBehaviour", "gameObject": "S/V/Background", "class": "Image"},
+                    "_target": {"transform": "S/V/Target"},
+                },
+                {
+                    "type": "MonoBehaviour",
+                    "class": "RawImage",
+                    "m_Enabled": 1,
+                    "m_Color": {"r": 1.0, "g": 1.0, "b": 1.0, "a": 1.0},
+                    "m_UVRect": {"x": 0.0, "y": 0.0, "width": 1.0, "height": 1.0},
+                    "m_RaycastTarget": 0,
+                    "m_Maskable": 0,
+                    "m_Texture": None,
+                    "m_Material": None,
+                },
+                {
+                    "type": "MonoBehaviour",
+                    "class": "UISafeAreaEdgeAnchor",
+                    "m_Enabled": 1,
+                    "_left": {"_target": 1, "_anchor": 0, "_offset": 0.0},
+                    "_right": {"_target": 1, "_anchor": 2, "_offset": 0.0},
+                    "_top": {"_target": 1, "_anchor": 2, "_offset": 0.0},
+                    "_bottom": {"_target": 1, "_anchor": 0, "_offset": 0.0},
+                },
+                {
+                    "type": "MonoBehaviour",
+                    "class": "ButtonImageState",
+                    "_normaledSprite": {"spriteRef": "cab:2", "name": "stop"},
+                    "_selectedSprite": {"spriteRef": "cab:3", "name": "play"},
+                    "_target": {"component": "MonoBehaviour", "gameObject": "M/Pause/Icon", "class": "Image"},
+                },
+            ]
+        }
+    )
+    assert rec["stillView"] == {
+        "enabled": 1,
+        "_overlay": "S/V/Overlay",
+        "_background": "S/V/Background",
+        "_target": "S/V/Target",
+    }
     assert rec["rawImage"]["texture"] is None and rec["rawImage"]["m_UVRect"]["width"] == 1.0
     assert rec["safeAreaEdgeAnchor"]["_right"] == {"_target": 1, "_anchor": 2, "_offset": 0.0}
-    assert rec["buttonImageState"] == {"normal": "stop", "selected": "play", "selectedRef": "cab:3",
-                                       "target": "M/Pause/Icon"}
-    plain = advui._layout_components({"components": [
-        {"type": "MonoBehaviour", "class": "ButtonImageState", "_normaledSprite": None, "_selectedSprite": None,
-         "_target": None}, {"type": "MonoBehaviour", "class": "AdvFrameView", "m_Enabled": 1}]})
+    assert rec["buttonImageState"] == {
+        "normal": "stop",
+        "selected": "play",
+        "selectedRef": "cab:3",
+        "target": "M/Pause/Icon",
+    }
+    plain = advui._layout_components(
+        {
+            "components": [
+                {
+                    "type": "MonoBehaviour",
+                    "class": "ButtonImageState",
+                    "_normaledSprite": None,
+                    "_selectedSprite": None,
+                    "_target": None,
+                },
+                {"type": "MonoBehaviour", "class": "AdvFrameView", "m_Enabled": 1},
+            ]
+        }
+    )
     assert plain == {"buttonImageState": {"normal": None}, "frameView": {"enabled": 1}}
 
 
 def test_camera_record():
-    widget = [{"path": "W/Cam", "active": True, "components": [
-        {"type": "Camera", **{k: 0 for k in advui.CAMERA_FIELDS}, "m_Iso": 200},
-        {"type": "MonoBehaviour", "class": "UniversalAdditionalCameraData", **{k: 1 for k in advui.CAMERA_DATA_FIELDS}}]}]
+    widget = [
+        {
+            "path": "W/Cam",
+            "active": True,
+            "components": [
+                {"type": "Camera", **{k: 0 for k in advui.CAMERA_FIELDS}, "m_Iso": 200},
+                {
+                    "type": "MonoBehaviour",
+                    "class": "UniversalAdditionalCameraData",
+                    **{k: 1 for k in advui.CAMERA_DATA_FIELDS},
+                },
+            ],
+        }
+    ]
     cam = advui._camera(widget, "W/Cam")
     assert cam["path"] == "W/Cam" and set(cam["camera"]) == set(advui.CAMERA_FIELDS) and "m_Iso" not in cam["camera"]
     assert set(cam["additionalCameraData"]) == set(advui.CAMERA_DATA_FIELDS)
@@ -101,18 +200,43 @@ def _ui_manager(data_go=3):
     objs = {
         1: _Obj(1, "GameObject", {"m_Component": [{"component": ptr(10)}, {"component": ptr(11)}]}),
         11: _Obj(11, "MonoBehaviour", {"m_GameObject": ptr(1), "_cameraController": ptr(20)}, "UIManager"),
-        20: _Obj(20, "MonoBehaviour", {"m_GameObject": ptr(2), "_uiCamera": ptr(30), "_uiCameraData": ptr(31)},
-                 "UICameraController"),
-        30: _Obj(30, "Camera", {"m_GameObject": ptr(3), **{k: 0 for k in advui.CAMERA_FIELDS}, "orthographic": 1,
-                                "orthographic size": 5.0, "far clip plane": 1000.0, "m_Iso": 200}),
-        31: _Obj(31, "MonoBehaviour", {"m_GameObject": ptr(data_go), **{k: 1 for k in advui.CAMERA_DATA_FIELDS}},
-                 "UniversalAdditionalCameraData"),
+        20: _Obj(
+            20,
+            "MonoBehaviour",
+            {"m_GameObject": ptr(2), "_uiCamera": ptr(30), "_uiCameraData": ptr(31)},
+            "UICameraController",
+        ),
+        30: _Obj(
+            30,
+            "Camera",
+            {
+                "m_GameObject": ptr(3),
+                **{k: 0 for k in advui.CAMERA_FIELDS},
+                "orthographic": 1,
+                "orthographic size": 5.0,
+                "far clip plane": 1000.0,
+                "m_Iso": 200,
+            },
+        ),
+        31: _Obj(
+            31,
+            "MonoBehaviour",
+            {"m_GameObject": ptr(data_go), **{k: 1 for k in advui.CAMERA_DATA_FIELDS}},
+            "UniversalAdditionalCameraData",
+        ),
         10: _Obj(10, "RectTransform", {}),
     }
-    graph = type("G", (), {"go": {1: {"m_IsActive": 1}, 2: {"m_IsActive": 1}, 3: {"m_IsActive": 1}},
-                           "tf_of_go": {1: 101, 2: 102, 3: 103},
-                           "path": staticmethod(lambda tf: {101: "UIManager", 102: "UIManager/Cameras",
-                                                            103: "UIManager/Cameras/UICamera"}[tf])})()
+    graph = type(
+        "G",
+        (),
+        {
+            "go": {1: {"m_IsActive": 1}, 2: {"m_IsActive": 1}, 3: {"m_IsActive": 1}},
+            "tf_of_go": {1: 101, 2: 102, 3: 103},
+            "path": staticmethod(
+                lambda tf: {101: "UIManager", 102: "UIManager/Cameras", 103: "UIManager/Cameras/UICamera"}[tf]
+            ),
+        },
+    )()
 
     class Ex:
         def key_object(self, key):
@@ -127,6 +251,7 @@ def _ui_manager(data_go=3):
 
         def script_class(self, o):
             return o.cls
+
     return Ex()
 
 
@@ -142,20 +267,36 @@ def test_ui_camera_record_follows_the_ui_manager_references():
 
 def test_shown_texts_keep_subtitles_and_ruby_readings():
     lines = lambda s: {"japanese": s, "english": s}  # noqa: E731
-    episode = {"commands": [{"cmd": "Talk", "lines": lines("<r=よみ>読</r>み"), "TargetName": "a", "AdvTextID": "t",
-                             "TargetTextIDs": ["n"]},
-                            {"cmd": "Subtitles", "lines": lines("字幕")}, {"cmd": "Subtitles"},
-                            {"cmd": "Bgm", "lines": lines("no")}],
-               "text": {"n": lines("名")}, "title": lines("題")}
-    got = advui.shown_texts(episode, {"_unknownCharacterNameTextId": "u", "_splitCharacterNameTextId": "s"},
-                            "japanese")
+    episode = {
+        "commands": [
+            {
+                "cmd": "Talk",
+                "lines": lines("<r=よみ>読</r>み"),
+                "TargetName": "a",
+                "AdvTextID": "t",
+                "TargetTextIDs": ["n"],
+            },
+            {"cmd": "Subtitles", "lines": lines("字幕")},
+            {"cmd": "Subtitles"},
+            {"cmd": "Bgm", "lines": lines("no")},
+        ],
+        "text": {"n": lines("名")},
+        "title": lines("題"),
+    }
+    got = advui.shown_texts(episode, {"_unknownCharacterNameTextId": "u", "_splitCharacterNameTextId": "s"}, "japanese")
     assert got == ["読み", "よみ", "字幕", "名", "題"]
 
 
 def test_master_id_texts(tmp_path):
     settings = {k: f"id_{i}" for i, k in enumerate(advui.MASTER_ID_TEXTS)}
-    settings.update({"_skipVideoMessageTextId": "ui_skip_movie", "_skipButtonTextId": "ui_skip",
-                     "_cancelButtonTextId": "ui_cancel", "_unknownCharacterNameTextId": "x"})
+    settings.update(
+        {
+            "_skipVideoMessageTextId": "ui_skip_movie",
+            "_skipButtonTextId": "ui_skip",
+            "_cancelButtonTextId": "ui_cancel",
+            "_unknownCharacterNameTextId": "x",
+        }
+    )
     rows = [{"_id": i, "_japanese": f"ja {i}", "_english": f"en {i}"} for i in [*settings.values(), "y"]]
     (tmp_path / "MasterText.json").write_text(json.dumps({"_allData": rows}), encoding="utf-8")
     got = advui.master_id_texts(settings, tmp_path, "english")
@@ -171,46 +312,68 @@ def ref(path, component="MonoBehaviour", cls="UIButton"):
 
 
 def test_menu_and_chat_view_records():
-    menu = {"type": "MonoBehaviour", "class": "AdvMenuView", "m_Enabled": 1, "_fadeDuration": 0.2,
-            **{k: ref(f"M/{k}") for k in advui.MENU_VIEW_REFS},
-            "_menuButtonsBackground": {"transform": "M/Back"},
-            "_fastForwardNormalSprite": {"spriteRef": "cab:5", "name": "fast_off"},
-            "_fastForwardOnePointFiveSprite": {"spriteRef": "cab:6", "name": "fast15"},
-            "_fastForwardOnePointSevenSprite": None,
-            "_fastForwardDoubleSprite": {"spriteRef": "cab:8", "name": "fast2"}}
+    menu = {
+        "type": "MonoBehaviour",
+        "class": "AdvMenuView",
+        "m_Enabled": 1,
+        "_fadeDuration": 0.2,
+        **{k: ref(f"M/{k}") for k in advui.MENU_VIEW_REFS},
+        "_menuButtonsBackground": {"transform": "M/Back"},
+        "_fastForwardNormalSprite": {"spriteRef": "cab:5", "name": "fast_off"},
+        "_fastForwardOnePointFiveSprite": {"spriteRef": "cab:6", "name": "fast15"},
+        "_fastForwardOnePointSevenSprite": None,
+        "_fastForwardDoubleSprite": {"spriteRef": "cab:8", "name": "fast2"},
+    }
     node = advui._layout_components({"components": [menu]})
     rec = node["menuView"]
     assert rec["_skipButton"] == "M/_skipButton" and rec["_menuButtonsBackground"] == "M/Back"
     assert (rec["_fastForwardNormalSprite"], rec["_fastForwardOnePointSevenSprite"]) == ("fast_off", None)
     assert rec["_fadeDuration"] == 0.2 and node["_spriteRefs"] == ["cab:5", "cab:6", "cab:8"]
     assert set(rec) == {"enabled", "_fadeDuration", *advui.MENU_VIEW_REFS, *advui.MENU_VIEW_SPRITES}
-    chat = {"type": "MonoBehaviour", "class": "AdvChatView", "m_Enabled": 1,
-            **{k: 0.25 for k in advui.CHAT_VIEW_FIELDS}, "_windowParentRect": {"transform": "C/Canvas/View/Target"}}
+    chat = {
+        "type": "MonoBehaviour",
+        "class": "AdvChatView",
+        "m_Enabled": 1,
+        **{k: 0.25 for k in advui.CHAT_VIEW_FIELDS},
+        "_windowParentRect": {"transform": "C/Canvas/View/Target"},
+    }
     rec = advui._layout_components({"components": [chat]})["chatView"]
-    assert rec == {"enabled": 1, **{k: 0.25 for k in advui.CHAT_VIEW_FIELDS},
-                   "_windowParentRect": "C/Canvas/View/Target"}
+    assert rec == {
+        "enabled": 1,
+        **{k: 0.25 for k in advui.CHAT_VIEW_FIELDS},
+        "_windowParentRect": "C/Canvas/View/Target",
+    }
 
 
 def test_widget_canvases():
-    widget = [{"path": "W", "components": []},
-              {"path": "W/Block", "components": [canvas(order=300)]},
-              {"path": "W/Front", "components": [canvas(mode=1, order=304)]},
-              {"path": "W/Letter", "components": [canvas(mode=0, order=0)]}]
-    comp = {"_canvasSortOrder": 99999, "_canvases": [{"component": "Canvas", "gameObject": p}
-                                                      for p in ("W/Block", "W/Front", "W/Letter")]}
-    assert advui.widget_canvases(widget, comp) == {"canvasSortOrder": 99999, "canvases": [
-        {"path": "W/Block", "sortingOrder": 300}, {"path": "W/Front", "sortingOrder": 304},
-        {"path": "W/Letter", "sortingOrder": 0}]}
+    widget = [
+        {"path": "W", "components": []},
+        {"path": "W/Block", "components": [canvas(order=300)]},
+        {"path": "W/Front", "components": [canvas(mode=1, order=304)]},
+        {"path": "W/Letter", "components": [canvas(mode=0, order=0)]},
+    ]
+    comp = {
+        "_canvasSortOrder": 99999,
+        "_canvases": [{"component": "Canvas", "gameObject": p} for p in ("W/Block", "W/Front", "W/Letter")],
+    }
+    assert advui.widget_canvases(widget, comp) == {
+        "canvasSortOrder": 99999,
+        "canvases": [
+            {"path": "W/Block", "sortingOrder": 300},
+            {"path": "W/Front", "sortingOrder": 304},
+            {"path": "W/Letter", "sortingOrder": 0},
+        ],
+    }
     with pytest.raises(RuntimeError, match="0 Canvas"):
         advui.widget_canvases(widget, {**comp, "_canvases": [{"component": "Canvas", "gameObject": "W"}]})
 
 
 def test_emoji_sequence_keys():
     key = advui.emoji_sequence_key
-    assert key("1f636-200d-1f32b-fe0f", 0x1F636) == "\U0001F636\u200D\U0001F32B\uFE0F"
-    assert key("2764-FE0F", 0x2764) == "\u2764\uFE0F"                       # lower case, padded parts
-    assert key("Emoji/1f590-fe0f.png", 0x1F590) == "\U0001F590\uFE0F"      # file name without extension
-    assert key("0001f600", 0x1F600) is None                                  # the sprite's own code point
+    assert key("1f636-200d-1f32b-fe0f", 0x1F636) == "\U0001f636\u200d\U0001f32b\ufe0f"
+    assert key("2764-FE0F", 0x2764) == "\u2764\ufe0f"  # lower case, padded parts
+    assert key("Emoji/1f590-fe0f.png", 0x1F590) == "\U0001f590\ufe0f"  # file name without extension
+    assert key("0001f600", 0x1F600) is None  # the sprite's own code point
     with pytest.raises(NotImplementedError, match="not a code point"):
         key("d83d-de00", 0)
 
@@ -227,16 +390,33 @@ def test_sprite_asset_record():
     """The emoji sprite asset as the layout reads it: face info, the character table in order, the glyphs, the
     sequence entries of the legacy sprite list, the sheet and the material."""
     metrics = {"m_Width": 32.0, "m_Height": 32.0}
-    tree = {"m_Name": "Emoji", "fallbackSpriteAssets": [], "m_FaceInfo": {"m_PointSize": 0.0},
-            "spriteSheet": "sheet", "m_Material": "mat",
-            "spriteInfoList": [{"name": "1f600", "unicode": 0x1F600}, {"name": "2764-fe0f", "unicode": 0x2764},
-                               {"name": "", "unicode": 0}],
-            "m_SpriteCharacterTable": [{"m_Unicode": 0x1F600, "m_Name": "1f600", "m_GlyphIndex": 0, "m_Scale": 1.0},
-                                       {"m_Unicode": 0x2764, "m_Name": "2764-fe0f", "m_GlyphIndex": 1, "m_Scale": 1.0}],
-            "m_GlyphTable": [{"m_Index": i, "m_Metrics": metrics, "m_GlyphRect": {"m_X": 32 * i}, "m_Scale": 1.0,
-                              "m_AtlasIndex": 0} for i in (0, 1)]}
-    sheet = {"m_Name": "Sheet", "m_Width": 64, "m_Height": 32, "m_MipCount": 1,
-             "m_TextureSettings": {"m_FilterMode": 1}}
+    tree = {
+        "m_Name": "Emoji",
+        "fallbackSpriteAssets": [],
+        "m_FaceInfo": {"m_PointSize": 0.0},
+        "spriteSheet": "sheet",
+        "m_Material": "mat",
+        "spriteInfoList": [
+            {"name": "1f600", "unicode": 0x1F600},
+            {"name": "2764-fe0f", "unicode": 0x2764},
+            {"name": "", "unicode": 0},
+        ],
+        "m_SpriteCharacterTable": [
+            {"m_Unicode": 0x1F600, "m_Name": "1f600", "m_GlyphIndex": 0, "m_Scale": 1.0},
+            {"m_Unicode": 0x2764, "m_Name": "2764-fe0f", "m_GlyphIndex": 1, "m_Scale": 1.0},
+        ],
+        "m_GlyphTable": [
+            {"m_Index": i, "m_Metrics": metrics, "m_GlyphRect": {"m_X": 32 * i}, "m_Scale": 1.0, "m_AtlasIndex": 0}
+            for i in (0, 1)
+        ],
+    }
+    sheet = {
+        "m_Name": "Sheet",
+        "m_Width": 64,
+        "m_Height": 32,
+        "m_MipCount": 1,
+        "m_TextureSettings": {"m_FilterMode": 1},
+    }
 
     class Ex:
         def key_object(self, key):
@@ -248,9 +428,12 @@ def test_sprite_asset_record():
 
         def material(self, o):
             return {"material": f"{o} record"}
+
     rec = advui.sprite_asset_record(Ex())
-    assert rec["characters"] == [{"index": 0, "unicode": 0x1F600, "name": "1f600", "glyph": 0, "scale": 1.0},
-                                 {"index": 1, "unicode": 0x2764, "name": "2764-fe0f", "glyph": 1, "scale": 1.0}]
+    assert rec["characters"] == [
+        {"index": 0, "unicode": 0x1F600, "name": "1f600", "glyph": 0, "scale": 1.0},
+        {"index": 1, "unicode": 0x2764, "name": "2764-fe0f", "glyph": 1, "scale": 1.0},
+    ]
     assert rec["glyphs"]["1"] == {"metrics": metrics, "rect": {"m_X": 32}, "scale": 1.0, "atlasIndex": 0}
     assert rec["sequences"] == [{"name": "2764-fe0f", "unicode": 0x2764}]
     assert rec["sheet"] == {"name": "Sheet", "width": 64, "height": 32, "mipCount": 1, "settings": {"m_FilterMode": 1}}
@@ -263,15 +446,19 @@ def test_sprite_asset_record():
 def test_emoji_sequence_parse():
     """TMP_EmojiSearchEngine: the table (the first entry of a key wins) and the names a parse writes: the longest run
     of UTF-16 units whose prefixes are all in the fast set, no backtracking, the scan going on after a failed run."""
-    seqs = [{"name": "2764-fe0f", "unicode": 0x2764}, {"name": "2764-FE0F", "unicode": 0x2764},
-            {"name": "1f647-200d-2640-fe0f", "unicode": 0x1F647}, {"name": "2764-fe0f-200d-1f525", "unicode": 0x2764}]
+    seqs = [
+        {"name": "2764-fe0f", "unicode": 0x2764},
+        {"name": "2764-FE0F", "unicode": 0x2764},
+        {"name": "1f647-200d-2640-fe0f", "unicode": 0x1F647},
+        {"name": "2764-fe0f-200d-1f525", "unicode": 0x2764},
+    ]
     table, fast = advui.emoji_sequence_table(seqs)
-    assert table[advui._utf16("\u2764\uFE0F")] == "2764-fe0f" and len(table) == 3
-    assert (0xD83D,) in fast                                               # a half of a surrogate pair
+    assert table[advui._utf16("\u2764\ufe0f")] == "2764-fe0f" and len(table) == 3
+    assert (0xD83D,) in fast  # a half of a surrogate pair
     names = advui.emoji_sequence_names
-    assert names(table, fast, "a\u2764\ufe0fb\U0001F647\u200d\u2640\ufe0f") == ["2764-fe0f", "1f647-200d-2640-fe0f"]
+    assert names(table, fast, "a\u2764\ufe0fb\U0001f647\u200d\u2640\ufe0f") == ["2764-fe0f", "1f647-200d-2640-fe0f"]
     assert names(table, fast, "\u2764\ufe0f\u200dx") == [], "the run's prefix is no key: no shorter key is tried"
-    assert names(table, fast, "\u2764\ufe0f\u200d\U0001F525") == ["2764-fe0f-200d-1f525"]
+    assert names(table, fast, "\u2764\ufe0f\u200d\U0001f525") == ["2764-fe0f-200d-1f525"]
     assert names(table, fast, "\u2764\u2764\ufe0f") == ["2764-fe0f"]
     assert names({}, set(), "\u2764\ufe0f") == []
 
@@ -280,23 +467,33 @@ def test_tmp_hash():
     """TMP_TextUtilities.GetHashCode: case-insensitive for ASCII letters, 32 bits."""
     assert advui.tmp_hash("abc") == ((((65 * 33) ^ 66) * 33) ^ 67)
     assert advui.tmp_hash("1f600") == advui.tmp_hash("1F600") != advui.tmp_hash("1f601")
-    assert 0 <= advui.tmp_hash("x" * 40) < 2 ** 32
+    assert 0 <= advui.tmp_hash("x" * 40) < 2**32
 
 
-LANG = {"languages": {0: {"fontNames": ["JA-R", "JA-N"], "additionalFontNames": ["CHAT"]},
-                      1: {"fontNames": ["EN-R", "EN-N"], "additionalFontNames": ["EN-CHAT"]},
-                      4: {"fontNames": ["KO-R", "KO-N"], "additionalFontNames": []}},
-        "materialTypes": ["Default", "Outline"]}
+LANG = {
+    "languages": {
+        0: {"fontNames": ["JA-R", "JA-N"], "additionalFontNames": ["CHAT"]},
+        1: {"fontNames": ["EN-R", "EN-N"], "additionalFontNames": ["EN-CHAT"]},
+        4: {"fontNames": ["KO-R", "KO-N"], "additionalFontNames": []},
+    },
+    "materialTypes": ["Default", "Outline"],
+}
 
 
 def test_chat_localize():
     """TryGetFontIndex over the Japanese font names and additional fonts, the font of that index among the
     language's loaded fonts (index out of range: font 0), the material of the type."""
     assert advui.chat_localize("CHAT SDF", "CHAT - Default", LANG, 1) == {
-        "fontAsset": "EN-CHAT SDF", "material": "EN-CHAT - Default", "lineSpacing": -100.0}
+        "fontAsset": "EN-CHAT SDF",
+        "material": "EN-CHAT - Default",
+        "lineSpacing": -100.0,
+    }
     assert advui.chat_localize("CHAT SDF", "CHAT - Outline", LANG, 4)["fontAsset"] == "KO-R SDF"
     assert advui.chat_localize("JA-N SDF", "JA-N - Outline", LANG, 0) == {
-        "fontAsset": "JA-N SDF", "material": "JA-N - Outline", "lineSpacing": 0.0}
+        "fontAsset": "JA-N SDF",
+        "material": "JA-N - Outline",
+        "lineSpacing": 0.0,
+    }
     with pytest.raises(NotImplementedError, match="lookup table"):
         advui.chat_localize("Other SDF", "Other - Default", LANG, 1)
     with pytest.raises(NotImplementedError, match="material type"):
@@ -308,60 +505,116 @@ def lines(s):
 
 
 def chat_episode():
-    return {"commands": [
-        {"cmd": "ChatWindow", "TargetTextIDs": ["w"], "Parameter1": "80.9", "Parameter4": "3"},
-        {"cmd": "ChatTalk", "lines": lines("やあ"), "TargetTextIDs": ["s"], "Parameter1": "2"},
-        {"cmd": "ChatStamp", "TargetAssetName": "Stamp/st_01", "TargetTextIDs": ["s"], "Parameter1": "1"},
-        {"cmd": "ChatRead", "Parameter1": "x"},
-        {"cmd": "ChatTalk", "lines": lines("無視"), "IgnoreData": 1, "Parameter1": "9"}],
+    return {
+        "commands": [
+            {"cmd": "ChatWindow", "TargetTextIDs": ["w"], "Parameter1": "80.9", "Parameter4": "3"},
+            {"cmd": "ChatTalk", "lines": lines("やあ"), "TargetTextIDs": ["s"], "Parameter1": "2"},
+            {"cmd": "ChatStamp", "TargetAssetName": "Stamp/st_01", "TargetTextIDs": ["s"], "Parameter1": "1"},
+            {"cmd": "ChatRead", "Parameter1": "x"},
+            {"cmd": "ChatTalk", "lines": lines("無視"), "IgnoreData": 1, "Parameter1": "9"},
+        ],
         "text": {"w": lines("窓"), "s": lines("送"), "st_01_log": lines("スタンプ"), "60001": lines("既読")},
         "title": lines("題"),
-        "resources": [{"kind": "chatwindow", "address": "Adv/Chat/Prefabs/Line", "present": True},
-                      {"kind": "chaticon", "address": "Adv/Chat/Icon/a", "present": True}]}
+        "resources": [
+            {"kind": "chatwindow", "address": "Adv/Chat/Prefabs/Line", "present": True},
+            {"kind": "chaticon", "address": "Adv/Chat/Icon/a", "present": True},
+        ],
+    }
 
 
 def test_chat_runtime_texts_and_shown_chat_rows():
     ep = chat_episode()
     assert advui.chat_runtime_texts(ep) == ["...", "80%", "(3)", " 2", " 1"]
     assert advui.chat_runtime_texts({"commands": [{"cmd": "Talk"}]}) == []
-    got = advui.shown_texts(ep, {"_unknownCharacterNameTextId": "u", "_splitCharacterNameTextId": "p",
-                                 "_chatReadTextId": "60001", "_chatStampLogTextId": "60004"}, "japanese")
+    got = advui.shown_texts(
+        ep,
+        {
+            "_unknownCharacterNameTextId": "u",
+            "_splitCharacterNameTextId": "p",
+            "_chatReadTextId": "60001",
+            "_chatStampLogTextId": "60004",
+        },
+        "japanese",
+    )
     assert got == ["やあ", *sorted(["窓", "送", "スタンプ", "既読"]), "題", "...", "80%", "(3)", " 2", " 1"]
     assert advui.chat_windows(ep) == {"Line": "Adv/Chat/Prefabs/Line"}
 
 
 def tmp_text(font, material, text=""):
-    return {"type": "MonoBehaviour", "class": "TextMeshProUGUI", "m_Enabled": 1, "m_fontAsset": {"name": font},
-            "m_sharedMaterial": {"material": material}, "m_text": text, "m_isRichText": 1,
-            "m_parseCtrlCharacters": 1, "m_fontSize": 24.0, "m_enableAutoSizing": 0, "m_fontSizeMin": 18.0,
-            "m_fontSizeMax": 72.0, "m_charWidthMaxAdj": 0.0, "m_lineSpacingMax": 0.0, "m_fontStyle": 0,
-            "m_fontWeight": 400, "m_HorizontalAlignment": 1, "m_VerticalAlignment": 256, "m_TextWrappingMode": 1,
-            "m_overflowMode": 0, "m_margin": {"x": 0.0, "y": 0.0, "z": 0.0, "w": 0.0}, "m_lineSpacing": 3.0,
-            "m_paragraphSpacing": 0.0, "m_characterSpacing": 0.0, "m_wordSpacing": 0.0, "m_enableKerning": 1,
-            "m_isRightToLeft": 0, "m_isOrthographic": 0, "m_fontColor": {"r": 1.0, "g": 1.0, "b": 1.0, "a": 1.0},
-            "m_colorMode": 3, "m_enableVertexGradient": 0, "m_overrideHtmlColors": 0}
+    return {
+        "type": "MonoBehaviour",
+        "class": "TextMeshProUGUI",
+        "m_Enabled": 1,
+        "m_fontAsset": {"name": font},
+        "m_sharedMaterial": {"material": material},
+        "m_text": text,
+        "m_isRichText": 1,
+        "m_parseCtrlCharacters": 1,
+        "m_fontSize": 24.0,
+        "m_enableAutoSizing": 0,
+        "m_fontSizeMin": 18.0,
+        "m_fontSizeMax": 72.0,
+        "m_charWidthMaxAdj": 0.0,
+        "m_lineSpacingMax": 0.0,
+        "m_fontStyle": 0,
+        "m_fontWeight": 400,
+        "m_HorizontalAlignment": 1,
+        "m_VerticalAlignment": 256,
+        "m_TextWrappingMode": 1,
+        "m_overflowMode": 0,
+        "m_margin": {"x": 0.0, "y": 0.0, "z": 0.0, "w": 0.0},
+        "m_lineSpacing": 3.0,
+        "m_paragraphSpacing": 0.0,
+        "m_characterSpacing": 0.0,
+        "m_wordSpacing": 0.0,
+        "m_enableKerning": 1,
+        "m_isRightToLeft": 0,
+        "m_isOrthographic": 0,
+        "m_fontColor": {"r": 1.0, "g": 1.0, "b": 1.0, "a": 1.0},
+        "m_colorMode": 3,
+        "m_enableVertexGradient": 0,
+        "m_overrideHtmlColors": 0,
+    }
 
 
 def localize(enabled=1, key="0"):
-    return {"type": "MonoBehaviour", "class": "LocalizeText", "m_Enabled": enabled, "_localizeEnabled": enabled,
-            "_masterTextID": key}
+    return {
+        "type": "MonoBehaviour",
+        "class": "LocalizeText",
+        "m_Enabled": enabled,
+        "_localizeEnabled": enabled,
+        "_masterTextID": key,
+    }
 
 
 def test_chat_texts(monkeypatch):
-    window = [{"path": "Line", "components": [{"class": "AdvChatWindow", "_incomingCallStatusTextKey": "call",
-                                               "_lockScreenStatusTextKey": ""}]},
-              {"path": "Line/Top/Name", "components": [tmp_text("CHAT SDF", "CHAT - Default"), localize()]},
-              {"path": "Line/Top/Percent", "components": [tmp_text("JA-N SDF", "JA-N - Outline", "100%")]}]
+    window = [
+        {
+            "path": "Line",
+            "components": [
+                {"class": "AdvChatWindow", "_incomingCallStatusTextKey": "call", "_lockScreenStatusTextKey": ""}
+            ],
+        },
+        {"path": "Line/Top/Name", "components": [tmp_text("CHAT SDF", "CHAT - Default"), localize()]},
+        {"path": "Line/Top/Percent", "components": [tmp_text("JA-N SDF", "JA-N - Outline", "100%")]},
+    ]
 
     class Ex:
         def prefab(self, address):
             assert address == "Adv/Chat/Prefabs/Line"
             return {"nodes": window}
+
     face = {"m_PointSize": 40.0, "m_Scale": 1.0}
-    fonts = fontsettings.FontSettings({
-        "format": fontsettings.FORMAT, "fonts": {"EN-CHAT SDF": {"faceInfo": face}, "JA-N SDF": {"faceInfo": face}},
-        "materials": {"EN-CHAT - Default": {"floats": {}, "colors": {}, "keywords": []},
-                      "JA-N - Outline": {"floats": {}, "colors": {}, "keywords": []}}})
+    fonts = fontsettings.FontSettings(
+        {
+            "format": fontsettings.FORMAT,
+            "fonts": {"EN-CHAT SDF": {"faceInfo": face}, "JA-N SDF": {"faceInfo": face}},
+            "materials": {
+                "EN-CHAT - Default": {"floats": {}, "colors": {}, "keywords": []},
+                "JA-N - Outline": {"floats": {}, "colors": {}, "keywords": []},
+            },
+        }
+    )
     monkeypatch.setattr(advui.textstyle, "material_style", lambda m, point, scale: {"face": {"point": point}})
     got, status = advui.chat_texts(Ex(), fonts, LANG, 1, chat_episode())
     assert status == ["call"]
@@ -384,57 +637,125 @@ def test_behaviours_record_every_serialized_field():
     order; a node with several ButtonImageState components has them there instead of `buttonImageState`."""
     sprite = {"spriteRef": "cab:9", "name": "sp_voice"}
     comps = [
-        {"type": "MonoBehaviour", "class": "UIButton", "m_Enabled": 1, "m_GameObject": {"m_PathID": 1},
-         "m_Script": {"m_PathID": 2}, "m_Name": "", "_initialButtonState": 0,
-         "_buttonStates": [ref("B/State"), ref("B/State2", cls="ButtonImageState")],
-         "_buttonAnimation": ref("B", cls="ButtonAnimationScale"),
-         "m_OnClick": {"m_PersistentCalls": {"m_Calls": [{"m_Target": ref("B/T", cls="Image"), "m_MethodName": "x"}]}}},
-        {"type": "MonoBehaviour", "class": "ButtonActiveState", "m_Enabled": 1, "_target": {"gameObject": "B/On"},
-         "_selectedActive": 1},
+        {
+            "type": "MonoBehaviour",
+            "class": "UIButton",
+            "m_Enabled": 1,
+            "m_GameObject": {"m_PathID": 1},
+            "m_Script": {"m_PathID": 2},
+            "m_Name": "",
+            "_initialButtonState": 0,
+            "_buttonStates": [ref("B/State"), ref("B/State2", cls="ButtonImageState")],
+            "_buttonAnimation": ref("B", cls="ButtonAnimationScale"),
+            "m_OnClick": {
+                "m_PersistentCalls": {"m_Calls": [{"m_Target": ref("B/T", cls="Image"), "m_MethodName": "x"}]}
+            },
+        },
+        {
+            "type": "MonoBehaviour",
+            "class": "ButtonActiveState",
+            "m_Enabled": 1,
+            "_target": {"gameObject": "B/On"},
+            "_selectedActive": 1,
+        },
         {"type": "MonoBehaviour", "class": "ButtonActiveState", "m_Enabled": 0, "_target": None, "_selectedActive": 0},
-        {"type": "MonoBehaviour", "class": "ButtonImageState", "m_Enabled": 1, "_target": ref("B/Icon", cls="Image"),
-         "_normaledSprite": sprite, "_selectedSprite": None},
-        {"type": "MonoBehaviour", "class": "ButtonImageState", "m_Enabled": 1, "_target": ref("B/Frame", cls="Image"),
-         "_normaledSprite": {"spriteRef": "cab:10", "name": "frame"}, "_selectedSprite": sprite},
-        {"type": "MonoBehaviour", "class": "SimpleRaycastTarget", "m_Enabled": 1, "m_Material": None,
-         "m_RaycastPadding": {"x": 0.0, "y": 0.0, "z": 0.0, "w": 0.0}},
-        {"type": "MonoBehaviour", "class": "LocalizeSpriteEvent", "m_Enabled": 1,
-         "m_LocalizedAssetReference": {"m_TableReference": {"m_TableCollectionName": "GUID:abc"},
-                                       "m_TableEntryReference": {"m_KeyId": 7, "m_Key": ""}}},
+        {
+            "type": "MonoBehaviour",
+            "class": "ButtonImageState",
+            "m_Enabled": 1,
+            "_target": ref("B/Icon", cls="Image"),
+            "_normaledSprite": sprite,
+            "_selectedSprite": None,
+        },
+        {
+            "type": "MonoBehaviour",
+            "class": "ButtonImageState",
+            "m_Enabled": 1,
+            "_target": ref("B/Frame", cls="Image"),
+            "_normaledSprite": {"spriteRef": "cab:10", "name": "frame"},
+            "_selectedSprite": sprite,
+        },
+        {
+            "type": "MonoBehaviour",
+            "class": "SimpleRaycastTarget",
+            "m_Enabled": 1,
+            "m_Material": None,
+            "m_RaycastPadding": {"x": 0.0, "y": 0.0, "z": 0.0, "w": 0.0},
+        },
+        {
+            "type": "MonoBehaviour",
+            "class": "LocalizeSpriteEvent",
+            "m_Enabled": 1,
+            "m_LocalizedAssetReference": {
+                "m_TableReference": {"m_TableCollectionName": "GUID:abc"},
+                "m_TableEntryReference": {"m_KeyId": 7, "m_Key": ""},
+            },
+        },
         {"type": "MonoBehaviour", "class": "GraphicRaycaster", "m_Enabled": 1},
     ]
     rec = advui._layout_components({"components": comps})
     b = rec["behaviours"]
     assert set(b) == {"UIButton", "ButtonActiveState", "ButtonImageState", "SimpleRaycastTarget", "LocalizeSpriteEvent"}
-    assert b["UIButton"] == [{"m_Enabled": 1, "_initialButtonState": 0, "_buttonStates": ["B/State", "B/State2"],
-                              "_buttonAnimation": "B", "m_OnClick": {"m_PersistentCalls": {"m_Calls": [
-                                  {"m_Target": "B/T", "m_MethodName": "x"}]}}}]
+    assert b["UIButton"] == [
+        {
+            "m_Enabled": 1,
+            "_initialButtonState": 0,
+            "_buttonStates": ["B/State", "B/State2"],
+            "_buttonAnimation": "B",
+            "m_OnClick": {"m_PersistentCalls": {"m_Calls": [{"m_Target": "B/T", "m_MethodName": "x"}]}},
+        }
+    ]
     assert [x["_target"] for x in b["ButtonActiveState"]] == ["B/On", None]
     assert [x["_normaledSprite"] for x in b["ButtonImageState"]] == ["sp_voice", "frame"]
     assert "buttonImageState" not in rec and rec["_spriteRefs"] == ["cab:9", "cab:10", "cab:9"]
     assert b["LocalizeSpriteEvent"][0]["m_LocalizedAssetReference"]["m_TableEntryReference"]["m_KeyId"] == 7
     one = advui._layout_components({"components": comps[3:4]})
     assert one["buttonImageState"] == {"normal": "sp_voice"} and "behaviours" not in one
-    assert advui._plain({"asset": "UIPictogramCatalog", "name": "UIPictogramCatalog", "_list": []}, []) == \
-        "UIPictogramCatalog"
+    assert (
+        advui._plain({"asset": "UIPictogramCatalog", "name": "UIPictogramCatalog", "_list": []}, [])
+        == "UIPictogramCatalog"
+    )
     assert advui._plain({"material": "M", "shader": {"shader": "UI/Default"}}, []) == "M"
 
 
 def test_full_views_and_pictograms():
-    view = {"type": "MonoBehaviour", "class": "AdvChoiceView", "m_Enabled": 1, "m_Script": {},
-            "_choiceItems": [ref("C/Item", cls="AdvChoiceItem"), ref("C/Item (1)", cls="AdvChoiceItem")],
-            "_choiceItemParent": {"transform": "C/Choices"}, "_animationIntervalIn": 0.1}
+    view = {
+        "type": "MonoBehaviour",
+        "class": "AdvChoiceView",
+        "m_Enabled": 1,
+        "m_Script": {},
+        "_choiceItems": [ref("C/Item", cls="AdvChoiceItem"), ref("C/Item (1)", cls="AdvChoiceItem")],
+        "_choiceItemParent": {"transform": "C/Choices"},
+        "_animationIntervalIn": 0.1,
+    }
     rec = advui._layout_components({"components": [view]})
-    assert rec["choiceView"] == {"enabled": 1, "m_Enabled": 1, "_choiceItems": ["C/Item", "C/Item (1)"],
-                                 "_choiceItemParent": "C/Choices", "_animationIntervalIn": 0.1}
-    catalog = {"asset": "Cat", "name": "Cat", "m_Enabled": 1,
-               "_spritesByKey": {"_list": [{"Key": 98, "Value": {"spriteRef": "cab:98", "name": "IconClose"}}]},
-               "_defaultSprite": {"spriteRef": "cab:1", "name": "IconSetting"}}
-    picto = {"type": "MonoBehaviour", "class": "UIPictogram", "m_Enabled": 1, "_key": 98, "_spriteCatalog": catalog,
-             "_image": ref("C/Close", cls="Image"), "_setNativeSize": 0}
-    nodes = [{"path": "C/Close", "components": [picto]},
-             {"path": "C/Other",
-              "components": [{**picto, "_key": 5, "_spriteCatalog": {"asset": "Cat", "name": "Cat"}}]}]
+    assert rec["choiceView"] == {
+        "enabled": 1,
+        "m_Enabled": 1,
+        "_choiceItems": ["C/Item", "C/Item (1)"],
+        "_choiceItemParent": "C/Choices",
+        "_animationIntervalIn": 0.1,
+    }
+    catalog = {
+        "asset": "Cat",
+        "name": "Cat",
+        "m_Enabled": 1,
+        "_spritesByKey": {"_list": [{"Key": 98, "Value": {"spriteRef": "cab:98", "name": "IconClose"}}]},
+        "_defaultSprite": {"spriteRef": "cab:1", "name": "IconSetting"},
+    }
+    picto = {
+        "type": "MonoBehaviour",
+        "class": "UIPictogram",
+        "m_Enabled": 1,
+        "_key": 98,
+        "_spriteCatalog": catalog,
+        "_image": ref("C/Close", cls="Image"),
+        "_setNativeSize": 0,
+    }
+    nodes = [
+        {"path": "C/Close", "components": [picto]},
+        {"path": "C/Other", "components": [{**picto, "_key": 5, "_spriteCatalog": {"asset": "Cat", "name": "Cat"}}]},
+    ]
     cats = advui.pictogram_catalogs(nodes)
     assert set(cats) == {"Cat"}
     recs = []
@@ -442,9 +763,17 @@ def test_full_views_and_pictograms():
         r = {"path": n["path"], **advui._layout_components(n)}
         advui.resolve_pictograms(r, cats)
         recs.append(r["behaviours"]["UIPictogram"][0])
-    assert recs[0] == {"m_Enabled": 1, "_key": 98, "_image": "C/Close", "_setNativeSize": 0, "catalog": "Cat",
-                       "sprite": "IconClose", "defaultSprite": "IconSetting", "_spriteRef": "cab:98",
-                       "_defaultRef": None}
+    assert recs[0] == {
+        "m_Enabled": 1,
+        "_key": 98,
+        "_image": "C/Close",
+        "_setNativeSize": 0,
+        "catalog": "Cat",
+        "sprite": "IconClose",
+        "defaultSprite": "IconSetting",
+        "_spriteRef": "cab:98",
+        "_defaultRef": None,
+    }
     assert (recs[1]["sprite"], recs[1]["_defaultRef"]) == (None, "cab:1")
     with pytest.raises(RuntimeError, match="not exported"):
         advui.resolve_pictograms({"path": "x", **advui._layout_components(nodes[1])}, {})
@@ -453,10 +782,12 @@ def test_full_views_and_pictograms():
 def test_talk_windows_and_their_nodes():
     """The default talk window first, then the episode's other talk windows by name; each window's prefab nodes under
     TalkView, the default from WINDOW_KEY and the others from the TalkWindow address as adv.closure resolves it."""
-    res = [{"kind": "talkwindow", "address": "EmbUI/Prefab/Parts/Adv/Talk/UIDefaultTalkWindow"},
-           {"kind": "talkwindow", "address": "EmbUI/Prefab/Parts/Adv/Talk/UICenterTalkWindow"},
-           {"kind": "chatwindow", "address": "Adv/Chat/Prefabs/Zed"},
-           {"kind": "talkwindow", "address": "UI/Prefab/Parts/Adv/Talk/UIBTalkWindow"}]
+    res = [
+        {"kind": "talkwindow", "address": "EmbUI/Prefab/Parts/Adv/Talk/UIDefaultTalkWindow"},
+        {"kind": "talkwindow", "address": "EmbUI/Prefab/Parts/Adv/Talk/UICenterTalkWindow"},
+        {"kind": "chatwindow", "address": "Adv/Chat/Prefabs/Zed"},
+        {"kind": "talkwindow", "address": "UI/Prefab/Parts/Adv/Talk/UIBTalkWindow"},
+    ]
     assert advui.talk_windows({"resources": res}) == ["UIDefaultTalkWindow", "UIBTalkWindow", "UICenterTalkWindow"]
     assert advui.talk_windows({"resources": []}) == ["UIDefaultTalkWindow"]
 
@@ -474,36 +805,50 @@ def test_talk_windows_and_their_nodes():
             self.keys.append(key)
             name = key.rsplit("/", 1)[1]
             return {"nodes": [{"path": name, "components": []}, {"path": f"{name}/TalkArea", "components": []}]}
+
     assert advui.window_key(Cat(), "UIDefaultTalkWindow") == advui.WINDOW_KEY
     assert advui.window_key(Cat(), "UIBTalkWindow") == "UI/Prefab/Parts/Adv/Talk/UIBTalkWindow"
     assert advui.window_key(Cat(), "UICenterTalkWindow") == "EmbUI/Prefab/Parts/Adv/Talk/UICenterTalkWindow"
     ex = Ex()
     got = advui.window_nodes(ex, ["UIDefaultTalkWindow", "UICenterTalkWindow"])
-    assert [n["path"] for n in got] == [f"{advui.WINDOW_PARENT}/{p}" for p in (
-        "UIDefaultTalkWindow", "UIDefaultTalkWindow/TalkArea", "UICenterTalkWindow", "UICenterTalkWindow/TalkArea")]
+    assert [n["path"] for n in got] == [
+        f"{advui.WINDOW_PARENT}/{p}"
+        for p in (
+            "UIDefaultTalkWindow",
+            "UIDefaultTalkWindow/TalkArea",
+            "UICenterTalkWindow",
+            "UICenterTalkWindow/TalkArea",
+        )
+    ]
     assert ex.keys == [advui.WINDOW_KEY, "EmbUI/Prefab/Parts/Adv/Talk/UICenterTalkWindow"]
 
     class Wrong(Ex):
         def prefab(self, key):
             return {"nodes": [{"path": "Other", "components": []}]}
+
     with pytest.raises(RuntimeError, match="prefab root"):
         advui.window_nodes(Wrong(), ["UICenterTalkWindow"])
-    assert advui.about("en", ["UIDefaultTalkWindow", "UICenterTalkWindow"]) == \
-        "ADV front canvas UI data (UIAdvWidget + UIDefaultTalkWindow, UICenterTalkWindow), en"
+    assert (
+        advui.about("en", ["UIDefaultTalkWindow", "UICenterTalkWindow"])
+        == "ADV front canvas UI data (UIAdvWidget + UIDefaultTalkWindow, UICenterTalkWindow), en"
+    )
 
 
 def test_backdrop_filter_and_the_backdrop_node():
     """The centre-talk backdrop is kept when a talk window uses the backdrop filter: the node UIAdvWidget's backdrop
     CanvasGroup and Image references name (one node with both components)."""
-    win = lambda on: [{"path": "W", "components": [{"class": "UIAdvTalkWindow", "_useBackdropFilter": on}]},
-                      {"path": "W/TalkArea", "components": [image()]}]
+    win = lambda on: [
+        {"path": "W", "components": [{"class": "UIAdvTalkWindow", "_useBackdropFilter": on}]},
+        {"path": "W/TalkArea", "components": [image()]},
+    ]
     assert advui.uses_backdrop_filter(win(0) + win(1)) and not advui.uses_backdrop_filter(win(0))
     path = "UIAdvWidget/FrontCanvas/CenterTalkBackdrop"
-    widget = [{"path": "UIAdvWidget", "components": []},
-              {"path": path, "components": [{"type": "CanvasGroup", "m_Alpha": 0.0}, image()]},
-              {"path": "UIAdvWidget/FrontCanvas/Plain", "components": [image()]}]
-    comp = {"_centerTalkBackdropCanvasGroup": ref(path, "CanvasGroup", None),
-            "_centerTalkBackdropImage": ref(path)}
+    widget = [
+        {"path": "UIAdvWidget", "components": []},
+        {"path": path, "components": [{"type": "CanvasGroup", "m_Alpha": 0.0}, image()]},
+        {"path": "UIAdvWidget/FrontCanvas/Plain", "components": [image()]},
+    ]
+    comp = {"_centerTalkBackdropCanvasGroup": ref(path, "CanvasGroup", None), "_centerTalkBackdropImage": ref(path)}
     assert advui.backdrop_path(widget, comp) == path
     with pytest.raises(RuntimeError, match="BACKDROP|_centerTalkBackdrop"):
         advui.backdrop_path(widget, {**comp, "_centerTalkBackdropImage": ref("UIAdvWidget/FrontCanvas/Plain")})
@@ -513,8 +858,15 @@ def test_backdrop_filter_and_the_backdrop_node():
 
 def test_blur_settings():
     """The blur of a backdrop-filter talk window: renderer 0's UIRendererFeature record and its shader object."""
-    feature = {"class": "Fwk.UI.Rendering.UIRendererFeature", "m_Active": 1, "_blurIterations": 3, "_blurOffset": 1.0,
-               "_blurDownsample": 1, "_blurBlendRateMax": 0.3, "_dualKawaseBlurShader": "Hidden/UI/DualKawaseBlur"}
+    feature = {
+        "class": "Fwk.UI.Rendering.UIRendererFeature",
+        "m_Active": 1,
+        "_blurIterations": 3,
+        "_blurOffset": 1.0,
+        "_blurDownsample": 1,
+        "_blurBlendRateMax": 0.3,
+        "_dualKawaseBlurShader": "Hidden/UI/DualKawaseBlur",
+    }
 
     class Shader:
         def __init__(self, name):
@@ -528,15 +880,26 @@ def test_blur_settings():
             self.active = active
 
         def graphics(self):
-            return {"defaultPipeline": "P", "pipelines": {"P": {"m_RendererDataList": ["R0"], "m_DefaultRendererIndex": 0}},
-                    "renderers": {"R0": {"m_RendererFeatures": [{**feature, "m_Active": self.active}]}}}
+            return {
+                "defaultPipeline": "P",
+                "pipelines": {"P": {"m_RendererDataList": ["R0"], "m_DefaultRendererIndex": 0}},
+                "renderers": {"R0": {"m_RendererFeatures": [{**feature, "m_Active": self.active}]}},
+            }
 
         def renderer_shaders(self, name):
             assert name == "R0"
             return [Shader("Hidden/Other"), Shader("Hidden/UI/DualKawaseBlur")]
+
     blur, shader = advui.blur_settings(Player())
-    assert blur == {"renderer": "R0", "active": True, "iterations": 3, "offset": 1.0, "downsample": 1,
-                    "blendRateMax": 0.3, "shader": "Hidden/UI/DualKawaseBlur"}
+    assert blur == {
+        "renderer": "R0",
+        "active": True,
+        "iterations": 3,
+        "offset": 1.0,
+        "downsample": 1,
+        "blendRateMax": 0.3,
+        "shader": "Hidden/UI/DualKawaseBlur",
+    }
     assert shader.m_ParsedForm.m_Name == "Hidden/UI/DualKawaseBlur"
     with pytest.raises(NotImplementedError, match="not active"):
         advui.blur_settings(Player(0))

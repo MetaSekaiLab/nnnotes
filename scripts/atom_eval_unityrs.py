@@ -19,6 +19,7 @@ NNNOTES_ATOM_<NAME>) takes:
 
 Nothing here is used by nnnotes itself.
 """
+
 from __future__ import annotations
 
 import json
@@ -54,6 +55,7 @@ def _build() -> str:
         import hashlib
         from pathlib import Path
         import unity_rs
+
         mods = sorted(Path(unity_rs.__file__).parent.glob("_native*"))
         _BUILD.append(hashlib.sha256(mods[0].read_bytes()).hexdigest()[:12] if mods else "unknown")
     return _BUILD[0]
@@ -75,7 +77,7 @@ def portable(path: str) -> str:
 
 @dataclass(frozen=True)
 class RsTextureInput(TextureInput):
-    source: tuple | None = field(default=None, compare=False, repr=False)     # (UnityRs, file index, path id)
+    source: tuple | None = field(default=None, compare=False, repr=False)  # (UnityRs, file index, path id)
 
 
 @dataclass(frozen=True)
@@ -85,6 +87,7 @@ class RsMeshInput(MeshInput):
 
 def _class_name(class_id: int) -> str:
     from UnityPy.enums import ClassIDType
+
     try:
         return ClassIDType(class_id).name
     except ValueError:
@@ -104,32 +107,45 @@ class HybridBundle(UnityBundle):
     def _rs_index(self):
         if self._rs is None:
             from unity_rs import UnityRs
+
             self._rs = UnityRs.from_bytes(self._data, name="bundle")
             names = {f.index: portable(f.path) for f in self._rs.files()}
-            self._index = {(names[o.file_index], o.path_id): o.file_index for o in self._rs.objects()
-                           if o.class_id == 28}
+            self._index = {
+                (names[o.file_index], o.path_id): o.file_index for o in self._rs.objects() if o.class_id == 28
+            }
         return self._rs, self._index
 
     def texture_input(self, obj: ObjectInfo) -> TextureInput:
         inp = super().texture_input(obj)
         rs, index = self._rs_index()
         fi = index.get((obj.file, obj.path_id))
-        return RsTextureInput(inp.data, inp.width, inp.height, inp.format, inp.version, inp.platform,
-                              inp.platform_blob, source=None if fi is None else (rs, fi, obj.path_id))
+        return RsTextureInput(
+            inp.data,
+            inp.width,
+            inp.height,
+            inp.format,
+            inp.version,
+            inp.platform,
+            inp.platform_blob,
+            source=None if fi is None else (rs, fi, obj.path_id),
+        )
 
 
 def open_hybrid(data: bytes) -> HybridBundle:
     from nnnotes.unity import load_bytes
+
     data = bytes(data)
     return HybridBundle(load_bytes(data), data)
 
 
 class RsBundle:
     """unity-rs alone, as far as its Python API goes (conformance checks only)."""
+
     typetree_form = "json"
 
     def __init__(self, data: bytes):
         from unity_rs import UnityRs
+
         self.rs = UnityRs.from_bytes(bytes(data), name="bundle")
         self._files = self.rs.files()
         self._names = [portable(f.path) for f in self._files]
@@ -185,13 +201,19 @@ class RsBundle:
 
     def sprite_image(self, obj: ObjectInfo):
         from PIL import Image
+
         ri = self.rs.read_sprite(*self._loc(obj))
         return Image.frombytes("RGBA", (ri.width, ri.height), ri.rgba)
 
     def texture_input(self, obj: ObjectInfo) -> TextureInput:
         tt = self.typetree(obj)
-        return RsTextureInput(b"", int(tt.get("m_Width", 0)), int(tt.get("m_Height", 0)),
-                              int(tt.get("m_TextureFormat", 0)), source=(self.rs, *self._loc(obj)))
+        return RsTextureInput(
+            b"",
+            int(tt.get("m_Width", 0)),
+            int(tt.get("m_Height", 0)),
+            int(tt.get("m_TextureFormat", 0)),
+            source=(self.rs, *self._loc(obj)),
+        )
 
     def mesh_input(self, obj: ObjectInfo) -> MeshInput:
         return RsMeshInput(obj.class_name, (), 0, source=(self.rs, *self._loc(obj)))
@@ -201,32 +223,65 @@ class RsBundle:
         by_file: dict[str, list] = {n: [] for n in self._names}
         for info in self._infos:
             o = self._raw_info[(info.file, info.path_id)]
-            rec = {"pathId": info.path_id, "classId": info.class_id, "class": info.class_name,
-                   "byteSize": info.byte_size}
+            rec = {
+                "pathId": info.path_id,
+                "classId": info.class_id,
+                "class": info.class_name,
+                "byteSize": info.byte_size,
+            }
             if o.name is not None:
                 rec["name"] = o.name
             by_file[info.file].append(rec)
             classes[info.class_name] = classes.get(info.class_name, 0) + 1
             if info.class_id == 142:
                 ab = self.rs.read_asset_bundle(*self._loc(info))
-                d = {"file": info.file, "pathId": info.path_id, "name": ab.name,
-                     "assetBundleName": ab.asset_bundle_name, "dependencies": list(ab.dependencies),
-                     "isStreamedSceneAssetBundle": bool(ab.is_streamed_scene_asset_bundle)}
+                d = {
+                    "file": info.file,
+                    "pathId": info.path_id,
+                    "name": ab.name,
+                    "assetBundleName": ab.asset_bundle_name,
+                    "dependencies": list(ab.dependencies),
+                    "isStreamedSceneAssetBundle": bool(ab.is_streamed_scene_asset_bundle),
+                }
                 if all(fid == 0 for _p, _i, _s, (fid, _pid) in ab.container):
-                    d["container"] = [{"path": p, "file": info.file if pid else None, "pathId": int(pid) or None,
-                                       "preloadIndex": pi, "preloadSize": ps} for p, pi, ps, (_fid, pid) in ab.container]
+                    d["container"] = [
+                        {
+                            "path": p,
+                            "file": info.file if pid else None,
+                            "pathId": int(pid) or None,
+                            "preloadIndex": pi,
+                            "preloadSize": ps,
+                        }
+                        for p, pi, ps, (_fid, pid) in ab.container
+                    ]
                 bundles.append(d)
             elif info.class_id == 115:
                 m = self.rs.read_mono_script(*self._loc(info))
-                scripts.append({"file": info.file, "pathId": info.path_id, "assembly": m.assembly_name,
-                                "namespace": m.namespace, "class": m.class_name, "name": m.name})
+                scripts.append(
+                    {
+                        "file": info.file,
+                        "pathId": info.path_id,
+                        "assembly": m.assembly_name,
+                        "namespace": m.namespace,
+                        "class": m.class_name,
+                        "name": m.name,
+                    }
+                )
         for f, n in sorted(zip(self._files, self._names), key=lambda x: x[1]):
-            files.append({"name": n, "unityVersion": f.unity_version,
-                          "objects": sorted(by_file[n], key=lambda r: r["pathId"])})
-        resources = sorted(({"name": portable(r.path), "size": int(r.byte_size)} for r in self.rs.resources()),
-                           key=lambda r: r["name"])
-        return {"files": files, "resources": resources, "assetBundles": bundles, "scripts": scripts,
-                "classes": classes, "objects": len(self._infos)}
+            files.append(
+                {"name": n, "unityVersion": f.unity_version, "objects": sorted(by_file[n], key=lambda r: r["pathId"])}
+            )
+        resources = sorted(
+            ({"name": portable(r.path), "size": int(r.byte_size)} for r in self.rs.resources()), key=lambda r: r["name"]
+        )
+        return {
+            "files": files,
+            "resources": resources,
+            "assetBundles": bundles,
+            "scripts": scripts,
+            "classes": classes,
+            "objects": len(self._infos),
+        }
 
 
 @cache
@@ -249,6 +304,7 @@ def _mode(fmt: int) -> str:
     if hit is None:
         from UnityPy.export.Texture2DConverter import CONV_TABLE, pillow
         from UnityPy.enums import TextureFormat
+
         try:
             fn, args = CONV_TABLE[TextureFormat(fmt)]
         except (KeyError, ValueError):
@@ -264,6 +320,7 @@ def _mode(fmt: int) -> str:
 
 def _decode(inp: TextureInput, keep: bool = False):
     from PIL import Image
+
     if not inp.width or not inp.height:
         raise Unsupported("empty.texture", f"{inp.width}x{inp.height} texture")
     src = getattr(inp, "source", None)
@@ -309,6 +366,7 @@ def _png_with(compression):
             FALLBACKS["png"] += 1
             return png_atom.encode(image, level)
         return kept[1].encode("png", compression=level if compression == "level" else compression)
+
     return encode
 
 
@@ -331,6 +389,7 @@ def png_encode_fast() -> Impl:
 def _mesh(inp: MeshInput):
     import numpy as np
     from nnnotes.atoms.mesh import Channel, MeshArrays, Primitive
+
     src = getattr(inp, "source", None)
     if src is None:
         raise Unsupported("empty.mesh", "no unity-rs object for this mesh")
@@ -369,4 +428,5 @@ def _mesh(inp: MeshInput):
 @cache
 def mesh_arrays() -> Impl:
     from nnnotes.atoms import mesh as mesh_atom
+
     return Impl(_id(_rs(), "obj"), _mesh, mesh_atom.cost)

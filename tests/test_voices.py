@@ -1,6 +1,7 @@
 """The voices index on synthetic master tables, synthetic ACBs and synthetic cri.audio results (no game data): every
 source, the ACB cue tables, the statuses, content apart from availability, the stage, the layout document and the
 command."""
+
 import argparse
 import copy
 import json
@@ -57,8 +58,13 @@ def utf(name: str, cols: list, rows: list[dict]) -> bytes:
 
 
 def afs2(ids: list[int]) -> bytes:
-    return b"AFS2" + bytes([1, 4, 2, 0]) + struct.pack("<IHH", len(ids), 32, 0) + b"".join(
-        struct.pack("<H", i) for i in ids) + bytes(4 * (len(ids) + 1))
+    return (
+        b"AFS2"
+        + bytes([1, 4, 2, 0])
+        + struct.pack("<IHH", len(ids), 32, 0)
+        + b"".join(struct.pack("<H", i) for i in ids)
+        + bytes(4 * (len(ids) + 1))
+    )
 
 
 def tlv(code: int, payload: bytes) -> bytes:
@@ -70,8 +76,18 @@ def acb_bytes(*, names, cues, waves, synths=(), seqs=(), tracks=(), events=(), b
     tables = {
         "CueNameTable": utf("CueName", [("CueName", 0xA), ("CueIndex", 2)], names),
         "CueTable": utf("Cue", [("CueId", 4), ("ReferenceType", 0), ("ReferenceIndex", 2), ("Length", 4)], cues),
-        "WaveformTable": utf("Waveform", [("MemoryAwbId", 2), ("StreamAwbId", 2), ("Streaming", 0),
-                                          ("NumChannels", 0), ("SamplingRate", 2), ("NumSamples", 4)], waves),
+        "WaveformTable": utf(
+            "Waveform",
+            [
+                ("MemoryAwbId", 2),
+                ("StreamAwbId", 2),
+                ("Streaming", 0),
+                ("NumChannels", 0),
+                ("SamplingRate", 2),
+                ("NumSamples", 4),
+            ],
+            waves,
+        ),
         "SynthTable": utf("Synth", [("Type", 0), ("ReferenceItems", 0xB)], list(synths)),
         "SequenceTable": utf("Sequence", [("Type", 0), ("TrackIndex", 0xB)], list(seqs)),
         "TrackTable": utf("Track", [("EventIndex", 2)], list(tracks)),
@@ -88,8 +104,14 @@ def u16(*v) -> bytes:
 
 
 def wave(awb_id, samples, streaming=0):
-    return {"MemoryAwbId": awb_id, "StreamAwbId": awb_id, "Streaming": streaming, "NumChannels": 1,
-            "SamplingRate": RATE, "NumSamples": samples}
+    return {
+        "MemoryAwbId": awb_id,
+        "StreamAwbId": awb_id,
+        "Streaming": streaming,
+        "NumChannels": 1,
+        "SamplingRate": RATE,
+        "NumSamples": samples,
+    }
 
 
 def simple_acb(cues: dict, order: list[int], samples: dict) -> bytes:
@@ -111,34 +133,49 @@ def simple_acb(cues: dict, order: list[int], samples: dict) -> bytes:
 # ---------------------------------------------------------------- acb
 def test_cue_streams_follow_every_reference_kind():
     data = acb_bytes(
-        names=[{"CueName": "wave", "CueIndex": 0}, {"CueName": "synth", "CueIndex": 1},
-               {"CueName": "seq", "CueIndex": 2}, {"CueName": "block", "CueIndex": 3},
-               {"CueName": "streamed", "CueIndex": 4}, {"CueName": "none", "CueIndex": 5},
-               {"CueName": "wave", "CueIndex": 1}, {"CueName": "bad", "CueIndex": 9}],
-        cues=[{"CueId": 10, "ReferenceType": 1, "ReferenceIndex": 0, "Length": 1500},
-              {"CueId": 11, "ReferenceType": 2, "ReferenceIndex": 0},
-              {"CueId": 12, "ReferenceType": 3, "ReferenceIndex": 0},
-              {"CueId": 13, "ReferenceType": 8, "ReferenceIndex": 0},
-              {"CueId": 14, "ReferenceType": 1, "ReferenceIndex": 3},
-              {"CueId": 15, "ReferenceType": 0, "ReferenceIndex": 0}],
+        names=[
+            {"CueName": "wave", "CueIndex": 0},
+            {"CueName": "synth", "CueIndex": 1},
+            {"CueName": "seq", "CueIndex": 2},
+            {"CueName": "block", "CueIndex": 3},
+            {"CueName": "streamed", "CueIndex": 4},
+            {"CueName": "none", "CueIndex": 5},
+            {"CueName": "wave", "CueIndex": 1},
+            {"CueName": "bad", "CueIndex": 9},
+        ],
+        cues=[
+            {"CueId": 10, "ReferenceType": 1, "ReferenceIndex": 0, "Length": 1500},
+            {"CueId": 11, "ReferenceType": 2, "ReferenceIndex": 0},
+            {"CueId": 12, "ReferenceType": 3, "ReferenceIndex": 0},
+            {"CueId": 13, "ReferenceType": 8, "ReferenceIndex": 0},
+            {"CueId": 14, "ReferenceType": 1, "ReferenceIndex": 3},
+            {"CueId": 15, "ReferenceType": 0, "ReferenceIndex": 0},
+        ],
         waves=[wave(5, 500), wave(3, 300), wave(9, 900), wave(0, 7, streaming=1)],
         synths=[{"ReferenceItems": u16(1, 1, 2, 1, 1, 1)}, {"ReferenceItems": u16(1, 2, 0, 0, 1, 0)}],
         seqs=[{"TrackIndex": u16(0)}],
         tracks=[{"EventIndex": 0}, {"EventIndex": 1}, {"EventIndex": 0xFFFF}],
-        events=[{"Command": tlv(0, b"") + tlv(2000, u16(2, 1)) + tlv(146, b"\0\0\0\0")},
-                {"Command": tlv(2003, u16(3, 0))}],
+        events=[
+            {"Command": tlv(0, b"") + tlv(2000, u16(2, 1)) + tlv(146, b"\0\0\0\0")},
+            {"Command": tlv(2003, u16(3, 0))},
+        ],
         blockseqs=[{"TrackIndex": u16(2), "BlockIndex": u16(0)}],
         blocks=[{"TrackIndex": u16(1)}],
-        awb=[3, 5, 9])
+        awb=[3, 5, 9],
+    )
     cues = acb.cue_streams(data)
-    assert list(cues) == ["wave", "synth", "seq", "block", "streamed", "none"]    # a repeated name keeps the first
-    assert cues["wave"] == {"cueId": 10, "lengthMs": 1500, "streams": [
-        {"stream": 2, "awbId": 5, "samples": 500, "sampleRate": RATE, "channels": 1}]}
-    assert [s["stream"] for s in cues["synth"]["streams"]] == [1, 3]           # nested synth; each waveform once
-    assert [s["stream"] for s in cues["seq"]["streams"]] == [3]                # track event note-on -> synth
-    assert [s["stream"] for s in cues["block"]["streams"]] == [3]              # block -> track -> sequence
-    assert cues["streamed"]["streams"] == [{"streamed": True, "awbId": 0, "samples": 7, "sampleRate": RATE,
-                                            "channels": 1}]
+    assert list(cues) == ["wave", "synth", "seq", "block", "streamed", "none"]  # a repeated name keeps the first
+    assert cues["wave"] == {
+        "cueId": 10,
+        "lengthMs": 1500,
+        "streams": [{"stream": 2, "awbId": 5, "samples": 500, "sampleRate": RATE, "channels": 1}],
+    }
+    assert [s["stream"] for s in cues["synth"]["streams"]] == [1, 3]  # nested synth; each waveform once
+    assert [s["stream"] for s in cues["seq"]["streams"]] == [3]  # track event note-on -> synth
+    assert [s["stream"] for s in cues["block"]["streams"]] == [3]  # block -> track -> sequence
+    assert cues["streamed"]["streams"] == [
+        {"streamed": True, "awbId": 0, "samples": 7, "sampleRate": RATE, "channels": 1}
+    ]
     assert cues["none"]["streams"] == []
     assert acb.awb_ids(afs2([7, 2])) == [7, 2]
     with pytest.raises(acb.AcbError):
@@ -146,10 +183,15 @@ def test_cue_streams_follow_every_reference_kind():
 
 
 def test_utf_tables_and_commands():
-    t = utf("T", [("a", 0), ("b", 2), ("c", 4), ("s", 0xA), ("d", 0xB)],
-            [{"a": 1, "b": 2, "c": 3, "s": "x", "d": b"\1\2"}, {"a": 4, "s": "", "d": b""}])
-    assert acb.utf_table(t) == [{"a": 1, "b": 2, "c": 3, "s": "x", "d": b"\1\2"},
-                                {"a": 4, "b": 0, "c": 0, "s": "", "d": b""}]
+    t = utf(
+        "T",
+        [("a", 0), ("b", 2), ("c", 4), ("s", 0xA), ("d", 0xB)],
+        [{"a": 1, "b": 2, "c": 3, "s": "x", "d": b"\1\2"}, {"a": 4, "s": "", "d": b""}],
+    )
+    assert acb.utf_table(t) == [
+        {"a": 1, "b": 2, "c": 3, "s": "x", "d": b"\1\2"},
+        {"a": 4, "b": 0, "c": 0, "s": "", "d": b""},
+    ]
     assert acb.commands(tlv(2000, u16(2, 7)) + tlv(65, b"\0\0\0\1")) == [(2000, u16(2, 7)), (65, b"\0\0\0\1")]
     assert acb.u16s(u16(1, 2, 3)) == [1, 2, 3]
 
@@ -165,74 +207,193 @@ def snd(i, sheet, cue, cat=2):
 
 TABLES = {
     "MasterCharacter": [
-        {"_id": 1, "_nameTextID": "Character_Name_Alpha", "_shortNameTextID": "Short_Alpha",
-         "_enDisplayNameTextId": "En_Alpha"},
-        {"_id": 2, "_nameTextID": "Character_Name_Beta_Gamma", "_shortNameTextID": "Short_Gamma",
-         "_enDisplayNameTextId": "En_Gamma"}],
-    "MasterSoundCueSheet": [{"_id": 1, "_cueSheetName": "Bgm"}, {"_id": 10, "_cueSheetName": "VoiceSystem_01"},
-                            {"_id": 11, "_cueSheetName": "VoiceSystem_02"},
-                            {"_id": 12, "_cueSheetName": "VoiceLive_01"},
-                            {"_id": 13, "_cueSheetName": "VoiceGone"}, {"_id": 14, "_cueSheetName": "spot_01_01_01"},
-                            {"_id": 15, "_cueSheetName": "VoiceBroken"}],
+        {
+            "_id": 1,
+            "_nameTextID": "Character_Name_Alpha",
+            "_shortNameTextID": "Short_Alpha",
+            "_enDisplayNameTextId": "En_Alpha",
+        },
+        {
+            "_id": 2,
+            "_nameTextID": "Character_Name_Beta_Gamma",
+            "_shortNameTextID": "Short_Gamma",
+            "_enDisplayNameTextId": "En_Gamma",
+        },
+    ],
+    "MasterSoundCueSheet": [
+        {"_id": 1, "_cueSheetName": "Bgm"},
+        {"_id": 10, "_cueSheetName": "VoiceSystem_01"},
+        {"_id": 11, "_cueSheetName": "VoiceSystem_02"},
+        {"_id": 12, "_cueSheetName": "VoiceLive_01"},
+        {"_id": 13, "_cueSheetName": "VoiceGone"},
+        {"_id": 14, "_cueSheetName": "spot_01_01_01"},
+        {"_id": 15, "_cueSheetName": "VoiceBroken"},
+    ],
     "MasterSound": [
-        snd(1, 1, "bgm_home", cat=0), snd(101, 10, "Growth_Alpha_RankUp_01"), snd(102, 10, "Shared_01"),
-        snd(103, 11, "Shared_01"), snd(104, 10, "Gone_01"), snd(105, 12, "Live_Alpha_Skill_01"),
-        snd(106, 13, "Gacha_Alpha_01"), snd(107, 12, "Live_Alpha_Gekisou_01"), snd(108, 12, "Live_Alpha_Combo_01"),
-        snd(109, 12, "Live_Alpha_Pair_01"), snd(110, 12, "Live_Gamma_Pair_01"), snd(111, 12, "Live_Alpha_Start_01"),
-        snd(112, 14, "IntroRandom"), snd(113, 14, "spot_01_01_01_alpha_01_tap"),
-        snd(114, 10, "Result_Alpha_Talk_CP_Gamma_Call_01"), snd(115, 15, "Broken_01"), snd(116, 99, "Orphan_01")],
+        snd(1, 1, "bgm_home", cat=0),
+        snd(101, 10, "Growth_Alpha_RankUp_01"),
+        snd(102, 10, "Shared_01"),
+        snd(103, 11, "Shared_01"),
+        snd(104, 10, "Gone_01"),
+        snd(105, 12, "Live_Alpha_Skill_01"),
+        snd(106, 13, "Gacha_Alpha_01"),
+        snd(107, 12, "Live_Alpha_Gekisou_01"),
+        snd(108, 12, "Live_Alpha_Combo_01"),
+        snd(109, 12, "Live_Alpha_Pair_01"),
+        snd(110, 12, "Live_Gamma_Pair_01"),
+        snd(111, 12, "Live_Alpha_Start_01"),
+        snd(112, 14, "IntroRandom"),
+        snd(113, 14, "spot_01_01_01_alpha_01_tap"),
+        snd(114, 10, "Result_Alpha_Talk_CP_Gamma_Call_01"),
+        snd(115, 15, "Broken_01"),
+        snd(116, 99, "Orphan_01"),
+    ],
     "MasterTalk": [
-        {"_id": 561, "_characterId": 1, "_costumeId": 1, "_category": 1, "_textId": "Talk_Text_561",
-         "_voiceSoundId": 101, "_startAt": "", "_unlockCharacterRank": 1},
+        {
+            "_id": 561,
+            "_characterId": 1,
+            "_costumeId": 1,
+            "_category": 1,
+            "_textId": "Talk_Text_561",
+            "_voiceSoundId": 101,
+            "_startAt": "",
+            "_unlockCharacterRank": 1,
+        },
         {"_id": 562, "_characterId": 1, "_category": 0, "_textId": "Talk_Text_562", "_voiceSoundId": 102},
-        {"_id": 563, "_characterId": 2, "_category": 2, "_textId": "Talk_Text_563", "_voiceSoundId": 104,
-         "_seasonStartAt": "4/1"},
+        {
+            "_id": 563,
+            "_characterId": 2,
+            "_category": 2,
+            "_textId": "Talk_Text_563",
+            "_voiceSoundId": 104,
+            "_seasonStartAt": "4/1",
+        },
         {"_id": 564, "_characterId": 2, "_category": 9, "_textId": "Talk_Missing", "_voiceSoundId": 999},
-        {"_id": 565, "_characterId": 1, "_category": 0, "_textId": "", "_voiceSoundId": 115}],
-    "MasterCharacterVoice": [{"_id": 1, "_characterId": 2, "_type": 3, "_textId": "CharacterVoice_1",
-                              "_soundId": 103, "_scoreRank": 0, "_startAt": "2026/01/01 0:00:00"}],
+        {"_id": 565, "_characterId": 1, "_category": 0, "_textId": "", "_voiceSoundId": 115},
+    ],
+    "MasterCharacterVoice": [
+        {
+            "_id": 1,
+            "_characterId": 2,
+            "_type": 3,
+            "_textId": "CharacterVoice_1",
+            "_soundId": 103,
+            "_scoreRank": 0,
+            "_startAt": "2026/01/01 0:00:00",
+        }
+    ],
     "MasterMemberCard": [
-        {"_id": 1, "_characterID": 1, "_nameTextID": "Card_1", "_gachaVoiceTextId": "Gacha_1",
-         "_gachaVoiceSoundId": 106, "_startAt": "2026-01-01 0:00:00"},
-        {"_id": 2, "_characterID": 2, "_nameTextID": "Card_2", "_gachaVoiceTextId": "", "_gachaVoiceSoundId": 0}],
-    "MasterLiveCharacter": [{"_id": 1, "_characterID": 1, "_liveSkillVoiceTextID": "LiveSkill_1",
-                             "_liveSkillVoiceSoundID": 105}],
-    "MasterLiveGekisouVoice": [{"_id": 1, "_characterID": 1, "_gekisouVoiceType": 3, "_voiceTextID": "Gekisou_1",
-                                "_voiceID": 107}],
-    "MasterLiveDialogueCommon": [{"_id": 1, "_characterID": 1, "_dialogueType": 1, "_comboVoiceTextID": "Common_1",
-                                  "_comboVoiceSoundID": 108}],
-    "MasterLiveDialogueFixedPair": [{"_id": 1, "_dialogueType": 1, "_characterID01": 1, "_characterID02": 2,
-                                     "_character01ComboVoiceTextID": "Pair_1a", "_character01ComboVoiceSoundID": 109,
-                                     "_character02ComboVoiceTextID": "Pair_1b", "_character02ComboVoiceSoundID": 110,
-                                     "_unlockFriendshipRank": 0}],
-    "MasterLiveStartCharacterVoice": [{"_id": 1, "_characterId": 1, "_voiceTextId": "Start_1", "_voiceSoundId": 111,
-                                       "_unlockCharacterRank": 0}],
-    "MasterHomeSpot": [{"_id": 10001, "_nameTextId": "Spot_Name_10001", "_characterIds": [1, 2],
-                        "_introSoundId": 112, "_startAt": "2026/01/01 0:00:00"}],
+        {
+            "_id": 1,
+            "_characterID": 1,
+            "_nameTextID": "Card_1",
+            "_gachaVoiceTextId": "Gacha_1",
+            "_gachaVoiceSoundId": 106,
+            "_startAt": "2026-01-01 0:00:00",
+        },
+        {"_id": 2, "_characterID": 2, "_nameTextID": "Card_2", "_gachaVoiceTextId": "", "_gachaVoiceSoundId": 0},
+    ],
+    "MasterLiveCharacter": [
+        {"_id": 1, "_characterID": 1, "_liveSkillVoiceTextID": "LiveSkill_1", "_liveSkillVoiceSoundID": 105}
+    ],
+    "MasterLiveGekisouVoice": [
+        {"_id": 1, "_characterID": 1, "_gekisouVoiceType": 3, "_voiceTextID": "Gekisou_1", "_voiceID": 107}
+    ],
+    "MasterLiveDialogueCommon": [
+        {"_id": 1, "_characterID": 1, "_dialogueType": 1, "_comboVoiceTextID": "Common_1", "_comboVoiceSoundID": 108}
+    ],
+    "MasterLiveDialogueFixedPair": [
+        {
+            "_id": 1,
+            "_dialogueType": 1,
+            "_characterID01": 1,
+            "_characterID02": 2,
+            "_character01ComboVoiceTextID": "Pair_1a",
+            "_character01ComboVoiceSoundID": 109,
+            "_character02ComboVoiceTextID": "Pair_1b",
+            "_character02ComboVoiceSoundID": 110,
+            "_unlockFriendshipRank": 0,
+        }
+    ],
+    "MasterLiveStartCharacterVoice": [
+        {"_id": 1, "_characterId": 1, "_voiceTextId": "Start_1", "_voiceSoundId": 111, "_unlockCharacterRank": 0}
+    ],
+    "MasterHomeSpot": [
+        {
+            "_id": 10001,
+            "_nameTextId": "Spot_Name_10001",
+            "_characterIds": [1, 2],
+            "_introSoundId": 112,
+            "_startAt": "2026/01/01 0:00:00",
+        }
+    ],
     "MasterTitle": [{"_id": 1, "_voiceCharacterIds": [1]}, {"_id": 2, "_voiceCharacterIds": [1, 2]}],
 }
-TABLES["MasterText"] = [text(t, t.lower()) for t in (
-    "Character_Name_Alpha", "Short_Alpha", "En_Alpha", "Character_Name_Beta_Gamma", "Short_Gamma", "En_Gamma",
-    "Talk_Text_562", "Talk_Text_563", "CharacterVoice_1", "Gacha_1", "Card_1", "LiveSkill_1", "Gekisou_1", "Common_1",
-    "Pair_1a", "Pair_1b", "Start_1", "Spot_Name_10001")] + [
-    {"_id": "Talk_Text_561", "_japanese": "テストです", "_english": "Hello!", "_traditionalChinese": "測試",
-     "_simplifiedChinese": "測試", "_korean": "테스트"}]
+TABLES["MasterText"] = [
+    text(t, t.lower())
+    for t in (
+        "Character_Name_Alpha",
+        "Short_Alpha",
+        "En_Alpha",
+        "Character_Name_Beta_Gamma",
+        "Short_Gamma",
+        "En_Gamma",
+        "Talk_Text_562",
+        "Talk_Text_563",
+        "CharacterVoice_1",
+        "Gacha_1",
+        "Card_1",
+        "LiveSkill_1",
+        "Gekisou_1",
+        "Common_1",
+        "Pair_1a",
+        "Pair_1b",
+        "Start_1",
+        "Spot_Name_10001",
+    )
+] + [
+    {
+        "_id": "Talk_Text_561",
+        "_japanese": "テストです",
+        "_english": "Hello!",
+        "_traditionalChinese": "測試",
+        "_simplifiedChinese": "測試",
+        "_korean": "테스트",
+    }
+]
 
-for _t in voices.tables_of(voices.load_rules()):          # the story tables: no episodes here (test_voices_story)
+for _t in voices.tables_of(voices.load_rules()):  # the story tables: no episodes here (test_voices_story)
     TABLES.setdefault(_t, [])
 
-KEYS = ["Cri/Sound/Bgm", "Cri/Sound/InitialVoice", "Cri/Sound/VoiceBroken", "Cri/Sound/VoiceLive_01",
-        "Cri/Sound/VoiceSystem_01", "Cri/Sound/VoiceSystem_02", "Cri/Sound/adv_voice_x_01", "Cri/Sound/spot_01_01_01"]
+KEYS = [
+    "Cri/Sound/Bgm",
+    "Cri/Sound/InitialVoice",
+    "Cri/Sound/VoiceBroken",
+    "Cri/Sound/VoiceLive_01",
+    "Cri/Sound/VoiceSystem_01",
+    "Cri/Sound/VoiceSystem_02",
+    "Cri/Sound/adv_voice_x_01",
+    "Cri/Sound/spot_01_01_01",
+]
 
 # the decoded sheets: {sheet: ({cue: [awb ids]}, AWB order, {awb id: (stream name, samples)})}
 SHEETS = {
-    "VoiceSystem_01": ({"Growth_Alpha_RankUp_01": [0], "Shared_01": [1], "Extra_01": [2]}, [0, 1, 2],
-                       {0: ("Growth_Alpha_RankUp_01", 1000), 1: ("Shared_01", 1100), 2: ("Extra_01", 1200)}),
+    "VoiceSystem_01": (
+        {"Growth_Alpha_RankUp_01": [0], "Shared_01": [1], "Extra_01": [2]},
+        [0, 1, 2],
+        {0: ("Growth_Alpha_RankUp_01", 1000), 1: ("Shared_01", 1100), 2: ("Extra_01", 1200)},
+    ),
     "VoiceSystem_02": ({"Shared_01": [4], "Other_01": [3]}, [3, 4], {3: ("Other_01", 900), 4: ("Shared_01", 800)}),
-    "spot_01_01_01": ({"IntroRandom": [0, 1], "spot_01_01_01_alpha_01_tap": [2]}, [0, 1, 2],
-                      {0: ("IntroRandom", 500), 1: ("IntroRandom", 600), 2: ("spot_01_01_01_alpha_01_tap", 700)}),
-    "InitialVoice": ({"Title_1_App_ON_01": [0], "Title_1_Company_BR_01": [1], "Title_2_App_ON_01": [2]}, [0, 1, 2],
-                     {0: ("Title_1_App_ON_01", 10), 1: ("Title_1_Company_BR_01", 11), 2: ("Title_2_App_ON_01", 12)}),
+    "spot_01_01_01": (
+        {"IntroRandom": [0, 1], "spot_01_01_01_alpha_01_tap": [2]},
+        [0, 1, 2],
+        {0: ("IntroRandom", 500), 1: ("IntroRandom", 600), 2: ("spot_01_01_01_alpha_01_tap", 700)},
+    ),
+    "InitialVoice": (
+        {"Title_1_App_ON_01": [0], "Title_1_Company_BR_01": [1], "Title_2_App_ON_01": [2]},
+        [0, 1, 2],
+        {0: ("Title_1_App_ON_01", 10), 1: ("Title_1_Company_BR_01", 11), 2: ("Title_2_App_ON_01", 12)},
+    ),
 }
 
 
@@ -261,20 +422,41 @@ def audio_task(sheet: str, sheets=None) -> Task:
 def audio_result(store, sheet: str, unsupported: bool = False, sheets=None) -> dict:
     """A cri.audio result of a sheet, committed to `store` when given."""
     sheets = sheets or SHEETS
-    t = audio_task(sheet, sheets) if sheet in sheets else Task("cri.audio", 1, contract.sha256(sheet.encode()), {},
-                                                              {}, ())
+    t = (
+        audio_task(sheet, sheets)
+        if sheet in sheets
+        else Task("cri.audio", 1, contract.sha256(sheet.encode()), {}, {}, ())
+    )
     if unsupported:
-        return contract.result(t, [], [contract.item(t.id, "unsupported", why=contract.reason(
-            "unsupported.cri.awb_external", "streamed"), cls="ACB")])
+        return contract.result(
+            t,
+            [],
+            [
+                contract.item(
+                    t.id, "unsupported", why=contract.reason("unsupported.cri.awb_external", "streamed"), cls="ACB"
+                )
+            ],
+        )
     arts = []
     for n, name, file, samples in stream_files(sheet, sheets):
         data = f"{sheet}/{file}".encode()
-        content = store.add(data, "flac") if store is not None else {
-            "sha256": contract.sha256(data), "size": len(data), "mediaType": "audio/flac", "ext": "flac"}
-        arts.append(contract.artifact(f"{t.id}#{file}.flac", content, contract.provenance(t),
-                                      {"kind": "audio.stream", "format": "flac", "facts": {
-                                          "stream": n, "name": name, "sampleRate": RATE, "channels": 1,
-                                          "samples": samples}}))
+        content = (
+            store.add(data, "flac")
+            if store is not None
+            else {"sha256": contract.sha256(data), "size": len(data), "mediaType": "audio/flac", "ext": "flac"}
+        )
+        arts.append(
+            contract.artifact(
+                f"{t.id}#{file}.flac",
+                content,
+                contract.provenance(t),
+                {
+                    "kind": "audio.stream",
+                    "format": "flac",
+                    "facts": {"stream": n, "name": name, "sampleRate": RATE, "channels": 1, "samples": samples},
+                },
+            )
+        )
     res = contract.result(t, arts, [contract.item(t.id, "exported", artifacts=[a["id"] for a in arts], cls="ACB")])
     if store is not None:
         store.commit(res)
@@ -283,8 +465,10 @@ def audio_result(store, sheet: str, unsupported: bool = False, sheets=None) -> d
 
 def audio(store=None, sheets=None) -> dict:
     sheets = sheets or SHEETS
-    out = {s: voices.sheet_audio(audio_result(store, s, sheets=sheets), acb.cue_streams(sheet_acb(s, sheets)))
-           for s in sheets}
+    out = {
+        s: voices.sheet_audio(audio_result(store, s, sheets=sheets), acb.cue_streams(sheet_acb(s, sheets)))
+        for s in sheets
+    }
     out["VoiceBroken"] = voices.sheet_audio(audio_result(store, "VoiceBroken", unsupported=True), None)
     return out
 
@@ -310,38 +494,69 @@ def test_every_source_gives_rows():
         by.setdefault(r["source"]["name"], []).append(r["id"])
     assert by == {
         "Talk": ["MasterTalk:561", "MasterTalk:562", "MasterTalk:563", "MasterTalk:564", "MasterTalk:565"],
-        "CharacterVoice": ["MasterCharacterVoice:1"], "MemberCard": ["MasterMemberCard:1"],
-        "LiveCharacter": ["MasterLiveCharacter:1"], "LiveGekisouVoice": ["MasterLiveGekisouVoice:1"],
+        "CharacterVoice": ["MasterCharacterVoice:1"],
+        "MemberCard": ["MasterMemberCard:1"],
+        "LiveCharacter": ["MasterLiveCharacter:1"],
+        "LiveGekisouVoice": ["MasterLiveGekisouVoice:1"],
         "LiveDialogueCommon": ["MasterLiveDialogueCommon:1"],
         "LiveDialogueFixedPair": ["MasterLiveDialogueFixedPair:1:1", "MasterLiveDialogueFixedPair:1:2"],
-        "LiveStartCharacterVoice": ["MasterLiveStartCharacterVoice:1"], "HomeSpot": ["MasterHomeSpot:10001"],
-        "Title": [f"Title:{c}:{k}" for c in (1, 2) for k in ("TitleCall", "SplashCompanyBR", "SplashCompanyFT",
-                                                             "SplashCompanyBilibili")],
-        "Sound": ["MasterSound:113", "MasterSound:114", "MasterSound:116"]}
-    assert doc["coverage"]["sources"]["MemberCard"]["empty"] == 1              # a card without a gacha voice
+        "LiveStartCharacterVoice": ["MasterLiveStartCharacterVoice:1"],
+        "HomeSpot": ["MasterHomeSpot:10001"],
+        "Title": [
+            f"Title:{c}:{k}"
+            for c in (1, 2)
+            for k in ("TitleCall", "SplashCompanyBR", "SplashCompanyFT", "SplashCompanyBilibili")
+        ],
+        "Sound": ["MasterSound:113", "MasterSound:114", "MasterSound:116"],
+    }
+    assert doc["coverage"]["sources"]["MemberCard"]["empty"] == 1  # a card without a gacha voice
     assert doc["tables"] == voices.tables_of(voices.load_rules())
 
 
 def test_the_rank_up_talk_is_found_with_its_file():
     doc = build(audio())
     r = row(doc, "MasterTalk:561")
-    assert r["source"] == {"name": "Talk", "table": "MasterTalk", "row": 561, "column": "_voiceSoundId",
-                           "type": {"enum": "CharacterVoiceMasterType", "value": 0, "name": "Talk"}}
+    assert r["source"] == {
+        "name": "Talk",
+        "table": "MasterTalk",
+        "row": 561,
+        "column": "_voiceSoundId",
+        "type": {"enum": "CharacterVoiceMasterType", "value": 0, "name": "Talk"},
+    }
     assert r["characters"] == [1]
     assert r["category"] == {"name": "CharacterRankUp", "enum": "TalkCategory", "value": 1}
     assert r["sound"] == {"id": 101, "category": 2, "sheet": "VoiceSystem_01", "cue": "Growth_Alpha_RankUp_01"}
-    assert r["text"] == {"id": "Talk_Text_561", "texts": {"ja": "テストです", "en": "Hello!", "zh-Hant": "測試",
-                                                          "zh-Hans": "測試", "ko": "테스트"}}
-    assert r["conditions"] == {"_costumeId": 1, "_unlockCharacterRank": 1}       # the empty _startAt left out
+    assert r["text"] == {
+        "id": "Talk_Text_561",
+        "texts": {"ja": "テストです", "en": "Hello!", "zh-Hant": "測試", "zh-Hans": "測試", "ko": "테스트"},
+    }
+    assert r["conditions"] == {"_costumeId": 1, "_unlockCharacterRank": 1}  # the empty _startAt left out
     assert r["availability"] == {"master": True, "catalog": True, "exported": True} and r["status"] == "ok"
     tid = audio_task("VoiceSystem_01").id
     data = b"VoiceSystem_01/Growth_Alpha_RankUp_01"
-    assert r["audio"] == {"cueId": 0, "lengthMs": 100, "streams": [{
-        "stream": 1, "artifact": f"{tid}#Growth_Alpha_RankUp_01.flac", "file": "Growth_Alpha_RankUp_01.flac",
-        "sha256": contract.sha256(data), "size": len(data), "sampleRate": RATE, "channels": 1, "samples": 1000,
-        "seconds": round(1000 / RATE, 6)}]}
-    for q in (dict(characters={1}, text="hello"), dict(category="character-rank-up"),
-              dict(category="Talk.CharacterRankUp", characters={1}), dict(text="テスト", language="ja")):
+    assert r["audio"] == {
+        "cueId": 0,
+        "lengthMs": 100,
+        "streams": [
+            {
+                "stream": 1,
+                "artifact": f"{tid}#Growth_Alpha_RankUp_01.flac",
+                "file": "Growth_Alpha_RankUp_01.flac",
+                "sha256": contract.sha256(data),
+                "size": len(data),
+                "sampleRate": RATE,
+                "channels": 1,
+                "samples": 1000,
+                "seconds": round(1000 / RATE, 6),
+            }
+        ],
+    }
+    for q in (
+        dict(characters={1}, text="hello"),
+        dict(category="character-rank-up"),
+        dict(category="Talk.CharacterRankUp", characters={1}),
+        dict(text="テスト", language="ja"),
+    ):
         assert [x["id"] for x in voices.select(doc, **q)] == ["MasterTalk:561"], q
     assert voices.select(doc, text="テスト", language="en") == []
     assert voices.character_ids(doc, "alpha") == {1} and voices.character_ids(doc, "en_gamma-ko") == {2}
@@ -353,19 +568,26 @@ def test_statuses_and_gaps():
     doc = build(audio())
     status = {r["id"]: r["status"] for r in doc["rows"]}
     assert status["MasterTalk:562"] == "ok"
-    assert status["MasterTalk:563"] == "missing-cue"                          # the ACB has no Gone_01
-    assert status["MasterTalk:564"] == "no-value" and row(doc, "MasterTalk:564")["detail"] == \
-        "MasterSound has no row 999"
+    assert status["MasterTalk:563"] == "missing-cue"  # the ACB has no Gone_01
+    assert (
+        status["MasterTalk:564"] == "no-value" and row(doc, "MasterTalk:564")["detail"] == "MasterSound has no row 999"
+    )
     assert row(doc, "MasterTalk:564")["availability"] == {"master": False, "catalog": None, "exported": False}
-    assert status["MasterTalk:565"] == "unsupported" and row(doc, "MasterTalk:565")["detail"] == \
-        "unsupported.cri.awb_external"
-    assert status["MasterMemberCard:1"] == "missing-key"                      # no key Cri/Sound/VoiceGone
-    assert status["MasterLiveCharacter:1"] == "not-exported"                  # a key, no cri.audio result
+    assert (
+        status["MasterTalk:565"] == "unsupported"
+        and row(doc, "MasterTalk:565")["detail"] == "unsupported.cri.awb_external"
+    )
+    assert status["MasterMemberCard:1"] == "missing-key"  # no key Cri/Sound/VoiceGone
+    assert status["MasterLiveCharacter:1"] == "not-exported"  # a key, no cri.audio result
     assert row(doc, "MasterLiveCharacter:1")["availability"] == {"master": True, "catalog": True, "exported": False}
-    assert status["MasterSound:116"] == "no-value"                            # its sheet has no row
-    assert status["MasterSound:114"] == "missing-cue"                         # a MasterSound row the ACB lacks
-    assert [status[f"Title:{c}:{k}"] for c in (1, 2) for k in ("TitleCall", "SplashCompanyBR")] == \
-        ["ok", "ok", "ok", "missing-cue"]
+    assert status["MasterSound:116"] == "no-value"  # its sheet has no row
+    assert status["MasterSound:114"] == "missing-cue"  # a MasterSound row the ACB lacks
+    assert [status[f"Title:{c}:{k}"] for c in (1, 2) for k in ("TitleCall", "SplashCompanyBR")] == [
+        "ok",
+        "ok",
+        "ok",
+        "missing-cue",
+    ]
     assert status["Title:1:SplashCompanyBilibili"] == "missing-cue"
     cov = doc["coverage"]["sources"]
     assert cov["Talk"]["gaps"] == ["MasterTalk:563"] and cov["MemberCard"]["gaps"] == ["MasterMemberCard:1"]
@@ -380,7 +602,7 @@ def test_a_cue_in_two_sheets_resolves_in_its_own_sheet():
     a, b = row(doc, "MasterTalk:562"), row(doc, "MasterCharacterVoice:1")
     assert (a["sound"]["cue"], b["sound"]["cue"]) == ("Shared_01", "Shared_01")
     assert [(s["stream"], s["samples"]) for s in a["audio"]["streams"]] == [(2, 1100)]
-    assert [(s["stream"], s["samples"]) for s in b["audio"]["streams"]] == [(2, 800)]    # AWB order 3, 4
+    assert [(s["stream"], s["samples"]) for s in b["audio"]["streams"]] == [(2, 800)]  # AWB order 3, 4
     assert a["audio"]["streams"][0]["artifact"].startswith(audio_task("VoiceSystem_01").id)
     assert b["audio"]["streams"][0]["artifact"].startswith(audio_task("VoiceSystem_02").id)
     assert b["category"] == {"name": "RankUp", "enum": "CharacterVoiceType", "value": 3}
@@ -393,16 +615,23 @@ def test_several_characters_streams_and_inferences():
     assert [s["file"] for s in spot["audio"]["streams"]] == ["IntroRandom.flac", "IntroRandom_2.flac"]
     assert spot["names"] == {"spot": {c: f"spot_name_10001-{c}" for c in languages.LANGUAGES}}
     pair = [row(doc, f"MasterLiveDialogueFixedPair:1:{s}") for s in (1, 2)]
-    assert [(p["characters"], p["source"]["slot"], p["text"]["id"]) for p in pair] == \
-        [([1], "1", "Pair_1a"), ([2], "2", "Pair_1b")]
+    assert [(p["characters"], p["source"]["slot"], p["text"]["id"]) for p in pair] == [
+        ([1], "1", "Pair_1a"),
+        ([2], "2", "Pair_1b"),
+    ]
     tap = row(doc, "MasterSound:113")
     assert tap["characters"] == [] and tap["category"] == {"name": None} and tap["status"] == "ok"
     assert tap["inferred"] == {"situation": "SpotTap", "characters": [1], "rows": ["MasterHomeSpot:10001"]}
     call = row(doc, "MasterSound:114")
     assert call["inferred"] == {"situation": "ResultPairTalk", "characters": [1, 2]}
     title = row(doc, "Title:1:TitleCall")
-    assert title["source"] == {"name": "Title", "table": "MasterTitle", "rows": [1, 2], "column": "_voiceCharacterIds",
-                               "cue": "Title_{character}_App_ON_01"}
+    assert title["source"] == {
+        "name": "Title",
+        "table": "MasterTitle",
+        "rows": [1, 2],
+        "column": "_voiceCharacterIds",
+        "cue": "Title_{character}_App_ON_01",
+    }
     assert title["sound"] == {"id": None, "sheet": "InitialVoice", "cue": "Title_1_App_ON_01"}
     assert row(doc, "Title:2:TitleCall")["source"]["rows"] == [2]
     assert [x["id"] for x in voices.select(doc, characters={2}, source="Sound")] == ["MasterSound:114"]
@@ -413,7 +642,7 @@ def test_several_characters_streams_and_inferences():
 def test_content_is_apart_from_availability():
     exported, bare = build(audio()), build()
     content = ("id", "source", "characters", "category", "sound", "text", "names", "conditions", "inferred")
-    strip = lambda d: [{k: r[k] for k in content if k in r} for r in d["rows"]]     # noqa: E731
+    strip = lambda d: [{k: r[k] for k in content if k in r} for r in d["rows"]]  # noqa: E731
     assert strip(exported) == strip(bare)
     r = row(bare, "MasterTalk:561")
     assert r["status"] == "not-exported" and "audio" not in r
@@ -428,7 +657,7 @@ def test_reverse_coverage():
     doc = build(audio())
     rev = doc["coverage"]["reverse"]
     assert rev["prefixes"] == voices.load_rules()["voices"]["prefixes"]
-    assert rev["unreferencedKeys"] == ["Cri/Sound/adv_voice_x_01"]           # Bgm is under no prefix
+    assert rev["unreferencedKeys"] == ["Cri/Sound/adv_voice_x_01"]  # Bgm is under no prefix
     assert rev["unreferencedStreams"] == {"VoiceSystem_01": [[3, "Extra_01"]], "VoiceSystem_02": [[1, "Other_01"]]}
     assert rev["streams"] == 3 + 2 + 3 + 3
     assert voices.unreferenced_streams(doc) == 2
@@ -484,8 +713,10 @@ def planning(store, tmp: Path, keys=KEYS, skip=(), sheets=None, tables=None, doc
         deps[f"Cri/Sound/{sheet}"] = [stable]
     lid = {s: f"remote:{i}" for i, s in enumerate(sorted(raw))}
     locations = [{"id": lid[s], "primaryKey": s, "kind": "raw", "dependencies": []} for s in sorted(raw)]
-    locations += [{"id": f"remote:{100 + i}", "primaryKey": k, "kind": "asset", "dependencies": [lid[s] for s in d]}
-                  for i, (k, d) in enumerate(sorted(deps.items()))]
+    locations += [
+        {"id": f"remote:{100 + i}", "primaryKey": k, "kind": "asset", "dependencies": [lid[s] for s in d]}
+        for i, (k, d) in enumerate(sorted(deps.items()))
+    ]
     cat = {"rawFiles": [{"stable": s, "locations": [lid[s]]} for s in sorted(raw)], "locations": locations}
     link = FakeAddresses(doc or addresses_doc({k: [] for k in keys}))
     env = Env(store, {"catalogs": {"main": []}, "master": mdir, "views": ["voices"], "raw": raw, "index": cat})
@@ -497,8 +728,15 @@ def planning(store, tmp: Path, keys=KEYS, skip=(), sheets=None, tables=None, doc
             res = audio_result(store, sheet, sheets=sheets)
             env.done(audio_task(sheet, sheets).id, res["key"])
     b = Task("cri.audio", 1, raw["cri_assets_cri/sound/voicebroken"].sha256, {}, {}, ())
-    broken = contract.result(b, [], [contract.item(b.id, "unsupported", why=contract.reason(
-        "unsupported.cri.awb_external", "streamed"), cls="ACB")])
+    broken = contract.result(
+        b,
+        [],
+        [
+            contract.item(
+                b.id, "unsupported", why=contract.reason("unsupported.cri.awb_external", "streamed"), cls="ACB"
+            )
+        ],
+    )
     store.commit(broken)
     env.done(b.id, broken["key"])
     if results is not None:
@@ -525,14 +763,22 @@ def test_stage_subjects_inputs_and_waits(tmp_path):
     assert stage.subjects(env) == ["main"]
     task = describe(stage, "main", None, env)
     roles = sorted(i.role for i in task.inputs)
-    assert [r for r in roles if r.startswith("acb:")] == sorted(f"acb:{contract.sha256(sheet_acb(s))}"
-                                                               for s in SHEETS)   # not the unsupported sheet's
+    assert [r for r in roles if r.startswith("acb:")] == sorted(
+        f"acb:{contract.sha256(sheet_acb(s))}" for s in SHEETS
+    )  # not the unsupported sheet's
     assert [r for r in roles if not r.startswith("acb:")] == [
-        "addresses", "episodes", *sorted(f"master:{t}" for t in voices.tables_of(stage.rules)), "rules", "sheets"]
+        "addresses",
+        "episodes",
+        *sorted(f"master:{t}" for t in voices.tables_of(stage.rules)),
+        "rules",
+        "sheets",
+    ]
     sheets = contract.loads(store.read(task.input("sheets").sha256))
     assert sorted(sheets) == sorted([*SHEETS, "VoiceBroken"])
-    assert sheets["VoiceSystem_01"] == {"task": audio_task("VoiceSystem_01").id,
-                                        "acb": contract.sha256(sheet_acb("VoiceSystem_01"))}
+    assert sheets["VoiceSystem_01"] == {
+        "task": audio_task("VoiceSystem_01").id,
+        "acb": contract.sha256(sheet_acb("VoiceSystem_01")),
+    }
     assert sorted(task.context["audio"]) == sorted(stage.depends("main", env)[1:])
     assert stage.depends("main", env)[0] == "link.addresses:main"
     waiting = Env(store, env.facts)
@@ -554,8 +800,12 @@ def test_stage_document_equals_the_index_of_its_inputs(tmp_path):
     assert sorted(doc["snapshot"]["tables"]) == voices.tables_of(stage.rules)
     assert doc["snapshot"]["sheets"]["VoiceBroken"]["status"] == "unsupported"
     facts = res["artifacts"][0]["semantics"]["facts"]
-    assert facts == {"rows": len(doc["rows"]), "entries": voices.counts(doc), "gaps": voices.gaps(doc),
-                     "unreferenced": 2}
+    assert facts == {
+        "rows": len(doc["rows"]),
+        "entries": voices.counts(doc),
+        "gaps": voices.gaps(doc),
+        "unreferenced": 2,
+    }
     # described again: the same key; run again: the same bytes
     assert describe(voices.VoiceStage(), "main", None, env).key == task.key
     again = execute(task, store, registry(stage), force=True)
@@ -652,11 +902,14 @@ def export_dir(tmp: Path, store) -> Path:
 def test_command_list_search_summary(tmp_path, capsysbinary):
     out = export_dir(tmp_path, Store(tmp_path / "s"))
     common = argparse.Namespace()
-    command(["voices", "list", "--from", str(out), "--character", "Alpha", "--category", "Talk.CharacterRankUp"],
-            common)
+    command(
+        ["voices", "list", "--from", str(out), "--character", "Alpha", "--category", "Talk.CharacterRankUp"], common
+    )
     line = capsysbinary.readouterr().out.decode("utf-8")
-    assert line == "MasterTalk:561\tcharacter_name_alpha-ja\tTalk.CharacterRankUp\tVoiceSystem_01/" \
-                   "Growth_Alpha_RankUp_01\tok\tテストです\n"
+    assert (
+        line == "MasterTalk:561\tcharacter_name_alpha-ja\tTalk.CharacterRankUp\tVoiceSystem_01/"
+        "Growth_Alpha_RankUp_01\tok\tテストです\n"
+    )
     command(["voices", "search", "HELLO", "--from", str(out), "--language", "en", "--json"], common)
     rows = json.loads(capsysbinary.readouterr().out)
     assert [r["id"] for r in rows] == ["MasterTalk:561"]
@@ -692,17 +945,18 @@ def test_get_copies_the_exported_files(tmp_path, capsysbinary):
     command(["voices", "get", "101", "-o", str(tmp_path / "g2"), "--from", str(out)], argparse.Namespace())
     assert (tmp_path / "g2" / "Growth_Alpha_RankUp_01.flac").is_file()
     with pytest.raises(SystemExit) as e:
-        command(["voices", "get", "MasterTalk:563", "-o", str(tmp_path / "g3"), "--from", str(out)],
-                argparse.Namespace())
+        command(
+            ["voices", "get", "MasterTalk:563", "-o", str(tmp_path / "g3"), "--from", str(out)], argparse.Namespace()
+        )
     assert e.value.code == 1
     with pytest.raises(SystemExit) as e:
-        command(["voices", "get", "MasterTalk:1", "-o", str(tmp_path / "g4"), "--from", str(out)],
-                argparse.Namespace())
+        command(["voices", "get", "MasterTalk:1", "-o", str(tmp_path / "g4"), "--from", str(out)], argparse.Namespace())
     assert e.value.code == 2
 
 
 def test_get_without_an_export_decodes_the_one_sheet(tmp_path, capsysbinary, monkeypatch):
     from nnnotes import cri
+
     mdir = write_master(tmp_path / "m", TABLES)
     calls = []
 
@@ -729,8 +983,10 @@ def test_get_without_an_export_decodes_the_one_sheet(tmp_path, capsysbinary, mon
 
 # ---------------------------------------------------------------- laziness and documentation
 def test_voices_import_nothing_heavy():
-    code = ("import sys, nnnotes.voices, nnnotes.acb, nnnotes.storyvoices, nnnotes.advcommand; "
-            "print(sorted(m for m in ('UnityPy', 'numpy', 'PIL', 'nnnotes.cri') if m in sys.modules))")
+    code = (
+        "import sys, nnnotes.voices, nnnotes.acb, nnnotes.storyvoices, nnnotes.advcommand; "
+        "print(sorted(m for m in ('UnityPy', 'numpy', 'PIL', 'nnnotes.cri') if m in sys.modules))"
+    )
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, cwd=ROOT, check=True).stdout
     assert out.strip() == "[]"
 

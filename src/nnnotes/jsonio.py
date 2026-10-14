@@ -9,15 +9,16 @@ NaN has no such literal and raises, naming where it occurs.
 Most documents have no non-finite float: they are encoded by json.dumps directly, and only a document that
 json.dumps refuses (or whose text holds a placeholder) takes the walk that finds and replaces them.
 """
+
 from __future__ import annotations
 
 import json
 import math
 from pathlib import Path
 
-_POS, _NEG = "\x00nnnotes:+inf", "\x00nnnotes:-inf"        # placeholders, replaced after encoding
+_POS, _NEG = "\x00nnnotes:+inf", "\x00nnnotes:-inf"  # placeholders, replaced after encoding
 _TOKENS = ((json.dumps(_POS), "1e999"), (json.dumps(_NEG), "-1e999"))
-_MARK = json.dumps(_POS)[1:-len("+inf") - 1]                 # the placeholders' common prefix as JSON text
+_MARK = json.dumps(_POS)[1 : -len("+inf") - 1]  # the placeholders' common prefix as JSON text
 
 
 class _NaN(ValueError):
@@ -75,10 +76,10 @@ def dumps(obj, **kw) -> str:
     try:
         s = json.dumps(obj, allow_nan=False, **kw)
     except ValueError:
-        pass                                   # a non-finite float (or NaN): the walk below
+        pass  # a non-finite float (or NaN): the walk below
     else:
         if _MARK not in s:
-            return s                           # (a placeholder string in the data: the walk rejects it)
+            return s  # (a placeholder string in the data: the walk rejects it)
     found: list = []
     try:
         clean = _finite(obj, found)

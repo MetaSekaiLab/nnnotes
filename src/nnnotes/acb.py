@@ -12,6 +12,7 @@ list, the order in which cri.decode numbers the streams of `streams.json`.
 the waveform's sample count, rate and channels (for checking against the decoded streams). A waveform streamed from
 an external AWB has no stream number here (`streamed`).
 """
+
 from __future__ import annotations
 
 import struct
@@ -31,15 +32,15 @@ def utf_table(buf: bytes) -> list[dict]:
     """Rows of a CRI @UTF table (big endian; column storage 0x10 name flag, 0x30 constant, 0x50 per row)."""
     if bytes(buf[:4]) != UTF_MAGIC:
         raise AcbError("not an @UTF table")
-    size, = struct.unpack_from(">I", buf, 4)
-    t = memoryview(buf)[8:8 + size]
-    rows_off, = struct.unpack_from(">H", t, 2)
+    (size,) = struct.unpack_from(">I", buf, 4)
+    t = memoryview(buf)[8 : 8 + size]
+    (rows_off,) = struct.unpack_from(">H", t, 2)
     str_off, data_off = struct.unpack_from(">II", t, 4)
     ncol, row_w, nrow = struct.unpack_from(">HHI", t, 16)
     strings = bytes(t[str_off:data_off] if data_off > str_off else t[str_off:])
 
     def cstr(o):
-        return strings[o:strings.index(b"\0", o)].decode("utf-8")
+        return strings[o : strings.index(b"\0", o)].decode("utf-8")
 
     def value(p, typ):
         f = _FORMATS.get(typ)
@@ -49,7 +50,7 @@ def utf_table(buf: bytes) -> list[dict]:
             return cstr(struct.unpack_from(">I", t, p)[0]), p + 4
         if typ == 0xB:
             o, n = struct.unpack_from(">II", t, p)
-            return bytes(t[data_off + o:data_off + o + n]), p + 8
+            return bytes(t[data_off + o : data_off + o + n]), p + 8
         raise AcbError(f"@UTF column type {typ}")
 
     cols, p = [], 24
@@ -89,9 +90,9 @@ def commands(b: bytes) -> list[tuple[int, bytes]]:
     """An ACB command list: repeated (u16 code, u8 size, payload)."""
     out, p = [], 0
     while p + 3 <= len(b):
-        code, = struct.unpack_from(">H", b, p)
+        (code,) = struct.unpack_from(">H", b, p)
         n = b[p + 2]
-        out.append((code, b[p + 3:p + 3 + n]))
+        out.append((code, b[p + 3 : p + 3 + n]))
         p += 3 + n
     return out
 
@@ -104,7 +105,7 @@ def awb_ids(awb: bytes) -> list[int]:
     """The file ids of an AFS2 archive in stored order (u16 little endian after the 16-byte header)."""
     if bytes(awb[:4]) != AFS2_MAGIC:
         raise AcbError("not an AFS2 archive")
-    count, = struct.unpack_from("<I", awb, 8)
+    (count,) = struct.unpack_from("<I", awb, 8)
     width = awb[6] or 2
     fmt = {2: "<H", 4: "<I"}.get(width)
     if fmt is None:
@@ -178,8 +179,11 @@ def cue_streams(acb: bytes) -> dict[str, dict]:
         streams = []
         for wi in found:
             w = waves[wi]
-            info = {"samples": w.get("NumSamples"), "sampleRate": w.get("SamplingRate"),
-                    "channels": w.get("NumChannels")}
+            info = {
+                "samples": w.get("NumSamples"),
+                "sampleRate": w.get("SamplingRate"),
+                "channels": w.get("NumChannels"),
+            }
             memory = (w.get("Streaming") or 0) != 1
             aid = w.get("MemoryAwbId") if "MemoryAwbId" in w else w.get("Id")
             if memory and aid in position:

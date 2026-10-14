@@ -52,3 +52,8 @@ include = ["/src", "/tests", "/docs", "/scripts", "/CHANGELOG.md", "/README.md",
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+extend-exclude = [".venv"]

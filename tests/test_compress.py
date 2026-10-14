@@ -22,12 +22,14 @@ def test_gzip_bytes_round_trip(data):
     assert compress.gzip_bytes(data) == out
 
 
-@pytest.mark.skipif(hasattr(zlib, "ZLIBNG_VERSION") or "ng" in zlib.ZLIB_RUNTIME_VERSION,
-                    reason="zlib-ng writes other deflate streams")
+@pytest.mark.skipif(
+    hasattr(zlib, "ZLIBNG_VERSION") or "ng" in zlib.ZLIB_RUNTIME_VERSION, reason="zlib-ng writes other deflate streams"
+)
 def test_gzip_bytes_are_fixed():
     data = b'{"a":[1,2,3],"b":"' + b"xyz" * 40 + b'"}'
-    assert compress.gzip_bytes(data).hex() == ("1f8b08000000000002ffab564a54b28a36d431d2318ed5514a52b252aaa8ac1a10a4540b"
-                                               "008c9586d38c000000")
+    assert compress.gzip_bytes(data).hex() == (
+        "1f8b08000000000002ffab564a54b28a36d431d2318ed5514a52b252aaa8ac1a10a4540b008c9586d38c000000"
+    )
 
 
 def test_brotli_round_trip():
@@ -41,7 +43,7 @@ def test_encode_decode_and_names():
     assert compress.encode("gzip", TEXT) == compress.gzip_bytes(TEXT)
     with pytest.raises(ValueError):
         compress.encode("none", TEXT)
-    assert compress.decode("assets/x.json", TEXT) == TEXT          # other names: as they are
+    assert compress.decode("assets/x.json", TEXT) == TEXT  # other names: as they are
     assert compress.SUFFIXES == {"gzip": ".gz", "br": ".br"}
     assert {"json", "glsl", "moc3", "atlas", "skel", "bin", "wav", "glb"} == compress.COMPRESSIBLE
     compress.check("none")
@@ -54,7 +56,7 @@ def test_holds_and_decoded_size(tmp_path):
     gz.write_bytes(compress.gzip_bytes(TEXT))
     assert compress.holds(gz, TEXT) and not compress.holds(gz, TEXT + b" ")
     assert compress.decoded_size(gz) == len(TEXT)
-    gz.write_bytes(compress.gzip_bytes(TEXT)[:-9])                  # truncated
+    gz.write_bytes(compress.gzip_bytes(TEXT)[:-9])  # truncated
     assert not compress.holds(gz, TEXT)
     raw = tmp_path / "a.json"
     raw.write_bytes(TEXT)

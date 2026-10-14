@@ -8,6 +8,7 @@ plugin, which undoes the XOR, so the HCA keycode is the decimal value itself.
 This reads it from a user-supplied APK (or an extracted data.unity3d); nothing
 is hard-coded here.
 """
+
 from __future__ import annotations
 
 import io
@@ -21,7 +22,8 @@ DATA_IN_APK = "assets/bin/Data/data.unity3d"
 
 
 def _load_data(src: Path):
-    import UnityPy                    # here, not at import: the modules that import this one seldom call it
+    import UnityPy  # here, not at import: the modules that import this one seldom call it
+
     src = Path(src)
     if src.is_dir() or src.suffix.lower() in (".apk", ".zip", ".apks", ".xapk"):
         with ApkSet(src) as z:
@@ -58,7 +60,7 @@ def find_key(src: Path) -> int:
             if s >= 4:
                 n = struct.unpack_from("<i", raw, s - 4)[0]
                 if 0 < n <= len(m.group()):
-                    last = raw[s:s + n]
+                    last = raw[s : s + n]
         if last is None or not last.isdigit():
             return 0  # empty key: decryption disabled
         return int(last)

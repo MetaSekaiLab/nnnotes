@@ -15,6 +15,7 @@ Spine files are written from the SkeletonDataAsset reference chain (write_skelet
   SkeletonDataAsset.atlasAssets[i].atlasFile -> <name>.atlas
   SpineAtlasAsset.materials[j]._MainTex    -> PNG named after atlas page j
 """
+
 from __future__ import annotations
 
 import io
@@ -36,14 +37,17 @@ def _master(md: Path, name: str) -> list[dict]:
 
 
 def _mat4(m) -> list[float]:
-    return [float(x) for x in m.T.reshape(-1)]          # column-major
+    return [float(x) for x in m.T.reshape(-1)]  # column-major
 
 
 def _atlas_pages(text: str) -> list[str]:
     """Page file names of a Spine atlas (a page line is followed by 'size:')."""
     lines = [ln.strip() for ln in text.splitlines()]
-    return [ln for i, ln in enumerate(lines)
-            if ln and ":" not in ln and i + 1 < len(lines) and lines[i + 1].startswith("size:")]
+    return [
+        ln
+        for i, ln in enumerate(lines)
+        if ln and ":" not in ln and i + 1 < len(lines) and lines[i + 1].startswith("size:")
+    ]
 
 
 def _text_bytes(ta) -> bytes:
@@ -67,7 +71,7 @@ def write_skeleton(o, write, written_atlases: dict[int, str] | None = None) -> d
     raw = _text_bytes(sk)
     is_json = raw.lstrip()[:1] == b"{"
     ext = ".json" if is_json else ".skel"
-    sk_file = sk.m_Name if sk.m_Name.endswith(ext) else f"{sk.m_Name}{ext}"   # as the atlas below
+    sk_file = sk.m_Name if sk.m_Name.endswith(ext) else f"{sk.m_Name}{ext}"  # as the atlas below
     write(sk_file, raw)
     atlases = []
     for ap in o.read().atlasAssets:
@@ -77,24 +81,29 @@ def write_skeleton(o, write, written_atlases: dict[int, str] | None = None) -> d
             araw = _text_bytes(af)
             atext = araw.decode("utf-8")
             a_file = af.m_Name if af.m_Name.endswith(".atlas") else f"{af.m_Name}.atlas"
-            write(a_file, araw)                  # the atlas text exactly as the game stores it
+            write(a_file, araw)  # the atlas text exactly as the game stores it
             pages = _atlas_pages(atext)
             mats = list(atlas_asset.materials)
             if len(mats) != len(pages):
                 raise RuntimeError(f"{a_file}: {len(pages)} pages vs {len(mats)} materials")
             for page, mp in zip(pages, mats):
                 mat = mp.read()
-                tex = next(e.m_Texture.read() for k, e in mat.m_SavedProperties.m_TexEnvs
-                           if k == "_MainTex")
-                buf = io.BytesIO(); texture_image(tex).save(buf, format="PNG")
+                tex = next(e.m_Texture.read() for k, e in mat.m_SavedProperties.m_TexEnvs if k == "_MainTex")
+                buf = io.BytesIO()
+                texture_image(tex).save(buf, format="PNG")
                 write(page, buf.getvalue())
             written[ap.path_id] = a_file
         atlases.append(written[ap.path_id])
     return {
-        "name": sda["m_Name"], "skeleton": sk_file, "atlases": atlases,
-        "scale": sda["scale"], "defaultMix": sda["defaultMix"],
-        "mixes": [{"from": f, "to": t, "duration": d} for f, t, d in
-                  zip(sda.get("fromAnimation", []), sda.get("toAnimation", []), sda.get("duration", []))],
+        "name": sda["m_Name"],
+        "skeleton": sk_file,
+        "atlases": atlases,
+        "scale": sda["scale"],
+        "defaultMix": sda["defaultMix"],
+        "mixes": [
+            {"from": f, "to": t, "duration": d}
+            for f, t, d in zip(sda.get("fromAnimation", []), sda.get("toAnimation", []), sda.get("duration", []))
+        ],
     }
 
 
@@ -111,14 +120,27 @@ def spine_characters(objs: list, graph, skeletons: dict, world_of) -> list[dict]
             out.append({"path": path, "skeletonData": None, "animation": None, "world": None})
             continue
         at = anim_o.object_reader.read_typetree()
-        out.append({
-            "path": path,
-            "skeletonData": skeletons[anim_o.skeletonDataAsset.path_id]["name"],
-            "animation": {k: at[k] for k in ("_animationName", "loop", "timeScale",
-                                             "initialSkinName", "initialFlipX", "initialFlipY",
-                                             "pmaVertexColors", "tintBlack", "zSpacing")},
-            "world": world_of(at["m_GameObject"]),
-        })
+        out.append(
+            {
+                "path": path,
+                "skeletonData": skeletons[anim_o.skeletonDataAsset.path_id]["name"],
+                "animation": {
+                    k: at[k]
+                    for k in (
+                        "_animationName",
+                        "loop",
+                        "timeScale",
+                        "initialSkinName",
+                        "initialFlipX",
+                        "initialFlipY",
+                        "pmaVertexColors",
+                        "tintBlack",
+                        "zSpacing",
+                    )
+                },
+                "world": world_of(at["m_GameObject"]),
+            }
+        )
     return out
 
 
@@ -129,12 +151,16 @@ def tap_targets(objs: list, graph, world_of) -> list[dict]:
     for o in objs:
         sc = o.read_typetree()
         focus_o = _target(o.read()._focus)
-        out.append({
-            "path": graph.path(graph.tf_of_go[sc["m_GameObject"]["m_PathID"]]),
-            **strip_pptrs({k: v for k, v in sc.items() if k != "_focus"}),
-            "world": world_of(sc["m_GameObject"]),
-            "focusWorld": None if focus_o is None else world_of(focus_o.object_reader.read_typetree()["m_GameObject"]),
-        })
+        out.append(
+            {
+                "path": graph.path(graph.tf_of_go[sc["m_GameObject"]["m_PathID"]]),
+                **strip_pptrs({k: v for k, v in sc.items() if k != "_focus"}),
+                "world": world_of(sc["m_GameObject"]),
+                "focusWorld": None
+                if focus_o is None
+                else world_of(focus_o.object_reader.read_typetree()["m_GameObject"]),
+            }
+        )
     out.sort(key=lambda c: c["_characterId"])
     return out
 
@@ -186,8 +212,7 @@ def extract(cat: Catalog, md: Path, spot_id: int, out_dir: Path) -> dict:
         "name": {lang[1:]: txt.get(sp.get("_nameTextId"), {}).get(lang, "") for lang in LANGS},
         "tapTalk": {str(k): v for k, v in sorted(taps.items())},
         "situationSettings": settings,
-        "controller": {k: v for k, v in controller.items()
-                       if k not in ("_spotSpineCharacters", "_characters")},
+        "controller": {k: v for k, v in controller.items() if k not in ("_spotSpineCharacters", "_characters")},
         "characters": characters,
         "spineCharacters": spine_chars,
         "skeletons": list(skeleton_files.values()),

@@ -37,6 +37,7 @@ alpha channel from the alpha stream's luma); its audio is the first audio stream
 in its bit-exact mode, so the files are reproducible. An MPEG-1 or H.264 elementary stream carries no timestamps:
 ffmpeg derives them (`-fflags +genpts`), from the frame rate of the stream's header for H.264.
 """
+
 from __future__ import annotations
 
 import re
@@ -60,13 +61,13 @@ AUDIO_BITRATE = "192k"
 # movieInfo.codecType (CriMana.CodecType)
 CODECS = {1: "sofdec.prime", 5: "h264", 9: "vp9"}
 ADX_SIGNATURE = b"\x80\x00"
-ADX_FRAME = 18                 # bytes of one ADX frame: 32 samples of one channel
-ADX_END = b"\x80\x01"          # the end-of-stream block after the last frame: 0x8001, its size, zero padding
-HCA_SIGNATURES = (b"HCA\x00", b"\xc8\xc3\xc1\x00")      # plain, and with the high bits of an encrypted header
+ADX_FRAME = 18  # bytes of one ADX frame: 32 samples of one channel
+ADX_END = b"\x80\x01"  # the end-of-stream block after the last frame: 0x8001, its size, zero padding
+HCA_SIGNATURES = (b"HCA\x00", b"\xc8\xc3\xc1\x00")  # plain, and with the high bits of an encrypted header
 KINDS = {b"@SFV": "video", b"@ALP": "alpha", b"@SFA": "audio", b"@SBT": "subtitle"}
 KIND_ORDER = ("video", "alpha", "audio", "subtitle")
-VIDEO_CODECS = {1: "mpeg1", 5: "h264", 9: "vp9"}          # VIDEO_HDRINFO mpeg_codec
-AUDIO_CODECS = {2: "adx", 4: "hca"}                       # AUDIO_HDRINFO audio_codec
+VIDEO_CODECS = {1: "mpeg1", 5: "h264", 9: "vp9"}  # VIDEO_HDRINFO mpeg_codec
+AUDIO_CODECS = {2: "adx", 4: "hca"}  # AUDIO_HDRINFO audio_codec
 EXTENSIONS = {"vp9": "ivf", "mpeg1": "m1v", "h264": "h264", "adx": "adx", "hca": "hca"}
 SBT_RECORD = struct.Struct("<5I")
 CODEC_REASON, STREAM_REASON = "unsupported.usm.codec", "unsupported.usm.stream"
@@ -84,6 +85,7 @@ class Unsupported(ValueError):
 class Stream:
     """One stream of a USM: `kind` video / alpha / audio / subtitle, its channel, its codec (vp9, h264, mpeg1; adx,
     hca; sbt), the first row of its header table ({} without one) and its bytes as stored, unmasked."""
+
     kind: str
     channel: int
     codec: str
@@ -134,8 +136,11 @@ def masks(key: int) -> tuple[bytes, bytes, bytes]:
     t[0x1E] = (t[0x05] - t[0x16]) & 0xFF
     t[0x1F] = t[0x1D] ^ t[0x13]
     audio = b"URUC"
-    return (bytes(t), bytes(x ^ 0xFF for x in t),
-            bytes(audio[(i >> 1) & 3] if i & 1 else t[i] ^ 0xFF for i in range(0x20)))
+    return (
+        bytes(t),
+        bytes(x ^ 0xFF for x in t),
+        bytes(audio[(i >> 1) & 3] if i & 1 else t[i] ^ 0xFF for i in range(0x20)),
+    )
 
 
 def unmask_video(payload: bytes, mask1: bytes, mask2: bytes) -> bytes:
@@ -171,20 +176,21 @@ def chunks(data: bytes):
     while i < len(data):
         if len(data) - i < 0x20:
             raise ValueError(f"USM: truncated chunk at {i:#x}")
-        sig = data[i:i + 4]
+        sig = data[i : i + 4]
         size = struct.unpack_from(">I", data, i + 4)[0]
         offset, padding = data[i + 9], struct.unpack_from(">H", data, i + 10)[0]
         channel, dtype = data[i + 12], data[i + 15]
         end = i + 8 + size
         if end > len(data) or 8 + offset > size + 8 - padding:
             raise ValueError(f"USM: chunk {sig!r} at {i:#x} overruns the file")
-        yield sig, channel, dtype, data[i + 8 + offset:end - padding]
+        yield sig, channel, dtype, data[i + 8 + offset : end - padding]
         i = end
 
 
 def _header(payload: bytes) -> dict:
     """The first row of a stream's @UTF header table (its scalar and string columns)."""
     from .acb import utf_table
+
     rows = utf_table(payload)
     return {k: v for k, v in rows[0].items() if isinstance(k, str) and not isinstance(v, bytes)} if rows else {}
 
@@ -211,9 +217,9 @@ def _sniff_video(data: bytes) -> str | None:
     body = head.lstrip(b"\0")
     if len(head) - len(body) < 2 or body[:1] != b"\x01" or len(body) < 2:
         return None
-    if body[1] == 0xB3:                       # MPEG sequence header
+    if body[1] == 0xB3:  # MPEG sequence header
         return "mpeg1"
-    return "h264" if body[1] & 0x80 == 0 else None    # an H.264 NAL unit header
+    return "h264" if body[1] & 0x80 == 0 else None  # an H.264 NAL unit header
 
 
 def _audio_codec(header: dict, first: bytes, what: str) -> str:
@@ -252,7 +258,7 @@ def demux(data: bytes, key: int) -> list[Stream]:
     for kind, channel in sorted(parts, key=lambda k: (KIND_ORDER.index(k[0]), k[1])):
         ps, header, what = parts[(kind, channel)], headers.get((kind, channel), {}), f"{kind} channel {channel}"
         if kind in ("video", "alpha"):
-            codec = _video_codec(header, ps[0][:0x40], what)      # a payload's first 0x40 bytes are never masked
+            codec = _video_codec(header, ps[0][:0x40], what)  # a payload's first 0x40 bytes are never masked
             if key:
                 ps = _form(codec, ps, lambda p: unmask_video(p, m1, m2))
         elif kind == "audio":
@@ -296,8 +302,8 @@ def _superframe(p: bytes) -> int:
     at = 32 if p[:4] == b"DKIF" else 0
     if len(p) < at + 12:
         return 0
-    size = int.from_bytes(p[at:at + 4], "little")
-    d = p[at + 12:at + 12 + size]
+    size = int.from_bytes(p[at : at + 4], "little")
+    d = p[at + 12 : at + 12 + size]
     if not d or len(d) != size or d[-1] & 0xE0 != 0xC0:
         return 0
     marker = d[-1]
@@ -305,8 +311,10 @@ def _superframe(p: bytes) -> int:
     index = 2 + frames * width
     if len(d) < index or d[-index] != marker:
         return 0
-    sizes = sum(int.from_bytes(d[len(d) - index + 1 + i * width:len(d) - index + 1 + (i + 1) * width], "little")
-                for i in range(frames))
+    sizes = sum(
+        int.from_bytes(d[len(d) - index + 1 + i * width : len(d) - index + 1 + (i + 1) * width], "little")
+        for i in range(frames)
+    )
     return int(sizes + index == len(d))
 
 
@@ -318,8 +326,13 @@ def video_facts(s: Stream) -> dict:
         w, ht, rate, scale, frames = struct.unpack_from("<HHIII", s.data, 12)
         return {"codec": "vp9", "width": w, "height": ht, "frameRate": [rate, scale], "frames": frames}
     facts = {"codec": s.codec}
-    for k, name in (("width", "width"), ("height", "height"), ("disp_width", "displayWidth"),
-                    ("disp_height", "displayHeight"), ("total_frames", "frames")):
+    for k, name in (
+        ("width", "width"),
+        ("height", "height"),
+        ("disp_width", "displayWidth"),
+        ("disp_height", "displayHeight"),
+        ("total_frames", "frames"),
+    ):
         if h.get(k) is not None:
             facts[name] = h[k]
     if h.get("framerate_n") and h.get("framerate_d"):
@@ -341,10 +354,14 @@ def adx_info(adx: bytes) -> dict:
     if adx[:2] != ADX_SIGNATURE:
         raise NotImplementedError(f"USM audio is not ADX: {adx[:4]!r}")
     data_at = struct.unpack_from(">H", adx, 2)[0] + 4
-    if adx[data_at - 6:data_at] != b"(c)CRI":
+    if adx[data_at - 6 : data_at] != b"(c)CRI":
         raise ValueError("ADX header without the (c)CRI mark")
-    return {"codec": "adx", "channels": adx[7], "sampleRate": struct.unpack_from(">I", adx, 8)[0],
-            "samples": struct.unpack_from(">I", adx, 12)[0]}
+    return {
+        "codec": "adx",
+        "channels": adx[7],
+        "sampleRate": struct.unpack_from(">I", adx, 8)[0],
+        "samples": struct.unpack_from(">I", adx, 12)[0],
+    }
 
 
 def adx_frames(adx: bytes) -> bytes:
@@ -357,8 +374,12 @@ def adx_frames(adx: bytes) -> bytes:
     if len(adx) < end:
         raise ValueError(f"ADX: {len(adx)} bytes, the header counts frames up to byte {end}")
     tail = adx[end:]
-    if tail and not (tail[:2] == ADX_END and len(tail) >= 4 and len(tail) == 4 + struct.unpack_from(">H", tail, 2)[0]
-                     and not tail[4:].strip(bytes(1))):
+    if tail and not (
+        tail[:2] == ADX_END
+        and len(tail) >= 4
+        and len(tail) == 4 + struct.unpack_from(">H", tail, 2)[0]
+        and not tail[4:].strip(bytes(1))
+    ):
         raise ValueError(f"ADX: the {len(tail)} bytes after the last frame are not an end-of-stream block")
     return adx[:end]
 
@@ -374,7 +395,7 @@ def hca_info(hca: bytes) -> dict:
     i = head.find(b"fmt\x00")
     if i < 0:
         raise ValueError("HCA header without fmt")
-    info["channels"], info["sampleRate"] = hca[i + 4], int.from_bytes(hca[i + 5:i + 8], "big")
+    info["channels"], info["sampleRate"] = hca[i + 4], int.from_bytes(hca[i + 5 : i + 8], "big")
     info["blocks"] = struct.unpack_from(">I", hca, i + 8)[0]
     for tag in (b"comp", b"dec\x00"):
         j = head.find(tag)
@@ -400,13 +421,22 @@ def subtitle_records(data: bytes) -> list[dict]:
         if unit == 0:
             raise ValueError(f"subtitle record at byte {i - SBT_RECORD.size}: time unit 0")
         if len(data) - i < size:
-            raise ValueError(f"subtitle record at byte {i - SBT_RECORD.size}: text of {size} bytes, {len(data) - i} "
-                             f"left")
-        text = data[i:i + size]
+            raise ValueError(
+                f"subtitle record at byte {i - SBT_RECORD.size}: text of {size} bytes, {len(data) - i} left"
+            )
+        text = data[i : i + size]
         i += size
         stripped = text.rstrip(b"\0")
-        out.append({"language": language, "timeUnit": unit, "start": start, "duration": duration, "text": stripped,
-                    "terminator": len(text) - len(stripped)})
+        out.append(
+            {
+                "language": language,
+                "timeUnit": unit,
+                "start": start,
+                "duration": duration,
+                "text": stripped,
+                "terminator": len(text) - len(stripped),
+            }
+        )
     return out
 
 
@@ -434,15 +464,19 @@ def _cues(records: list[dict]) -> list[tuple[int, int, list[str]]]:
 
 def subtitle_srt(records: list[dict]) -> str:
     """SubRip of one channel's records (UnicodeDecodeError when a text is not UTF-8)."""
-    return "".join(f"{n}\n{_clock(a, ',')} --> {_clock(b, ',')}\n" + "\n".join(lines) + "\n\n"
-                   for n, (a, b, lines) in enumerate(_cues(records), 1))
+    return "".join(
+        f"{n}\n{_clock(a, ',')} --> {_clock(b, ',')}\n" + "\n".join(lines) + "\n\n"
+        for n, (a, b, lines) in enumerate(_cues(records), 1)
+    )
 
 
 def subtitle_webvtt(records: list[dict]) -> str:
     """WebVTT of one channel's records, `&`, `<`, `>` escaped (UnicodeDecodeError when a text is not UTF-8)."""
     esc = str.maketrans({"&": "&amp;", "<": "&lt;", ">": "&gt;"})
-    return "WEBVTT\n\n" + "".join(f"{_clock(a, '.')} --> {_clock(b, '.')}\n" + "\n".join(ln.translate(esc) for ln in lines)
-                                  + "\n\n" for a, b, lines in _cues(records))
+    return "WEBVTT\n\n" + "".join(
+        f"{_clock(a, '.')} --> {_clock(b, '.')}\n" + "\n".join(ln.translate(esc) for ln in lines) + "\n\n"
+        for a, b, lines in _cues(records)
+    )
 
 
 def subtitle_json(channel: int, records: list[dict]) -> dict:
@@ -463,8 +497,11 @@ def subtitle_json(channel: int, records: list[dict]) -> dict:
 # --- movie files ------------------------------------------------------------------------
 # ffmpeg's input options per codec: an MPEG-1 or H.264 elementary stream has no timestamps (+genpts); an H.264 one
 # no frame rate either (the header's)
-INPUT_FORMATS = {"vp9": ("-f", "ivf"), "mpeg1": ("-fflags", "+genpts", "-f", "mpegvideo"),
-                 "h264": ("-fflags", "+genpts", "-f", "h264")}
+INPUT_FORMATS = {
+    "vp9": ("-f", "ivf"),
+    "mpeg1": ("-fflags", "+genpts", "-f", "mpegvideo"),
+    "h264": ("-fflags", "+genpts", "-f", "h264"),
+}
 # the WebM re-encode of a stream that is not VP9 or has an alpha stream: libvpx VP9 at a constant quality, one
 # thread layout (the bytes do not depend on the machine's cores)
 VP9_ENCODE = ("-c:v", "libvpx-vp9", "-b:v", "0", "-crf", "20", "-row-mt", "0", "-threads", "8", "-flags:v", "+bitexact")
@@ -494,6 +531,7 @@ def stream_input(s: Stream, work: Path, key: int = 0, vgmstream: str | None = No
         return ["-f", "adx", "-i", str(p)]
     if s.kind == "audio":
         from . import crikey
+
         if vgmstream is None:
             raise ValueError(f"{s.name}: an HCA stream needs vgmstream")
         p, wav = work / f"{s.name}.hca", work / f"{s.name}.wav"
@@ -561,8 +599,11 @@ def webm_args(streams: list[Stream], inputs: dict[str, list[str]], dst: Path) ->
         size = display_size(video)
         crop = f",crop={size[0]}:{size[1]}:0:0" if size else ""
         graph = f"[0:v]setpts=N/FRAME_RATE/TB{crop}[c];"
-        graph += (f"[1:v]setpts=N/FRAME_RATE/TB{crop},format=gray[a];[c][a]alphamerge,format=yuva420p[v]" if alpha
-                  else "[c]format=yuv420p[v]")
+        graph += (
+            f"[1:v]setpts=N/FRAME_RATE/TB{crop},format=gray[a];[c][a]alphamerge,format=yuva420p[v]"
+            if alpha
+            else "[c]format=yuv420p[v]"
+        )
         args += ["-filter_complex", graph]
         maps += ["-map", "[v]"]
         codecs = [*VP9_ENCODE, *(VP9_ALPHA if alpha else ())]
@@ -577,8 +618,9 @@ def run_ffmpeg(ffmpeg: str, args: list[str], what: str) -> None:
         raise RuntimeError(f"ffmpeg {what} failed: {r.stderr[-2000:]}")
 
 
-def write_webm(streams: list[Stream], dst: Path, work: Path, ffmpeg: str, key: int = 0,
-               vgmstream: str | None = None) -> list[Stream]:
+def write_webm(
+    streams: list[Stream], dst: Path, work: Path, ffmpeg: str, key: int = 0, vgmstream: str | None = None
+) -> list[Stream]:
     """The WebM of a movie's streams (webm_streams, webm_args) -> dst, through files in `work` (removed after).
     Returns the streams it carries."""
     picked = webm_streams(streams)
@@ -596,6 +638,7 @@ def usm_asset(cat: "Catalog", key: str) -> tuple[dict, Path]:
     """(the movie's CriWare.Assets MonoBehaviour typetree, the USM file) of a `Cri/Video/...` key."""
     import UnityPy
     from .addressables import remote_path
+
     info, raw = None, None
     for off in cat._entry(key)["dependencies"]:
         e = cat._by_off.get(off)
@@ -623,6 +666,7 @@ def export(cat: "Catalog", key: str, dst: Path, cri_key: int, work: Path) -> dic
     stream; the first audio stream as Opus). Returns its record (movie info, the audio's source; `encode` when the
     video was re-encoded)."""
     from .config import tool
+
     info, raw = usm_asset(cat, key)
     mi = info["movieInfo"]
     codec = CODECS.get(mi["codecType"], f"codecType {mi['codecType']}")
@@ -630,19 +674,33 @@ def export(cat: "Catalog", key: str, dst: Path, cri_key: int, work: Path) -> dic
     if mi["numAudioStreams"] and not any(s.kind == "audio" for s in streams):
         raise RuntimeError(f"{key}: movie info lists an audio stream the USM does not carry")
     hca = any(s.kind == "audio" and s.codec == "hca" for s in webm_streams(streams))
-    picked = write_webm(streams, dst, work, tool("ffmpeg", "ffmpeg"), cri_key,
-                        tool("vgmstream", "vgmstream-cli") if hca else None)
-    rec = {"key": key, "codec": codec, "width": mi["width"], "height": mi["height"],
-           "displayWidth": mi["dispWidth"], "displayHeight": mi["dispHeight"],
-           "frameRate": [mi["framerateN"], mi["framerateD"]], "frames": mi["totalFrames"],
-           "assetInfo": info.get("assetInfo")}
+    picked = write_webm(
+        streams, dst, work, tool("ffmpeg", "ffmpeg"), cri_key, tool("vgmstream", "vgmstream-cli") if hca else None
+    )
+    rec = {
+        "key": key,
+        "codec": codec,
+        "width": mi["width"],
+        "height": mi["height"],
+        "displayWidth": mi["dispWidth"],
+        "displayHeight": mi["dispHeight"],
+        "frameRate": [mi["framerateN"], mi["framerateD"]],
+        "frames": mi["totalFrames"],
+        "assetInfo": info.get("assetInfo"),
+    }
     if webm_reencoded(picked):
-        rec["encode"] = {"codec": "vp9", "crf": int(VP9_ENCODE[VP9_ENCODE.index("-crf") + 1]),
-                         "alpha": any(s.kind == "alpha" for s in picked)}
+        rec["encode"] = {
+            "codec": "vp9",
+            "crf": int(VP9_ENCODE[VP9_ENCODE.index("-crf") + 1]),
+            "alpha": any(s.kind == "alpha" for s in picked),
+        }
     audio = next((s for s in picked if s.kind == "audio"), None)
     if audio is not None:
-        rec["audio"] = {"codec": "opus", "bitrate": AUDIO_BITRATE,
-                        "source": adx_info(audio.data) if audio.codec == "adx" else hca_info(audio.data)}
+        rec["audio"] = {
+            "codec": "opus",
+            "bitrate": AUDIO_BITRATE,
+            "source": adx_info(audio.data) if audio.codec == "adx" else hca_info(audio.data),
+        }
     return rec
 
 
@@ -651,6 +709,7 @@ def extract(cat: "Catalog", episode: dict, out_dir: Path, cri_key: int | None = 
     Movie / Clip rows to its file, its -Video row (`master`: size, autoStop, hasAudio) and the stream facts.
     Returns the index, or None when the episode has no video."""
     from . import adv, cri
+
     keys = sorted(r["address"] for r in episode["resources"] if r["kind"] == "video")
     if not keys:
         return None

@@ -40,6 +40,7 @@ plus `story_fields(story_dir)` (what story.json gets besides `models`). ModelDir
 (the files above; `nnnotes story`), SiteModels reads model.json from the model manifests of a site (the site's
 stories).
 """
+
 from __future__ import annotations
 
 import json
@@ -56,17 +57,34 @@ from . import jsonio, languages, live2d, master
 from . import shader as shader_mod
 from .config import Config, usable_cpus, use
 from .export import Exporter
-from .web import (MANIFEST_FORMAT, MODELS_DIR, MODELS_INDEX, SHADER_PLATFORM, SHADER_TYPE, SITE_FORMAT, Store, _dump,
-                  _lock_fetches, _log, check_player, collect, entry_assets, entry_text, site_store, text_asset,
-                  write_index, write_player)
+from .web import (
+    MANIFEST_FORMAT,
+    MODELS_DIR,
+    MODELS_INDEX,
+    SHADER_PLATFORM,
+    SHADER_TYPE,
+    SITE_FORMAT,
+    Store,
+    _dump,
+    _lock_fetches,
+    _log,
+    check_player,
+    collect,
+    entry_assets,
+    entry_text,
+    site_store,
+    text_asset,
+    write_index,
+    write_player,
+)
 
 LIVE2D_PREFIX = "Character/Live2D/"
 MODEL_KEY = re.compile(r"Character/Live2D/(?P<group>[^/]+)/(?P<name>[^/]+)/model/(?P=name)")
 MODEL_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*")
 MODEL_INDEX = "model.json"
-MODEL_FORMAT = 2                                   # model.json "format"
+MODEL_FORMAT = 2  # model.json "format"
 SHADER_DIR = "shaders"
-MASK_KEYWORD = "CUBISM_MASK_ON"                    # a drawable material's keyword: the drawable is masked
+MASK_KEYWORD = "CUBISM_MASK_ON"  # a drawable material's keyword: the drawable is masked
 # keywords the story renderer adds to a character draw (_ADDITIONAL_LIGHTS_VERTEX: at quality 4); the mask pass draws
 # with none
 STORY_KEYWORDS = ("_ADDITIONAL_LIGHTS_VERTEX",)
@@ -77,8 +95,8 @@ RESOURCES = {
 }
 # a model's MotionSync path (the player's CubismMotionSyncController.fromPrefab): both components on the prefab's root
 MOTION_SYNC_COMPONENTS = ("CubismMotionSyncController", "Live2DMotionSyncCriAudioInput")
-COSTUME_TABLE = "MasterCharacterCostume"           # _live2dPath (the key after LIVE2D_PREFIX) -> _characterID
-NAME_FIELDS = ("character", "names", "label")      # listing fields from the master data (model_names)
+COSTUME_TABLE = "MasterCharacterCostume"  # _live2dPath (the key after LIVE2D_PREFIX) -> _characterID
+NAME_FIELDS = ("character", "names", "label")  # listing fields from the master data (model_names)
 
 
 # ---------------------------------------------------------------- models and ids
@@ -117,8 +135,10 @@ def select(specs, models: dict[str, str]) -> dict[str, str]:
         else:
             out[i] = models[i]
     if unknown:
-        raise ValueError(f"not a Live2D model of the catalog: {', '.join(unknown)} "
-                         f"(give a model id or a key Character/Live2D/<group>/<name>/model/<name>)")
+        raise ValueError(
+            f"not a Live2D model of the catalog: {', '.join(unknown)} "
+            f"(give a model id or a key Character/Live2D/<group>/<name>/model/<name>)"
+        )
     return dict(sorted(out.items()))
 
 
@@ -164,6 +184,7 @@ def master_names(cfg: Config, region: str | None = None, log=None) -> dict[str, 
     if cfg.path(section, key) is None:
         return None
     from .cli import master_dir
+
     code = cfg.get("catalog", "language")
     try:
         return model_names(master_dir(cfg, region), languages.check(code) if code else None)
@@ -204,22 +225,33 @@ def shader_names(doc) -> set[str]:
 
 def drawable_materials(prefab: dict) -> list[dict]:
     """The material of every drawable: MeshRenderer.m_Materials[0] of the prefab's nodes."""
-    return [c["m_Materials"][0] for n in prefab["nodes"] for c in n["components"]
-            if c.get("type") == "MeshRenderer" and c.get("m_Materials") and c["m_Materials"][0]]
+    return [
+        c["m_Materials"][0]
+        for n in prefab["nodes"]
+        for c in n["components"]
+        if c.get("type") == "MeshRenderer" and c.get("m_Materials") and c["m_Materials"][0]
+    ]
 
 
 def has_motion_sync(prefab: dict) -> bool:
     """The exported prefab (live2d.extract_runtime) has a MotionSync controller with its CRI audio input on its root
     node; a model without one takes its mouth in a story from the voice's CRI Lips analysis."""
-    classes = {c.get("class") or c.get("type") for n in prefab["nodes"] if "/" not in n["path"]
-               for c in n["components"]}
+    classes = {
+        c.get("class") or c.get("type") for n in prefab["nodes"] if "/" not in n["path"] for c in n["components"]
+    }
     return all(k in classes for k in MOTION_SYNC_COMPONENTS)
 
 
 def drawable_textures(prefab: dict) -> list[str]:
     """The atlas pages the drawables draw with (every distinct CubismRenderer._mainTexture), sorted."""
-    return sorted({c["_mainTexture"]["texture"] for n in prefab["nodes"] for c in n["components"]
-                   if c.get("class") == "CubismRenderer" and c.get("_mainTexture")})
+    return sorted(
+        {
+            c["_mainTexture"]["texture"]
+            for n in prefab["nodes"]
+            for c in n["components"]
+            if c.get("class") == "CubismRenderer" and c.get("_mainTexture")
+        }
+    )
 
 
 def shader_files(index: list, materials: list[dict], extra: tuple[str, ...] = ()) -> list[str]:
@@ -236,8 +268,11 @@ def shader_files(index: list, materials: list[dict], extra: tuple[str, ...] = ()
     for name, kws in sorted(sets):
         if name not in recs:
             raise RuntimeError(f"shader {name}: not in the shader index")
-        variants = [v for v in recs[name]["variants"] if v["platform"] == SHADER_PLATFORM and v["type"] == SHADER_TYPE
-                    and v["subShader"] == 0 and v["pass"] == 0]
+        variants = [
+            v
+            for v in recs[name]["variants"]
+            if v["platform"] == SHADER_PLATFORM and v["type"] == SHADER_TYPE and v["subShader"] == 0 and v["pass"] == 0
+        ]
         want = set(kws) & {k for v in variants for k in v["keywords"]}
         hits = [v for v in variants if set(v["keywords"]) == want]
         if len(hits) != 1:
@@ -256,8 +291,16 @@ def read_files(doc: dict, prefab: dict, index: list) -> list[str]:
     if any(MASK_KEYWORD in m["keywords"] for m in materials):
         files |= set(shader_files(index, list(doc["resources"].values())))
     sdir = doc["shaders"].rpartition("/")[0]
-    return sorted({MODEL_INDEX, doc["moc3"], doc["prefab"], *doc["textures"], doc["shaders"],
-                   *(f"{sdir}/{f}" if sdir else f for f in files)})
+    return sorted(
+        {
+            MODEL_INDEX,
+            doc["moc3"],
+            doc["prefab"],
+            *doc["textures"],
+            doc["shaders"],
+            *(f"{sdir}/{f}" if sdir else f for f in files),
+        }
+    )
 
 
 def export_model(cat, player, key: str, out_dir: Path) -> dict:
@@ -278,31 +321,55 @@ def export_model(cat, player, key: str, out_dir: Path) -> dict:
     for n in names:
         shader_mod.dump_objects([objs[n]], out_dir / SHADER_DIR, objs[n].assets_file.name, index)
     shader_mod.write_index(index, out_dir / SHADER_DIR)
-    doc = {"format": MODEL_FORMAT, "name": res["name"], "key": key, "moc3": res["moc3"], "prefab": res["prefab"],
-           "textures": drawable_textures(prefab), "canvas": prefab["canvas"], "shaders": f"{SHADER_DIR}/shaders.json",
-           "resources": resources, "motionSync": has_motion_sync(prefab)}
+    doc = {
+        "format": MODEL_FORMAT,
+        "name": res["name"],
+        "key": key,
+        "moc3": res["moc3"],
+        "prefab": res["prefab"],
+        "textures": drawable_textures(prefab),
+        "canvas": prefab["canvas"],
+        "shaders": f"{SHADER_DIR}/shaders.json",
+        "resources": resources,
+        "motionSync": has_motion_sync(prefab),
+    }
     jsonio.write_json(out_dir / MODEL_INDEX, doc)
-    return {**res, "textures": doc["textures"], "canvas": prefab["canvas"], "shaders": names,
-            "files": read_files(doc, prefab, index)}
+    return {
+        **res,
+        "textures": doc["textures"],
+        "canvas": prefab["canvas"],
+        "shaders": names,
+        "files": read_files(doc, prefab, index),
+    }
 
 
 def model_facts(key: str, summary: dict, names: dict | None = None) -> dict:
     """What a model listing needs, from the key and the export summary, plus the NAME_FIELDS of `names` (an entry
     of model_names)."""
-    facts = {"group": MODEL_KEY.fullmatch(key)["group"], "canvas": summary["canvas"],
-             "textures": len(summary["textures"]), "nodes": summary["nodes"]}
+    facts = {
+        "group": MODEL_KEY.fullmatch(key)["group"],
+        "canvas": summary["canvas"],
+        "textures": len(summary["textures"]),
+        "nodes": summary["nodes"],
+    }
     facts.update({k: names[k] for k in NAME_FIELDS if names and k in names})
     return facts
 
 
-def ingest(store: Store, site: Path, mid: str, key: str, model_dir: Path, summary: dict,
-           names: dict | None = None) -> dict:
+def ingest(
+    store: Store, site: Path, mid: str, key: str, model_dir: Path, summary: dict, names: dict | None = None
+) -> dict:
     """One exported model's files (summary["files"]) into the store + its manifest (`names`: model_facts)."""
     text, binary = collect(Path(model_dir), summary["files"])
     entries = {p: store.put_file(p, text_asset(p, s)) for p, s in text.items()}
     entries.update({p: store.put(p, b) for p, b in binary.items()})
-    manifest = {"format": MANIFEST_FORMAT, "id": mid, "key": key, "model": model_facts(key, summary, names),
-                "files": dict(sorted(entries.items()))}
+    manifest = {
+        "format": MANIFEST_FORMAT,
+        "id": mid,
+        "key": key,
+        "model": model_facts(key, summary, names),
+        "files": dict(sorted(entries.items())),
+    }
     (Path(site) / MODELS_DIR / f"{mid}.json").write_bytes(_dump(manifest))
     return {"id": mid, "ok": True, "files": len(entries), "bytes": sum(e["size"] for e in entries.values())}
 
@@ -313,8 +380,9 @@ def source_entry(address: str, doc: dict, where: str) -> dict:
     if doc.get("key") != address:
         raise RuntimeError(f"{where}: model.json of {doc.get('key')}, not of {address}")
     if not isinstance(doc.get("motionSync"), bool):
-        raise RuntimeError(f"{where}: model.json of format {doc.get('format')} has no motionSync; export the model "
-                           f"again (--force)")
+        raise RuntimeError(
+            f"{where}: model.json of format {doc.get('format')} has no motionSync; export the model again (--force)"
+        )
     return {"id": model_id(address), "motionSync": doc["motionSync"]}
 
 
@@ -341,14 +409,15 @@ class ModelDir:
             d = self.root / mid
             index = d / MODEL_INDEX
             built = (self.force or not d.exists()) and self._export(address, d)
-            if not index.is_file() and not d.exists():     # moved aside by a forced export of another process
+            if not index.is_file() and not d.exists():  # moved aside by a forced export of another process
                 built = self._export(address, d)
             (self.built if built else self.skipped).append(mid)
             try:
                 doc = json.loads(index.read_text(encoding="utf-8"))
             except FileNotFoundError:
-                raise RuntimeError(f"{d}: no {MODEL_INDEX} (not a model directory); remove it or export again "
-                                   f"(--force)") from None
+                raise RuntimeError(
+                    f"{d}: no {MODEL_INDEX} (not a model directory); remove it or export again (--force)"
+                ) from None
             self._done[mid] = source_entry(address, doc, str(index))
         return self._done[mid]
 
@@ -372,7 +441,7 @@ class ModelDir:
                 return False
             try:
                 d.rename(work / "previous")
-            except FileNotFoundError:                     # moved aside by another process
+            except FileNotFoundError:  # moved aside by another process
                 pass
             return _install(model, d)
         finally:
@@ -443,9 +512,16 @@ def write_models_index(site: Path) -> tuple[int, set[str]]:
         man = json.loads(p.read_text(encoding="utf-8"))
         for e in man["files"].values():
             used.update(entry_assets(e))
-        models.append({"id": p.stem, "manifest": f"{MODELS_DIR}/{p.name}", "key": man["key"],
-                       "files": len(man["files"]),
-                       "bytes": sum(f["size"] for f in man["files"].values()), **man["model"]})
+        models.append(
+            {
+                "id": p.stem,
+                "manifest": f"{MODELS_DIR}/{p.name}",
+                "key": man["key"],
+                "files": len(man["files"]),
+                "bytes": sum(f["size"] for f in man["files"].values()),
+                **man["model"],
+            }
+        )
     (site / MODELS_INDEX).write_bytes(_dump({"format": SITE_FORMAT, "models": models}))
     return len(models), used
 
@@ -456,6 +532,7 @@ _W: dict = {}
 
 def _open(cfg: Config, region: str | None = None):
     from .cli import open_catalog, player_data
+
     return open_catalog(cfg, region=region), player_data(cfg, region)
 
 
@@ -476,8 +553,7 @@ def model_task(mid: str, key: str, job: dict | None = None, data=None) -> dict:
     try:
         summary = export_model(cat, player, key, work)
         stage = "ingest"
-        r = ingest(site_store(site, job["encoding"]), site, mid, key, work, summary,
-                   (job.get("names") or {}).get(key))
+        r = ingest(site_store(site, job["encoding"]), site, mid, key, work, summary, (job.get("names") or {}).get(key))
         return {**r, "seconds": round(time.time() - t0, 1)}
     except Exception as e:
         cause = f"{type(e).__name__}: {e}"
@@ -492,8 +568,19 @@ def _pool_task(args):
 
 
 # ---------------------------------------------------------------- build
-def build(out_dir, models: dict[str, str] | None, cfg: Config, player_dir, force: bool = False, *, tmp_dir=None,
-          log=None, workers: int | None = None, region: str | None = None, encoding: str = "gzip") -> dict:
+def build(
+    out_dir,
+    models: dict[str, str] | None,
+    cfg: Config,
+    player_dir,
+    force: bool = False,
+    *,
+    tmp_dir=None,
+    log=None,
+    workers: int | None = None,
+    region: str | None = None,
+    encoding: str = "gzip",
+) -> dict:
     """Add the Live2D models `models` ({id: key}, see `catalog_models`; None: every model of the catalog) to the site
     at `out_dir`, with the player of the ournotes-player checkout or package at `player_dir` (its page files are
     written, models.json and charts.json rebuilt). The data comes from the settings `cfg` (each worker process opens
@@ -511,6 +598,7 @@ def build(out_dir, models: dict[str, str] | None, cfg: Config, player_dir, force
     t0 = time.time()
     if models is None:
         from .cli import open_catalog
+
         models = catalog_models(open_catalog(cfg, bundles=False, region=region))
     todo, skipped, rebuilt = [], [], []
     for mid, key in sorted(models.items()):
@@ -552,10 +640,15 @@ def build(out_dir, models: dict[str, str] | None, cfg: Config, player_dir, force
     failed = [r for r in results if not r["ok"]]
     if failed:
         (site.parent / f"{site.name}.model-failures.json").write_bytes(_dump(failed))
-    return {"site": str(site),
-            "modelsBuilt": [{k: r[k] for k in ("id", "files", "bytes")} for r in results if r["ok"]],
-            "modelsFailed": [{k: r.get(k) for k in ("id", "stage", "error")} for r in failed],
-            "modelsSkipped": skipped, "modelsRebuilt": rebuilt, "modelSeconds": round(time.time() - t0, 1),
-            "modelWorkers": workers,
-            "modelNames": None if names is None else sum(1 for k in models.values() if k in names),
-            **v, **idx}
+    return {
+        "site": str(site),
+        "modelsBuilt": [{k: r[k] for k in ("id", "files", "bytes")} for r in results if r["ok"]],
+        "modelsFailed": [{k: r.get(k) for k in ("id", "stage", "error")} for r in failed],
+        "modelsSkipped": skipped,
+        "modelsRebuilt": rebuilt,
+        "modelSeconds": round(time.time() - t0, 1),
+        "modelWorkers": workers,
+        "modelNames": None if names is None else sum(1 for k in models.values() if k in names),
+        **v,
+        **idx,
+    }

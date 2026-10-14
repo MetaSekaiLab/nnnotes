@@ -10,6 +10,7 @@
 The localized font / material / line spacing of a text (LocalizeText) and the text records are in textstyle.py.
 Needs the optional dependencies of the `fonts` extra (require_extra).
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -36,8 +37,10 @@ def require_extra(what: str = "TextMesh Pro font assets") -> None:
     them (an option, or the font assets)."""
     missing = [pkg for mod, pkg in EXTRA_MODULES.items() if importlib.util.find_spec(mod) is None]
     if missing:
-        raise ConfigError(f"{what}: the optional '{EXTRA}' dependencies are needed ({', '.join(missing)} not "
-                          f"installed): pip install 'nnnotes[{EXTRA}]'")
+        raise ConfigError(
+            f"{what}: the optional '{EXTRA}' dependencies are needed ({', '.join(missing)} not "
+            f"installed): pip install 'nnnotes[{EXTRA}]'"
+        )
 
 
 # --------------------------------------------------------------------------
@@ -58,24 +61,28 @@ class Font:
         if any(p["regularTypeface"]["m_PathID"] or p["italicTypeface"]["m_PathID"] for p in tt["m_FontWeightTable"]):
             raise NotImplementedError(f"{self.name}: font weight table typefaces")
         self.cmap: set[int] = set()
-        self.variants: dict[tuple[int, int], str] = {}   # (base, selector) -> a variant glyph other than the base's
+        self.variants: dict[tuple[int, int], str] = {}  # (base, selector) -> a variant glyph other than the base's
         self.font_data: bytes | None = None
         src = ex.deref(obj, tt["m_SourceFontFile"]) if tt["m_SourceFontFile"]["m_PathID"] else None
         if src is not None:
             from fontTools.ttLib import TTFont
+
             data = bytes(src.read_typetree()["m_FontData"])
             ft = TTFont(io.BytesIO(data), fontNumber=tt["m_FaceInfo"]["m_FaceIndex"], lazy=True)
             best = ft.getBestCmap() or {}
             self.cmap = set(best)
-            for t in ft["cmap"].tables:                  # variation sequences (cmap format 14), non-default ones
+            for t in ft["cmap"].tables:  # variation sequences (cmap format 14), non-default ones
                 if t.format == 14:
                     for vs, entries in t.uvsDict.items():
                         for base, glyph in entries:
                             if glyph is not None and glyph != best.get(base):
                                 self.variants[(base, vs)] = glyph
             self.font_data = data
-            self.source_font = {"name": src.read_typetree()["m_Name"], "bytes": len(data),
-                                "sha256": hashlib.sha256(data).hexdigest()}
+            self.source_font = {
+                "name": src.read_typetree()["m_Name"],
+                "bytes": len(data),
+                "sha256": hashlib.sha256(data).hexdigest(),
+            }
         else:
             self.source_font = None
 
@@ -114,7 +121,7 @@ class FontSet:
         if u in TMP_SYNTHESIZED and not (f.dynamic and u in f.cmap):
             return ("synthesized", f)
         if f.dynamic and u in f.cmap:
-            return ("runtime", f)                 # TryAddCharacterInternal: SDF rendered at runtime
+            return ("runtime", f)  # TryAddCharacterInternal: SDF rendered at runtime
         return None
 
     def _search(self, f: Font, u: int, searched: set):
@@ -152,7 +159,7 @@ class FontSet:
 # --------------------------------------------------------------------------
 # missing glyph
 # --------------------------------------------------------------------------
-MISSING_GLYPH_CHARACTER = 0x25A1     # TMP_Settings.missingGlyphCharacter 0: U+25A1 (TMP_Text.SetArraySizes)
+MISSING_GLYPH_CHARACTER = 0x25A1  # TMP_Settings.missingGlyphCharacter 0: U+25A1 (TMP_Text.SetArraySizes)
 SPACE, END_OF_TEXT = 0x20, 0x03
 
 
@@ -210,10 +217,20 @@ def check_glyph_variants(fonts: FontSet, font: Font, texts) -> None:
 # UnityEngine.TextCore.LowLevel.GlyphRasterModes: a GlyphRenderMode
 # is a set of these flags; SDF = 4134 = RASTER_MODE_1X | RASTER_MODE_SDF | RASTER_MODE_NO_HINTING |
 # RASTER_MODE_MONO.
-RASTER_MODE = {"8BIT": 1, "MONO": 2, "NO_HINTING": 4, "HINTED": 8, "BITMAP": 16, "SDF": 32, "SDFAA": 64,
-               "1X": 4096, "8X": 8192, "16X": 16384, "32X": 32768}
-GLYPH_METRIC_FIELDS = ("m_Width", "m_Height", "m_HorizontalBearingX", "m_HorizontalBearingY",
-                       "m_HorizontalAdvance")
+RASTER_MODE = {
+    "8BIT": 1,
+    "MONO": 2,
+    "NO_HINTING": 4,
+    "HINTED": 8,
+    "BITMAP": 16,
+    "SDF": 32,
+    "SDFAA": 64,
+    "1X": 4096,
+    "8X": 8192,
+    "16X": 16384,
+    "32X": 32768,
+}
+GLYPH_METRIC_FIELDS = ("m_Width", "m_Height", "m_HorizontalBearingX", "m_HorizontalBearingY", "m_HorizontalAdvance")
 
 
 class RuntimeGlyphs:
@@ -233,17 +250,22 @@ class RuntimeGlyphs:
         padding + 1 texels (= the material _GradientScale) on each side.
     """
 
-    ALGORITHM = ("FreeType monochrome raster (FT_RENDER_MODE_MONO, FT_LOAD_NO_HINTING, 1x) + exact Euclidean "
-                 "distance transform between texel centres (scipy.ndimage.distance_transform_edt)")
+    ALGORITHM = (
+        "FreeType monochrome raster (FT_RENDER_MODE_MONO, FT_LOAD_NO_HINTING, 1x) + exact Euclidean "
+        "distance transform between texel centres (scipy.ndimage.distance_transform_edt)"
+    )
     MAPPING = "alpha8 = round(255 * clamp01(0.5 + (dIn - dOut) / (2 * (padding + 1)))), distances in texels"
-    ALIGNMENT = ("rect = metrics box (bearingX, bearingY - height, width, height) with each edge rounded to the "
-                 "nearest pixel, ties outwards; the raster's pixel (i, j) of the rect is the glyph-space pixel "
-                 "[xMin + i, xMin + i + 1) x [yMin + j, yMin + j + 1) at pointSize px/em, texel centres sampled; "
-                 "the SDF block is the rect grown by padding on each side")
+    ALIGNMENT = (
+        "rect = metrics box (bearingX, bearingY - height, width, height) with each edge rounded to the "
+        "nearest pixel, ties outwards; the raster's pixel (i, j) of the rect is the glyph-space pixel "
+        "[xMin + i, xMin + i + 1) x [yMin + j, yMin + j + 1) at pointSize px/em, texel centres sampled; "
+        "the SDF block is the rect grown by padding on each side"
+    )
 
     def __init__(self, font: Font):
         import freetype
         from scipy.ndimage import distance_transform_edt
+
         self.ft = freetype
         self.edt = distance_transform_edt
         tt = font.tt
@@ -264,17 +286,19 @@ class RuntimeGlyphs:
         if self.face.units_per_EM != tt["m_FaceInfo"]["m_UnitsPerEM"]:
             raise RuntimeError(f"{font.name}: units per EM differ from the face info")
 
-    oversample = 1                       # raster pixels per texel (cell(); 1: the runtime rasterization above)
+    oversample = 1  # raster pixels per texel (cell(); 1: the runtime rasterization above)
 
     @classmethod
-    def from_font_file(cls, data: bytes, face_index: int, point_size: int, padding: int,
-                       oversample: int = 1) -> "RuntimeGlyphs":
+    def from_font_file(
+        cls, data: bytes, face_index: int, point_size: int, padding: int, oversample: int = 1
+    ) -> "RuntimeGlyphs":
         """The same generator for a font file of one's own (open font assets, storyfonts.py): `point_size` px per
         em, `padding` texels of distance field (spread padding + 1). `oversample` > 1: cell() rasterizes at that
         many times the point size and takes the distance at each texel centre from the finer grid (the
         supersampled GlyphRenderModes). The glyph metrics and rects are those at `point_size` in every case."""
         import freetype
         from scipy.ndimage import distance_transform_edt
+
         if point_size != int(point_size) or point_size <= 0:
             raise ValueError(f"point size {point_size}: a positive whole number of px per em")
         if oversample < 1 or oversample != int(oversample):
@@ -309,17 +333,17 @@ class RuntimeGlyphs:
             if bm.pixel_mode != ft.FT_PIXEL_MODE_MONO:
                 raise RuntimeError(f"glyph {gi}: FreeType returned pixel mode {bm.pixel_mode}")
             raw = np.frombuffer(bytes(bm.buffer), np.uint8).reshape(bm.rows, bm.pitch)
-            bits = np.unpackbits(raw, axis=1)[:, :bm.width].astype(bool)[::-1]      # bottom row first
+            bits = np.unpackbits(raw, axis=1)[:, : bm.width].astype(bool)[::-1]  # bottom row first
             ox = self.fine.glyph.bitmap_left - (xmin - margin) * k
             oy = (self.fine.glyph.bitmap_top - bm.rows) - (ymin - margin) * k
             if ox < 0 or oy < 0 or ox + bm.width > grid.shape[1] or oy + bm.rows > grid.shape[0]:
                 raise RuntimeError(f"glyph {gi}: raster outside the cell")
-            grid[oy:oy + bm.rows, ox:ox + bm.width] = bits
+            grid[oy : oy + bm.rows, ox : ox + bm.width] = bits
         if not grid.any():
             return m, (xmin, ymin, w, h), np.zeros((rows, cols), np.uint8)
         d = self.edt(grid) - self.edt(~grid)
         if k > 1:
-            lo, hi = (k - 1) // 2, k // 2 + 1                    # the fine pixels whose centres are nearest the texel's
+            lo, hi = (k - 1) // 2, k // 2 + 1  # the fine pixels whose centres are nearest the texel's
             d = d.reshape(rows, k, cols, k)[:, lo:hi, :, lo:hi].mean(axis=(1, 3)) / k
         a = np.floor(255.0 * np.clip(0.5 + d / (2.0 * self.spread), 0.0, 1.0) + 0.5).astype(np.uint8)
         return m, (xmin, ymin, w, h), a
@@ -330,13 +354,20 @@ class RuntimeGlyphs:
     def metrics(self, gi: int) -> dict:
         self.face.load_glyph(gi, self.ft.FT_LOAD_NO_HINTING)
         m = self.face.glyph.metrics
-        return {"m_Width": m.width / 64, "m_Height": m.height / 64, "m_HorizontalBearingX": m.horiBearingX / 64,
-                "m_HorizontalBearingY": m.horiBearingY / 64, "m_HorizontalAdvance": m.horiAdvance / 64}
+        return {
+            "m_Width": m.width / 64,
+            "m_Height": m.height / 64,
+            "m_HorizontalBearingX": m.horiBearingX / 64,
+            "m_HorizontalBearingY": m.horiBearingY / 64,
+            "m_HorizontalAdvance": m.horiAdvance / 64,
+        }
 
     @staticmethod
     def pixel_box(m: dict) -> tuple[int, int, int, int]:
-        x0 = m["m_HorizontalBearingX"]; x1 = x0 + m["m_Width"]
-        y1 = m["m_HorizontalBearingY"]; y0 = y1 - m["m_Height"]
+        x0 = m["m_HorizontalBearingX"]
+        x1 = x0 + m["m_Width"]
+        y1 = m["m_HorizontalBearingY"]
+        y0 = y1 - m["m_Height"]
         xmin, ymin = math.ceil(x0 - 0.5), math.ceil(y0 - 0.5)
         return xmin, ymin, math.floor(x1 + 0.5) - xmin, math.floor(y1 + 0.5) - ymin
 
@@ -354,12 +385,12 @@ class RuntimeGlyphs:
             if bm.pixel_mode != ft.FT_PIXEL_MODE_MONO:
                 raise RuntimeError(f"glyph {gi}: FreeType returned pixel mode {bm.pixel_mode}")
             raw = np.frombuffer(bytes(bm.buffer), np.uint8).reshape(bm.rows, bm.pitch)
-            bits = np.unpackbits(raw, axis=1)[:, :bm.width].astype(bool)[::-1]      # bottom row first
+            bits = np.unpackbits(raw, axis=1)[:, : bm.width].astype(bool)[::-1]  # bottom row first
             ox = self.face.glyph.bitmap_left - (xmin - p)
             oy = (self.face.glyph.bitmap_top - bm.rows) - (ymin - p)
             if ox < 0 or oy < 0 or ox + bm.width > grid.shape[1] or oy + bm.rows > grid.shape[0]:
                 raise RuntimeError(f"glyph {gi}: raster outside the padded rect")
-            grid[oy:oy + bm.rows, ox:ox + bm.width] = bits
+            grid[oy : oy + bm.rows, ox : ox + bm.width] = bits
         if not grid.any():
             return m, (xmin, ymin, w, h), np.zeros(grid.shape, np.uint8)
         d = self.edt(grid) - self.edt(~grid)
@@ -381,31 +412,39 @@ class RuntimeGlyphs:
                 metric_diff[k] = max(metric_diff[k], abs(gm[k] - g["m_Metrics"][k]))
             gr = g["m_GlyphRect"]
             if g["m_Metrics"]["m_Width"] <= 0 or g["m_Metrics"]["m_Height"] <= 0:
-                continue                                    # no outline (space): nothing rendered
+                continue  # no outline (space): nothing rendered
             m, (xmin, ymin, w, h), a = self.sdf(c["m_GlyphIndex"])
             if (w, h) != (gr["m_Width"], gr["m_Height"]):
                 rect_mismatch.append(u)
                 continue
             atlas = packer.pixels(f.atlases[g["m_AtlasIndex"]])[:, :, 3]
             y0, x0 = gr["m_Y"] - p, gr["m_X"] - p
-            ref = atlas[y0:y0 + h + 2 * p, x0:x0 + w + 2 * p].astype(np.int32)
+            ref = atlas[y0 : y0 + h + 2 * p, x0 : x0 + w + 2 * p].astype(np.int32)
             if ref.shape != a.shape:
                 raise RuntimeError(f"{f.name}: glyph {c['m_GlyphIndex']} block leaves the atlas")
             e = np.abs(a.astype(np.int32) - ref)
             errs.append(e.ravel())
-            per[chr(u)] = {"max": int(e.max()), "mean": float(e.mean()), "differing": int((e > 0).sum()),
-                           "texels": int(e.size)}
+            per[chr(u)] = {
+                "max": int(e.max()),
+                "mean": float(e.mean()),
+                "differing": int((e > 0).sum()),
+                "texels": int(e.size),
+            }
         allerr = np.concatenate(errs) if errs else np.zeros(0, np.int32)
         worst = sorted(per.items(), key=lambda kv: (-kv[1]["max"], -kv[1]["differing"]))[:5]
-        return {"glyphs": len(per), "texels": int(allerr.size),
-                "maxAbsError": int(allerr.max()) if allerr.size else 0,
-                "meanAbsError": round(float(allerr.mean()), 6) if allerr.size else 0.0,
-                "texelsDiffering": int((allerr > 0).sum()),
-                "exactGlyphs": sum(1 for v in per.values() if v["max"] == 0),
-                "worstGlyphs": [{"char": ch, **v} for ch, v in worst],
-                "metricsMaxAbsDiff": metric_diff, "glyphIndexMismatches": index_mismatch,
-                "rectSizeMismatches": rect_mismatch,
-                "units": "alpha8 levels over the glyph rect grown by padding; metrics in pointSize px"}
+        return {
+            "glyphs": len(per),
+            "texels": int(allerr.size),
+            "maxAbsError": int(allerr.max()) if allerr.size else 0,
+            "meanAbsError": round(float(allerr.mean()), 6) if allerr.size else 0.0,
+            "texelsDiffering": int((allerr > 0).sum()),
+            "exactGlyphs": sum(1 for v in per.values() if v["max"] == 0),
+            "worstGlyphs": [{"char": ch, **v} for ch, v in worst],
+            "metricsMaxAbsDiff": metric_diff,
+            "glyphIndexMismatches": index_mismatch,
+            "rectSizeMismatches": rect_mismatch,
+            "units": "alpha8 levels over the glyph rect grown by padding; metrics in pointSize px",
+        }
 
 
 def rgba_alpha(a: np.ndarray) -> np.ndarray:
@@ -421,8 +460,9 @@ def material_by_name(ex: Exporter, font: Font, mat_name: str):
     return ex.material(ex.key_object(key))
 
 
-def runtime_glyphs(f: Font, extra: set, baked: set, margin: int, packer: TexelPacker,
-                    chars_out: dict, glyphs_out: dict) -> dict:
+def runtime_glyphs(
+    f: Font, extra: set, baked: set, margin: int, packer: TexelPacker, chars_out: dict, glyphs_out: dict
+) -> dict:
     """Characters of a dynamic font asset that TMP renders into the atlas at runtime: generate their
     SDF glyphs + metrics from the source font, add them to the glyph/character tables and the packed
     font texture, and validate the generator against the baked glyphs `baked` of the same asset."""
@@ -449,19 +489,32 @@ def runtime_glyphs(f: Font, extra: set, baked: set, margin: int, packer: TexelPa
         rec = {"metrics": m, "rect": rect, "scale": 1.0, "atlasIndex": None, "runtime": True}
         if w > 0 and h > 0:
             cell = np.zeros((h + 2 * margin, w + 2 * margin), np.uint8)
-            cell[margin - p:margin - p + a.shape[0], margin - p:margin - p + a.shape[1]] = a
-            rec["_block"] = packer.add_array(f"font_{f.name}", f"runtime glyph {gi}", rgba_alpha(cell),
-                                             (rect["m_X"] - margin, rect["m_Y"] - margin), settings[0])
+            cell[margin - p : margin - p + a.shape[0], margin - p : margin - p + a.shape[1]] = a
+            rec["_block"] = packer.add_array(
+                f"font_{f.name}",
+                f"runtime glyph {gi}",
+                rgba_alpha(cell),
+                (rect["m_X"] - margin, rect["m_Y"] - margin),
+                settings[0],
+            )
         chars_out[str(u)] = {"glyph": gi, "scale": 1.0, "elementType": 1}
         glyphs_out[str(gi)] = rec
         generated.append({"char": chr(u), "unicode": u, "glyph": gi})
     return {
-        "renderMode": {"value": f.tt["m_AtlasRenderMode"],
-                       "flags": [k for k, v in RASTER_MODE.items() if f.tt["m_AtlasRenderMode"] & v]},
-        "pointSize": gen.point_size, "padding": p, "spread": gen.spread,
-        "algorithm": gen.ALGORITHM, "mapping": gen.MAPPING, "alignment": gen.ALIGNMENT,
-        "atlasPlacement": ("runtime state: rects are cells of a virtual page (atlasIndex null), one cell per "
-                           "glyph with the sampling margin cleared to 0"),
+        "renderMode": {
+            "value": f.tt["m_AtlasRenderMode"],
+            "flags": [k for k, v in RASTER_MODE.items() if f.tt["m_AtlasRenderMode"] & v],
+        },
+        "pointSize": gen.point_size,
+        "padding": p,
+        "spread": gen.spread,
+        "algorithm": gen.ALGORITHM,
+        "mapping": gen.MAPPING,
+        "alignment": gen.ALIGNMENT,
+        "atlasPlacement": (
+            "runtime state: rects are cells of a virtual page (atlasIndex null), one cell per "
+            "glyph with the sampling margin cleared to 0"
+        ),
         "generated": generated,
         "validation": validation,
         "unresolved": [
@@ -488,8 +541,15 @@ def runtime_glyphs(f: Font, extra: set, baked: set, margin: int, packer: TexelPa
 def glyph_coverage(fonts: FontSet, primary: Font, chars: list[int]) -> tuple[dict, dict, dict]:
     """TMP character lookup of `chars` (distinct code points) from `primary` through its fallback chain.
     -> (coverage report, {font: baked units}, {font: runtime units})."""
-    coverage = {"primaryFont": primary.name, "characters": len(chars), "baked": [], "fallbackBaked": {},
-                "runtimeGenerated": [], "synthesized": [], "missing": []}
+    coverage = {
+        "primaryFont": primary.name,
+        "characters": len(chars),
+        "baked": [],
+        "fallbackBaked": {},
+        "runtimeGenerated": [],
+        "synthesized": [],
+        "missing": [],
+    }
     needed: dict[str, set] = {}
     runtime_units: dict[str, set] = {}
     for u in chars:
@@ -509,12 +569,15 @@ def glyph_coverage(fonts: FontSet, primary: Font, chars: list[int]) -> tuple[dic
             coverage["synthesized"].append(f"U+{u:04X}")
         else:
             runtime_units.setdefault(f.name, set()).add(u)
-            coverage["runtimeGenerated"].append({"char": ch, "font": f.name,
-                                                 "bakedIn": fonts.baked_anywhere(u)})
-    coverage["counts"] = {"distinct": len(chars), "bakedPrimary": len(coverage["baked"]),
-                          "bakedFallbackOnly": sum(len(v) for v in coverage["fallbackBaked"].values()),
-                          "runtimeGenerated": len(coverage["runtimeGenerated"]),
-                          "synthesized": len(coverage["synthesized"]), "missing": len(coverage["missing"])}
+            coverage["runtimeGenerated"].append({"char": ch, "font": f.name, "bakedIn": fonts.baked_anywhere(u)})
+    coverage["counts"] = {
+        "distinct": len(chars),
+        "bakedPrimary": len(coverage["baked"]),
+        "bakedFallbackOnly": sum(len(v) for v in coverage["fallbackBaked"].values()),
+        "runtimeGenerated": len(coverage["runtimeGenerated"]),
+        "synthesized": len(coverage["synthesized"]),
+        "missing": len(coverage["missing"]),
+    }
     # newline (and other control characters) resolve like any character in TMP;
     # report how the primary font serves them
     for u in (0x0A,):
@@ -523,8 +586,9 @@ def glyph_coverage(fonts: FontSet, primary: Font, chars: list[int]) -> tuple[dic
     return coverage, needed, runtime_units
 
 
-def text_materials(ex: Exporter, fonts: FontSet, localized: list[dict], primaries: set, needed: dict,
-                   runtime_units: dict) -> tuple[dict, dict]:
+def text_materials(
+    ex: Exporter, fonts: FontSet, localized: list[dict], primaries: set, needed: dict, runtime_units: dict
+) -> tuple[dict, dict]:
     """The localized text materials (in text order), then the default material of every font asset that
     serves a character or is a primary. -> (all materials, text materials)."""
     materials: dict[str, dict] = {}
@@ -539,8 +603,16 @@ def text_materials(ex: Exporter, fonts: FontSet, localized: list[dict], primarie
     return materials, text_mats
 
 
-def export_fonts(ex: Exporter, fonts: FontSet, primaries: set, needed: dict, runtime_units: dict,
-                 text_mats: dict, packer: TexelPacker, subset: str) -> dict:
+def export_fonts(
+    ex: Exporter,
+    fonts: FontSet,
+    primaries: set,
+    needed: dict,
+    runtime_units: dict,
+    text_mats: dict,
+    packer: TexelPacker,
+    subset: str,
+) -> dict:
     """Font asset records with the character / glyph tables reduced to the `needed` baked characters (plus the
     baked control characters) and the runtime characters generated from the source font; glyph texel blocks
     go to `packer` (resolve them with resolve_font_blocks after packer.build())."""
@@ -562,8 +634,15 @@ def export_fonts(ex: Exporter, fonts: FontSet, primaries: set, needed: dict, run
         # (padding + style padding, clamped to _GradientScale by TMP), the underlay
         # sample offset (-_UnderlayOffset * _ScaleRatioC * _GradientScale texels,
         # ScaleRatioC <= 1) and one texel for bilinear filtering.
-        off = max([abs(m["floats"].get(k, 0.0)) for m in text_mats.values()
-                   if "UNDERLAY_ON" in m["keywords"] for k in ("_UnderlayOffsetX", "_UnderlayOffsetY")] + [0.0])
+        off = max(
+            [
+                abs(m["floats"].get(k, 0.0))
+                for m in text_mats.values()
+                if "UNDERLAY_ON" in m["keywords"]
+                for k in ("_UnderlayOffsetX", "_UnderlayOffsetY")
+            ]
+            + [0.0]
+        )
         margin = math.ceil(gs) + math.ceil(off * gs) + 1
         tt = f.tt
         chars_out, glyphs_out = {}, {}
@@ -585,23 +664,31 @@ def export_fonts(ex: Exporter, fonts: FontSet, primaries: set, needed: dict, run
             runtime_rec = runtime_glyphs(f, extra, units, margin, packer, chars_out, glyphs_out)
         pair_records = tt["m_FontFeatureTable"]["m_GlyphPairAdjustmentRecords"]
         font_out[f.name] = {
-            "faceInfo": tt["m_FaceInfo"], "atlasWidth": tt["m_AtlasWidth"], "atlasHeight": tt["m_AtlasHeight"],
-            "atlasPadding": tt["m_AtlasPadding"], "atlasRenderMode": tt["m_AtlasRenderMode"],
+            "faceInfo": tt["m_FaceInfo"],
+            "atlasWidth": tt["m_AtlasWidth"],
+            "atlasHeight": tt["m_AtlasHeight"],
+            "atlasPadding": tt["m_AtlasPadding"],
+            "atlasRenderMode": tt["m_AtlasRenderMode"],
             "atlasPopulationMode": tt["m_AtlasPopulationMode"],
             "atlases": [a.read_typetree()["m_Name"] if a is not None else None for a in f.atlases],
-            "normalStyle": tt["normalStyle"], "normalSpacingOffset": tt["normalSpacingOffset"],
-            "boldStyle": tt["boldStyle"], "boldSpacing": tt["boldSpacing"], "italicStyle": tt["italicStyle"],
-            "tabSize": tt["tabSize"], "material": mat["material"],
+            "normalStyle": tt["normalStyle"],
+            "normalSpacingOffset": tt["normalSpacingOffset"],
+            "boldStyle": tt["boldStyle"],
+            "boldSpacing": tt["boldSpacing"],
+            "italicStyle": tt["italicStyle"],
+            "tabSize": tt["tabSize"],
+            "material": mat["material"],
             "fallbacks": [fb.name for fb in fonts.fallbacks(f)],
             "glyphPairAdjustmentRecords": len(pair_records),
-            "sourceFont": f.source_font, "characters": chars_out, "glyphs": glyphs_out,
+            "sourceFont": f.source_font,
+            "characters": chars_out,
+            "glyphs": glyphs_out,
             "runtimeCharacters": sorted(extra),
             "runtimeGlyphs": runtime_rec,
             "subset": subset,
         }
         if pair_records:
-            font_out[f.name]["glyphPairAdjustments"] = pair_adjustments(
-                pair_records, {int(g) for g in glyphs_out})
+            font_out[f.name]["glyphPairAdjustments"] = pair_adjustments(pair_records, {int(g) for g in glyphs_out})
     return font_out
 
 
@@ -610,10 +697,16 @@ def pair_adjustments(records: list, glyphs: set) -> dict:
     LookupDictionary builds it (key = first glyph | second glyph << 16, the first record of a key
     wins), reduced to the pairs whose two glyphs are exported. -> {key: {first, second, flags}} with the
     value records {xPlacement, yPlacement, xAdvance, yAdvance} and m_FeatureLookupFlags."""
+
     def value(r: dict) -> dict:
         v = r["m_GlyphValueRecord"]
-        return {"xPlacement": v["m_XPlacement"], "yPlacement": v["m_YPlacement"],
-                "xAdvance": v["m_XAdvance"], "yAdvance": v["m_YAdvance"]}
+        return {
+            "xPlacement": v["m_XPlacement"],
+            "yPlacement": v["m_YPlacement"],
+            "xAdvance": v["m_XAdvance"],
+            "yAdvance": v["m_YAdvance"],
+        }
+
     out: dict[str, dict] = {}
     seen: set[int] = set()
     for r in records:

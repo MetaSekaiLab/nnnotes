@@ -11,6 +11,7 @@ a Mesh's (or a Sprite's render data's) vertex buffer, channel table, index buffe
 layouts `mesh.arrays` does not decode itself (compressed meshes, Unity before 2018.2) are decoded here by UnityPy's
 MeshHandler.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -24,12 +25,12 @@ from .. import contract
 
 @dataclass(frozen=True)
 class ObjectInfo:
-    file: str                       # serialized file name (CAB-...)
+    file: str  # serialized file name (CAB-...)
     path_id: int
     class_id: int
     class_name: str
     byte_size: int
-    type_hash: str | None = None    # the type's stored hash (hex), None when the file does not store it
+    type_hash: str | None = None  # the type's stored hash (hex), None when the file does not store it
 
     @property
     def id(self) -> str:
@@ -58,11 +59,9 @@ class BundleView(Protocol):
     def unity_version(self, file: str) -> str:
         """The Unity version a serialized file was written by."""
 
-    def texture_input(self, obj: ObjectInfo) -> TextureInput:
-        ...
+    def texture_input(self, obj: ObjectInfo) -> TextureInput: ...
 
-    def mesh_input(self, obj: ObjectInfo) -> MeshInput:
-        ...
+    def mesh_input(self, obj: ObjectInfo) -> MeshInput: ...
 
 
 def _bytes(v) -> bytes:
@@ -75,10 +74,17 @@ def _file_name(path: str) -> str:
 
 
 def submeshes(tt_submeshes) -> tuple:
-    return tuple(Submesh(int(s["firstByte"]), int(s["indexCount"]), int(s.get("topology", 0) or 0),
-                         int(s.get("baseVertex", 0) or 0), int(s.get("firstVertex", 0) or 0),
-                         int(s.get("vertexCount", 0) or 0))
-                 for s in tt_submeshes or ())
+    return tuple(
+        Submesh(
+            int(s["firstByte"]),
+            int(s["indexCount"]),
+            int(s.get("topology", 0) or 0),
+            int(s.get("baseVertex", 0) or 0),
+            int(s.get("firstVertex", 0) or 0),
+            int(s.get("vertexCount", 0) or 0),
+        )
+        for s in tt_submeshes or ()
+    )
 
 
 def mesh_input_from_typetree(tt: dict, version: tuple, resource=None) -> MeshInput:
@@ -103,15 +109,23 @@ def mesh_input_from_typetree(tt: dict, version: tuple, resource=None) -> MeshInp
     n_shapes = len(shapes.get("channels", ()) or shapes.get("shapes", ())) if isinstance(shapes, dict) else 0
     vbw = tt.get("m_VariableBoneCountWeights")
     return MeshInput(
-        name=tt.get("m_Name", ""), version=tuple(version), vertex_count=int(vd.get("m_VertexCount", 0)),
-        channels=tuple((int(c["stream"]), int(c["offset"]), int(c["format"]), int(c["dimension"]))
-                       for c in vd.get("m_Channels") or ()),
-        vertex_data=data, index_buffer=_bytes(src.get("m_IndexBuffer")), index_bits=bits,
+        name=tt.get("m_Name", ""),
+        version=tuple(version),
+        vertex_count=int(vd.get("m_VertexCount", 0)),
+        channels=tuple(
+            (int(c["stream"]), int(c["offset"]), int(c["format"]), int(c["dimension"]))
+            for c in vd.get("m_Channels") or ()
+        ),
+        vertex_data=data,
+        index_buffer=_bytes(src.get("m_IndexBuffer")),
+        index_bits=bits,
         submeshes=submeshes(src.get("m_SubMeshes")),
         bind_poses=tuple(src.get("m_Bindpose" if sprite else "m_BindPose") or ()),
         bone_name_hashes=() if sprite else tuple(tt.get("m_BoneNameHashes") or ()),
         root_bone_name_hash=None if sprite else tt.get("m_RootBoneNameHash"),
-        blend_shapes=n_shapes, variable_bone_weights=len((vbw or {}).get("m_Data") or ()))
+        blend_shapes=n_shapes,
+        variable_bone_weights=len((vbw or {}).get("m_Data") or ()),
+    )
 
 
 def needs_handler(tt: dict, version: tuple) -> bool:
@@ -122,15 +136,22 @@ def needs_handler(tt: dict, version: tuple) -> bool:
     return bool(cm) and int(cm["m_Vertices"]["m_NumItems"]) > 0
 
 
-_HANDLER_FIELDS = {"position": "m_Vertices", "normal": "m_Normals", "tangent": "m_Tangents", "color": "m_Colors",
-                   **{f"uv{i}": f"m_UV{i}" for i in range(8)}, "blendWeight": "m_BoneWeights",
-                   "blendIndices": "m_BoneIndices"}
+_HANDLER_FIELDS = {
+    "position": "m_Vertices",
+    "normal": "m_Normals",
+    "tangent": "m_Tangents",
+    "color": "m_Colors",
+    **{f"uv{i}": f"m_UV{i}" for i in range(8)},
+    "blendWeight": "m_BoneWeights",
+    "blendIndices": "m_BoneIndices",
+}
 
 
 def handler_input(src, tt: dict, version: tuple) -> MeshInput:
     """MeshInput decoded by UnityPy's MeshHandler from `src` (a Mesh object, or a Sprite's m_RD)."""
     import numpy as np
     from UnityPy.helpers.MeshHelper import MeshHandler
+
     h = MeshHandler(src, tuple(version))
     h.process()
     decoded = {}
@@ -147,17 +168,26 @@ def handler_input(src, tt: dict, version: tuple) -> MeshInput:
     base = mesh_input_from_typetree({**tt, "m_StreamData": None} if "m_RD" not in tt else tt, version)
     ib = h.m_IndexBuffer
     return MeshInput(
-        name=base.name, version=base.version, vertex_count=int(h.m_VertexCount or 0), decoded=decoded,
+        name=base.name,
+        version=base.version,
+        vertex_count=int(h.m_VertexCount or 0),
+        decoded=decoded,
         index_buffer=[] if not ib else list(ib) if not isinstance(ib, (bytes, bytearray)) else bytes(ib),
-        index_bits=16 if h.m_Use16BitIndices else 32, submeshes=base.submeshes, bind_poses=base.bind_poses,
-        bone_name_hashes=base.bone_name_hashes, root_bone_name_hash=base.root_bone_name_hash,
-        blend_shapes=base.blend_shapes, variable_bone_weights=base.variable_bone_weights)
+        index_bits=16 if h.m_Use16BitIndices else 32,
+        submeshes=base.submeshes,
+        bind_poses=base.bind_poses,
+        bone_name_hashes=base.bone_name_hashes,
+        root_bone_name_hash=base.root_bone_name_hash,
+        blend_shapes=base.blend_shapes,
+        variable_bone_weights=base.variable_bone_weights,
+    )
 
 
 def _resource(assets_file, path: str, offset: int, size: int) -> bytes:
     """`size` bytes at `offset` of the resource file `path` (a .resS / .resource inside the same bundle). Unlike
     UnityPy's own lookup, nothing outside the loaded bundle is searched."""
     import ntpath
+
     base = ntpath.basename(path)
     stem = ntpath.splitext(base)[0]
     env = assets_file.environment
@@ -185,8 +215,9 @@ class UnityBundle:
                 st = r.serialized_type
                 h = getattr(st, "old_type_hash", None) if st is not None else None
                 self._readers[(name, pid)] = r
-                self._infos.append(ObjectInfo(name, int(pid), int(r.class_id), r.type.name, int(r.byte_size),
-                                              h.hex() if h else None))
+                self._infos.append(
+                    ObjectInfo(name, int(pid), int(r.class_id), r.type.name, int(r.byte_size), h.hex() if h else None)
+                )
 
     def _reader(self, obj: ObjectInfo):
         return self._readers[(obj.file, obj.path_id)]
@@ -241,8 +272,15 @@ class UnityBundle:
                 data = _resource(r.assets_file, stream.path, int(stream.offset), int(stream.size))
             else:
                 raise ValueError(f"{obj.id}: texture without image data")
-        return TextureInput(data, w, h, int(tex.m_TextureFormat), tuple(getattr(r, "version", (0, 0, 0, 0))),
-                            int(getattr(r, "platform", 0) or 0), None if blob is None else bytes(blob))
+        return TextureInput(
+            data,
+            w,
+            h,
+            int(tex.m_TextureFormat),
+            tuple(getattr(r, "version", (0, 0, 0, 0))),
+            int(getattr(r, "platform", 0) or 0),
+            None if blob is None else bytes(blob),
+        )
 
     def mesh_input(self, obj: ObjectInfo) -> MeshInput:
         r = self._reader(obj)
@@ -253,13 +291,15 @@ class UnityBundle:
         if needs_handler(tt, version):
             o = r.read()
             return handler_input(o.m_RD if obj.class_name == "Sprite" else o, tt, version)
-        return mesh_input_from_typetree(tt, version, lambda path, offset, size: _resource(r.assets_file, path,
-                                                                                           offset, size))
+        return mesh_input_from_typetree(
+            tt, version, lambda path, offset, size: _resource(r.assets_file, path, offset, size)
+        )
 
 
 def open_bundle(data: bytes) -> UnityBundle:
     """The BundleView of a bundle's bytes (decrypted UnityFS), loaded alone."""
     from ..unity import load_bytes
+
     return UnityBundle(load_bytes(bytes(data)))
 
 

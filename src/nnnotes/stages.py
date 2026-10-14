@@ -21,6 +21,7 @@ function of the task's key parts: a change of what a stage writes is a change of
 Deterministic per-object failures are items (status `failed`, cached with the result); an exception out of `run`
 fails the task, and nothing of it is cached.
 """
+
 from __future__ import annotations
 
 import time
@@ -30,8 +31,20 @@ from importlib import metadata
 from . import contract
 from .contract import Cost, IncompatibleTask, Input, Task
 
-__all__ = ["Stage", "Env", "Pending", "Output", "Execution", "IncompatibleTask", "describe", "execute", "registry",
-           "golden", "golden_problems", "library_versions"]
+__all__ = [
+    "Stage",
+    "Env",
+    "Pending",
+    "Output",
+    "Execution",
+    "IncompatibleTask",
+    "describe",
+    "execute",
+    "registry",
+    "golden",
+    "golden_problems",
+    "library_versions",
+]
 
 
 class Pending(Exception):
@@ -45,6 +58,7 @@ class Pending(Exception):
 @dataclass
 class Output:
     """What Stage.run returns: artifact records (their bytes already in the store) and one item per object."""
+
     artifacts: list = field(default_factory=list)
     items: list = field(default_factory=list)
 
@@ -52,11 +66,12 @@ class Output:
 class Stage:
     """Base of the stages. Subclasses set `name` and `version` and override what their subjects need; `ATOMS` is
     every atom the stage may use (atom name -> implementation id), the default answer of `uses`."""
+
     name: str = ""
     version: int = 0
-    after: tuple = ()                  # stages that run before this one (their results feed its tasks)
+    after: tuple = ()  # stages that run before this one (their results feed its tasks)
     ATOMS: dict = {}
-    PARAMS: dict = {}                  # parameter defaults; normalize fills them and refuses unknown names
+    PARAMS: dict = {}  # parameter defaults; normalize fills them and refuses unknown names
 
     def subjects(self, env: "Env") -> list[str]:
         raise NotImplementedError
@@ -105,9 +120,9 @@ class Env:
     def __init__(self, store, facts: dict | None = None):
         self.store = store
         self.facts = dict(facts or {})
-        self.params: dict = {}                   # the normalized parameters of the task being described
-        self._keys: dict[str, str] = {}          # task id -> key, for tasks whose result is in the store
-        self._open: dict[str, bool] = {}         # task id -> failed?, for tasks without a result
+        self.params: dict = {}  # the normalized parameters of the task being described
+        self._keys: dict[str, str] = {}  # task id -> key, for tasks whose result is in the store
+        self._open: dict[str, bool] = {}  # task id -> failed?, for tasks without a result
 
     def fact(self, name: str):
         try:
@@ -170,8 +185,16 @@ def describe(stage: Stage, subject: str, params: dict | None, env: Env) -> Task:
     env.params = p
     try:
         ins = list(stage.inputs(subject, env))
-        return Task(stage.name, stage.version, subject, p, dict(stage.uses(subject, env)), tuple(ins),
-                    dict(stage.context(subject, env)), stage.estimate(subject, env, ins))
+        return Task(
+            stage.name,
+            stage.version,
+            subject,
+            p,
+            dict(stage.uses(subject, env)),
+            tuple(ins),
+            dict(stage.context(subject, env)),
+            stage.estimate(subject, env, ins),
+        )
     finally:
         env.params = {}
 
@@ -179,6 +202,7 @@ def describe(stage: Stage, subject: str, params: dict | None, env: Env) -> Task:
 @dataclass
 class Execution:
     """The outcome of execute: `status` hit (the result was in the store) or ran; the measured cost of a run."""
+
     task: str
     key: str
     status: str
@@ -196,8 +220,10 @@ def execute(task: Task, store, stages: dict[str, Stage], *, force: bool = False)
     if stage is None:
         raise IncompatibleTask(f"task {task.id}: no stage {task.stage!r} in this installation")
     if stage.version != task.version:
-        raise IncompatibleTask(f"task {task.id}: stage {task.stage} is version {stage.version} here, "
-                               f"the task was described for version {task.version}")
+        raise IncompatibleTask(
+            f"task {task.id}: stage {task.stage} is version {stage.version} here, "
+            f"the task was described for version {task.version}"
+        )
     if not force:
         hit = store.result(task.key)
         if hit is not None:
@@ -211,9 +237,14 @@ def execute(task: Task, store, stages: dict[str, Stage], *, force: bool = False)
     store.commit(doc)
     own = time.process_time() - cpu
     child = None if children is None else max(0.0, children_cpu() - children)
-    cost = {"schema": contract.COST, "key": task.key, "task": task.id,
-            "cpuSeconds": round(own + (child or 0.0), 3), "wallSeconds": round(time.perf_counter() - wall, 3),
-            "childCpuSeconds": None if child is None else round(child, 3)}
+    cost = {
+        "schema": contract.COST,
+        "key": task.key,
+        "task": task.id,
+        "cpuSeconds": round(own + (child or 0.0), 3),
+        "wallSeconds": round(time.perf_counter() - wall, 3),
+        "childCpuSeconds": None if child is None else round(child, 3),
+    }
     return Execution(task.id, task.key, "ran", doc["status"], cost)
 
 
@@ -253,8 +284,13 @@ def golden(stage: Stage, fixtures: dict, store, libraries=()) -> dict:
         doc = store.result(task.key)
         atoms.update(task.atoms)
         out[name] = {"key": task.key, "result": contract.sha256(contract.encode(doc))}
-    return {"stage": stage.name, "version": stage.version, "atoms": dict(sorted(atoms.items())),
-            "libraries": library_versions(libraries), "fixtures": out}
+    return {
+        "stage": stage.name,
+        "version": stage.version,
+        "atoms": dict(sorted(atoms.items())),
+        "libraries": library_versions(libraries),
+        "fixtures": out,
+    }
 
 
 def golden_problems(expected: dict, actual: dict, stage: Stage | None = None) -> list[str]:
@@ -263,11 +299,14 @@ def golden_problems(expected: dict, actual: dict, stage: Stage | None = None) ->
     With `stage`, every atom it declares must be used by some fixture."""
     problems = []
     if expected.get("version") != actual["version"]:
-        problems.append(f"{actual['stage']}: version {actual['version']}, golden record has "
-                        f"{expected.get('version')}: regenerate the golden record")
+        problems.append(
+            f"{actual['stage']}: version {actual['version']}, golden record has "
+            f"{expected.get('version')}: regenerate the golden record"
+        )
     if expected.get("atoms") != actual["atoms"]:
-        problems.append(f"{actual['stage']}: atoms {actual['atoms']} differ from the golden record's "
-                        f"{expected.get('atoms')}")
+        problems.append(
+            f"{actual['stage']}: atoms {actual['atoms']} differ from the golden record's {expected.get('atoms')}"
+        )
     exp, act = expected.get("fixtures", {}), actual["fixtures"]
     for name in sorted(set(exp) | set(act)):
         if name not in act:

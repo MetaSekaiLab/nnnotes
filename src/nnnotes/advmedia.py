@@ -31,6 +31,7 @@ assets become {asset, name} and TextMeshPro materials {material, shader}, each w
 text with a font of its own; "game" exports the font assets and their materials with the atlas textures like any
 other asset. A MonoBehaviour whose script is missing (Unity runs nothing for it) is recorded as such.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -46,8 +47,11 @@ TMP_SHADER_PREFIX = "TextMeshPro/"
 TMP_ASSETS = ("TMP_FontAsset", "TMP_SpriteAsset", "TMP_StyleSheet")
 FONT_CHOICES = ("open", "game")
 FONT_NOTE = "font data not exported (fonts: open): draw the text with a font of your own"
-CHAT_SHARDS = {"text": "Adv/Chat/AdvChat-Text", "sounds": "Adv/Chat/AdvChat-Sound",
-               "cueSheets": "Adv/Chat/AdvChat-SoundCueSheet"}
+CHAT_SHARDS = {
+    "text": "Adv/Chat/AdvChat-Text",
+    "sounds": "Adv/Chat/AdvChat-Sound",
+    "cueSheets": "Adv/Chat/AdvChat-SoundCueSheet",
+}
 # resource kind -> (story.json key = file key, file, address prefix removed from the entry keys; None: last segment)
 FILES = {
     "frame": ("frames", "frames.json", adv.RESOURCE_PREFIX["Frame"][1]),
@@ -69,9 +73,14 @@ class MediaExporter(Exporter):
     def __init__(self, cat: Catalog, out_dir: Path, player: PlayerData, fonts: str = "open"):
         if fonts not in FONT_CHOICES:
             raise ValueError(f"fonts={fonts!r}")
-        super().__init__(cat, out_dir, player=player, stub_assets=TMP_ASSETS if fonts == "open" else (),
-                         follow=("AnimatorController",),
-                         font_stubs=fontsettings.builtin() if fonts == "open" else None)
+        super().__init__(
+            cat,
+            out_dir,
+            player=player,
+            stub_assets=TMP_ASSETS if fonts == "open" else (),
+            follow=("AnimatorController",),
+            font_stubs=fontsettings.builtin() if fonts == "open" else None,
+        )
         self.fonts = fonts
 
     def scriptable(self, o) -> dict:
@@ -104,8 +113,12 @@ class MediaExporter(Exporter):
         if o.type.name == "MonoBehaviour":
             tt = o.read_typetree()
             if not tt["m_Script"]["m_PathID"]:
-                return {"type": "MonoBehaviour", "class": None, "missingScript": True,
-                        **self.value(o, {k: v for k, v in tt.items() if k not in HEADER})}
+                return {
+                    "type": "MonoBehaviour",
+                    "class": None,
+                    "missingScript": True,
+                    **self.value(o, {k: v for k, v in tt.items() if k not in HEADER}),
+                }
         return super().component(o)
 
 
@@ -114,7 +127,7 @@ def _suffix(address: str, prefix: str | None) -> str:
         return address.rsplit("/", 1)[-1]
     if not address.startswith(prefix):
         raise ValueError(f"{address}: not under {prefix}")
-    return address[len(prefix):]
+    return address[len(prefix) :]
 
 
 def effect_instances(commands: list[dict]) -> dict[str, str]:
@@ -122,8 +135,12 @@ def effect_instances(commands: list[dict]) -> dict[str, str]:
     TargetName is the instance every later Effect row with that TargetName drives)."""
     out: dict[str, str] = {}
     for c in commands:
-        if c["cmd"] == "Effect" and not c.get("IgnoreData") and adv._name(c.get("TargetName")) \
-                and adv._name(c.get("TargetAssetName")):
+        if (
+            c["cmd"] == "Effect"
+            and not c.get("IgnoreData")
+            and adv._name(c.get("TargetName"))
+            and adv._name(c.get("TargetAssetName"))
+        ):
             out.setdefault(c["TargetName"], c["TargetAssetName"])
     return out
 
@@ -131,8 +148,7 @@ def effect_instances(commands: list[dict]) -> dict[str, str]:
 def _chat(cat: Catalog, master: Path, ex: Exporter, episode: dict, resources: list[dict]) -> dict:
     rows = {r["_id"]: r for r in master_mod.table(master, "MasterAdvChat")}
     ids = sorted({c["TargetChatID"] for c in episode["commands"] if c.get("TargetChatID")})
-    doc: dict = {"chats": {str(i): rows[i] for i in ids if i in rows},
-                 "windows": {}, "icons": {}, "stamps": {}}
+    doc: dict = {"chats": {str(i): rows[i] for i in ids if i in rows}, "windows": {}, "icons": {}, "stamps": {}}
     for r in resources:
         if r["kind"] == "chatwindow":
             doc["windows"][_suffix(r["address"], adv.CHAT_WINDOW_PREFIX)] = ex.export_key(r["address"])
@@ -146,8 +162,7 @@ def _chat(cat: Catalog, master: Path, ex: Exporter, episode: dict, resources: li
     return doc
 
 
-def extract(cat: Catalog, player: PlayerData, master: Path, episode: dict, out_dir: Path,
-            fonts: str = "open") -> dict:
+def extract(cat: Catalog, player: PlayerData, master: Path, episode: dict, out_dir: Path, fonts: str = "open") -> dict:
     """Write the kind files the episode needs (`fonts`: see the module docstring). Returns {"files": {index key:
     file or None} for every INDEX_KEYS entry, "shaders": {name: Shader object}, "counts": {index key: entries},
     "textures": textures written}."""

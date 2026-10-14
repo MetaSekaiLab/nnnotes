@@ -22,6 +22,7 @@ PNG). Shaders referenced anywhere, every Shader in the loaded bundle closures,
 the ADV camera renderer's shaders and the shaders handed in by the caller (those
 of advmedia's kind files) are dumped with shader.py into one `shaders/`.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -78,24 +79,30 @@ def extract(cat: Catalog, player: PlayerData, episode: dict, out_dir: Path, shad
     for node in doc["cameraManager"]["nodes"]:
         for comp in node["components"]:
             if comp.get("class") == "UniversalAdditionalCameraData":
-                renderers.add(camera_renderer(graphics, graphics["defaultPipeline"],
-                                              comp["m_RendererIndex"]))
+                renderers.add(camera_renderer(graphics, graphics["defaultPipeline"], comp["m_RendererIndex"]))
     for rn in sorted(renderers):
         for o in player.renderer_shaders(rn):
             ex._shader(o)
     for name, o in (shaders or {}).items():
         ex.shaders.setdefault(name, o)
     # post-process textures the URP chain samples (film grain lookup by FilmGrain.type)
-    doc["postTextures"] = {rn: {"filmGrainTex": [ex.texture(o) for o in player.post_textures(rn, "filmGrainTex")]}
-                           for rn in sorted(renderers)}
+    doc["postTextures"] = {
+        rn: {"filmGrainTex": [ex.texture(o) for o in player.post_textures(rn, "filmGrainTex")]}
+        for rn in sorted(renderers)
+    }
     sdir = out_dir / "shaders"
     index: list = []
     for name in sorted(ex.shaders):
         shader_mod.dump_objects([ex.shaders[name]], sdir, ex.shaders[name].assets_file.name, index)
     shader_summary = shader_mod.write_index(index, sdir)
-    doc["shaders"] = {"index": "shaders/shaders.json", "names": shader_summary["names"],
-                      "cameraRenderers": sorted(renderers)}
-    doc["convention"] = ("Unity space (left-handed, Y up); transforms are local TRS; "
-                         "quaternions (x,y,z,w); colours in the project's Gamma space")
+    doc["shaders"] = {
+        "index": "shaders/shaders.json",
+        "names": shader_summary["names"],
+        "cameraRenderers": sorted(renderers),
+    }
+    doc["convention"] = (
+        "Unity space (left-handed, Y up); transforms are local TRS; "
+        "quaternions (x,y,z,w); colours in the project's Gamma space"
+    )
     write_json(out_dir / "scene.json", doc)
     return {"stages": list(stages), "textures": len(ex.textures), **shader_summary}

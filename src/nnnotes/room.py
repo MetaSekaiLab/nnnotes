@@ -29,6 +29,7 @@ The situation's backgroundPosition/Rotation/Scale (spot.json) is not baked in: i
 goes on top of this, as the game applies it to the prefab root. Objects that
 are inactive in the prefab are kept, flagged `extras.unityActive = false`.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -45,7 +46,7 @@ from .unity import SceneGraph, deref, mesh_arrays, texture_image
 
 # UnityEngine.Rendering.BlendMode
 BLEND_ONE, BLEND_ZERO, BLEND_SRC_ALPHA, BLEND_ONE_MINUS_SRC_ALPHA = 1, 0, 5, 10
-BLEND_OP_ADD = 0                                 # UnityEngine.Rendering.BlendOp.Add
+BLEND_OP_ADD = 0  # UnityEngine.Rendering.BlendOp.Add
 # UnityEngine.Rendering.CullMode
 CULL_OFF, CULL_FRONT, CULL_BACK = 0, 1, 2
 # glTF sampler enums
@@ -56,13 +57,19 @@ WRAP = {0: REPEAT, 1: CLAMP, 2: MIRROR, 3: MIRROR}
 UNLIT_SHADERS = ("Unlit/", "Universal Render Pipeline/Unlit")
 # render state of a pass (SerializedShaderState) read by room: record key -> path in m_State (render target 0)
 STATE_FIELDS = {
-    "srcBlend": ("rtBlend0", "srcBlend"), "dstBlend": ("rtBlend0", "destBlend"),
-    "srcBlendAlpha": ("rtBlend0", "srcBlendAlpha"), "dstBlendAlpha": ("rtBlend0", "destBlendAlpha"),
-    "blendOp": ("rtBlend0", "blendOp"), "blendOpAlpha": ("rtBlend0", "blendOpAlpha"),
-    "colorMask": ("rtBlend0", "colMask"), "cull": ("culling",), "zWrite": ("zWrite",), "zTest": ("zTest",),
+    "srcBlend": ("rtBlend0", "srcBlend"),
+    "dstBlend": ("rtBlend0", "destBlend"),
+    "srcBlendAlpha": ("rtBlend0", "srcBlendAlpha"),
+    "dstBlendAlpha": ("rtBlend0", "destBlendAlpha"),
+    "blendOp": ("rtBlend0", "blendOp"),
+    "blendOpAlpha": ("rtBlend0", "blendOpAlpha"),
+    "colorMask": ("rtBlend0", "colMask"),
+    "cull": ("culling",),
+    "zWrite": ("zWrite",),
+    "zTest": ("zTest",),
     "alphaToMask": ("alphaToMask",),
 }
-NO_PROPERTY = "<noninit>"                        # SerializedShaderFloatValue.name of a fixed value
+NO_PROPERTY = "<noninit>"  # SerializedShaderFloatValue.name of a fixed value
 
 
 # ---- material translation -------------------------------------------------
@@ -170,8 +177,11 @@ def main_textures(owner, mat_tt: dict, shader_name: str) -> list:
     """[(texture object, texture env)] of a material's main texture slot (_main_tex_slot) when it holds a texture;
     `owner` is the material's object, whose file the env's PPtr is read from."""
     slot = _main_tex_slot(shader_name)
-    return [(deref(owner, env["m_Texture"]), env) for key, env in mat_tt["m_SavedProperties"]["m_TexEnvs"]
-            if key == slot and env["m_Texture"]["m_PathID"]]
+    return [
+        (deref(owner, env["m_Texture"]), env)
+        for key, env in mat_tt["m_SavedProperties"]["m_TexEnvs"]
+        if key == slot and env["m_Texture"]["m_PathID"]
+    ]
 
 
 def _sampler(tex_tt: dict) -> dict:
@@ -183,9 +193,12 @@ def _sampler(tex_tt: dict) -> dict:
         mn = NEAREST_MIPMAP_NEAREST if mips else NEAREST
     else:
         mn = LINEAR_MIPMAP_LINEAR if mips else LINEAR
-    return {"magFilter": mag, "minFilter": mn,
-            "wrapS": WRAP.get(s.get("m_WrapU", 0), REPEAT),
-            "wrapT": WRAP.get(s.get("m_WrapV", 0), REPEAT)}
+    return {
+        "magFilter": mag,
+        "minFilter": mn,
+        "wrapS": WRAP.get(s.get("m_WrapU", 0), REPEAT),
+        "wrapT": WRAP.get(s.get("m_WrapV", 0), REPEAT),
+    }
 
 
 # ---- glTF builder -------------------------------------------------------
@@ -194,7 +207,7 @@ class _Glb:
         self.bin = bytearray()
         self.bufferViews, self.accessors, self.meshes, self.nodes = [], [], [], []
         self.materials, self.textures, self.images, self.samplers = [], [], [], []
-        self._image_of: dict[str, int] = {}      # sha256 of the PNG bytes -> image index
+        self._image_of: dict[str, int] = {}  # sha256 of the PNG bytes -> image index
         self.ext_used: set[str] = set()
 
     def _view(self, data: bytes, target=None) -> int:
@@ -209,8 +222,12 @@ class _Glb:
 
     def accessor_f32(self, arr: np.ndarray, kind: str, minmax=False) -> int:
         a = np.ascontiguousarray(arr, dtype="<f4")
-        acc = {"bufferView": self._view(a.tobytes(), 34962), "componentType": 5126,
-               "count": int(arr.shape[0]), "type": kind}
+        acc = {
+            "bufferView": self._view(a.tobytes(), 34962),
+            "componentType": 5126,
+            "count": int(arr.shape[0]),
+            "type": kind,
+        }
         if minmax:
             acc["min"] = a.min(0).tolist()
             acc["max"] = a.max(0).tolist()
@@ -219,8 +236,14 @@ class _Glb:
 
     def accessor_idx(self, idx: np.ndarray) -> int:
         a = np.ascontiguousarray(idx, dtype="<u4")
-        self.accessors.append({"bufferView": self._view(a.tobytes(), 34963), "componentType": 5125,
-                               "count": int(idx.shape[0]), "type": "SCALAR"})
+        self.accessors.append(
+            {
+                "bufferView": self._view(a.tobytes(), 34963),
+                "componentType": 5125,
+                "count": int(idx.shape[0]),
+                "type": "SCALAR",
+            }
+        )
         return len(self.accessors) - 1
 
     def texture(self, png: bytes, name: str, sampler: dict) -> int:
@@ -232,8 +255,7 @@ class _Glb:
             self._image_of[digest] = len(self.images) - 1
         if sampler not in self.samplers:
             self.samplers.append(sampler)
-        self.textures.append({"name": name, "source": self._image_of[digest],
-                              "sampler": self.samplers.index(sampler)})
+        self.textures.append({"name": name, "source": self._image_of[digest], "sampler": self.samplers.index(sampler)})
         return len(self.textures) - 1
 
     def material(self, m: dict) -> int:
@@ -243,8 +265,7 @@ class _Glb:
 
     def add_mesh(self, name, pos, nrm, uv, prims, active=True) -> None:
         """prims: [(triangle index array, material index)] -- one per submesh."""
-        attrs = {"POSITION": self.accessor_f32(pos, "VEC3", minmax=True),
-                 "TEXCOORD_0": self.accessor_f32(uv, "VEC2")}
+        attrs = {"POSITION": self.accessor_f32(pos, "VEC3", minmax=True), "TEXCOORD_0": self.accessor_f32(uv, "VEC2")}
         if len(nrm):
             attrs["NORMAL"] = self.accessor_f32(nrm, "VEC3")
         primitives = []
@@ -254,8 +275,7 @@ class _Glb:
                 p["material"] = material
             primitives.append(p)
         self.meshes.append({"name": name, "primitives": primitives})
-        self.nodes.append({"name": name, "mesh": len(self.meshes) - 1,
-                           "extras": {"unityActive": active}})
+        self.nodes.append({"name": name, "mesh": len(self.meshes) - 1, "extras": {"unityActive": active}})
 
     def write(self, path: Path, extras: dict):
         """glTF requires the arrays it has to be non-empty and a buffer to hold bytes: an empty array is left out,
@@ -263,11 +283,17 @@ class _Glb:
         scene = {"nodes": list(range(len(self.nodes)))} if self.nodes else {}
         gltf = {
             "asset": {"version": "2.0", "generator": "nnnotes/room", "extras": extras},
-            "scene": 0, "scenes": [scene],
-            "nodes": self.nodes, "meshes": self.meshes, "accessors": self.accessors,
-            "bufferViews": self.bufferViews, "buffers": [{"byteLength": len(self.bin)}] if self.bin else [],
-            "materials": self.materials, "textures": self.textures,
-            "images": self.images, "samplers": self.samplers,
+            "scene": 0,
+            "scenes": [scene],
+            "nodes": self.nodes,
+            "meshes": self.meshes,
+            "accessors": self.accessors,
+            "bufferViews": self.bufferViews,
+            "buffers": [{"byteLength": len(self.bin)}] if self.bin else [],
+            "materials": self.materials,
+            "textures": self.textures,
+            "images": self.images,
+            "samplers": self.samplers,
         }
         gltf = {k: v for k, v in gltf.items() if v != []}
         if self.ext_used:
@@ -278,9 +304,11 @@ class _Glb:
         size = 12 + 8 + len(js) + (8 + len(self.bin) if self.bin else 0)
         with open(path, "wb") as f:
             f.write(struct.pack("<III", 0x46546C67, 2, size))
-            f.write(struct.pack("<II", len(js), 0x4E4F534A)); f.write(js)
+            f.write(struct.pack("<II", len(js), 0x4E4F534A))
+            f.write(js)
             if self.bin:
-                f.write(struct.pack("<II", len(self.bin), 0x004E4942)); f.write(self.bin)
+                f.write(struct.pack("<II", len(self.bin), 0x004E4942))
+                f.write(self.bin)
 
 
 # ---- extraction ---------------------------------------------------------
@@ -292,7 +320,7 @@ def submesh_primitives(tris: list, mats: list, material_for, on_null) -> list:
     for i, t in enumerate(tris):
         if not len(t):
             continue
-        if not mats[i].path_id:                  # empty slot: no material to draw the submesh with
+        if not mats[i].path_id:  # empty slot: no material to draw the submesh with
             on_null(i)
             continue
         prims.append((t[:, [0, 2, 1]].reshape(-1).astype(np.uint32), material_for(mats[i])))
@@ -335,8 +363,8 @@ def extract_room(cat: Catalog, bg_key: str, out_path: Path) -> dict:
     mf_by_go, mr_by_go = mesh_components(env)
 
     glb = _Glb()
-    tex_cache: dict[tuple[str, int], int] = {}   # texture object_key -> glTF texture
-    mat_cache: dict[tuple[str, int], int] = {}   # material object_key -> glTF material
+    tex_cache: dict[tuple[str, int], int] = {}  # texture object_key -> glTF texture
+    mat_cache: dict[tuple[str, int], int] = {}  # material object_key -> glTF material
 
     def material_for(pptr) -> int:
         mat = pptr.deref()
@@ -350,7 +378,8 @@ def extract_room(cat: Catalog, bg_key: str, out_path: Path) -> dict:
             tid = object_key(tex_obj)
             if tid not in tex_cache:
                 tex_tt = tex_obj.read_typetree()
-                buf = io.BytesIO(); texture_image(tex_obj.read()).save(buf, format="PNG")
+                buf = io.BytesIO()
+                texture_image(tex_obj.read()).save(buf, format="PNG")
                 tex_cache[tid] = glb.texture(buf.getvalue(), tex_tt["m_Name"], _sampler(tex_tt))
             info = {"index": tex_cache[tid]}
             sx, sy = env_["m_Scale"]["x"], env_["m_Scale"]["y"]
@@ -358,8 +387,7 @@ def extract_room(cat: Catalog, bg_key: str, out_path: Path) -> dict:
             if (sx, sy, ox, oy) != (1.0, 1.0, 0.0, 0.0):
                 # Unity samples (u*sx+ox, v*sy+oy) with a bottom-left origin;
                 # in glTF's top-left texture space that is this transform.
-                info["extensions"] = {"KHR_texture_transform":
-                                      {"scale": [sx, sy], "offset": [ox, 1.0 - sy - oy]}}
+                info["extensions"] = {"KHR_texture_transform": {"scale": [sx, sy], "offset": [ox, 1.0 - sy - oy]}}
                 glb.ext_used.add("KHR_texture_transform")
             gm["pbrMetallicRoughness"]["baseColorTexture"] = info
         mat_cache[mkey] = glb.material(gm)
@@ -368,23 +396,23 @@ def extract_room(cat: Catalog, bg_key: str, out_path: Path) -> dict:
     n_mesh = 0
     n_inactive = 0
     skipped = []
-    null_slots = []                              # submeshes whose material slot is empty
-    null_meshes = []                             # objects whose MeshFilter has no mesh
-    no_triangles = []                            # meshes with vertices but no triangles
+    null_slots = []  # submeshes whose material slot is empty
+    null_meshes = []  # objects whose MeshFilter has no mesh
+    no_triangles = []  # meshes with vertices but no triangles
     for tf_pid, mesh, mats in drawn_meshes(mf_by_go, mr_by_go, graph, null_meshes.append):
         arrays = mesh_arrays(mesh)
         if arrays is None:
-            skipped.append(mesh.m_Name)          # empty mesh (no vertex data)
+            skipped.append(mesh.m_Name)  # empty mesh (no vertex data)
             continue
         v, vn, uv0, tris = arrays
-        if not any(len(t) for t in tris):        # vertices only (e.g. a placeholder mesh without index data)
+        if not any(len(t) for t in tris):  # vertices only (e.g. a placeholder mesh without index data)
             no_triangles.append({"mesh": mesh.m_Name, "path": graph.path(tf_pid)})
             continue
         if len(mats) < len(tris):
             raise NotImplementedError(f"{mesh.m_Name}: {len(tris)} submeshes, {len(mats)} materials")
         m = graph.world(tf_pid)
         p = (np.hstack([v, np.ones((len(v), 1))]) @ m.T)[:, :3]
-        p[:, 2] *= -1.0                          # Unity LH -> glTF RH
+        p[:, 2] *= -1.0  # Unity LH -> glTF RH
         if len(vn):
             nw = vn @ np.linalg.inv(m[:3, :3]).T
             nw /= np.maximum(np.linalg.norm(nw, axis=1, keepdims=True), 1e-12)
@@ -392,9 +420,13 @@ def extract_room(cat: Catalog, bg_key: str, out_path: Path) -> dict:
         else:
             nw = np.empty((0, 3))
         uv = uv0.copy()
-        uv[:, 1] = 1.0 - uv[:, 1]                # Unity UV origin bottom-left -> glTF top-left
-        prims = submesh_primitives(tris, mats, material_for, lambda i: null_slots.append(
-            {"mesh": mesh.m_Name, "path": graph.path(tf_pid), "submesh": i}))
+        uv[:, 1] = 1.0 - uv[:, 1]  # Unity UV origin bottom-left -> glTF top-left
+        prims = submesh_primitives(
+            tris,
+            mats,
+            material_for,
+            lambda i: null_slots.append({"mesh": mesh.m_Name, "path": graph.path(tf_pid), "submesh": i}),
+        )
         if not prims:
             continue
         is_active = graph.active(tf_pid)
@@ -406,19 +438,26 @@ def extract_room(cat: Catalog, bg_key: str, out_path: Path) -> dict:
     out_path.parent.mkdir(parents=True, exist_ok=True)
     glb.write(out_path, {"backgroundKey": bg_key})
     doc = {
-        "backgroundKey": bg_key, "glb": out_path.name, "meshCount": n_mesh,
+        "backgroundKey": bg_key,
+        "glb": out_path.name,
+        "meshCount": n_mesh,
         "inactiveMeshes": n_inactive,
         "skippedEmptyMeshes": skipped,
         "nullMaterialSubmeshes": null_slots,
         "nullMeshFilters": null_meshes,
         "meshesWithoutTriangles": no_triangles,
-        "materials": [{"name": m["name"], "shader": m["extras"]["unityShader"],
-                       "alphaMode": m.get("alphaMode", "OPAQUE"),
-                       "alphaCutoff": m.get("alphaCutoff"),
-                       "doubleSided": m.get("doubleSided", False),
-                       "unlit": "KHR_materials_unlit" in m.get("extensions", {}),
-                       "renderState": m["extras"]["unityRenderState"]}
-                      for m in glb.materials],
+        "materials": [
+            {
+                "name": m["name"],
+                "shader": m["extras"]["unityShader"],
+                "alphaMode": m.get("alphaMode", "OPAQUE"),
+                "alphaCutoff": m.get("alphaCutoff"),
+                "doubleSided": m.get("doubleSided", False),
+                "unlit": "KHR_materials_unlit" in m.get("extensions", {}),
+                "renderState": m["extras"]["unityRenderState"],
+            }
+            for m in glb.materials
+        ],
         "textures": [t["name"] for t in glb.textures],
         "samplers": glb.samplers,
     }

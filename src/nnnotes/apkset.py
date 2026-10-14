@@ -4,6 +4,7 @@ The base manifest wins over split manifests. Resource members are resolved acros
 no merged APK is produced. Nested APKs are expanded once per archive revision to disk, with
 at most two idle APK sets retained per process; active readers keep their set alive until closed.
 """
+
 from __future__ import annotations
 
 import shutil
@@ -73,14 +74,13 @@ class ApkSet:
                 raise FileNotFoundError("APK directory has no base.apk")
             paths = [base] + sorted(p for p in path.glob("*.apk") if p != base)
         elif path.suffix.lower() in (".apks", ".xapk"):
-            with _EXPAND_LOCK:              # lru_cache alone permits duplicate concurrent expansions
+            with _EXPAND_LOCK:  # lru_cache alone permits duplicate concurrent expansions
                 self._expanded = _expanded_apks(file_id(path.resolve()))
             paths = self._expanded[1]
         else:
             paths = [path]
             if path.name == "base.apk":
-                paths += sorted(p for p in path.parent.glob("*.apk")
-                                if p.name.startswith(("split_", "config.")))
+                paths += sorted(p for p in path.parent.glob("*.apk") if p.name.startswith(("split_", "config.")))
         for apk in paths:
             self._add(apk)
 

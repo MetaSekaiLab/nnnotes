@@ -2,6 +2,7 @@
 of a story group, the slot capture camera and layout root records, SpotBackground.Prepare, the floor render queue
 rule, the room node, material and texture order, the build's entry and return value. Nothing here comes from game
 data."""
+
 import json
 from types import SimpleNamespace
 
@@ -30,23 +31,48 @@ def graph(tree, inactive=()):
     def walk(name, kids, father):
         tf = len(ids) + 1
         ids[name] = tf
-        objs.append(obj("GameObject", 1000 + tf, {"m_Name": name.split("#")[0], "m_IsActive": name not in inactive,
-                                                   "m_Layer": 0, "m_Component": []}))
-        entry = {"m_GameObject": {"m_FileID": 0, "m_PathID": 1000 + tf},
-                 "m_Father": {"m_FileID": 0, "m_PathID": father}, "m_Children": [],
-                 "m_LocalPosition": V0, "m_LocalRotation": Q0, "m_LocalScale": V1}
+        objs.append(
+            obj(
+                "GameObject",
+                1000 + tf,
+                {"m_Name": name.split("#")[0], "m_IsActive": name not in inactive, "m_Layer": 0, "m_Component": []},
+            )
+        )
+        entry = {
+            "m_GameObject": {"m_FileID": 0, "m_PathID": 1000 + tf},
+            "m_Father": {"m_FileID": 0, "m_PathID": father},
+            "m_Children": [],
+            "m_LocalPosition": V0,
+            "m_LocalRotation": Q0,
+            "m_LocalScale": V1,
+        }
         objs.append(obj("Transform", tf, entry))
         for child, sub in kids:
             entry["m_Children"].append({"m_FileID": 0, "m_PathID": walk(child, sub, tf)})
         return tf
+
     for name, kids in tree:
         walk(name, kids, 0)
     return SceneGraph(SimpleNamespace(objects=objs)), ids
 
 
-BACKGROUND = [("bg", [("light", [("table", []), ("chair", []), ("wall_floor_shadow", [("floor_mesh", [])]),
-                                 ("obj_floor", [("mesh_a", []), ("mesh_b", [])])])]),
-              ("model", [("table#m", [])])]
+BACKGROUND = [
+    (
+        "bg",
+        [
+            (
+                "light",
+                [
+                    ("table", []),
+                    ("chair", []),
+                    ("wall_floor_shadow", [("floor_mesh", [])]),
+                    ("obj_floor", [("mesh_a", []), ("mesh_b", [])]),
+                ],
+            )
+        ],
+    ),
+    ("model", [("table#m", [])]),
+]
 
 
 def test_prepare_matches_the_situation_without_clone_suffix():
@@ -57,10 +83,10 @@ def test_prepare_matches_the_situation_without_clone_suffix():
     assert got["activate"] == [ids["table"], ids["chair"], ids["wall_floor_shadow"], ids["obj_floor"]]
     assert got["hide"] == [1000 + ids["table"], None]
     ov = got["overrides"]
-    assert ov[1000 + ids["chair"]] is True and ov[1000 + ids["table"]] is False     # hidden after activation
+    assert ov[1000 + ids["chair"]] is True and ov[1000 + ids["table"]] is False  # hidden after activation
     assert not storyhost.active_in_hierarchy(g, ids["table"], ov)
     assert storyhost.active_in_hierarchy(g, ids["chair"], ov)
-    assert not storyhost.active_in_hierarchy(g, ids["chair"], {})                  # saved state
+    assert not storyhost.active_in_hierarchy(g, ids["chair"], {})  # saved state
 
 
 def test_prepare_without_a_matching_entry_keeps_the_prefab_state():
@@ -75,15 +101,17 @@ def test_prepare_without_a_matching_entry_keeps_the_prefab_state():
 def test_floor_rule_skips_shadow_names_and_inactive_renderers():
     g, ids = graph(BACKGROUND, inactive=("mesh_a",))
     floor = storyhost.find_first_child_with_name(g, ids["bg"], "floor", "shadow")
-    assert floor == ids["floor_mesh"]              # below the excluded "wall_floor_shadow", depth first
-    g2, ids2 = graph([("bg", [("a_shadow_floor", []), ("obj_floor", [("mesh_a", []), ("mesh_b", [])])])],
-                     inactive=("mesh_a",))
+    assert floor == ids["floor_mesh"]  # below the excluded "wall_floor_shadow", depth first
+    g2, ids2 = graph(
+        [("bg", [("a_shadow_floor", []), ("obj_floor", [("mesh_a", []), ("mesh_b", [])])])], inactive=("mesh_a",)
+    )
     floor = storyhost.find_first_child_with_name(g2, ids2["bg"], "floor", "shadow")
     assert floor == ids2["obj_floor"]
     renderers = {ids2["mesh_a"], ids2["mesh_b"]}
-    hit = storyhost.component_in_children(g2, floor, renderers.__contains__,
-                                          lambda t: storyhost.active_in_hierarchy(g2, t, {}))
-    assert hit == ids2["mesh_b"]                   # GetComponentInChildren skips the inactive mesh_a
+    hit = storyhost.component_in_children(
+        g2, floor, renderers.__contains__, lambda t: storyhost.active_in_hierarchy(g2, t, {})
+    )
+    assert hit == ids2["mesh_b"]  # GetComponentInChildren skips the inactive mesh_a
     assert storyhost.component_in_children(g2, floor, set().__contains__, lambda t: True) is None
     assert storyhost.find_first_child_with_name(g2, ids2["mesh_b"], "floor", "shadow") is None
 
@@ -102,8 +130,9 @@ class Mesh:
 
 def pp(pid, file="CAB-a"):
     """A material PPtr: its path id and the object it names in `file`."""
-    return SimpleNamespace(path_id=pid, deref=lambda: SimpleNamespace(assets_file=SimpleNamespace(name=file),
-                                                                      path_id=pid))
+    return SimpleNamespace(
+        path_id=pid, deref=lambda: SimpleNamespace(assets_file=SimpleNamespace(name=file), path_id=pid)
+    )
 
 
 def arrays(mesh):
@@ -112,10 +141,12 @@ def arrays(mesh):
 
 def test_glb_json_reads_the_json_chunk(tmp_path):
     import struct
+
     js = json.dumps({"nodes": [{"name": "a"}]}).encode("utf-8")
     js += b" " * (-len(js) % 4)
-    (tmp_path / "r.glb").write_bytes(b"glTF" + struct.pack("<II", 2, 20 + len(js)) + struct.pack("<I", len(js))
-                                     + b"JSON" + js)
+    (tmp_path / "r.glb").write_bytes(
+        b"glTF" + struct.pack("<II", 2, 20 + len(js)) + struct.pack("<I", len(js)) + b"JSON" + js
+    )
     assert storyhost.glb_json(tmp_path / "r.glb") == {"nodes": [{"name": "a"}]}
     (tmp_path / "x.glb").write_bytes(b"XXXX" + bytes(20))
     with pytest.raises(RuntimeError, match="not a binary glTF"):
@@ -124,12 +155,14 @@ def test_glb_json_reads_the_json_chunk(tmp_path):
 
 def test_glb_order_follows_room_extract_room():
     tri = [[0, 1, 2]]
-    drawn = [(1, Mesh("a", [tri, tri]), [pp(20), pp(10)]),
-             (2, Mesh("empty", [tri]), [pp(30)]),              # no vertex data: no node
-             (3, Mesh("none", [[]]), [pp(40)]),                # no triangles
-             (4, Mesh("nomat", [tri]), [pp(0)]),               # its only submesh has no material
-             (5, Mesh("b", [[], tri]), [pp(50), pp(10)]),      # the empty submesh does not number pp(50)
-             (6, Mesh("c", [tri]), [pp(10, "CAB-b")])]         # path id 10 of another file: another material
+    drawn = [
+        (1, Mesh("a", [tri, tri]), [pp(20), pp(10)]),
+        (2, Mesh("empty", [tri]), [pp(30)]),  # no vertex data: no node
+        (3, Mesh("none", [[]]), [pp(40)]),  # no triangles
+        (4, Mesh("nomat", [tri]), [pp(0)]),  # its only submesh has no material
+        (5, Mesh("b", [[], tri]), [pp(50), pp(10)]),  # the empty submesh does not number pp(50)
+        (6, Mesh("c", [tri]), [pp(10, "CAB-b")]),
+    ]  # path id 10 of another file: another material
     nodes, mats = storyhost.glb_order(drawn, arrays)
     assert nodes == [(1, "a"), (5, "b"), (6, "c")]
     assert [room.object_key(m.deref()) for m in mats] == [("CAB-a", 20), ("CAB-a", 10), ("CAB-b", 10)]
@@ -138,14 +171,25 @@ def test_glb_order_follows_room_extract_room():
 
 
 def tex(pid, sx=1.0, file_id=0):
-    return {"m_Texture": {"m_FileID": file_id, "m_PathID": pid}, "m_Scale": {"x": sx, "y": 1.0},
-            "m_Offset": {"x": 0.0, "y": 0.5}}
+    return {
+        "m_Texture": {"m_FileID": file_id, "m_PathID": pid},
+        "m_Scale": {"x": sx, "y": 1.0},
+        "m_Offset": {"x": 0.0, "y": 0.5},
+    }
 
 
 def mat_tt(name, envs, keywords=("K",)):
-    return {"m_Name": name, "m_ValidKeywords": list(keywords), "m_CustomRenderQueue": -1,
-            "m_SavedProperties": {"m_TexEnvs": envs, "m_Floats": [["_Cutoff", 0.5]], "m_Ints": [],
-                                  "m_Colors": [["_Color", {"r": 1.0, "g": 1.0, "b": 1.0, "a": 1.0}]]}}
+    return {
+        "m_Name": name,
+        "m_ValidKeywords": list(keywords),
+        "m_CustomRenderQueue": -1,
+        "m_SavedProperties": {
+            "m_TexEnvs": envs,
+            "m_Floats": [["_Cutoff", 0.5]],
+            "m_Ints": [],
+            "m_Colors": [["_Color", {"r": 1.0, "g": 1.0, "b": 1.0, "a": 1.0}]],
+        },
+    }
 
 
 def test_glb_textures_and_room_materials_keep_the_glb_order():
@@ -157,13 +201,20 @@ def test_glb_textures_and_room_materials_keep_the_glb_order():
     a = mat_tt("a", [["_MainTex", tex(7)], ["_Mask", tex(9)]])
     b = mat_tt("b", [["_MainTex", tex(9)], ["_Extra", tex(7)]])
     c = mat_tt("c", [["_BaseMap", tex(8)], ["_MainTex", tex(6)]])
-    d = mat_tt("d", [["_MainTex", tex(7)]])                      # in CAB-b: its own texture 7
-    e = mat_tt("e", [["_MainTex", tex(7, file_id=1)]])           # in CAB-a: CAB-b's texture 7
-    oa, ob, oc, od, oe = (f.add("Material", pid, tt) for f, pid, tt in
-                          ((fa, 1, a), (fa, 2, b), (fa, 3, c), (fb, 1, d), (fa, 4, e)))
-    index = storyhost.glb_textures([(oa, a, "Unlit/Transparent"), (ob, b, "Unlit/Transparent Cutout"),
-                                    (oc, c, "Universal Render Pipeline/Unlit"), (od, d, "Unlit/Texture"),
-                                    (oe, e, "Unlit/Texture")])
+    d = mat_tt("d", [["_MainTex", tex(7)]])  # in CAB-b: its own texture 7
+    e = mat_tt("e", [["_MainTex", tex(7, file_id=1)]])  # in CAB-a: CAB-b's texture 7
+    oa, ob, oc, od, oe = (
+        f.add("Material", pid, tt) for f, pid, tt in ((fa, 1, a), (fa, 2, b), (fa, 3, c), (fb, 1, d), (fa, 4, e))
+    )
+    index = storyhost.glb_textures(
+        [
+            (oa, a, "Unlit/Transparent"),
+            (ob, b, "Unlit/Transparent Cutout"),
+            (oc, c, "Universal Render Pipeline/Unlit"),
+            (od, d, "Unlit/Texture"),
+            (oe, e, "Unlit/Texture"),
+        ]
+    )
     # main slot only, first use, by file and path id; URP shaders use _BaseMap
     assert index == {("CAB-a", 7): 0, ("CAB-a", 9): 1, ("CAB-a", 8): 2, ("CAB-b", 7): 3}
     rec = storyhost.room_material(oa, a, "Unlit/Transparent", index)
@@ -186,10 +237,13 @@ def test_background_numbers_the_room_as_room_extract_room(tmp_path, monkeypatch)
     assert bg["check"]["textures"] == len(gltf["textures"]) == 2 and len(gltf["images"]) == 1
     mats = bg["roomMaterials"]
     assert [m["name"] for m in mats] == ["a_wall", "b_wall", "a_floor"]
-    assert ([m["texEnvs"]["_MainTex"]["texture"] for m in mats]
-            == [m["pbrMetallicRoughness"]["baseColorTexture"]["index"] for m in gltf["materials"]] == [0, 1, 1])
-    assert mats[0]["texEnvs"]["_Mask"]["texture"] is None      # unity default resources: not loaded, not in the glb
-    assert mats[2]["texEnvs"]["_Detail"]["texture"] == 0       # CAB-a's texture 7, a_wall's main texture
+    assert (
+        [m["texEnvs"]["_MainTex"]["texture"] for m in mats]
+        == [m["pbrMetallicRoughness"]["baseColorTexture"]["index"] for m in gltf["materials"]]
+        == [0, 1, 1]
+    )
+    assert mats[0]["texEnvs"]["_Mask"]["texture"] is None  # unity default resources: not loaded, not in the glb
+    assert mats[2]["texEnvs"]["_Detail"]["texture"] == 0  # CAB-a's texture 7, a_wall's main texture
     assert bg["floor"]["renderer"] == "room/floor"
     assert [n["renderQueue"] for n in bg["roomNodes"]] == [None, None, storyhost.FLOOR_QUEUE, None]
     with pytest.raises(RuntimeError, match="differ from the background's order"):
@@ -205,11 +259,18 @@ def test_host_of_maps_the_story_group():
     spot = {"id": 10, "names": {}}
     char = [{"id": 3, "names": {}}]
     assert storyhost.host_of([group("chapter"), group("spotTalk", spot=spot, characters=char)]) == {
-        "kind": "home", "group": {"kind": "spotTalk", "id": 7}, "spotId": 10, "talk": "tap", "characterId": 3}
+        "kind": "home",
+        "group": {"kind": "spotTalk", "id": 7},
+        "spotId": 10,
+        "talk": "tap",
+        "characterId": 3,
+    }
     assert storyhost.host_of([group("spot", spot=spot, characters=[])])["talk"] == "area"
     assert storyhost.host_of([group("spot", spot=spot, characters=char)])["characterId"] is None
     assert storyhost.host_of([group("liveResult", characters=char)]) == {
-        "kind": "afterlive", "group": {"kind": "liveResult", "id": 7}}
+        "kind": "afterlive",
+        "group": {"kind": "liveResult", "id": 7},
+    }
     with pytest.raises(ValueError, match="not 0"):
         storyhost.host_of([group("chapter")])
     with pytest.raises(ValueError, match="not 2"):
@@ -217,18 +278,36 @@ def test_host_of_maps_the_story_group():
 
 
 def node(path, *components, **kw):
-    return {"path": path, "name": path.rsplit("/", 1)[-1], "active": True, "layer": 5, "localPosition": V0,
-            "localRotation": Q0, "localScale": V1, "components": list(components), **kw}
+    return {
+        "path": path,
+        "name": path.rsplit("/", 1)[-1],
+        "active": True,
+        "layer": 5,
+        "localPosition": V0,
+        "localRotation": Q0,
+        "localScale": V1,
+        "components": list(components),
+        **kw,
+    }
 
 
-LAYOUT = {"type": "MonoBehaviour", "class": "SimpleAdvLayoutRoot", "m_Enabled": 1, "m_Name": "",
-          "_layoutSurfaceReferenceSize": {"x": 1220.0, "y": 1020.0}, "_characterSlotCount": 3}
+LAYOUT = {
+    "type": "MonoBehaviour",
+    "class": "SimpleAdvLayoutRoot",
+    "m_Enabled": 1,
+    "m_Name": "",
+    "_layoutSurfaceReferenceSize": {"x": 1220.0, "y": 1020.0},
+    "_characterSlotCount": 3,
+}
 
 
 def test_layout_root_record():
     nodes = [node("W"), node("W/Root", LAYOUT)]
-    assert storyhost.layout_root(nodes, "W/Root") == {"m_Enabled": 1, "_layoutSurfaceReferenceSize":
-                                                      {"x": 1220.0, "y": 1020.0}, "_characterSlotCount": 3}
+    assert storyhost.layout_root(nodes, "W/Root") == {
+        "m_Enabled": 1,
+        "_layoutSurfaceReferenceSize": {"x": 1220.0, "y": 1020.0},
+        "_characterSlotCount": 3,
+    }
     with pytest.raises(RuntimeError, match="no SimpleAdvLayoutRoot"):
         storyhost.layout_root(nodes, "W")
     rec = storyhost.node_record(nodes[1])
@@ -236,17 +315,39 @@ def test_layout_root_record():
 
 
 def camera_nodes():
-    crt = {"type": "MonoBehaviour", "class": "CameraTargetRenderer", "m_Enabled": 1, "m_Name": "",
-           "_stage": {"transform": "C/Container/Stage"},
-           "_captureCamera": {"component": "Camera", "gameObject": "C/Container/CaptureCamera"}}
-    cam = {"type": "Camera", "m_ClearFlags": 2, "m_BackGroundColor": {"r": 0.2, "g": 0.3, "b": 0.5, "a": 0.0},
-           "near clip plane": 0.3, "far clip plane": 1000.0, "field of view": 60.0, "orthographic": False,
-           "orthographic size": 0.6, "m_HDR": True, "m_AllowMSAA": True}
-    data = {"type": "MonoBehaviour", "class": "UniversalAdditionalCameraData", "m_RendererIndex": -1,
-            "m_RenderPostProcessing": 0, "m_Antialiasing": 0}
-    return [node("C", crt), node("C/Container"),
-            node("C/Container/CaptureCamera", cam, data, localPosition={"x": 0.0, "y": 0.0, "z": -1.0}),
-            node("C/Container/Stage")]
+    crt = {
+        "type": "MonoBehaviour",
+        "class": "CameraTargetRenderer",
+        "m_Enabled": 1,
+        "m_Name": "",
+        "_stage": {"transform": "C/Container/Stage"},
+        "_captureCamera": {"component": "Camera", "gameObject": "C/Container/CaptureCamera"},
+    }
+    cam = {
+        "type": "Camera",
+        "m_ClearFlags": 2,
+        "m_BackGroundColor": {"r": 0.2, "g": 0.3, "b": 0.5, "a": 0.0},
+        "near clip plane": 0.3,
+        "far clip plane": 1000.0,
+        "field of view": 60.0,
+        "orthographic": False,
+        "orthographic size": 0.6,
+        "m_HDR": True,
+        "m_AllowMSAA": True,
+    }
+    data = {
+        "type": "MonoBehaviour",
+        "class": "UniversalAdditionalCameraData",
+        "m_RendererIndex": -1,
+        "m_RenderPostProcessing": 0,
+        "m_Antialiasing": 0,
+    }
+    return [
+        node("C", crt),
+        node("C/Container"),
+        node("C/Container/CaptureCamera", cam, data, localPosition={"x": 0.0, "y": 0.0, "z": -1.0}),
+        node("C/Container/Stage"),
+    ]
 
 
 def test_camera_target_record():
@@ -256,9 +357,23 @@ def test_camera_target_record():
     cam = got["camera"]
     assert cam["localPosition"]["z"] == -1.0 and cam["fieldOfView"] == 60.0 and cam["clearFlags"] == 2
     assert cam["backgroundColor"]["a"] == 0.0 and cam["rendererIndex"] == -1 and cam["renderPostProcessing"] is False
-    assert set(cam) == {"path", "localPosition", "localRotation", "fieldOfView", "near", "far", "orthographic",
-                        "orthographicSize", "clearFlags", "backgroundColor", "hdr", "allowMSAA", "rendererIndex",
-                        "renderPostProcessing", "antialiasing"}
+    assert set(cam) == {
+        "path",
+        "localPosition",
+        "localRotation",
+        "fieldOfView",
+        "near",
+        "far",
+        "orthographic",
+        "orthographicSize",
+        "clearFlags",
+        "backgroundColor",
+        "hdr",
+        "allowMSAA",
+        "rendererIndex",
+        "renderPostProcessing",
+        "antialiasing",
+    }
     bad = camera_nodes()
     bad[0]["components"][0]["_stage"] = {"transform": "C/Stage"}
     with pytest.raises(RuntimeError, match="one parent"):
@@ -266,63 +381,139 @@ def test_camera_target_record():
 
 
 def test_node_record_adds_fitters_widgets_and_sequence_calls():
-    fitter = {"type": "MonoBehaviour", "class": "AspectRatioFitter", "m_Enabled": 1, "m_AspectMode": 4,
-              "m_AspectRatio": 1.5}
-    widget = {"type": "MonoBehaviour", "class": "UIThingWidget", "m_Enabled": 1, "_canvasSortOrder": 100,
-              "_useBlur": 0}
-    call = {"m_Target": {"component": "MonoBehaviour", "gameObject": "W/View", "class": "SimpleAnimationTrigger"},
-            "m_MethodName": "PlayAnimation", "m_Mode": 5,
-            "m_Arguments": {"m_StringArgument": "Show", "m_FloatArgument": 0.0, "m_IntArgument": 0,
-                            "m_BoolArgument": 0}}
-    seq = {"type": "MonoBehaviour", "class": "DOTweenSequence", "updateType": 0, "isSpeedBased": 0,
-           "_list": [{"_commandType": 1, "_duration": 2.0, "_tweenEvent": {"m_PersistentCalls": {"m_Calls": [call]}}},
-                     {"_commandType": 0, "_duration": 0.5}]}
+    fitter = {
+        "type": "MonoBehaviour",
+        "class": "AspectRatioFitter",
+        "m_Enabled": 1,
+        "m_AspectMode": 4,
+        "m_AspectRatio": 1.5,
+    }
+    widget = {"type": "MonoBehaviour", "class": "UIThingWidget", "m_Enabled": 1, "_canvasSortOrder": 100, "_useBlur": 0}
+    call = {
+        "m_Target": {"component": "MonoBehaviour", "gameObject": "W/View", "class": "SimpleAnimationTrigger"},
+        "m_MethodName": "PlayAnimation",
+        "m_Mode": 5,
+        "m_Arguments": {"m_StringArgument": "Show", "m_FloatArgument": 0.0, "m_IntArgument": 0, "m_BoolArgument": 0},
+    }
+    seq = {
+        "type": "MonoBehaviour",
+        "class": "DOTweenSequence",
+        "updateType": 0,
+        "isSpeedBased": 0,
+        "_list": [
+            {"_commandType": 1, "_duration": 2.0, "_tweenEvent": {"m_PersistentCalls": {"m_Calls": [call]}}},
+            {"_commandType": 0, "_duration": 0.5},
+        ],
+    }
     rec = storyhost.node_record(node("W", fitter, widget, seq))
     assert rec["aspectRatioFitter"] == {"m_Enabled": 1, "m_AspectMode": 4, "m_AspectRatio": 1.5}
     assert rec["widget"] == {"class": "UIThingWidget", "_canvasSortOrder": 100, "_useBlur": 0}
     first, second = rec["tweenSequence"]["list"]
-    assert first["calls"] == [{"target": "W/View", "class": "SimpleAnimationTrigger", "method": "PlayAnimation",
-                               "string": "Show", "float": 0.0, "int": 0, "bool": 0, "mode": 5}]
+    assert first["calls"] == [
+        {
+            "target": "W/View",
+            "class": "SimpleAnimationTrigger",
+            "method": "PlayAnimation",
+            "string": "Show",
+            "float": 0.0,
+            "int": 0,
+            "bool": 0,
+            "mode": 5,
+        }
+    ]
     assert "calls" not in second
     assert storyhost._call_targets([node("W", seq), node("X", seq)], ["W"]) == ["W/View"]
 
 
 def test_kept_keeps_subtrees_singles_and_their_ancestors():
     keep = dict(subtrees=["W/View/Root"], singles=["W/Seq"])
-    assert [p for p in ("W", "W/View", "W/View/Root", "W/View/Root/Talk", "W/View/Other", "W/Seq", "W/Seq/Child")
-            if storyhost.kept(p, **keep)] == ["W", "W/View", "W/View/Root", "W/View/Root/Talk", "W/Seq"]
+    assert [
+        p
+        for p in ("W", "W/View", "W/View/Root", "W/View/Root/Talk", "W/View/Other", "W/Seq", "W/Seq/Child")
+        if storyhost.kept(p, **keep)
+    ] == ["W", "W/View", "W/View/Root", "W/View/Root/Talk", "W/Seq"]
 
 
 # ---------------------------------------------------------------- scene, volume, blur, ambient
 def test_volume_record_keeps_overrides_only():
-    comp = {"type": "MonoBehaviour", "class": "Volume", "m_Enabled": 1, "m_IsGlobal": 1, "priority": 0.0,
-            "blendDistance": 0.0, "weight": 0.05,
-            "sharedProfile": {"asset": "VolumeProfile", "name": "p", "components": [
-                {"asset": "Bloom", "name": "Bloom", "active": 1, "threshold": {"m_OverrideState": 1, "m_Value": 0.5},
-                 "scatter": {"m_OverrideState": 0, "m_Value": 1.0}}, None]}}
+    comp = {
+        "type": "MonoBehaviour",
+        "class": "Volume",
+        "m_Enabled": 1,
+        "m_IsGlobal": 1,
+        "priority": 0.0,
+        "blendDistance": 0.0,
+        "weight": 0.05,
+        "sharedProfile": {
+            "asset": "VolumeProfile",
+            "name": "p",
+            "components": [
+                {
+                    "asset": "Bloom",
+                    "name": "Bloom",
+                    "active": 1,
+                    "threshold": {"m_OverrideState": 1, "m_Value": 0.5},
+                    "scatter": {"m_OverrideState": 0, "m_Value": 1.0},
+                },
+                None,
+            ],
+        },
+    }
     assert storyhost.volume_record(comp, 3) == {
-        "enabled": True, "isGlobal": True, "weight": 0.05, "priority": 0.0, "blendDistance": 0.0, "layer": 3,
-        "profile": "p", "components": [{"class": "Bloom", "active": True, "threshold": 0.5}]}
+        "enabled": True,
+        "isGlobal": True,
+        "weight": 0.05,
+        "priority": 0.0,
+        "blendDistance": 0.0,
+        "layer": 3,
+        "profile": "p",
+        "components": [{"class": "Bloom", "active": True, "threshold": 0.5}],
+    }
 
 
 def test_world_trs_composes_the_parents():
-    turn = {"x": 0.0, "y": 1.0, "z": 0.0, "w": 0.0}                     # 180 degrees about y
-    nodes = [node("R", localPosition={"x": 1.0, "y": 0.0, "z": 0.0}, localRotation=turn,
-                  localScale={"x": 2.0, "y": 2.0, "z": 2.0}),
-             node("R/O", localPosition={"x": 1.0, "y": 0.0, "z": 3.0})]
+    turn = {"x": 0.0, "y": 1.0, "z": 0.0, "w": 0.0}  # 180 degrees about y
+    nodes = [
+        node(
+            "R",
+            localPosition={"x": 1.0, "y": 0.0, "z": 0.0},
+            localRotation=turn,
+            localScale={"x": 2.0, "y": 2.0, "z": 2.0},
+        ),
+        node("R/O", localPosition={"x": 1.0, "y": 0.0, "z": 3.0}),
+    ]
     got = storyhost.world_trs(nodes, "R/O")
     assert [got["position"][a] for a in "xyz"] == pytest.approx([-1.0, 0.0, -6.0])
     assert got["rotation"] == {"x": 0.0, "y": 1.0, "z": 0.0, "w": 0.0} and got["scale"]["y"] == 2.0
 
 
 def test_blur_record_reads_renderer_zero():
-    feat = {"class": storyhost.BLUR_FEATURE, "m_Active": 1, "_blurIterations": 3, "_blurOffset": 1.0,
-            "_blurDownsample": 1, "_blurBlendRateMax": 0.3, "_dualKawaseBlurShader": "Hidden/Blur"}
-    g = {"defaultPipeline": "P", "pipelines": {"P": {"m_RendererDataList": ["R0", "R1"], "m_DefaultRendererIndex": 1},
-                                               "Q": {"m_RendererDataList": ["R0"], "m_DefaultRendererIndex": 0}},
-         "renderers": {"R0": {"m_RendererFeatures": [{"class": "Other"}, feat]}, "R1": {"m_RendererFeatures": []}}}
-    assert storyhost.blur_record(g) == {"renderer": "R0", "active": True, "iterations": 3, "offset": 1.0,
-                                        "downsample": 1, "blendRateMax": 0.3, "shader": "Hidden/Blur"}
+    feat = {
+        "class": storyhost.BLUR_FEATURE,
+        "m_Active": 1,
+        "_blurIterations": 3,
+        "_blurOffset": 1.0,
+        "_blurDownsample": 1,
+        "_blurBlendRateMax": 0.3,
+        "_dualKawaseBlurShader": "Hidden/Blur",
+    }
+    g = {
+        "defaultPipeline": "P",
+        "pipelines": {
+            "P": {"m_RendererDataList": ["R0", "R1"], "m_DefaultRendererIndex": 1},
+            "Q": {"m_RendererDataList": ["R0"], "m_DefaultRendererIndex": 0},
+        },
+        "renderers": {"R0": {"m_RendererFeatures": [{"class": "Other"}, feat]}, "R1": {"m_RendererFeatures": []}},
+    }
+    assert storyhost.blur_record(g) == {
+        "renderer": "R0",
+        "active": True,
+        "iterations": 3,
+        "offset": 1.0,
+        "downsample": 1,
+        "blendRateMax": 0.3,
+        "shader": "Hidden/Blur",
+    }
     g["pipelines"]["Q"]["m_RendererDataList"] = ["R1"]
     with pytest.raises(NotImplementedError):
         storyhost.blur_record(g)
@@ -335,15 +526,32 @@ def write_table(d, name, rows):
 def test_render_settings_keeps_the_lighting_environment(monkeypatch):
     null = {"m_FileID": 0, "m_PathID": 0}
     white = {"r": 1.0, "g": 1.0, "b": 1.0, "a": 1.0}
-    rs = {"m_Fog": 0, "m_AmbientMode": 3, "m_AmbientSkyColor": white, "m_AmbientIntensity": 1.0,
-          "m_DefaultReflectionMode": 0, "m_ReflectionIntensity": 1.0, "m_SkyboxMaterial": null,
-          "m_CustomReflection": null, "m_Sun": {"m_FileID": 0, "m_PathID": 7}, "m_HaloStrength": 0.5}
+    rs = {
+        "m_Fog": 0,
+        "m_AmbientMode": 3,
+        "m_AmbientSkyColor": white,
+        "m_AmbientIntensity": 1.0,
+        "m_DefaultReflectionMode": 0,
+        "m_ReflectionIntensity": 1.0,
+        "m_SkyboxMaterial": null,
+        "m_CustomReflection": null,
+        "m_Sun": {"m_FileID": 0, "m_PathID": 7},
+        "m_HaloStrength": 0.5,
+    }
     env = SimpleNamespace(objects=[obj("RenderSettings", 1, rs), obj("LightmapSettings", 2, {"m_Lightmaps": [{}, {}]})])
     monkeypatch.setattr(storyhost, "deref", lambda owner, p: obj("Light", p["m_PathID"], {"m_Enabled": 1}))
     assert storyhost.render_settings(env) == {
-        "m_Fog": 0, "m_AmbientMode": 3, "m_AmbientSkyColor": white, "m_AmbientIntensity": 1.0,
-        "m_DefaultReflectionMode": 0, "m_ReflectionIntensity": 1.0, "m_SkyboxMaterial": None,
-        "m_CustomReflection": None, "m_Sun": {"name": None}, "lightmaps": 2}
+        "m_Fog": 0,
+        "m_AmbientMode": 3,
+        "m_AmbientSkyColor": white,
+        "m_AmbientIntensity": 1.0,
+        "m_DefaultReflectionMode": 0,
+        "m_ReflectionIntensity": 1.0,
+        "m_SkyboxMaterial": None,
+        "m_CustomReflection": None,
+        "m_Sun": {"name": None},
+        "lightmaps": 2,
+    }
     with pytest.raises(RuntimeError, match="1 RenderSettings and 0 LightmapSettings"):
         storyhost.render_settings(SimpleNamespace(objects=env.objects[:1]))
 
@@ -353,18 +561,31 @@ def test_lighting_components_list_the_lights_under_the_placed_root():
 
     def comp(kind, pid, go, **kw):
         return obj(kind, pid, {"m_GameObject": {"m_FileID": 0, "m_PathID": 1000 + ids[go]}, "m_Enabled": 1, **kw})
-    env = SimpleNamespace(objects=[comp("Light", 501, "chair", m_Type=2), comp("Light", 502, "table", m_Enabled=0, m_Type=1),
-                                   comp("ReflectionProbe", 503, "light"), comp("Light", 504, "table#m", m_Type=1),
-                                   comp("MeshRenderer", 505, "mesh_a")])
+
+    env = SimpleNamespace(
+        objects=[
+            comp("Light", 501, "chair", m_Type=2),
+            comp("Light", 502, "table", m_Enabled=0, m_Type=1),
+            comp("ReflectionProbe", 503, "light"),
+            comp("Light", 504, "table#m", m_Type=1),
+            comp("MeshRenderer", 505, "mesh_a"),
+        ]
+    )
     got = storyhost.lighting_components(env, g, ids["bg"], lambda tf: storyhost.active_in_hierarchy(g, tf, {}))
-    assert got == [{"path": "bg/light", "type": "ReflectionProbe", "m_Enabled": 1, "active": True},
-                   {"path": "bg/light/chair", "type": "Light", "m_Enabled": 1, "active": False, "m_Type": 2},
-                   {"path": "bg/light/table", "type": "Light", "m_Enabled": 0, "active": True, "m_Type": 1}]
+    assert got == [
+        {"path": "bg/light", "type": "ReflectionProbe", "m_Enabled": 1, "active": True},
+        {"path": "bg/light/chair", "type": "Light", "m_Enabled": 1, "active": False, "m_Type": 2},
+        {"path": "bg/light/table", "type": "Light", "m_Enabled": 0, "active": True, "m_Type": 1},
+    ]
 
 
 def test_active_path_needs_the_node_and_its_ancestors_active():
-    nodes = [{"path": "A", "active": True}, {"path": "A/B", "active": False}, {"path": "A/B/C", "active": True},
-             {"path": "A/BC", "active": True}]
+    nodes = [
+        {"path": "A", "active": True},
+        {"path": "A/B", "active": False},
+        {"path": "A/B/C", "active": True},
+        {"path": "A/BC", "active": True},
+    ]
     assert not storyhost._active_path(nodes, "A/B/C")
     assert storyhost._active_path(nodes, "A/BC") and storyhost._active_path(nodes, "A")
 
@@ -373,7 +594,11 @@ def test_ambient_record(tmp_path):
     write_table(tmp_path, "MasterSound", [{"_id": 31, "_soundCueSheetID": 4, "_cueName": "amb_cafe"}])
     write_table(tmp_path, "MasterSoundCueSheet", [{"_id": 4, "_cueSheetName": "se_amb"}])
     assert storyhost.ambient_record({"_soundId": 31, "ambientSoundVolume": 0.5}, tmp_path) == {
-        "soundId": 31, "volume": 0.5, "cueSheet": "se_amb", "cue": "amb_cafe"}
+        "soundId": 31,
+        "volume": 0.5,
+        "cueSheet": "se_amb",
+        "cue": "amb_cafe",
+    }
     assert storyhost.ambient_record({"_soundId": 0}, tmp_path) is None
     assert storyhost.ambient_record({"_soundId": 99}, tmp_path)["cue"] is None
 
@@ -411,16 +636,31 @@ def test_build_returns_the_manifest_entry(tmp_path, monkeypatch):
     calls = []
     monkeypatch.setattr(storyhost, "emb_key", lambda cat, a: "Emb" + a)
     monkeypatch.setattr(storyhost, "UiDoc", FakeUi)
-    monkeypatch.setattr(storyhost, "afterlive_ui", lambda ui, keys: (
-        "W/Root", {"_characterSlotCount": 3}, ["B/In", "W/In", "W/View/In"],
-        {"backgroundNode": "B/Bg", "backgroundSprite": "bg", "rewardPanel": "W/Reward", "substitutes": []}))
+    monkeypatch.setattr(
+        storyhost,
+        "afterlive_ui",
+        lambda ui, keys: (
+            "W/Root",
+            {"_characterSlotCount": 3},
+            ["B/In", "W/In", "W/View/In"],
+            {"backgroundNode": "B/Bg", "backgroundSprite": "bg", "rewardPanel": "W/Reward", "substitutes": []},
+        ),
+    )
     monkeypatch.setattr(storyhost, "simple_ui", lambda *a: calls.append((a[4], a[5], a[7], a[8], a[9])))
     story = tmp_path / "story"
     (story / "host" / "stale").mkdir(parents=True)
     ep = {"advId": 5, "master": {"_playbackMode": 1}}
     langs = {"ja": tmp_path / "ja", "en": tmp_path / "en"}
-    got = storyhost.build("cat", tmp_path, "player", ep, story, langs, [group("liveResult", characters=[])],
-                          font_files={"ja": "font-ja", "en": "font-en"})
+    got = storyhost.build(
+        "cat",
+        tmp_path,
+        "player",
+        ep,
+        story,
+        langs,
+        [group("liveResult", characters=[])],
+        font_files={"ja": "font-ja", "en": "font-en"},
+    )
     assert got == {"kind": "afterlive", "doc": "host/host.json", "ui": "ui/simple/ui.json"}
     assert not (story / "host" / "stale").exists()
     doc = json.loads((story / "host" / "host.json").read_text(encoding="utf-8"))
@@ -428,25 +668,45 @@ def test_build_returns_the_manifest_entry(tmp_path, monkeypatch):
     assert doc["overlayRoot"] == "W/Root" and doc["openedSequences"] == ["B/In", "W/In", "W/View/In"]
     assert doc["keys"]["resultWidget"] == "EmbUI/Prefab/UILiveResultWidget" and "systemMessage" not in doc["keys"]
     assert doc["cameraTarget"]["stage"]["path"] == "C/Container/Stage" and doc["ui"] == "host/ui/ui.json"
-    assert [(c[0], c[1], c[3], c[4]) for c in calls] == [(tmp_path / "ja", "ja", None, "font-ja"),
-                                                        (tmp_path / "en", "en", None, "font-en")]
+    assert [(c[0], c[1], c[3], c[4]) for c in calls] == [
+        (tmp_path / "ja", "ja", None, "font-ja"),
+        (tmp_path / "en", "en", None, "font-en"),
+    ]
     again = story / "host" / "host.json"
     first = again.read_bytes()
-    storyhost.build("cat", tmp_path, "player", ep, story, langs, [group("liveResult", characters=[])],
-                    font_files={"ja": "font-ja", "en": "font-en"})
+    storyhost.build(
+        "cat",
+        tmp_path,
+        "player",
+        ep,
+        story,
+        langs,
+        [group("liveResult", characters=[])],
+        font_files={"ja": "font-ja", "en": "font-en"},
+    )
     assert again.read_bytes() == first
 
 
 def test_story_text_materials_localize_the_story_ui_texts():
-    lang = {"languages": {0: {"fontNames": ["Game-R", "Num-B"], "additionalFontNames": []},
-                          2: {"fontNames": ["Game-TC", "Num-TC"], "additionalFontNames": []}},
-            "materialTypes": ["Default", "OutlineAdvCommon"]}
-    fonts = {"source": "open", "texts": {
-        "W/Talk": {"fontAsset": "Game-R SDF", "material": "Game-R SDF Material"},
-        "W/Name": {"fontAsset": "Game-R SDF", "material": "Game-R - OutlineAdvCommon"},
-        "W/Num": {"fontAsset": "Num-B SDF", "material": "Num-B - Default"}}}
+    lang = {
+        "languages": {
+            0: {"fontNames": ["Game-R", "Num-B"], "additionalFontNames": []},
+            2: {"fontNames": ["Game-TC", "Num-TC"], "additionalFontNames": []},
+        },
+        "materialTypes": ["Default", "OutlineAdvCommon"],
+    }
+    fonts = {
+        "source": "open",
+        "texts": {
+            "W/Talk": {"fontAsset": "Game-R SDF", "material": "Game-R SDF Material"},
+            "W/Name": {"fontAsset": "Game-R SDF", "material": "Game-R - OutlineAdvCommon"},
+            "W/Num": {"fontAsset": "Num-B SDF", "material": "Num-B - Default"},
+        },
+    }
     assert storyhost.story_text_materials(fonts, lang, 2) == {
-        "Game-TC SDF": {"Game-TC - Default", "Game-TC - OutlineAdvCommon"}, "Num-TC SDF": {"Num-TC - Default"}}
+        "Game-TC SDF": {"Game-TC - Default", "Game-TC - OutlineAdvCommon"},
+        "Num-TC SDF": {"Num-TC - Default"},
+    }
     assert storyhost.story_text_materials({**fonts, "source": "game"}, lang, 2) == {}
     assert storyhost.story_text_materials(None, lang, 2) == {}
 
@@ -455,6 +715,7 @@ def test_story_text_materials_localize_the_story_ui_texts():
 def stream(frames):
     """StreamedClip words of [(time, [(curve, c0, c1, c2, c3)])], closed by the empty +inf frame."""
     import struct
+
     buf = b""
     for t, keys in [*frames, (float("inf"), [])]:
         buf += struct.pack("<fi", t, len(keys)) + b"".join(struct.pack("<i4f", *k) for k in keys)
@@ -462,8 +723,19 @@ def stream(frames):
 
 
 def binding(path, tid, attr, pptr=False, script=None, crc=0):
-    return {"path": path, "pathCrc": crc, "typeID": tid, "attribute": attr, "attributeCrc": 0, "pptr": pptr,
-            "int": False, "serializeReference": False, "transformAttr": False, "script": script, "raw": attr}
+    return {
+        "path": path,
+        "pathCrc": crc,
+        "typeID": tid,
+        "attribute": attr,
+        "attributeCrc": 0,
+        "pptr": pptr,
+        "int": False,
+        "serializeReference": False,
+        "transformAttr": False,
+        "script": script,
+        "raw": attr,
+    }
 
 
 class FakeClipExporter:
@@ -481,17 +753,30 @@ class FakeClipExporter:
 
 
 def test_clip_view_keys_child_bindings_discrete_dense_and_lost_paths():
-    rec = {"name": "In", "tt": {"m_SampleRate": 60.0, "m_Events": []},
-           "muscle": {"m_StartTime": 0.0, "m_StopTime": 1.0, "m_LoopTime": 0},
-           "streamed": {"curveCount": 1, "discreteCurveCount": 1,
-                        "data": stream([(-1.0, [(0, 0.0, 0.0, 0.0, 1.0), (1, 0.0, 0.0, 0.0, 0.0)]),
-                                        (0.5, [(0, 0.0, 0.0, -2.0, 1.0), (1, 0.0, 0.0, 0.0, 1.0)])])},
-           "dense": {"m_CurveCount": 0, "m_FrameCount": 0, "m_SampleRate": 0.0, "m_BeginTime": 0.0,
-                     "m_SampleArray": []},
-           "constant": [0.25, 1.0],
-           "bindings": [binding("", 225, "m_Alpha"), binding("Logo", 114, "m_Sprite", pptr=True, script=("", "Image")),
-                        binding("BgBlack", 225, "m_Alpha"), binding(None, 1, "m_IsActive", crc=77)],
-           "pptrCurveMapping": [{"m_FileID": 0, "m_PathID": 5}, {"m_FileID": 0, "m_PathID": 6}]}
+    rec = {
+        "name": "In",
+        "tt": {"m_SampleRate": 60.0, "m_Events": []},
+        "muscle": {"m_StartTime": 0.0, "m_StopTime": 1.0, "m_LoopTime": 0},
+        "streamed": {
+            "curveCount": 1,
+            "discreteCurveCount": 1,
+            "data": stream(
+                [
+                    (-1.0, [(0, 0.0, 0.0, 0.0, 1.0), (1, 0.0, 0.0, 0.0, 0.0)]),
+                    (0.5, [(0, 0.0, 0.0, -2.0, 1.0), (1, 0.0, 0.0, 0.0, 1.0)]),
+                ]
+            ),
+        },
+        "dense": {"m_CurveCount": 0, "m_FrameCount": 0, "m_SampleRate": 0.0, "m_BeginTime": 0.0, "m_SampleArray": []},
+        "constant": [0.25, 1.0],
+        "bindings": [
+            binding("", 225, "m_Alpha"),
+            binding("Logo", 114, "m_Sprite", pptr=True, script=("", "Image")),
+            binding("BgBlack", 225, "m_Alpha"),
+            binding(None, 1, "m_IsActive", crc=77),
+        ],
+        "pptrCurveMapping": [{"m_FileID": 0, "m_PathID": 5}, {"m_FileID": 0, "m_PathID": 6}],
+    }
     ex = FakeClipExporter(rec)
     got = storyhost.clip_view(ex, None, None, "W/Root")
     assert ex.bound == "W/Root"
@@ -500,7 +785,7 @@ def test_clip_view_keys_child_bindings_discrete_dense_and_lost_paths():
     assert got["curves"]["BgBlack:CanvasGroup.m_Alpha"] == {"constant": 0.25}
     assert got["curves"]["#77:GameObject.m_IsActive"] == {"constant": 1.0}
     assert got["pptrCurveMapping"] == ["sprite5", "sprite6"] and got["unresolvedPaths"] == [77]
-    rec["bindings"][0]["pptr"] = True                    # a reference curve among the float curves
+    rec["bindings"][0]["pptr"] = True  # a reference curve among the float curves
     with pytest.raises(NotImplementedError, match="outside the discrete curves"):
         storyhost.clip_view(ex, None, None, "W/Root")
 
@@ -508,5 +793,6 @@ def test_clip_view_keys_child_bindings_discrete_dense_and_lost_paths():
 def test_ui_only_characters():
     """The characters of a UI alone: storyfonts.shown_characters over the empty episode storyhost passes."""
     from nnnotes import storyfonts
+
     ui_doc = {"nodes": [], "masterIdTexts": {"a": {"text": "Ab"}}}
     assert storyfonts.shown_characters(storyhost.NO_EPISODE, ui_doc, None, "japanese") == [ord("A"), ord("b")]

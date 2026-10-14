@@ -20,6 +20,7 @@ by id, master data floats as the shortest decimal of their binary32 value, the d
 The same inputs and deck model give the same bytes. The file is written only when every table, chart and cue sheet
 was read and every chart measured; any missing or unreadable input is a MusicDataError naming it.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -37,15 +38,32 @@ from .languages import LANGUAGES
 
 FORMAT = "nnnotes.music-data/2"
 DIFFICULTIES = ("easy", "normal", "hard", "expert")
-MUSIC_LENGTH_TAIL_MS = 1000         # the live's music length: the last note time + 1000 ms (LiveScore skip path)
+MUSIC_LENGTH_TAIL_MS = 1000  # the live's music length: the last note time + 1000 ms (LiveScore skip path)
 
 # the tables of the song metadata; the deck model's are deckdata.TABLES
-SONG_TABLES = ("MasterLiveMusic", "MasterLiveMusicScore", "MasterText", "MasterBand", "MasterCharacter",
-               "MasterTag", "MasterLiveMusicCategory", "MasterSound", "MasterSoundCueSheet", "MasterLiveScoreRank")
+SONG_TABLES = (
+    "MasterLiveMusic",
+    "MasterLiveMusicScore",
+    "MasterText",
+    "MasterBand",
+    "MasterCharacter",
+    "MasterTag",
+    "MasterLiveMusicCategory",
+    "MasterSound",
+    "MasterSoundCueSheet",
+    "MasterLiveScoreRank",
+)
 # the tables of the Gekisou catalog (gekisou_catalog): member cards, snaps and their Gekisou (support) skills
-CATALOG_TABLES = ("MasterMemberCard", "MasterSupportCard", "MasterSupportCardRank", "MasterGekisouSkill",
-                  "MasterGekisouSkillEffect", "MasterGekisouSupportSkill", "MasterGekisouSupportSkillEffect")
-SCORE_RANKS = {1: "E", 2: "D", 3: "C", 4: "B", 5: "A", 6: "S", 7: "SS"}   # LiveScoreRank
+CATALOG_TABLES = (
+    "MasterMemberCard",
+    "MasterSupportCard",
+    "MasterSupportCardRank",
+    "MasterGekisouSkill",
+    "MasterGekisouSkillEffect",
+    "MasterGekisouSupportSkill",
+    "MasterGekisouSupportSkillEffect",
+)
+SCORE_RANKS = {1: "E", 2: "D", 3: "C", 4: "B", 5: "A", 6: "S", 7: "SS"}  # LiveScoreRank
 
 
 class MusicDataError(ValueError):
@@ -95,23 +113,28 @@ def bpm_facts(bpm_events: list, first_ms: int, last_ms: int) -> dict:
             order.append(b)
             held[b] = 0
         held[b] += max(0, hi - lo)
-    if not order:                                    # every change after the span: the first one holds before it
+    if not order:  # every change after the span: the first one holds before it
         order, held = [changes[0][1]], {changes[0][1]: 0}
     main = max(order, key=lambda b: (held[b], -order.index(b)))
-    return {"main": main, "min": min(order), "max": max(order),
-            "changes": [{"timeMs": t, "bpm": b} for t, b in changes]}
+    return {
+        "main": main,
+        "min": min(order),
+        "max": max(order),
+        "changes": [{"timeMs": t, "bpm": b} for t, b in changes],
+    }
 
 
 def chart_facts(score_row: dict, key: str, raw: bytes) -> dict:
     """The facts of one chart: level, note counts, BPM, chart times, skill events and fevers."""
     from . import score
+
     try:
         root = score.load_bytes(raw)
     except (ValueError, OSError, EOFError):
         raise MusicDataError(f"chart {key}: not a chart (gzip or JSON cannot be read)") from None
     try:
         rs = score.runtime_score(root)
-    except Exception as e:                               # the converter's own errors and malformed chart fields
+    except Exception as e:  # the converter's own errors and malformed chart fields
         raise MusicDataError(f"chart {key}: cannot be converted ({type(e).__name__}: {e})") from None
     notes = rs.notes
     if not notes:
@@ -131,8 +154,11 @@ def chart_facts(score_row: dict, key: str, raw: bytes) -> dict:
         "displayLevel": score_row.get("_musicScoreDisplayLevel"),
         "fullComboCount": score_row["_fullComboCount"],
         "asset": {"key": key, "sha256": hashlib.sha256(raw).hexdigest()},
-        "notes": {"judged": len(judged), "total": len(notes),
-                  "byOperateType": {str(op): by_type[op] for op in sorted(by_type)}},
+        "notes": {
+            "judged": len(judged),
+            "total": len(notes),
+            "byOperateType": {str(op): by_type[op] for op in sorted(by_type)},
+        },
         "bpm": bpm,
         "firstNoteMs": judged[0],
         "lastJudgedNoteMs": judged[-1],
@@ -148,6 +174,7 @@ def cue_length(acb: bytes, cue: str, where: str) -> dict:
     """{lengthMs, samples, sampleRate, durationMs} of a cue of an ACB: the CueTable `Length` and the first stream's
     sample count and rate (durationMs = samples * 1000 // sampleRate)."""
     from . import acb as acbmod
+
     try:
         cues = acbmod.cue_streams(acb)
     except Exception as e:
@@ -157,9 +184,12 @@ def cue_length(acb: bytes, cue: str, where: str) -> dict:
         raise MusicDataError(f"{where}: no cue {cue!r}")
     s = (c.get("streams") or [None])[0] or {}
     samples, rate = s.get("samples"), s.get("sampleRate")
-    return {"lengthMs": c.get("lengthMs"), "samples": samples, "sampleRate": rate,
-            "durationMs": samples * 1000 // rate if isinstance(samples, int) and isinstance(rate, int) and rate
-            else None}
+    return {
+        "lengthMs": c.get("lengthMs"),
+        "samples": samples,
+        "sampleRate": rate,
+        "durationMs": samples * 1000 // rate if isinstance(samples, int) and isinstance(rate, int) and rate else None,
+    }
 
 
 def catalog_bgm(cat) -> Callable[[str, str], dict]:
@@ -174,26 +204,27 @@ def catalog_bgm(cat) -> Callable[[str, str], dict]:
         except Exception as e:
             raise MusicDataError(f"cue sheet {sheet}: cannot be read ({type(e).__name__}: {e})") from None
         return cue_length(files["acb"], cue, f"cue sheet {sheet}")
+
     return bgm
 
 
 # ---------------------------------------------------------------- document
 JACKET_KEY = "Image/Jacket/{jacket}"
-JACKET_SIZE = 320                           # longer side of a written jacket, pixels
-JACKET_QUALITY = 88                         # WebP quality
+JACKET_SIZE = 320  # longer side of a written jacket, pixels
+JACKET_QUALITY = 88  # WebP quality
 
 
 def jacket_webp(image, size: int = JACKET_SIZE) -> bytes:
     """WebP bytes of a jacket image (a Pillow image), scaled down (Lanczos) to at most `size` pixels on its longer
     side; opaque images are written without alpha."""
     from PIL import Image
+
     img = image.convert("RGBA")
     if img.getextrema()[3][0] == 255:
         img = img.convert("RGB")
     w, h = img.size
     if max(w, h) > size:
-        img = img.resize((max(1, round(w * size / max(w, h))), max(1, round(h * size / max(w, h)))),
-                         Image.LANCZOS)
+        img = img.resize((max(1, round(w * size / max(w, h))), max(1, round(h * size / max(w, h)))), Image.LANCZOS)
     buf = io.BytesIO()
     img.save(buf, format="WEBP", quality=JACKET_QUALITY, method=6)
     return buf.getvalue()
@@ -203,6 +234,7 @@ def catalog_jacket(cat, size: int = JACKET_SIZE) -> Callable[[str], bytes]:
     """jacket(name) for a catalog: the WebP bytes (jacket_webp) of the Texture2D `Image/Jacket/<name>`."""
     import tempfile
     from .export import Exporter
+
     ex = Exporter(cat, Path(tempfile.gettempdir()), textures="deferred")
 
     def jacket(name: str) -> bytes:
@@ -216,6 +248,7 @@ def catalog_jacket(cat, size: int = JACKET_SIZE) -> Callable[[str], bytes]:
         if o is None or o.type.name != "Texture2D":
             raise MusicDataError(f"jacket {name}: {key} is not a Texture2D")
         return jacket_webp(o.read().image, size)
+
     return jacket
 
 
@@ -229,7 +262,7 @@ def _by_id(rows: list[dict], table: str) -> dict:
 
 
 # ---------------------------------------------------------------- the Gekisou catalog
-MISSION_LUCK, MISSION_JUST, MISSION_ALL = 2, 3, 4   # GekisouMissionType: 1 combo, 2 luck, 3 Just count, 4 all
+MISSION_LUCK, MISSION_JUST, MISSION_ALL = 2, 3, 4  # GekisouMissionType: 1 combo, 2 luck, 3 Just count, 4 all
 
 
 def _max_levels(rows: list[dict], key: str) -> dict:
@@ -251,15 +284,20 @@ def gekisou_catalog(tables: dict[str, list[dict]], text: Texts) -> dict:
     support_rows = _by_id(tables["MasterGekisouSupportSkill"], "MasterGekisouSupportSkill")
     levels = _max_levels(tables["MasterGekisouSkillEffect"], "_gekisouSkillID")
     support_levels = _max_levels(tables["MasterGekisouSupportSkillEffect"], "_gekisouSupportSkillID")
-    top: dict = {}                                      # rank group -> its highest rank row (a later row on a tie)
+    top: dict = {}  # rank group -> its highest rank row (a later row on a tie)
     for r in tables["MasterSupportCardRank"]:
         g = r.get("_group")
         if g not in top or (r.get("_rank") or 0) >= (top[g].get("_rank") or 0):
             top[g] = r
 
     def skill(r: dict, max_level: dict) -> dict:
-        return {"id": r["_id"], "mission": r.get("_gekisouMissionType"), "maxLevel": max_level.get(r["_id"], 0),
-                "name": text.get(r.get("_nameTextID")), "description": text.get(r.get("_descriptionTextFormatID"))}
+        return {
+            "id": r["_id"],
+            "mission": r.get("_gekisouMissionType"),
+            "maxLevel": max_level.get(r["_id"], 0),
+            "name": text.get(r.get("_nameTextID")),
+            "description": text.get(r.get("_descriptionTextFormatID")),
+        }
 
     members = []
     for c in sorted(_by_id(tables["MasterMemberCard"], "MasterMemberCard").values(), key=lambda r: r["_id"]):
@@ -270,16 +308,25 @@ def gekisou_catalog(tables: dict[str, list[dict]], text: Texts) -> dict:
         sid = c.get("_gekisouSkillID") or None
         if sid is not None and sid not in skill_rows:
             raise MusicDataError(f"{where}: Gekisou skill {sid} is not in MasterGekisouSkill")
-        members.append({"id": c["_id"], "characterId": c.get("_characterID"), "bandId": ch.get("_bandID"),
-                        "rarity": c.get("_rarity"), "gekisouSkillId": sid, "name": text.get(c.get("_nameTextID")),
-                        "subtitle": text.get(c.get("_subtitleTextID"))})
+        members.append(
+            {
+                "id": c["_id"],
+                "characterId": c.get("_characterID"),
+                "bandId": ch.get("_bandID"),
+                "rarity": c.get("_rarity"),
+                "gekisouSkillId": sid,
+                "name": text.get(c.get("_nameTextID")),
+                "subtitle": text.get(c.get("_subtitleTextID")),
+            }
+        )
     snaps = []
     for s in sorted(_by_id(tables["MasterSupportCard"], "MasterSupportCard").values(), key=lambda r: r["_id"]):
         where = f"MasterSupportCard {s['_id']}"
         rank = top.get(s.get("_supportCardRankGroup"))
         if rank is None:
-            raise MusicDataError(f"{where}: rank group {s.get('_supportCardRankGroup')} has no MasterSupportCardRank "
-                                 f"row")
+            raise MusicDataError(
+                f"{where}: rank group {s.get('_supportCardRankGroup')} has no MasterSupportCardRank row"
+            )
         ids, at = [], []
         for n in (1, 2):
             i = s.get(f"_gekisouSupportSkillId0{n}")
@@ -289,19 +336,31 @@ def gekisou_catalog(tables: dict[str, list[dict]], text: Texts) -> dict:
                 ids.append(i)
                 at.append(rank.get(f"_gekisouSupportSkill0{n}Level"))
         if len(set(at)) > 1:
-            raise MusicDataError(f"{where}: its Gekisou support skills {ids} have the levels {at} at the highest "
-                                 f"rank; the catalog has one level per snap")
-        snaps.append({"id": s["_id"], "characterIds": list(s.get("_characterIDs") or []), "rarity": s.get("_rarity"),
-                      "gekisouSupportSkillIds": ids,
-                      "supportSkillLevel": at[0] if at else rank.get("_gekisouSupportSkill01Level"),
-                      "name": text.get(s.get("_nameTextID")), "subtitle": text.get(s.get("_descriptionTextID"))})
-    return {"skills": [skill(r, levels) for r in sorted(skill_rows.values(), key=lambda r: r["_id"])],
-            "supportSkills": [skill(r, support_levels) for r in sorted(support_rows.values(), key=lambda r: r["_id"])],
-            "members": members, "snaps": snaps}
+            raise MusicDataError(
+                f"{where}: its Gekisou support skills {ids} have the levels {at} at the highest "
+                f"rank; the catalog has one level per snap"
+            )
+        snaps.append(
+            {
+                "id": s["_id"],
+                "characterIds": list(s.get("_characterIDs") or []),
+                "rarity": s.get("_rarity"),
+                "gekisouSupportSkillIds": ids,
+                "supportSkillLevel": at[0] if at else rank.get("_gekisouSupportSkill01Level"),
+                "name": text.get(s.get("_nameTextID")),
+                "subtitle": text.get(s.get("_descriptionTextID")),
+            }
+        )
+    return {
+        "skills": [skill(r, levels) for r in sorted(skill_rows.values(), key=lambda r: r["_id"])],
+        "supportSkills": [skill(r, support_levels) for r in sorted(support_rows.values(), key=lambda r: r["_id"])],
+        "members": members,
+        "snaps": snaps,
+    }
 
 
 # ---------------------------------------------------------------- the deck model
-DECK_SEEDS = 8                              # replay seeds of a chart with a luck range
+DECK_SEEDS = 8  # replay seeds of a chart with a luck range
 DECK_STATS_FORMAT = "ournotes-deck.chart-stats/3"
 
 
@@ -312,8 +371,14 @@ class Deck:
     current input on every call and publishes the native cache counters separately from the music data.
     """
 
-    def __init__(self, seeds: int = DECK_SEEDS, workers: int | None = None, module=None, aptitude: bool = True,
-                 cache: Path | None = None):
+    def __init__(
+        self,
+        seeds: int = DECK_SEEDS,
+        workers: int | None = None,
+        module=None,
+        aptitude: bool = True,
+        cache: Path | None = None,
+    ):
         native_max = sys.maxsize * 2 + 1
         if not _int(seeds) or not 1 <= seeds <= native_max:
             raise MusicDataError("--seeds must be a positive integer supported by the native model")
@@ -323,12 +388,14 @@ class Deck:
             try:
                 import ournotes_sim as module
             except ImportError:
-                raise MusicDataError("the deck model (the package ournotes-sim) is not installed: install "
-                                     "'nnnotes[deck]', or pass --no-deck") from None
+                raise MusicDataError(
+                    "the deck model (the package ournotes-sim) is not installed: install "
+                    "'nnnotes[deck]', or pass --no-deck"
+                ) from None
         self.module, self.seeds, self.workers = module, seeds, None if workers == 0 else workers
         self.aptitude = aptitude
         self.cache = None if cache is None else Path(cache)
-        self.counts: dict | None = None                 # native counters, or None when no cache was requested
+        self.counts: dict | None = None  # native counters, or None when no cache was requested
 
     def info(self) -> dict:
         """The identity and statistics format of the installed model."""
@@ -339,16 +406,19 @@ class Deck:
         """The current chart-statistics document, preserving every number exactly as the model writes it."""
         info = self.info()
         if info["format"] != DECK_STATS_FORMAT:
-            raise MusicDataError(f"deck model: format {info['format']!r} is not supported; install the ournotes-sim "
-                                 f"release the extra deck pins ({DECK_STATS_FORMAT})")
+            raise MusicDataError(
+                f"deck model: format {info['format']!r} is not supported; install the ournotes-sim "
+                f"release the extra deck pins ({DECK_STATS_FORMAT})"
+            )
         data = deckdata.encode(deck_input).decode("utf-8")
         try:
             if self.cache is None:
                 text = self.module.chart_stats(data, self.seeds, self.workers, aptitude=self.aptitude)
                 counts = None
             else:
-                text, counts = self.module.chart_stats_cached(data, self.seeds, self.workers, aptitude=self.aptitude,
-                                                              cache_dir=str(self.cache))
+                text, counts = self.module.chart_stats_cached(
+                    data, self.seeds, self.workers, aptitude=self.aptitude, cache_dir=str(self.cache)
+                )
                 if not isinstance(counts, dict):
                     raise MusicDataError("deck model: native cache counters are not an object")
         except MusicDataError:
@@ -364,19 +434,32 @@ class Deck:
             raise MusicDataError(f"deck model: wrote {wrote!r}, expected {DECK_STATS_FORMAT!r}")
         charts = doc.get("charts")
         asked = [chart["scoreId"] for chart in deck_input["charts"]]
-        if (not isinstance(charts, list) or any(not isinstance(chart, dict) or not _int(chart.get("scoreId"))
-                                              for chart in charts)
-                or [chart["scoreId"] for chart in charts] != asked):
+        if (
+            not isinstance(charts, list)
+            or any(not isinstance(chart, dict) or not _int(chart.get("scoreId")) for chart in charts)
+            or [chart["scoreId"] for chart in charts] != asked
+        ):
             raise MusicDataError("deck model: the charts measured differ from the charts asked for")
         self.counts = counts
         return doc
 
 
 # the keys of a chart's statistics carried by `deck` (the others are checked against the chart facts)
-DECK_CHART_KEYS = ("convertedNoteCount", "skip", "events", "positions", "ranges", "justNotes", "expectation",
-                   "replaySeeds", "offSeeds", "unplayable", "gekisouAptitude")
-RANKS = 5                                   # the ranks of a Gekisou range (a Gekisou live has up to five players)
-GEKISOU_RANGES = 3                          # the Gekisou ranges of a live (its first three fevers)
+DECK_CHART_KEYS = (
+    "convertedNoteCount",
+    "skip",
+    "events",
+    "positions",
+    "ranges",
+    "justNotes",
+    "expectation",
+    "replaySeeds",
+    "offSeeds",
+    "unplayable",
+    "gekisouAptitude",
+)
+RANKS = 5  # the ranks of a Gekisou range (a Gekisou live has up to five players)
+GEKISOU_RANGES = 3  # the Gekisou ranges of a live (its first three fevers)
 
 
 def mission_pattern(missions) -> int:
@@ -408,20 +491,21 @@ def _int(v) -> bool:
 
 def _numbers(v, n: int) -> bool:
     """Whether v is a list of n numbers (as the deck model writes them)."""
-    return isinstance(v, list) and len(v) == n and all(
-        _number(x) for x in v)
+    return isinstance(v, list) and len(v) == n and all(_number(x) for x in v)
 
 
 def _check_bound(c, what: str, where: str) -> None:
     """A check (or rank check) of the deck model: its exact score within `bound` of the predicted one."""
     if not isinstance(c, dict):
         raise MusicDataError(f"{where}: {what}: no check")
-    if not (_int(c.get("exact")) and _number(c.get("predicted")) and _number(c.get("bound"))
-            and float(c["bound"]) >= 0):
+    if not (
+        _int(c.get("exact")) and _number(c.get("predicted")) and _number(c.get("bound")) and float(c["bound"]) >= 0
+    ):
         raise MusicDataError(f"{where}: {what}: invalid exact, predicted or bound")
     if abs(c["exact"] - float(c["predicted"])) > float(c["bound"]):
-        raise MusicDataError(f"{where}: {what} scores {c['exact']}, predicted {c['predicted']} beyond the bound "
-                             f"{c['bound']}")
+        raise MusicDataError(
+            f"{where}: {what} scores {c['exact']}, predicted {c['predicted']} beyond the bound {c['bound']}"
+        )
 
 
 # ournotes-sim's published seed set (live::seeds): candidate k is the low 32 bits (a signed integer) of output k + 1
@@ -438,6 +522,7 @@ def _i32(x: int) -> int:
 
 def published_seeds(n: int) -> list[int]:
     """The first n seeds of ournotes-deck's published seed set (a smaller set is a prefix of a larger one)."""
+
     def mix(z: int) -> int:
         z = ((z ^ (z >> 30)) * 0xBF58_476D_1CE4_E5B9) & _M64
         z = ((z ^ (z >> 27)) * 0x94D0_49BB_1331_11EB) & _M64
@@ -445,6 +530,7 @@ def published_seeds(n: int) -> list[int]:
 
     def eff(x: int) -> int:
         return (1 << 31) - 1 if x == -(1 << 31) else abs(x)
+
     keys, out, k = set(), [], 0
     while len(out) < n:
         b = _i32(mix((SEED_ORIGIN + _GAMMA * (k + 1)) & _M64))
@@ -464,29 +550,44 @@ def chart_seeds(stats: dict, seeds: int) -> list[int]:
 
 
 def _check_deck_slots(deck, positions: int, allowed: set[int], where: str) -> None:
-    if not (isinstance(deck, list) and len(deck) == positions and all(
-            slot is None or (isinstance(slot, list) and len(slot) == 2 and _int(slot[0]) and slot[0] in allowed
-                             and _int(slot[1])) for slot in deck)):
+    if not (
+        isinstance(deck, list)
+        and len(deck) == positions
+        and all(
+            slot is None
+            or (isinstance(slot, list) and len(slot) == 2 and _int(slot[0]) and slot[0] in allowed and _int(slot[1]))
+            for slot in deck
+        )
+    ):
         raise MusicDataError(f"{where}: check deck is not [kind, value] or null per position")
 
 
-def _check_expectation_check(check, positions: int, allowed: set[int], ranges: int, where: str, *,
-                             ranked: bool = False, linear: bool = True) -> None:
-    if not (isinstance(check, dict) and all(key in check for key in CHECK_KEYS)
-            and _estimate(check["expected"]) and _estimate(check["predicted"])
-            and _number(check["bound"]) and float(check["bound"]) >= 0):
+def _check_expectation_check(
+    check, positions: int, allowed: set[int], ranges: int, where: str, *, ranked: bool = False, linear: bool = True
+) -> None:
+    if not (
+        isinstance(check, dict)
+        and all(key in check for key in CHECK_KEYS)
+        and _estimate(check["expected"])
+        and _estimate(check["predicted"])
+        and _number(check["bound"])
+        and float(check["bound"]) >= 0
+    ):
         raise MusicDataError(f"{where}: invalid expectation check (expected, predicted and bound)")
     _check_deck_slots(check["deck"], positions, allowed, where)
     ranks = check["ranks"]
     if ranked:
-        if not (isinstance(ranks, list) and len(ranks) == ranges
-                and all(_int(rank) and 1 <= rank <= RANKS for rank in ranks)
-                and (linear or all(rank == 1 for rank in ranks))):
+        if not (
+            isinstance(ranks, list)
+            and len(ranks) == ranges
+            and all(_int(rank) and 1 <= rank <= RANKS for rank in ranks)
+            and (linear or all(rank == 1 for rank in ranks))
+        ):
             raise MusicDataError(f"{where}: check ranks {ranks!r}")
     elif ranks is not None:
         raise MusicDataError(f"{where}: an unranked expectation check has ranks {ranks!r}")
     with localcontext() as context:
-        context.prec = 800                   # exact arithmetic for the finite binary64 decimal tokens
+        context.prec = 800  # exact arithmetic for the finite binary64 decimal tokens
         expected, predicted = check["expected"], check["predicted"]
         error = abs(Decimal(expected[0]) - Decimal(predicted[0])) + Decimal(expected[1]) + Decimal(predicted[1])
         # Each of the two serialized score intervals rounds its center to millipoints and expands its radius
@@ -502,21 +603,36 @@ def _check_expectation(stats: dict, kinds: int, where: str) -> None:
         raise MusicDataError(f"{where}: invalid number of performance positions")
     if not (isinstance(infos, list) and all(isinstance(row, dict) and _int(row.get("mission")) for row in infos)):
         raise MusicDataError(f"{where}: invalid Gekisou range descriptions")
-    if not (all(_int(stats.get(key)) and stats[key] >= 0 for key in ("judgedNotes", "justNotes"))
-            and stats["justNotes"] <= stats["judgedNotes"]):
+    if not (
+        all(_int(stats.get(key)) and stats[key] >= 0 for key in ("judgedNotes", "justNotes"))
+        and stats["justNotes"] <= stats["judgedNotes"]
+    ):
         raise MusicDataError(f"{where}: invalid chart judgement counts")
     n = len(infos)
     off = stats.get("offSeeds")
-    if not (isinstance(off, list) and len(off) == 1 and isinstance(off[0], dict)
-            and _int(off[0].get("seed")) and off[0]["seed"] == 0 and _int(off[0].get("score"))):
+    if not (
+        isinstance(off, list)
+        and len(off) == 1
+        and isinstance(off[0], dict)
+        and _int(off[0].get("seed"))
+        and off[0]["seed"] == 0
+        and _int(off[0].get("score"))
+    ):
         raise MusicDataError(f"{where}: the deck model gives no Gekisou off statistics (offSeeds)")
     weights = off[0].get("weights")
-    if not (isinstance(weights, list) and len(weights) == kinds
-            and all(row is None or _numbers(row, positions) for row in weights)):
+    if not (
+        isinstance(weights, list)
+        and len(weights) == kinds
+        and all(row is None or _numbers(row, positions) for row in weights)
+    ):
         raise MusicDataError(f"{where}: Gekisou off: weights are not [kind][position]")
     _check_bound(off[0].get("check"), "Gekisou off: the check deck", where)
-    _check_deck_slots(off[0]["check"].get("deck"), positions,
-                      {i for i, row in enumerate(weights) if row is not None}, f"{where}: Gekisou off")
+    _check_deck_slots(
+        off[0]["check"].get("deck"),
+        positions,
+        {i for i, row in enumerate(weights) if row is not None},
+        f"{where}: Gekisou off",
+    )
     if "expectation" not in stats:
         raise MusicDataError(f"{where}: no Gekisou expectation field")
     expected = stats["expectation"]
@@ -542,22 +658,39 @@ def _check_expectation(stats: dict, kinds: int, where: str) -> None:
         lots = row.get("lotResults")
         if not (isinstance(lots, list) and len(lots) == 4 and all(_estimate(value) for value in lots)):
             raise MusicDataError(f"{at}: lottery results are not four [center, outward radius] estimates")
-        if info["mission"] != MISSION_LUCK and any(not _consistent(value, [[0, 0]]) for value in [row["luckPoints"], *lots]):
+        if info["mission"] != MISSION_LUCK and any(
+            not _consistent(value, [[0, 0]]) for value in [row["luckPoints"], *lots]
+        ):
             raise MusicDataError(f"{at}: lottery results or luck points outside a luck range")
-        if stats["justNotes"] == 0 and any(not _consistent(row[a], [row[b]]) for a, b in (
-                ("rangeScore", "rangeScorePerfect"), ("rankBonus", "rankBonusPerfect"))):
+        if stats["justNotes"] == 0 and any(
+            not _consistent(row[a], [row[b]])
+            for a, b in (("rangeScore", "rangeScorePerfect"), ("rankBonus", "rankBonusPerfect"))
+        ):
             raise MusicDataError(f"{at}: a chart without Just notes differs on its Perfect play")
     if stats["justNotes"] == 0 and not _consistent(expected["score"], [expected["scorePerfect"]]):
         raise MusicDataError(f"{where}: a chart without Just notes differs on its Perfect play")
     weights, rw = expected.get("weights"), expected.get("rangeWeights")
-    if not (isinstance(weights, list) and len(weights) == kinds
-            and all(isinstance(row, list) and len(row) == positions and all(_estimate(v) for v in row)
-                    for row in weights)):
+    if not (
+        isinstance(weights, list)
+        and len(weights) == kinds
+        and all(isinstance(row, list) and len(row) == positions and all(_estimate(v) for v in row) for row in weights)
+    ):
         raise MusicDataError(f"{where}: expectation weights are not [kind][position] of estimates")
-    if rw is not None and not (isinstance(rw, list) and len(rw) == kinds and all(
-            kind is None or (isinstance(kind, list) and len(kind) == positions and all(
-                isinstance(row, list) and len(row) == n and all(_estimate(value) for value in row) for row in kind))
-            for kind in rw)):
+    if rw is not None and not (
+        isinstance(rw, list)
+        and len(rw) == kinds
+        and all(
+            kind is None
+            or (
+                isinstance(kind, list)
+                and len(kind) == positions
+                and all(
+                    isinstance(row, list) and len(row) == n and all(_estimate(value) for value in row) for row in kind
+                )
+            )
+            for kind in rw
+        )
+    ):
         raise MusicDataError(f"{where}: expectation rangeWeights are not [kind][position][range] of estimates")
     _check_expectation_check(expected.get("check"), positions, set(range(kinds)), n, f"{where}: expectation")
     check, rank_check = expected["check"], expected.get("rankCheck")
@@ -565,15 +698,14 @@ def _check_expectation(stats: dict, kinds: int, where: str) -> None:
     if can_rank != (rank_check is not None):
         raise MusicDataError(f"{where}: rankCheck does not match the range-weight domain")
     if rank_check is not None:
-        _check_expectation_check(rank_check, positions, set(range(kinds)), n,
-                                 f"{where}: rank expectation", ranked=True)
+        _check_expectation_check(rank_check, positions, set(range(kinds)), n, f"{where}: rank expectation", ranked=True)
         if rank_check["deck"] != check["deck"]:
             raise MusicDataError(f"{where}: rankCheck does not use the expectation's check deck")
 
 
 # ---------------------------------------------------------------- the Gekisou aptitude
-PLAIN_EFFECT_TYPE, PLAIN_MS = 2000, 5000    # the plain kind: score up on the whole deck for 5 s, nothing else
-CONDITION_MEMBER_TARGET = 5000              # the skill condition on the member a snap's support skill is paired with
+PLAIN_EFFECT_TYPE, PLAIN_MS = 2000, 5000  # the plain kind: score up on the whole deck for 5 s, nothing else
+CONDITION_MEMBER_TARGET = 5000  # the skill condition on the member a snap's support skill is paired with
 APTITUDE_KEYS = ("plainKind", "host", "law", "shapes")
 EXPECTATION_LAW = "independent nominal lottery and skill probabilities"
 SHAPE_KEYS = ("id", "source", "mission", "bandCondition", "effects", "skills")
@@ -582,8 +714,12 @@ VARIANT_ESTIMATES = ("score", "scorePerfect", "tail", "tailPerfect", "converted"
 EXPECTED_RANGE_ESTIMATES = ("rangeScore", "rankBonus", "rankBonusPerfect", "rangeScorePerfect", "luckPoints")
 RANGE_ESTIMATES = (*EXPECTED_RANGE_ESTIMATES, "maxCombo", "justCount")
 CHECK_KEYS = ("ranks", "deck", "expected", "predicted", "bound")
-CONDITION_GROUPS = (("trigger", "_skillTriggerConditionGroup"), ("condition", "_skillConditionGroup"),
-                    ("release", "_skillReleaseConditionGroup"), ("reset", "_effectExecuteLimitResetConditionGroup"))
+CONDITION_GROUPS = (
+    ("trigger", "_skillTriggerConditionGroup"),
+    ("condition", "_skillConditionGroup"),
+    ("release", "_skillReleaseConditionGroup"),
+    ("reset", "_effectExecuteLimitResetConditionGroup"),
+)
 
 
 def plain_kind(kinds: list[dict]) -> int | None:
@@ -591,10 +727,15 @@ def plain_kind(kinds: list[dict]) -> int | None:
     conditions or limits for 5 s (a kind without `durationMs` counts as 5 s); None when there is none."""
     for k in kinds:
         ms = k.get("durationMs")
-        if (k.get("effectType") == PLAIN_EFFECT_TYPE and not (k.get("skillTargetIds") or [])
-                and not k.get("skillConditionGroup") and not k.get("skillReleaseConditionGroup")
-                and not k.get("effectLimitCount") and not k.get("effectExecuteLimitCount")
-                and (PLAIN_MS if ms is None else ms) == PLAIN_MS):
+        if (
+            k.get("effectType") == PLAIN_EFFECT_TYPE
+            and not (k.get("skillTargetIds") or [])
+            and not k.get("skillConditionGroup")
+            and not k.get("skillReleaseConditionGroup")
+            and not k.get("effectLimitCount")
+            and not k.get("effectExecuteLimitCount")
+            and (PLAIN_MS if ms is None else ms) == PLAIN_MS
+        ):
             return k["id"]
     return None
 
@@ -611,9 +752,14 @@ def _number(v) -> bool:
 
 def _estimate(value) -> bool:
     """A finite [center, outward interval half-width], including its two finite endpoints."""
-    return (isinstance(value, list) and len(value) == 2 and all(_number(v) for v in value)
-            and float(value[1]) >= 0 and math.isfinite(float(value[0]) - float(value[1]))
-            and math.isfinite(float(value[0]) + float(value[1])))
+    return (
+        isinstance(value, list)
+        and len(value) == 2
+        and all(_number(v) for v in value)
+        and float(value[1]) >= 0
+        and math.isfinite(float(value[0]) - float(value[1]))
+        and math.isfinite(float(value[0]) + float(value[1]))
+    )
 
 
 def _consistent(value, terms) -> bool:
@@ -627,6 +773,7 @@ def _consistent(value, terms) -> bool:
 
 def _f32(v) -> float:
     import numpy as np
+
     return float(np.float32(float(v)))
 
 
@@ -643,18 +790,24 @@ class Aptitude:
         self.sets: dict = {}
         for r in tables["MasterSkillConditionSet"]:
             self.sets.setdefault(r.get("_group"), []).append(r)
-        self.rows: dict = {}                            # (source, skill id, level) -> effect rows in master order
-        for source, table, key in (("member", "MasterGekisouSkillEffect", "_gekisouSkillID"),
-                                   ("support", "MasterGekisouSupportSkillEffect", "_gekisouSupportSkillID")):
+        self.rows: dict = {}  # (source, skill id, level) -> effect rows in master order
+        for source, table, key in (
+            ("member", "MasterGekisouSkillEffect", "_gekisouSkillID"),
+            ("support", "MasterGekisouSupportSkillEffect", "_gekisouSupportSkillID"),
+        ):
             for r in tables[table]:
                 self.rows.setdefault((source, r.get(key), r.get("_level")), []).append(r)
         # what the shapes cover: every member card's Gekisou skill at its highest level, every snap's Gekisou support
         # skills at the snap's highest rank
-        expected = {("member", m["gekisouSkillId"], self.skills[m["gekisouSkillId"]]["maxLevel"])
-                    for m in catalog["members"] if m["gekisouSkillId"] is not None}
-        expected |= {("support", i, s["supportSkillLevel"]) for s in catalog["snaps"]
-                     for i in s["gekisouSupportSkillIds"]}
-        self.expected = {k for k in expected if k in self.rows}     # a skill level with effect rows
+        expected = {
+            ("member", m["gekisouSkillId"], self.skills[m["gekisouSkillId"]]["maxLevel"])
+            for m in catalog["members"]
+            if m["gekisouSkillId"] is not None
+        }
+        expected |= {
+            ("support", i, s["supportSkillLevel"]) for s in catalog["snaps"] for i in s["gekisouSupportSkillIds"]
+        }
+        self.expected = {k for k in expected if k in self.rows}  # a skill level with effect rows
         self.header = self.shapes = None
 
     # ------------------------------------------------ the shape table
@@ -669,13 +822,20 @@ class Aptitude:
             for cid in s.get("_conditionIds") or []:
                 c = self.conditions.get(cid)
                 if c is None:
-                    raise MusicDataError(f"MasterSkillConditionSet {s.get('_id')}: condition {cid} is not in "
-                                         f"MasterSkillCondition")
+                    raise MusicDataError(
+                        f"MasterSkillConditionSet {s.get('_id')}: condition {cid} is not in MasterSkillCondition"
+                    )
                 t = c.get("_conditionType")
-                conds.append({"type": t, "values": list(c.get("_conditionValues") or []),
-                              "positive": bool(c.get("_isPositive")),
-                              "targetIds": (None if t == CONDITION_MEMBER_TARGET
-                                            else list(c.get("_conditionTargetIDs") or []))})
+                conds.append(
+                    {
+                        "type": t,
+                        "values": list(c.get("_conditionValues") or []),
+                        "positive": bool(c.get("_isPositive")),
+                        "targetIds": (
+                            None if t == CONDITION_MEMBER_TARGET else list(c.get("_conditionTargetIDs") or [])
+                        ),
+                    }
+                )
             out.append(conds)
         return out
 
@@ -686,18 +846,31 @@ class Aptitude:
             cid = r.get("_skillCumulativeConditionID")
             c = self.cumulative.get(cid) if cid else None
             if cid and c is None:
-                raise MusicDataError(f"Gekisou {source} skill {skill} level {level}: cumulative condition {cid} is not "
-                                     f"in MasterSkillCumulativeCondition")
-            e = {"effectType": r.get("_skillEffectType"), "triggerType": r.get("_skillTriggerType"),
-                 "activationTimeSecond": r.get("_activationTimeSecond"), "effectValue": r.get("_effectValue"),
-                 "maxEffectValue": r.get("_maxEffectValue"), "effectLimitCount": r.get("_effectLimitCount"),
-                 "effectExecuteLimitCount": r.get("_effectExecuteLimitCount"),
-                 "skillTargetIds": list(r.get("_skillTargetIDs") or [])}
+                raise MusicDataError(
+                    f"Gekisou {source} skill {skill} level {level}: cumulative condition {cid} is not "
+                    f"in MasterSkillCumulativeCondition"
+                )
+            e = {
+                "effectType": r.get("_skillEffectType"),
+                "triggerType": r.get("_skillTriggerType"),
+                "activationTimeSecond": r.get("_activationTimeSecond"),
+                "effectValue": r.get("_effectValue"),
+                "maxEffectValue": r.get("_maxEffectValue"),
+                "effectLimitCount": r.get("_effectLimitCount"),
+                "effectExecuteLimitCount": r.get("_effectExecuteLimitCount"),
+                "skillTargetIds": list(r.get("_skillTargetIDs") or []),
+            }
             e.update({k: self._group(r.get(col)) for k, col in CONDITION_GROUPS})
-            e["cumulative"] = None if c is None else {
-                "type": c.get("_skillCumulativeConditionType"), "values": list(c.get("_conditionValues") or []),
-                "targetIds": list(c.get("_conditionTargetIDs") or []),
-                "maxCumulativeCount": c.get("_maxCumulativeCount")}
+            e["cumulative"] = (
+                None
+                if c is None
+                else {
+                    "type": c.get("_skillCumulativeConditionType"),
+                    "values": list(c.get("_conditionValues") or []),
+                    "targetIds": list(c.get("_conditionTargetIDs") or []),
+                    "maxCumulativeCount": c.get("_maxCumulativeCount"),
+                }
+            )
             out.append(e)
         return out
 
@@ -747,8 +920,9 @@ class Aptitude:
             raise MusicDataError(f"{where}: not {{{', '.join(APTITUDE_KEYS)}}}")
         want = plain_kind(kinds)
         if info["plainKind"] != want:
-            raise MusicDataError(f"{where}: plain kind {info['plainKind']!r} is not the plain kind of the kinds, "
-                                 f"{want!r}")
+            raise MusicDataError(
+                f"{where}: plain kind {info['plainKind']!r} is not the plain kind of the kinds, {want!r}"
+            )
         if not (isinstance(info["host"], str) and info["host"]):
             raise MusicDataError(f"{where}: the support skills' host is not described (host)")
         if not (isinstance(model.get("gekisouAptitude"), str) and model["gekisouAptitude"]):
@@ -757,51 +931,69 @@ class Aptitude:
             raise MusicDataError(f"{where}: unsupported expectation law {info['law']!r}")
         shapes = info["shapes"]
         if not isinstance(shapes, list) or [s.get("id") if isinstance(s, dict) else s for s in shapes] != list(
-                range(len(shapes))):
+            range(len(shapes))
+        ):
             ids = [s.get("id") if isinstance(s, dict) else s for s in shapes] if isinstance(shapes, list) else shapes
             raise MusicDataError(f"{where}: shape ids {ids!r} are not 0, 1, ... in order")
         seen: dict = {}
         for shape in shapes:
             at = f"{where}: shape {shape['id']}"
-            if not _int(shape["id"]) or any(k not in shape for k in SHAPE_KEYS) or shape["source"] not in ("member", "support") \
-                    or not _int(shape["mission"]) or shape["mission"] not in (1, 2, 3, 4) \
-                    or not isinstance(shape["bandCondition"], bool) \
-                    or not isinstance(shape["skills"], list) or not shape["skills"]:
-                raise MusicDataError(f"{at}: not a shape {{{', '.join(SHAPE_KEYS)}}} of a source, a mission and "
-                                     f"skills")
+            if (
+                not _int(shape["id"])
+                or any(k not in shape for k in SHAPE_KEYS)
+                or shape["source"] not in ("member", "support")
+                or not _int(shape["mission"])
+                or shape["mission"] not in (1, 2, 3, 4)
+                or not isinstance(shape["bandCondition"], bool)
+                or not isinstance(shape["skills"], list)
+                or not shape["skills"]
+            ):
+                raise MusicDataError(f"{at}: not a shape {{{', '.join(SHAPE_KEYS)}}} of a source, a mission and skills")
             source = shape["source"]
             catalog = self.skills if source == "member" else self.supports
             for sk in shape["skills"]:
-                if not isinstance(sk, dict) or any(k not in sk for k in ("id", "level", "memberTargetIds", "bandIds")) or not (
-                        _int(sk.get("id")) and _int(sk.get("level"))):
+                if (
+                    not isinstance(sk, dict)
+                    or any(k not in sk for k in ("id", "level", "memberTargetIds", "bandIds"))
+                    or not (_int(sk.get("id")) and _int(sk.get("level")))
+                ):
                     raise MusicDataError(f"{at}: skill {sk!r}")
                 key = (source, sk["id"], sk["level"])
-                what = f"{at}: Gekisou {'skill' if source == 'member' else 'support skill'} {sk['id']} level " \
-                       f"{sk['level']}"
+                what = (
+                    f"{at}: Gekisou {'skill' if source == 'member' else 'support skill'} {sk['id']} level {sk['level']}"
+                )
                 if key in seen:
                     raise MusicDataError(f"{what} is in shape {seen[key]} too")
                 seen[key] = shape["id"]
                 if key not in self.expected:
-                    raise MusicDataError(f"{what} is not a skill and level of the Gekisou catalog (a member card's "
-                                         f"Gekisou skill at its highest level, a snap's support skill at its highest "
-                                         f"rank)")
+                    raise MusicDataError(
+                        f"{what} is not a skill and level of the Gekisou catalog (a member card's "
+                        f"Gekisou skill at its highest level, a snap's support skill at its highest "
+                        f"rank)"
+                    )
                 if catalog[sk["id"]]["mission"] != shape["mission"]:
-                    raise MusicDataError(f"{what} has the mission {catalog[sk['id']]['mission']!r}, the shape "
-                                         f"{shape['mission']!r}")
+                    raise MusicDataError(
+                        f"{what} has the mission {catalog[sk['id']]['mission']!r}, the shape {shape['mission']!r}"
+                    )
                 targets = self.member_targets(*key)
                 if (sk.get("memberTargetIds"), sk.get("bandIds")) != targets:
-                    raise MusicDataError(f"{what}: member targets {sk.get('memberTargetIds')!r} and bands "
-                                         f"{sk.get('bandIds')!r}, the master data has {targets[0]!r} and "
-                                         f"{targets[1]!r}")
+                    raise MusicDataError(
+                        f"{what}: member targets {sk.get('memberTargetIds')!r} and bands "
+                        f"{sk.get('bandIds')!r}, the master data has {targets[0]!r} and "
+                        f"{targets[1]!r}"
+                    )
                 if shape["bandCondition"] != (targets[0] is not None):
-                    raise MusicDataError(f"{what}: band condition {shape['bandCondition']}, the master data has "
-                                         f"{'one' if targets[0] is not None else 'none'}")
+                    raise MusicDataError(
+                        f"{what}: band condition {shape['bandCondition']}, the master data has "
+                        f"{'one' if targets[0] is not None else 'none'}"
+                    )
                 if not self._effects_equal(shape["effects"], self.effects(*key)):
                     raise MusicDataError(f"{what}: the shape's effect rows are not the master data's")
         missing = sorted(self.expected - set(seen), key=repr)
         if missing:
-            raise MusicDataError(f"{where}: no shape has " + ", ".join(f"the {s} skill {i} level {lv}"
-                                                                        for s, i, lv in missing))
+            raise MusicDataError(
+                f"{where}: no shape has " + ", ".join(f"the {s} skill {i} level {lv}" for s, i, lv in missing)
+            )
         self.header, self.shapes = info, shapes
         return {k: info[k] for k in APTITUDE_KEYS}
 
@@ -822,30 +1014,48 @@ def validate_aptitude_statistics(header: dict | None, stats: dict, where: str) -
     apt = stats["gekisouAptitude"]
     if header is None or not shapes or stats.get("unplayable") is not None or not stats["ranges"]:
         if apt is not None:
-            why = ("the aptitude left out" if header is None else "no shape" if not shapes
-                   else "a chart unplayable with Gekisou" if stats.get("unplayable") is not None
-                   else "a chart without Gekisou ranges")
+            why = (
+                "the aptitude left out"
+                if header is None
+                else "no shape"
+                if not shapes
+                else "a chart unplayable with Gekisou"
+                if stats.get("unplayable") is not None
+                else "a chart without Gekisou ranges"
+            )
             raise MusicDataError(f"{where}: the deck model gives a Gekisou aptitude with {why}")
         return None
     where = f"{where}: Gekisou aptitude"
-    if not (isinstance(apt, dict) and isinstance(apt.get("factors"), list) and isinstance(apt.get("variants"),
-                                                                                            list)):
+    if not (isinstance(apt, dict) and isinstance(apt.get("factors"), list) and isinstance(apt.get("variants"), list)):
         raise MusicDataError(f"{where}: none (gekisouAptitude {{factors, variants}})")
     ranges, base = stats["ranges"], stats["expectation"]
     _validate_aptitude_factors(where, apt["factors"], stats)
     missions = {r["mission"] for r in ranges}
-    want = [(s["id"], b) for s in shapes if s["mission"] == MISSION_ALL or s["mission"] in missions
-            for b in ((True, False) if s["bandCondition"] else (None,))]
-    if any(not isinstance(v, dict) or not _int(v.get("shape"))
-           or v.get("bandMatch") is not None and not isinstance(v.get("bandMatch"), bool)
-           or "bandMatch" not in v for v in apt["variants"]):
+    want = [
+        (s["id"], b)
+        for s in shapes
+        if s["mission"] == MISSION_ALL or s["mission"] in missions
+        for b in ((True, False) if s["bandCondition"] else (None,))
+    ]
+    if any(
+        not isinstance(v, dict)
+        or not _int(v.get("shape"))
+        or v.get("bandMatch") is not None
+        and not isinstance(v.get("bandMatch"), bool)
+        or "bandMatch" not in v
+        for v in apt["variants"]
+    ):
         raise MusicDataError(f"{where}: invalid shape or bandMatch")
     got = [(v.get("shape"), v.get("bandMatch")) if isinstance(v, dict) else v for v in apt["variants"]]
     if got != want:
-        raise MusicDataError(f"{where}: variants (shape, bandMatch) {got!r}, the shapes of the chart's missions "
-                             f"{sorted(missions)} give {want!r}")
+        raise MusicDataError(
+            f"{where}: variants (shape, bandMatch) {got!r}, the shapes of the chart's missions "
+            f"{sorted(missions)} give {want!r}"
+        )
     for v in apt["variants"]:
-        _validate_aptitude_variant(f"{where}: shape {v['shape']} band match {v['bandMatch']!r}", v, stats, base, plain, shapes)
+        _validate_aptitude_variant(
+            f"{where}: shape {v['shape']} band match {v['bandMatch']!r}", v, stats, base, plain, shapes
+        )
     return {"factors": apt["factors"], "variants": apt["variants"]}
 
 
@@ -855,12 +1065,16 @@ def _validate_aptitude_factors(where: str, factors: list, stats: dict) -> None:
         raise MusicDataError(f"{where}: {len(factors)} factors for {len(ranges)} ranges")
     for j, (f, r) in enumerate(zip(factors, ranges)):
         at = f"{where}: range {j} factors"
-        if not (isinstance(f, dict) and all(_int(f.get(k)) and f[k] >= 0 for k in FACTOR_COUNTS)
-                and _estimate(f.get("lotteries"))):
+        if not (
+            isinstance(f, dict)
+            and all(_int(f.get(k)) and f[k] >= 0 for k in FACTOR_COUNTS)
+            and _estimate(f.get("lotteries"))
+        ):
             raise MusicDataError(f"{at}: not {{{', '.join(FACTOR_COUNTS)}, lotteries}}: {f!r}")
         if r["mission"] != MISSION_JUST and (f["justNotes"], f["perfectNotes"]) != (0, 0):
-            raise MusicDataError(f"{at}: {f['justNotes']} Just and {f['perfectNotes']} Perfect notes outside a "
-                                 f"Just count range")
+            raise MusicDataError(
+                f"{at}: {f['justNotes']} Just and {f['perfectNotes']} Perfect notes outside a Just count range"
+            )
         if f["justNotes"] + f["perfectNotes"] > f["judgedNotes"] or f["comboAtStart"] > stats["judgedNotes"]:
             raise MusicDataError(f"{at}: note counts {f!r} beyond the range's or the chart's")
         lotteries = base["ranges"][j]["lotResults"]
@@ -874,8 +1088,10 @@ def _validate_aptitude_variant(at: str, value: dict, stats: dict, base: dict, pl
     n, positions = len(stats["ranges"]), stats["positions"]
     effects = shapes[value["shape"]]["effects"]
     reads_rank = any(
-        any(condition["type"] == 7012 for key, _ in CONDITION_GROUPS for group in effect[key]
-            for condition in group) or (effect["cumulative"] or {}).get("type") == 7012 for effect in effects)
+        any(condition["type"] == 7012 for key, _ in CONDITION_GROUPS for group in effect[key] for condition in group)
+        or (effect["cumulative"] or {}).get("type") == 7012
+        for effect in effects
+    )
     linear = base.get("rangeWeights") is not None and not reads_rank
     pairs = [(key, value.get(key)) for key in VARIANT_ESTIMATES]
     ranges = value.get("ranges")
@@ -895,29 +1111,51 @@ def _validate_aptitude_variant(at: str, value: dict, stats: dict, base: dict, pl
         if (rw is not None) != linear:
             raise MusicDataError(f"{at}: rangeWeights do not match the chart and shape's rank-linear domain")
         if rw is not None:
-            if not (isinstance(rw, list) and len(rw) == positions
-                    and all(isinstance(row, list) and len(row) == n for row in rw)):
+            if not (
+                isinstance(rw, list)
+                and len(rw) == positions
+                and all(isinstance(row, list) and len(row) == n for row in rw)
+            ):
                 raise MusicDataError(f"{at}: rangeWeights are not [position][range] of estimates")
-            pairs += [(f"rangeWeights[{i}][{j}]", estimate) for i, row in enumerate(rw)
-                      for j, estimate in enumerate(row)]
+            pairs += [
+                (f"rangeWeights[{i}][{j}]", estimate) for i, row in enumerate(rw) for j, estimate in enumerate(row)
+            ]
     for name, estimate in pairs:
         if not _estimate(estimate):
             raise MusicDataError(f"{at}: {name} {estimate!r} is not [center, outward radius]")
     for name, estimate in [("converted", value["converted"])] + [
-            (f"ranges[{i}].{key}", row[key]) for i, row in enumerate(ranges) for key in ("maxCombo", "justCount")]:
+        (f"ranges[{i}].{key}", row[key]) for i, row in enumerate(ranges) for key in ("maxCombo", "justCount")
+    ]:
         if float(estimate[1]) != 0 or not float(estimate[0]).is_integer():
             raise MusicDataError(f"{at}: {name} is not a deterministic integer counter")
-    for score, tail, range_score, bonus in (("score", "tail", "rangeScore", "rankBonus"),
-                                           ("scorePerfect", "tailPerfect", "rangeScorePerfect", "rankBonusPerfect")):
+    for score, tail, range_score, bonus in (
+        ("score", "tail", "rangeScore", "rankBonus"),
+        ("scorePerfect", "tailPerfect", "rangeScorePerfect", "rankBonusPerfect"),
+    ):
         terms = [value[tail]] + [row[key] for row in ranges for key in (range_score, bonus)]
         if not _consistent(value[score], terms):
             raise MusicDataError(f"{at}: {tail} interval is inconsistent with {score} and the range increments")
-    _check_expectation_check(value.get("check"), positions, set() if plain is None else {plain}, n,
-                             f"{at}: expectation", ranked=True, linear=linear)
+    _check_expectation_check(
+        value.get("check"),
+        positions,
+        set() if plain is None else {plain},
+        n,
+        f"{at}: expectation",
+        ranked=True,
+        linear=linear,
+    )
 
 
-def chart_deck(song: dict, chart: dict, stats: dict, kinds: int, percents: list[list], seeds: int,
-               aptitude: Aptitude, plain: int | None) -> dict:
+def chart_deck(
+    song: dict,
+    chart: dict,
+    stats: dict,
+    kinds: int,
+    percents: list[list],
+    seeds: int,
+    aptitude: Aptitude,
+    plain: int | None,
+) -> dict:
     """A chart's `deck` from its statistics, after checking them against the song, the chart facts, the song's rank
     bonus percentages (`percents`: rank_bonus_percents), and the replay seed set (`seeds` with a luck range)
     and its Gekisou aptitude (Aptitude.chart, `plain` the plain kind), `kinds` the number of score-up kinds."""
@@ -931,7 +1169,7 @@ def chart_deck(song: dict, chart: dict, stats: dict, kinds: int, percents: list[
         ("music length", stats["musicLengthMs"], chart["musicLengthMs"]),
         ("Gekisou missions", stats["missions"], song["gekisouMissions"]),
         ("skill event times", [t for _, t in stats["events"]], chart["skillEventsMs"]),
-        ("fevers", [[r["startMs"], r["endMs"]] for r in stats["ranges"]], chart["fevers"][:len(stats["ranges"])]),
+        ("fevers", [[r["startMs"], r["endMs"]] for r in stats["ranges"]], chart["fevers"][: len(stats["ranges"])]),
     )
     for name, deck, facts in checks:
         if deck != facts:
@@ -941,8 +1179,10 @@ def chart_deck(song: dict, chart: dict, stats: dict, kinds: int, percents: list[
         want = percents[i] if i < len(percents) else [0] * RANKS
         got = r.get("rankBonusPercents")
         if got != want or r["rankBonusPercent"] != want[0]:
-            raise MusicDataError(f"{where}: range {i}: the deck model's rank bonus percentages {got!r} "
-                                 f"({r['rankBonusPercent']!r}) differ from MasterLiveGekisouRankingScoreBonus {want!r}")
+            raise MusicDataError(
+                f"{where}: range {i}: the deck model's rank bonus percentages {got!r} "
+                f"({r['rankBonusPercent']!r}) differ from MasterLiveGekisouRankingScoreBonus {want!r}"
+            )
     want = chart_seeds(stats, seeds)
     replay = stats.get("replaySeeds")
     if not isinstance(replay, list) or not all(_int(seed) for seed in replay) or replay != want:
@@ -952,18 +1192,30 @@ def chart_deck(song: dict, chart: dict, stats: dict, kinds: int, percents: list[
 
 
 # ---------------------------------------------------------------- document
-def build(tables: dict[str, list[dict]], table_sha: dict[str, str], fetch: Callable[[str], bytes],
-          bgm: Callable[[str, str], dict] | None, *, region: str, client: dict, catalog: dict, master_source: str,
-          master_version: str | None, deck: Deck | None = None, full: bool = False) -> dict:
+def build(
+    tables: dict[str, list[dict]],
+    table_sha: dict[str, str],
+    fetch: Callable[[str], bytes],
+    bgm: Callable[[str, str], dict] | None,
+    *,
+    region: str,
+    client: dict,
+    catalog: dict,
+    master_source: str,
+    master_version: str | None,
+    deck: Deck | None = None,
+    full: bool = False,
+) -> dict:
     """The music data document. `fetch(file name)`: a chart TextAsset's bytes (KeyError when there is none);
     `bgm(cue sheet, cue)`: the BGM length (catalog_bgm), None to leave every song's `bgm.length` null; `deck`: the
     deck model measuring the songs' charts (and their Gekisou aptitude), None to leave every chart's `deck` null;
     `full`: add the deck input (`master`, `charts`: deckdata.TABLES and every chart's runtime notes). `tables`:
     tables_of(deck, full)."""
     from . import __version__
+
     raws: dict[str, bytes] = {}
 
-    def raw_chart(row: dict) -> tuple[str, bytes]:      # (key, bytes); each chart asset is read once
+    def raw_chart(row: dict) -> tuple[str, bytes]:  # (key, bytes); each chart asset is read once
         name = row["_musicScoreTextFileName"]
         key = deckdata.chart_key(name)
         if name not in raws:
@@ -978,22 +1230,39 @@ def build(tables: dict[str, list[dict]], table_sha: dict[str, str], fetch: Calla
     sounds = _by_id(tables["MasterSound"], "MasterSound")
     sheets = _by_id(tables["MasterSoundCueSheet"], "MasterSoundCueSheet")
     musics = sorted(_by_id(tables["MasterLiveMusic"], "MasterLiveMusic").values(), key=lambda r: r["_id"])
-    rank_groups: dict = {}                              # _group -> rows in required-score order, as the client reads
+    rank_groups: dict = {}  # _group -> rows in required-score order, as the client reads
     for r in sorted(tables["MasterLiveScoreRank"], key=lambda r: (r.get("_requiredScore") or 0, r.get("_id") or 0)):
         if r.get("_liveScoreRank") not in SCORE_RANKS:
             raise MusicDataError(f"MasterLiveScoreRank {r.get('_id')}: unknown rank {r.get('_liveScoreRank')!r}")
         rank_groups.setdefault(r.get("_group"), []).append(r)
 
-    bands = [{"id": b["_id"], "name": text.get(b.get("_nameTextID")), "mainColor": b.get("_mainColorCode"),
-              "subColor": b.get("_subColorCode")} for b in sorted(tables["MasterBand"], key=lambda r: r["_id"])]
-    characters = [{"id": c["_id"], "bandId": c.get("_bandID"), "name": text.get(c.get("_nameTextID")),
-                   "shortName": text.get(c.get("_shortNameTextID")), "mainColor": c.get("_mainColorCode")}
-                  for c in sorted(tables["MasterCharacter"], key=lambda r: r["_id"])]
-    tags = [{"id": t["_id"], "name": text.get(t.get("_nameTextID"))}
-            for t in sorted(tables["MasterTag"], key=lambda r: r["_id"])]
-    categories = [{"id": c["_id"], "musicCategories": list(c.get("_musicCategories") or []),
-                   "name": text.get(c.get("_textKey"))}
-                  for c in sorted(tables["MasterLiveMusicCategory"], key=lambda r: r["_id"])]
+    bands = [
+        {
+            "id": b["_id"],
+            "name": text.get(b.get("_nameTextID")),
+            "mainColor": b.get("_mainColorCode"),
+            "subColor": b.get("_subColorCode"),
+        }
+        for b in sorted(tables["MasterBand"], key=lambda r: r["_id"])
+    ]
+    characters = [
+        {
+            "id": c["_id"],
+            "bandId": c.get("_bandID"),
+            "name": text.get(c.get("_nameTextID")),
+            "shortName": text.get(c.get("_shortNameTextID")),
+            "mainColor": c.get("_mainColorCode"),
+        }
+        for c in sorted(tables["MasterCharacter"], key=lambda r: r["_id"])
+    ]
+    tags = [
+        {"id": t["_id"], "name": text.get(t.get("_nameTextID"))}
+        for t in sorted(tables["MasterTag"], key=lambda r: r["_id"])
+    ]
+    categories = [
+        {"id": c["_id"], "musicCategories": list(c.get("_musicCategories") or []), "name": text.get(c.get("_textKey"))}
+        for c in sorted(tables["MasterLiveMusicCategory"], key=lambda r: r["_id"])
+    ]
     gk_catalog = gekisou_catalog(tables, text)
 
     songs = []
@@ -1016,35 +1285,47 @@ def build(tables: dict[str, list[dict]], table_sha: dict[str, str], fetch: Calla
             raise MusicDataError(f"{where}: cue sheet {snd.get('_soundCueSheetID')} is not in MasterSoundCueSheet")
         length = bgm(sheet["_cueSheetName"], snd["_cueName"]) if bgm is not None else None
         rank_rows = rank_groups.get(m.get("_liveScoreRankGroup"), [])
-        songs.append({
-            "id": m["_id"],
-            "sortOrder": m.get("_sortOrder"),
-            "startAt": m.get("_startAt"),
-            "defaultUnlock": m.get("_defaultUnlock"),
-            "title": text.get(m.get("_titleTextID")),
-            "ruby": text.get(m.get("_rubyTitleTextID")),
-            "phonetic": text.get(m.get("_phoneticTextID")),
-            "bandIds": list(m.get("_bandIDs") or []),
-            "bandName": text.get(m.get("_bandNameTextID")),
-            "vocalCharacterIds": list(m.get("_vocalCharacterIDs") or []),
-            "lyricist": text.get(m.get("_lyricistTextID")),
-            "composer": text.get(m.get("_composerTextID")),
-            "arranger": text.get(m.get("_arrangerTextID")),
-            "musicType": m.get("_musicType"),
-            "musicCategories": list(m.get("_musicCategories") or []),
-            "bestMusicTagIds": list(m.get("_bestMusicTagIDs") or []),
-            "jacket": m.get("_jacketAssetName"),
-            "gekisouMissions": [m.get("_gekisouMission1"), m.get("_gekisouMission2"), m.get("_gekisouMission3")],
-            "bgm": {"soundId": snd["_id"], "cueSheet": sheet["_cueSheetName"], "cue": snd["_cueName"],
-                    "length": length},
-            "scoreRanks": [{"rank": SCORE_RANKS[r["_liveScoreRank"]], "requiredScore": r.get("_requiredScore"),
-                            "battleRequiredScore": r.get("_battleLiveRequiredScore")} for r in rank_rows],
-            "charts": charts,
-            "master": {"MasterLiveMusic": m, "MasterLiveScoreRank": rank_rows},
-        })
+        songs.append(
+            {
+                "id": m["_id"],
+                "sortOrder": m.get("_sortOrder"),
+                "startAt": m.get("_startAt"),
+                "defaultUnlock": m.get("_defaultUnlock"),
+                "title": text.get(m.get("_titleTextID")),
+                "ruby": text.get(m.get("_rubyTitleTextID")),
+                "phonetic": text.get(m.get("_phoneticTextID")),
+                "bandIds": list(m.get("_bandIDs") or []),
+                "bandName": text.get(m.get("_bandNameTextID")),
+                "vocalCharacterIds": list(m.get("_vocalCharacterIDs") or []),
+                "lyricist": text.get(m.get("_lyricistTextID")),
+                "composer": text.get(m.get("_composerTextID")),
+                "arranger": text.get(m.get("_arrangerTextID")),
+                "musicType": m.get("_musicType"),
+                "musicCategories": list(m.get("_musicCategories") or []),
+                "bestMusicTagIds": list(m.get("_bestMusicTagIDs") or []),
+                "jacket": m.get("_jacketAssetName"),
+                "gekisouMissions": [m.get("_gekisouMission1"), m.get("_gekisouMission2"), m.get("_gekisouMission3")],
+                "bgm": {
+                    "soundId": snd["_id"],
+                    "cueSheet": sheet["_cueSheetName"],
+                    "cue": snd["_cueName"],
+                    "length": length,
+                },
+                "scoreRanks": [
+                    {
+                        "rank": SCORE_RANKS[r["_liveScoreRank"]],
+                        "requiredScore": r.get("_requiredScore"),
+                        "battleRequiredScore": r.get("_battleLiveRequiredScore"),
+                    }
+                    for r in rank_rows
+                ],
+                "charts": charts,
+                "master": {"MasterLiveMusic": m, "MasterLiveScoreRank": rank_rows},
+            }
+        )
 
     exporter = {"name": "nnnotes", "version": __version__, "chartFormat": deckdata.CHART_FORMAT}
-    records: dict[int, dict] = {}                       # score id -> the chart's deck input record
+    records: dict[int, dict] = {}  # score id -> the chart's deck input record
 
     def record(sid: int) -> dict:
         if sid not in records:
@@ -1054,25 +1335,35 @@ def build(tables: dict[str, list[dict]], table_sha: dict[str, str], fetch: Calla
     deck_doc = None
     if deck is not None:
         measured = sorted({c["scoreId"] for s in songs for c in s["charts"]})
-        stats = deck.stats(deckdata.build(
-            tables, [record(i) for i in measured],
-            {"region": region, "master": {"source": master_source, "version": master_version},
-             "exporter": exporter}))
+        stats = deck.stats(
+            deckdata.build(
+                tables,
+                [record(i) for i in measured],
+                {
+                    "region": region,
+                    "master": {"source": master_source, "version": master_version},
+                    "exporter": exporter,
+                },
+            )
+        )
         by_score = {c["scoreId"]: c for c in stats["charts"]}
         if sorted(by_score) != measured:
             raise MusicDataError("deck model: the charts measured differ from the songs' charts")
         aptitude = Aptitude(tables, gk_catalog)
         header = aptitude.check_header(stats.get("gekisouAptitude"), stats["kinds"], stats["model"])
         if (header is not None) != deck.aptitude:
-            raise MusicDataError(f"deck model: {'no' if deck.aptitude else 'a'} Gekisou aptitude (gekisouAptitude), "
-                                 f"asked for {'it' if deck.aptitude else 'none'}")
+            raise MusicDataError(
+                f"deck model: {'no' if deck.aptitude else 'a'} Gekisou aptitude (gekisouAptitude), "
+                f"asked for {'it' if deck.aptitude else 'none'}"
+            )
         plain = header["plainKind"] if header is not None else None
         bonus_rows = tables.get("MasterLiveGekisouRankingScoreBonus", [])
         for s in songs:
             percents = rank_bonus_percents(bonus_rows, s["gekisouMissions"])
             for c in s["charts"]:
-                c["deck"] = chart_deck(s, c, by_score[c["scoreId"]], len(stats["kinds"]), percents, deck.seeds,
-                                       aptitude, plain)
+                c["deck"] = chart_deck(
+                    s, c, by_score[c["scoreId"]], len(stats["kinds"]), percents, deck.seeds, aptitude, plain
+                )
         deck_doc = {"model": stats["model"], "kinds": stats["kinds"], "gekisouAptitude": header}
 
     read = [t for t in tables_of(deck is not None, full) if t in tables]
@@ -1081,10 +1372,16 @@ def build(tables: dict[str, list[dict]], table_sha: dict[str, str], fetch: Calla
         "provenance": {
             "region": region,
             "client": {"versionName": client.get("versionName"), "versionCode": client.get("versionCode")},
-            "catalog": {"resourceVersion": catalog.get("resourceVersion"), "sha256": catalog.get("sha256"),
-                        **({"resourceHash": catalog["resourceHash"]} if catalog.get("resourceHash") else {})},
-            "master": {"source": master_source, "version": master_version,
-                       "tables": {t: {"sha256": table_sha[t]} for t in read}},
+            "catalog": {
+                "resourceVersion": catalog.get("resourceVersion"),
+                "sha256": catalog.get("sha256"),
+                **({"resourceHash": catalog["resourceHash"]} if catalog.get("resourceHash") else {}),
+            },
+            "master": {
+                "source": master_source,
+                "version": master_version,
+                "tables": {t: {"sha256": table_sha[t]} for t in read},
+            },
             "exporter": exporter,
             "deck": deck.info() if deck is not None else None,
         },
@@ -1112,14 +1409,29 @@ def tables_of(deck: bool, full: bool) -> tuple[str, ...]:
     return base + tuple(t for t, _ in deckdata.TABLES if t not in base)
 
 
-def export(out, src: deckdata.MasterSource, key, fetch: Callable[[str], bytes],
-           bgm: Callable[[str, str], dict] | None, *, region: str, client: dict, catalog: dict,
-           deck: Deck | None = None, full: bool = False, jacket: Callable[[str], bytes] | None = None,
-           jackets_dir=None, replay_dir=None, replay_engine=None, recommend_engine=None) -> dict:
+def export(
+    out,
+    src: deckdata.MasterSource,
+    key,
+    fetch: Callable[[str], bytes],
+    bgm: Callable[[str, str], dict] | None,
+    *,
+    region: str,
+    client: dict,
+    catalog: dict,
+    deck: Deck | None = None,
+    full: bool = False,
+    jacket: Callable[[str], bytes] | None = None,
+    jackets_dir=None,
+    replay_dir=None,
+    replay_engine=None,
+    recommend_engine=None,
+) -> dict:
     """Read the master data, every chart and every BGM cue sheet, measure the charts with `deck`, then write the file
     `out` (gzip when it ends in `.gz`) through a temporary file and a rename; with `jacket` and `jackets_dir`, first
     every song's jacket as `<jackets_dir>/<jacket>.webp`. Returns the summary."""
     from .cache import write_atomic
+
     out = Path(out)
     try:
         if replay_engine is not None and replay_dir is None:
@@ -1129,22 +1441,38 @@ def export(out, src: deckdata.MasterSource, key, fetch: Callable[[str], bytes],
         if replay_dir is not None and bgm is None:
             raise deckdata.DeckDataError("replay export requires actual BGM lengths; --no-bgm is incompatible")
         tables, shas = deckdata.read_master(src, key, tables_of(deck is not None, full or replay_dir is not None))
-        doc = build(tables, shas, fetch, bgm, region=region, client=client, catalog=catalog,
-                    master_source=src.source, master_version=src.version, deck=deck, full=full or replay_dir is not None)
+        doc = build(
+            tables,
+            shas,
+            fetch,
+            bgm,
+            region=region,
+            client=client,
+            catalog=catalog,
+            master_source=src.source,
+            master_version=src.version,
+            deck=deck,
+            full=full or replay_dir is not None,
+        )
         replay_files = None
         if replay_dir is not None:
             from . import replaydata
-            replay_files, replay_manifest = replaydata.bundle(doc, replay_engine, recommend_engine,
-                label_source=replaydata.labels(tables, shas, doc["provenance"]))
+
+            replay_files, replay_manifest = replaydata.bundle(
+                doc, replay_engine, recommend_engine, label_source=replaydata.labels(tables, shas, doc["provenance"])
+            )
             manifest_sha = hashlib.sha256(replay_files["manifest.json"]).hexdigest()
             replay_target = Path(replay_dir) / manifest_sha
             try:
                 relative = replay_target.resolve().relative_to(out.parent.resolve()).as_posix()
             except ValueError:
                 raise deckdata.DeckDataError("replay directory must be under the music-data output directory") from None
-            doc["replay"] = {"format": replaydata.FORMAT, "manifestUrl": relative + "/manifest.json",
-                             "sha256": manifest_sha,
-                             "charts": len(replay_manifest["charts"])}
+            doc["replay"] = {
+                "format": replaydata.FORMAT,
+                "manifestUrl": relative + "/manifest.json",
+                "sha256": manifest_sha,
+                "charts": len(replay_manifest["charts"]),
+            }
             if not full:
                 del doc["master"], doc["charts"]
         jackets = sorted({s["jacket"] for s in doc["songs"] if s["jacket"]}) if jacket is not None else []
@@ -1163,11 +1491,22 @@ def export(out, src: deckdata.MasterSource, key, fetch: Callable[[str], bytes],
     out.parent.mkdir(parents=True, exist_ok=True)
     write_atomic(out, written)
     charts = [c for s in doc["songs"] for c in s["charts"]]
-    return {"out": str(out), "format": FORMAT, "region": region, "masterSource": src.source,
-            "masterVersion": src.version, "songs": len(doc["songs"]), "charts": len(charts),
-            "deck": doc["provenance"]["deck"]["commit"] if deck is not None else None,
-            **({"deckStats": deck.counts} if deck is not None else {}),
-            "unplayable": sum(1 for c in charts if c["deck"] and c["deck"]["unplayable"]),
-            "full": full, "bgm": bgm is not None, "jackets": len(jackets),
-            "bytes": len(data), "fileBytes": len(written), "sha256": hashlib.sha256(written).hexdigest(),
-            **({"replay": doc["replay"]} if replay_files is not None else {})}
+    return {
+        "out": str(out),
+        "format": FORMAT,
+        "region": region,
+        "masterSource": src.source,
+        "masterVersion": src.version,
+        "songs": len(doc["songs"]),
+        "charts": len(charts),
+        "deck": doc["provenance"]["deck"]["commit"] if deck is not None else None,
+        **({"deckStats": deck.counts} if deck is not None else {}),
+        "unplayable": sum(1 for c in charts if c["deck"] and c["deck"]["unplayable"]),
+        "full": full,
+        "bgm": bgm is not None,
+        "jackets": len(jackets),
+        "bytes": len(data),
+        "fileBytes": len(written),
+        "sha256": hashlib.sha256(written).hexdigest(),
+        **({"replay": doc["replay"]} if replay_files is not None else {}),
+    }

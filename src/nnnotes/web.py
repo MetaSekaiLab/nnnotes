@@ -59,6 +59,7 @@ A JSON object larger than SPLIT_MIN_BYTES is stored per top-level key: each valu
 is its own asset, and the player rebuilds the file as `{"k1":` + t1 + `,"k2":` + t2 + `}`, so the values the charts
 share (most of livescene/scene.json) are stored once.
 """
+
 from __future__ import annotations
 
 import collections
@@ -87,19 +88,19 @@ from .config import Config, ConfigError, tool, usable_cpus, use
 from .score import DIFFICULTIES, master_table
 from .webaudio import DEFAULT_AUDIO_FORMAT, WEB_AUDIO
 
-SITE_FORMAT = 2                                    # charts.json "format"
-MANIFEST_FORMAT = 3                                # chart manifest "format" (3: entries may be stored encoded)
+SITE_FORMAT = 2  # charts.json "format"
+MANIFEST_FORMAT = 3  # chart manifest "format" (3: entries may be stored encoded)
 AUDIO_EXT = {".flac", ".ogg", ".opus", ".wav", ".m4a", ".mp3"}
 SPLIT_MIN_BYTES = 512 * 1024
 # the live directories of a web build: no liveui/ (the player reads none of it), the BGM decoded once for the read
 # set (FLAC) and, from the same samples, into the site format (bgm_options)
 WEB_LIVEUI = False
 BGM_DIRECT = True
-SPLIT_KEY = re.compile(r"[A-Za-z0-9_$.\-]+")       # keys whose JSON text is the same in Python and JavaScript
-TRACE_QUALITY = 1                                  # the quality the read set is taken at (the player default, Middle)
-FLOWS = ("direct",)                                # the start flow the player has
+SPLIT_KEY = re.compile(r"[A-Za-z0-9_$.\-]+")  # keys whose JSON text is the same in Python and JavaScript
+TRACE_QUALITY = 1  # the quality the read set is taken at (the player default, Middle)
+FLOWS = ("direct",)  # the start flow the player has
 # files of the ournotes-player checkout / package the site uses
-READ_SET_SCRIPT = "scripts/read-set.mjs"           # node <script> <live dir> -> JSON list of the paths the player reads
+READ_SET_SCRIPT = "scripts/read-set.mjs"  # node <script> <live dir> -> JSON list of the paths the player reads
 PLAYER_BUNDLES = ("dist/ournotes-player.element.min.js",)
 PLAYER_PAGE_DIR = "examples/chart-list"
 SONGS_PAGE_DIR = "examples/songs"
@@ -122,25 +123,56 @@ MODELS_INDEX = "models.json"
 STORIES_DIR = "stories"
 STORIES_INDEX = "stories.json"
 SITE_DATA = ("assets", "charts", MODELS_DIR, "charts.json", MODELS_INDEX, STORIES_DIR, STORIES_INDEX)
-PLAYER_VERSION_MARKER = "@PLAYER_VERSION@"         # replaced in the page's files by the bundles' short hash
+PLAYER_VERSION_MARKER = "@PLAYER_VERSION@"  # replaced in the page's files by the bundles' short hash
 # collected files: text as UTF-8, binary as is; shader programs of the WebGL2 tier only
 TEXT_EXT = {".json", ".glsl"}
-BINARY_EXT = {".png", ".flac", ".ogg", ".wav", ".moc3", ".glb", ".atlas", ".skel", ".bin"}   # .glb / .atlas / .skel: an Overlay story's home spot; .bin: a story's CRI Lips data (crilips.py)
+BINARY_EXT = {
+    ".png",
+    ".flac",
+    ".ogg",
+    ".wav",
+    ".moc3",
+    ".glb",
+    ".atlas",
+    ".skel",
+    ".bin",
+}  # .glb / .atlas / .skel: an Overlay story's home spot; .bin: a story's CRI Lips data (crilips.py)
 SHADER_PLATFORM = "gles3"
 SHADER_TYPE = "GLES3"
 # master tables the chart build reads (score, live, liveaudio, livescene, livenotes, liveui): a region's chart inputs
-LIVE_TABLES = ("MasterBand", "MasterCharacter", "MasterLiveJudgementSprite", "MasterLiveLaneSkin", "MasterLiveMusic",
-               "MasterLiveMusicScore", "MasterLiveNoteEffectSkin", "MasterLiveNoteSe", "MasterLiveNoteSkin",
-               "MasterLiveQualitySettings", "MasterLiveSe", "MasterLiveSettings", "MasterLiveStageVideo",
-               "MasterLiveStartCharacterVoice", "MasterMemberCard", "MasterOptionDefault", "MasterOptionRange",
-               "MasterSound", "MasterSoundCueSheet", "MasterText")
+LIVE_TABLES = (
+    "MasterBand",
+    "MasterCharacter",
+    "MasterLiveJudgementSprite",
+    "MasterLiveLaneSkin",
+    "MasterLiveMusic",
+    "MasterLiveMusicScore",
+    "MasterLiveNoteEffectSkin",
+    "MasterLiveNoteSe",
+    "MasterLiveNoteSkin",
+    "MasterLiveQualitySettings",
+    "MasterLiveSe",
+    "MasterLiveSettings",
+    "MasterLiveStageVideo",
+    "MasterLiveStartCharacterVoice",
+    "MasterMemberCard",
+    "MasterOptionDefault",
+    "MasterOptionRange",
+    "MasterSound",
+    "MasterSoundCueSheet",
+    "MasterText",
+)
 CHARTS_INDEX = "charts.json"
 # documentation fields of the extractors the player does not read (live-audio.json `spec`, the voice rule notes,
 # scene.json `slice` / `derived` notes): left out of the site's copies
 DOC_FIELDS = {
     "audio/live-audio.json": [("spec",), ("voice", "rule"), ("voice", "decision")],
-    "livescene/scene.json": [("slice", "bandChoice", "source"), ("slice", "bandChoice", "note"),
-                             ("derived", "lane", "sources"), ("derived", "fovRule", "source")],
+    "livescene/scene.json": [
+        ("slice", "bandChoice", "source"),
+        ("slice", "bandChoice", "note"),
+        ("derived", "lane", "sources"),
+        ("derived", "fovRule", "source"),
+    ],
 }
 
 
@@ -194,9 +226,27 @@ def transcode(src: Path, fmt: str, work: Path) -> bytes:
     if codec is None:
         return Path(src).read_bytes()
     dst = Path(work) / f"transcode-{os.getpid()}{ext}"
-    r = subprocess.run([tool("ffmpeg", "ffmpeg"), "-hide_banner", "-loglevel", "error", "-y", "-i", str(src), "-map_metadata", "-1",
-                        "-fflags", "+bitexact", "-flags:a", "+bitexact", *codec, str(dst)],
-                       capture_output=True, text=True)
+    r = subprocess.run(
+        [
+            tool("ffmpeg", "ffmpeg"),
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-i",
+            str(src),
+            "-map_metadata",
+            "-1",
+            "-fflags",
+            "+bitexact",
+            "-flags:a",
+            "+bitexact",
+            *codec,
+            str(dst),
+        ],
+        capture_output=True,
+        text=True,
+    )
     if r.returncode != 0:
         raise RuntimeError(f"ffmpeg {fmt} failed on {src}: {r.stderr[-2000:]}")
     data = dst.read_bytes()
@@ -206,36 +256,40 @@ def transcode(src: Path, fmt: str, work: Path) -> bytes:
 
 def mp4_priming(data: bytes) -> int:
     """Encoder delay of an MP4 audio track: media_time of the first edit list entry (moov/trak/edts/elst)."""
+
     def boxes(b, off, end):
         while off + 8 <= end:
-            size, kind = struct.unpack(">I4s", b[off:off + 8])
+            size, kind = struct.unpack(">I4s", b[off : off + 8])
             hdr = 8
             if size == 1:
-                size, hdr = struct.unpack(">Q", b[off + 8:off + 16])[0], 16
+                size, hdr = struct.unpack(">Q", b[off + 8 : off + 16])[0], 16
             elif size == 0:
                 size = end - off
             yield kind, off + hdr, off + size
             off += size
+
     def find(path, off, end):
         for kind, a, z in boxes(data, off, end):
             if kind == path[0]:
                 return (a, z) if len(path) == 1 else find(path[1:], a, z)
         return None
+
     loc = find([b"moov", b"trak", b"edts", b"elst"], 0, len(data))
     if loc is None:
         return 0
     a, _ = loc
     version = data[a]
-    count = struct.unpack(">I", data[a + 4:a + 8])[0]
+    count = struct.unpack(">I", data[a + 4 : a + 8])[0]
     if count < 1:
         return 0
     if version == 1:
-        return max(0, struct.unpack(">q", data[a + 16:a + 24])[0])
-    return max(0, struct.unpack(">i", data[a + 12:a + 16])[0])
+        return max(0, struct.unpack(">q", data[a + 16 : a + 24])[0])
+    return max(0, struct.unpack(">i", data[a + 12 : a + 16])[0])
 
 
-def _web_audio(live_dir: Path, text: dict[str, str], binary: dict[str, bytes], fmt: str, work: Path,
-               cache: dict | None = None) -> None:
+def _web_audio(
+    live_dir: Path, text: dict[str, str], binary: dict[str, bytes], fmt: str, work: Path, cache: dict | None = None
+) -> None:
     """The BGM layers (live-audio.json music sound) in the web format; the JSON paths follow. An AAC layer records
     its encoder delay (`encoderDelay`, samples): a decoder that does not apply the MP4 edit list outputs that many
     priming samples first, which the player then drops (LiveSoundManager.preload). `cache`: FLAC sha256 -> bytes."""
@@ -248,12 +302,12 @@ def _web_audio(live_dir: Path, text: dict[str, str], binary: dict[str, bytes], f
         old = layer["file"]
         if old not in binary or not old.endswith(".flac"):
             raise ValueError(f"BGM layer {old}: not a packed FLAC")
-        new = old[:-len(".flac")] + ext
+        new = old[: -len(".flac")] + ext
         if new != old:
             key = hashlib.sha256(binary[old]).hexdigest()
             data = cache.get(key) if cache is not None else None
             if data is None:
-                pre = live_dir / new                   # made from the same samples by the decode (bgm_options)
+                pre = live_dir / new  # made from the same samples by the decode (bgm_options)
                 data = pre.read_bytes() if pre.is_file() else transcode(live_dir / old, fmt, work)
                 if cache is not None:
                     cache[key] = data
@@ -314,7 +368,7 @@ def chart_facts(live_dir: Path, summary: dict, difficulty: str, language: str) -
 
 
 # ---------------------------------------------------------------- store
-ENCODINGS = compress.ENCODINGS                     # stored encodings of site assets (web --compress)
+ENCODINGS = compress.ENCODINGS  # stored encodings of site assets (web --compress)
 
 
 class Store:
@@ -330,7 +384,7 @@ class Store:
         self.dir.mkdir(parents=True, exist_ok=True)
         self.written = 0
         self.reused = 0
-        self._have: dict[str, dict] = {}           # <sha256>.<ext> this store has written or found -> its entry
+        self._have: dict[str, dict] = {}  # <sha256>.<ext> this store has written or found -> its entry
 
     def put(self, path: str, data: bytes) -> dict:
         ext = Path(path).suffix.lower().lstrip(".") or "bin"
@@ -417,7 +471,7 @@ def entry_assets(e: dict) -> list[str]:
     return [p[1] for p in e["parts"]] if "parts" in e else [e["asset"]]
 
 
-_TEXTS = cache.bucket("webtext")                  # (build, store, encoding, path, text) -> manifest entry
+_TEXTS = cache.bucket("webtext")  # (build, store, encoding, path, text) -> manifest entry
 
 
 def stored_text(store: Store, path: str, s: str, memo: str | None = None) -> dict:
@@ -439,6 +493,7 @@ def open_data(cfg: Config, region: str | None = None):
     """Catalog (fetching from the CDN of `region`), the master dir of `region` and PlayerData from the settings (as
     the command line opens them; `region` None: [catalog] region)."""
     from .cli import master_dir, open_catalog, player_data
+
     return open_catalog(cfg, region=region), master_dir(cfg, region), player_data(cfg, region)
 
 
@@ -447,12 +502,14 @@ def _lock_fetches(cat, lock) -> None:
     already in the cache is returned without the lock (Catalog.cached)."""
     for name in ("fetch", "fetch_raw"):
         f = getattr(cat, name)
+
         def locked(x, _f=f, _name=name):
             hit = cat.cached(x) if _name == "fetch" else cat.cached_raw(x)
             if hit is not None:
                 return hit
             with lock:
                 return _f(x)
+
         setattr(cat, name, locked)
 
 
@@ -472,8 +529,10 @@ def site_regions(cfg: Config, regions=None, all_regions: bool = False) -> list[s
     if all_regions:
         names = cfg.regions()
         if not names:
-            raise ConfigError("no region configured: add a [servers.<region>] table with `cdn` to the config file "
-                              "(or set NNNOTES_SERVERS_<REGION>_CDN)")
+            raise ConfigError(
+                "no region configured: add a [servers.<region>] table with `cdn` to the config file "
+                "(or set NNNOTES_SERVERS_<REGION>_CDN)"
+            )
     else:
         names = list(dict.fromkeys(regions or [])) or [cfg.region()]
     known = set(cfg.regions())
@@ -491,8 +550,9 @@ def unknown_pairs(cfg: Config, pairs, regions=None) -> list[tuple[int, str]]:
         try:
             have.update(all_pairs(md))
         except FileNotFoundError as e:
-            raise ConfigError(f"master data {md}: no {Path(e.filename).name} (a directory written by "
-                              f"`nnnotes master decode`)") from None
+            raise ConfigError(
+                f"master data {md}: no {Path(e.filename).name} (a directory written by `nnnotes master decode`)"
+            ) from None
     return [p for p in dict.fromkeys((int(m), d) for m, d in pairs) if p not in have]
 
 
@@ -500,9 +560,12 @@ def region_masters(cfg: Config, regions: list[str]) -> dict[str, Path]:
     """{region: decoded master dir} (cli.master_dir). With more than one region the --master flag is refused and
     at most one region may use [paths] master (the others need their own `[servers.<region>] master`)."""
     from .cli import master_dir
+
     if len(regions) > 1 and cfg.origin("paths", "master") == "flag":
-        raise ConfigError("--master names one directory: give each region's master data as `master` in its "
-                          "[servers.<region>] table of the config file (NNNOTES_SERVERS_<REGION>_MASTER)")
+        raise ConfigError(
+            "--master names one directory: give each region's master data as `master` in its "
+            "[servers.<region>] table of the config file (NNNOTES_SERVERS_<REGION>_MASTER)"
+        )
     shared = [r for r in regions if cfg.master(r) == ("paths", "master")]
     if len(shared) > 1:
         raise cfg.missing(f"servers.{shared[1]}", "master")
@@ -598,10 +661,23 @@ def bgm_options(audio_format: str, audio: bool) -> dict:
     return {"flac_level": 0, **({"also": (ext, codec)} if BGM_DIRECT else {})}
 
 
-def build_music_dirs(cat, master: Path, player, music_id: int, difficulties: list[str], root: Path,
-                     livenotes_dir: Path, band: int | None = None, leader_card: int | None = None, *,
-                     language: str, fonts: str = "open", scene=None, bgm: dict | None = None,
-                     options: liveoptions.LiveOptions = liveoptions.LiveOptions()) -> dict:
+def build_music_dirs(
+    cat,
+    master: Path,
+    player,
+    music_id: int,
+    difficulties: list[str],
+    root: Path,
+    livenotes_dir: Path,
+    band: int | None = None,
+    leader_card: int | None = None,
+    *,
+    language: str,
+    fonts: str = "open",
+    scene=None,
+    bgm: dict | None = None,
+    options: liveoptions.LiveOptions = liveoptions.LiveOptions(),
+) -> dict:
     """The live directories of one music's charts under root/<difficulty>/, composed as live.build composes one:
     BGM decode (bgm: cri.decode options), live sounds and scene into root/base, shared by hard links; per difficulty
     its own score/ (score.extract without audio) and live.json (liveui/ only with WEB_LIVEUI); livenotes/ linked
@@ -609,12 +685,13 @@ def build_music_dirs(cat, master: Path, player, music_id: int, difficulties: lis
     band (livescene.band_part), else the scene is exported whole. `band` / `leader_card` / `language` / `fonts` /
     `options`: as for live.build (livenotes_dir made with the same options). Returns {difficulty: (dir, summary)}."""
     from . import liveaudio, liveui, score
+
     base = root / "base"
     base.mkdir(parents=True)
     choice = live.resolve_band(cat, master, music_id, band=band, leader_card=leader_card)
     first = {"audio": score.extract_audio(cat, master, music_id, base, "flac", **(bgm or {}))}
     la = liveaudio.extract(cat, master, player, music_id, base, fmt="flac", options=options)
-    mode = "whole (no band part)"                      # how the scene was made: reported per chart
+    mode = "whole (no band part)"  # how the scene was made: reported per chart
     if scene is not None and scene[0]["band"] == choice["band"]:
         _link_tree(scene[1], base / "livescene")
         try:
@@ -625,8 +702,7 @@ def build_music_dirs(cat, master: Path, player, music_id: int, difficulties: lis
             _log(f"{music_id}: scene exported whole: {e}")
             shutil.rmtree(base / "livescene")
     if mode != "band":
-        livescene.extract(cat, player, base, master=master, music_id=music_id, band=choice["band"],
-                          band_choice=choice)
+        livescene.extract(cat, player, base, master=master, music_id=music_id, band=choice["band"], band_choice=choice)
     out = {}
     for d in difficulties:
         pdir = root / d
@@ -636,11 +712,19 @@ def build_music_dirs(cat, master: Path, player, music_id: int, difficulties: lis
         _link_tree(livenotes_dir, pdir / "livenotes")
         s = score.extract(cat, master, music_id, d, pdir, audio=False, audio_fmt="flac", mirror=options.mirror)
         if WEB_LIVEUI:
-            liveui.extract(cat, player, pdir, master=master, music_id=music_id, difficulty=d, language=language,
-                           fonts=fonts)
+            liveui.extract(
+                cat, player, pdir, master=master, music_id=music_id, difficulty=d, language=language, fonts=fonts
+            )
         jsonio.write_json(pdir / "live.json", live.index_doc(music_id, d, s, first["audio"], la["index"]))
-        out[d] = (pdir, {"band": choice, "judgementNoteCount": s["judgementNoteCount"],
-                         "fullComboCount": s["fullComboCount"], "scene": mode})
+        out[d] = (
+            pdir,
+            {
+                "band": choice,
+                "judgementNoteCount": s["judgementNoteCount"],
+                "fullComboCount": s["fullComboCount"],
+                "scene": mode,
+            },
+        )
     return out
 
 
@@ -663,8 +747,9 @@ def collect(live_dir: Path, files: list[str]) -> tuple[dict[str, str], dict[str,
             continue
         index = json.loads((sdir / "shaders.json").read_text(encoding="utf-8"))
         for rec in index:
-            rec["variants"] = [v for v in rec["variants"]
-                               if v["platform"] == SHADER_PLATFORM and v["type"] == SHADER_TYPE]
+            rec["variants"] = [
+                v for v in rec["variants"] if v["platform"] == SHADER_PLATFORM and v["type"] == SHADER_TYPE
+            ]
         index = [rec for rec in index if wanted(f"{rel_dir}/{rec['parsed']}")]
         for rec in index:
             rec["variants"] = [v for v in rec["variants"] if wanted(f"{rel_dir}/{v['file']}")]
@@ -679,9 +764,9 @@ def collect(live_dir: Path, files: list[str]) -> tuple[dict[str, str], dict[str,
             continue
         sdir = next((d for d in shader_dirs if f.is_relative_to(d)), None)
         if sdir is not None and f.suffix == ".glsl" and rel not in keep:
-            continue                                   # other platforms / GLES 3.1 programs
+            continue  # other platforms / GLES 3.1 programs
         if sdir is not None and f.suffix not in (".glsl", ".json"):
-            continue                                   # Vulkan / SPIR-V containers
+            continue  # Vulkan / SPIR-V containers
         if f.suffix in TEXT_EXT:
             text[rel] = f.read_text(encoding="utf-8")
         elif f.suffix in BINARY_EXT:
@@ -691,10 +776,25 @@ def collect(live_dir: Path, files: list[str]) -> tuple[dict[str, str], dict[str,
     return text, binary
 
 
-def ingest(store: Store, site: Path, music_id: int, difficulty: str, live_dir: Path, summary: dict,
-           files: list[str], flows: list[str], audio_format: str, audio: bool, work: Path, bgm_cache: dict,
-           language: str, prefix: str = "", regions: list[str] | None = None, memo: str | None = None,
-           options: liveoptions.LiveOptions | None = None) -> dict:
+def ingest(
+    store: Store,
+    site: Path,
+    music_id: int,
+    difficulty: str,
+    live_dir: Path,
+    summary: dict,
+    files: list[str],
+    flows: list[str],
+    audio_format: str,
+    audio: bool,
+    work: Path,
+    bgm_cache: dict,
+    language: str,
+    prefix: str = "",
+    regions: list[str] | None = None,
+    memo: str | None = None,
+    options: liveoptions.LiveOptions | None = None,
+) -> dict:
     """One chart's files into the store + its manifest charts/<prefix><id>.json, serving `regions` (added to the
     regions of the manifest it replaces). `memo`: the build's id for stored_text. `options`: the live options the
     files carry (the manifest's `options`: LiveOptions.manifest_options)."""
@@ -707,17 +807,31 @@ def ingest(store: Store, site: Path, music_id: int, difficulty: str, live_dir: P
     entries = {p: stored_text(store, p, s, memo) for p, s in text.items()}
     entries.update({p: store.put(p, b) for p, b in binary.items()})
     offered = options.manifest_options() if options else None
-    manifest = {"format": MANIFEST_FORMAT, "musicId": music_id, "difficulty": difficulty, "audio": bool(audio),
-                "audioFormat": audio_format if audio else None, "flows": flows, "quality": TRACE_QUALITY,
-                **({"options": offered} if offered else {}), "chart": facts, "files": dict(sorted(entries.items()))}
+    manifest = {
+        "format": MANIFEST_FORMAT,
+        "musicId": music_id,
+        "difficulty": difficulty,
+        "audio": bool(audio),
+        "audioFormat": audio_format if audio else None,
+        "flows": flows,
+        "quality": TRACE_QUALITY,
+        **({"options": offered} if offered else {}),
+        "chart": facts,
+        "files": dict(sorted(entries.items())),
+    }
     path = manifest_file(site, f"{music_id}_{difficulty}", prefix)
     old = json.loads(path.read_text(encoding="utf-8")).get("regions") if path.is_file() else None
     if old or regions:
         manifest["regions"] = merge_regions(old, regions or [])
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(_dump(manifest))
-    return {"id": f"{music_id}_{difficulty}", "ok": True, "files": len(entries), "bytes": sum(e["size"] for e in entries.values()),
-            "flows": flows}
+    return {
+        "id": f"{music_id}_{difficulty}",
+        "ok": True,
+        "files": len(entries),
+        "bytes": sum(e["size"] for e in entries.values()),
+        "flows": flows,
+    }
 
 
 # ---------------------------------------------------------------- per music (in a worker or in this process)
@@ -778,16 +892,31 @@ def extract_task(music_id: int, difficulties: list[str], cfg: dict | None = None
     t0 = time.time()
     try:
         choice = live.resolve_band(cat, master, music_id, band=cfg["band"], leader_card=cfg["leaderCard"])
-        dirs = build_music_dirs(cat, master, player, music_id, difficulties, root, Path(cfg["livenotes"]),
-                                band=cfg["band"], leader_card=cfg["leaderCard"], language=cfg["language"],
-                                fonts=cfg.get("fonts", "open"), scene=_scene_part(cfg, choice["band"]),
-                                bgm=bgm_options(cfg["audioFormat"], cfg["audio"]),
-                                options=cfg.get("options") or liveoptions.LiveOptions())
+        dirs = build_music_dirs(
+            cat,
+            master,
+            player,
+            music_id,
+            difficulties,
+            root,
+            Path(cfg["livenotes"]),
+            band=cfg["band"],
+            leader_card=cfg["leaderCard"],
+            language=cfg["language"],
+            fonts=cfg.get("fonts", "open"),
+            scene=_scene_part(cfg, choice["band"]),
+            bgm=bgm_options(cfg["audioFormat"], cfg["audio"]),
+            options=cfg.get("options") or liveoptions.LiveOptions(),
+        )
     except BaseException:
         shutil.rmtree(root, ignore_errors=True)
         raise
-    return {"music": music_id, "root": str(root), "dirs": {d: (str(p), s) for d, (p, s) in dirs.items()},
-            "extractSec": round(time.time() - t0, 1)}
+    return {
+        "music": music_id,
+        "root": str(root),
+        "dirs": {d: (str(p), s) for d, (p, s) in dirs.items()},
+        "extractSec": round(time.time() - t0, 1),
+    }
 
 
 def ingest_task(music_id: int, charts: list, root: str, cfg: dict | None = None) -> list[dict]:
@@ -797,13 +926,29 @@ def ingest_task(music_id: int, charts: list, root: str, cfg: dict | None = None)
     store, bgm, out = site_store(site, cfg.get("encoding", DEFAULT_ENCODING)), {}, []
     for d, pdir, summary, files in charts:
         try:
-            r = ingest(store, site, music_id, d, Path(pdir), summary, files, list(FLOWS), cfg["audioFormat"],
-                       cfg["audio"], Path(root), bgm, cfg["language"], cfg.get("prefix", ""), cfg.get("regions"),
-                       memo=cfg.get("build"), options=cfg.get("options"))
+            r = ingest(
+                store,
+                site,
+                music_id,
+                d,
+                Path(pdir),
+                summary,
+                files,
+                list(FLOWS),
+                cfg["audioFormat"],
+                cfg["audio"],
+                Path(root),
+                bgm,
+                cfg["language"],
+                cfg.get("prefix", ""),
+                cfg.get("regions"),
+                memo=cfg.get("build"),
+                options=cfg.get("options"),
+            )
             r["scene"] = summary.get("scene")
             out.append(r)
         except ConfigError:
-            raise                                      # a setting the whole build needs (Pipeline)
+            raise  # a setting the whole build needs (Pipeline)
         except Exception as e:
             out.append(_failure(f"{music_id}_{d}", "ingest", e))
     return out
@@ -844,7 +989,7 @@ class Pipeline:
                 f.add_done_callback(lambda f, m=m: self.events.put(("extracted", m, f)))
 
         start()
-        stop = None                                    # the ConfigError that ends the run
+        stop = None  # the ConfigError that ends the run
 
         def failed(e) -> None:
             nonlocal stop
@@ -899,8 +1044,10 @@ class Pipeline:
                 dt = time.time() - t0[m]
                 for r in rs:
                     r.update(music=m, extractSec=x["extractSec"], musicSec=round(dt, 1))
-                self.log(f"{m}: {sum(r['ok'] for r in rs)}/{len(rs)} charts, extract {x['extractSec']:.0f} s, "
-                         f"total {dt:.0f} s")
+                self.log(
+                    f"{m}: {sum(r['ok'] for r in rs)}/{len(rs)} charts, extract {x['extractSec']:.0f} s, "
+                    f"total {dt:.0f} s"
+                )
                 results += rs
                 self.cleanup(x["root"])
                 del active[m]
@@ -918,20 +1065,24 @@ def _pool_call(fn_name: str, *args):
 def check_player(player_dir) -> Path:
     """The ournotes-player checkout or installed package: its read-set script, built bundle and page must exist."""
     if player_dir is None:
-        raise ConfigError("the site needs the player: give --player <ournotes-player checkout or package> "
-                          "(or `player` in the [paths] table of the config file, NNNOTES_PATHS_PLAYER)")
+        raise ConfigError(
+            "the site needs the player: give --player <ournotes-player checkout or package> "
+            "(or `player` in the [paths] table of the config file, NNNOTES_PATHS_PLAYER)"
+        )
     d = Path(player_dir)
-    missing = [rel for rel in (READ_SET_SCRIPT, *PLAYER_BUNDLES, f"{PLAYER_PAGE_DIR}/index.html")
-               if not (d / rel).is_file()]
+    missing = [
+        rel for rel in (READ_SET_SCRIPT, *PLAYER_BUNDLES, f"{PLAYER_PAGE_DIR}/index.html") if not (d / rel).is_file()
+    ]
     if missing:
-        raise ConfigError(f"{d} is not a built ournotes-player (missing {', '.join(missing)}; "
-                          f"a checkout needs its build first)")
+        raise ConfigError(
+            f"{d} is not a built ournotes-player (missing {', '.join(missing)}; a checkout needs its build first)"
+        )
     return d.resolve()
 
 
 READ_SETS = cache.bucket("readsets", salt=cache.source_salt(__file__), disk=True)
-READ_SET_CHECK = 10          # plan mode: the build's first chart and 1 in this many others also run the full simulation
-READ_SET_SERVE_TIMEOUT = 600.0   # seconds a served read set may take (ReadSetServers); then its process is ended
+READ_SET_CHECK = 10  # plan mode: the build's first chart and 1 in this many others also run the full simulation
+READ_SET_SERVE_TIMEOUT = 600.0  # seconds a served read set may take (ReadSetServers); then its process is ended
 _player_ids: dict = {}
 _features: dict = {}
 _features_lock = threading.Lock()
@@ -947,8 +1098,9 @@ def player_id(player_dir: Path) -> str:
         files = [p for d in ("src", "scripts") for p in sorted((player_dir / d).rglob("*")) if p.is_file()]
         files += [player_dir / "package.json"] if (player_dir / "package.json").is_file() else []
         version = subprocess.run([node, "--version"], capture_output=True, text=True).stdout.strip()
-        _player_ids[k] = cache.key(cache.file_id(node), version,
-                                   [(p.relative_to(player_dir).as_posix(), p.read_bytes()) for p in files])
+        _player_ids[k] = cache.key(
+            cache.file_id(node), version, [(p.relative_to(player_dir).as_posix(), p.read_bytes()) for p in files]
+        )
     return _player_ids[k]
 
 
@@ -958,8 +1110,12 @@ def player_features(player_dir: Path) -> frozenset:
     k = player_id(player_dir)
     with _features_lock:
         if k not in _features:
-            r = subprocess.run([tool("node", "node"), str(Path(player_dir) / READ_SET_SCRIPT), "--features"],
-                               capture_output=True, text=True, encoding="utf-8")
+            r = subprocess.run(
+                [tool("node", "node"), str(Path(player_dir) / READ_SET_SCRIPT), "--features"],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+            )
             feats = frozenset()
             if r.returncode == 0:
                 try:
@@ -967,8 +1123,9 @@ def player_features(player_dir: Path) -> frozenset:
                 except ValueError:
                     doc = None
                 if not (isinstance(doc, dict) and isinstance(doc.get("features"), list)):
-                    raise RuntimeError(f"read set --features: expected a JSON object with a features list, got "
-                                       f"{r.stdout[:200]!r}")
+                    raise RuntimeError(
+                        f"read set --features: expected a JSON object with a features list, got {r.stdout[:200]!r}"
+                    )
                 feats = frozenset(str(f) for f in doc["features"])
             _features[k] = feats
         return _features[k]
@@ -981,8 +1138,14 @@ def live_dir_digest(live_dir: Path) -> list:
     return [(p.relative_to(live_dir).as_posix(), hashlib.sha256(p.read_bytes()).digest()) for p in files]
 
 
-def read_set_cached(live_dir: Path, player_dir: Path, mode: str = "full", digest: list | None = None,
-                    run=None, settings: dict | None = None) -> list[str]:
+def read_set_cached(
+    live_dir: Path,
+    player_dir: Path,
+    mode: str = "full",
+    digest: list | None = None,
+    run=None,
+    settings: dict | None = None,
+) -> list[str]:
     """read_set, reused when the live directory's files, the player code, Node, the mode and the settings are the
     same as for a read set stored before (READ_SETS: this process, and the disk layer of the build's cache).
     `digest`: the live directory's live_dir_digest when the caller has it. `run`: what reads a set that is not
@@ -1008,10 +1171,18 @@ def read_set(live_dir: Path, player_dir: Path, mode: str = "full", settings: dic
     (player_features has "plan"; ReadSets checks it against the full simulation)."""
     if mode not in ("full", "plan"):
         raise ValueError(f"read set mode {mode}")
-    r = subprocess.run([tool("node", "node"), str(Path(player_dir) / READ_SET_SCRIPT), str(Path(live_dir)),
-                        *(["--plan"] if mode == "plan" else []),
-                        *([f"--settings={json.dumps(settings, sort_keys=True)}"] if settings else [])],
-                       capture_output=True, text=True, encoding="utf-8")
+    r = subprocess.run(
+        [
+            tool("node", "node"),
+            str(Path(player_dir) / READ_SET_SCRIPT),
+            str(Path(live_dir)),
+            *(["--plan"] if mode == "plan" else []),
+            *([f"--settings={json.dumps(settings, sort_keys=True)}"] if settings else []),
+        ],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
     if r.returncode != 0:
         raise RuntimeError(f"read set of {Path(live_dir).name} failed:\n{(r.stderr or r.stdout)[-4000:]}")
     return read_set_answer(json.loads(r.stdout), mode)
@@ -1022,7 +1193,7 @@ def read_set_answer(out, mode: str) -> list[str]:
     mode, a full simulation that reached the end of the chart, a list of paths."""
     if mode == "plan" and not (isinstance(out, dict) and out.get("mode") == "plan"):
         raise RuntimeError("read set --plan: the player did not answer in plan mode")
-    if isinstance(out, dict):                          # {files, state, frames} form
+    if isinstance(out, dict):  # {files, state, frames} form
         if mode == "full" and out.get("state", "ended") != "ended":
             raise RuntimeError(f"read set: the chart did not end ({out.get('state')} after {out.get('frames')} frames)")
         out = out.get("files")
@@ -1044,14 +1215,21 @@ class ReadSetServer:
     by a JSON line on its stdin and answered by one on its stdout; the last lines of its stderr are kept for errors."""
 
     def __init__(self, player_dir: Path):
-        self.proc = subprocess.Popen([tool("node", "node"), str(Path(player_dir) / READ_SET_SCRIPT), "--serve"],
-                                     stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                     text=True, encoding="utf-8", errors="replace")
+        self.proc = subprocess.Popen(
+            [tool("node", "node"), str(Path(player_dir) / READ_SET_SCRIPT), "--serve"],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
         self.lines: queue.Queue = queue.Queue()
         self.stderr: collections.deque = collections.deque(maxlen=50)
         threading.Thread(target=self._pump, args=(self.proc.stdout, self.lines.put, True), daemon=True).start()
-        self._stderr_pump = threading.Thread(target=self._pump, args=(self.proc.stderr, self.stderr.append, False),
-                                             daemon=True)
+        self._stderr_pump = threading.Thread(
+            target=self._pump, args=(self.proc.stderr, self.stderr.append, False), daemon=True
+        )
         self._stderr_pump.start()
 
     @staticmethod
@@ -1068,7 +1246,7 @@ class ReadSetServer:
             self.proc.stdin.write(json.dumps(request) + "\n")
             self.proc.stdin.flush()
         except OSError:
-            pass                                       # exited: the end of its stdout follows
+            pass  # exited: the end of its stdout follows
         try:
             line = self.lines.get(timeout=timeout)
         except queue.Empty:
@@ -1076,8 +1254,7 @@ class ReadSetServer:
         if line is None:
             code = self.proc.wait()
             self._stderr_pump.join(timeout=2)
-            raise ReadSetServerError(f"the read-set server exited ({code}):\n"
-                                     f"{''.join(self.stderr)[-4000:]}")
+            raise ReadSetServerError(f"the read-set server exited ({code}):\n{''.join(self.stderr)[-4000:]}")
         try:
             doc = json.loads(line)
         except ValueError:
@@ -1128,7 +1305,7 @@ class ReadSetServers:
                 s = self.idle.pop()
                 if s.proc.poll() is None:
                     return s
-                s.kill()                               # exited while idle
+                s.kill()  # exited while idle
             self.started += 1
         return ReadSetServer(self.player_dir)
 
@@ -1190,15 +1367,15 @@ class ReadSets:
         self.initial = self.mode = None
         self.check_every = max(1, check_every)
         self.log = log
-        self.lock = threading.Lock()                   # counters, mode
-        self.first: str | None = None                  # the chart checked as the build's first (expect)
+        self.lock = threading.Lock()  # counters, mode
+        self.first: str | None = None  # the chart checked as the build's first (expect)
         self.counts = {"plan": 0, "full": 0, "checked": 0}
-        self.variants = 0                              # read sets of option variants (read's `variants`)
+        self.variants = 0  # read sets of option variants (read's `variants`)
         self.features: frozenset = frozenset()
         self.unchecked: list[str] = []
         self.mismatches: list[dict] = []
         self.plan_errors: list[dict] = []
-        self.servers: ReadSetServers | None = None      # the plans' servers (the player's serve mode)
+        self.servers: ReadSetServers | None = None  # the plans' servers (the player's serve mode)
 
     def start(self) -> str:
         """The mode (player_features), asked once."""
@@ -1227,16 +1404,20 @@ class ReadSets:
     def describe(self) -> str:
         if self.start() == "full":
             return "read sets: the full simulation of every chart (the player has no plan mode)"
-        return (f"read sets: the player's plan{' (served)' if self.servers is not None else ''}; "
-                f"{self.first or 'no first chart'} and 1 in {self.check_every} other "
-                f"charts checked by the full simulation")
+        return (
+            f"read sets: the player's plan{' (served)' if self.servers is not None else ''}; "
+            f"{self.first or 'no first chart'} and 1 in {self.check_every} other "
+            f"charts checked by the full simulation"
+        )
 
     def need_settings(self) -> None:
         """ConfigError unless the player's read-set script reads with given settings (feature "settings")."""
         self.start()
         if "settings" not in self.features:
-            raise ConfigError(f"{self.player_dir}: its {READ_SET_SCRIPT} has no settings (feature \"settings\"), "
-                              f"which the read sets of live options need")
+            raise ConfigError(
+                f'{self.player_dir}: its {READ_SET_SCRIPT} has no settings (feature "settings"), '
+                f"which the read sets of live options need"
+            )
 
     def sampled(self, chart_id: str) -> bool:
         h = hashlib.sha256(f"{player_id(self.player_dir)}|{chart_id}".encode("utf-8")).digest()
@@ -1262,13 +1443,21 @@ class ReadSets:
         if self.mode == "plan":
             servers = self.servers
             try:
-                return read_set_cached(live_dir, self.player_dir, "plan", digest,
-                                       run=servers.read_set if servers is not None else None, settings=settings)
+                return read_set_cached(
+                    live_dir,
+                    self.player_dir,
+                    "plan",
+                    digest,
+                    run=servers.read_set if servers is not None else None,
+                    settings=settings,
+                )
             except RuntimeError as e:
                 with self.lock:
                     self.plan_errors.append({"id": chart_id, "settings": settings, "error": str(e)[-500:]})
-                self.log(f"{chart_id}: the player's read-set plan with {json.dumps(settings, sort_keys=True)} "
-                         f"failed; the full simulation reads it")
+                self.log(
+                    f"{chart_id}: the player's read-set plan with {json.dumps(settings, sort_keys=True)} "
+                    f"failed; the full simulation reads it"
+                )
         return read_set_cached(live_dir, self.player_dir, "full", digest, settings=settings)
 
     def _default(self, live_dir: Path, chart_id: str, digest: list) -> list[str]:
@@ -1290,13 +1479,16 @@ class ReadSets:
         """The plan's read set, None when the player's script failed on the chart (logged, listed)."""
         servers = self.servers
         try:
-            return read_set_cached(live_dir, self.player_dir, "plan", digest,
-                                   run=servers.read_set if servers is not None else None)
+            return read_set_cached(
+                live_dir, self.player_dir, "plan", digest, run=servers.read_set if servers is not None else None
+            )
         except RuntimeError as e:
             with self.lock:
                 self.plan_errors.append({"id": chart_id, "error": str(e)[-500:]})
-            self.log(f"{chart_id}: the player's read-set plan failed; the full simulation reads it "
-                     f"({str(e).strip().splitlines()[-1][:200] if str(e).strip() else type(e).__name__})")
+            self.log(
+                f"{chart_id}: the player's read-set plan failed; the full simulation reads it "
+                f"({str(e).strip().splitlines()[-1][:200] if str(e).strip() else type(e).__name__})"
+            )
             return None
 
     def _checked(self, live_dir: Path, chart_id: str, digest: list) -> list[str]:
@@ -1314,20 +1506,29 @@ class ReadSets:
             self.mismatches.append({"id": chart_id, "missing": missing, "extra": extra})
             if self.mode == "plan":
                 self.mode = "full"
-                self.log(f"{chart_id}: the player's read-set plan differs from its full simulation "
-                         f"({len(missing)} missing, {len(extra)} extra); the full simulation reads the other charts")
-        raise ReadSetMismatch(f"the player's plan and its full simulation differ: missing {missing[:10]}"
-                              f"{' ...' if len(missing) > 10 else ''}, extra {extra[:10]}"
-                              f"{' ...' if len(extra) > 10 else ''}")
+                self.log(
+                    f"{chart_id}: the player's read-set plan differs from its full simulation "
+                    f"({len(missing)} missing, {len(extra)} extra); the full simulation reads the other charts"
+                )
+        raise ReadSetMismatch(
+            f"the player's plan and its full simulation differ: missing {missing[:10]}"
+            f"{' ...' if len(missing) > 10 else ''}, extra {extra[:10]}"
+            f"{' ...' if len(extra) > 10 else ''}"
+        )
 
     def summary(self) -> dict:
         """{mode, plan, full, checked, variants?, mismatches, planErrors, unchecked}: charts read by each mode
         (checked: by both), read sets of option variants (when there were any); after a mismatch the charts whose
         set came from an unchecked plan are listed, else counted."""
         with self.lock:
-            return {"mode": self.initial, **self.counts, **({"variants": self.variants} if self.variants else {}),
-                    "mismatches": list(self.mismatches), "planErrors": list(self.plan_errors),
-                    "unchecked": sorted(self.unchecked) if self.mismatches else len(self.unchecked)}
+            return {
+                "mode": self.initial,
+                **self.counts,
+                **({"variants": self.variants} if self.variants else {}),
+                "mismatches": list(self.mismatches),
+                "planErrors": list(self.plan_errors),
+                "unchecked": sorted(self.unchecked) if self.mismatches else len(self.unchecked),
+            }
 
 
 def player_bundles(player_dir: Path, rels) -> tuple[dict[str, bytes], str]:
@@ -1340,8 +1541,7 @@ def player_bundles(player_dir: Path, rels) -> tuple[dict[str, bytes], str]:
     return bundles, hashlib.sha256(b"".join(bundles[Path(rel).name] for rel in rels)).hexdigest()[:16]
 
 
-def page_files(page_dir: Path, imports: dict[str, str], version: str,
-               names: str = "PAGE_IMPORTS") -> dict[str, bytes]:
+def page_files(page_dir: Path, imports: dict[str, str], version: str, names: str = "PAGE_IMPORTS") -> dict[str, bytes]:
     """The files of a player page directory; in its .html / .js files the module specifiers `imports` (`names`)
     point at the bundles copied next to the page and PLAYER_VERSION_MARKER is `version`."""
     page = {f.relative_to(page_dir).as_posix(): f.read_bytes() for f in sorted(page_dir.rglob("*")) if f.is_file()}
@@ -1378,8 +1578,9 @@ def write_player(site: Path, player_dir: Path, stories: bool = False) -> dict:
     if (player_dir / LIVE2D_PAGE_DIR / "index.html").is_file():
         missing = [rel for rel in LIVE2D_BUNDLES if not (player_dir / rel).is_file()]
         if missing:
-            raise ConfigError(f"{player_dir} has the Live2D page but not {', '.join(missing)} "
-                              f"(a checkout needs its build first)")
+            raise ConfigError(
+                f"{player_dir} has the Live2D page but not {', '.join(missing)} (a checkout needs its build first)"
+            )
         live2d_bundles, live2d_version = player_bundles(player_dir, LIVE2D_BUNDLES)
         live2d = page_files(player_dir / LIVE2D_PAGE_DIR, LIVE2D_PAGE_IMPORTS, live2d_version, "LIVE2D_PAGE_IMPORTS")
         files.update({f"{LIVE2D_PAGE_SITE_DIR}/{r}": d for r, d in {**live2d, **live2d_bundles}.items()})
@@ -1387,12 +1588,14 @@ def write_player(site: Path, player_dir: Path, stories: bool = False) -> dict:
     if (player_dir / STORY_PAGE_DIR / "index.html").is_file():
         missing = [rel for rel in STORY_BUNDLES if not (player_dir / rel).is_file()]
         if missing and stories:
-            raise ConfigError(f"{player_dir} has the story page but not {', '.join(missing)} "
-                              f"(a checkout needs its build first)")
+            raise ConfigError(
+                f"{player_dir} has the story page but not {', '.join(missing)} (a checkout needs its build first)"
+            )
         if not missing:
             story_bundles, story_version = player_bundles(player_dir, STORY_BUNDLES)
-            story_page = page_files(player_dir / STORY_PAGE_DIR, STORY_PAGE_IMPORTS, story_version,
-                                    "STORY_PAGE_IMPORTS")
+            story_page = page_files(
+                player_dir / STORY_PAGE_DIR, STORY_PAGE_IMPORTS, story_version, "STORY_PAGE_IMPORTS"
+            )
             files.update({f"{STORY_PAGE_SITE_DIR}/{r}": d for r, d in {**story_page, **story_bundles}.items()})
     for rel, data in files.items():
         if rel.split("/", 1)[0] in SITE_DATA:
@@ -1400,8 +1603,12 @@ def write_player(site: Path, player_dir: Path, stories: bool = False) -> dict:
         dst = Path(site) / rel
         dst.parent.mkdir(parents=True, exist_ok=True)
         dst.write_bytes(data)
-    out = {"playerVersion": version, "playerBytes": sum(map(len, bundles.values())), "pageFiles": len(page),
-           "live2dPageFiles": len(live2d)}
+    out = {
+        "playerVersion": version,
+        "playerBytes": sum(map(len, bundles.values())),
+        "pageFiles": len(page),
+        "live2dPageFiles": len(live2d),
+    }
     if story_page:
         out["storyPageFiles"] = len(story_page)
     if songs:
@@ -1426,7 +1633,7 @@ def reingest_json(site: Path, encoding: str = DEFAULT_ENCODING) -> dict:
         for p, e in files.items():
             if not p.endswith(".json"):
                 continue
-            key = (p, json.dumps(e, sort_keys=True))              # charts share most files: each stored once
+            key = (p, json.dumps(e, sort_keys=True))  # charts share most files: each stored once
             if key not in memo:
                 memo[key] = store.put_file(p, text_asset(p, entry_text(site, e).decode("utf-8")))
             ne = memo[key]
@@ -1437,8 +1644,7 @@ def reingest_json(site: Path, encoding: str = DEFAULT_ENCODING) -> dict:
     return {"changedEntries": changed}
 
 
-def index_meta(site: Path, charts: list[dict], language: str | None = None,
-               regions: list[dict] | None = None) -> dict:
+def index_meta(site: Path, charts: list[dict], language: str | None = None, regions: list[dict] | None = None) -> dict:
     """The top-level keys of charts.json besides `charts`: `language` (the default listing language), `languages`
     (the languages of the entries' `titles`) and `regions` (id, name, languages; merged by id into those of the
     existing charts.json, first the ones it has); keys without a value are left out."""
@@ -1466,6 +1672,7 @@ def write_index(site: Path, language: str | None = None, regions: list[dict] | N
     `assetBytes` is the size of the asset files, `bytes` their decoded size (compress.decoded_size)."""
     from .storysite import write_stories_index
     from .webmodel import write_models_index
+
     order = {d: i for i, d in enumerate(DIFFICULTIES)}
     charts, used = [], set()
     (site / "assets").mkdir(parents=True, exist_ok=True)
@@ -1473,9 +1680,17 @@ def write_index(site: Path, language: str | None = None, regions: list[dict] | N
         man = json.loads(p.read_text(encoding="utf-8"))
         for e in man["files"].values():
             used.update(entry_assets(e))
-        entry = {"id": p.stem, "manifest": p.relative_to(site).as_posix(), "musicId": man["musicId"],
-                 "difficulty": man["difficulty"], "audio": man["audio"], "audioFormat": man.get("audioFormat"),
-                 "flows": man.get("flows"), "bytes": sum(f["size"] for f in man["files"].values()), **man["chart"]}
+        entry = {
+            "id": p.stem,
+            "manifest": p.relative_to(site).as_posix(),
+            "musicId": man["musicId"],
+            "difficulty": man["difficulty"],
+            "audio": man["audio"],
+            "audioFormat": man.get("audioFormat"),
+            "flows": man.get("flows"),
+            "bytes": sum(f["size"] for f in man["files"].values()),
+            **man["chart"],
+        }
         if man.get("regions"):
             entry["regions"] = man["regions"]
         charts.append(entry)
@@ -1492,9 +1707,14 @@ def write_index(site: Path, language: str | None = None, regions: list[dict] | N
             f.unlink()
             removed += 1
     files = list((site / "assets").iterdir())
-    out = {"charts": len(charts), "models": models, "assets": len(files),
-           "assetBytes": sum(f.stat().st_size for f in files), "bytes": sum(map(compress.decoded_size, files)),
-           "removedAssets": removed}
+    out = {
+        "charts": len(charts),
+        "models": models,
+        "assets": len(files),
+        "assetBytes": sum(f.stat().st_size for f in files),
+        "bytes": sum(map(compress.decoded_size, files)),
+        "removedAssets": removed,
+    }
     if stories:
         out["stories"] = stories
     return out
@@ -1517,9 +1737,21 @@ def _group_pairs(pairs, master: Path) -> list[tuple[int, str]]:
     return [p for p in pairs if p in have]
 
 
-def _build_group(site: Path, tmp_root: Path, pairs, cfg: Config, region: str, prefix: str, regions: list[str],
-                 job: dict, force: bool, workers: int | None, log, read_workers: int | None = None,
-                 reads: "ReadSets | None" = None) -> tuple[list, list, int]:
+def _build_group(
+    site: Path,
+    tmp_root: Path,
+    pairs,
+    cfg: Config,
+    region: str,
+    prefix: str,
+    regions: list[str],
+    job: dict,
+    force: bool,
+    workers: int | None,
+    log,
+    read_workers: int | None = None,
+    reads: "ReadSets | None" = None,
+) -> tuple[list, list, int]:
     """The charts `pairs` of one region group into charts/<prefix><id>.json (data of `region`); manifests that exist
     are skipped unless `force` and gain the group's `regions`. -> (results, skipped ids, workers)."""
     cfg = cfg.for_region(region)
@@ -1551,25 +1783,35 @@ def _build_group(site: Path, tmp_root: Path, pairs, cfg: Config, region: str, pr
         cat, master, player = open_data(cfg, region)
         options = liveoptions.resolve(job.get("liveOptions"), master)
         livenotes.extract(cat, player, gdir, master=master, options=options)
-        job = {**job, "livenotes": str(gdir / "livenotes"), "scenes": str(gdir / "scenes"), "region": region,
-               "prefix": prefix, "regions": regions, "options": options}
+        job = {
+            **job,
+            "livenotes": str(gdir / "livenotes"),
+            "scenes": str(gdir / "scenes"),
+            "region": region,
+            "prefix": prefix,
+            "regions": regions,
+            "options": options,
+        }
         variants = options.read_variants()
-        bands: dict[int, int] = {}                     # band -> a music of it (the scene is built once per band)
+        bands: dict[int, int] = {}  # band -> a music of it (the scene is built once per band)
         for m in sorted(by_music):
             try:
-                bands.setdefault(live.resolve_band(cat, master, m, band=job["band"],
-                                                   leader_card=job["leaderCard"])["band"], m)
+                bands.setdefault(
+                    live.resolve_band(cat, master, m, band=job["band"], leader_card=job["leaderCard"])["band"], m
+                )
             except Exception:
-                pass                                   # the music's extraction reports it
-        log(f"{sum(len(ds) for ds in by_music.values())} charts of {len(by_music)} musics"
+                pass  # the music's extraction reports it
+        log(
+            f"{sum(len(ds) for ds in by_music.values())} charts of {len(by_music)} musics"
             f"{f' for {prefix[:-1]}' if prefix else ''}, {len(bands)} band scene(s); {workers} extraction "
             f"process(es) ({cri.default_workers()} stream decodes each), {read_workers} read set(s) at a time, "
             f"{pipeline_window(workers, read_workers)} musics in flight; caches "
             f"{cache.settings()['memory'] >> 20} MB per bucket, disk "
-            f"{job.get('cache') or 'none'}")
+            f"{job.get('cache') or 'none'}"
+        )
         own_reads = reads is None
         reads = reads or ReadSets(Path(job["player"]), log)
-        reads.expect([f"{m}_{d}" for m, ds in sorted(by_music.items()) for d in ds])     # the Pipeline's order
+        reads.expect([f"{m}_{d}" for m, ds in sorted(by_music.items()) for d in ds])  # the Pipeline's order
         log(reads.describe())
         if variants:
             reads.need_settings()
@@ -1578,17 +1820,18 @@ def _build_group(site: Path, tmp_root: Path, pairs, cfg: Config, region: str, pr
         if workers <= 1:
             data = (cat, master, player)
             _W.update(cfg=job, scenes={})
-            ex = ThreadPoolExecutor(1)                 # UnityPy stays on one thread
-            call = {"band": lambda b, m: band_task(b, m, job, data),
-                    "extract": lambda m, ds: extract_task(m, ds, job, data),
-                    "ingest": lambda m, charts, root: ingest_task(m, charts, root, job)}
+            ex = ThreadPoolExecutor(1)  # UnityPy stays on one thread
+            call = {
+                "band": lambda b, m: band_task(b, m, job, data),
+                "extract": lambda m, ds: extract_task(m, ds, job, data),
+                "ingest": lambda m, charts, root: ingest_task(m, charts, root, job),
+            }
             submit = lambda name, *a: ex.submit(call[name], *a)
             ctx = None
         else:
             ctx = mp.get_context("spawn")
             mgr = ctx.Manager()
-            ex = ProcessPoolExecutor(workers, mp_context=ctx, initializer=_worker_init,
-                                     initargs=(cfg, mgr.Lock(), job))
+            ex = ProcessPoolExecutor(workers, mp_context=ctx, initializer=_worker_init, initargs=(cfg, mgr.Lock(), job))
             submit = lambda name, *a: ex.submit(_pool_call, f"{name}_task", *a)
         try:
             for b, f in [(b, submit("band", b, m)) for b, m in sorted(bands.items())]:
@@ -1596,18 +1839,27 @@ def _build_group(site: Path, tmp_root: Path, pairs, cfg: Config, region: str, pr
                     f.result()
                 except ConfigError:
                     raise
-                except Exception as e:                  # its musics export the scene whole
+                except Exception as e:  # its musics export the scene whole
                     log(f"band {b}: shared scene failed ({type(e).__name__}: {str(e)[:200]}); exported per music")
                     shutil.rmtree(gdir / "scenes" / str(b), ignore_errors=True)
             with ThreadPoolExecutor(read_workers) as readers:
-                shim = SimpleNamespace(submit=lambda fn, *a: submit({extract_task: "extract",
-                                                                     ingest_task: "ingest"}[fn], *a))
+                shim = SimpleNamespace(
+                    submit=lambda fn, *a: submit({extract_task: "extract", ingest_task: "ingest"}[fn], *a)
+                )
+
                 def read(live_dir, chart_id):
                     return reads.read(live_dir, chart_id, variants)
-                results = Pipeline(shim, readers, extract_task, read, ingest_task,
-                                   lambda root: shutil.rmtree(root, ignore_errors=True),
-                                   window=pipeline_window(workers, read_workers), log=log
-                                   ).run(sorted(by_music.items()))
+
+                results = Pipeline(
+                    shim,
+                    readers,
+                    extract_task,
+                    read,
+                    ingest_task,
+                    lambda root: shutil.rmtree(root, ignore_errors=True),
+                    window=pipeline_window(workers, read_workers),
+                    log=log,
+                ).run(sorted(by_music.items()))
         finally:
             ex.shutdown()
             if ctx is not None:
@@ -1622,11 +1874,26 @@ def _build_group(site: Path, tmp_root: Path, pairs, cfg: Config, region: str, pr
     return results, skipped, workers
 
 
-def build(out_dir, pairs, cfg: Config, player_dir: Path, audio_format: str = DEFAULT_AUDIO_FORMAT,
-          audio: bool = True, force: bool = False, *, tmp_dir=None, log=None, workers: int | None = None,
-          band: int | None = None, leader_card: int | None = None, regions: list[str] | None = None,
-          fonts: str = "open", read_workers: int | None = None, live_options: dict | None = None,
-          encoding: str = DEFAULT_ENCODING) -> dict:
+def build(
+    out_dir,
+    pairs,
+    cfg: Config,
+    player_dir: Path,
+    audio_format: str = DEFAULT_AUDIO_FORMAT,
+    audio: bool = True,
+    force: bool = False,
+    *,
+    tmp_dir=None,
+    log=None,
+    workers: int | None = None,
+    band: int | None = None,
+    leader_card: int | None = None,
+    regions: list[str] | None = None,
+    fonts: str = "open",
+    read_workers: int | None = None,
+    live_options: dict | None = None,
+    encoding: str = DEFAULT_ENCODING,
+) -> dict:
     """Add the charts `pairs` ([(musicId, difficulty)]; None: every chart of every region's master data) to the site
     at `out_dir`, with the player of the ournotes-player checkout or package at `player_dir`. The data comes from the
     settings `cfg` (each worker process opens its own). `regions`: the regions the charts serve (default: the one
@@ -1665,10 +1932,21 @@ def build(out_dir, pairs, cfg: Config, player_dir: Path, audio_format: str = DEF
     tmp_root.mkdir(parents=True, exist_ok=True)
     log = log or _log
     t0 = time.time()
-    job = {"site": str(site), "tmp": str(tmp_root), "audioFormat": audio_format, "audio": bool(audio),
-           "player": str(player_dir), "language": language, "fonts": fonts, "band": band, "leaderCard": leader_card,
-           "cache": str(tmp_root / "cache"), "build": uuid.uuid4().hex, "liveOptions": live_options or None,
-           "encoding": encoding}
+    job = {
+        "site": str(site),
+        "tmp": str(tmp_root),
+        "audioFormat": audio_format,
+        "audio": bool(audio),
+        "player": str(player_dir),
+        "language": language,
+        "fonts": fonts,
+        "band": band,
+        "leaderCard": leader_card,
+        "cache": str(tmp_root / "cache"),
+        "build": uuid.uuid4().hex,
+        "liveOptions": live_options or None,
+        "encoding": encoding,
+    }
     configure_caches(job)
     results, skipped, folded, used_workers = [], [], [], 1
     offered = set()
@@ -1679,8 +1957,9 @@ def build(out_dir, pairs, cfg: Config, player_dir: Path, audio_format: str = DEF
             prefix = "" if gi == 0 else f"{rep}/"
             gpairs = _group_pairs(pairs, masters[rep])
             offered.update(gpairs)
-            rs, sk, w = _build_group(site, tmp_root, gpairs, cfg, rep, prefix, group, job, force, workers, log,
-                                     read_workers, reads)
+            rs, sk, w = _build_group(
+                site, tmp_root, gpairs, cfg, rep, prefix, group, job, force, workers, log, read_workers, reads
+            )
             results += rs
             skipped += sk
             used_workers = max(used_workers, w)
@@ -1690,20 +1969,35 @@ def build(out_dir, pairs, cfg: Config, player_dir: Path, audio_format: str = DEF
         reads.close()
     for m, d in pairs or []:
         if (m, d) not in offered:
-            results.append({"id": f"{m}_{d}", "ok": False, "stage": "master",
-                            "error": f"no MasterLiveMusicScore row for {m}_{d} in the master data of "
-                                     f"{', '.join(regions)}"})
+            results.append(
+                {
+                    "id": f"{m}_{d}",
+                    "ok": False,
+                    "stage": "master",
+                    "error": f"no MasterLiveMusicScore row for {m}_{d} in the master data of {', '.join(regions)}",
+                }
+            )
     v = write_player(site, player_dir)
     idx = write_index(site, language, region_meta(cfg, regions))
     failed = [r for r in results if not r["ok"]]
-    scenes: dict[str, int] = {}                        # how the charts' scenes were made (band part / whole)
+    scenes: dict[str, int] = {}  # how the charts' scenes were made (band part / whole)
     for r in results:
         if r["ok"]:
             scenes[r.get("scene") or "?"] = scenes.get(r.get("scene") or "?", 0) + 1
     if failed:
         (site.parent / f"{site.name}.failures.json").write_bytes(_dump(sorted(failed, key=lambda r: r["id"])))
-    return {"site": str(site), "built": [{k: r[k] for k in ("id", "files", "bytes", "flows")} for r in results if r["ok"]],
-            "failed": [{k: r.get(k) for k in ("id", "stage", "error")} for r in failed], "skipped": skipped,
-            "regions": regions, "regionGroups": groups, "foldedRegionManifests": folded, "scenes": scenes,
-            "readSets": reads.summary(),
-            "seconds": round(time.time() - t0, 1), "workers": used_workers, **v, **idx}
+    return {
+        "site": str(site),
+        "built": [{k: r[k] for k in ("id", "files", "bytes", "flows")} for r in results if r["ok"]],
+        "failed": [{k: r.get(k) for k in ("id", "stage", "error")} for r in failed],
+        "skipped": skipped,
+        "regions": regions,
+        "regionGroups": groups,
+        "foldedRegionManifests": folded,
+        "scenes": scenes,
+        "readSets": reads.summary(),
+        "seconds": round(time.time() - t0, 1),
+        "workers": used_workers,
+        **v,
+        **idx,
+    }

@@ -6,6 +6,7 @@ has a `skeleton.spine` version), UTF-8 text, and otherwise `binary`. `hint`, a f
 equivalent answers: a text extension it ends with (`.csv`, `.atlas`, ...; a trailing `.bytes` is skipped) for text,
 `.acf` for a CRI table. Magic numbers take precedence over the hint.
 """
+
 from __future__ import annotations
 
 import json
@@ -43,7 +44,7 @@ MAGIC: tuple = (
     (0, b"AFS2", "afs2", "awb", "application/octet-stream"),
     (0, b"CRID", "usm", "usm", "application/octet-stream"),
     (0, b"HCA\x00", "hca", "hca", "application/octet-stream"),
-    (0, b"\xc8\xc3\xc1\x00", "hca", "hca", "application/octet-stream"),       # HCA with masked chunk names
+    (0, b"\xc8\xc3\xc1\x00", "hca", "hca", "application/octet-stream"),  # HCA with masked chunk names
     (0, b"UnityFS\x00", "unityfs", "bundle", "application/octet-stream"),
     (0, b"UnityWeb\x00", "unityweb", "bundle", "application/octet-stream"),
     (0, b"UnityRaw\x00", "unityraw", "bundle", "application/octet-stream"),
@@ -67,11 +68,33 @@ MAGIC: tuple = (
     (0, b"\x04\x22\x4d\x18", "lz4", "lz4", "application/octet-stream"),
 )
 # RIFF containers by form type
-RIFF = {b"WAVE": ("wav", "wav", "audio/wav"), b"WEBP": ("webp", "webp", "image/webp"),
-        b"AVI ": ("avi", "avi", "video/x-msvideo")}
-TEXT_EXTS = frozenset({"txt", "csv", "tsv", "xml", "yaml", "yml", "ini", "md", "html", "css", "js", "lua", "atlas",
-                       "srt", "vtt", "svg", "plist"})
-_CONTROL = re.compile(r"[\x00-\x08\x0b\x0e-\x1f\x7f]")      # not in text: C0 controls except \t \n \f \r, DEL
+RIFF = {
+    b"WAVE": ("wav", "wav", "audio/wav"),
+    b"WEBP": ("webp", "webp", "image/webp"),
+    b"AVI ": ("avi", "avi", "video/x-msvideo"),
+}
+TEXT_EXTS = frozenset(
+    {
+        "txt",
+        "csv",
+        "tsv",
+        "xml",
+        "yaml",
+        "yml",
+        "ini",
+        "md",
+        "html",
+        "css",
+        "js",
+        "lua",
+        "atlas",
+        "srt",
+        "vtt",
+        "svg",
+        "plist",
+    }
+)
+_CONTROL = re.compile(r"[\x00-\x08\x0b\x0e-\x1f\x7f]")  # not in text: C0 controls except \t \n \f \r, DEL
 _SPINE_VERSION = re.compile(r"[34]\.\d+(\.\d+)*")
 
 
@@ -107,7 +130,7 @@ def _spine_string(data: bytes, pos: int) -> tuple[str, int]:
     n, pos = _varint(data, pos)
     if n == 0 or pos + n - 1 > len(data):
         raise ValueError
-    return data[pos:pos + n - 1].decode("ascii"), pos + n - 1
+    return data[pos : pos + n - 1].decode("ascii"), pos + n - 1
 
 
 def spine_binary_version(data: bytes) -> str | None:
@@ -134,7 +157,8 @@ def _sfnt(data: bytes) -> bool:
 
 # checks beyond the magic, for magics short or common enough to begin other data
 VALIDATE = {
-    "ttf": _sfnt, "otf": _sfnt,
+    "ttf": _sfnt,
+    "otf": _sfnt,
     "gzip": lambda d: d[2:3] == b"\x08",
     "midi": lambda d: d[4:8] == b"\x00\x00\x00\x06",
     "glb": lambda d: d[4:8] in (b"\x01\x00\x00\x00", b"\x02\x00\x00\x00"),
@@ -145,7 +169,7 @@ def _adx(data: bytes) -> bool:
     if len(data) < 6 or data[:2] != b"\x80\x00":
         return False
     off = int.from_bytes(data[2:4], "big")
-    return data[off - 2:off + 4] == b"(c)CRI"
+    return data[off - 2 : off + 4] == b"(c)CRI"
 
 
 def sniff(data: bytes, hint: str | None = None) -> Sniffed:
@@ -154,7 +178,7 @@ def sniff(data: bytes, hint: str | None = None) -> Sniffed:
         return Sniffed("empty", "bin", "application/octet-stream")
     head = data[:16]
     for off, magic, fmt, ext, media in MAGIC:
-        if head[off:off + len(magic)] == magic and VALIDATE.get(fmt, bool)(data):
+        if head[off : off + len(magic)] == magic and VALIDATE.get(fmt, bool)(data):
             if fmt == "cri-utf" and _hint_ext(hint) == "acf":
                 ext = "acf"
             return Sniffed(fmt, ext, media)

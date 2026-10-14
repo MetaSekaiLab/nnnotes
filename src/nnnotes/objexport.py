@@ -56,6 +56,7 @@ mesh and object facts); one sprite.crop task per atlas then reads the atlas' JSO
 metas, and makes "<sprite object id>#image" exactly as unity.export makes the image of a sprite whose atlas is in its
 own bundle.
 """
+
 from __future__ import annotations
 
 import io
@@ -75,28 +76,65 @@ EXPORT, CROP, CENSUS, SCRIPTS = "unity.export", "sprite.crop", "unity.census", "
 SCRIPTS_TASK = contract.task_id(SCRIPTS, "all")
 
 # converter -> version
-CONVERTERS = {"tex.png": 1, "sprite.png": 1, "mesh.glb": 1, "prefab.json": 1, "material.json": 1, "clip.json": 1,
-              "controller.json": 1, "mono.json": 2, "data": 1, "font": 1, "scripts.json": 1, "bundle.json": 1,
-              "shader.json": 1, "generic.json": 1, "cri.usm": 1}
+CONVERTERS = {
+    "tex.png": 1,
+    "sprite.png": 1,
+    "mesh.glb": 1,
+    "prefab.json": 1,
+    "material.json": 1,
+    "clip.json": 1,
+    "controller.json": 1,
+    "mono.json": 2,
+    "data": 1,
+    "font": 1,
+    "scripts.json": 1,
+    "bundle.json": 1,
+    "shader.json": 1,
+    "generic.json": 1,
+    "cri.usm": 1,
+}
 # class -> the converters its objects may use (every class may fall back to generic.json)
-CLASS_CONVERTERS = {"Texture2D": ("tex.png",), "Sprite": ("sprite.png",), "Mesh": ("mesh.glb",),
-                    "GameObject": ("prefab.json",), "Material": ("material.json",), "AnimationClip": ("clip.json",),
-                    "AnimatorController": ("controller.json",), "AnimatorOverrideController": ("controller.json",),
-                    "MonoBehaviour": ("mono.json",), "TextAsset": ("data",), "Font": ("font",),
-                    "MonoScript": ("scripts.json",), "AssetBundle": ("bundle.json",), "Shader": ("shader.json",)}
+CLASS_CONVERTERS = {
+    "Texture2D": ("tex.png",),
+    "Sprite": ("sprite.png",),
+    "Mesh": ("mesh.glb",),
+    "GameObject": ("prefab.json",),
+    "Material": ("material.json",),
+    "AnimationClip": ("clip.json",),
+    "AnimatorController": ("controller.json",),
+    "AnimatorOverrideController": ("controller.json",),
+    "MonoBehaviour": ("mono.json",),
+    "TextAsset": ("data",),
+    "Font": ("font",),
+    "MonoScript": ("scripts.json",),
+    "AssetBundle": ("bundle.json",),
+    "Shader": ("shader.json",),
+}
 ALWAYS = ("generic.json",)
 BASE_ATOMS = ("reader", "sniff")
-CONVERTER_ATOMS = {"tex.png": ("texture.decode", "png.encode", "astc.container"),
-                   "sprite.png": ("texture.decode", "png.encode", "sprite.crop", "mesh.arrays"),
-                   "mesh.glb": ("mesh.arrays", "gltf.write")}
+CONVERTER_ATOMS = {
+    "tex.png": ("texture.decode", "png.encode", "astc.container"),
+    "sprite.png": ("texture.decode", "png.encode", "sprite.crop", "mesh.arrays"),
+    "mesh.glb": ("mesh.arrays", "gltf.write"),
+}
 UNSUPPORTED_CLASSES = ("AudioClip", "VideoClip", "MovieTexture")
 LATE_CLASSES = ("AnimationClip", "AnimatorController", "AnimatorOverrideController")
 FONT_FORMATS = ("ttf", "otf", "ttc", "woff", "woff2")
 # every reason code this module gives (the atoms give more; docs/stages.md lists them all)
-REASONS = ("generic.error", "generic.clip.legacy", "generic.controller.override", "script.unresolved",
-           "script.missing", "no_data.sprite", "no_data.font", "unsupported.sprite.external_texture",
-           "unsupported.cri.awb_external", "failed.read", "failed.export",
-           *(f"unsupported.class.{c}" for c in UNSUPPORTED_CLASSES))
+REASONS = (
+    "generic.error",
+    "generic.clip.legacy",
+    "generic.controller.override",
+    "script.unresolved",
+    "script.missing",
+    "no_data.sprite",
+    "no_data.font",
+    "unsupported.sprite.external_texture",
+    "unsupported.cri.awb_external",
+    "failed.read",
+    "failed.export",
+    *(f"unsupported.class.{c}" for c in UNSUPPORTED_CLASSES),
+)
 ACB_KIND = "cri.acb"
 SPLIT_ACB, EMBEDDED_ACB = "split", "embedded"
 EMBEDDED_ACB_IMPL = "CriSerializedBytesAssetImpl"
@@ -108,7 +146,7 @@ _BYTE_TYPES = frozenset({"UInt8", "SInt8", "char"})
 _SCALARS = (int, float, str, bool, type(None))
 _ADDRESS = re.compile(r"0x[0-9a-fA-F]{6,}")
 _EXT = re.compile(r"[0-9a-z]+")
-_NO_SCRIPT = "\0none"                      # a MonoBehaviour whose m_Script is null
+_NO_SCRIPT = "\0none"  # a MonoBehaviour whose m_Script is null
 ATOM_NAMES = frozenset(ATOM_REGISTRY)
 
 
@@ -203,8 +241,9 @@ def acb_asset(tt: dict) -> dict | None:
     if isinstance(sheet, str) and isinstance(tt.get("_chunks"), list):
         return {"layout": SPLIT_ACB, "cueSheet": sheet, "chunks": tt["_chunks"]}
     ref = embedded_bytes(tt)
-    return None if ref is None else {"layout": EMBEDDED_ACB, "cueSheet": tt.get("m_Name"), "ref": ref[0],
-                                     "impl": ref[1]}
+    return (
+        None if ref is None else {"layout": EMBEDDED_ACB, "cueSheet": tt.get("m_Name"), "ref": ref[0], "impl": ref[1]}
+    )
 
 
 def embedded_bytes(tt: dict) -> tuple[int, dict] | None:
@@ -241,6 +280,7 @@ class _ReadError(Exception):
 
 class _Script:
     """A MonoScript outside the bundle, known from the task's script table: what Exporter code reads of it."""
+
     type = SimpleNamespace(name="MonoScript", value=115)
 
     def __init__(self, file: str, path_id: int, entry: str):
@@ -296,8 +336,8 @@ class RefExporter:
         self.staged: list[dict] = []
         self.blob_ids: list[str] = []
         self.conv = "generic.json"
-        self.acb_field: tuple | None = None       # (object key, field path, facts) of the embedded ACB being walked
-        self.usm_field: tuple | None = None       # the same for the USM of a movie asset
+        self.acb_field: tuple | None = None  # (object key, field path, facts) of the embedded ACB being walked
+        self.usm_field: tuple | None = None  # the same for the USM of a movie asset
         self.usm_assets = USM_CONVERTER in task.atoms
         self.atoms_of: dict[str, dict] = {}
         self.unresolved = 0
@@ -333,8 +373,16 @@ class RefExporter:
             cut = None
             if "m_Name" in names:
                 from UnityPy.helpers.TypeTreeNode import TypeTreeNode
-                cut = TypeTreeNode(node.m_Level, node.m_Type, node.m_Name, node.m_ByteSize, node.m_Version,
-                                   m_MetaFlag=node.m_MetaFlag, m_Children=node.m_Children[:names.index("m_Name") + 1])
+
+                cut = TypeTreeNode(
+                    node.m_Level,
+                    node.m_Type,
+                    node.m_Name,
+                    node.m_ByteSize,
+                    node.m_Version,
+                    m_MetaFlag=node.m_MetaFlag,
+                    m_Children=node.m_Children[: names.index("m_Name") + 1],
+                )
             hit = self.heads[id(node)] = (node, cut)
         if hit[1] is None:
             return None
@@ -511,11 +559,13 @@ class RefExporter:
             data = bytes(v)
         elif signed:
             import numpy as np
+
             data = np.asarray(v, np.int16).astype(np.uint8).tobytes()
         else:
             data = bytes(v)
         if self.acb_field is not None and self.acb_field[:2] == (self._key(owner), path):
             from . import cri
+
             if data[:4] != cri.ACB_SIGNATURE:
                 raise ValueError(f"{path}: the cue sheet data is not an ACB (@UTF): {data[:4].hex()}")
             aid, content = self._emit(self._key(owner), "acb", data, "acb", ACB_KIND, "acb", self.acb_field[2])
@@ -556,8 +606,20 @@ class RefExporter:
             d["container"] = _label(c)
         return d
 
-    def _emit(self, key, role: str, data: bytes, ext: str, kind: str, fmt: str, facts: dict, *, issues=(),
-              refs=(), owner: str | None = None) -> tuple[str, dict]:
+    def _emit(
+        self,
+        key,
+        role: str,
+        data: bytes,
+        ext: str,
+        kind: str,
+        fmt: str,
+        facts: dict,
+        *,
+        issues=(),
+        refs=(),
+        owner: str | None = None,
+    ) -> tuple[str, dict]:
         """Store `data` and stage the artifact "<owner>#<role>" (owner: the object `key`, else a task-level name)."""
         aid = contract.artifact_id(owner or contract.object_id(*key), role)
         if aid in self.emitted or any(a["id"] == aid for a in self.staged):
@@ -584,8 +646,9 @@ class RefExporter:
 
     def _need(self, conv: str) -> None:
         if conv not in self.task.atoms:
-            raise IncompatibleTask(f"task {self.task.id}: converter {conv} is not in the task (its census lacks "
-                                   f"the class)")
+            raise IncompatibleTask(
+                f"task {self.task.id}: converter {conv} is not in the task (its census lacks the class)"
+            )
 
     def _convert(self, info, conv: str, fn, *args) -> bool:
         """Run a converter on one object: its artifacts (exported), else the typetree JSON with the reason."""
@@ -612,8 +675,12 @@ class RefExporter:
             self._begin("generic.json")
             what = "failed.read" if isinstance(e, _ReadError) else "failed.export"
             detail = str(e) if isinstance(e, _ReadError) else _message(e)
-            self.items[info.id] = contract.item(info.id, "failed", why=contract.reason(
-                what, _label(f"{code}: {message}; typetree JSON: {detail}")), cls=info.class_name)
+            self.items[info.id] = contract.item(
+                info.id,
+                "failed",
+                why=contract.reason(what, _label(f"{code}: {message}; typetree JSON: {detail}")),
+                cls=info.class_name,
+            )
             return
         self._commit(info, status, [aid, *self.blob_ids], contract.reason(code, _label(message)))
 
@@ -627,8 +694,12 @@ class RefExporter:
         except Exception as e:
             self._begin("generic.json")
             what = "failed.read" if isinstance(e, _ReadError) else "failed.export"
-            self.items[info.id] = contract.item(info.id, "failed", why=contract.reason(
-                what, str(e) if isinstance(e, _ReadError) else _message(e)), cls=info.class_name)
+            self.items[info.id] = contract.item(
+                info.id,
+                "failed",
+                why=contract.reason(what, str(e) if isinstance(e, _ReadError) else _message(e)),
+                cls=info.class_name,
+            )
             return
         self._commit(info, "exported", [*ids, *self.blob_ids])
 
@@ -665,8 +736,9 @@ class RefExporter:
             if i.id in self.items or i.class_name in LATE_CLASSES or not self._selected(i.class_name):
                 continue
             if i.class_name in UNSUPPORTED_CLASSES:
-                self._fallback(i, f"unsupported.class.{i.class_name}", f"{i.class_name} is not converted",
-                               status="unsupported")
+                self._fallback(
+                    i, f"unsupported.class.{i.class_name}", f"{i.class_name} is not converted", status="unsupported"
+                )
             else:
                 self._generic(i)
         for i in self._of("AnimationClip"):
@@ -676,23 +748,31 @@ class RefExporter:
                 self._convert(i, "controller.json", self.conv_controller)
         for i in self.infos:
             if i.id not in self.items and self._selected(i.class_name):
-                self.items[i.id] = contract.item(i.id, "failed", why=contract.reason(
-                    "failed.export", "no converter took the object"), cls=i.class_name)
+                self.items[i.id] = contract.item(
+                    i.id,
+                    "failed",
+                    why=contract.reason("failed.export", "no converter took the object"),
+                    cls=i.class_name,
+                )
         return self.artifacts, list(self.items.values())
 
     def _index(self) -> None:
         """Hierarchies per serialized file (their roots, the objects each root's prefab holds), scene files."""
         from .unity import SceneGraph
+
         by_file = defaultdict(list)
         for i in self.infos:
             by_file[i.file].append(i)
         for f in self.files:
-            objs = [self.readers[(i.file, i.path_id)] for i in by_file[f]
-                    if i.class_name in ("GameObject", "Transform", "RectTransform")]
+            objs = [
+                self.readers[(i.file, i.path_id)]
+                for i in by_file[f]
+                if i.class_name in ("GameObject", "Transform", "RectTransform")
+            ]
             try:
                 g = SceneGraph(SimpleNamespace(objects=objs))
             except Exception:
-                continue                           # the file's objects are exported one by one
+                continue  # the file's objects are exported one by one
             self.graphs[f] = g
             if by_file[f]:
                 self._graph_of_file[id(self.readers[(f, by_file[f][0].path_id)].assets_file)] = g
@@ -835,20 +915,30 @@ class RefExporter:
         tkey = self._texture_key(owner, tex)
         alpha = src.get("alphaTexture") or {}
         akey = self._texture_key(owner, alpha) if alpha.get("m_PathID") else None
-        return {"tt": tt, "external": False, "src": src, "owner": owner, "atlasKey": atlas_key, "texture": tkey,
-                "alpha": akey}
+        return {
+            "tt": tt,
+            "external": False,
+            "src": src,
+            "owner": owner,
+            "atlasKey": atlas_key,
+            "texture": tkey,
+            "alpha": akey,
+        }
 
     def _texture_key(self, owner, pptr: dict) -> tuple:
         k = self._target(owner, pptr)
         if k is None or k not in self.info:
-            raise Unsupported("unsupported.sprite.external_texture",
-                              f"texture {pptr.get('m_FileID')}:{pptr.get('m_PathID')} is outside the bundle")
+            raise Unsupported(
+                "unsupported.sprite.external_texture",
+                f"texture {pptr.get('m_FileID')}:{pptr.get('m_PathID')} is outside the bundle",
+            )
         if self.info[k].class_name != "Texture2D":
             raise Unsupported("no_data.sprite", f"the texture reference names a {self.info[k].class_name}")
         return k
 
     def conv_texture(self, info, holder: dict) -> list:
         from .atoms.texture import ASTC_BLOCKS, format_name, is_hdr_astc
+
         key = (info.file, info.path_id)
         try:
             tt = self._tt(key)
@@ -857,11 +947,17 @@ class RefExporter:
             holder["error"] = e
             raise
         fmt, w, h = int(inp.format), int(inp.width), int(inp.height)
-        facts = {"width": w, "height": h, "textureFormat": format_name(fmt),
-                 "mipCount": int(tt.get("m_MipCount", 1) or 1), "exportedMips": [0]}
+        facts = {
+            "width": w,
+            "height": h,
+            "textureFormat": format_name(fmt),
+            "mipCount": int(tt.get("m_MipCount", 1) or 1),
+            "exportedMips": [0],
+        }
         if w and h and is_hdr_astc(fmt):
-            holder["error"] = Unsupported("unsupported.texture.format",
-                                          f"{format_name(fmt)} (HDR ASTC; the texture is exported as .astc)")
+            holder["error"] = Unsupported(
+                "unsupported.texture.format", f"{format_name(fmt)} (HDR ASTC; the texture is exported as .astc)"
+            )
             data = self.fns["astc.container"](inp.data, w, h, ASTC_BLOCKS[fmt])
             return [self._emit(key, "image", data, "astc", "texture.image", "astc", facts)[0]]
         try:
@@ -877,6 +973,7 @@ class RefExporter:
     def _decode_into(self, info, holder: dict) -> None:
         """The texture's image for its sprites (a task whose `classes` leave Texture2D out)."""
         from .atoms.texture import format_name, is_hdr_astc
+
         try:
             inp = self.view.texture_input(info)
             if inp.width and inp.height and is_hdr_astc(inp.format):
@@ -890,6 +987,7 @@ class RefExporter:
 
     def conv_sprite(self, info, plan: dict, holder: dict) -> list:
         from .atoms import sprite as sprite_atom
+
         err = holder.get("error")
         if err is not None:
             if isinstance(err, Unsupported):
@@ -904,47 +1002,89 @@ class RefExporter:
         st = sprite_atom.settings(raw)
         mesh = self.fns["mesh.arrays"](self.view.mesh_input(info)) if st.packing_mode == sprite_atom.TIGHT else None
         downscale = float(src.get("downscaleMultiplier", 1.0))
-        img = self.fns["sprite.crop"](holder["image"], src["textureRect"], raw, mesh, float(tt["m_PixelsToUnits"]),
-                                      alpha, downscale=downscale,
-                                      canvas={"rect": tt["m_Rect"], "offset": src["textureRectOffset"],
-                                              "pivot": tt["m_Pivot"]})
+        img = self.fns["sprite.crop"](
+            holder["image"],
+            src["textureRect"],
+            raw,
+            mesh,
+            float(tt["m_PixelsToUnits"]),
+            alpha,
+            downscale=downscale,
+            canvas={"rect": tt["m_Rect"], "offset": src["textureRectOffset"], "pivot": tt["m_Pivot"]},
+        )
         data = self.fns["png.encode"](img, self.png_level)
         tex_oid = contract.object_id(*plan["texture"])
         refs = [{"rel": "texture", "object": tex_oid}]
         if plan["atlasKey"] is not None:
             refs.append({"rel": "atlas", "object": contract.object_id(*plan["atlasKey"])})
-        image_id = self._emit(key, "image", data, "png", "sprite.image", "png",
-                              {"width": img.width, "height": img.height, "mode": img.mode}, refs=refs)[0]
-        meta = {"sprite": self.tree(r, tt),
-                "image": {"source": "atlas" if plan["atlasKey"] is not None else "renderData",
-                          "atlas": None if plan["atlasKey"] is None else self._dref(plan["atlasKey"]),
-                          "texture": self._dref(plan["texture"]),
-                          "alphaTexture": None if plan["alpha"] is None else self._dref(plan["alpha"]),
-                          "textureRect": src["textureRect"], "textureRectOffset": src["textureRectOffset"],
-                          "settingsRaw": raw, "packed": st.packed, "packingMode": st.packing_mode,
-                          "packingRotation": st.packing_rotation, "downscaleMultiplier": downscale,
-                          "width": img.width, "height": img.height}}
+        image_id = self._emit(
+            key,
+            "image",
+            data,
+            "png",
+            "sprite.image",
+            "png",
+            {"width": img.width, "height": img.height, "mode": img.mode},
+            refs=refs,
+        )[0]
+        meta = {
+            "sprite": self.tree(r, tt),
+            "image": {
+                "source": "atlas" if plan["atlasKey"] is not None else "renderData",
+                "atlas": None if plan["atlasKey"] is None else self._dref(plan["atlasKey"]),
+                "texture": self._dref(plan["texture"]),
+                "alphaTexture": None if plan["alpha"] is None else self._dref(plan["alpha"]),
+                "textureRect": src["textureRect"],
+                "textureRectOffset": src["textureRectOffset"],
+                "settingsRaw": raw,
+                "packed": st.packed,
+                "packingMode": st.packing_mode,
+                "packingRotation": st.packing_rotation,
+                "downscaleMultiplier": downscale,
+                "width": img.width,
+                "height": img.height,
+            },
+        }
         meta_id = self._emit(key, "meta", encode_object(meta), "json", "sprite.meta", "json", {}, refs=refs)[0]
         return [image_id, meta_id]
 
     def conv_sprite_external(self, info, plan: dict) -> list:
         from .atoms import sprite as sprite_atom
+
         key = (info.file, info.path_id)
         m = self.fns["mesh.arrays"](self.view.mesh_input(info))
         mesh = sprite_atom.mesh_values(m) if "position" in m.channels else None
         atlas_oid = contract.object_id(*plan["atlasKey"])
-        meta = {"object": self._facts(key), "sprite": self.tree(self.readers[key], plan["tt"]),
-                "image": {"source": "atlas", "atlas": self._dref(plan["atlasKey"]), "stage": CROP}, "mesh": mesh}
-        return [self._emit(key, "meta", encode_object(meta), "json", "sprite.meta", "json",
-                           {"crop": CROP, "atlas": atlas_oid}, refs=[{"rel": "atlas", "object": atlas_oid}])[0]]
+        meta = {
+            "object": self._facts(key),
+            "sprite": self.tree(self.readers[key], plan["tt"]),
+            "image": {"source": "atlas", "atlas": self._dref(plan["atlasKey"]), "stage": CROP},
+            "mesh": mesh,
+        }
+        return [
+            self._emit(
+                key,
+                "meta",
+                encode_object(meta),
+                "json",
+                "sprite.meta",
+                "json",
+                {"crop": CROP, "atlas": atlas_oid},
+                refs=[{"rel": "atlas", "object": atlas_oid}],
+            )[0]
+        ]
 
     # ---------------------------------------------------------------- other converters
     def conv_mesh(self, info) -> list:
         key = (info.file, info.path_id)
         m = self.fns["mesh.arrays"](self.view.mesh_input(info))
         glb = self.fns["gltf.write"]([m])
-        facts = {"vertexCount": int(m.vertex_count), "submeshes": len(m.submeshes), "channels": list(m.channels),
-                 "skinned": m.skin is not None}
+        facts = {
+            "vertexCount": int(m.vertex_count),
+            "submeshes": len(m.submeshes),
+            "channels": list(m.channels),
+            "skinned": m.skin is not None,
+        }
         return [self._emit(key, "mesh", glb, "glb", "mesh.gltf", "glb", facts, issues=m.issues)[0]]
 
     def conv_text(self, info) -> list:
@@ -975,6 +1115,7 @@ class RefExporter:
         """The parsed form (the bytes `nnnotes shader` writes as <name>.json), every compiled sub-program as stored
         (`program:<platform>/s<S>p<P>_<stage>_<N>`), the variant index and the typetree JSON."""
         from . import shader
+
         key = (info.file, info.path_id)
         r, tt = self.readers[key], self._tt(key)
         name = (tt.get("m_ParsedForm") or {}).get("m_Name") or f"shader_{info.path_id}"
@@ -990,10 +1131,18 @@ class RefExporter:
         platforms = sorted({v["platform"] for v in variants})
         facts = {"name": _label(name), "variants": len(variants), "platforms": platforms}
         ids.append(self._emit(key, "json", text.encode("utf-8"), "json", "shader", "json", facts)[0])
-        ids.append(self._emit(key, "index", encode_object({"name": name, "variants": variants}), "json",
-                              "shader.index", "json", {"variants": len(variants)})[0])
-        ids.append(self._emit(key, "typetree", encode_object(self.tree(r, tt)), "json", "unity.object", "json",
-                              {})[0])
+        ids.append(
+            self._emit(
+                key,
+                "index",
+                encode_object({"name": name, "variants": variants}),
+                "json",
+                "shader.index",
+                "json",
+                {"variants": len(variants)},
+            )[0]
+        )
+        ids.append(self._emit(key, "typetree", encode_object(self.tree(r, tt)), "json", "unity.object", "json", {})[0])
         return ids
 
     def conv_clip(self, info) -> list:
@@ -1023,16 +1172,18 @@ class RefExporter:
             raise Unsupported("script.missing", "m_Script is null")
         if entry is None:
             s = tt.get("m_Script") or {}
-            raise Unsupported("script.unresolved", f"script {s.get('m_FileID')}:{s.get('m_PathID')} is not in the "
-                                                   f"task's script table")
+            raise Unsupported(
+                "script.unresolved", f"script {s.get('m_FileID')}:{s.get('m_PathID')} is not in the task's script table"
+            )
         movie = embedded_bytes(tt) if self.usm_assets and entry == USM_ASSET_SCRIPT else None
         acb = acb_asset(tt) if movie is None else None
         if movie is not None:
             self.usm_field = (key, f"references/RefIds/{movie[0]}/data/data", {"movie": _label(tt.get("m_Name"))})
         if acb is not None and acb["layout"] == EMBEDDED_ACB:
-            if ((tt.get("awb") or {}).get("m_PathID")):
-                raise Unsupported("unsupported.cri.awb_external", f"cue sheet {acb['cueSheet']}: its AWB is another "
-                                                                  f"object")
+            if (tt.get("awb") or {}).get("m_PathID"):
+                raise Unsupported(
+                    "unsupported.cri.awb_external", f"cue sheet {acb['cueSheet']}: its AWB is another object"
+                )
             path = f"references/RefIds/{acb['ref']}/data/data"
             self.acb_field = (key, path, {"cueSheet": _label(acb["cueSheet"]), "layout": EMBEDDED_ACB})
         try:
@@ -1042,8 +1193,11 @@ class RefExporter:
         ids = [self._emit(key, "json", encode_object(doc), "json", "mono.json", "json", {"script": entry})[0]]
         if movie is not None and not any(a["id"] == contract.artifact_id(info.id, "usm") for a in self.staged):
             raise ValueError(f"movie {tt.get('m_Name')}: no USM bytes in its {EMBEDDED_ACB_IMPL}")
-        if acb is not None and acb["layout"] == EMBEDDED_ACB and not any(
-                a["id"] == contract.artifact_id(info.id, "acb") for a in self.staged):
+        if (
+            acb is not None
+            and acb["layout"] == EMBEDDED_ACB
+            and not any(a["id"] == contract.artifact_id(info.id, "acb") for a in self.staged)
+        ):
             raise ValueError(f"cue sheet {acb['cueSheet']}: no ACB bytes in its {EMBEDDED_ACB_IMPL}")
         if acb is not None and acb["layout"] == SPLIT_ACB:
             ids.append(self._split_acb(key, acb))
@@ -1052,6 +1206,7 @@ class RefExporter:
     def _split_acb(self, key: tuple, acb: dict) -> str:
         """The `acb` artifact of a SplitAcbData: its chunk TextAssets (of this bundle) joined and unmasked."""
         from . import cri
+
         owner, parts = self.readers[key], []
         for c in acb["chunks"]:
             k = self._target(owner, c) if isinstance(c, dict) else None
@@ -1060,9 +1215,16 @@ class RefExporter:
             parts.append(cri.text_bytes(self._tt(k).get("m_Script", "")))
         data = cri.split_acb(parts, acb["cueSheet"])
         facts = {"cueSheet": _label(acb["cueSheet"]), "layout": SPLIT_ACB, "chunks": len(parts)}
-        return self._emit(key, "acb", data, "acb", ACB_KIND, "acb", facts,
-                          refs=[{"rel": "chunk", "object": contract.object_id(*self._target(owner, c))}
-                                for c in acb["chunks"]])[0]
+        return self._emit(
+            key,
+            "acb",
+            data,
+            "acb",
+            ACB_KIND,
+            "acb",
+            facts,
+            refs=[{"rel": "chunk", "object": contract.object_id(*self._target(owner, c))} for c in acb["chunks"]],
+        )[0]
 
     def conv_generic(self, info) -> list:
         key = (info.file, info.path_id)
@@ -1099,13 +1261,22 @@ class RefExporter:
                 pid = int(c["component"]["m_PathID"] or 0)
                 if pid and pid != tf:
                     comps.append(self.component(self.readers[(info.file, pid)]))
-            node = {"path": g.path(tf), "name": go["m_Name"], "pathId": go_pid, "transformPathId": tf,
-                    "active": bool(go["m_IsActive"]), "layer": go["m_Layer"], "tag": go.get("m_Tag"),
-                    "localPosition": t["m_LocalPosition"], "localRotation": t["m_LocalRotation"],
-                    "localScale": t["m_LocalScale"]}
+            node = {
+                "path": g.path(tf),
+                "name": go["m_Name"],
+                "pathId": go_pid,
+                "transformPathId": tf,
+                "active": bool(go["m_IsActive"]),
+                "layer": go["m_Layer"],
+                "tag": go.get("m_Tag"),
+                "localPosition": t["m_LocalPosition"],
+                "localRotation": t["m_LocalRotation"],
+                "localScale": t["m_LocalScale"],
+            }
             if "m_AnchorMin" in t:
-                node["rect"] = {k: t[k] for k in ("m_AnchorMin", "m_AnchorMax", "m_AnchoredPosition", "m_SizeDelta",
-                                                  "m_Pivot")}
+                node["rect"] = {
+                    k: t[k] for k in ("m_AnchorMin", "m_AnchorMax", "m_AnchoredPosition", "m_SizeDelta", "m_Pivot")
+                }
             node["components"] = comps
             nodes.append(node)
             stack.extend(reversed([int(ch["m_PathID"]) for ch in t["m_Children"]]))
@@ -1113,10 +1284,23 @@ class RefExporter:
         if info.file in self.scene_of:
             doc["scene"] = self.scene_of[info.file]
         doc["nodes"] = nodes
-        issues = [("script.unresolved", f"{self.unresolved} MonoBehaviours whose script is not in the task's "
-                                        f"script table")] if self.unresolved else []
-        return [self._emit(key, "prefab", encode_object(doc), "json", "prefab", "json",
-                           {"nodes": len(nodes), "objects": len(members)}, issues=issues)[0]]
+        issues = (
+            [("script.unresolved", f"{self.unresolved} MonoBehaviours whose script is not in the task's script table")]
+            if self.unresolved
+            else []
+        )
+        return [
+            self._emit(
+                key,
+                "prefab",
+                encode_object(doc),
+                "json",
+                "prefab",
+                "json",
+                {"nodes": len(nodes), "objects": len(members)},
+                issues=issues,
+            )[0]
+        ]
 
     def _prefabs(self) -> None:
         if not self._selected("GameObject"):
@@ -1163,19 +1347,24 @@ class RefExporter:
                 entries[i.id] = self.tree(self.readers[key], self._tt(key))
                 done.append(i)
             except Exception as e:
-                del self.staged[mark[0]:], self.blob_ids[mark[1]:]
+                del self.staged[mark[0] :], self.blob_ids[mark[1] :]
                 failed.append((i, e))
         if done:
             if conv == "bundle.json":
-                doc = {"files": [{"name": f, "unityVersion": self.versions.get(f),
-                                  "externals": list(self.view.externals(f))} for f in self.files],
-                       "assetBundles": entries}
+                doc = {
+                    "files": [
+                        {"name": f, "unityVersion": self.versions.get(f), "externals": list(self.view.externals(f))}
+                        for f in self.files
+                    ],
+                    "assetBundles": entries,
+                }
                 kind = "unity.bundle"
             else:
                 doc = {"scripts": entries}
                 kind = "unity.scripts"
-            aid = self._emit(None, conv, encode_object(doc), "json", kind, "json", {"objects": len(done)},
-                             owner=self.task.id)[0]
+            aid = self._emit(
+                None, conv, encode_object(doc), "json", kind, "json", {"objects": len(done)}, owner=self.task.id
+            )[0]
             for a in self.staged:
                 self.emitted.add(a["id"])
             self.artifacts.extend(self.staged)
@@ -1184,8 +1373,9 @@ class RefExporter:
                 self.items[i.id] = contract.item(i.id, "contained", within=aid, cls=i.class_name)
         for i, e in failed:
             if isinstance(e, _ReadError):
-                self.items[i.id] = contract.item(i.id, "failed", why=contract.reason("failed.read", str(e)),
-                                                 cls=i.class_name)
+                self.items[i.id] = contract.item(
+                    i.id, "failed", why=contract.reason("failed.read", str(e)), cls=i.class_name
+                )
             else:
                 self._fallback(i, "generic.error", _message(e))
 
@@ -1194,6 +1384,7 @@ class RefExporter:
 def exporter_type():
     """RefExporter combined with export.Exporter (imported here: it loads UnityPy)."""
     from .export import Exporter
+
     return type("ObjectExporter", (RefExporter, Exporter), {})
 
 
@@ -1252,6 +1443,7 @@ class ExportStage(Stage):
     {"scripts": {object id: "assembly|namespace|class"}}. Parameters: `blobMin` (bytes; byte arrays of this size or
     more are blobs), `png.level` (zlib level of the PNG files). `reader`: another implementation of the reader atom
     (its id enters the keys)."""
+
     name = EXPORT
     version = 1
     after = (CENSUS, SCRIPTS)
@@ -1270,8 +1462,11 @@ class ExportStage(Stage):
 
     @property
     def ATOMS(self) -> dict:
-        return dict(sorted({**export_atoms(CLASS_CONVERTERS, self.reader_id()),
-                            USM_CONVERTER: converter_id(USM_CONVERTER)}.items()))
+        return dict(
+            sorted(
+                {**export_atoms(CLASS_CONVERTERS, self.reader_id()), USM_CONVERTER: converter_id(USM_CONVERTER)}.items()
+            )
+        )
 
     def reader_id(self) -> str:
         return self.reader.id if self.reader is not None else atom_id("reader")
@@ -1378,6 +1573,7 @@ class SpriteCropStage(Stage):
     "<unity.export subject of the atlas' bundle>:<atlas pathId>"; inputs: "atlas" (the atlas' JSON), "sprite:<object
     id>" (each sprite's meta), "texture:<object id>" (the image of each atlas texture the sprites use), all artifacts
     of unity.export results. Waits for unity.export tasks that have not run. Artifacts "<sprite object id>#image"."""
+
     name = CROP
     version = 1
     after = (EXPORT,)
@@ -1444,8 +1640,12 @@ class SpriteCropStage(Stage):
                 tid = atlases[atlas][0]
                 subject = f"{contract.parse_task_id(tid, EXPORT)[1]}:{contract.parse_object_id(atlas)[1]}"
                 subjects[subject] = (atlas, sorted(reqs, key=lambda r: r[0]))
-        idx = {"subjects": subjects, "atlases": atlases, "textures": textures,
-               "missing": sorted(set(requests) - set(atlases))}
+        idx = {
+            "subjects": subjects,
+            "atlases": atlases,
+            "textures": textures,
+            "missing": sorted(set(requests) - set(atlases)),
+        }
         self._memo = (sig, idx)
         return idx
 
@@ -1469,8 +1669,7 @@ class SpriteCropStage(Stage):
             doc = self._docs.get(env.store, meta["content"]["sha256"])
             entry = _entry(entries, doc["sprite"].get("m_RenderDataKey"))
             if entry is not None:
-                needed.update(t for t in (_pptr_oid(entry.get("texture")), _pptr_oid(entry.get("alphaTexture")))
-                              if t)
+                needed.update(t for t in (_pptr_oid(entry.get("texture")), _pptr_oid(entry.get("alphaTexture"))) if t)
         ins += [_store_input("texture:" + t, idx["textures"][t][1]) for t in sorted(needed) if t in idx["textures"]]
         return ins
 
@@ -1489,6 +1688,7 @@ class SpriteCropStage(Stage):
     def run(self, task, store) -> Output:
         from PIL import Image
         from .atoms import sprite as sprite_atom
+
         _check_atoms(task)
         crop, encode = resolve("sprite.crop").fn, resolve("png.encode").fn
         level = int(task.params["png"]["level"])
@@ -1510,23 +1710,32 @@ class SpriteCropStage(Stage):
         for inp in task.inputs:
             if not inp.role.startswith("sprite:"):
                 continue
-            oid = inp.role[len("sprite:"):]
+            oid = inp.role[len("sprite:") :]
             meta = contract.loads(store.input_bytes(inp))
             try:
                 img = _crop_meta(meta, entries, image, crop, sprite_atom)
                 aid = contract.artifact_id(oid, "image")
-                arts.append(contract.artifact(aid, store.add(encode(img, level), "png"),
-                                              contract.provenance(task, obj=meta.get("object")),
-                                              {"kind": "sprite.image", "format": "png",
-                                               "facts": {"width": img.width, "height": img.height,
-                                                         "mode": img.mode}}))
+                arts.append(
+                    contract.artifact(
+                        aid,
+                        store.add(encode(img, level), "png"),
+                        contract.provenance(task, obj=meta.get("object")),
+                        {
+                            "kind": "sprite.image",
+                            "format": "png",
+                            "facts": {"width": img.width, "height": img.height, "mode": img.mode},
+                        },
+                    )
+                )
                 items.append(contract.item(oid, "exported", artifacts=[aid], cls="Sprite"))
             except Unsupported as e:
-                items.append(contract.item(oid, "unsupported", why=contract.reason(e.code, _label(e.message)),
-                                           cls="Sprite"))
+                items.append(
+                    contract.item(oid, "unsupported", why=contract.reason(e.code, _label(e.message)), cls="Sprite")
+                )
             except Exception as e:
-                items.append(contract.item(oid, "failed", why=contract.reason("failed.export", _message(e)),
-                                           cls="Sprite"))
+                items.append(
+                    contract.item(oid, "failed", why=contract.reason("failed.export", _message(e)), cls="Sprite")
+                )
         return Output(arts, items)
 
 
@@ -1555,10 +1764,16 @@ def _crop_meta(meta: dict, entries: list, image, crop, sprite_atom):
         if not meta.get("mesh"):
             raise Unsupported("unsupported.sprite.tight_mask", "tightly packed sprite without a mesh")
         mesh = sprite_atom.mesh_from_values(meta["mesh"])
-    return crop(image(tex), entry["textureRect"], raw, mesh, float(s["m_PixelsToUnits"]),
-                None if alpha_oid is None else image(alpha_oid),
-                downscale=float(entry.get("downscaleMultiplier", 1.0)),
-                canvas={"rect": s["m_Rect"], "offset": entry["textureRectOffset"], "pivot": s["m_Pivot"]})
+    return crop(
+        image(tex),
+        entry["textureRect"],
+        raw,
+        mesh,
+        float(s["m_PixelsToUnits"]),
+        None if alpha_oid is None else image(alpha_oid),
+        downscale=float(entry.get("downscaleMultiplier", 1.0)),
+        canvas={"rect": s["m_Rect"], "offset": entry["textureRectOffset"], "pivot": s["m_Pivot"]},
+    )
 
 
 STAGES = (ExportStage, SpriteCropStage)

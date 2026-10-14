@@ -37,8 +37,16 @@ def version_response(version: str, resource: str = "") -> bytes:
 
 
 def server_info(name: str, cdn: str, api: str, area: str = "", display: str = "") -> bytes:
-    return (ld(1, name) + ld(2, cdn) + ld(3, api) + ld(4, "chat.example.test") + ld(6, "live.example.test")
-            + ld(7, display or name) + ld(8, area) + ld(9, "icon"))
+    return (
+        ld(1, name)
+        + ld(2, cdn)
+        + ld(3, api)
+        + ld(4, "chat.example.test")
+        + ld(6, "live.example.test")
+        + ld(7, display or name)
+        + ld(8, area)
+        + ld(9, "icon")
+    )
 
 
 def run(argv, capsys):
@@ -53,23 +61,40 @@ def run(argv, capsys):
 
 # ---------------------------------------------------------------- wire format
 def test_fields_all_wire_types():
-    buf = (varint(1 << 3 | 0) + varint(300) + varint(2 << 3 | 1) + bytes(range(8)) + ld(3, "hé")
-           + varint(4 << 3 | 5) + b"\x01\x02\x03\x04" + varint(1000 << 3 | 0) + varint(2 ** 63))
-    assert gameapi.fields(buf) == [(1, 300), (2, bytes(range(8))), (3, "hé".encode()), (4, b"\x01\x02\x03\x04"),
-                                   (1000, 2 ** 63)]
+    buf = (
+        varint(1 << 3 | 0)
+        + varint(300)
+        + varint(2 << 3 | 1)
+        + bytes(range(8))
+        + ld(3, "hé")
+        + varint(4 << 3 | 5)
+        + b"\x01\x02\x03\x04"
+        + varint(1000 << 3 | 0)
+        + varint(2**63)
+    )
+    assert gameapi.fields(buf) == [
+        (1, 300),
+        (2, bytes(range(8))),
+        (3, "hé".encode()),
+        (4, b"\x01\x02\x03\x04"),
+        (1000, 2**63),
+    ]
     assert gameapi.fields(b"") == []
 
 
-@pytest.mark.parametrize("buf", [
-    b"\x08",                          # varint value missing
-    b"\x08\x80",                      # truncated varint
-    b"\x08" + b"\xff" * 10 + b"\x01",  # varint longer than 10 bytes
-    b"\x0a\x05abc",                   # length past the end
-    b"\x09\x00\x00",                  # fixed64 past the end
-    b"\x0b",                          # wire type 3 (group)
-    b"\x0e\x00",                      # wire type 6
-    b"\x02\x00",                      # field number 0
-])
+@pytest.mark.parametrize(
+    "buf",
+    [
+        b"\x08",  # varint value missing
+        b"\x08\x80",  # truncated varint
+        b"\x08" + b"\xff" * 10 + b"\x01",  # varint longer than 10 bytes
+        b"\x0a\x05abc",  # length past the end
+        b"\x09\x00\x00",  # fixed64 past the end
+        b"\x0b",  # wire type 3 (group)
+        b"\x0e\x00",  # wire type 6
+        b"\x02\x00",  # field number 0
+    ],
+)
 def test_fields_malformed(buf):
     with pytest.raises(ValueError):
         gameapi.fields(buf)
@@ -79,9 +104,9 @@ def test_strings():
     buf = ld(1, "old") + varint(5 << 3) + varint(7) + ld(1, "new") + ld(9, "other")
     assert gameapi.strings(buf, {1: "a", 2: "b"}) == {"a": "new", "b": ""}
     with pytest.raises(ValueError):
-        gameapi.strings(varint(1 << 3) + varint(1), {1: "a"})          # a varint where a string belongs
+        gameapi.strings(varint(1 << 3) + varint(1), {1: "a"})  # a varint where a string belongs
     with pytest.raises(ValueError):
-        gameapi.strings(ld(1, b"\xff\xfe"), {1: "a"})                  # not UTF-8
+        gameapi.strings(ld(1, b"\xff\xfe"), {1: "a"})  # not UTF-8
 
 
 def test_parse_version():
@@ -91,11 +116,19 @@ def test_parse_version():
 
 
 def test_parse_server_list():
-    buf = (ld(1, server_info("Region A", f"{CDN_A}|{CDN_B}/", f"{API}| {API}-2 |", "2", "Display A"))
-           + ld(1, server_info("Region B", "", API, "3")) + ld(2, "ignored"))
+    buf = (
+        ld(1, server_info("Region A", f"{CDN_A}|{CDN_B}/", f"{API}| {API}-2 |", "2", "Display A"))
+        + ld(1, server_info("Region B", "", API, "3"))
+        + ld(2, "ignored")
+    )
     a, b = gameapi.parse_server_list(buf)
-    assert (a.name, a.display_name, a.area_id, a.cdn, a.api) == ("Region A", "Display A", "2", (CDN_A, CDN_B),
-                                                                 (API, API + "-2"))
+    assert (a.name, a.display_name, a.area_id, a.cdn, a.api) == (
+        "Region A",
+        "Display A",
+        "2",
+        (CDN_A, CDN_B),
+        (API, API + "-2"),
+    )
     assert (b.name, b.cdn, b.api) == ("Region B", (), (API,))
     assert "example.test" not in repr(a)
     with pytest.raises(ValueError):
@@ -117,23 +150,34 @@ def test_metadata():
     assert dict(gameapi.metadata("1", "rid"))["x-request-id"] == "rid"
 
 
-@pytest.mark.parametrize("root, target", [
-    (API, ("api.example.test:443", True)),
-    (API + "/", ("api.example.test:443", True)),
-    ("api.example.test", ("api.example.test:443", True)),
-    ("api.example.test:8443", ("api.example.test:8443", True)),
-    (" https://API.example.test:9000 ", ("api.example.test:9000", True)),
-    ("http://127.0.0.1:50051", ("127.0.0.1:50051", False)),
-    ("http://localhost", ("localhost:80", False)),
-    ("https://[::1]:9", ("[::1]:9", True)),
-])
+@pytest.mark.parametrize(
+    "root, target",
+    [
+        (API, ("api.example.test:443", True)),
+        (API + "/", ("api.example.test:443", True)),
+        ("api.example.test", ("api.example.test:443", True)),
+        ("api.example.test:8443", ("api.example.test:8443", True)),
+        (" https://API.example.test:9000 ", ("api.example.test:9000", True)),
+        ("http://127.0.0.1:50051", ("127.0.0.1:50051", False)),
+        ("http://localhost", ("localhost:80", False)),
+        ("https://[::1]:9", ("[::1]:9", True)),
+    ],
+)
 def test_channel_target(root, target):
     assert gameapi.channel_target(root) == target
 
 
-@pytest.mark.parametrize("root", ["ftp://secret.example.test", "https://secret.example.test/prod/x",
-                                  "https://secret.example.test/?q=1", "https://:443", "https://secret.example.test:x",
-                                  "https://secret.example.test:99999"])
+@pytest.mark.parametrize(
+    "root",
+    [
+        "ftp://secret.example.test",
+        "https://secret.example.test/prod/x",
+        "https://secret.example.test/?q=1",
+        "https://:443",
+        "https://secret.example.test:x",
+        "https://secret.example.test:99999",
+    ],
+)
 def test_channel_target_errors_hide_the_value(root):
     with pytest.raises(ValueError) as e:
         gameapi.channel_target(root)
@@ -153,9 +197,13 @@ def server():
                 return None
 
             def unary(request, context):
-                seen.append(SimpleNamespace(method=details.method, request=request,
-                                            metadata=dict(context.invocation_metadata())))
+                seen.append(
+                    SimpleNamespace(
+                        method=details.method, request=request, metadata=dict(context.invocation_metadata())
+                    )
+                )
                 return fn(request, context)
+
             return grpc.unary_unary_rpc_method_handler(unary)
 
     srv = grpc.server(ThreadPoolExecutor(2))
@@ -194,13 +242,16 @@ def test_game_error_code(server):
     def fail(req, ctx):
         ctx.set_trailing_metadata(((gameapi.ERROR_CODE_TRAILER, "CLIENT_UPDATE_REQUIRED"),))
         ctx.abort(grpc.StatusCode.UNKNOWN, "details that are not shown")
+
     server.handlers[gameapi.VERSION_METHOD] = fail
     with pytest.raises(gameapi.GameApiError) as e:
         gameapi.fetch_master_version(server.root, "0.0.1", setting="[servers.zz] api")
     msg = str(e.value)
-    assert msg == ("game API call Version to [servers.zz] api failed: UNKNOWN (game error code "
-                   "CLIENT_UPDATE_REQUIRED, the client version is older than the server accepts)")
-    assert len(server.seen) == 1                                        # not retried
+    assert msg == (
+        "game API call Version to [servers.zz] api failed: UNKNOWN (game error code "
+        "CLIENT_UPDATE_REQUIRED, the client version is older than the server accepts)"
+    )
+    assert len(server.seen) == 1  # not retried
 
 
 def test_unknown_method(server):
@@ -292,6 +343,7 @@ def test_master_version_reads_the_region_settings(monkeypatch):
     def fake_call(root, method, request, client_version, **kw):
         calls.append((root, method, request, client_version, kw["setting"]))
         return version_response("0123abcd", "1.0.0.7")
+
     monkeypatch.setattr(gameapi, "call", fake_call)
     v = gameapi.master_version(cfg(SERVERS_ZZ_API=API, CLIENT_VERSION="1.2.3"), "zz")
     assert v.version == "0123abcd"
@@ -319,6 +371,7 @@ def fake_api(monkeypatch):
         if method not in ns.answers:
             raise gameapi.GameApiError(gameapi.failure(method, kw["setting"], grpc.StatusCode.UNAVAILABLE, ()))
         return ns.answers[method]
+
     monkeypatch.setattr(gameapi, "call", fake_call)
     return ns
 
@@ -341,42 +394,48 @@ def test_master_version_command_failure(fake_api, capsys, monkeypatch):
     monkeypatch.setenv("NNNOTES_CLIENT_VERSION", "1.2.3")
     with pytest.raises(SystemExit) as e:
         cli.main(["--region", "zz", "master", "version"])
-    msg = e.value.code                                   # printed to standard error, exit status 1
+    msg = e.value.code  # printed to standard error, exit status 1
     assert isinstance(msg, str) and not capsys.readouterr().out
     assert msg.startswith("nnnotes: game API call") and "UNAVAILABLE" in msg and "example" not in msg
 
 
-@pytest.mark.parametrize("argv, message", [
-    (["master", "download", "-o", "m"], "one of the arguments --version --latest is required"),
-    (["master", "download", "--latest", "--version", "1", "-o", "m"], "not allowed with"),
-])
+@pytest.mark.parametrize(
+    "argv, message",
+    [
+        (["master", "download", "-o", "m"], "one of the arguments --version --latest is required"),
+        (["master", "download", "--latest", "--version", "1", "-o", "m"], "not allowed with"),
+    ],
+)
 def test_master_download_version_or_latest(argv, message, capsys):
     code, _, err = run(argv, capsys)
     assert code == 2 and message in err
 
 
 def test_master_download_latest(fake_api, tmp_path, capsys, monkeypatch):
-    cdn = synth.serve_master_version(tmp_path / "cdn", "0123abcd",
-                                     {"MasterA.bin": synth.master_file(synth.MASTER_TABLE)})
+    cdn = synth.serve_master_version(
+        tmp_path / "cdn", "0123abcd", {"MasterA.bin": synth.master_file(synth.MASTER_TABLE)}
+    )
     monkeypatch.setenv("NNNOTES_SERVERS_ZZ_CDN", cdn)
     monkeypatch.setenv("NNNOTES_CLIENT_VERSION", "1.2.3")
     argv = ["--region", "zz", "master", "download", "--latest", "-o", str(tmp_path / "m")]
     code, _, err = run(argv, capsys)
-    assert code == 2 and "servers.zz.api" in err and not fake_api.calls        # checked before any call
+    assert code == 2 and "servers.zz.api" in err and not fake_api.calls  # checked before any call
     monkeypatch.setenv("NNNOTES_SERVERS_ZZ_API", API)
     fake_api.answers[gameapi.VERSION_METHOD] = version_response("0123abcd", "1.0.0.7")
     code, out, _ = run(argv, capsys)
     r = json.loads(out)
     assert code == 0 and (r["version"], r["files"], r["downloaded"]) == ("0123abcd", 1, 1)
     assert (tmp_path / "m" / "MasterA.bin").is_file()
-    code, _, _ = run(["--region", "zz", "master", "download", "--version", "0123abcd", "-o", str(tmp_path / "m")],
-                     capsys)
-    assert code == 0 and len(fake_api.calls) == 1                               # --version: no API call
+    code, _, _ = run(
+        ["--region", "zz", "master", "download", "--version", "0123abcd", "-o", str(tmp_path / "m")], capsys
+    )
+    assert code == 0 and len(fake_api.calls) == 1  # --version: no API call
 
 
 def test_servers_command(fake_api, tmp_path, capsys):
-    fake_api.answers[gameapi.SERVER_LIST_METHOD] = (ld(1, server_info("Region A", f"{CDN_A}|{CDN_B}", API, "2"))
-                                                    + ld(1, server_info("Region B", "", "", "3")))
+    fake_api.answers[gameapi.SERVER_LIST_METHOD] = ld(1, server_info("Region A", f"{CDN_A}|{CDN_B}", API, "2")) + ld(
+        1, server_info("Region B", "", "", "3")
+    )
     conf = tmp_path / "nnnotes.toml"
     conf.write_text(f'[client]\nversion = "1.2.3"\n[servers.tw]\ncdn = "{CDN_A}"\n', encoding="utf-8")
     code, _, err = run(["--config", str(conf), "servers"], capsys)

@@ -4,6 +4,7 @@ Remote bundles are fetched from the region's CDN and decrypted (addressables.dec
 the APK) are read from a user-supplied base.apk. Nothing here bundles or redistributes game data: it only reads
 what the user points it at into a local cache the user controls.
 """
+
 from __future__ import annotations
 
 import http.client
@@ -21,17 +22,17 @@ from .cache import write_atomic as _write_atomic
 from .config import ConfigError, apk_missing, check_catalog_version
 
 LOCAL_PREFIX = "{UnityEngine.AddressableAssets.Addressables.RuntimePath}"
-APK_AA_DIR = "assets/aa/"          # + "Android/<bundle>"
+APK_AA_DIR = "assets/aa/"  # + "Android/<bundle>"
 APK_CATALOG = "assets/aa/catalog.bin"
-APK_OFFSET_BASE = 1 << 40          # namespace for APK catalog entry offsets
+APK_OFFSET_BASE = 1 << 40  # namespace for APK catalog entry offsets
 
 
 @dataclass(frozen=True)
 class Bundle:
     offset: int
     internal_id: str
-    name: str          # bare file name (embeds content hash)
-    remote: bool       # True: on CDN; False: shipped inside the APK
+    name: str  # bare file name (embeds content hash)
+    remote: bool  # True: on CDN; False: shipped inside the APK
 
 
 def location_kind(internal_id: str) -> str:
@@ -49,11 +50,12 @@ def file_name(internal_id: str) -> str:
     bundle is its bare file name."""
     if internal_id.startswith(REMOTE_PREFIX):
         from .jp import relative_path
-        path = relative_path(internal_id[len(REMOTE_PREFIX):])
+
+        path = relative_path(internal_id[len(REMOTE_PREFIX) :])
         return path.rsplit("/", 1)[-1] if path.endswith(".bundle") else path
     rel = remote_path(internal_id)
     if rel is None:
-        rel = internal_id[len(LOCAL_PREFIX):] if internal_id.startswith(LOCAL_PREFIX) else internal_id
+        rel = internal_id[len(LOCAL_PREFIX) :] if internal_id.startswith(LOCAL_PREFIX) else internal_id
     head, sep, tail = rel.partition("/Android/")
     return tail if sep else rel.rsplit("/", 1)[-1]
 
@@ -79,8 +81,19 @@ class Catalog:
     `apk_catalog`: the stored catalog to replay without opening an APK; JP local reads verify it before extraction.
     """
 
-    def __init__(self, catalog_bytes: bytes, cache_dir: Path, *, cdn=None, bundle_key=None, apk: Path | None = None,
-                 source=None, session=None, apk_catalog: bytes | None = None, resource_version: str | None = None):
+    def __init__(
+        self,
+        catalog_bytes: bytes,
+        cache_dir: Path,
+        *,
+        cdn=None,
+        bundle_key=None,
+        apk: Path | None = None,
+        source=None,
+        session=None,
+        apk_catalog: bytes | None = None,
+        resource_version: str | None = None,
+    ):
         self._settings = {"cdn": cdn, "bundle_key": bundle_key}
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
@@ -142,8 +155,16 @@ class Catalog:
 
     # --- construction ------------------------------------------------------
     @classmethod
-    def load(cls, language: str, cache_dir: Path, *, cdn=None, bundle_key=None,
-             apk: Path | None = None, version: str = "main") -> "Catalog":
+    def load(
+        cls,
+        language: str,
+        cache_dir: Path,
+        *,
+        cdn=None,
+        bundle_key=None,
+        apk: Path | None = None,
+        version: str = "main",
+    ) -> "Catalog":
         """The remote catalog of `language` from the cache, downloaded from the CDN on first use (`cdn` /
         `bundle_key`: as for Catalog). A versioned catalog is isolated by CDN root and version; main retains
         its legacy offline cache path. Missing versioned files never fall back to main."""
@@ -163,8 +184,14 @@ class Catalog:
             data = download(cdn.rstrip("/") + f"/asset/Android/{cat.name}")
             parse(data)  # Never install a corrupt/error response as a reusable catalog.
             _write_atomic(cat, data)
-        return cls(cat.read_bytes(), cache_dir, cdn=cdn, bundle_key=bundle_key, apk=apk,
-                   resource_version=version if version != "main" else None)
+        return cls(
+            cat.read_bytes(),
+            cache_dir,
+            cdn=cdn,
+            bundle_key=bundle_key,
+            apk=apk,
+            resource_version=version if version != "main" else None,
+        )
 
     def _setting(self, name: str, needed_by: str):
         """The `cdn` / `bundle_key` given to the catalog, its function called (once) now that `needed_by` needs it."""
@@ -297,12 +324,12 @@ class Catalog:
             return dst
         if b.remote:
             url = self._url(b.internal_id)
-            key = self._setting("bundle_key", b.name)   # before the download: a missing key fails first
+            key = self._setting("bundle_key", b.name)  # before the download: a missing key fails first
             data = self._download(url)
         else:
             if self.apk is None:
                 raise apk_missing(f"bundle {b.name}")
-            rel = b.internal_id[len(LOCAL_PREFIX):].lstrip("/")
+            rel = b.internal_id[len(LOCAL_PREFIX) :].lstrip("/")
             with ApkSet(self.apk) as z:
                 self.check_apk(z)
                 data = z.read(APK_AA_DIR + rel)
@@ -313,7 +340,7 @@ class Catalog:
     def _url(self, internal_id: str) -> str:
         if self.source is not None:
             return self.source.url(internal_id)
-        name = internal_id.rsplit('/', 1)[-1]
+        name = internal_id.rsplit("/", 1)[-1]
         cdn = self._setting("cdn", name)
         if not cdn:
             raise RuntimeError(f"{name} not cached and no CDN base given")
@@ -361,9 +388,11 @@ class Catalog:
         if self.apk is None:
             raise apk_missing("an APK bundle")
         with ApkSet(self.apk) as z:
-            names = [n for n in z.namelist()
-                     if n.startswith(APK_AA_DIR) and n.endswith(".bundle")
-                     and name_contains in n.rsplit("/", 1)[1]]
+            names = [
+                n
+                for n in z.namelist()
+                if n.startswith(APK_AA_DIR) and n.endswith(".bundle") and name_contains in n.rsplit("/", 1)[1]
+            ]
             if len(names) != 1:
                 raise KeyError(f"{name_contains!r}: {len(names)} APK bundles match")
             name = names[0].rsplit("/", 1)[1]
@@ -377,8 +406,8 @@ class Catalog:
         return dst
 
 
-_KEPT = threading.local()                  # per thread: {(scheme, host): an open connection}
-_AGENT = "Python-urllib/%d.%d" % sys.version_info[:2]      # what urllib.request sends
+_KEPT = threading.local()  # per thread: {(scheme, host): an open connection}
+_AGENT = "Python-urllib/%d.%d" % sys.version_info[:2]  # what urllib.request sends
 
 
 def download(url: str, timeout: float = 120) -> bytes:
@@ -405,7 +434,7 @@ def download(url: str, timeout: float = 120) -> bytes:
         except (http.client.HTTPException, OSError):
             conn.close()
             if kept:
-                continue                           # closed by the server while idle: once more, on a new one
+                continue  # closed by the server while idle: once more, on a new one
             break
         if r.status != 200 or r.will_close:
             conn.close()

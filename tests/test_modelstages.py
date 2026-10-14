@@ -1,5 +1,6 @@
 """The model stages: the closures of Live2D model keys (as Catalog.resolve gives them), the task catalog the
 Live2D extractor runs on, the keys of both stages, and their runs with synthetic extractors, censuses and objects."""
+
 import subprocess
 import sys
 import zipfile
@@ -25,21 +26,20 @@ PREFAB = "Assets/AddressableResources/Character/Live2D/g1/m1/model/m1.prefab"
 
 def remote_entries(order=(2, 3, 5), m1_prefab=PREFAB):
     return [
-        (M1, "Character/Live2D/g1/m1/model/m1", [3]),                     # an alias location first
+        (M1, "Character/Live2D/g1/m1/model/m1", [3]),  # an alias location first
         (M1, m1_prefab, list(order), {"type": "UnityEngine.GameObject"}),
         (f"model_m1_{H[0]}.bundle", synth.remote(f"model_m1_{H[0]}.bundle"), [4]),
         (f"shared_{H[1]}.bundle", synth.remote(f"shared_{H[1]}.bundle"), []),
-        (f"tex_{H[2]}.bundle", synth.remote(f"tex_{H[2]}.bundle"), [2]),   # a cycle back to the model bundle
+        (f"tex_{H[2]}.bundle", synth.remote(f"tex_{H[2]}.bundle"), [2]),  # a cycle back to the model bundle
         ("monoscripts.bundle", synth.local("monoscripts.bundle"), []),
         (M2, "Assets/AddressableResources/Character/Live2D/g2/m2/model/m2.prefab", [7, 5, 3]),
         (f"model_m2_{H[3]}.bundle", synth.remote(f"model_m2_{H[3]}.bundle"), []),
         ("Character/Live2D/g2/m2/motion/idle", "Assets/Game/idle.anim", [7]),
-        ("Character/Live2D/g3/m3/model/m3", "Assets/Game/m3.prefab", []),   # no bundle
+        ("Character/Live2D/g3/m3/model/m3", "Assets/Game/m3.prefab", []),  # no bundle
     ]
 
 
-APK = [("Shared/S", "Assets/Game/Shared/S.prefab", [1]),
-       ("monoscripts.bundle", synth.local("monoscripts.bundle"), [])]
+APK = [("Shared/S", "Assets/Game/Shared/S.prefab", [1]), ("monoscripts.bundle", synth.local("monoscripts.bundle"), [])]
 
 
 def build(entries):
@@ -62,7 +62,7 @@ def test_closures_are_those_of_catalog_resolve(tmp_path):
     for key in cat.keys():
         assert c.entry(key)["internalId"] == cat._entry(key)["internal_id"]
         assert [names[s] for s in c.closure_bundles(key)] == [b.name for b in cat.resolve(key)], key
-    assert c.entry(M1)["internalId"] == PREFAB                              # the location inside a bundle
+    assert c.entry(M1)["internalId"] == PREFAB  # the location inside a bundle
     assert c.closure_bundles(M1) == ["monoscripts", "shared", "model_m1", "tex"]
     assert c.own_bundle(M1) == "model_m1" and c.own_bundle("Character/Live2D/g3/m3/model/m3") is None
     with pytest.raises(KeyError):
@@ -71,8 +71,13 @@ def test_closures_are_those_of_catalog_resolve(tmp_path):
 
 # ---------------------------------------------------------------- live2d.model
 def contents(tag=b""):
-    return {"model_m1": b"UnityFS m1" + tag, "shared": b"UnityFS shared", "tex": b"UnityFS tex",
-            "monoscripts": b"UnityFS scripts", "model_m2": b"UnityFS m2"}
+    return {
+        "model_m1": b"UnityFS m1" + tag,
+        "shared": b"UnityFS shared",
+        "tex": b"UnityFS tex",
+        "monoscripts": b"UnityFS scripts",
+        "model_m2": b"UnityFS m2",
+    }
 
 
 def bundles_fact(doc, data, locators=True):
@@ -94,14 +99,16 @@ def live2d_env(store, entries=None, data=None, selected=None, locators=True):
 def test_live2d_subjects_inputs_and_context(tmp_path):
     stage = Live2DStage()
     env = live2d_env(Store(tmp_path / "s"))
-    assert stage.subjects(env) == [M1, M2]                                   # model keys with their bundle
+    assert stage.subjects(env) == [M1, M2]  # model keys with their bundle
     assert stage.subjects(live2d_env(Store(tmp_path / "s"), selected=["model_m2", "shared"])) == [M2]
     t = describe(stage, M1, None, env)
     assert t.id == "live2d.model:" + M1 and t.params == {} and t.atoms == Live2DStage.ATOMS
-    assert [(i.role, i.name) for i in t.inputs] == [("bundle:000", "monoscripts.bundle"),
-                                                  ("bundle:001", f"shared_{H[1]}.bundle"),
-                                                  ("bundle:002", f"model_m1_{H[0]}.bundle"),
-                                                  ("bundle:003", f"tex_{H[2]}.bundle")]
+    assert [(i.role, i.name) for i in t.inputs] == [
+        ("bundle:000", "monoscripts.bundle"),
+        ("bundle:001", f"shared_{H[1]}.bundle"),
+        ("bundle:002", f"model_m1_{H[0]}.bundle"),
+        ("bundle:003", f"tex_{H[2]}.bundle"),
+    ]
     assert t.inputs[2].sha256 == contract.sha256(contents()["model_m1"])
     assert t.context == {"internalId": PREFAB}
     assert t.inputs[0].locators == ({"kind": "cache", "path": "bundles/monoscripts.bundle"},)
@@ -164,8 +171,12 @@ def test_task_catalog_answers_from_the_task(tmp_path):
             f(M2)
     # inputs are ordered by position, not by role text
     many = [Input(f"bundle:{i}", contract.sha256(b"x%d" % i), 2) for i in (10, 2, 1)]
-    assert [i.role for i in TaskCatalog("k", "Assets/k", modelstages._ordered(
-        Task(Live2DStage.name, 1, "k", inputs=tuple(many))), store).bundles] == ["bundle:1", "bundle:2", "bundle:10"]
+    assert [
+        i.role
+        for i in TaskCatalog(
+            "k", "Assets/k", modelstages._ordered(Task(Live2DStage.name, 1, "k", inputs=tuple(many))), store
+        ).bundles
+    ] == ["bundle:1", "bundle:2", "bundle:10"]
 
 
 def fake_extract(calls):
@@ -184,11 +195,13 @@ def fake_extract(calls):
         (out_dir / "smile.exp3.json").write_text("{}", encoding="utf-8")
         (out_dir / f"{name}.model3.json").write_text('{"Version": 3}\n', encoding="utf-8")
         return {"name": name, "textures": ["textures/texture_00-1a2b3c4d.png"], "motions": 1, "expressions": 1}
+
     return extract_model
 
 
 def test_live2d_run_stores_every_file_of_the_extractor(tmp_path, monkeypatch):
     from nnnotes import live2d
+
     calls = []
     monkeypatch.setattr(live2d, "extract_model", fake_extract(calls))
     store = Store(tmp_path / "s")
@@ -199,36 +212,53 @@ def test_live2d_run_stores_every_file_of_the_extractor(tmp_path, monkeypatch):
     doc = store.result(t.key)
     tid = "live2d.model:" + M1
     got = {contract.parse_artifact_id(a["id"])[1]: a for a in doc["artifacts"]}
-    assert sorted(got) == ["m1.moc3", "m1.model3.json", "m1.prefab.json", "motions/_fades.json",
-                           "motions/idle.motion3.json", "smile.exp3.json", "textures/texture_00-1a2b3c4d.png"]
+    assert sorted(got) == [
+        "m1.moc3",
+        "m1.model3.json",
+        "m1.prefab.json",
+        "motions/_fades.json",
+        "motions/idle.motion3.json",
+        "smile.exp3.json",
+        "textures/texture_00-1a2b3c4d.png",
+    ]
     assert all(a["id"].startswith(tid + "#") for a in doc["artifacts"]) and doc["items"] == []
     kinds = {r: (a["semantics"]["kind"], a["content"]["ext"]) for r, a in got.items()}
-    assert kinds == {"m1.model3.json": ("live2d.model3", "json"), "m1.moc3": ("live2d.moc3", "moc3"),
-                     "m1.prefab.json": ("live2d.prefab", "json"), "motions/_fades.json": ("live2d.fades", "json"),
-                     "motions/idle.motion3.json": ("live2d.motion", "json"),
-                     "smile.exp3.json": ("live2d.expression", "json"),
-                     "textures/texture_00-1a2b3c4d.png": ("live2d.texture", "png")}
+    assert kinds == {
+        "m1.model3.json": ("live2d.model3", "json"),
+        "m1.moc3": ("live2d.moc3", "moc3"),
+        "m1.prefab.json": ("live2d.prefab", "json"),
+        "motions/_fades.json": ("live2d.fades", "json"),
+        "motions/idle.motion3.json": ("live2d.motion", "json"),
+        "smile.exp3.json": ("live2d.expression", "json"),
+        "textures/texture_00-1a2b3c4d.png": ("live2d.texture", "png"),
+    }
     order = ["monoscripts", "shared", "model_m1", "tex"]
     assert store.read(got["m1.moc3"]["content"]["sha256"]) == b"MOC3" + b"".join(contents()[s] for s in order)
-    assert got["m1.model3.json"]["semantics"]["facts"] == {"expressions": 1, "motions": 1, "name": "m1",
-                                                          "textures": ["textures/texture_00-1a2b3c4d.png"]}
+    assert got["m1.model3.json"]["semantics"]["facts"] == {
+        "expressions": 1,
+        "motions": 1,
+        "name": "m1",
+        "textures": ["textures/texture_00-1a2b3c4d.png"],
+    }
     assert execute(t, store, registry(stage)).status == "hit"
-    assert execute(t, store, registry(stage), force=True).status == "ran"   # the same result again
-    other = Task(t.stage, t.version, t.subject, t.params, {"live2d.extract_model": "unitypy-0/1"}, t.inputs,
-                 t.context)
+    assert execute(t, store, registry(stage), force=True).status == "ran"  # the same result again
+    other = Task(t.stage, t.version, t.subject, t.params, {"live2d.extract_model": "unitypy-0/1"}, t.inputs, t.context)
     with pytest.raises(IncompatibleTask):
         execute(other, store, registry(stage))
 
 
 def test_the_model_key_and_libraries_are_those_of_the_extractors():
     from nnnotes import export, webmodel
+
     assert modelstages.MODEL_KEY.pattern == webmodel.MODEL_KEY.pattern
     assert modelstages.LIBRARIES == export._LIBS
 
 
 def test_importing_the_stages_does_not_import_unitypy():
-    code = "import sys, nnnotes.modelstages as m; m.Live2DStage(); m.SpineStage(); " \
-           "assert 'UnityPy' not in sys.modules, 'UnityPy imported'"
+    code = (
+        "import sys, nnnotes.modelstages as m; m.Live2DStage(); m.SpineStage(); "
+        "assert 'UnityPy' not in sys.modules, 'UnityPy imported'"
+    )
     r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
     assert r.returncode == 0, r.stderr[-2000:]
 
@@ -248,34 +278,79 @@ def obj(pid, cls, name=None, script=None):
 
 def cdoc(files, scripts=()):
     """A census document: files [(name, externals, objects)]."""
-    fs = [{"name": n, "unityVersion": "6000.0.0f1", "platform": 13, "typetree": True,
-           "externals": [{"file": x, "path": f"archive:/{x}/{x}", "guid": None, "type": 0} for x in ext],
-           "objects": objs} for n, ext, objs in files]
+    fs = [
+        {
+            "name": n,
+            "unityVersion": "6000.0.0f1",
+            "platform": 13,
+            "typetree": True,
+            "externals": [{"file": x, "path": f"archive:/{x}/{x}", "guid": None, "type": 0} for x in ext],
+            "objects": objs,
+        }
+        for n, ext, objs in files
+    ]
     classes = {}
     for f in fs:
         for o in f["objects"]:
             classes[o["class"]] = classes.get(o["class"], 0) + 1
-    return {"schema": contract.CENSUS, "files": fs, "resources": [], "assetBundles": [], "scripts": list(scripts),
-            "classes": classes, "objects": sum(classes.values()), "errors": []}
+    return {
+        "schema": contract.CENSUS,
+        "files": fs,
+        "resources": [],
+        "assetBundles": [],
+        "scripts": list(scripts),
+        "classes": classes,
+        "objects": sum(classes.values()),
+        "errors": [],
+    }
 
 
 def spine_censuses():
     sda, atlas = 1, 2
     return {
-        "spine_a": cdoc([(CAB["a"], [CAB["t"], CAB["m"], "unity default resources"],
-                          [obj(10, "MonoBehaviour", "chr_SkeletonData", sda), obj(11, "MonoBehaviour", "chr_Atlas",
-                                                                                   atlas), obj(12, "TextAsset", "chr")])]),
+        "spine_a": cdoc(
+            [
+                (
+                    CAB["a"],
+                    [CAB["t"], CAB["m"], "unity default resources"],
+                    [
+                        obj(10, "MonoBehaviour", "chr_SkeletonData", sda),
+                        obj(11, "MonoBehaviour", "chr_Atlas", atlas),
+                        obj(12, "TextAsset", "chr"),
+                    ],
+                )
+            ]
+        ),
         "tex_b": cdoc([(CAB["t"], [CAB["s"]], [obj(1, "Texture2D", "chr"), obj(2, "Material", "chr_Material")])]),
         "shader_c": cdoc([(CAB["s"], [], [obj(1, "Shader", "Spine/Skeleton")])]),
         "other_d": cdoc([(CAB["d"], [], [obj(5, "MonoBehaviour", "x_SkeletonData", sda)])]),
-        "scene_e": cdoc([(CAB["e"], [], [obj(7, "GameObject", "root")]),
-                         (CAB["e"] + ".sharedAssets", [CAB["t"]], [obj(7, "MonoBehaviour", "y_SkeletonData", sda)])]),
-        "scripts": cdoc([(CAB["m"], [], [obj(1, "MonoScript", "SkeletonDataAsset"),
-                                         obj(2, "MonoScript", "SpineAtlasAsset")])],
-                        scripts=[{"file": CAB["m"], "pathId": 1, "assembly": "spine-unity.dll",
-                                  "namespace": "Spine.Unity", "class": "SkeletonDataAsset", "name": "SkeletonDataAsset"},
-                                 {"file": CAB["m"], "pathId": 2, "assembly": "spine-unity.dll",
-                                  "namespace": "Spine.Unity", "class": "SpineAtlasAsset", "name": "SpineAtlasAsset"}]),
+        "scene_e": cdoc(
+            [
+                (CAB["e"], [], [obj(7, "GameObject", "root")]),
+                (CAB["e"] + ".sharedAssets", [CAB["t"]], [obj(7, "MonoBehaviour", "y_SkeletonData", sda)]),
+            ]
+        ),
+        "scripts": cdoc(
+            [(CAB["m"], [], [obj(1, "MonoScript", "SkeletonDataAsset"), obj(2, "MonoScript", "SpineAtlasAsset")])],
+            scripts=[
+                {
+                    "file": CAB["m"],
+                    "pathId": 1,
+                    "assembly": "spine-unity.dll",
+                    "namespace": "Spine.Unity",
+                    "class": "SkeletonDataAsset",
+                    "name": "SkeletonDataAsset",
+                },
+                {
+                    "file": CAB["m"],
+                    "pathId": 2,
+                    "assembly": "spine-unity.dll",
+                    "namespace": "Spine.Unity",
+                    "class": "SpineAtlasAsset",
+                    "name": "SpineAtlasAsset",
+                },
+            ],
+        ),
         "unsel_f": cdoc([(CAB["f"], [], [obj(3, "MonoBehaviour", "z_SkeletonData", sda)])]),
     }
 
@@ -283,8 +358,12 @@ def spine_censuses():
 def census_result(store, env, subject, doc, body):
     inp = Input("bundle", contract.sha256(body), len(body), subject + ".bundle", ())
     t = describe(CensusStage(), subject, None, Env(store, {"bundles": {subject: inp}}))
-    rec = contract.artifact(contract.artifact_id(t.id, "census"), store.add(contract.encode(doc), "json"),
-                            contract.provenance(t), {"kind": "unity.census", "format": "json", "facts": census.facts(doc)})
+    rec = contract.artifact(
+        contract.artifact_id(t.id, "census"),
+        store.add(contract.encode(doc), "json"),
+        contract.provenance(t),
+        {"kind": "unity.census", "format": "json", "facts": census.facts(doc)},
+    )
     store.commit(contract.result(t, [rec], []))
     env.done(t.id, t.key)
     return inp
@@ -294,8 +373,9 @@ def spine_env(store, docs=None, data=None, selected=("other_d", "scene_e", "spin
     docs = docs or spine_censuses()
     data = data or {}
     env = Env(store, {"selected": sorted(selected)})
-    env.facts["bundles"] = {s: census_result(store, env, s, d, data.get(s, b"UnityFS " + s.encode()))
-                            for s, d in sorted(docs.items())}
+    env.facts["bundles"] = {
+        s: census_result(store, env, s, d, data.get(s, b"UnityFS " + s.encode())) for s, d in sorted(docs.items())
+    }
     st = describe(link.ScriptsStage(), "all", None, env)
     execute(st, store, registry(link.ScriptsStage()))
     env.done(st.id, st.key)
@@ -311,9 +391,13 @@ def test_spine_subjects_closures_and_context(tmp_path):
     assert [i.role for i in t.inputs] == ["bundle:scripts", "bundle:shader_c", "bundle:spine_a", "bundle:tex_b"]
     assert t.inputs[2].sha256 == contract.sha256(b"UnityFS spine_a")
     assert t.context == {"object": CAB["a"] + ":10"}
-    assert stage.depends("spine_a:10", env) == ["link.scripts:all", "unity.census:scripts",
-                                                "unity.census:shader_c", "unity.census:spine_a",
-                                                "unity.census:tex_b"]
+    assert stage.depends("spine_a:10", env) == [
+        "link.scripts:all",
+        "unity.census:scripts",
+        "unity.census:shader_c",
+        "unity.census:spine_a",
+        "unity.census:tex_b",
+    ]
     e = describe(stage, "scene_e.sharedAssets:7", None, env)
     assert [i.role for i in e.inputs] == ["bundle:scene_e", "bundle:shader_c", "bundle:tex_b"]
     assert e.context == {"object": CAB["e"] + ".sharedAssets:7"}
@@ -337,7 +421,7 @@ def test_spine_waits_for_censuses_and_the_script_table(tmp_path):
     env.waiting("unity.census:tex_b")
     with pytest.raises(Pending, match="unity.census:tex_b"):
         stage.subjects(env)
-    env.waiting("unity.census:tex_b", failed=True)            # a failed census is left out of the closures
+    env.waiting("unity.census:tex_b", failed=True)  # a failed census is left out of the closures
     assert [i.role for i in describe(stage, "spine_a:10", None, env).inputs] == ["bundle:scripts", "bundle:spine_a"]
     env.waiting("link.scripts:all")
     with pytest.raises(Pending, match="link.scripts:all"):
@@ -378,18 +462,33 @@ class FakeEnv:
 
 def fake_skeleton(pages=1):
     from PIL import Image
-    text = lambda name, s: type("T", (), {"m_Name": name, "m_Script": s})()        # noqa: E731
+
+    text = lambda name, s: type("T", (), {"m_Name": name, "m_Script": s})()  # noqa: E731
     tex = type("Tex", (), {"m_Name": "chr", "m_TextureFormat": 4, "image": Image.new("RGBA", (1, 1))})()
-    mat = type("Mat", (), {"m_SavedProperties": type("P", (), {"m_TexEnvs": [
-        ("_MainTex", type("E", (), {"m_Texture": FakeRef(1, tex)})())]})()})()
-    atlas = type("A", (), {"atlasFile": FakeRef(2, text("chr", "\nchr.png\nsize: 1,1\n")),
-                           "materials": [FakeRef(3, mat)] * pages})()
-    return FakeObj({"m_Name": "chr_SkeletonData", "scale": 1.0, "defaultMix": 0.0},
-                   skeletonJSON=FakeRef(4, text("chr", b"\x01skel")), atlasAssets=[FakeRef(11, atlas)])
+    mat = type(
+        "Mat",
+        (),
+        {
+            "m_SavedProperties": type(
+                "P", (), {"m_TexEnvs": [("_MainTex", type("E", (), {"m_Texture": FakeRef(1, tex)})())]}
+            )()
+        },
+    )()
+    atlas = type(
+        "A",
+        (),
+        {"atlasFile": FakeRef(2, text("chr", "\nchr.png\nsize: 1,1\n")), "materials": [FakeRef(3, mat)] * pages},
+    )()
+    return FakeObj(
+        {"m_Name": "chr_SkeletonData", "scale": 1.0, "defaultMix": 0.0},
+        skeletonJSON=FakeRef(4, text("chr", b"\x01skel")),
+        atlasAssets=[FakeRef(11, atlas)],
+    )
 
 
 def test_spine_run_stores_the_files_of_the_skeleton(tmp_path, monkeypatch):
     from nnnotes import unity
+
     stage, store = SpineStage(), Store(tmp_path / "s")
     env = spine_env(store)
     for s in ("scripts", "shader_c", "spine_a", "tex_b"):
@@ -408,14 +507,21 @@ def test_spine_run_stores_the_files_of_the_skeleton(tmp_path, monkeypatch):
     doc = store.result(t.key)
     got = {contract.parse_artifact_id(a["id"])[1]: a for a in doc["artifacts"]}
     assert {r: (a["semantics"]["kind"], a["content"]["ext"]) for r, a in got.items()} == {
-        "chr.skel": ("spine.skeleton", "skel"), "chr.atlas": ("spine.atlas", "atlas"), "chr.png": ("spine.page", "png")}
+        "chr.skel": ("spine.skeleton", "skel"),
+        "chr.atlas": ("spine.atlas", "atlas"),
+        "chr.png": ("spine.page", "png"),
+    }
     assert store.read(got["chr.skel"]["content"]["sha256"]) == b"\x01skel"
     assert got["chr.skel"]["semantics"]["facts"]["atlases"] == ["chr.atlas"]
     (item,) = doc["items"]
-    assert item == {"object": CAB["a"] + ":10", "status": "exported", "class": "MonoBehaviour",
-                    "artifacts": sorted(a["id"] for a in doc["artifacts"])}
-    sda = fake_skeleton(pages=2)                               # a writer error: a failed item, cached
-    t2 = Task(t.stage, t.version, t.subject, {}, t.atoms, t.inputs[:3], t.context)     # another key
+    assert item == {
+        "object": CAB["a"] + ":10",
+        "status": "exported",
+        "class": "MonoBehaviour",
+        "artifacts": sorted(a["id"] for a in doc["artifacts"]),
+    }
+    sda = fake_skeleton(pages=2)  # a writer error: a failed item, cached
+    t2 = Task(t.stage, t.version, t.subject, {}, t.atoms, t.inputs[:3], t.context)  # another key
     assert execute(t2, store, registry(stage)).result_status == "partial"
     doc2 = store.result(t2.key)
     assert doc2["artifacts"] == [] and doc2["items"][0]["reason"]["code"] == "failed.export"

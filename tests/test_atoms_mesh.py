@@ -1,14 +1,35 @@
 """mesh.arrays and gltf.write on synthetic meshes: every channel with its stored component count and type (half-float
 normals with four components), conformance with UnityPy's MeshHandler (and with unity.mesh_arrays), skins, meshes
 without an index buffer or without vertices, and the GLB's structure (accessors, min / max, winding, alignment)."""
+
 import struct
 
 import numpy as np
 import pytest
 from UnityPy.helpers.MeshHelper import MeshHandler
 
-from fakeunity import (BLENDINDICES, BLENDWEIGHT, COLOR, F16, F32, NORMAL, POSITION, SNORM16, TANGENT, UINT32,
-                       UNORM8, UNORM16, UV0, UV1, VERSION, FakeEnvironment, matrix, mesh_tt, submesh, unitypy_mesh)
+from fakeunity import (
+    BLENDINDICES,
+    BLENDWEIGHT,
+    COLOR,
+    F16,
+    F32,
+    NORMAL,
+    POSITION,
+    SNORM16,
+    TANGENT,
+    UINT32,
+    UNORM8,
+    UNORM16,
+    UV0,
+    UV1,
+    VERSION,
+    FakeEnvironment,
+    matrix,
+    mesh_tt,
+    submesh,
+    unitypy_mesh,
+)
 from nnnotes import unity
 from nnnotes.atoms import ATOMS, Unsupported, gltf
 from nnnotes.atoms.mesh import MeshInput, arrays
@@ -57,13 +78,22 @@ def handler(tt):
     return h
 
 
-FIELDS = {"position": "m_Vertices", "normal": "m_Normals", "tangent": "m_Tangents", "color": "m_Colors",
-          "uv0": "m_UV0", "uv1": "m_UV1", "blendWeight": "m_BoneWeights", "blendIndices": "m_BoneIndices"}
+FIELDS = {
+    "position": "m_Vertices",
+    "normal": "m_Normals",
+    "tangent": "m_Tangents",
+    "color": "m_Colors",
+    "uv0": "m_UV0",
+    "uv1": "m_UV1",
+    "blendWeight": "m_BoneWeights",
+    "blendIndices": "m_BoneIndices",
+}
 
 
 # ---------------------------------------------------------------- conformance with UnityPy
-@pytest.mark.parametrize("layout", [dict(), dict(half=True), dict(skin="x2", uv1=True), dict(skin="x1"),
-                                    dict(streams=True)])
+@pytest.mark.parametrize(
+    "layout", [dict(), dict(half=True), dict(skin="x2", uv1=True), dict(skin="x1"), dict(streams=True)]
+)
 def test_channels_equal_meshhandler(layout):
     count = 23
     tt = mesh_tt("m", count, channels(count, **layout), tris(count, 9), [submesh(0, 27)])
@@ -71,7 +101,7 @@ def test_channels_equal_meshhandler(layout):
     assert set(ours.channels) == {k for k, f in FIELDS.items() if getattr(h, f)}
     for name, ch in ours.channels.items():
         theirs = np.asarray(getattr(h, FIELDS[name]), np.float64)
-        assert ch.data.shape == theirs.shape, name                       # component count as stored
+        assert ch.data.shape == theirs.shape, name  # component count as stored
         assert np.array_equal(ch.data.astype(np.float64), theirs), name  # the stored values, not renormalized
     assert [p.indices.tolist() for p in ours.primitives] == [[list(t) for t in s] for s in h.get_triangles()]
 
@@ -113,20 +143,29 @@ def test_base_vertex_and_32_bit_indices():
     tt = mesh_tt("m", count, ch, idx, [submesh(0, 6, bits=32), submesh(6, 3, base_vertex=5, bits=32)], bits=32)
     m = mesh_of(tt)
     assert m.primitives[0].indices.tolist() == [[0, 1, 2], [69997, 69998, 69999]]
-    assert m.primitives[1].indices.tolist() == [[5, 6, 7]]                 # baseVertex added (UnityPy does not)
+    assert m.primitives[1].indices.tolist() == [[5, 6, 7]]  # baseVertex added (UnityPy does not)
     doc, body = gltf.read(gltf.write([m]))
     acc = doc["accessors"][doc["meshes"][0]["primitives"][0]["indices"]]
-    assert acc["componentType"] == 5125                                  # 69999 does not fit an unsigned short
-    assert gltf.accessor_array(doc, body, doc["meshes"][0]["primitives"][0]["indices"]).tolist() == \
-        [0, 2, 1, 69997, 69999, 69998]
+    assert acc["componentType"] == 5125  # 69999 does not fit an unsigned short
+    assert gltf.accessor_array(doc, body, doc["meshes"][0]["primitives"][0]["indices"]).tolist() == [
+        0,
+        2,
+        1,
+        69997,
+        69999,
+        69998,
+    ]
 
 
 def test_lines_and_points_stay_what_they_are():
     ch = {POSITION: (F32, 3, rng.normal(size=(5, 3)))}
     tt = mesh_tt("m", 5, ch, [0, 1, 1, 2, 3, 4, 0], [submesh(0, 4, 3), submesh(4, 2, 4), submesh(6, 1, 5)])
     m = mesh_of(tt)
-    assert [(p.topology, p.indices.tolist()) for p in m.primitives] == \
-        [("lines", [0, 1, 1, 2]), ("line_strip", [3, 4]), ("points", [0])]
+    assert [(p.topology, p.indices.tolist()) for p in m.primitives] == [
+        ("lines", [0, 1, 1, 2]),
+        ("line_strip", [3, 4]),
+        ("points", [0]),
+    ]
     doc, _ = gltf.read(gltf.write([m]))
     assert [p["mode"] for p in doc["meshes"][0]["primitives"]] == [1, 3, 0]
 
@@ -159,8 +198,18 @@ def test_skin_with_two_weights_per_vertex():
     count = 5
     ch = channels(count, skin="x2")
     poses = [matrix(np.eye(4) * (i + 1)) for i in range(5)]
-    m = mesh_of(mesh_tt("m", count, ch, tris(count, 2), [submesh(0, 6)], bind_poses=poses,
-                        bone_hashes=[11, 12, 13, 14, 15], root_hash=99))
+    m = mesh_of(
+        mesh_tt(
+            "m",
+            count,
+            ch,
+            tris(count, 2),
+            [submesh(0, 6)],
+            bind_poses=poses,
+            bone_hashes=[11, 12, 13, 14, 15],
+            root_hash=99,
+        )
+    )
     assert m.skin.joints.dtype == np.uint16 and m.skin.joints.shape == (5, 4)
     assert np.array_equal(m.skin.joints[:, :2], ch[BLENDINDICES][2]) and not m.skin.joints[:, 2:].any()
     assert np.array_equal(m.skin.weights.data[:, :2], ch[BLENDWEIGHT][2].astype(np.float32))
@@ -191,7 +240,7 @@ def test_inconsistent_or_variable_skins_are_reported():
     assert m.skin is None and [c for c, _ in m.issues] == ["partial.mesh.skin"]
     doc, _ = gltf.read(gltf.write([m]))
     attrs = doc["meshes"][0]["primitives"][0]["attributes"]
-    assert "JOINTS_0" not in attrs and {"_BLENDWEIGHT", "_BLENDINDICES"} <= set(attrs)   # kept as custom attributes
+    assert "JOINTS_0" not in attrs and {"_BLENDWEIGHT", "_BLENDINDICES"} <= set(attrs)  # kept as custom attributes
     m = mesh_of(mesh_tt("m", count, channels(count, skin="x2"), tris(count, 1), [submesh(0, 3)], variable_weights=3))
     assert m.skin is not None and [c for c, _ in m.issues] == ["partial.mesh.skin"]
 
@@ -207,8 +256,9 @@ def test_no_index_buffer_is_one_points_primitive(subs):
     m = mesh_of(mesh_tt("m", count, channels(count, color=False), [], subs))
     assert [(p.topology, p.indices) for p in m.primitives] == [("points", None)]
     doc, _ = gltf.read(gltf.write([m]))
-    assert doc["meshes"][0]["primitives"] == [{"attributes": doc["meshes"][0]["primitives"][0]["attributes"],
-                                               "mode": 0}]
+    assert doc["meshes"][0]["primitives"] == [
+        {"attributes": doc["meshes"][0]["primitives"][0]["attributes"], "mode": 0}
+    ]
 
 
 def test_empty_mesh_is_refused():
@@ -250,7 +300,7 @@ def test_glb_structure_space_conversion_and_minmax():
     acc = doc["accessors"][attrs["POSITION"]]
     assert acc["min"] == want.min(0).tolist() and acc["max"] == want.max(0).tolist()
     nrm = gltf.accessor_array(doc, body, attrs["NORMAL"])
-    assert np.array_equal(nrm, ch[NORMAL][2][:, :3].astype(np.float32) * [1, 1, -1])      # w (zero) dropped
+    assert np.array_equal(nrm, ch[NORMAL][2][:, :3].astype(np.float32) * [1, 1, -1])  # w (zero) dropped
     tan = gltf.accessor_array(doc, body, attrs["TANGENT"])
     assert np.array_equal(tan, np.asarray(ch[TANGENT][2], np.float16).astype(np.float32) * [1, 1, -1, -1])
     uv = gltf.accessor_array(doc, body, attrs["TEXCOORD_0"])
@@ -265,7 +315,7 @@ def test_glb_structure_space_conversion_and_minmax():
     assert doc["accessors"][prims[0]["indices"]]["componentType"] == 5123
     for v in doc["bufferViews"]:
         assert v["byteOffset"] % 4 == 0 and v.get("byteStride", 4) % 4 == 0
-    assert gltf.write([m], extras={"source": "x"}) == glb                                 # deterministic
+    assert gltf.write([m], extras={"source": "x"}) == glb  # deterministic
 
 
 def test_nonzero_extra_components_become_custom_attributes():
@@ -281,10 +331,12 @@ def test_nonzero_extra_components_become_custom_attributes():
 
 def test_normalized_and_small_attributes_are_aligned():
     count = 5
-    ch = {POSITION: (F32, 3, rng.normal(size=(count, 3))),
-          NORMAL: (SNORM16, 3, rng.integers(-32768, 32768, (count, 3))),
-          UV0: (UNORM16, 2, rng.integers(0, 65536, (count, 2))),
-          COLOR: (UNORM8, 3, rng.integers(0, 256, (count, 3)))}
+    ch = {
+        POSITION: (F32, 3, rng.normal(size=(count, 3))),
+        NORMAL: (SNORM16, 3, rng.integers(-32768, 32768, (count, 3))),
+        UV0: (UNORM16, 2, rng.integers(0, 65536, (count, 2))),
+        COLOR: (UNORM8, 3, rng.integers(0, 256, (count, 3))),
+    }
     m = mesh_of(mesh_tt("m", count, ch, [0, 1, 2], [submesh(0, 3)]))
     assert m.channels["normal"].normalized and m.channels["normal"].data.dtype == np.int16
     doc, body = gltf.read(gltf.write([m]))
@@ -294,8 +346,8 @@ def test_normalized_and_small_attributes_are_aligned():
     assert np.array_equal(gltf.accessor_array(doc, body, attrs["COLOR_0"]), ch[COLOR][2])
     uv = gltf.accessor_array(doc, body, attrs["TEXCOORD_0"])
     assert doc["accessors"][attrs["TEXCOORD_0"]]["normalized"] is True
-    assert uv[:, 1].tolist() == (65535 - ch[UV0][2][:, 1]).tolist()                      # v flipped exactly
-    nrm = gltf.accessor_array(doc, body, attrs["NORMAL"])                                # SNorm -> float (glTF)
+    assert uv[:, 1].tolist() == (65535 - ch[UV0][2][:, 1]).tolist()  # v flipped exactly
+    nrm = gltf.accessor_array(doc, body, attrs["NORMAL"])  # SNorm -> float (glTF)
     want = np.maximum(ch[NORMAL][2] / 32767.0, -1.0).astype(np.float32) * [1, 1, -1]
     assert nrm.dtype == np.float32 and np.array_equal(nrm, want.astype(np.float32))
 
@@ -320,8 +372,11 @@ def test_streamed_vertex_data_is_read_from_the_bundle():
     count = 6
     tt = mesh_tt("m", count, channels(count, half=True, color=False), tris(count, 2), [submesh(0, 6)])
     data = tt["m_VertexData"]["m_DataSize"]
-    streamed = dict(tt, m_VertexData=dict(tt["m_VertexData"], m_DataSize=b""),
-                    m_StreamData={"offset": 16, "size": len(data), "path": "archive:/CAB-a/CAB-a.resS"})
+    streamed = dict(
+        tt,
+        m_VertexData=dict(tt["m_VertexData"], m_DataSize=b""),
+        m_StreamData={"offset": 16, "size": len(data), "path": "archive:/CAB-a/CAB-a.resS"},
+    )
     env = FakeEnvironment()
     env.resources["CAB-a.resS"] = b"\xee" * 16 + data
     f = env.file("CAB-a")
@@ -337,12 +392,15 @@ def test_streamed_vertex_data_is_read_from_the_bundle():
 
 def test_sprite_render_mesh_input():
     from fakeunity import pptr, quad, rect, render_data, sprite_tt
+
     r = rect(0, 0, 40, 20)
     pos, idx = quad(r)
     tt = sprite_tt("s", r, render_data(pptr(3), r, 64, pos, idx))
     m = arrays(mesh_input_from_typetree(tt, VERSION))
-    assert np.array_equal(m.channels["position"].data, pos) and m.primitives[0].indices.tolist() == [[0, 1, 2],
-                                                                                                    [2, 1, 3]]
+    assert np.array_equal(m.channels["position"].data, pos) and m.primitives[0].indices.tolist() == [
+        [0, 1, 2],
+        [2, 1, 3],
+    ]
 
 
 def test_mesh_input_of_older_layouts_is_refused_by_the_atom():

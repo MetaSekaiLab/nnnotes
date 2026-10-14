@@ -21,6 +21,7 @@ codes listed in docs/stages.md.
 Heavy libraries (UnityPy, Pillow's codecs) are imported by the atom functions when first called, so importing this
 package or listing the registry does not load them.
 """
+
 from __future__ import annotations
 
 import importlib

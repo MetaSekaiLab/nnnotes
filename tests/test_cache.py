@@ -11,16 +11,20 @@ def fresh_cache():
     before = cache.settings()
     cache.configure(enabled=True, memory_mb=cache.DEFAULT_MEMORY_MB, directory="")
     yield
-    cache.configure(enabled=before["enabled"], memory_mb=before["memory"] >> 20,
-                    directory=before["directory"] or "", closures=before["closures"],
-                    closure_mb=before["closure_bytes"] >> 20)
+    cache.configure(
+        enabled=before["enabled"],
+        memory_mb=before["memory"] >> 20,
+        directory=before["directory"] or "",
+        closures=before["closures"],
+        closure_mb=before["closure_bytes"] >> 20,
+    )
 
 
 def test_key_is_unambiguous_and_stable():
     assert cache.key("ab", "c") != cache.key("a", "bc")
     assert cache.key(b"x") != cache.key("x")
     assert cache.key(1) != cache.key("1") != cache.key(1.0)
-    assert cache.key((1, 2), [b"a"]) == cache.key([1, 2], (b"a",))          # tuples and lists alike
+    assert cache.key((1, 2), [b"a"]) == cache.key([1, 2], (b"a",))  # tuples and lists alike
     assert cache.key(memoryview(b"abc")) == cache.key(b"abc") == cache.key(bytearray(b"abc"))
     assert len(cache.key()) == 64
     with pytest.raises(TypeError):
@@ -32,10 +36,10 @@ def test_bucket_lru_and_budget():
     b = cache.bucket("t-lru", max_item=1 << 20)
     k = [b.key(i) for i in range(5)]
     for i in range(4):
-        b.put(k[i], bytes(300 << 10))                 # 4 x 300 KiB > 1 MiB: the oldest goes
+        b.put(k[i], bytes(300 << 10))  # 4 x 300 KiB > 1 MiB: the oldest goes
     assert b.get(k[0]) is None
     assert all(b.get(x) is not None for x in k[1:4])
-    b.get(k[1])                                        # most recently used survives the next insert
+    b.get(k[1])  # most recently used survives the next insert
     b.put(k[4], bytes(300 << 10))
     assert b.get(k[1]) is not None and b.get(k[2]) is None
     s = b.stats()
@@ -49,7 +53,7 @@ def test_bucket_max_item_and_disabled():
     b.put(b.key("small"), b"x" * 10)
     assert b.get(b.key("small")) == b"x" * 10
     cache.configure(enabled=False)
-    assert b.get(b.key("small")) is None               # configure clears, and a disabled cache misses
+    assert b.get(b.key("small")) is None  # configure clears, and a disabled cache misses
     b.put(b.key("small"), b"y")
     assert b.get(b.key("small")) is None
     cache.configure(enabled=True)
@@ -69,11 +73,11 @@ def test_disk_layer_shared_and_checked(tmp_path):
     b.put(k, b"payload")
     files = [p for p in (tmp_path / "c").rglob("*") if p.is_file()]
     assert len(files) == 1 and not files[0].name.endswith(".part")
-    cache.clear()                                      # memory gone: the disk answers
+    cache.clear()  # memory gone: the disk answers
     assert b.get(k) == b"payload" and b.stats()["diskHits"] == 1
     other = cache.bucket("t-disk-other-salt", salt="s2", disk=True)
-    assert other.get(other.key("v")) is None           # another salt: another key
-    files[0].write_bytes(files[0].read_bytes()[:-1])   # a truncated file is a miss
+    assert other.get(other.key("v")) is None  # another salt: another key
+    files[0].write_bytes(files[0].read_bytes()[:-1])  # a truncated file is a miss
     cache.clear()
     assert b.get(k) is None
     files[0].write_bytes(b"garbage")

@@ -13,22 +13,46 @@ from UnityPy.streams.EndianBinaryReader import EndianBinaryReader
 import synth
 from nnnotes import cli
 from nnnotes.config import ConfigError
-from nnnotes.player import (HEADER, TYPETREE_FORMAT, PlayerData, UnsupportedVersion, dump_typetrees, load_typetrees,
-                            manifest_version_name, typetree_key, typetree_node)
+from nnnotes.player import (
+    HEADER,
+    TYPETREE_FORMAT,
+    PlayerData,
+    UnsupportedVersion,
+    dump_typetrees,
+    load_typetrees,
+    manifest_version_name,
+    typetree_key,
+    typetree_node,
+)
 
 TYPETREE_DIR = resources.files("nnnotes").joinpath("typetrees")
-EMBEDDED = sorted(f.name[:-len(".json")] for f in TYPETREE_DIR.iterdir() if f.name.endswith(".json"))
+EMBEDDED = sorted(f.name[: -len(".json")] for f in TYPETREE_DIR.iterdir() if f.name.endswith(".json"))
 ALIGN = 0x4000
 
 # a small MonoBehaviour in Unity's layout: header + one float field
-ROWS = [[0, "MonoBehaviour", "Base", 0],
-        [1, "PPtr<GameObject>", "m_GameObject", 0], [2, "int", "m_FileID", 0], [2, "SInt64", "m_PathID", 0],
-        [1, "UInt8", "m_Enabled", ALIGN],
-        [1, "PPtr<MonoScript>", "m_Script", 0], [2, "int", "m_FileID", 0], [2, "SInt64", "m_PathID", 0],
-        [1, "string", "m_Name", 0], [2, "Array", "Array", ALIGN], [3, "int", "size", 0], [3, "char", "data", 0],
-        [1, "float", "volume", 0]]
-DATA = (struct.pack("<iq", 0, 0) + b"\x01\x00\x00\x00" + struct.pack("<iq", 0, 5)
-        + struct.pack("<i", 4) + b"test" + struct.pack("<f", 0.5))
+ROWS = [
+    [0, "MonoBehaviour", "Base", 0],
+    [1, "PPtr<GameObject>", "m_GameObject", 0],
+    [2, "int", "m_FileID", 0],
+    [2, "SInt64", "m_PathID", 0],
+    [1, "UInt8", "m_Enabled", ALIGN],
+    [1, "PPtr<MonoScript>", "m_Script", 0],
+    [2, "int", "m_FileID", 0],
+    [2, "SInt64", "m_PathID", 0],
+    [1, "string", "m_Name", 0],
+    [2, "Array", "Array", ALIGN],
+    [3, "int", "size", 0],
+    [3, "char", "data", 0],
+    [1, "float", "volume", 0],
+]
+DATA = (
+    struct.pack("<iq", 0, 0)
+    + b"\x01\x00\x00\x00"
+    + struct.pack("<iq", 0, 5)
+    + struct.pack("<i", 4)
+    + b"test"
+    + struct.pack("<f", 0.5)
+)
 KEY = ("Game.Runtime", "Game.Sound", "Sample")
 HASH = "00112233445566778899aabbccddeeff"
 
@@ -45,7 +69,7 @@ def test_embedded_file_is_well_formed(version):
     doc = load_typetrees(version)
     assert doc["format"] == TYPETREE_FORMAT and doc["unityVersion"] == version
     assert isinstance(doc["gameVersion"], str) and doc["gameVersion"]
-    assert dump_typetrees(doc) == text                      # deterministic: sorted keys, one class per line
+    assert dump_typetrees(doc) == text  # deterministic: sorted keys, one class per line
     assert doc["classes"]
     for key, entry in doc["classes"].items():
         assert len(key.split("|")) == 3 and all(key.split("|")[1:])
@@ -69,15 +93,22 @@ def test_load_typetrees_unknown_version():
 
 
 def test_dump_is_sorted_and_compact():
-    doc = {"unityVersion": "1", "format": 1, "gameVersion": "2",
-           "classes": {"b|n|B": {"typeHash": HASH, "nodes": [[0, "B", "Base", 0]]},
-                       "a|n|A": {"nodes": [[0, "A", "Base", 0]], "typeHash": HASH}}}
+    doc = {
+        "unityVersion": "1",
+        "format": 1,
+        "gameVersion": "2",
+        "classes": {
+            "b|n|B": {"typeHash": HASH, "nodes": [[0, "B", "Base", 0]]},
+            "a|n|A": {"nodes": [[0, "A", "Base", 0]], "typeHash": HASH},
+        },
+    }
     text = dump_typetrees(doc)
     assert text.splitlines() == [
         '{"format":1,"gameVersion":"2","unityVersion":"1","classes":{',
         f'"a|n|A":{{"nodes":[[0,"A","Base",0]],"typeHash":"{HASH}"}},',
         f'"b|n|B":{{"nodes":[[0,"B","Base",0]],"typeHash":"{HASH}"}}',
-        "}}"]
+        "}}",
+    ]
     assert json.loads(text) == doc
 
 
@@ -95,16 +126,20 @@ class FakeObject:
         self.serialized_type = _Type(type_hash)
 
     def read_typetree(self, node, check_read=True):
-        return read_typetree(node, EndianBinaryReader(self.data, "<"), as_dict=True, byte_size=len(self.data),
-                             check_read=check_read)
+        return read_typetree(
+            node, EndianBinaryReader(self.data, "<"), as_dict=True, byte_size=len(self.data), check_read=check_read
+        )
 
 
 def player(classes=None, game_version="9.9.9"):
     p = PlayerData.__new__(PlayerData)
     p.unity_version = "6000.0.0f1"
     p.game_version = game_version
-    p.typetrees = None if classes is None else {"format": 1, "unityVersion": p.unity_version,
-                                                "gameVersion": "1.0.0", "classes": classes}
+    p.typetrees = (
+        None
+        if classes is None
+        else {"format": 1, "unityVersion": p.unity_version, "gameVersion": "1.0.0", "classes": classes}
+    )
     p._nodes = {}
     p._clear_memos()
     p.script = lambda o: KEY
@@ -127,15 +162,25 @@ def test_the_header_is_read_at_unitys_offsets():
 
 
 # ---------------------------------------------------------------- Unity's node layout
-CSHARP_NAMES = ("Bounds", "Color", "Color32", "LayerMask", "Quaternion", "Rect", "Vector2", "Vector2Int", "Vector3",
-                "Vector4")
+CSHARP_NAMES = (
+    "Bounds",
+    "Color",
+    "Color32",
+    "LayerMask",
+    "Quaternion",
+    "Rect",
+    "Vector2",
+    "Vector2Int",
+    "Vector3",
+    "Vector4",
+)
 
 
 def nodes(rows):
     """[(row, parent row or None, child rows)] of [level, type, name, meta flag] rows."""
     stack, parents, kids = [], [], [[] for _ in rows]
     for i, r in enumerate(rows):
-        del stack[r[0]:]
+        del stack[r[0] :]
         parents.append(rows[stack[-1]] if stack else None)
         if stack:
             kids[stack[-1]].append(r)
@@ -164,7 +209,10 @@ def unity_layout_errors(rows) -> list:
                 errors.append(f"root {ty} {nm}")
         elif ty == "string":
             want = False
-            if [k[1:3] for k in kids] != [["Array", "Array"]] or                     [k[1:3] for k in kids_of[id(kids[0])]] != [["int", "size"], ["char", "data"]]:
+            if [k[1:3] for k in kids] != [["Array", "Array"]] or [k[1:3] for k in kids_of[id(kids[0])]] != [
+                ["int", "size"],
+                ["char", "data"],
+            ]:
                 errors.append(f"{nm}: string not in full form")
         elif ty == "Array":
             if [k[2] for k in kids] != ["size", "data"]:
@@ -175,11 +223,11 @@ def unity_layout_errors(rows) -> list:
                 want = True
             elif parent[1] == "vector":
                 want = not elem.startswith("PPtr<")
-            else:                                        # an array of a serializable class keeps the class name
+            else:  # an array of a serializable class keeps the class name
                 want = False
                 if parent[1] != elem:
                     errors.append(f"{parent[2]}: array container {parent[1]} of {elem}")
-        elif parent[1] == "Array":                       # size, data
+        elif parent[1] == "Array":  # size, data
             want = False
         elif ty == "vector":
             arr = kids[0] if len(kids) == 1 and kids[0][1] == "Array" else None
@@ -191,7 +239,7 @@ def unity_layout_errors(rows) -> list:
             want = header[nm]
         elif not kids:
             want = ty in ("UInt8", "SInt8", "UInt16", "SInt16")
-        else:                                            # classes, PPtrs
+        else:  # classes, PPtrs
             want = False
         if align != want:
             label = f"{parent[2]}/Array" if ty == "Array" else nm
@@ -205,7 +253,7 @@ def test_embedded_rows_have_unitys_layout(version):
     for key, entry in doc["classes"].items():
         assert unity_layout_errors(entry["nodes"]) == [], key
     strings = [r for e in doc["classes"].values() for r in e["nodes"] if r[1] == "string"]
-    assert len(strings) >= len(doc["classes"])           # m_Name at least
+    assert len(strings) >= len(doc["classes"])  # m_Name at least
 
 
 def test_the_layout_check_catches_the_generators_forms():
@@ -213,20 +261,38 @@ def test_the_layout_check_catches_the_generators_forms():
     leaf = ROWS[:9] + [[1, "string", "m_Name", ALIGN]] + ROWS[12:]
     assert "m_Name: string not in full form" in unity_layout_errors(leaf)
     assert "m_Name (string): align True, Unity False" in unity_layout_errors(leaf)
-    shifted = [r[:3] + [ALIGN if r[2] in ("m_GameObject", "m_Script") else 0 if r[2] == "m_Enabled" else r[3]]
-               for r in ROWS]
-    assert unity_layout_errors(shifted) == ["m_GameObject (PPtr<GameObject>): align True, Unity False",
-                                            "m_Enabled (UInt8): align False, Unity True",
-                                            "m_Script (PPtr<MonoScript>): align True, Unity False"]
-    classes = ROWS + [[1, "Item", "_items", 0], [2, "Array", "Array", ALIGN], [3, "int", "size", 0],
-                      [3, "Item", "data", 0], [4, "UInt8", "on", ALIGN],
-                      [1, "vector", "_refs", 0], [2, "Array", "Array", 0], [3, "int", "size", 0],
-                      [3, "PPtr<$Mesh>", "data", 0], [4, "int", "m_FileID", 0], [4, "SInt64", "m_PathID", 0],
-                      [1, "vector", "_bytes", ALIGN], [2, "Array", "Array", ALIGN], [3, "int", "size", 0],
-                      [3, "UInt8", "data", 0],
-                      [1, "Vector2", "_size", 0], [2, "float", "x", 0], [2, "float", "y", 0]]
-    assert unity_layout_errors(classes) == ["_items/Array (Array): align True, Unity False",
-                                            "_size: C# type name Vector2"]
+    shifted = [
+        r[:3] + [ALIGN if r[2] in ("m_GameObject", "m_Script") else 0 if r[2] == "m_Enabled" else r[3]] for r in ROWS
+    ]
+    assert unity_layout_errors(shifted) == [
+        "m_GameObject (PPtr<GameObject>): align True, Unity False",
+        "m_Enabled (UInt8): align False, Unity True",
+        "m_Script (PPtr<MonoScript>): align True, Unity False",
+    ]
+    classes = ROWS + [
+        [1, "Item", "_items", 0],
+        [2, "Array", "Array", ALIGN],
+        [3, "int", "size", 0],
+        [3, "Item", "data", 0],
+        [4, "UInt8", "on", ALIGN],
+        [1, "vector", "_refs", 0],
+        [2, "Array", "Array", 0],
+        [3, "int", "size", 0],
+        [3, "PPtr<$Mesh>", "data", 0],
+        [4, "int", "m_FileID", 0],
+        [4, "SInt64", "m_PathID", 0],
+        [1, "vector", "_bytes", ALIGN],
+        [2, "Array", "Array", ALIGN],
+        [3, "int", "size", 0],
+        [3, "UInt8", "data", 0],
+        [1, "Vector2", "_size", 0],
+        [2, "float", "x", 0],
+        [2, "float", "y", 0],
+    ]
+    assert unity_layout_errors(classes) == [
+        "_items/Array (Array): align True, Unity False",
+        "_size: C# type name Vector2",
+    ]
 
 
 def test_unsupported_is_a_config_error():
@@ -235,16 +301,16 @@ def test_unsupported_is_a_config_error():
 
 def check_unsupported(e, *parts):
     msg = str(e.value)
-    for part in ("MonoBehaviour Game.Sound.Sample (Game.Runtime)", "Unity 6000.0.0f1", "is not supported yet",
-                 *parts):
+    for part in ("MonoBehaviour Game.Sound.Sample (Game.Runtime)", "Unity 6000.0.0f1", "is not supported yet", *parts):
         assert part in msg, (part, msg)
 
 
 def test_missing_class():
     with pytest.raises(UnsupportedVersion) as e:
         player({}).mono(FakeObject(DATA))
-    check_unsupported(e, "no embedded typetree for this class", "Game version 9.9.9",
-                      "embedded typetrees from game version 1.0.0")
+    check_unsupported(
+        e, "no embedded typetree for this class", "Game version 9.9.9", "embedded typetrees from game version 1.0.0"
+    )
 
 
 def test_missing_unity_version():
@@ -308,7 +374,8 @@ def gen_typetrees():
     """scripts/gen_typetrees.py (a maintainer tool, not part of the package)."""
     if "gen_typetrees" not in sys.modules:
         spec = importlib.util.spec_from_file_location(
-            "gen_typetrees", Path(__file__).resolve().parents[1] / "scripts" / "gen_typetrees.py")
+            "gen_typetrees", Path(__file__).resolve().parents[1] / "scripts" / "gen_typetrees.py"
+        )
         mod = importlib.util.module_from_spec(spec)
         sys.modules["gen_typetrees"] = mod
         spec.loader.exec_module(mod)
@@ -316,65 +383,142 @@ def gen_typetrees():
 
 
 # the header as TypeTreeGeneratorAPI writes it
-GEN_HEADER = [[0, "Sample", "Base", 0],
-              [1, "PPtr<GameObject>", "m_GameObject", ALIGN], [2, "int", "m_FileID", 0], [2, "SInt64", "m_PathID", 0],
-              [1, "UInt8", "m_Enabled", 0],
-              [1, "PPtr<MonoScript>", "m_Script", ALIGN], [2, "int", "m_FileID", 0], [2, "SInt64", "m_PathID", 0],
-              [1, "string", "m_Name", ALIGN]]
+GEN_HEADER = [
+    [0, "Sample", "Base", 0],
+    [1, "PPtr<GameObject>", "m_GameObject", ALIGN],
+    [2, "int", "m_FileID", 0],
+    [2, "SInt64", "m_PathID", 0],
+    [1, "UInt8", "m_Enabled", 0],
+    [1, "PPtr<MonoScript>", "m_Script", ALIGN],
+    [2, "int", "m_FileID", 0],
+    [2, "SInt64", "m_PathID", 0],
+    [1, "string", "m_Name", ALIGN],
+]
 
 
 def test_unity_rows_header_and_strings():
     g = gen_typetrees()
     assert g.unity_rows(GEN_HEADER + [[1, "float", "volume", 0]]) == ROWS
-    rows = g.unity_rows(GEN_HEADER + [[1, "string", "label", 0], [2, "Array", "Array", ALIGN], [3, "int", "size", 0],
-                                      [3, "char", "data", 0], [1, "UInt8", "on", ALIGN]])
-    assert rows[12:] == [[1, "string", "label", 0], [2, "Array", "Array", ALIGN], [3, "int", "size", 0],
-                         [3, "char", "data", 0], [1, "UInt8", "on", ALIGN]]
+    rows = g.unity_rows(
+        GEN_HEADER
+        + [
+            [1, "string", "label", 0],
+            [2, "Array", "Array", ALIGN],
+            [3, "int", "size", 0],
+            [3, "char", "data", 0],
+            [1, "UInt8", "on", ALIGN],
+        ]
+    )
+    assert rows[12:] == [
+        [1, "string", "label", 0],
+        [2, "Array", "Array", ALIGN],
+        [3, "int", "size", 0],
+        [3, "char", "data", 0],
+        [1, "UInt8", "on", ALIGN],
+    ]
     assert unity_layout_errors(rows) == []
 
 
 def test_unity_rows_arrays_and_builtin_structs():
     g = gen_typetrees()
     fields = [
-        [1, "string", "_names", 0], [2, "Array", "Array", ALIGN], [3, "int", "size", 0], [3, "string", "data", 0],
-        [1, "Color", "_colors", 0], [2, "Array", "Array", ALIGN], [3, "int", "size", 0], [3, "Color", "data", 0],
-        [4, "float", "r", 0], [4, "float", "g", 0], [4, "float", "b", 0], [4, "float", "a", 0],
-        [1, "Item", "_items", 0], [2, "Array", "Array", ALIGN], [3, "int", "size", 0], [3, "Item", "data", 0],
+        [1, "string", "_names", 0],
+        [2, "Array", "Array", ALIGN],
+        [3, "int", "size", 0],
+        [3, "string", "data", 0],
+        [1, "Color", "_colors", 0],
+        [2, "Array", "Array", ALIGN],
+        [3, "int", "size", 0],
+        [3, "Color", "data", 0],
+        [4, "float", "r", 0],
+        [4, "float", "g", 0],
+        [4, "float", "b", 0],
+        [4, "float", "a", 0],
+        [1, "Item", "_items", 0],
+        [2, "Array", "Array", ALIGN],
+        [3, "int", "size", 0],
+        [3, "Item", "data", 0],
         [4, "int", "id", 0],
-        [1, "vector", "_meshes", 0], [2, "Array", "Array", ALIGN], [3, "int", "size", 0],
-        [3, "PPtr<$Mesh>", "data", 0], [4, "int", "m_FileID", 0], [4, "SInt64", "m_PathID", 0],
-        [1, "vector", "_flags", 0], [2, "Array", "Array", ALIGN], [3, "int", "size", 0], [3, "UInt8", "data", 0],
-        [1, "Vector3", "_offset", 0], [2, "float", "x", 0], [2, "float", "y", 0], [2, "float", "z", 0],
+        [1, "vector", "_meshes", 0],
+        [2, "Array", "Array", ALIGN],
+        [3, "int", "size", 0],
+        [3, "PPtr<$Mesh>", "data", 0],
+        [4, "int", "m_FileID", 0],
+        [4, "SInt64", "m_PathID", 0],
+        [1, "vector", "_flags", 0],
+        [2, "Array", "Array", ALIGN],
+        [3, "int", "size", 0],
+        [3, "UInt8", "data", 0],
+        [1, "Vector3", "_offset", 0],
+        [2, "float", "x", 0],
+        [2, "float", "y", 0],
+        [2, "float", "z", 0],
         [1, "RenderingLayerMask", "_layers", 0],
-        [1, "PropertyName", "_exposed", 0], [2, "string", "id", 0], [3, "Array", "Array", ALIGN],
-        [4, "int", "size", 0], [4, "char", "data", 0],
+        [1, "PropertyName", "_exposed", 0],
+        [2, "string", "id", 0],
+        [3, "Array", "Array", ALIGN],
+        [4, "int", "size", 0],
+        [4, "char", "data", 0],
     ]
     rows = g.unity_rows(GEN_HEADER + fields)
     assert rows[12:] == [
-        [1, "vector", "_names", 0], [2, "Array", "Array", ALIGN], [3, "int", "size", 0], [3, "string", "data", 0],
-        [4, "Array", "Array", ALIGN], [5, "int", "size", 0], [5, "char", "data", 0],
-        [1, "vector", "_colors", 0], [2, "Array", "Array", ALIGN], [3, "int", "size", 0], [3, "ColorRGBA", "data", 0],
-        [4, "float", "r", 0], [4, "float", "g", 0], [4, "float", "b", 0], [4, "float", "a", 0],
-        [1, "Item", "_items", 0], [2, "Array", "Array", 0], [3, "int", "size", 0], [3, "Item", "data", 0],
+        [1, "vector", "_names", 0],
+        [2, "Array", "Array", ALIGN],
+        [3, "int", "size", 0],
+        [3, "string", "data", 0],
+        [4, "Array", "Array", ALIGN],
+        [5, "int", "size", 0],
+        [5, "char", "data", 0],
+        [1, "vector", "_colors", 0],
+        [2, "Array", "Array", ALIGN],
+        [3, "int", "size", 0],
+        [3, "ColorRGBA", "data", 0],
+        [4, "float", "r", 0],
+        [4, "float", "g", 0],
+        [4, "float", "b", 0],
+        [4, "float", "a", 0],
+        [1, "Item", "_items", 0],
+        [2, "Array", "Array", 0],
+        [3, "int", "size", 0],
+        [3, "Item", "data", 0],
         [4, "int", "id", 0],
-        [1, "vector", "_meshes", 0], [2, "Array", "Array", 0], [3, "int", "size", 0],
-        [3, "PPtr<$Mesh>", "data", 0], [4, "int", "m_FileID", 0], [4, "SInt64", "m_PathID", 0],
-        [1, "vector", "_flags", ALIGN], [2, "Array", "Array", ALIGN], [3, "int", "size", 0], [3, "UInt8", "data", 0],
-        [1, "Vector3f", "_offset", 0], [2, "float", "x", 0], [2, "float", "y", 0], [2, "float", "z", 0],
-        [1, "RenderingLayerMask", "_layers", 0], [2, "unsigned int", "m_Bits", 0],
-        [1, "string", "_exposed", 0], [2, "string", "id", ALIGN], [3, "Array", "Array", ALIGN],
-        [4, "int", "size", 0], [4, "char", "data", 0],
+        [1, "vector", "_meshes", 0],
+        [2, "Array", "Array", 0],
+        [3, "int", "size", 0],
+        [3, "PPtr<$Mesh>", "data", 0],
+        [4, "int", "m_FileID", 0],
+        [4, "SInt64", "m_PathID", 0],
+        [1, "vector", "_flags", ALIGN],
+        [2, "Array", "Array", ALIGN],
+        [3, "int", "size", 0],
+        [3, "UInt8", "data", 0],
+        [1, "Vector3f", "_offset", 0],
+        [2, "float", "x", 0],
+        [2, "float", "y", 0],
+        [2, "float", "z", 0],
+        [1, "RenderingLayerMask", "_layers", 0],
+        [2, "unsigned int", "m_Bits", 0],
+        [1, "string", "_exposed", 0],
+        [2, "string", "id", ALIGN],
+        [3, "Array", "Array", ALIGN],
+        [4, "int", "size", 0],
+        [4, "char", "data", 0],
     ]
     # the checker's rules hold except for the ExposedReference name (a string holding a string)
     assert unity_layout_errors(rows) == ["_exposed: string not in full form", "id (string): align True, Unity False"]
 
 
-@pytest.mark.parametrize("fields, message", [
-    ([[1, "managedReference", "_ref", 0]], "[SerializeReference]"),
-    ([[1, "Item", "_items", 0], [2, "Array", "Array", ALIGN], [3, "int", "size", 0], [3, "Other", "data", 0]],
-     "array container Item of Other"),
-    ([[1, "vector", "_v", 0], [2, "Array", "Array", ALIGN], [3, "int", "count", 0]], "unexpected Array children"),
-])
+@pytest.mark.parametrize(
+    "fields, message",
+    [
+        ([[1, "managedReference", "_ref", 0]], "[SerializeReference]"),
+        (
+            [[1, "Item", "_items", 0], [2, "Array", "Array", ALIGN], [3, "int", "size", 0], [3, "Other", "data", 0]],
+            "array container Item of Other",
+        ),
+        ([[1, "vector", "_v", 0], [2, "Array", "Array", ALIGN], [3, "int", "count", 0]], "unexpected Array children"),
+    ],
+)
 def test_unity_rows_refuses_what_it_has_no_layout_for(fields, message):
     with pytest.raises(ValueError, match=re.escape(message)):
         gen_typetrees().unity_rows(GEN_HEADER + fields)

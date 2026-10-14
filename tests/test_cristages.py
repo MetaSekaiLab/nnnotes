@@ -1,6 +1,7 @@
 """cri.audio and cri.movie on synthetic data: subjects by content (raw files and the ACB artifacts of unity.export),
 the ACB / AWB pairing, the key's source, the tools' ids, the artifacts equal to cri.decode's files and to
 advvideo.demux's streams, the unsupported forms, laziness, the documentation and the golden records' providers."""
+
 import json
 import re
 import subprocess
@@ -23,7 +24,7 @@ from test_advvideo import ADX, HCA, KEY, MPEG1, VP9, audio_header, build, chunk,
 ROOT = Path(__file__).resolve().parents[1]
 ACB = b"@UTF" + b"cue sheet bytes"
 AWB = b"AFS2" + b"streamed waveforms"
-NAMES = ["a", "b", "a", "c", "c"]                     # stream names (layered waveforms repeat a name)
+NAMES = ["a", "b", "a", "c", "c"]  # stream names (layered waveforms repeat a name)
 FAKE_ATOMS = {"hca.decode": "vgmstream-fake/1", "flac.encode": "ffmpeg-fake/1"}
 MOVIE_ATOMS = {"usm.demux", "movie.mux", "hca.decode"}
 
@@ -39,7 +40,7 @@ class FakeMux(FakeTools):
     by its inputs' bytes."""
 
     def __call__(self, args, **kw):
-        if Path(args[0]).name == "vgmstream" and args[1:3] == ["-i", "-o"]:      # an HCA stream of a movie
+        if Path(args[0]).name == "vgmstream" and args[1:3] == ["-i", "-o"]:  # an HCA stream of a movie
             with self.lock:
                 self.calls.append(args[1:3])
             Path(args[3]).write_bytes(b"RIFF" + Path(args[4]).read_bytes())
@@ -89,20 +90,29 @@ def catalog_index(keys: dict, bundles=()) -> dict:
     `bundles`: the names that are bundles."""
     files = sorted({s for deps in keys.values() for s in deps})
     lid = {s: f"remote:{i}" for i, s in enumerate(files)}
-    locations = [{"id": lid[s], "primaryKey": s, "kind": "bundle" if s in bundles else "raw", "dependencies": []}
-                 for s in files]
-    locations += [{"id": f"remote:{100 + i}", "primaryKey": k, "kind": "asset", "dependencies": [lid[s] for s in deps]}
-                  for i, (k, deps) in enumerate(sorted(keys.items()))]
-    return {"rawFiles": [{"stable": s, "locations": [lid[s]]} for s in files if s not in bundles],
-            "bundles": [{"stable": s, "locations": [lid[s]]} for s in files if s in bundles], "locations": locations}
+    locations = [
+        {"id": lid[s], "primaryKey": s, "kind": "bundle" if s in bundles else "raw", "dependencies": []} for s in files
+    ]
+    locations += [
+        {"id": f"remote:{100 + i}", "primaryKey": k, "kind": "asset", "dependencies": [lid[s] for s in deps]}
+        for i, (k, deps) in enumerate(sorted(keys.items()))
+    ]
+    return {
+        "rawFiles": [{"stable": s, "locations": [lid[s]]} for s in files if s not in bundles],
+        "bundles": [{"stable": s, "locations": [lid[s]]} for s in files if s in bundles],
+        "locations": locations,
+    }
 
 
 def planning(store, tmp, files: dict, keys=None, boot=True, bundles=()) -> Env:
     raw = {s: file_input(store, tmp, s, d) for s, d in files.items()}
     b = tmp / "data.unity3d"
     b.write_bytes(b"UnityFS boot data")
-    facts = {"raw": raw, "index": catalog_index(keys or {}, bundles),
-             "boot": cristages.boot_input(store, b) if boot else None}
+    facts = {
+        "raw": raw,
+        "index": catalog_index(keys or {}, bundles),
+        "boot": cristages.boot_input(store, b) if boot else None,
+    }
     return Env(store, facts)
 
 
@@ -110,12 +120,24 @@ def export_result(store, env, subject: str, acbs: dict, usms=None) -> str:
     """A committed unity.export result holding `cri.acb` artifacts {cue sheet: ACB bytes} and `cri.usm` artifacts
     {movie asset name: USM bytes}."""
     t = Task(EXPORT, 1, subject, {}, {}, (Input("bundle", store.put(subject.encode()), len(subject)),))
-    recs = [contract.artifact(f"CAB-{subject}:{i + 1}#acb", store.add(data, "acb"), contract.provenance(t),
-                              {"kind": "cri.acb", "format": "acb", "facts": {"cueSheet": sheet, "layout": "embedded"}})
-            for i, (sheet, data) in enumerate(sorted(acbs.items()))]
-    recs += [contract.artifact(f"CAB-{subject}:{100 + i}#usm", store.add(data, "usm"), contract.provenance(t),
-                               {"kind": "cri.usm", "format": "usm", "facts": {"movie": name}})
-             for i, (name, data) in enumerate(sorted((usms or {}).items()))]
+    recs = [
+        contract.artifact(
+            f"CAB-{subject}:{i + 1}#acb",
+            store.add(data, "acb"),
+            contract.provenance(t),
+            {"kind": "cri.acb", "format": "acb", "facts": {"cueSheet": sheet, "layout": "embedded"}},
+        )
+        for i, (sheet, data) in enumerate(sorted(acbs.items()))
+    ]
+    recs += [
+        contract.artifact(
+            f"CAB-{subject}:{100 + i}#usm",
+            store.add(data, "usm"),
+            contract.provenance(t),
+            {"kind": "cri.usm", "format": "usm", "facts": {"movie": name}},
+        )
+        for i, (name, data) in enumerate(sorted((usms or {}).items()))
+    ]
     store.commit(contract.result(t, recs, []))
     env.done(t.id, t.key)
     return t.id
@@ -146,11 +168,16 @@ def test_boot_input_from_an_apk_is_stored_once(tmp_path):
         z.writestr(cristages.BOOT_IN_APK, b"UnityFS boot")
         z.writestr("classes.dex", b"dex")
     a = cristages.boot_input(store, apk)
-    assert (a.role, a.sha256, a.size, a.name, a.locators) == ("boot", contract.sha256(b"UnityFS boot"), 12,
-                                                              "data.unity3d", ({"kind": "store"},))
+    assert (a.role, a.sha256, a.size, a.name, a.locators) == (
+        "boot",
+        contract.sha256(b"UnityFS boot"),
+        12,
+        "data.unity3d",
+        ({"kind": "store"},),
+    )
     assert store.read(a.sha256) == b"UnityFS boot"
     with mock.patch.object(zipfile, "ZipFile", side_effect=AssertionError("read again")):
-        assert cristages.boot_input(Store(tmp_path / "s"), apk) == a              # remembered by the APK's content
+        assert cristages.boot_input(Store(tmp_path / "s"), apk) == a  # remembered by the APK's content
     d = tmp_path / "data.unity3d"
     d.write_bytes(b"UnityFS other")
     b = cristages.boot_input(store, d)
@@ -162,8 +189,10 @@ def test_hca_key_is_read_once_per_content(tmp_path):
     store = Store(tmp_path / "s")
     inp = Input("boot", store.put(b"boot"), 4, None, ({"kind": "store"},))
     calls = []
-    with mock.patch.object(cristages, "_keys", {}), \
-            mock.patch.object(crikey, "find_key", lambda p: calls.append(Path(p).read_bytes()) or 77):
+    with (
+        mock.patch.object(cristages, "_keys", {}),
+        mock.patch.object(crikey, "find_key", lambda p: calls.append(Path(p).read_bytes()) or 77),
+    ):
         assert cristages.hca_key(store, inp) == cristages.hca_key(store, inp) == 77
     assert calls == [b"boot"]
 
@@ -188,12 +217,16 @@ def test_tool_ids_name_the_version_and_the_executable(tmp_path):
 def test_audio_subjects_by_content(tmp_path, tools):
     store = Store(tmp_path / "s")
     other = b"@UTF" + b"another sheet"
-    env = planning(store, tmp_path, {"cri_assets_cri/sound/bgm_x": ACB, "cri_assets_cri/video/m": usm_file()[0]},
-                   {"Cri/Sound/bgm_x": ["cri_assets_cri/sound/bgm_x"], "Cri/Video/m": ["cri_assets_cri/video/m"]})
+    env = planning(
+        store,
+        tmp_path,
+        {"cri_assets_cri/sound/bgm_x": ACB, "cri_assets_cri/video/m": usm_file()[0]},
+        {"Cri/Sound/bgm_x": ["cri_assets_cri/sound/bgm_x"], "Cri/Video/m": ["cri_assets_cri/video/m"]},
+    )
     tid = export_result(store, env, "cri_bundle", {"bgm_x": ACB, "se_live": other})
     stage = AudioStage()
     sha, other_sha = contract.sha256(ACB), contract.sha256(other)
-    assert stage.subjects(env) == sorted([sha, other_sha])                  # the raw ACB and its bundle copy: one
+    assert stage.subjects(env) == sorted([sha, other_sha])  # the raw ACB and its bundle copy: one
     assert stage.names(env) == {sha: ["Cri/Sound/bgm_x"], other_sha: ["se_live"]}
     assert stage.depends(sha, env) == [tid] and stage.depends(other_sha, env) == [tid]
     t = describe(stage, sha, None, env)
@@ -212,13 +245,14 @@ def test_audio_subjects_by_content(tmp_path, tools):
 
 def test_audio_waits_for_raw_files_not_fetched(tmp_path, tools):
     from nnnotes.cli_assets import Inputs
+
     store = Store(tmp_path / "s")
     env = planning(store, tmp_path, {"cri_assets_cri/sound/a": ACB})
     env.facts["raw"] = Inputs({**env.facts["raw"], "cri_assets_cri/sound/b": Pending("fetch:b_1")})
     with pytest.raises(Pending, match="fetch:b_1"):
         AudioStage().subjects(env)
     elsewhere = Input("raw", contract.sha256(b"x"), 1, "c_1", ({"kind": "catalog", "catalog": "v", "location": "r"},))
-    env.facts["raw"] = {"cri_assets_cri/sound/c": elsewhere}                  # only a catalog locator: not fetched
+    env.facts["raw"] = {"cri_assets_cri/sound/c": elsewhere}  # only a catalog locator: not fetched
     with pytest.raises(Pending, match="fetch:c_1"):
         AudioStage().subjects(env)
 
@@ -243,12 +277,23 @@ def test_audio_artifacts_are_the_files_of_cri_decode(tmp_path, tools, monkeypatc
         assert load(store, doc, f"{t.id}#{f}") == (ref / f).read_bytes(), f
     s = art(doc, f"{t.id}#a_3.flac")
     assert s["content"]["mediaType"] == "audio/flac" and "object" not in s["provenance"]
-    assert s["semantics"] == {"kind": "audio.stream", "format": "flac", "facts": {
-        "stream": 3, "name": "a", "sampleRate": 48000, "channels": 2, "samples": 3000, "loopStart": 3,
-        "loopEnd": 270}}
+    assert s["semantics"] == {
+        "kind": "audio.stream",
+        "format": "flac",
+        "facts": {
+            "stream": 3,
+            "name": "a",
+            "sampleRate": 48000,
+            "channels": 2,
+            "samples": 3000,
+            "loopStart": 3,
+            "loopEnd": 270,
+        },
+    }
     assert art(doc, f"{t.id}#cues.json")["semantics"]["facts"] == {"cues": 3}
-    assert doc["items"] == [{"object": t.id, "status": "exported", "artifacts": sorted(f"{t.id}#{f}" for f in files),
-                             "class": "ACB"}]
+    assert doc["items"] == [
+        {"object": t.id, "status": "exported", "artifacts": sorted(f"{t.id}#{f}" for f in files), "class": "ACB"}
+    ]
     assert doc["status"] == "ok" and not list(tmp_path.glob("**/_work"))
 
 
@@ -267,17 +312,28 @@ def test_audio_two_runs_and_levels(tmp_path, tools):
 
 def test_an_acb_with_an_external_awb_is_unsupported(tmp_path, tools):
     store = Store(tmp_path / "s")
-    env = planning(store, tmp_path, {"cri_assets_cri/sound/v": ACB, "cri_assets_cri/sound/v_awb": AWB},
-                   {"Cri/Sound/v": ["cri_assets_cri/sound/v", "cri_assets_cri/sound/v_awb"]})
+    env = planning(
+        store,
+        tmp_path,
+        {"cri_assets_cri/sound/v": ACB, "cri_assets_cri/sound/v_awb": AWB},
+        {"Cri/Sound/v": ["cri_assets_cri/sound/v", "cri_assets_cri/sound/v_awb"]},
+    )
     stage = AudioStage()
     sha = contract.sha256(ACB)
-    assert stage.subjects(env) == [sha]                                       # an AWB is not a subject
+    assert stage.subjects(env) == [sha]  # an AWB is not a subject
     t, doc = run(stage, env, sha)
     assert [i.role for i in t.inputs] == ["acb", "awb", "boot"] and t.input("awb").sha256 == contract.sha256(AWB)
-    assert doc["artifacts"] == [] and doc["items"] == [{"object": t.id, "status": "unsupported", "class": "ACB",
-                                                        "reason": {"code": "unsupported.cri.awb_external", "message":
-                                                                   "the cue sheet's waveforms are streamed from an "
-                                                                   "external AWB"}}]
+    assert doc["artifacts"] == [] and doc["items"] == [
+        {
+            "object": t.id,
+            "status": "unsupported",
+            "class": "ACB",
+            "reason": {
+                "code": "unsupported.cri.awb_external",
+                "message": "the cue sheet's waveforms are streamed from an external AWB",
+            },
+        }
+    ]
     assert tools.calls == []
 
 
@@ -293,10 +349,15 @@ def test_a_task_of_other_tools_is_incompatible(tmp_path, tools):
 # ---------------------------------------------------------------- cri.movie
 def test_movie_streams_as_stored_and_the_mkv(tmp_path, tools):
     from nnnotes import advvideo
+
     store = Store(tmp_path / "s")
     data, frames = usm_file()
-    env = planning(store, tmp_path, {"membercard/1/movie/anime_part1": data, "cri_assets_cri/sound/x": ACB},
-                   {"MemberCard/1/movie/anime_part1": ["membercard/1/movie/anime_part1"]})
+    env = planning(
+        store,
+        tmp_path,
+        {"membercard/1/movie/anime_part1": data, "cri_assets_cri/sound/x": ACB},
+        {"MemberCard/1/movie/anime_part1": ["membercard/1/movie/anime_part1"]},
+    )
     stage = MovieStage()
     sha = contract.sha256(data)
     assert stage.subjects(env) == [sha] and stage.names(env) == {sha: ["MemberCard/1/movie/anime_part1"]}
@@ -306,13 +367,19 @@ def test_movie_streams_as_stored_and_the_mkv(tmp_path, tools):
     video, audio = advvideo.demux(data, KEY)
     assert load(store, doc, f"{t.id}#video.ivf") == video.data == b"".join(frames)
     assert load(store, doc, f"{t.id}#audio.adx") == audio.data
-    assert art(doc, f"{t.id}#video.ivf")["semantics"] == {"kind": "video.stream", "format": "ivf", "facts": {
-        "codec": "vp9", "width": 320, "height": 180, "frameRate": [30, 1], "frames": 3}}
+    assert art(doc, f"{t.id}#video.ivf")["semantics"] == {
+        "kind": "video.stream",
+        "format": "ivf",
+        "facts": {"codec": "vp9", "width": 320, "height": 180, "frameRate": [30, 1], "frames": 3},
+    }
     assert art(doc, f"{t.id}#audio.adx")["semantics"]["facts"] == advvideo.adx_info(audio.data)
     mkv = art(doc, f"{t.id}#movie.mkv")
-    assert mkv["content"]["mediaType"] == "video/x-matroska" and mkv["semantics"]["facts"] == {"tracks": [
-        {"kind": "video", "channel": 0, "codec": "vp9"}, {"kind": "audio", "channel": 0, "codec": "flac",
-                                                          "source": "adx"}]}
+    assert mkv["content"]["mediaType"] == "video/x-matroska" and mkv["semantics"]["facts"] == {
+        "tracks": [
+            {"kind": "video", "channel": 0, "codec": "vp9"},
+            {"kind": "audio", "channel": 0, "codec": "flac", "source": "adx"},
+        ]
+    }
     assert b"-c:a|flac|-compression_level|8" in load(store, doc, mkv["id"])
     assert doc["items"][0]["status"] == "exported" and doc["items"][0]["class"] == "USM"
     with fake_tools(key=KEY):
@@ -330,31 +397,49 @@ def test_movie_without_audio(tmp_path, tools):
     with fake_tools(key=KEY):
         t, doc = run(MovieStage(), env, contract.sha256(data))
     assert sorted(a["id"] for a in doc["artifacts"]) == [f"{t.id}#movie.mkv", f"{t.id}#video.ivf"]
-    assert art(doc, f"{t.id}#movie.mkv")["semantics"]["facts"]["tracks"] == [{"kind": "video", "channel": 0,
-                                                                            "codec": "vp9"}]
+    assert art(doc, f"{t.id}#movie.mkv")["semantics"]["facts"]["tracks"] == [
+        {"kind": "video", "channel": 0, "codec": "vp9"}
+    ]
 
 
-EVERY = [(b"@SFV", 0, video_header(1, disp=(320, 180)), MPEG1, "video"),
-         (b"@ALP", 0, video_header(1, 320, 184, disp=(320, 180), alpha_type=1), MPEG1, "video"),
-         (b"@SFA", 0, audio_header(2), ADX, "audio"), (b"@SFA", 1, audio_header(2, 1), ADX, "audio"),
-         (b"@SFA", 2, audio_header(4), HCA, None),
-         (b"@SBT", 0, None, [sbt(0, 1000, 0, 1500, "こんにちは"), sbt(0, 1000, 2000, 1000, "b")], None),
-         (b"@SBT", 1, None, [sbt(1, 100, 0, 150, "en")], None)]
+EVERY = [
+    (b"@SFV", 0, video_header(1, disp=(320, 180)), MPEG1, "video"),
+    (b"@ALP", 0, video_header(1, 320, 184, disp=(320, 180), alpha_type=1), MPEG1, "video"),
+    (b"@SFA", 0, audio_header(2), ADX, "audio"),
+    (b"@SFA", 1, audio_header(2, 1), ADX, "audio"),
+    (b"@SFA", 2, audio_header(4), HCA, None),
+    (b"@SBT", 0, None, [sbt(0, 1000, 0, 1500, "こんにちは"), sbt(0, 1000, 2000, 1000, "b")], None),
+    (b"@SBT", 1, None, [sbt(1, 100, 0, 150, "en")], None),
+]
 
 
 def test_movie_every_stream_kind(tmp_path, tools):
     """MPEG-1 video and alpha, two ADX channels, an HCA channel (decoded by vgmstream with the key) and two subtitle
     channels: every stream as stored, the subtitles as JSON / SubRip / WebVTT, every track in the Matroska file."""
     from nnnotes import advvideo
+
     store = Store(tmp_path / "s")
     data = build(EVERY)
     env = planning(store, tmp_path, {"v/m": data})
     with fake_tools(key=KEY) as fake:
         t, doc = run(MovieStage(), env, contract.sha256(data))
     roles = sorted(contract.parse_artifact_id(a["id"])[1] for a in doc["artifacts"])
-    assert roles == sorted(["video.m1v", "alpha.m1v", "audio.adx", "audio_1.adx", "audio_2.hca", "subtitle.json",
-                            "subtitle.srt", "subtitle.vtt", "subtitle_1.json", "subtitle_1.srt", "subtitle_1.vtt",
-                            "movie.mkv"])
+    assert roles == sorted(
+        [
+            "video.m1v",
+            "alpha.m1v",
+            "audio.adx",
+            "audio_1.adx",
+            "audio_2.hca",
+            "subtitle.json",
+            "subtitle.srt",
+            "subtitle.vtt",
+            "subtitle_1.json",
+            "subtitle_1.srt",
+            "subtitle_1.vtt",
+            "movie.mkv",
+        ]
+    )
     assert doc["items"][0]["status"] == "exported"
     streams = {s.name: s for s in advvideo.demux(data, KEY)}
     assert load(store, doc, f"{t.id}#alpha.m1v") == streams["alpha"].data == b"".join(MPEG1)
@@ -363,21 +448,36 @@ def test_movie_every_stream_kind(tmp_path, tools):
     assert alpha["content"]["mediaType"] == "video/mpeg" and alpha["semantics"]["kind"] == "video.alpha"
     assert alpha["semantics"]["facts"]["alphaType"] == 1 and alpha["semantics"]["facts"]["displayHeight"] == 180
     assert art(doc, f"{t.id}#audio_2.hca")["semantics"]["facts"]["cipher"] == 56
-    assert json.loads(load(store, doc, f"{t.id}#subtitle.json")) == {"channel": 0, "records": [
-        {"language": 0, "timeUnit": 1000, "start": 0, "duration": 1500, "text": "こんにちは", "terminator": 1},
-        {"language": 0, "timeUnit": 1000, "start": 2000, "duration": 1000, "text": "b", "terminator": 1}]}
+    assert json.loads(load(store, doc, f"{t.id}#subtitle.json")) == {
+        "channel": 0,
+        "records": [
+            {"language": 0, "timeUnit": 1000, "start": 0, "duration": 1500, "text": "こんにちは", "terminator": 1},
+            {"language": 0, "timeUnit": 1000, "start": 2000, "duration": 1000, "text": "b", "terminator": 1},
+        ],
+    }
     assert load(store, doc, f"{t.id}#subtitle_1.srt") == b"1\n00:00:00,000 --> 00:00:01,500\nen\n\n"
-    assert load(store, doc, f"{t.id}#subtitle.vtt").startswith("WEBVTT\n\n00:00:00.000 --> 00:00:01.500\n"
-                                                                 "こんにちは\n".encode())
-    assert ["-i", "-o"] in fake.calls                                  # vgmstream decoded the HCA stream
+    assert load(store, doc, f"{t.id}#subtitle.vtt").startswith(
+        "WEBVTT\n\n00:00:00.000 --> 00:00:01.500\nこんにちは\n".encode()
+    )
+    assert ["-i", "-o"] in fake.calls  # vgmstream decoded the HCA stream
     mkv = art(doc, f"{t.id}#movie.mkv")
     assert [(x["kind"], x["channel"], x["codec"]) for x in mkv["semantics"]["facts"]["tracks"]] == [
-        ("video", 0, "mpeg1"), ("alpha", 0, "mpeg1"), ("audio", 0, "flac"), ("audio", 1, "flac"), ("audio", 2, "flac"),
-        ("subtitle", 0, "srt"), ("subtitle", 1, "srt")]
+        ("video", 0, "mpeg1"),
+        ("alpha", 0, "mpeg1"),
+        ("audio", 0, "flac"),
+        ("audio", 1, "flac"),
+        ("audio", 2, "flac"),
+        ("subtitle", 0, "srt"),
+        ("subtitle", 1, "srt"),
+    ]
     args = load(store, doc, mkv["id"]).split(b"\x00")[0]
-    assert (b"|+genpts|-f|mpegvideo|-i|video.m1v|" in args and b"|-f|wav|-i|audio_2.wav|" in args
-            and b"|-metadata:s:v:1|title=alpha|-disposition:v:1|0|" in args and b"|-map|6:s:0|" in args
-            and b"|-c:s|srt|" in args)
+    assert (
+        b"|+genpts|-f|mpegvideo|-i|video.m1v|" in args
+        and b"|-f|wav|-i|audio_2.wav|" in args
+        and b"|-metadata:s:v:1|title=alpha|-disposition:v:1|0|" in args
+        and b"|-map|6:s:0|" in args
+        and b"|-c:s|srt|" in args
+    )
 
 
 def test_movie_webm_forms(tmp_path, tools):
@@ -392,7 +492,8 @@ def test_movie_webm_forms(tmp_path, tools):
     assert webm["semantics"]["facts"]["tracks"] == [
         {"kind": "video", "channel": 0, "codec": "vp9", "source": "mpeg1"},
         {"kind": "alpha", "channel": 0, "codec": "vp9", "source": "mpeg1"},
-        {"kind": "audio", "channel": 0, "codec": "opus", "source": "adx"}]
+        {"kind": "audio", "channel": 0, "codec": "opus", "source": "adx"},
+    ]
     args = load(store, doc, webm["id"])
     assert b"alphamerge,format=yuva420p" in args and b"|-c:v|libvpx-vp9|-b:v|0|-crf|20|" in args
     assert b"audio_1" not in args and b"srt" not in args
@@ -402,26 +503,39 @@ def test_movie_subtitles_that_cannot_be_read(tmp_path, tools):
     """Subtitle bytes that are not records: stored as they are (`.sbt`); a text that is not UTF-8: the JSON only.
     Either way the movie is `unsupported` with its other artifacts, and the Matroska file has no track for them."""
     store = Store(tmp_path / "s")
-    data = build([(b"@SFV", 0, None, VP9, "video"), (b"@SBT", 0, None, [rand(0x30, 20)], None),
-                  (b"@SBT", 1, None, [sbt(0, 1000, 0, 10, b"\x82\xa0")], None)])
+    data = build(
+        [
+            (b"@SFV", 0, None, VP9, "video"),
+            (b"@SBT", 0, None, [rand(0x30, 20)], None),
+            (b"@SBT", 1, None, [sbt(0, 1000, 0, 10, b"\x82\xa0")], None),
+        ]
+    )
     env = planning(store, tmp_path, {"v/m": data})
     with fake_tools(key=KEY):
         t, doc = run(MovieStage(), env, contract.sha256(data))
     (item,) = doc["items"]
     assert item["status"] == "unsupported" and item["reason"]["code"] == "unsupported.usm.subtitle"
     assert sorted(contract.parse_artifact_id(a["id"])[1] for a in doc["artifacts"]) == [
-        "movie.mkv", "subtitle.sbt", "subtitle_1.json", "video.ivf"]
+        "movie.mkv",
+        "subtitle.sbt",
+        "subtitle_1.json",
+        "video.ivf",
+    ]
     assert sorted(item["artifacts"]) == sorted(a["id"] for a in doc["artifacts"])
     assert json.loads(load(store, doc, f"{t.id}#subtitle_1.json"))["records"][0]["textHex"] == "82a0"
-    assert art(doc, f"{t.id}#movie.mkv")["semantics"]["facts"]["tracks"] == [{"kind": "video", "channel": 0,
-                                                                            "codec": "vp9"}]
+    assert art(doc, f"{t.id}#movie.mkv")["semantics"]["facts"]["tracks"] == [
+        {"kind": "video", "channel": 0, "codec": "vp9"}
+    ]
 
 
-@pytest.mark.parametrize("streams, extra, code", [
-    ((), [chunk(b"@CUE", rand(0x40, 6))], "unsupported.usm.stream"),
-    ([(b"@ALP", 0, video_header(10), MPEG1, "video")], (), "unsupported.usm.codec"),
-    ([(b"@SFA", 1, audio_header(7), ADX, "audio")], (), "unsupported.usm.codec"),
-])
+@pytest.mark.parametrize(
+    "streams, extra, code",
+    [
+        ((), [chunk(b"@CUE", rand(0x40, 6))], "unsupported.usm.stream"),
+        ([(b"@ALP", 0, video_header(10), MPEG1, "video")], (), "unsupported.usm.codec"),
+        ([(b"@SFA", 1, audio_header(7), ADX, "audio")], (), "unsupported.usm.codec"),
+    ],
+)
 def test_unsupported_movies(tmp_path, tools, streams, extra, code):
     store = Store(tmp_path / "s")
     data, _ = usm_file(streams=streams, extra=extra)
@@ -438,9 +552,17 @@ def test_movie_held_in_a_bundle(tmp_path, tools):
     store = Store(tmp_path / "s")
     held, _ = usm_file(audio=False)
     raw, _ = usm_file()
-    env = planning(store, tmp_path, {"cri_assets_cri/video/m": raw},
-                   {"Cri/Video/m": ["cri_assets_cri/video/m"], "EmbCri/Video/common/warmup": ["embcri_video_common"],
-                    "EmbCri/Video/common/other": ["embcri_video_common"]}, bundles=("embcri_video_common",))
+    env = planning(
+        store,
+        tmp_path,
+        {"cri_assets_cri/video/m": raw},
+        {
+            "Cri/Video/m": ["cri_assets_cri/video/m"],
+            "EmbCri/Video/common/warmup": ["embcri_video_common"],
+            "EmbCri/Video/common/other": ["embcri_video_common"],
+        },
+        bundles=("embcri_video_common",),
+    )
     tid = export_result(store, env, "embcri_video_common", {}, {"warmup": held, "loose": raw})
     stage = MovieStage()
     sha, raw_sha = contract.sha256(held), contract.sha256(raw)
@@ -467,9 +589,11 @@ def test_movie_parameters():
 
 # ---------------------------------------------------------------- laziness and documentation
 def test_stage_modules_import_nothing_heavy():
-    code = ("import sys; import nnnotes.cristages as c; c.AudioStage().normalize(None); "
-            "print(sorted(m for m in ('UnityPy', 'numpy', 'PIL', 'nnnotes.cri', 'nnnotes.advvideo', 'nnnotes.export')"
-            " if m in sys.modules))")
+    code = (
+        "import sys; import nnnotes.cristages as c; c.AudioStage().normalize(None); "
+        "print(sorted(m for m in ('UnityPy', 'numpy', 'PIL', 'nnnotes.cri', 'nnnotes.advvideo', 'nnnotes.export')"
+        " if m in sys.modules))"
+    )
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, cwd=ROOT, check=True)
     assert out.stdout.strip() == "[]"
 
@@ -505,8 +629,12 @@ class GoldenMovie(MovieStage):
     @property
     def ATOMS(self) -> dict:
         from nnnotes.atoms import impl_id
-        return {"usm.demux": impl_id(("numpy",), cristages.USM_DEMUX_REVISION), "movie.mux": "ffmpeg-fake/1",
-                "hca.decode": "vgmstream-fake/1"}
+
+        return {
+            "usm.demux": impl_id(("numpy",), cristages.USM_DEMUX_REVISION),
+            "movie.mux": "ffmpeg-fake/1",
+            "hca.decode": "vgmstream-fake/1",
+        }
 
     def run(self, task, store):
         with fake_tools(key=KEY):
@@ -517,17 +645,29 @@ def _fixture(stage, role, data: bytes, params=None):
     def build(store):
         sha = store.put(data)
         boot = store.put(b"UnityFS boot data")
-        return Task(stage.name, stage.version, sha, stage.normalize(params), stage.ATOMS,
-                    (Input(role, sha, len(data), None, ({"kind": "store"},)),
-                     Input("boot", boot, 17, None, ({"kind": "store"},))))
+        return Task(
+            stage.name,
+            stage.version,
+            sha,
+            stage.normalize(params),
+            stage.ATOMS,
+            (
+                Input(role, sha, len(data), None, ({"kind": "store"},)),
+                Input("boot", boot, 17, None, ({"kind": "store"},)),
+            ),
+        )
+
     return build
 
 
 def audio_golden():
     """Provider of tests/golden/cri.audio.json."""
     s = GoldenAudio()
-    return {"stage": s, "fixtures": {"sheet": _fixture(s, "acb", ACB),
-                                     "level0": _fixture(s, "acb", ACB, {"flac": {"level": 0}})}, "libraries": []}
+    return {
+        "stage": s,
+        "fixtures": {"sheet": _fixture(s, "acb", ACB), "level0": _fixture(s, "acb", ACB, {"flac": {"level": 0}})},
+        "libraries": [],
+    }
 
 
 def movie_golden():
@@ -535,18 +675,31 @@ def movie_golden():
     s = GoldenMovie()
     data = usm_file()[0]
     alpha = usm_file(streams=[(b"@ALP", 0, video_header(1, alpha_type=1), MPEG1, "video")])[0]
-    every = build([(b"@SFV", 0, video_header(1), MPEG1, "video"), (b"@SFA", 0, None, ADX, "audio"),
-                   (b"@SFA", 1, audio_header(4), HCA, None), (b"@SBT", 0, None, [sbt(0, 1000, 0, 900, "a")], None)])
-    return {"stage": s, "fixtures": {"mkv": _fixture(s, "usm", data), "webm": _fixture(s, "usm", data, {"format": "webm"}),
-                                     "silent": _fixture(s, "usm", usm_file(audio=False)[0]),
-                                     "alpha": _fixture(s, "usm", alpha),
-                                     "alpha_webm": _fixture(s, "usm", alpha, {"format": "webm"}),
-                                     "every_kind": _fixture(s, "usm", every)},
-            "libraries": ["numpy"]}
+    every = build(
+        [
+            (b"@SFV", 0, video_header(1), MPEG1, "video"),
+            (b"@SFA", 0, None, ADX, "audio"),
+            (b"@SFA", 1, audio_header(4), HCA, None),
+            (b"@SBT", 0, None, [sbt(0, 1000, 0, 900, "a")], None),
+        ]
+    )
+    return {
+        "stage": s,
+        "fixtures": {
+            "mkv": _fixture(s, "usm", data),
+            "webm": _fixture(s, "usm", data, {"format": "webm"}),
+            "silent": _fixture(s, "usm", usm_file(audio=False)[0]),
+            "alpha": _fixture(s, "usm", alpha),
+            "alpha_webm": _fixture(s, "usm", alpha, {"format": "webm"}),
+            "every_kind": _fixture(s, "usm", every),
+        },
+        "libraries": ["numpy"],
+    }
 
 
 def test_golden_providers_run_twice_alike(tmp_path):
     from nnnotes.stages import golden, golden_problems
+
     for provider in (audio_golden, movie_golden):
         p = provider()
         a = golden(p["stage"], p["fixtures"], Store(tmp_path / f"{p['stage'].name}a"), p["libraries"])

@@ -3,6 +3,7 @@
 Outputs contain game data and belong outside either source repository. This is
 an inspectable prefab preview format, not a claim of Unity runtime parity.
 """
+
 from __future__ import annotations
 
 from collections import Counter
@@ -69,26 +70,40 @@ class UIExporter(Exporter):
                 self.decoded_sprites = {}
             self.decoded_sprites[texture_key] = image
             self.sprite_recs[key] = {
-                "name": tt["m_Name"], "textureRef": texture_key,
+                "name": tt["m_Name"],
+                "textureRef": texture_key,
                 "rect": {"x": 0, "y": 0, "width": image.width, "height": image.height},
                 "textureRect": {"x": 0, "y": 0, "width": image.width, "height": image.height},
-                "textureRectOffset": {"x": 0, "y": 0}, "border": tt["m_Border"],
-                "pivot": tt["m_Pivot"], "pixelsPerUnit": tt["m_PixelsToUnits"], "settingsRaw": 0,
+                "textureRectOffset": {"x": 0, "y": 0},
+                "border": tt["m_Border"],
+                "pivot": tt["m_Pivot"],
+                "pixelsPerUnit": tt["m_PixelsToUnits"],
+                "settingsRaw": 0,
             }
             return {"spriteRef": key, "name": tt["m_Name"]}
 
     def atlas(self, obj):
         tt = obj.read_typetree()
-        return {"atlas": tt["m_Name"], "sprites": [self.sprite(sprite) for ptr in tt.get("m_PackedSprites", [])
-                if (sprite := self.deref(obj, ptr)) is not None]}
+        return {
+            "atlas": tt["m_Name"],
+            "sprites": [
+                self.sprite(sprite)
+                for ptr in tt.get("m_PackedSprites", [])
+                if (sprite := self.deref(obj, ptr)) is not None
+            ],
+        }
 
 
 def _font_metrics(ex, document, out):
-    used = {c["m_fontAsset"]["name"] for n in document.get("nodes", []) for c in n["components"]
-            if isinstance(c.get("m_fontAsset"), dict) and "VibeMO" in c["m_fontAsset"].get("name", "")}
+    used = {
+        c["m_fontAsset"]["name"]
+        for n in document.get("nodes", [])
+        for c in n["components"]
+        if isinstance(c.get("m_fontAsset"), dict) and "VibeMO" in c["m_fontAsset"].get("name", "")
+    }
     if not used:
         return {}
-    (out / 'fonts').mkdir(parents=True, exist_ok=True)
+    (out / "fonts").mkdir(parents=True, exist_ok=True)
     result = {}
     for obj in ex._objects.values():
         if obj.type.name != "MonoBehaviour" or ex.script_class(obj) != "TMP_FontAsset":
@@ -104,9 +119,18 @@ def _font_metrics(ex, document, out):
         chars = {str(c["m_Unicode"]): c["m_GlyphIndex"] for c in tt["m_CharacterTable"] if 32 <= c["m_Unicode"] < 127}
         glyphs = {str(g["m_Index"]): g for g in tt["m_GlyphTable"] if g["m_Index"] in chars.values()}
         rel = f"fonts/{object_id(obj)}.json"
-        write_json(out / rel, {"name": tt["m_Name"], "face": tt["m_FaceInfo"], "characters": chars,
-                              "glyphs": glyphs, "texture": f"../textures/{identity(key)}.png", "textureBase": "metrics"})
-        result[tt['m_Name']] = rel
+        write_json(
+            out / rel,
+            {
+                "name": tt["m_Name"],
+                "face": tt["m_FaceInfo"],
+                "characters": chars,
+                "glyphs": glyphs,
+                "texture": f"../textures/{identity(key)}.png",
+                "textureBase": "metrics",
+            },
+        )
+        result[tt["m_Name"]] = rel
     if used - result.keys():
         raise ValueError("UI font metrics not present in the loaded dependency closure")
     return result
@@ -153,18 +177,38 @@ def resources(ex, document, out: Path, written=None) -> dict:
 
 def _record(out, ident, name, kind, document, resource_table, directory, **extra):
     rel = f"{directory}/{ident}.json"
-    write_json(out / rel, {"schema": 1, "format": "ournotes-ui-pack", "resourceBase": "../",
-                          "document": document, "resources": resource_table})
+    write_json(
+        out / rel,
+        {
+            "schema": 1,
+            "format": "ournotes-ui-pack",
+            "resourceBase": "../",
+            "document": document,
+            "resources": resource_table,
+        },
+    )
     nodes = document.get("nodes", [])
-    files = {rel, *resource_table.get('textures', {}).values(), *resource_table.get('fonts', {}).values(),
-             *resource_table.get('fontMetricsByAsset', {}).values()}
-    if resource_table.get('fontMetrics'):
-        files.add(resource_table['fontMetrics'])
-    return {"id": ident, "name": name, "kind": kind, "file": rel, "status": "exported",
-            "sha256": hashlib.sha256((out / rel).read_bytes()).hexdigest(), "node_count": len(nodes),
-            "classes": dict(Counter(c.get("class", c["type"]) for n in nodes for c in n["components"])),
-            "files": {name: hashlib.sha256(_output_file(out, name).read_bytes()).hexdigest() for name in sorted(files)},
-            "runtime_verified": False, **extra}
+    files = {
+        rel,
+        *resource_table.get("textures", {}).values(),
+        *resource_table.get("fonts", {}).values(),
+        *resource_table.get("fontMetricsByAsset", {}).values(),
+    }
+    if resource_table.get("fontMetrics"):
+        files.add(resource_table["fontMetrics"])
+    return {
+        "id": ident,
+        "name": name,
+        "kind": kind,
+        "file": rel,
+        "status": "exported",
+        "sha256": hashlib.sha256((out / rel).read_bytes()).hexdigest(),
+        "node_count": len(nodes),
+        "classes": dict(Counter(c.get("class", c["type"]) for n in nodes for c in n["components"])),
+        "files": {name: hashlib.sha256(_output_file(out, name).read_bytes()).hexdigest() for name in sorted(files)},
+        "runtime_verified": False,
+        **extra,
+    }
 
 
 def _output_file(out, name):
@@ -175,12 +219,12 @@ def _output_file(out, name):
 
 
 def _valid_record(out, record):
-    files = record.get('files') if record else None
-    if not files or record.get('status') != 'exported':
+    files = record.get("files") if record else None
+    if not files or record.get("status") != "exported":
         return False
-    if record.get('file') not in files:
+    if record.get("file") not in files:
         return False
-    _output_file(out, record['file'])
+    _output_file(out, record["file"])
     for name, expected in files.items():
         file = _output_file(out, name)
         if not file.is_file() or hashlib.sha256(file.read_bytes()).hexdigest() != expected:
@@ -188,7 +232,9 @@ def _valid_record(out, record):
     return True
 
 
-def export_library(cat, out, *, player=None, keys=None, prefix="EmbUI/", dependencies=True, force=False, provenance=None):
+def export_library(
+    cat, out, *, player=None, keys=None, prefix="EmbUI/", dependencies=True, force=False, provenance=None
+):
     """Incrementally export keys, their unregistered prefab roots and controllers.
 
     Resume verifies packs, dependency packs and every texture/font hash; failures stay explicit in index.json.
@@ -200,8 +246,10 @@ def export_library(cat, out, *, player=None, keys=None, prefix="EmbUI/", depende
         (out / directory).mkdir(exist_ok=True)
     keys = sorted(set(keys if keys is not None else cat.keys(prefix)))
     old = json.loads((out / "index.json").read_text(encoding="utf-8")) if (out / "index.json").is_file() else {}
-    provenance = provenance or {'apk_catalog_sha256': hashlib.sha256(cat._sources.get('apk', cat._sources['remote'])).hexdigest()}
-    if old and old.get('provenance') != provenance:
+    provenance = provenance or {
+        "apk_catalog_sha256": hashlib.sha256(cat._sources.get("apk", cat._sources["remote"])).hexdigest()
+    }
+    if old and old.get("provenance") != provenance:
         raise ValueError("UI output belongs to different input data; use a separate output directory")
     assets = {e["key"]: e for e in old.get("assets", [])}
     embedded = {e["id"]: e for e in old.get("embedded", [])}
@@ -209,32 +257,47 @@ def export_library(cat, out, *, player=None, keys=None, prefix="EmbUI/", depende
     written, processed_roots, processed_controllers = set(), set(), set()
 
     def exporter():
-        return UIExporter(cat, out, player=player, textures="deferred", inline_meshes=False,
-                          stub_assets=("TMP_FontAsset", "TMP_SpriteAsset", "TMP_StyleSheet"))
+        return UIExporter(
+            cat,
+            out,
+            player=player,
+            textures="deferred",
+            inline_meshes=False,
+            stub_assets=("TMP_FontAsset", "TMP_SpriteAsset", "TMP_StyleSheet"),
+        )
 
     def save_index():
         rows = sorted(assets.values(), key=lambda e: e["key"])
-        index = {"schema": 1, "format": "ournotes-ui-library", "scope": "serialized UI assets and dependency roots",
-                 "counts": dict(Counter(e["status"] for e in rows)), "assets": rows,
-                 "embedded": sorted(embedded.values(), key=lambda e: e["id"]),
-                 "controllers": sorted(controllers.values(), key=lambda e: e["id"]), "runtime_verified": False,
-                 "provenance": provenance}
-        write_atomic(out / 'index.json', dumps(index, indent=1, ensure_ascii=False).encode('utf-8'))
+        index = {
+            "schema": 1,
+            "format": "ournotes-ui-library",
+            "scope": "serialized UI assets and dependency roots",
+            "counts": dict(Counter(e["status"] for e in rows)),
+            "assets": rows,
+            "embedded": sorted(embedded.values(), key=lambda e: e["id"]),
+            "controllers": sorted(controllers.values(), key=lambda e: e["id"]),
+            "runtime_verified": False,
+            "provenance": provenance,
+        }
+        write_atomic(out / "index.json", dumps(index, indent=1, ensure_ascii=False).encode("utf-8"))
         return index
 
     for key in keys:
         previous = assets.get(key)
         if not force and _valid_record(out, previous):
-            refs = previous.get('dependencies', {})
-            valid_deps = (not dependencies or previous.get('dependency_export') and
-                          all(_valid_record(out, embedded.get(i)) for i in refs.get('embedded', [])) and
-                          all(_valid_record(out, controllers.get(i)) for i in refs.get('controllers', [])))
+            refs = previous.get("dependencies", {})
+            valid_deps = (
+                not dependencies
+                or previous.get("dependency_export")
+                and all(_valid_record(out, embedded.get(i)) for i in refs.get("embedded", []))
+                and all(_valid_record(out, controllers.get(i)) for i in refs.get("controllers", []))
+            )
             if valid_deps:
                 continue
         ident, name = identity(key), key.rsplit("/", 1)[-1]
         try:
             ex = exporter()
-            refs = {'embedded': [], 'controllers': []}
+            refs = {"embedded": [], "controllers": []}
             document = ex.export_key(key)
             env, graph = ex.load(key)
             main_roots = {n["nodeId"] for n in document.get("nodes", []) if n["path"].count("/") == 0}
@@ -246,31 +309,67 @@ def export_library(cat, out, *, player=None, keys=None, prefix="EmbUI/", depende
                     root_id = identity(f"{ex._go_file[go_pid]}:{go_pid}")
                     if root_id in main_roots:
                         continue
-                    refs['embedded'].append(root_id)
+                    refs["embedded"].append(root_id)
                     go_name = graph.go[go_pid]["m_Name"]
                     if root_id not in processed_roots and (force or not _valid_record(out, embedded.get(root_id))):
                         doc = {"key": go_name, "nodes": ex.hierarchy(env, graph, pid)}
-                        embedded[root_id] = _record(out, root_id, go_name, "prefab", doc, resources(ex, doc, out, written), "embedded", source_key=key)
+                        embedded[root_id] = _record(
+                            out,
+                            root_id,
+                            go_name,
+                            "prefab",
+                            doc,
+                            resources(ex, doc, out, written),
+                            "embedded",
+                            source_key=key,
+                        )
                         processed_roots.add(root_id)
             if dependencies:
                 for obj in env.objects:
                     if obj.type.name != "AnimatorController":
                         continue
                     cid = object_id(obj)
-                    refs['controllers'].append(cid)
+                    refs["controllers"].append(cid)
                     if cid in processed_controllers or not force and _valid_record(out, controllers.get(cid)):
                         continue
                     fresh = exporter()
                     fresh.load(key)
                     owned = fresh._objects[(obj.assets_file.name, obj.path_id)]
                     doc = fresh.controller(owned)
-                    controllers[cid] = _record(out, cid, doc["name"], "controller", doc, resources(fresh, doc, out, written), "controllers", source_key=key)
+                    controllers[cid] = _record(
+                        out,
+                        cid,
+                        doc["name"],
+                        "controller",
+                        doc,
+                        resources(fresh, doc, out, written),
+                        "controllers",
+                        source_key=key,
+                    )
                     processed_controllers.add(cid)
             kind = cat._entry(key)["internal_id"].rsplit(".", 1)[-1]
-            assets[key] = _record(out, ident, name, kind, document, resources(ex, document, out, written), "packs", key=key,
-                                  dependencies=refs, dependency_export=dependencies)
+            assets[key] = _record(
+                out,
+                ident,
+                name,
+                kind,
+                document,
+                resources(ex, document, out, written),
+                "packs",
+                key=key,
+                dependencies=refs,
+                dependency_export=dependencies,
+            )
         except Exception as exc:
-            assets[key] = {"id": ident, "name": name, "key": key, "status": "failed", "error_type": type(exc).__name__, "error": str(exc), "runtime_verified": False}
+            assets[key] = {
+                "id": ident,
+                "name": name,
+                "key": key,
+                "status": "failed",
+                "error_type": type(exc).__name__,
+                "error": str(exc),
+                "runtime_verified": False,
+            }
         save_index()
     return save_index()
 
@@ -281,30 +380,48 @@ def command(args, cfg):
     from .catalog import Catalog, APK_CATALOG
     from .config import ConfigError
     from .player import MANIFEST_IN_APK, manifest_version_name, manifest_version_code
+
     if args.limit is not None and args.limit < 1:
         args.usage("--limit must be positive")
     apk = cfg.require_path("paths", "apk")
     with ApkSet(apk) as source:
         catalog_data = source.read(APK_CATALOG)
         members = sorted((i.filename, i.CRC, i.file_size) for i in source.infolist())
-        manifest = source.read(MANIFEST_IN_APK) if MANIFEST_IN_APK in source.namelist() else b''
-        provenance = {'apk_catalog_sha256': hashlib.sha256(catalog_data).hexdigest(),
-                      'apk_members_sha256': hashlib.sha256(dumps(members).encode('utf-8')).hexdigest(),
-                      'region': cfg.get('catalog', 'region'),
-                      'client': {'versionName': manifest_version_name(manifest), 'versionCode': manifest_version_code(manifest)}}
+        manifest = source.read(MANIFEST_IN_APK) if MANIFEST_IN_APK in source.namelist() else b""
+        provenance = {
+            "apk_catalog_sha256": hashlib.sha256(catalog_data).hexdigest(),
+            "apk_members_sha256": hashlib.sha256(dumps(members).encode("utf-8")).hexdigest(),
+            "region": cfg.get("catalog", "region"),
+            "client": {"versionName": manifest_version_name(manifest), "versionCode": manifest_version_code(manifest)},
+        }
     cat = Catalog(catalog_data, cfg.require_path("paths", "cache"), bundle_key=lambda: bundle_key(cfg), apk=apk)
     keys = args.key or cat.keys(args.prefix)
     if args.limit is not None:
-        keys = keys[:args.limit]
+        keys = keys[: args.limit]
     unknown = sorted(set(keys) - set(cat.keys("")))
     if unknown:
         raise ConfigError("UI key not in the APK catalog: " + ", ".join(unknown))
     try:
-        index = export_library(cat, args.out, player=player_data(cfg), keys=keys, dependencies=not args.no_dependencies,
-                               force=args.force, provenance=provenance)
+        index = export_library(
+            cat,
+            args.out,
+            player=player_data(cfg),
+            keys=keys,
+            dependencies=not args.no_dependencies,
+            force=args.force,
+            provenance=provenance,
+        )
     except ValueError as exc:
         raise ConfigError(str(exc)) from None
-    print(json.dumps({"index": str(Path(args.out).resolve() / "index.json"), "counts": index["counts"],
-                      "embedded": len(index["embedded"]), "controllers": len(index["controllers"])}))
+    print(
+        json.dumps(
+            {
+                "index": str(Path(args.out).resolve() / "index.json"),
+                "counts": index["counts"],
+                "embedded": len(index["embedded"]),
+                "controllers": len(index["controllers"]),
+            }
+        )
+    )
     if index["counts"].get("failed"):
         raise SystemExit(1)

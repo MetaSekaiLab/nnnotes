@@ -47,6 +47,7 @@ The command `nnnotes voices` lists, searches and fetches voices from that docume
 index built from the configured master data and catalog (content only; the episodes named by --episode or a row id
 are read from the catalog). Nothing here imports UnityPy or numpy before a sheet is decoded or an episode loaded.
 """
+
 from __future__ import annotations
 
 import copy
@@ -81,8 +82,12 @@ _RULE_KEYS = {"version", "key", "prefixes", "sound", "characters", "enums", "sou
 _STORY_KEYS = {"table", "asset", "title", "key", "shards", "split", "kinds"}
 _KIND_KEYS = {"kind", "table", "adv", "fields", "names"}
 # story part -> (the class of its object, the unity.export artifact role that holds its content)
-STORY_OBJECTS = {"script": ("MonoBehaviour", "json"), "text": ("TextAsset", "data"), "sound": ("TextAsset", "data"),
-                 "sheets": ("TextAsset", "data")}
+STORY_OBJECTS = {
+    "script": ("MonoBehaviour", "json"),
+    "text": ("TextAsset", "data"),
+    "sound": ("TextAsset", "data"),
+    "sheets": ("TextAsset", "data"),
+}
 
 
 # ---------------------------------------------------------------- rules
@@ -143,13 +148,15 @@ def check_rules(rules: dict) -> None:
 
 def _check_story(st) -> None:
     if not isinstance(st, dict) or set(st) - _STORY_KEYS or not all(st.get(k) for k in ("table", "asset", "key")):
-        raise views.ViewError(f"voices.story: keys are {', '.join(sorted(_STORY_KEYS))} (table, asset and key "
-                              f"needed)")
+        raise views.ViewError(f"voices.story: keys are {', '.join(sorted(_STORY_KEYS))} (table, asset and key needed)")
     if set(views.fields(st["key"])) != {"asset"}:
         raise views.ViewError("voices.story: key is a template of {asset}")
     shards = st.get("shards")
-    if not isinstance(shards, dict) or set(shards) != {"text", "sound", "sheets"} or not all(
-            isinstance(x, str) and x for x in shards.values()):
+    if (
+        not isinstance(shards, dict)
+        or set(shards) != {"text", "sound", "sheets"}
+        or not all(isinstance(x, str) and x for x in shards.values())
+    ):
         raise views.ViewError("voices.story.shards: the key suffixes of text, sound and sheets")
     if not isinstance(st.get("split", ""), str):
         raise views.ViewError("voices.story.split: a string")
@@ -231,19 +238,30 @@ def sheet_audio(result: dict | None, cues: dict | None) -> dict:
         n = f.pop("stream", None)
         if n is None:
             continue
-        streams[int(n)] = {"artifact": a["id"], "file": contract.parse_artifact_id(a["id"])[1],
-                           "sha256": a["content"]["sha256"], "size": a["content"]["size"], **f}
+        streams[int(n)] = {
+            "artifact": a["id"],
+            "file": contract.parse_artifact_id(a["id"])[1],
+            "sha256": a["content"]["sha256"],
+            "size": a["content"]["size"],
+            **f,
+        }
     item = next(iter(result["items"]), {})
-    out = {"status": "unsupported" if item.get("status") == "unsupported" else "exported",
-           "streams": streams, "cues": cues or {}}
+    out = {
+        "status": "unsupported" if item.get("status") == "unsupported" else "exported",
+        "streams": streams,
+        "cues": cues or {},
+    }
     if out["status"] == "unsupported":
         out["why"] = (item.get("reason") or {}).get("code")
     return out
 
 
 def _stream_entry(s: dict) -> dict:
-    e = {k: s[k] for k in ("artifact", "file", "sha256", "size", "sampleRate", "channels", "samples", "loopStart",
-                           "loopEnd") if k in s}
+    e = {
+        k: s[k]
+        for k in ("artifact", "file", "sha256", "size", "sampleRate", "channels", "samples", "loopStart", "loopEnd")
+        if k in s
+    }
     if s.get("samples") and s.get("sampleRate"):
         e["seconds"] = round(s["samples"] / s["sampleRate"], 6)
     return e
@@ -261,8 +279,9 @@ class _Master:
         self.characters = {}
         ids = {}
         for r in sorted(self.look.rows(cd["table"]), key=lambda r: views._sort_key(r.get("_id"))):
-            names = {k: self.look.text(r.get(col)) for k, col in cd.get("names", {}).items()
-                     if not views._empty(r.get(col))}
+            names = {
+                k: self.look.text(r.get(col)) for k, col in cd.get("names", {}).items() if not views._empty(r.get(col))
+            }
             ids[r.get("_id")] = str(r.get(cd["token"]) or "")
             token = ids[r.get("_id")].rsplit("_", 1)[-1]
             self.characters[r.get("_id")] = {"id": r.get("_id"), "names": names, "token": token}
@@ -302,8 +321,7 @@ class _Resolver:
         self.reached: dict[str, set] = {}
 
     def __call__(self, sheet, cue) -> dict:
-        out = {"availability": {"master": sheet is not None and cue is not None, "catalog": None,
-                                "exported": False}}
+        out = {"availability": {"master": sheet is not None and cue is not None, "catalog": None, "exported": False}}
         if sheet is None or cue is None:
             return out
         present = self.index.objects(self.key.format(sheet=sheet)) is not None
@@ -328,8 +346,11 @@ class _Resolver:
             if s is None:
                 problems.append(f"waveform {w.get('awbId')} is not a decoded stream")
                 continue
-            if abs((s.get("samples") or 0) - (w.get("samples") or 0)) > 8 or s.get("sampleRate") != w.get(
-                    "sampleRate") or s.get("channels") != w.get("channels"):
+            if (
+                abs((s.get("samples") or 0) - (w.get("samples") or 0)) > 8
+                or s.get("sampleRate") != w.get("sampleRate")
+                or s.get("channels") != w.get("channels")
+            ):
                 problems.append(f"stream {w['stream']}: the ACB's waveform differs from the decoded stream")
             streams.append({"stream": w["stream"], **_stream_entry(s)})
             self.reached.setdefault(sheet, set()).add(w["stream"])
@@ -396,19 +417,30 @@ def _row_sources(m: _Master, resolve: _Resolver, named: set) -> list[dict]:
                 rid = f"{s['table']}:{raw.get('_id')}" + (f":{x['slot']}" if len(s["voices"]) > 1 else "")
                 source = {"name": s["name"], "table": s["table"], "row": raw.get("_id"), "column": x["sound"]}
                 if stype is not None:
-                    source["type"] = {"enum": "CharacterVoiceMasterType", "value": stype,
-                                      "name": m.enum("CharacterVoiceMasterType", stype)}
+                    source["type"] = {
+                        "enum": "CharacterVoiceMasterType",
+                        "value": stype,
+                        "name": m.enum("CharacterVoiceMasterType", stype),
+                    }
                 if len(s["voices"]) > 1:
                     source["slot"] = x["slot"]
                 chars = _characters(raw.get(x["character"] if "character" in x else x["characters"]))
                 sound, sheet, cue, why = _sound_fields(m, sid)
-                row = {"id": rid, "source": source, "characters": chars, "category": _category(m, s, raw),
-                       "sound": sound}
+                row = {
+                    "id": rid,
+                    "source": source,
+                    "characters": chars,
+                    "category": _category(m, s, raw),
+                    "sound": sound,
+                }
                 text = m.text(raw.get(x["text"])) if "text" in x else None
                 if text is not None:
                     row["text"] = text
-                names = {k: m.look.text(raw.get(col)) for k, col in s.get("names", {}).items()
-                         if not views._empty(raw.get(col))}
+                names = {
+                    k: m.look.text(raw.get(col))
+                    for k, col in s.get("names", {}).items()
+                    if not views._empty(raw.get(col))
+                }
                 if names:
                     row["names"] = names
                 cond = {c: raw[c] for c in s.get("conditions", []) if c in raw and not views._empty(raw[c])}
@@ -430,11 +462,19 @@ def _code_sources(m: _Master, resolve: _Resolver) -> list[dict]:
         for c in sorted(by_char, key=views._sort_key):
             for pat in s["cues"]:
                 cue = pat["cue"].format(character=c)
-                row = {"id": f"{s['name']}:{c}:{pat['category']}",
-                       "source": {"name": s["name"], "table": s["table"], "rows": by_char[c], "column": s["characters"],
-                                  "cue": pat["cue"]},
-                       "characters": [c], "category": {"name": pat["category"]},
-                       "sound": {"id": None, "sheet": s["sheet"], "cue": cue}}
+                row = {
+                    "id": f"{s['name']}:{c}:{pat['category']}",
+                    "source": {
+                        "name": s["name"],
+                        "table": s["table"],
+                        "rows": by_char[c],
+                        "column": s["characters"],
+                        "cue": pat["cue"],
+                    },
+                    "characters": [c],
+                    "category": {"name": pat["category"]},
+                    "sound": {"id": None, "sheet": s["sheet"], "cue": cue},
+                }
                 out.append(_finish(row, resolve(s["sheet"], cue), None))
     return out
 
@@ -467,11 +507,17 @@ def _sound_rows(m: _Master, resolve: _Resolver, named: set, rows: list[dict]) ->
         if r["source"]["name"] in wanted and r["sound"].get("sheet"):
             near.setdefault(r["sound"]["sheet"], set()).add(r["id"])
     out = []
-    for sid in sorted((k for k, r in m.sound.items() if r.get(sd["category"]) == sd["voice"] and k not in named),
-                      key=views._sort_key):
+    for sid in sorted(
+        (k for k, r in m.sound.items() if r.get(sd["category"]) == sd["voice"] and k not in named), key=views._sort_key
+    ):
         sound, sheet, cue, why = _sound_fields(m, sid)
-        row = {"id": f"{sd['table']}:{sid}", "source": {"name": SOUND_SOURCE, "table": sd["table"], "row": sid},
-               "characters": [], "category": {"name": None}, "sound": sound}
+        row = {
+            "id": f"{sd['table']}:{sid}",
+            "source": {"name": SOUND_SOURCE, "table": sd["table"], "row": sid},
+            "characters": [],
+            "category": {"name": None},
+            "sound": sound,
+        }
         inf = _inferred(m, sheet, sound.get("cue"), near)
         if inf:
             row["inferred"] = inf
@@ -520,7 +566,7 @@ def _speaker_matches(m: _Master, target: str) -> list[dict]:
     in order, each character once."""
     split = m.v["story"].get("split") or ""
     out = []
-    for part in (target.split(split) if split else [target]):
+    for part in target.split(split) if split else [target]:
         seg = part.strip()
         c = m.name_parts.get(seg.casefold()) if seg else None
         if c is not None and all(x["character"] != c for x in out):
@@ -529,8 +575,7 @@ def _speaker_matches(m: _Master, target: str) -> list[dict]:
 
 
 def _unresolved(status: str, detail: str) -> dict:
-    return {"availability": {"master": False, "catalog": None, "exported": False}, "status": status,
-            "detail": detail}
+    return {"availability": {"master": False, "catalog": None, "exported": False}, "status": status, "detail": detail}
 
 
 def _story_rows(m: _Master, resolve: _Resolver, index, story: dict) -> tuple[list[dict], list[dict]]:
@@ -578,15 +623,28 @@ def _story_rows(m: _Master, resolve: _Resolver, index, story: dict) -> tuple[lis
         for c in data["commands"]:
             vids = [v for v in c.get("VoiceIDs") or () if not views._empty(v)]
             for n, vid in enumerate(vids, 1):
-                source = {"name": STORY_SOURCE, "table": st["table"], "row": aid, "command": c.get("Index"),
-                          "type": {"enum": "AdvCommand", "value": c.get("Command"),
-                                   "name": advcommand.name(c.get("Command"))}}
+                source = {
+                    "name": STORY_SOURCE,
+                    "table": st["table"],
+                    "row": aid,
+                    "command": c.get("Index"),
+                    "type": {
+                        "enum": "AdvCommand",
+                        "value": c.get("Command"),
+                        "name": advcommand.name(c.get("Command")),
+                    },
+                }
                 if len(vids) > 1:
                     source["slot"] = str(n)
                 if c.get("IgnoreData"):
                     source["ignoreData"] = True
-                row = {"id": f"{st['table']}:{aid}:{c.get('Index')}" + (f":{n}" if len(vids) > 1 else ""),
-                       "source": source, "characters": [], "category": {"name": ep["kind"]}, "sound": {"id": vid}}
+                row = {
+                    "id": f"{st['table']}:{aid}:{c.get('Index')}" + (f":{n}" if len(vids) > 1 else ""),
+                    "source": source,
+                    "characters": [],
+                    "category": {"name": ep["kind"]},
+                    "sound": {"id": vid},
+                }
                 if not views._empty(c.get("AdvTextID")):
                     row["text"] = text_of(c["AdvTextID"])
                 target, tids = c.get("TargetName") or "", list(c.get("TargetTextIDs") or ())
@@ -594,8 +652,11 @@ def _story_rows(m: _Master, resolve: _Resolver, index, story: dict) -> tuple[lis
                     row["speaker"] = {"name": target, "texts": [text_of(t) for t in tids]}
                 matches = _speaker_matches(m, target)
                 if matches:
-                    row["inferred"] = {"characters": [x["character"] for x in matches], "rule": SPEAKER_RULE,
-                                       "matches": matches}
+                    row["inferred"] = {
+                        "characters": [x["character"] for x in matches],
+                        "rule": SPEAKER_RULE,
+                        "matches": matches,
+                    }
                 res, why = sound_gap, None
                 if res is None:
                     s = sounds.get(vid)
@@ -619,8 +680,9 @@ def _story_rows(m: _Master, resolve: _Resolver, index, story: dict) -> tuple[lis
     return episodes, rows
 
 
-def _coverage(v: dict, rows: list[dict], index, audio: dict, reached: dict, empty: dict,
-              episodes: list[dict] | None = None) -> dict:
+def _coverage(
+    v: dict, rows: list[dict], index, audio: dict, reached: dict, empty: dict, episodes: list[dict] | None = None
+) -> dict:
     sources = {}
     for s in [x["name"] for x in v["sources"]] + [SOUND_SOURCE] + ([STORY_SOURCE] if "story" in v else []):
         sources[s] = {"rows": 0, "counts": {}, "gaps": []}
@@ -633,8 +695,10 @@ def _coverage(v: dict, rows: list[dict], index, audio: dict, reached: dict, empt
             counts[e["status"]] = counts.get(e["status"], 0) + 1
         sources[STORY_SOURCE]["empty"] = sum(1 for e in eps if e["status"] == "ok" and not e["voices"])
         sources[STORY_SOURCE]["episodes"] = {
-            "count": len(eps), "counts": dict(sorted(counts.items())),
-            "gaps": [f"{v['story']['table']}:{e['id']}" for e in eps if e["status"] in GAP_STATUSES]}
+            "count": len(eps),
+            "counts": dict(sorted(counts.items())),
+            "gaps": [f"{v['story']['table']}:{e['id']}" for e in eps if e["status"] in GAP_STATUSES],
+        }
     for r in rows:
         c = sources[r["source"]["name"]]
         c["rows"] += 1
@@ -647,8 +711,8 @@ def _coverage(v: dict, rows: list[dict], index, audio: dict, reached: dict, empt
     head = key.split("{", 1)[0]
     keys = sorted({k for p in v.get("prefixes", []) for k in index.keys(p)})
     named = {r["sound"]["sheet"] for r in rows if r["sound"].get("sheet")}
-    loose = [k for k in keys if k.startswith(head) and k[len(head):] not in named]
-    sheets = sorted({k[len(head):] for k in keys if k.startswith(head)} | named)
+    loose = [k for k in keys if k.startswith(head) and k[len(head) :] not in named]
+    sheets = sorted({k[len(head) :] for k in keys if k.startswith(head)} | named)
     streams, total = {}, 0
     for sh in sheets:
         a = audio.get(sh)
@@ -658,13 +722,22 @@ def _coverage(v: dict, rows: list[dict], index, audio: dict, reached: dict, empt
         left = [[n, a["streams"][n].get("name")] for n in sorted(a["streams"]) if n not in reached.get(sh, ())]
         if left:
             streams[sh] = left
-    return {"rows": len(rows), "sources": sources,
-            "reverse": {"prefixes": list(v.get("prefixes", [])), "keys": len(keys), "unreferencedKeys": loose,
-                        "streams": total, "unreferencedStreams": streams}}
+    return {
+        "rows": len(rows),
+        "sources": sources,
+        "reverse": {
+            "prefixes": list(v.get("prefixes", [])),
+            "keys": len(keys),
+            "unreferencedKeys": loose,
+            "streams": total,
+            "unreferencedStreams": streams,
+        },
+    }
 
 
-def build(rules: dict, tables, index, audio: dict | None = None, snapshot: dict | None = None,
-          story: dict | None = None) -> dict:
+def build(
+    rules: dict, tables, index, audio: dict | None = None, snapshot: dict | None = None, story: dict | None = None
+) -> dict:
     """The voices document (nnnotes.voices/1) of master `tables` (views.Tables), the address `index` (catalog
     keys; wrap it in a views.Recorder to learn what it read), `audio` ({sheet: sheet_audio(...)} of the decoded
     sheets; none: nothing exported) and `story` ({episode asset: storyvoices.episode(...)} of the exported
@@ -679,19 +752,29 @@ def build(rules: dict, tables, index, audio: dict | None = None, snapshot: dict 
     empty = {}
     for s in m.v["sources"]:
         if "voices" in s:
-            empty[s["name"]] = sum(1 for raw in m.look.rows(s["table"]) for x in s["voices"]
-                                   if views._empty(raw.get(x["sound"])) or raw.get(x["sound"]) == 0)
+            empty[s["name"]] = sum(
+                1
+                for raw in m.look.rows(s["table"])
+                for x in s["voices"]
+                if views._empty(raw.get(x["sound"])) or raw.get(x["sound"]) == 0
+            )
     rows += _sound_rows(m, resolve, named, rows)
     episodes = None
     if "story" in m.v:
         episodes, story_rows = _story_rows(m, resolve, index, story or {})
         rows += story_rows
-    used = sorted({c for r in rows for c in r["characters"] + r.get("inferred", {}).get("characters", [])},
-                  key=views._sort_key)
-    doc = {"schema": SCHEMA, "view": VIEW, "version": rules[VIEW]["version"], "rules": rules_digest(rules),
-           "tables": tables_of(rules),
-           "characters": [m.characters[c] for c in used if c in m.characters],
-           "rows": rows}
+    used = sorted(
+        {c for r in rows for c in r["characters"] + r.get("inferred", {}).get("characters", [])}, key=views._sort_key
+    )
+    doc = {
+        "schema": SCHEMA,
+        "view": VIEW,
+        "version": rules[VIEW]["version"],
+        "rules": rules_digest(rules),
+        "tables": tables_of(rules),
+        "characters": [m.characters[c] for c in used if c in m.characters],
+        "rows": rows,
+    }
     if episodes is not None:
         doc["episodes"] = episodes
     if snapshot:
@@ -730,11 +813,11 @@ def with_paths(doc: dict, paths) -> dict:
 # ---------------------------------------------------------------- the stage
 def _sheet_name(name: str) -> str | None:
     if name.startswith(SHEET_PREFIX):
-        return name[len(SHEET_PREFIX):] or None
+        return name[len(SHEET_PREFIX) :] or None
     return name if "/" not in name else None
 
 
-_address_cache: dict = {}          # content id of an address table -> (AddressIndex, files), the latest one
+_address_cache: dict = {}  # content id of an address table -> (AddressIndex, files), the latest one
 
 
 def _address_parts(env, tid: str) -> tuple:
@@ -752,6 +835,7 @@ def _address_parts(env, tid: str) -> tuple:
 class VoiceStage(Stage):
     """view.voices (module documentation). Artifact "<task id>#view" (nnnotes.voices/1); facts rows, entries (rows
     per status), gaps, unreferenced (streams of the decoded sheets no row reaches). No items."""
+
     name = STAGE
     after = (views.ADDRESSES_STAGE, EXPORT_STAGE, AUDIO_STAGE)
 
@@ -790,8 +874,7 @@ class VoiceStage(Stage):
         return env.tasks(EXPORT_STAGE)
 
     def depends(self, subject: str, env) -> list[str]:
-        return ([contract.task_id(views.ADDRESSES_STAGE, subject)] + self._audio_tasks(env)
-                + self._plan(subject, env)[6])
+        return [contract.task_id(views.ADDRESSES_STAGE, subject)] + self._audio_tasks(env) + self._plan(subject, env)[6]
 
     def context(self, subject: str, env) -> dict:
         sheets = self._plan(subject, env)[2]
@@ -805,6 +888,7 @@ class VoiceStage(Stage):
         if not tids:
             return {}, {}
         from .cristages import AudioStage
+
         index = AudioStage().index(env)
         sheets, acbs = {}, {}
         for tid in tids:
@@ -832,26 +916,34 @@ class VoiceStage(Stage):
         tids = self._audio_tasks(env)
         exports = self._export_tasks(env)
         masters = self._masters(env)
-        sig = (subject, env.key(link), tuple((t, env.key(t)) for t in tids), tuple((t, env.key(t)) for t in exports),
-               tuple(i.sha256 for i in masters), id(env.store), id(env.facts.get("index")))
+        sig = (
+            subject,
+            env.key(link),
+            tuple((t, env.key(t)) for t in tids),
+            tuple((t, env.key(t)) for t in exports),
+            tuple(i.sha256 for i in masters),
+            id(env.store),
+            id(env.facts.get("index")),
+        )
         if self._memo is not None and self._memo[0] == sig:
             return self._memo[1]
         index, files = _address_parts(env, link)
-        tables = {i.role[len(views.MASTER_ROLE):]: views._cached_rows(i.sha256, Path(i.locators[0]["path"]).read_bytes)
-                  for i in masters}
+        tables = {
+            i.role[len(views.MASTER_ROLE) :]: views._cached_rows(i.sha256, Path(i.locators[0]["path"]).read_bytes)
+            for i in masters
+        }
         found, acbs = self._sheets(env)
         rec = views.Recorder(index)
-        stub = build(self.rules, tables, rec, {s: {"status": "not-exported", "streams": {}, "cues": {}}
-                                               for s in found})
+        stub = build(self.rules, tables, rec, {s: {"status": "not-exported", "streams": {}, "cues": {}} for s in found})
         head = self.rules[VIEW]["key"].split("{", 1)[0]
         wanted = {r["sound"]["sheet"] for r in stub["rows"] if r["sound"].get("sheet")}
-        wanted |= {k[len(head):] for p in self.rules[VIEW].get("prefixes", []) for k in rec.keys(p)
-                   if k.startswith(head)}
+        wanted |= {
+            k[len(head) :] for p in self.rules[VIEW].get("prefixes", []) for k in rec.keys(p) if k.startswith(head)
+        }
         sheets = {s: v for s, v in found.items() if s in wanted}
         used = {v["acb"] for v in sheets.values()}
         episodes, contents, read = self._episodes(env, rec, tables, files, set(exports))
-        plan = (masters, rec.subset(), sheets, [acbs[a] for a in sorted(acbs) if a in used], episodes, contents,
-                read)
+        plan = (masters, rec.subset(), sheets, [acbs[a] for a in sorted(acbs) if a in used], episodes, contents, read)
         self._memo = (sig, plan)
         return plan
 
@@ -882,18 +974,26 @@ class VoiceStage(Stage):
                     continue
                 c = a["content"]
                 out.setdefault(asset, {})[part] = {"object": oid, "artifact": aid, "sha256": c["sha256"]}
-                contents.setdefault(c["sha256"], Input(f"adv:{c['sha256']}", c["sha256"], c["size"], None,
-                                                       ({"kind": "store"},)))
+                contents.setdefault(
+                    c["sha256"], Input(f"adv:{c['sha256']}", c["sha256"], c["size"], None, ({"kind": "store"},))
+                )
                 read.add(tid)
         return dict(sorted(out.items())), [contents[k] for k in sorted(contents)], sorted(read)
 
     def inputs(self, subject: str, env) -> list[Input]:
         masters, subset, sheets, acbs, episodes, contents, _ = self._plan(subject, env)
         store = env.store
-        return (masters + [views._stored(store, "addresses", contract.encode(subset)),
-                           views._stored(store, "rules", self.rules_bytes),
-                           views._stored(store, "sheets", contract.encode(sheets)),
-                           views._stored(store, "episodes", contract.encode(episodes))] + acbs + contents)
+        return (
+            masters
+            + [
+                views._stored(store, "addresses", contract.encode(subset)),
+                views._stored(store, "rules", self.rules_bytes),
+                views._stored(store, "sheets", contract.encode(sheets)),
+                views._stored(store, "episodes", contract.encode(episodes)),
+            ]
+            + acbs
+            + contents
+        )
 
     def _masters(self, env) -> list[Input]:
         mdir = Path(env.fact("master"))
@@ -910,9 +1010,14 @@ class VoiceStage(Stage):
         size = sum(i.size for i in inputs)
         big = max((i.size for i in inputs if i.role.startswith("acb:")), default=0)
         story = [i.size for i in inputs if i.role.startswith("adv:")]
-        return Cost(0.2 + size / 300e6 + sum(story) / 80e6,
-                    (96 << 20) + 4 * big + 16 * sum(i.size for i in inputs if i.role.startswith(views.MASTER_ROLE))
-                    + 2 * sum(story) + 12 * max(story, default=0))
+        return Cost(
+            0.2 + size / 300e6 + sum(story) / 80e6,
+            (96 << 20)
+            + 4 * big
+            + 16 * sum(i.size for i in inputs if i.role.startswith(views.MASTER_ROLE))
+            + 2 * sum(story)
+            + 12 * max(story, default=0),
+        )
 
     def run(self, task, store) -> Output:
         rules = contract.loads(store.input_bytes(task.input("rules")))
@@ -920,8 +1025,10 @@ class VoiceStage(Stage):
         if rules[VIEW]["version"] != task.version:
             raise views.ViewError(f"task {task.id}: its rules are not those of view {VIEW} version {task.version}")
         masters = [i for i in task.inputs if i.role.startswith(views.MASTER_ROLE)]
-        tables = {i.role[len(views.MASTER_ROLE):]: views._cached_rows(i.sha256, functools.partial(store.input_bytes, i))
-                  for i in masters}
+        tables = {
+            i.role[len(views.MASTER_ROLE) :]: views._cached_rows(i.sha256, functools.partial(store.input_bytes, i))
+            for i in masters
+        }
         index = views.AddressIndex.from_subset(contract.loads(store.input_bytes(task.input("addresses"))))
         sheets = contract.loads(store.input_bytes(task.input("sheets")))
         results = task.context.get("audio", {})
@@ -937,23 +1044,35 @@ class VoiceStage(Stage):
             if role in roles and s["acb"] not in cues:
                 cues[s["acb"]] = acb.cue_streams(store.input_bytes(task.input(role)))
             audio[sheet] = sheet_audio(res, cues.get(s["acb"]))
-        snapshot = {"tables": {i.role[len(views.MASTER_ROLE):]: i.sha256 for i in masters},
-                    "sheets": {k: {"task": v["task"], "acb": v["acb"], "status": audio[k]["status"]}
-                               for k, v in sorted(sheets.items())}}
+        snapshot = {
+            "tables": {i.role[len(views.MASTER_ROLE) :]: i.sha256 for i in masters},
+            "sheets": {
+                k: {"task": v["task"], "acb": v["acb"], "status": audio[k]["status"]} for k, v in sorted(sheets.items())
+            },
+        }
         story = {}
         if "episodes" in roles:
             snapshot["episodes"] = task.input("episodes").sha256
             column = rules[VIEW]["sound"]["sheet"]
             for asset, parts in sorted(contract.loads(store.input_bytes(task.input("episodes"))).items()):
                 got = {p: store.input_bytes(task.input(f"adv:{x['sha256']}")) for p, x in parts.items()}
-                story[asset] = storyvoices.episode(got.get("script"), got.get("text"), got.get("sound"),
-                                                   got.get("sheets"), sheet_column=column)
+                story[asset] = storyvoices.episode(
+                    got.get("script"), got.get("text"), got.get("sound"), got.get("sheets"), sheet_column=column
+                )
         doc = build(rules, tables, index, audio, snapshot, story)
         content = store.add(contract.encode(doc), "json")
-        facts = {"rows": len(doc["rows"]), "entries": counts(doc), "gaps": gaps(doc),
-                 "unreferenced": unreferenced_streams(doc)}
-        rec = contract.artifact(contract.artifact_id(task.id, views.VIEW_ROLE), content, contract.provenance(task),
-                                {"kind": "view", "format": "json", "facts": facts})
+        facts = {
+            "rows": len(doc["rows"]),
+            "entries": counts(doc),
+            "gaps": gaps(doc),
+            "unreferenced": unreferenced_streams(doc),
+        }
+        rec = contract.artifact(
+            contract.artifact_id(task.id, views.VIEW_ROLE),
+            content,
+            contract.provenance(task),
+            {"kind": "view", "format": "json", "facts": facts},
+        )
         return Output([rec], [])
 
     def derived(self, task_id: str, result: dict, store, paths) -> list[tuple[str, bytes]]:
@@ -1001,8 +1120,9 @@ def episode_ids(doc: dict, spec: str) -> set:
     return {e["id"] for e in doc.get("episodes", []) if str(e["id"]) == spec or e.get("asset") == spec}
 
 
-def select(doc: dict, *, characters=None, category=None, source=None, status=None, text=None,
-           language=None, episodes=None) -> list[dict]:
+def select(
+    doc: dict, *, characters=None, category=None, source=None, status=None, text=None, language=None, episodes=None
+) -> list[dict]:
     """The rows of a document matching every given filter (characters: a set of ids, a row matches by its
     characters or, for Sound and Story rows, the inferred ones; text: a part of the row's text in `language`, every
     language when None, or of its cue name; episodes: a set of episode ids, the Story rows of those)."""
@@ -1064,12 +1184,20 @@ def summary(doc: dict) -> dict:
     for k in rev["unreferencedKeys"]:
         f = re.sub(r"\d+", "N", k)
         keys[f] = keys.get(f, 0) + 1
-    out = {"rows": len(doc["rows"]), "statuses": counts(doc), "gaps": gaps(doc),
-           "categories": dict(sorted(by_cat.items())), "characters": dict(sorted(by_char.items())),
-           "forward": {s: [r["id"] for r in doc["rows"] if r["status"] == s] for s in GAP_STATUSES},
-           "reverse": {"keys": rev["keys"], "streams": rev["streams"],
-                       "unreferencedKeys": dict(sorted(keys.items())),
-                       "unreferencedStreams": dict(sorted(fam.items()))}}
+    out = {
+        "rows": len(doc["rows"]),
+        "statuses": counts(doc),
+        "gaps": gaps(doc),
+        "categories": dict(sorted(by_cat.items())),
+        "characters": dict(sorted(by_char.items())),
+        "forward": {s: [r["id"] for r in doc["rows"] if r["status"] == s] for s in GAP_STATUSES},
+        "reverse": {
+            "keys": rev["keys"],
+            "streams": rev["streams"],
+            "unreferencedKeys": dict(sorted(keys.items())),
+            "unreferencedStreams": dict(sorted(fam.items())),
+        },
+    }
     if "episodes" in doc:
         out["story"] = _story_summary(doc)
     return out
@@ -1109,9 +1237,14 @@ def _story_summary(doc: dict) -> dict:
                 shared["sources"][src] = shared["sources"].get(src, 0) + 1
     shared["cues"] = len(shared["cues"])
     shared["sources"] = dict(sorted(shared["sources"].items()))
-    return {"episodes": len(eps), "statuses": dict(sorted(statuses.items())), "kinds": dict(sorted(kinds.items())),
-            "gaps": doc["coverage"]["sources"].get(STORY_SOURCE, {}).get("episodes", {}).get("gaps", []),
-            "speakers": dict(sorted(speakers.items())), "sharedCues": shared}
+    return {
+        "episodes": len(eps),
+        "statuses": dict(sorted(statuses.items())),
+        "kinds": dict(sorted(kinds.items())),
+        "gaps": doc["coverage"]["sources"].get(STORY_SOURCE, {}).get("episodes", {}).get("gaps", []),
+        "speakers": dict(sorted(speakers.items())),
+        "sharedCues": shared,
+    }
 
 
 # ---------------------------------------------------------------- command line
@@ -1121,6 +1254,7 @@ def _out(text: str) -> None:
 
 def _print_json(obj) -> None:
     from .jsonio import dumps
+
     _out(dumps(obj, ensure_ascii=False, indent=1) + "\n")
 
 
@@ -1143,8 +1277,7 @@ def _line(doc: dict, r: dict, language: str) -> str:
     if "speaker" in r:
         names = [(t.get("texts") or {}).get(language) for t in r["speaker"]["texts"]]
         who = ",".join(n for n in names if n) or r["speaker"]["name"] or who
-    return "\t".join([r["id"], who, f"{r['source']['name']}.{cat}", where, r["status"],
-                      text.replace("\n", " ")]) + "\n"
+    return "\t".join([r["id"], who, f"{r['source']['name']}.{cat}", where, r["status"], text.replace("\n", " ")]) + "\n"
 
 
 def _story_ids(tables, rules: dict, specs) -> dict:
@@ -1166,8 +1299,7 @@ def _document(args, cfg, common, episodes=()) -> tuple[dict, Path | None]:
         p = Path(args.source_dir)
         f = p if p.is_file() else p / views.view_path(VIEW, views.MAIN_SUBJECT)
         if not f.is_file():
-            args.usage(f"--from {p}: no {views.view_path(VIEW, views.MAIN_SUBJECT)} (export --views voices "
-                       f"writes it)")
+            args.usage(f"--from {p}: no {views.view_path(VIEW, views.MAIN_SUBJECT)} (export --views voices writes it)")
         doc = contract.loads(f.read_bytes())
         if doc.get("schema") != SCHEMA:
             args.usage(f"{f}: not a voices document")
@@ -1184,8 +1316,9 @@ def _document(args, cfg, common, episodes=()) -> tuple[dict, Path | None]:
         column = rules[VIEW]["sound"]["sheet"]
         for asset in sorted(assets):
             got = storyvoices.load_episode(full, story_keys(rules, asset))
-            story[asset] = storyvoices.episode(got.get("script"), got.get("text"), got.get("sound"),
-                                               got.get("sheets"), sheet_column=column)
+            story[asset] = storyvoices.episode(
+                got.get("script"), got.get("text"), got.get("sound"), got.get("sheets"), sheet_column=column
+            )
     return build(rules, tables, index, story=story), None
 
 
@@ -1207,8 +1340,13 @@ def _filters(args, doc: dict) -> dict:
         eps = episode_ids(doc, args.episode)
         if not eps:
             args.usage(f"--episode {args.episode}: no episode of the master data has this id or asset")
-    return {"characters": chars, "category": getattr(args, "category", None), "source": getattr(args, "source", None),
-            "status": getattr(args, "status", None), "episodes": eps}
+    return {
+        "characters": chars,
+        "category": getattr(args, "category", None),
+        "source": getattr(args, "source", None),
+        "status": getattr(args, "status", None),
+        "episodes": eps,
+    }
 
 
 def _emit(args, doc: dict, rows: list[dict], language: str) -> None:
@@ -1247,12 +1385,17 @@ def cmd_summary(args, cfg, common) -> None:
     for k, v in s["categories"].items():
         _out(f"  {k}\t{v['rows']}\t{v['ok']} ok\n")
     rev = s["reverse"]
-    _out(f"reverse: {rev['keys']} keys, {sum(rev['unreferencedKeys'].values())} named by no row; {rev['streams']} "
-         f"decoded streams, {sum(rev['unreferencedStreams'].values())} reached by no row\n")
+    _out(
+        f"reverse: {rev['keys']} keys, {sum(rev['unreferencedKeys'].values())} named by no row; {rev['streams']} "
+        f"decoded streams, {sum(rev['unreferencedStreams'].values())} reached by no row\n"
+    )
     if "story" in s:
         st = s["story"]
-        _out(f"story: {st['episodes']} episodes (" + ", ".join(f"{k} {v}" for k, v in st["statuses"].items())
-             + f"); {st['sharedCues']['rows']} voices share a cue with another source\n")
+        _out(
+            f"story: {st['episodes']} episodes ("
+            + ", ".join(f"{k} {v}" for k, v in st["statuses"].items())
+            + f"); {st['sharedCues']['rows']} voices share a cue with another source\n"
+        )
         for k, v in st["kinds"].items():
             _out(f"  {k}\t{v['episodes']} episodes\t{v['voices']} voices\n")
 
@@ -1260,6 +1403,7 @@ def cmd_summary(args, cfg, common) -> None:
 def _decode_one(cfg, common, sheet: str, cue: str, fmt: str, level: int, dst: Path) -> list[Path]:
     """The files of a cue's streams, decoded from its sheet alone (cri.decode, as the export decodes a sheet)."""
     from . import cri
+
     cfg.require_path("paths", "apk")
     cat = common.open_catalog(cfg)
     files, _ = cri.acb_data(cat, sheet)
@@ -1281,7 +1425,7 @@ def _decode_one(cfg, common, sheet: str, cue: str, fmt: str, level: int, dst: Pa
 
 def cmd_get(args, cfg, common) -> None:
     head = f"{load_rules()[VIEW].get('story', {}).get('table')}:"
-    story = (args.id[len(head):].split(":", 1)[0],) if args.id.startswith(head) else ()
+    story = (args.id[len(head) :].split(":", 1)[0],) if args.id.startswith(head) else ()
     doc, base = _document(args, cfg, common, story)
     rows = rows_for(doc, args.id)
     if not rows:
@@ -1297,19 +1441,23 @@ def cmd_get(args, cfg, common) -> None:
             written.append(dst / s["file"])
             shutil.copyfile(base / s["path"], written[-1])
     elif sheet is None or cue is None or r["status"] in ("no-value", "missing-key", "missing-cue", "unsupported"):
-        print(f"nnnotes: {r['id']}: {r['status']}" + (f" ({r['detail']})" if r.get("detail") else ""),
-              file=sys.stderr)
+        print(f"nnnotes: {r['id']}: {r['status']}" + (f" ({r['detail']})" if r.get("detail") else ""), file=sys.stderr)
         sys.exit(1)
     else:
         from .cristages import FLAC_LEVEL
+
         try:
             written = _decode_one(cfg, common, sheet, cue, args.format, FLAC_LEVEL, dst)
         except LookupError as e:
             print(f"nnnotes: {r['id']}: {e}", file=sys.stderr)
             sys.exit(1)
     from .jsonio import dumps
-    (dst / "voice.json").write_text(dumps({"rows": rows, "files": [p.name for p in written]}, ensure_ascii=False,
-                                          indent=1) + "\n", encoding="utf-8", newline="\n")
+
+    (dst / "voice.json").write_text(
+        dumps({"rows": rows, "files": [p.name for p in written]}, ensure_ascii=False, indent=1) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
     for p in written:
         _out(f"{p}\n")
     if not written:
@@ -1318,21 +1466,31 @@ def cmd_get(args, cfg, common) -> None:
 
 def register(sub, common) -> None:
     """The `voices` command (common: open_catalog(cfg, bundles=...), master_dir(cfg))."""
-    c = sub.add_parser("voices", help="character voices of the master data and the story episodes: list, search, "
-                                      "summary, get one")
+    c = sub.add_parser(
+        "voices", help="character voices of the master data and the story episodes: list, search, summary, get one"
+    )
     vs = c.add_subparsers(dest="voices_cmd", required=True, metavar="<voices command>")
 
     def base(p, text=True):
-        p.add_argument("--from", dest="source_dir", metavar="OUT",
-                       help="an export directory with views/voices.json (export --views voices); else the index is "
-                            "built from the configured master data and catalog (no files)")
+        p.add_argument(
+            "--from",
+            dest="source_dir",
+            metavar="OUT",
+            help="an export directory with views/voices.json (export --views voices); else the index is "
+            "built from the configured master data and catalog (no files)",
+        )
         if text:
             p.add_argument("--character", help="a MasterCharacter id or a part of a name in any language")
-            p.add_argument("--category", help="a category (CharacterRankUp or character-rank-up), Source.Category "
-                                              "or a source")
+            p.add_argument(
+                "--category", help="a category (CharacterRankUp or character-rank-up), Source.Category or a source"
+            )
             p.add_argument("--source", help="a source (Talk, CharacterVoice, ..., HomeSpot, Title, Sound, Story)")
-            p.add_argument("--episode", metavar="ADV", help="the Story voices of one episode: a MasterAdv id or an "
-                                                            "episode asset (without --from: read from the catalog)")
+            p.add_argument(
+                "--episode",
+                metavar="ADV",
+                help="the Story voices of one episode: a MasterAdv id or an "
+                "episode asset (without --from: read from the catalog)",
+            )
             p.add_argument("--status", choices=STATUSES, help="only the rows with this status")
             p.add_argument("--limit", type=int, default=0, help="at most N rows (0: all)")
             p.add_argument("--json", action="store_true", help="the rows as JSON")
@@ -1353,11 +1511,16 @@ def register(sub, common) -> None:
     base(p, text=False)
     p.add_argument("--json", action="store_true", help="the summary as JSON")
     done(p, cmd_summary)
-    p = vs.add_parser("get", help="the files of one voice: a row id (MasterTalk:561, MasterAdv:<id>:<command>) or a "
-                                  "sound id")
+    p = vs.add_parser(
+        "get", help="the files of one voice: a row id (MasterTalk:561, MasterAdv:<id>:<command>) or a sound id"
+    )
     p.add_argument("id", help="row id or sound id")
     p.add_argument("-o", "--out", required=True, help="output directory")
     base(p, text=False)
-    p.add_argument("--format", choices=("flac", "ogg", "wav"), default="flac",
-                   help="flac (default: the exported files when --from has them), ogg or wav (decodes the sheet)")
+    p.add_argument(
+        "--format",
+        choices=("flac", "ogg", "wav"),
+        default="flac",
+        help="flac (default: the exported files when --from has them), ogg or wav (decodes the sheet)",
+    )
     done(p, cmd_get)

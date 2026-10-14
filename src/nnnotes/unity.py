@@ -1,5 +1,6 @@
 """UnityPy helpers for the game's bundles: typetree reads, TextAssets, shard JSON, meshes, the
 GameObject/Transform scene graph and PPtr references."""
+
 from __future__ import annotations
 
 import hashlib
@@ -25,7 +26,7 @@ from . import cache
 # is memoized per process by the blob itself: the parse arguments, the blob's length and its BLAKE2b-128 digest. A
 # hit returns the tree parsed before, shared: UnityPy and nnnotes only read typetree nodes (nnnotes builds new nodes
 # where it needs a cut tree, see _head_node), and one file's objects already share their class's tree.
-BLOB_MEMO_MAX = 8192                                      # distinct class trees kept per process (least recent go)
+BLOB_MEMO_MAX = 8192  # distinct class trees kept per process (least recent go)
 _blobs: OrderedDict = OrderedDict()
 _blobs_lock = threading.Lock()
 _blob_stats = {"hits": 0, "misses": 0, "installed": False}
@@ -47,6 +48,7 @@ def _install_blob_memo() -> bool:
     """Wrap TypeTreeNode.parse_blob (once) with the memo; False (nothing changed) when this UnityPy has not the
     blob layout the wrapper reads: node count, string buffer size, the node records, the string buffer."""
     from UnityPy.helpers import TypeTreeNode as ttn
+
     node_struct = getattr(ttn, "_get_blob_node_struct", None)
     original = ttn.TypeTreeNode.__dict__.get("parse_blob")
     if node_struct is None or not isinstance(original, classmethod):
@@ -71,7 +73,7 @@ def _install_blob_memo() -> bool:
                 return node
         reader.Position = start
         node = parse(cls, reader, version)
-        if reader.Position != end:                         # another layout: this parse is not memoized
+        if reader.Position != end:  # another layout: this parse is not memoized
             return node
         with _blobs_lock:
             _blob_stats["misses"] += 1
@@ -215,7 +217,7 @@ class UnsupportedTexture(RuntimeError):
     """A texture whose format the decoder cannot decode correctly."""
 
 
-HDR_ASTC = frozenset(range(66, 72))                       # TextureFormat ASTC_HDR_4x4 .. ASTC_HDR_12x12
+HDR_ASTC = frozenset(range(66, 72))  # TextureFormat ASTC_HDR_4x4 .. ASTC_HDR_12x12
 
 
 def check_texture(tex) -> None:
@@ -224,8 +226,10 @@ def check_texture(tex) -> None:
     fmt = int(tex.m_TextureFormat)
     if fmt in HDR_ASTC:
         name = TextureFormat(fmt).name
-        raise UnsupportedTexture(f"texture {tex.m_Name!r}: {name} (HDR ASTC) is not decoded: UnityPy's decoder "
-                                 f"returns its error colour for these blocks")
+        raise UnsupportedTexture(
+            f"texture {tex.m_Name!r}: {name} (HDR ASTC) is not decoded: UnityPy's decoder "
+            f"returns its error colour for these blocks"
+        )
 
 
 def texture_image(tex):
@@ -237,12 +241,15 @@ def texture_image(tex):
 # ---- scene graph ----------------------------------------------------------
 def quat_matrix(q: dict) -> np.ndarray:
     x, y, z, w = q["x"], q["y"], q["z"], q["w"]
-    return np.array([
-        [1 - 2 * (y * y + z * z), 2 * (x * y - z * w),     2 * (x * z + y * w),     0],
-        [2 * (x * y + z * w),     1 - 2 * (x * x + z * z), 2 * (y * z - x * w),     0],
-        [2 * (x * z - y * w),     2 * (y * z + x * w),     1 - 2 * (x * x + y * y), 0],
-        [0, 0, 0, 1],
-    ], dtype=np.float64)
+    return np.array(
+        [
+            [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w), 0],
+            [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w), 0],
+            [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y), 0],
+            [0, 0, 0, 1],
+        ],
+        dtype=np.float64,
+    )
 
 
 def trs(pos: dict, rot: dict, scale: dict) -> np.ndarray:
@@ -255,8 +262,8 @@ class SceneGraph:
     """GameObject/Transform hierarchy of an environment, with world matrices."""
 
     def __init__(self, env):
-        self.go = {}                  # GameObject path_id -> typetree
-        self.tf = {}                  # Transform path_id -> typetree
+        self.go = {}  # GameObject path_id -> typetree
+        self.tf = {}  # Transform path_id -> typetree
         for o in env.objects:
             if o.type.name == "GameObject":
                 table = self.go
@@ -321,9 +328,16 @@ def _head_node(node: TypeTreeNode) -> TypeTreeNode | None:
     names = [c.m_Name for c in node.m_Children]
     head = None
     if "m_Script" in names:
-        head = TypeTreeNode(node.m_Level, node.m_Type, node.m_Name, node.m_ByteSize, node.m_Version,
-                            m_MetaFlag=node.m_MetaFlag, m_Children=node.m_Children[:names.index("m_Script") + 1])
-    _heads[id(node)] = (node, head)             # the node is kept alive, so its id is not reused
+        head = TypeTreeNode(
+            node.m_Level,
+            node.m_Type,
+            node.m_Name,
+            node.m_ByteSize,
+            node.m_Version,
+            m_MetaFlag=node.m_MetaFlag,
+            m_Children=node.m_Children[: names.index("m_Script") + 1],
+        )
+    _heads[id(node)] = (node, head)  # the node is kept alive, so its id is not reused
     return head
 
 
@@ -369,5 +383,4 @@ def deref(owner, pptr: dict):
     """ObjectReader that a PPtr read from `owner`'s typetree points at; None if null."""
     if not pptr["m_PathID"]:
         return None
-    return PPtr(m_FileID=pptr["m_FileID"], m_PathID=pptr["m_PathID"],
-                assetsfile=owner.assets_file).deref()
+    return PPtr(m_FileID=pptr["m_FileID"], m_PathID=pptr["m_PathID"], assetsfile=owner.assets_file).deref()

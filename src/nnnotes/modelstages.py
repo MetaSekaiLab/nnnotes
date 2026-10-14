@@ -27,6 +27,7 @@ SkeletonDataAsset) of a selected bundle; its subject is the asset's stable addre
 Both tasks name their extractor as their one atom ("live2d.extract_model", "spot.write_skeleton"), whose id carries
 the versions of the libraries the files depend on; this module imports UnityPy only when a task runs.
 """
+
 from __future__ import annotations
 
 import re
@@ -53,10 +54,16 @@ _ASSET_PREFIXES = ("Assets/", "Packages/")
 _ADDRESS = re.compile(r"0x[0-9a-fA-F]{6,}")
 _EXT = re.compile(r"[0-9a-z]+")
 # live2d.extract_model files -> artifact kinds (by suffix, the first that matches)
-LIVE2D_KINDS = ((".model3.json", "live2d.model3"), (".prefab.json", "live2d.prefab"),
-                (".physics3.json", "live2d.physics3"), (".exp3.json", "live2d.expression"),
-                (".motion3.json", "live2d.motion"), ("motions/_fades.json", "live2d.fades"), (".moc3", "live2d.moc3"),
-                ("textures/", "live2d.texture"))
+LIVE2D_KINDS = (
+    (".model3.json", "live2d.model3"),
+    (".prefab.json", "live2d.prefab"),
+    (".physics3.json", "live2d.physics3"),
+    (".exp3.json", "live2d.expression"),
+    (".motion3.json", "live2d.motion"),
+    ("motions/_fades.json", "live2d.fades"),
+    (".moc3", "live2d.moc3"),
+    ("textures/", "live2d.texture"),
+)
 
 
 def _message(e: BaseException) -> str:
@@ -90,7 +97,7 @@ def _fact_input(bundles, stable: str, what: str) -> Input:
 def _ordered(task, prefix: str = "bundle:") -> list[Input]:
     """The inputs "bundle:<n>" of a task by n."""
     ins = [i for i in task.inputs if i.role.startswith(prefix)]
-    return sorted(ins, key=lambda i: int(i.role[len(prefix):]))
+    return sorted(ins, key=lambda i: int(i.role[len(prefix) :]))
 
 
 # ---------------------------------------------------------------- the catalog of a task
@@ -216,6 +223,7 @@ def _tree(root: Path) -> list[tuple[str, Path]]:
 class Live2DStage(Stage):
     """live2d.model: a Live2D model key -> the files of `nnnotes live2d` (module documentation). Subjects and inputs
     come from the facts "index" (the catalog index), "selected" and "bundles" ({stable name: Input "bundle"})."""
+
     name = LIVE2D
     version = 1
     ATOMS = {"live2d.extract_model": impl_id(LIBRARIES, 1)}
@@ -262,6 +270,7 @@ class Live2DStage(Stage):
     def run(self, task, store) -> Output:
         _check_atoms(task, self.ATOMS)
         from . import live2d
+
         cat = TaskCatalog.from_task(task, store)
         arts = []
         with tempfile.TemporaryDirectory(prefix="nnnotes-live2d-") as d:
@@ -270,9 +279,14 @@ class Live2DStage(Stage):
                 kind = live2d_kind(rel)
                 facts = {k: summary[k] for k in sorted(summary)} if kind == "live2d.model3" else {}
                 ext = _ext(rel)
-                arts.append(contract.artifact(contract.artifact_id(task.id, rel), store.add(p.read_bytes(), ext),
-                                              contract.provenance(task), {"kind": kind, "format": ext,
-                                                                          "facts": facts}))
+                arts.append(
+                    contract.artifact(
+                        contract.artifact_id(task.id, rel),
+                        store.add(p.read_bytes(), ext),
+                        contract.provenance(task),
+                        {"kind": kind, "format": ext, "facts": facts},
+                    )
+                )
         return Output(arts, [])
 
 
@@ -303,8 +317,12 @@ def skeleton_index(env, selected) -> dict:
         for f in doc["files"]:
             for o in f["objects"]:
                 s = o.get("script")
-                if o["class"] == "MonoBehaviour" and s and s.get("file") is not None and \
-                        contract.object_id(s["file"], s["pathId"]) in scripts:
+                if (
+                    o["class"] == "MonoBehaviour"
+                    and s
+                    and s.get("file") is not None
+                    and contract.object_id(s["file"], s["pathId"]) in scripts
+                ):
                     subject = contract.stable_address(stable + tags[f["name"]], path_id=o["pathId"])
                     subjects[subject] = (stable, f["name"], int(o["pathId"]))
     return {"subjects": subjects, "files": files, "externals": externals}
@@ -333,6 +351,7 @@ class SpineStage(Stage):
     """spine.skeleton: a SkeletonDataAsset -> its Spine files as `nnnotes spot` writes them (module documentation).
     Subjects from the census results, the script table (link.scripts:all) and the fact "selected"; inputs from the
     fact "bundles". Waits for census tasks that have not run."""
+
     name = SPINE
     version = 1
     after = (CENSUS, SCRIPTS)
@@ -394,6 +413,7 @@ class SpineStage(Stage):
     def run(self, task, store) -> Output:
         _check_atoms(task, self.ATOMS)
         from . import spot, unity
+
         oid = task.context["object"]
         paths = [store.open_input(i) for i in task.inputs if i.role.startswith("bundle:")]
         env = unity.load_closure(paths)
@@ -408,8 +428,10 @@ class SpineStage(Stage):
         except (MemoryError, OSError):
             raise
         except Exception as e:
-            return Output([], [contract.item(oid, "failed", why=contract.reason("failed.export", _message(e)),
-                                             cls="MonoBehaviour")])
+            return Output(
+                [],
+                [contract.item(oid, "failed", why=contract.reason("failed.export", _message(e)), cls="MonoBehaviour")],
+            )
         arts = []
         for name in sorted(written):
             data = written[name]
@@ -419,6 +441,12 @@ class SpineStage(Stage):
                 ext, kind, facts = _ext(name, "atlas"), "spine.atlas", {}
             else:
                 ext, kind, facts = "png", "spine.page", {}
-            arts.append(contract.artifact(contract.artifact_id(task.id, name), store.add(data, ext),
-                                          contract.provenance(task), {"kind": kind, "format": ext, "facts": facts}))
+            arts.append(
+                contract.artifact(
+                    contract.artifact_id(task.id, name),
+                    store.add(data, ext),
+                    contract.provenance(task),
+                    {"kind": kind, "format": ext, "facts": facts},
+                )
+            )
         return Output(arts, [contract.item(oid, "exported", artifacts=[a["id"] for a in arts], cls="MonoBehaviour")])

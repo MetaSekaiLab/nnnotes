@@ -11,6 +11,7 @@ a different type hash or a read that does not consume exactly the object's
 serialized size raises UnsupportedVersion. `unity default resources`
 (built-in meshes) is read from the APK as well.
 """
+
 from __future__ import annotations
 
 import copy
@@ -75,9 +76,12 @@ def dump_typetrees(doc: dict) -> str:
     lines = [json.dumps(head, sort_keys=True, ensure_ascii=False, separators=(",", ":"))[:-1] + ',"classes":{']
     items = sorted(doc["classes"].items())
     for i, (k, v) in enumerate(items):
-        lines.append(json.dumps(k, ensure_ascii=False) + ":"
-                     + json.dumps(v, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
-                     + ("," if i + 1 < len(items) else ""))
+        lines.append(
+            json.dumps(k, ensure_ascii=False)
+            + ":"
+            + json.dumps(v, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+            + ("," if i + 1 < len(items) else "")
+        )
     lines.append("}}")
     return "\n".join(lines) + "\n"
 
@@ -89,26 +93,26 @@ def _manifest_attribute(data: bytes, attribute: str) -> tuple[str | None, int | 
         pos, strings = 8, []
         while pos + 8 <= len(data):
             typ, hsize, size = struct.unpack_from("<HHI", data, pos)
-            if typ == 0x0001:                                   # string pool
+            if typ == 0x0001:  # string pool
                 count, _styles, flags, start = struct.unpack_from("<IIII", data, pos + 8)
                 for off in struct.unpack_from(f"<{count}I", data, pos + hsize):
                     q = pos + start + off
-                    if flags & 0x100:                           # UTF-8: UTF-16 length, UTF-8 length, bytes
+                    if flags & 0x100:  # UTF-8: UTF-16 length, UTF-8 length, bytes
                         q += 2 if data[q] & 0x80 else 1
                         n = data[q]
                         q += 1
                         if n & 0x80:
                             n = ((n & 0x7F) << 8) | data[q]
                             q += 1
-                        strings.append(data[q:q + n].decode("utf-8"))
-                    else:                                       # UTF-16LE: length in code units, chars
-                        n, = struct.unpack_from("<H", data, q)
+                        strings.append(data[q : q + n].decode("utf-8"))
+                    else:  # UTF-16LE: length in code units, chars
+                        (n,) = struct.unpack_from("<H", data, q)
                         q += 2
                         if n & 0x8000:
                             n = ((n & 0x7FFF) << 16) | struct.unpack_from("<H", data, q)[0]
                             q += 2
-                        strings.append(data[q:q + 2 * n].decode("utf-16-le"))
-            elif typ == 0x0102:                                 # start element
+                        strings.append(data[q : q + 2 * n].decode("utf-16-le"))
+            elif typ == 0x0102:  # start element
                 _ns, name, astart, asize, acount = struct.unpack_from("<IIHHH", data, pos + 16)
                 if strings[name] == "manifest":
                     for i in range(acount):
@@ -116,7 +120,7 @@ def _manifest_attribute(data: bytes, attribute: str) -> tuple[str | None, int | 
                         _ans, aname, raw = struct.unpack_from("<III", data, a)
                         if strings[aname] == attribute:
                             text = strings[raw] if raw != 0xFFFFFFFF else None
-                            if a + 20 > len(data):                  # no typed value
+                            if a + 20 > len(data):  # no typed value
                                 return text, None, None
                             _vsize, _res0, vtype, value = struct.unpack_from("<HBBI", data, a + 12)
                             return text, vtype, value
@@ -142,7 +146,7 @@ def manifest_version_code(data: bytes) -> int | None:
     if a is None:
         return None
     text, vtype, value = a
-    if vtype in (0x10, 0x11):                                   # TYPE_INT_DEC, TYPE_INT_HEX
+    if vtype in (0x10, 0x11):  # TYPE_INT_DEC, TYPE_INT_HEX
         return value
     return int(text) if text is not None and text.isdecimal() else None
 
@@ -157,8 +161,9 @@ class PlayerData:
             if datapack in z.namelist():
                 self.env.load_file(io.BytesIO(z.read(datapack)), name="datapack.unity3d")
             self.defaults = UnityPy.load(io.BytesIO(z.read(DEFAULT_RESOURCES_IN_APK)))
-            self.game_version = (manifest_version_name(z.read(MANIFEST_IN_APK))
-                                 if MANIFEST_IN_APK in z.namelist() else None)
+            self.game_version = (
+                manifest_version_name(z.read(MANIFEST_IN_APK)) if MANIFEST_IN_APK in z.namelist() else None
+            )
         self._by_type: dict[str, list] = {}
         for o in self.env.objects:
             self._by_type.setdefault(o.type.name, []).append(o)
@@ -170,8 +175,8 @@ class PlayerData:
     def _clear_memos(self) -> None:
         """Empty the memos of script, mono, shader, resource and graphics (an object is kept with its entry, so its
         id is not reused while the entry exists; the objects belong to `env` / `defaults` anyway)."""
-        self._scripts: dict[int, tuple] = {}          # id(object) -> (object, (assembly, namespace, class))
-        self._monos: dict[int, tuple] = {}            # id(object) -> (object, fields)
+        self._scripts: dict[int, tuple] = {}  # id(object) -> (object, (assembly, namespace, class))
+        self._monos: dict[int, tuple] = {}  # id(object) -> (object, fields)
         self._shader_names: dict[str, list] | None = None
         self._container: dict[str, list] | None = None
         self._graphics: dict | None = None
@@ -186,7 +191,7 @@ class PlayerData:
     def resource(self, path: str):
         """The object `Resources.Load(path)` returns (ResourceManager container, case-insensitive)."""
         rm = self.one("ResourceManager")
-        if self._container is None:                   # lower-case path -> PPtrs, in container order
+        if self._container is None:  # lower-case path -> PPtrs, in container order
             self._container = {}
             for p, pp in rm.read_typetree()["m_Container"]:
                 self._container.setdefault(p.lower(), []).append(pp)
@@ -201,7 +206,7 @@ class PlayerData:
     def shader(self, name: str, file: str | None = None):
         """The Shader object named `name` (parsed-form name, as Shader.Find sees it); `file` (serialized file
         name, e.g. "unity_builtin_extra") narrows the search. Exactly one must match."""
-        if self._shader_names is None:                # parsed-form name -> Shader objects, in object order
+        if self._shader_names is None:  # parsed-form name -> Shader objects, in object order
             self._shader_names = {}
             for o in self._by_type.get("Shader", []):
                 self._shader_names.setdefault(o.read().m_ParsedForm.m_Name, []).append(o)
@@ -243,8 +248,14 @@ class PlayerData:
         if key not in self._nodes:
             entry = (self.typetrees or {}).get("classes", {}).get(key)
             if entry is None:
-                raise self.unsupported(asm, ns, cls, "no embedded typetree for this class" if self.typetrees
-                                       else f"no embedded typetrees for Unity {self.unity_version}")
+                raise self.unsupported(
+                    asm,
+                    ns,
+                    cls,
+                    "no embedded typetree for this class"
+                    if self.typetrees
+                    else f"no embedded typetrees for Unity {self.unity_version}",
+                )
             self._nodes[key] = typetree_node(entry["nodes"]), entry["typeHash"]
         node, type_hash = self._nodes[key]
         st = o.serialized_type
@@ -253,15 +264,15 @@ class PlayerData:
         try:
             tt = o.read_typetree(node, check_read=True)
         except Exception as e:
-            raise self.unsupported(asm, ns, cls, f"the embedded typetree does not fit the serialized data ({e})"
-                                   ) from e
+            raise self.unsupported(asm, ns, cls, f"the embedded typetree does not fit the serialized data ({e})") from e
         return {k: v for k, v in tt.items() if k not in HEADER}
 
     def unsupported(self, asm: str, ns: str, cls: str, why: str) -> UnsupportedVersion:
         made = f" (embedded typetrees from game version {self.typetrees['gameVersion']})" if self.typetrees else ""
         return UnsupportedVersion(
             f"MonoBehaviour {ns + '.' if ns else ''}{cls} ({asm}): {why}{made}. "
-            f"Game version {self.game_version or 'unknown'} (Unity {self.unity_version}) is not supported yet.")
+            f"Game version {self.game_version or 'unknown'} (Unity {self.unity_version}) is not supported yet."
+        )
 
     def name_of(self, owner, pptr: dict) -> str | None:
         """`m_Name` of a referenced object (shader names come from the parsed form)."""
@@ -295,9 +306,15 @@ class PlayerData:
         node = o._get_typetree_node()
         names = [c.m_Name for c in node.m_Children]
         i = names.index("m_ActiveColorSpace")
-        prefix = TypeTreeNode(node.m_Level, node.m_Type, node.m_Name, node.m_ByteSize,
-                              node.m_Version, m_MetaFlag=node.m_MetaFlag,
-                              m_Children=node.m_Children[:i + 1])
+        prefix = TypeTreeNode(
+            node.m_Level,
+            node.m_Type,
+            node.m_Name,
+            node.m_ByteSize,
+            node.m_Version,
+            m_MetaFlag=node.m_MetaFlag,
+            m_Children=node.m_Children[: i + 1],
+        )
         return COLOR_SPACE[o.read_typetree(prefix, check_read=False)["m_ActiveColorSpace"]]
 
     def graphics(self) -> dict:
@@ -329,8 +346,9 @@ class PlayerData:
                 for fp in tt["m_RendererFeatures"]:
                     fo = self.deref(o, fp)
                     asm, ns, cls = self.script(fo)
-                    feats.append({"class": f"{ns}.{cls}" if ns else cls, "assembly": asm,
-                                  **self.names_in(fo, self.mono(fo))})
+                    feats.append(
+                        {"class": f"{ns}.{cls}" if ns else cls, "assembly": asm, **self.names_in(fo, self.mono(fo))}
+                    )
                 tt["m_RendererFeatures"] = feats
                 pp = tt.get("postProcessData")
                 if pp and pp["m_PathID"]:

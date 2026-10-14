@@ -17,6 +17,7 @@ versions of the libraries it calls, so a code or library change never reads an o
         png = encode(...)
         PNG.put(k, png)
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -31,14 +32,25 @@ from pathlib import Path
 DISK_MAGIC = b"NNC1"
 DEFAULT_MEMORY_MB = 128
 
-_settings = {"enabled": True, "memory": DEFAULT_MEMORY_MB << 20, "directory": None, "closures": 4,
-             "closure_bytes": 512 << 20}
+_settings = {
+    "enabled": True,
+    "memory": DEFAULT_MEMORY_MB << 20,
+    "directory": None,
+    "closures": 4,
+    "closure_bytes": 512 << 20,
+}
 _buckets: dict[str, "Bucket"] = {}
 _lock = threading.Lock()
 
 
-def configure(*, enabled: bool | None = None, memory_mb: int | None = None, directory=None,
-              closures: int | None = None, closure_mb: int | None = None) -> dict:
+def configure(
+    *,
+    enabled: bool | None = None,
+    memory_mb: int | None = None,
+    directory=None,
+    closures: int | None = None,
+    closure_mb: int | None = None,
+) -> dict:
     """Set the caches of this process: `enabled`; `memory_mb` (byte budget of each bucket); `directory` (disk layer
     of the byte buckets; "" or None for none); `closures` / `closure_mb` (loaded bundle closures kept by
     unity.load_closure, per thread: count and bundle bytes). Clears the buckets. Returns the settings."""
@@ -216,8 +228,15 @@ class Bucket:
 
     def stats(self) -> dict:
         with self._lock:
-            return {"items": len(self._items), "bytes": self._bytes, "hits": self.hits, "misses": self.misses,
-                    "diskHits": self.disk_hits, "diskWrites": self.disk_writes, "diskErrors": self.disk_errors}
+            return {
+                "items": len(self._items),
+                "bytes": self._bytes,
+                "hits": self.hits,
+                "misses": self.misses,
+                "diskHits": self.disk_hits,
+                "diskWrites": self.disk_writes,
+                "diskErrors": self.disk_errors,
+            }
 
 
 def _disk_read(p: Path) -> bytes | None:
@@ -227,7 +246,7 @@ def _disk_read(p: Path) -> bytes | None:
         return None
     if len(raw) < 12 or raw[:4] != DISK_MAGIC:
         return None
-    n, = struct.unpack_from("<Q", raw, 4)
+    (n,) = struct.unpack_from("<Q", raw, 4)
     return raw[12:] if len(raw) == 12 + n else None
 
 
@@ -276,13 +295,13 @@ def pack(meta: bytes, blobs: list[bytes]) -> bytes:
 def unpack(data: bytes) -> tuple[bytes, list[bytes]]:
     n, count = struct.unpack_from("<II", data, 0)
     pos = 8
-    meta = data[pos:pos + n]
+    meta = data[pos : pos + n]
     pos += n
     blobs = []
     for _ in range(count):
-        m, = struct.unpack_from("<Q", data, pos)
+        (m,) = struct.unpack_from("<Q", data, pos)
         pos += 8
-        blobs.append(data[pos:pos + m])
+        blobs.append(data[pos : pos + m])
         pos += m
     if pos != len(data):
         raise ValueError("packed cache value has trailing bytes")

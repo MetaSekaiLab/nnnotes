@@ -1,5 +1,6 @@
 """scripts/atom_eval.py (the atom evaluation harness) on synthetic bundles: sampling, the comparisons, m1 with
 candidate texture decoders and PNG encoders, and the comparison of two stage results."""
+
 from __future__ import annotations
 
 import io
@@ -32,8 +33,13 @@ def _open(data: bytes) -> UnityBundle:
     for pid, w, h, fmt, seed in doc["textures"]:
         channels = 3 if fmt == RGB24 else 4
         tex = FakeTexture2D(rgba_bytes(w, h, seed, channels), w, h, fmt, name=f"t{pid}")
-        f.add(pid, "Texture2D", {"m_Name": f"t{pid}", "m_Width": w, "m_Height": h, "m_TextureFormat": fmt},
-              obj=tex, raw=b"x" * 8)
+        f.add(
+            pid,
+            "Texture2D",
+            {"m_Name": f"t{pid}", "m_Width": w, "m_Height": h, "m_TextureFormat": fmt},
+            obj=tex,
+            raw=b"x" * 8,
+        )
     return UnityBundle(env)
 
 
@@ -47,16 +53,19 @@ def same_decode() -> Impl:
 
 def flipped_decode() -> Impl:
     ref = resolve("texture.decode").fn
-    return Impl("flipped/1", lambda inp: ref(inp).transpose(Image.Transpose.FLIP_TOP_BOTTOM),
-                resolve("texture.decode").cost)
+    return Impl(
+        "flipped/1", lambda inp: ref(inp).transpose(Image.Transpose.FLIP_TOP_BOTTOM), resolve("texture.decode").cost
+    )
 
 
 def rgba_png() -> Impl:
     """A lossy candidate for RGB images: always writes RGBA."""
+
     def encode(image, level=6):
         buf = io.BytesIO()
         image.convert("RGBA").save(buf, format="PNG")
         return buf.getvalue()
+
     return Impl("rgba/1", encode, resolve("png.encode").cost)
 
 
@@ -69,19 +78,31 @@ def _bundles(tmp_path: Path) -> Path:
 
 
 def _m1(d: Path, atoms, checks) -> dict:
-    cfg = {"dir": str(d), "atoms": atoms, "checks": checks, "threads": 4,
-           "reference_reader": "test_atom_eval:fake_reader"}
+    cfg = {
+        "dir": str(d),
+        "atoms": atoms,
+        "checks": checks,
+        "threads": 4,
+        "reference_reader": "test_atom_eval:fake_reader",
+    }
     return atom_eval.run_m1(cfg, atom_eval.bundle_list(d, None), workers=1)
 
 
 # ---------------------------------------------------------------- m1
 def test_m1_texture_decoders_per_format(tmp_path):
     d = _bundles(tmp_path)
-    out = _m1(d, [("reader", "test_atom_eval:fake_reader"), ("texture.decode", "test_atom_eval:same_decode"),
-                  ("texture.decode", "test_atom_eval:flipped_decode")], ("texture",))
+    out = _m1(
+        d,
+        [
+            ("reader", "test_atom_eval:fake_reader"),
+            ("texture.decode", "test_atom_eval:same_decode"),
+            ("texture.decode", "test_atom_eval:flipped_decode"),
+        ],
+        ("texture",),
+    )
     assert out["errors"] == []
     c = out["counts"]["texture"]
-    assert c["RGBA32 | same/1"] == {"equal": 2, "refused.both": 1}          # the 0x0 texture: empty.texture
+    assert c["RGBA32 | same/1"] == {"equal": 2, "refused.both": 1}  # the 0x0 texture: empty.texture
     assert c["RGB24 | same/1"] == {"equal": 1}
     assert c["RGBA32 | flipped/1"] == {"differ": 2, "refused.both": 1}
     ex = out["examples"]["texture"]["RGBA32 | flipped/1"]["differ"]
@@ -90,22 +111,30 @@ def test_m1_texture_decoders_per_format(tmp_path):
 
 def test_m1_png_round_trip_and_bytes(tmp_path):
     d = _bundles(tmp_path)
-    out = _m1(d, [("png.encode", "atom_eval_pillow:optimize"), ("png.encode", "atom_eval_pillow:level6"),
-                  ("png.encode", "test_atom_eval:rgba_png")], ("png",))
+    out = _m1(
+        d,
+        [
+            ("png.encode", "atom_eval_pillow:optimize"),
+            ("png.encode", "atom_eval_pillow:level6"),
+            ("png.encode", "test_atom_eval:rgba_png"),
+        ],
+        ("png",),
+    )
     c, s = out["counts"]["png"], out["stats"]["png"]
     opt = [k for k in c if k.startswith("RGBA32 | ") and "optimize" in k][0]
     l6 = [k for k in c if k.startswith("RGB24 | ") and "level6" in k][0]
     assert c[opt] == {"equal": 2}
-    assert c[l6] == {"equal": 1} and s[l6]["sameBytesAsReference"] == 1      # level 6 = the reference's bytes
-    assert c["RGB24 | rgba/1"] == {"differ": 1}                               # RGBA written for an RGB image
+    assert c[l6] == {"equal": 1} and s[l6]["sameBytesAsReference"] == 1  # level 6 = the reference's bytes
+    assert c["RGB24 | rgba/1"] == {"differ": 1}  # RGBA written for an RGB image
     assert c["RGBA32 | rgba/1"] == {"equal": 2}
     assert s["RGBA32"]["bytes:reference"] > 0 and s["RGBA32"]["rawBytes"] == (8 * 4 + 4 * 4) * 4
 
 
 def test_m1_determinism_check(tmp_path):
     d = _bundles(tmp_path)
-    out = _m1(d, [("texture.decode", "test_atom_eval:same_decode"), ("png.encode", "atom_eval_pillow:level1")],
-              ("det",))
+    out = _m1(
+        d, [("texture.decode", "test_atom_eval:same_decode"), ("png.encode", "atom_eval_pillow:level1")], ("det",)
+    )
     det = out["counts"]["det"]
     assert det["same/1"] == {"equal": 2}
     assert [v for k, v in det.items() if "level1" in k] == [{"equal": 2}]
@@ -161,8 +190,9 @@ def test_image_and_png_comparisons():
 
 
 def test_deep_diff():
-    assert atom_eval.deep_diff({"a": [1, 2.5, float("nan")], "b": b"x"}, {"a": (1, 2.5, float("nan")), "b": b"x"}) \
-        is None
+    assert (
+        atom_eval.deep_diff({"a": [1, 2.5, float("nan")], "b": b"x"}, {"a": (1, 2.5, float("nan")), "b": b"x"}) is None
+    )
     assert atom_eval.deep_diff({"a": 1, "b": 2}, {"b": 2, "a": 1}).startswith(": keys")
     assert atom_eval.deep_diff({"a": [1, 2]}, {"a": [1, 3]}) == ".a[1]: 2 vs 3"
     assert atom_eval.deep_diff({"a": 1}, {"a": 1.0}) == ".a: int vs float"
@@ -181,8 +211,7 @@ def _mesh(**changes) -> MeshArrays:
 def test_mesh_diff():
     assert atom_eval.mesh_diff(_mesh(), _mesh()) == []
     other = _mesh()
-    other.channels = {"position": other.channels["position"],
-                      "normal": Channel(np.zeros((3, 3), np.float32))}
+    other.channels = {"position": other.channels["position"], "normal": Channel(np.zeros((3, 3), np.float32))}
     assert atom_eval.mesh_diff(_mesh(), other) == ["dtype:normal"]
     fewer = _mesh()
     fewer.channels = {"position": fewer.channels["position"]}
@@ -202,14 +231,31 @@ def test_compare_results():
     blobs = {"p1": _png(img), "p2": atom_eval_png6(img), "j1": b"{}", "j2": b"[]"}
 
     def art(aid, sha, ext, cls):
-        return {"id": aid, "content": {"sha256": sha, "size": len(blobs[sha]), "ext": ext},
-                "provenance": {"object": {"class": cls}}}
+        return {
+            "id": aid,
+            "content": {"sha256": sha, "size": len(blobs[sha]), "ext": ext},
+            "provenance": {"object": {"class": cls}},
+        }
+
     item = {"object": "F:1", "status": "exported", "class": "Texture2D"}
-    ra = {"status": "ok", "items": [item, {"object": "F:2", "status": "exported", "class": "Material"}],
-          "artifacts": [art("F:1#image", "p1", "png", "Texture2D"), art("F:2#json", "j1", "json", "Material")]}
-    rb = {"status": "ok", "items": [item, {"object": "F:2", "status": "generic", "class": "Material",
-                                           "reason": {"code": "generic.error", "message": "x"}}],
-          "artifacts": [art("F:1#image", "p2", "png", "Texture2D"), art("F:2#json", "j2", "json", "Material")]}
+    ra = {
+        "status": "ok",
+        "items": [item, {"object": "F:2", "status": "exported", "class": "Material"}],
+        "artifacts": [art("F:1#image", "p1", "png", "Texture2D"), art("F:2#json", "j1", "json", "Material")],
+    }
+    rb = {
+        "status": "ok",
+        "items": [
+            item,
+            {
+                "object": "F:2",
+                "status": "generic",
+                "class": "Material",
+                "reason": {"code": "generic.error", "message": "x"},
+            },
+        ],
+        "artifacts": [art("F:1#image", "p2", "png", "Texture2D"), art("F:2#json", "j2", "json", "Material")],
+    }
     T = atom_eval.Tally()
     atom_eval.compare_results(ra, rb, blobs.__getitem__, blobs.__getitem__, T, "s")
     d = T.dump()

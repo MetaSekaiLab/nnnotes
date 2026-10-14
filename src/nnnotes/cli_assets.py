@@ -42,6 +42,7 @@ Exit codes: export 0 complete (unsupported objects allowed), 1 item or task fail
 settings, 3 aborted (results written so far stay valid); run-stage 0, 1 (a task failed or a result is partial), 2,
 4 an incompatible task (nothing of the batch runs); plan --check 1 when anything would run or change.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -69,9 +70,9 @@ GIB = 1 << 30
 LAYOUT_NAMES = ("original", "cas")
 FETCH_WORKERS = 8
 RECYCLE_TASKS = 500
-RECYCLE_RSS = 3 * GIB          # a worker whose resident memory after a task is above this is replaced ...
-RECYCLE_SHARE = 0.4            # ... or above this share of its part of the memory budget (budget / workers),
-RECYCLE_RSS_MIN = 256 << 20    # but not below this
+RECYCLE_RSS = 3 * GIB  # a worker whose resident memory after a task is above this is replaced ...
+RECYCLE_SHARE = 0.4  # ... or above this share of its part of the memory budget (budget / workers),
+RECYCLE_RSS_MIN = 256 << 20  # but not below this
 REPORTS = "_reports"
 SELECT_KINDS = ("group", "key", "bundle")
 RAW_STAGES = ("cri.audio", "cri.movie")
@@ -86,6 +87,7 @@ class StageSource:
     """Where a stage (or, for a name ending with '.', a family of stages) comes from. `output`: its artifacts are
     placed in the layouts; `root`: the layout root of its artifacts without a container path (format fields
     {stage} and {subject}; a stage's LAYOUT_ROOT attribute wins)."""
+
     name: str
     target: str
     output: bool = False
@@ -138,6 +140,7 @@ def load_source(src: StageSource) -> list[Stage] | None:
 @dataclass
 class Installed:
     """The installed stages in pipeline order, the source of each, and the sources not installed."""
+
     stages: dict
     sources: dict
     missing: list
@@ -185,14 +188,15 @@ def bundle_group(stable: str) -> str:
 
 @dataclass
 class Selection:
-    selected: list          # stable names of the selected bundles (export subjects)
-    census: list            # the selected bundles and the bundles they depend on
-    raw: list               # stable names of the selected raw files
+    selected: list  # stable names of the selected bundles (export subjects)
+    census: list  # the selected bundles and the bundles they depend on
+    raw: list  # stable names of the selected raw files
 
 
 def select(index: dict, selection: list[str]) -> Selection:
     """The bundles and raw files a selection names in a catalog index (module documentation)."""
     from . import catalogdb
+
     bundles = sorted(b["stable"] for b in index["bundles"])
     raws = sorted(r["stable"] for r in index["rawFiles"])
     if selection == ["all"]:
@@ -212,10 +216,14 @@ def select(index: dict, selection: list[str]) -> Selection:
                 if loc["kind"] not in catalogdb.FILE_KINDS and loc["primaryKey"].startswith(value):
                     chosen |= reach[loc["id"]]
     deps = set(chosen)
-    for loc in index["locations"]:              # a key's first dependency is the bundle that holds it
-        if loc["kind"] not in catalogdb.FILE_KINDS and loc["dependencies"] and                 files.get(loc["dependencies"][0]) in chosen:
+    for loc in index["locations"]:  # a key's first dependency is the bundle that holds it
+        if (
+            loc["kind"] not in catalogdb.FILE_KINDS
+            and loc["dependencies"]
+            and files.get(loc["dependencies"][0]) in chosen
+        ):
             deps |= reach[loc["id"]]
-    pick = lambda s, kind: sorted(n for k, n in s if k == kind)   # noqa: E731
+    pick = lambda s, kind: sorted(n for k, n in s if k == kind)  # noqa: E731
     return Selection(pick(chosen, "bundle"), pick(deps, "bundle"), pick(chosen, "raw"))
 
 
@@ -231,8 +239,10 @@ def store_root(args, cfg) -> Path:
     cache = cfg.path("paths", "cache")
     if cache is not None:
         return cache / "store"
-    raise ConfigError("setting paths.store is not set (nor paths.cache, whose store/ directory is the default): "
-                      f"give it as {describe_setting('paths', 'store', '--store')}")
+    raise ConfigError(
+        "setting paths.store is not set (nor paths.cache, whose store/ directory is the default): "
+        f"give it as {describe_setting('paths', 'store', '--store')}"
+    )
 
 
 def default_memory() -> int | None:
@@ -258,6 +268,7 @@ def recycle_rss(memory: int | None, workers: int) -> int:
 
 def _bundle_key(cfg):
     from .addressables import BundleKey
+
     return BundleKey(cfg.hex("bundle", "key", 16), cfg.hex("bundle", "nonce_seed"))
 
 
@@ -281,6 +292,7 @@ class CatalogFetcher:
         """(Catalog, {location id: location}) of a stored catalog version."""
         from . import catalogdb
         from .catalog import Catalog
+
         with self._lock:
             hit = self._catalogs.get(vid)
             if hit is None:
@@ -298,12 +310,19 @@ class CatalogFetcher:
                 source, session, cache = None, None, self.cache
                 if v.get("source") is not None:
                     from .jp import Source, Session
+
                     source = Source.from_dict(v["source"])
                     session = Session(cfg, cfg.region())
                     cache = source.cache_dir(cache)
-                cat = Catalog(remote, cache, cdn=lambda: cfg.cdn(cfg.region()),
-                              bundle_key=lambda: _bundle_key(cfg), apk_catalog=apk,
-                              source=source, session=session)
+                cat = Catalog(
+                    remote,
+                    cache,
+                    cdn=lambda: cfg.cdn(cfg.region()),
+                    bundle_key=lambda: _bundle_key(cfg),
+                    apk_catalog=apk,
+                    source=source,
+                    session=session,
+                )
                 # Replay imported offsets; the current APK is needed only for uncached local files.
                 cat.apk = cfg.path("paths", "apk")
                 hit = self._catalogs[vid] = (cat, catalogdb.by_id(catalogdb.index(remote, apk)))
@@ -312,6 +331,7 @@ class CatalogFetcher:
     def fetch_location(self, vid: str, lid: str) -> Path:
         from .addressables import remote_path
         from .catalog import Bundle, file_name
+
         cat, locs = self.catalog(vid)
         loc = locs.get(lid)
         if loc is None:
@@ -327,6 +347,7 @@ class CatalogFetcher:
         """A raw APK file through its snapshot's cache; only a cache miss needs the matching APK."""
         from .cache import write_atomic
         from .catalog import APK_AA_DIR
+
         rel = apk_rel(internal_id)
         dst = cat.local_cache_dir() / "raw" / rel
         if not (dst.is_file() and dst.stat().st_size > 0):
@@ -346,7 +367,8 @@ class CatalogFetcher:
 def apk_rel(internal_id: str) -> str:
     """The path of an APK-local location's file below the APK's Addressables directory (catalog.APK_AA_DIR)."""
     from .catalog import LOCAL_PREFIX
-    return internal_id[len(LOCAL_PREFIX):].lstrip("/") if internal_id.startswith(LOCAL_PREFIX) else internal_id
+
+    return internal_id[len(LOCAL_PREFIX) :].lstrip("/") if internal_id.startswith(LOCAL_PREFIX) else internal_id
 
 
 def _worker_init(store, cfg) -> None:
@@ -356,11 +378,12 @@ def _worker_init(store, cfg) -> None:
 
 def _log(message: str) -> None:
     from .orchestrate import _log as log
+
     log(message)
 
 
 # ---------------------------------------------------------------- cost calibration
-CALIBRATION = "calibration.json"                  # <store>/costs/calibration.json
+CALIBRATION = "calibration.json"  # <store>/costs/calibration.json
 MIN_SAMPLES = 10
 
 
@@ -417,21 +440,27 @@ def calibrate(log: list[dict], factors: dict, worker_bytes: int) -> dict:
             continue
         old = factors.get(stage, {"cpu": 1.0, "peak": 1.0})
         if any(c.get("childCpuSeconds", 0) is None for _, c in pairs):
-            cpu = 1.0                                   # child processes not measured here: keep the CPU factor
+            cpu = 1.0  # child processes not measured here: keep the CPU factor
         else:
             cpu = sum(c["cpuSeconds"] for _, c in pairs) / sum(a["cpuSeconds"] for a, _ in pairs)
-        ratios = sorted(max(0, (c.get("peakRssBytes") or 0) - (c.get("startRssBytes") or worker_bytes))
-                        / a["peakBytes"] for a, c in pairs)
+        ratios = sorted(
+            max(0, (c.get("peakRssBytes") or 0) - (c.get("startRssBytes") or worker_bytes)) / a["peakBytes"]
+            for a, c in pairs
+        )
         peak = ratios[min(len(ratios) - 1, int(0.95 * len(ratios)))]
         if not any(c.get("peakRssBytes") for _, c in pairs):
-            peak = 1.0                                  # not measurable on this platform
-        out[stage] = {"cpu": _clamp(old["cpu"] * cpu), "peak": _clamp(old["peak"] * max(peak, 0.05)),
-                      "samples": len(pairs)}
+            peak = 1.0  # not measurable on this platform
+        out[stage] = {
+            "cpu": _clamp(old["cpu"] * cpu),
+            "peak": _clamp(old["peak"] * max(peak, 0.05)),
+            "samples": len(pairs),
+        }
     return dict(sorted(out.items()))
 
 
 def write_calibration(root: Path, factors: dict) -> None:
     from .store import write_file
+
     write_file(Path(root) / "costs" / CALIBRATION, contract.encode({"stages": factors}))
 
 
@@ -443,6 +472,7 @@ class Workspace:
     def __init__(self, args, cfg, common, log=_log):
         from .catalogdb import CatalogDB
         from .store import Store
+
         self.args, self.cfg, self.common, self.log = args, cfg, common, log
         self.root = store_root(args, cfg)
         self.cache = cfg.path("paths", "cache")
@@ -456,7 +486,7 @@ class Workspace:
             args.usage(str(e))
         self.installed = installed()
         self.calibration = load_calibration(self.root)
-        self.scheduled = calibrated(self.installed.stages, self.calibration)   # the stages with calibrated costs
+        self.scheduled = calibrated(self.installed.stages, self.calibration)  # the stages with calibrated costs
         self.version, self.remote, self.apk_catalog = self._catalog_version()
         if self.version.get("region"):
             self.cfg = cfg.for_region(self.version["region"])
@@ -465,14 +495,15 @@ class Workspace:
         self._problems: list = []
         self._apk_names: set | None = None
         self._facts: dict = {}
-        self._later = None                                # the background fetch of the raw files
-        self._cancel = threading.Event()                  # set: start no more fetches
+        self._later = None  # the background fetch of the raw files
+        self._cancel = threading.Event()  # set: start no more fetches
         self._names: dict = {}
-        self._done: dict = {}                             # task id -> key of the tasks with a result
+        self._done: dict = {}  # task id -> key of the tasks with a result
 
     # ---------------------------------------------------------------- catalog
     def _catalog_version(self):
         from . import catalogdb
+
         ref = getattr(self.args, "catalog_version", None)
         if ref:
             try:
@@ -491,9 +522,15 @@ class Workspace:
         vid = catalogdb.version_id(contract.sha256(remote), contract.sha256(apk) if apk is not None else None, source)
         v = next((x for x in self.db.versions() if x["id"] == vid), None)
         if v is None:
-            v = self.db.add(remote, apk, region=self.cfg.get("catalog", "region"),
-                            language=self.cfg.get("catalog", "language"), apk_version_name=_apk_version(self.apk),
-                            source=source, resource_version=source["version"] if source else getattr(cat, "resource_version", None))
+            v = self.db.add(
+                remote,
+                apk,
+                region=self.cfg.get("catalog", "region"),
+                language=self.cfg.get("catalog", "language"),
+                apk_version_name=_apk_version(self.apk),
+                source=source,
+                resource_version=source["version"] if source else getattr(cat, "resource_version", None),
+            )
         return v, remote, apk
 
     def catalogs_fact(self) -> dict:
@@ -507,6 +544,7 @@ class Workspace:
         """The catalog index: from the store when catalog.index has run, else computed here."""
         if self._index is None:
             from . import catalogdb
+
             t = self.index_task()
             doc = self.store.result(t.key)
             if doc is not None:
@@ -522,18 +560,24 @@ class Workspace:
 
     def context(self) -> dict:
         v = self.version
-        return {"region": self.cfg.get("catalog", "region"),
-                "language": v.get("language") or self.cfg.get("catalog", "language"),
-                "catalog": {"id": v["id"], "sha": v["remote"]["sha256"],
-                            "label": v["labels"][0] if v["labels"] else None,
-                            "resourceVersion": v.get("resourceVersion"),
-                            "apkCatalogSha": v["apk"]["sha256"] if v.get("apk") else None,
-                            "apkVersionName": v.get("apkVersionName")}}
+        return {
+            "region": self.cfg.get("catalog", "region"),
+            "language": v.get("language") or self.cfg.get("catalog", "language"),
+            "catalog": {
+                "id": v["id"],
+                "sha": v["remote"]["sha256"],
+                "label": v["labels"][0] if v["labels"] else None,
+                "resourceVersion": v.get("resourceVersion"),
+                "apkCatalogSha": v["apk"]["sha256"] if v.get("apk") else None,
+                "apkVersionName": v.get("apkVersionName"),
+            },
+        }
 
     def master_context(self, results) -> dict | None:
         """The master data a run read: {"version": the `version` of <master>/MasterManifest.json (None without
         one), "tables": {table: sha256} of the tables its view tasks read}; None when no view task has a result."""
         from .views import MASTER_ROLE
+
         tables, any_view = {}, False
         for tid, doc in results:
             if not tid.startswith("view."):
@@ -541,7 +585,7 @@ class Workspace:
             any_view = True
             for role, sha in doc["keyParts"]["inputs"]:
                 if role.startswith(MASTER_ROLE):
-                    tables[role[len(MASTER_ROLE):]] = sha
+                    tables[role[len(MASTER_ROLE) :]] = sha
         if not any_view:
             return None
         version = None
@@ -572,8 +616,9 @@ class Workspace:
         want = avail if spec == "all" else sorted({"view." + v.strip() for v in spec.split(",") if v.strip()})
         unknown = [w[5:] for w in want if w not in avail]
         if unknown:
-            self.args.usage(f"--views: no view {', '.join(unknown)} (views: "
-                            f"{', '.join(a[5:] for a in avail) or 'none installed'})")
+            self.args.usage(
+                f"--views: no view {', '.join(unknown)} (views: {', '.join(a[5:] for a in avail) or 'none installed'})"
+            )
         if want and self.master() is None:
             raise self.cfg.missing(*self.cfg.master(self.cfg.get("catalog", "region")))
         return want
@@ -609,8 +654,9 @@ class Workspace:
             classes = sorted({c.strip() for c in only.split(",") if c.strip()})
             takers = [n for n in pipeline if "classes" in stages[n].PARAMS]
             if not classes or not takers:
-                self.args.usage("--only-class: " + ("no class given" if not classes
-                                                    else "no stage of the pipeline selects classes"))
+                self.args.usage(
+                    "--only-class: " + ("no class given" if not classes else "no stage of the pipeline selects classes")
+                )
             for n in takers:
                 out.setdefault(n, {})["classes"] = classes
         for n, p in out.items():
@@ -641,13 +687,19 @@ class Workspace:
         self._problems = []
         bundles = {b["stable"]: b for b in index["bundles"]}
         inputs = self._inputs("bundle", [bundles[s] for s in sel.census], fetch)
-        sel.selected = [s for s in sel.selected if s in inputs]          # files that cannot be read: problems()
-        facts = {"catalogs": self.catalogs_fact(), "index": index, "selected": sel.selected,
-                 "master": self.master() if any(n.startswith("view.") for n in pipeline) else None,
-                 "views": sorted(n[5:] for n in pipeline if n.startswith("view.")),
-                 "bundles": inputs, "raw": Inputs({})}
+        sel.selected = [s for s in sel.selected if s in inputs]  # files that cannot be read: problems()
+        facts = {
+            "catalogs": self.catalogs_fact(),
+            "index": index,
+            "selected": sel.selected,
+            "master": self.master() if any(n.startswith("view.") for n in pipeline) else None,
+            "views": sorted(n[5:] for n in pipeline if n.startswith("view.")),
+            "bundles": inputs,
+            "raw": Inputs({}),
+        }
         if any(n in pipeline for n in RAW_STAGES):
             from .cristages import boot_input
+
             raws = {r["stable"]: r for r in index["rawFiles"]}
             job = (self._inputs, "raw", [raws[s] for s in sel.raw], fetch)
             if background and fetch:
@@ -677,21 +729,24 @@ class Workspace:
 
     def _cache_rel(self, kind: str, entry: dict, loc: dict) -> str:
         from .addressables import remote_path
+
         prefix = ""
         if self.version.get("source"):
             from .jp import Source
+
             prefix = Source.from_dict(self.version["source"]).cache_dir(Path(".")).as_posix() + "/"
             if not entry.get("remote", True) and self.version.get("apk"):
                 prefix += "apk/" + self.version["apk"]["sha256"] + "/"
         if kind == "bundle":
             return prefix + f"bundles/{entry['name']}"
         rel = remote_path(loc["internalId"])
-        if rel is None:                                   # a raw file of the APK (CatalogFetcher._apk_file)
+        if rel is None:  # a raw file of the APK (CatalogFetcher._apk_file)
             rel = apk_rel(loc["internalId"])
         return prefix + "raw/" + rel.lstrip("/")
 
     def _inputs(self, kind: str, entries: list[dict], fetch: bool) -> dict:
         from .catalogdb import by_id
+
         locs = by_id(self.index())
         memo_kind = "bundles" if kind == "bundle" else "raw"
         memo_prefix = self.version["id"] + ":" if self.version.get("source") else ""
@@ -700,13 +755,14 @@ class Workspace:
             loc = locs[e["location"]]
             rel = self._cache_rel(kind, e, loc)
             locators = ([{"kind": "cache", "path": rel}] if rel else []) + [
-                {"kind": "catalog", "catalog": self.version["id"], "location": e["location"]}]
+                {"kind": "catalog", "catalog": self.version["id"], "location": e["location"]}
+            ]
             path = self.cache / rel if self.cache is not None and rel else None
             if path is not None and path.is_file() and path.stat().st_size > 0:
                 todo.append((e, locators, path))
                 continue
             known = self.store.named(memo_kind, memo_prefix + e["name"]) if e["name"] != e["stable"] else None
-            if known is not None:                # a hashed file name: its recorded identity holds
+            if known is not None:  # a hashed file name: its recorded identity holds
                 out[e["stable"]] = Input(kind, known[0], known[1], e["name"], tuple(locators))
             elif not e["remote"] and self.apk is None:
                 self._problem(kind, e, "source.absent", "a file of the APK, and [paths] apk is not set")
@@ -727,7 +783,7 @@ class Workspace:
                 sha, size = self.store.identify(path, memo_kind, memo_prefix + e["name"])
             except ConfigError:
                 raise
-            except KeyError as x:                # not in the APK
+            except KeyError as x:  # not in the APK
                 self._problem(kind, e, "source.absent", f"not in the APK: {x.args[0] if x.args else x}")
                 return None
             except Exception as x:
@@ -748,6 +804,7 @@ class Workspace:
     def _in_apk(self, internal_id: str) -> bool:
         """Whether the APK holds the file of a location (read from its directory, not fetched)."""
         from .catalog import APK_AA_DIR
+
         if self._apk_names is None:
             try:
                 with ApkSet(self.apk) as z:
@@ -757,27 +814,33 @@ class Workspace:
         return APK_AA_DIR + apk_rel(internal_id) in self._apk_names
 
     def _problem(self, kind: str, e: dict, code: str, message: str) -> None:
-        self._problems.append({"kind": kind, "stable": e["stable"], "name": e["name"], "code": code,
-                               "message": message})
+        self._problems.append(
+            {"kind": kind, "stable": e["stable"], "name": e["name"], "code": code, "message": message}
+        )
 
     # ---------------------------------------------------------------- explain
     def explain(self, pipeline: list[str], params: dict, orch=None, layouts=(), placement=None) -> list[str]:
         ctx = self.context()
         c = ctx["catalog"]
-        lines = [f"store: {self.root}", f"cache: {self.cache if self.cache is not None else 'not set'}",
-                 f"context: region {ctx['region'] or '-'}, language {ctx['language'] or '-'}, catalog "
-                 f"{c['label'] or '-'} ({c['id'][:12]}), APK catalog {(c['apkCatalogSha'] or '-')[:12]}",
-                 f"selection: {', '.join(self.selection)}",
-                 f"pipeline: {', '.join(pipeline)}",
-                 f"not installed: {', '.join(self.installed.missing) or 'none'}"]
+        lines = [
+            f"store: {self.root}",
+            f"cache: {self.cache if self.cache is not None else 'not set'}",
+            f"context: region {ctx['region'] or '-'}, language {ctx['language'] or '-'}, catalog "
+            f"{c['label'] or '-'} ({c['id'][:12]}), APK catalog {(c['apkCatalogSha'] or '-')[:12]}",
+            f"selection: {', '.join(self.selection)}",
+            f"pipeline: {', '.join(pipeline)}",
+            f"not installed: {', '.join(self.installed.missing) or 'none'}",
+        ]
         for n in pipeline:
             lines.append(f"params {n}: {contract.key_text(self.installed.stages[n].normalize(params.get(n)))}")
         lines.append(f"fetch workers: {getattr(self.args, 'fetch_workers', None) or FETCH_WORKERS}")
         for n in pipeline:
             if n in self.calibration:
                 f = self.calibration[n]
-                lines.append(f"cost calibration {n}: CPU x{f['cpu']}, peak memory x{f['peak']} "
-                             f"({f.get('samples', 0)} measured tasks)")
+                lines.append(
+                    f"cost calibration {n}: CPU x{f['cpu']}, peak memory x{f['peak']} "
+                    f"({f.get('samples', 0)} measured tasks)"
+                )
         if orch is not None:
             lines += orch.explain()
         if layouts:
@@ -799,11 +862,21 @@ class Workspace:
 
     def plan(self, pipeline: list[str], params: dict, *, since=None, out=None, layouts=()):
         from . import plan as plan_mod
+
         facts = self.facts(pipeline, fetch=False)
-        p = plan_mod.plan(self.scheduled, pipeline, self.store, params=params, facts=facts,
-                          previous=self.previous(since), workers=self.workers(), memory=self.memory())
+        p = plan_mod.plan(
+            self.scheduled,
+            pipeline,
+            self.store,
+            params=params,
+            facts=facts,
+            previous=self.previous(since),
+            workers=self.workers(),
+            memory=self.memory(),
+        )
         if out is not None and layouts:
             from . import layout
+
             self.done({n["id"]: n["key"] for n in p.doc["nodes"] if n["status"] == "hit"})
             hits = [(n["id"], n["key"]) for n in p.doc["nodes"] if n["status"] == "hit" and self._output(n["stage"])]
             placed = self.layout_input(dict(hits))
@@ -829,11 +902,11 @@ class Workspace:
             stages[contract.parse_task_id(tid)[0]].derived(tid, self.store.result(tasks[tid]), self.store, asked)
         return LayoutInput(asked.objects_asked, makers)
 
-    def layout_entries(self, name: str, placed: LayoutInput, *, store_derived: bool = True
-                       ) -> tuple[list[dict], dict]:
+    def layout_entries(self, name: str, placed: LayoutInput, *, store_derived: bool = True) -> tuple[list[dict], dict]:
         """The entries of layout `name` for the results of the output stages given to `placed` (derived documents
         of the stages in `original`) and its report."""
         from . import layout
+
         stages = self.installed.stages
         sources, named = [], []
         for tid, doc in placed.results:
@@ -845,20 +918,18 @@ class Workspace:
                 if len(names) > 1:
                     named.append({"task": tid, "names": list(names)})
             else:
-                sources.append(layout.Source(tid, doc, layout_root(stage, self.installed.sources[stage_name],
-                                                                   subject)))
+                sources.append(layout.Source(tid, doc, layout_root(stage, self.installed.sources[stage_name], subject)))
         index = self.index()
         case = {loc["internalId"].lower(): loc["internalId"] for loc in index["locations"] if loc["kind"] == "asset"}
         if name != "original":
             return layout.entries(name, sources)
-        derives = lambda s: hasattr(stages[contract.parse_task_id(s.task)[0]], "derived")   # noqa: E731
-        roots = {}                              # every object of a bundle under its export task's root
+        derives = lambda s: hasattr(stages[contract.parse_task_id(s.task)[0]], "derived")  # noqa: E731
+        roots = {}  # every object of a bundle under its export task's root
         for s in sources:
             if s.task.startswith(EXPORT_STAGE + ":") and s.root is not None:
                 for f in s.result["files"]:
                     roots.setdefault(f, s.root)
-        entries, report = layout.entries(name, [s for s in sources if not derives(s)], case=case,
-                                         object_roots=roots)
+        entries, report = layout.entries(name, [s for s in sources if not derives(s)], case=case, object_roots=roots)
         report["names"] = named
         extra = self._derived(sources, entries, store_derived, placed.objects)
         taken = {e["path"].casefold() for e in entries}
@@ -890,9 +961,11 @@ class Workspace:
 
     def _derived(self, sources, entries: list[dict], store_derived: bool, objects: dict) -> list[dict]:
         from . import layout
+
         stages = self.installed.stages
-        makers = list({s.task: s for s in sources
-                       if hasattr(stages[contract.parse_task_id(s.task)[0]], "derived")}.values())
+        makers = list(
+            {s.task: s for s in sources if hasattr(stages[contract.parse_task_id(s.task)[0]], "derived")}.values()
+        )
         if not makers:
             return []
         paths = LayoutPaths(layout.paths(entries), objects)
@@ -901,8 +974,14 @@ class Workspace:
             stage = stages[contract.parse_task_id(s.task)[0]]
             for rel, data in stage.derived(s.task, s.result, self.store, paths):
                 sha = self.store.put(data) if store_derived else contract.sha256(data)
-                out.append({"path": layout.escape_path(rel.split("/")), "sha256": sha, "size": len(data),
-                            "id": contract.artifact_id(s.task, "derived:" + rel)})
+                out.append(
+                    {
+                        "path": layout.escape_path(rel.split("/")),
+                        "sha256": sha,
+                        "size": len(data),
+                        "id": contract.artifact_id(s.task, "derived:" + rel),
+                    }
+                )
         return out
 
 
@@ -1036,6 +1115,7 @@ def _apk_version(apk: Path | None) -> str | None:
     if apk is None or not apk.is_file():
         return None
     from .gameapi import apk_version_name
+
     return apk_version_name(apk)
 
 
@@ -1062,12 +1142,17 @@ class Totals:
 
 
 def view_gaps(results) -> int:
-    return sum(int(a["semantics"].get("facts", {}).get("gaps", 0)) for tid, doc in results
-               if tid.startswith("view.") for a in doc["artifacts"])
+    return sum(
+        int(a["semantics"].get("facts", {}).get("gaps", 0))
+        for tid, doc in results
+        if tid.startswith("view.")
+        for a in doc["artifacts"]
+    )
 
 
 def _write_report(d: Path, name: str, doc) -> Path:
     from .store import write_file
+
     p = d / name
     write_file(p, contract.encode(doc))
     return p
@@ -1076,20 +1161,29 @@ def _write_report(d: Path, name: str, doc) -> Path:
 def cmd_export(args, cfg, common):
     from . import layout
     from .orchestrate import Orchestrator, failure
+
     try:
         names = parse_layouts(args.layout)
     except ValueError as e:
         args.usage(str(e))
-    use(cfg)                                          # the tools the atoms name are part of the keys
+    use(cfg)  # the tools the atoms name are part of the keys
     ws = Workspace(args, cfg, common)
     pipeline = ws.pipeline()
     params = ws.params(pipeline)
-    orch = Orchestrator(ws.store, ws.scheduled, workers=ws.workers(), memory=ws.memory(),
-                        recycle_tasks=RECYCLE_TASKS, recycle_rss=ws.recycle_rss(), initializer=_worker_init,
-                        initargs=(cfg,), log=ws.log)
+    orch = Orchestrator(
+        ws.store,
+        ws.scheduled,
+        workers=ws.workers(),
+        memory=ws.memory(),
+        recycle_tasks=RECYCLE_TASKS,
+        recycle_rss=ws.recycle_rss(),
+        initializer=_worker_init,
+        initargs=(cfg,),
+        log=ws.log,
+    )
     out = Path(args.out)
     placement = None
-    if not args.dry_run:                              # before any work: an explicit method that cannot work stops it
+    if not args.dry_run:  # before any work: an explicit method that cannot work stops it
         try:
             placement = layout.probe(out, ws.root / "cas" / "sha256", link_mode(args, cfg))
         except layout.LayoutError as e:
@@ -1103,10 +1197,12 @@ def cmd_export(args, cfg, common):
     ws.run_index()
     facts = ws.facts(pipeline, fetch=True, background=True)
     sel = ws.selected
-    ws.log(f"{len(sel.selected)} bundles selected ({len(sel.census)} with their dependencies), "
-           f"{len(sel.raw)} raw files" + (" (fetched while the bundle stages run)" if isinstance(facts["raw"], Later)
-                                          else "")
-           + f"; {sum(p['kind'] == 'bundle' for p in ws.problems())} bundles not readable")
+    ws.log(
+        f"{len(sel.selected)} bundles selected ({len(sel.census)} with their dependencies), "
+        f"{len(sel.raw)} raw files"
+        + (" (fetched while the bundle stages run)" if isinstance(facts["raw"], Later) else "")
+        + f"; {sum(p['kind'] == 'bundle' for p in ws.problems())} bundles not readable"
+    )
     aborted = None
     try:
         run = orch.run(pipeline, params=params, facts=facts, context=ws.context(), selection=ws.selection)
@@ -1122,15 +1218,22 @@ def cmd_export(args, cfg, common):
         sys.exit(EXIT_ABORTED)
     try:
         ws.wait()
-    except ConfigError as e:                          # the raw files' fetch stopped (the run stopped with it)
+    except ConfigError as e:  # the raw files' fetch stopped (the run stopped with it)
         aborted = aborted or str(e)
     if isinstance(facts["raw"], Later) and aborted is None:
         ws.log(f"{sum(p['kind'] == 'raw' for p in ws.problems())} raw files not readable")
-    stage_of ={"bundle": "unity.census", "raw": next((n for n in RAW_STAGES if n in pipeline), "cri.audio")}
+    stage_of = {"bundle": "unity.census", "raw": next((n for n in RAW_STAGES if n in pipeline), "cri.audio")}
     for p in ws.problems():
         if p["code"] == "source.error":
-            run.failures_.append(failure(contract.task_id(stage_of[p["kind"]], p["stable"]), stage_of[p["kind"]],
-                                         p["code"], p["message"], p["name"]))
+            run.failures_.append(
+                failure(
+                    contract.task_id(stage_of[p["kind"]], p["stable"]),
+                    stage_of[p["kind"]],
+                    p["code"],
+                    p["message"],
+                    p["name"],
+                )
+            )
     done = {tid: t["key"] for tid, t in run.tasks.items() if t["status"] != "failed"}
     ws.done(done)
     output = {tid for tid in done if ws._output(contract.parse_task_id(tid)[0])}
@@ -1141,7 +1244,8 @@ def cmd_export(args, cfg, common):
         totals.add(tid, doc)
         if tid in output:
             placed.add(tid, doc)
-    run.scan(visit, census=totals.census)             # the only reading of the results
+
+    run.scan(visit, census=totals.census)  # the only reading of the results
     run.context["master"] = ws.master_context(totals.views)
     reports = out / REPORTS
     written, shas, unplaced = {}, {}, 0
@@ -1149,14 +1253,25 @@ def cmd_export(args, cfg, common):
         entries, report = ws.layout_entries(name, placed)
         w = layout.materialize(d, name, {}, entries, layout.from_store(ws.store), link=placement[0])
         shas[name] = w["sha256"]
-        written[name] = {"dir": str(d), "files": len(w["manifest"]["entries"]), "write": w["write"],
-                         "remove": w["remove"], "keep": w["keep"], "cloned": w["cloned"], "linked": w["linked"],
-                         "copied": w["copied"], "failed": len(w["failed"]), "collisions": len(report["collisions"]),
-                         "shared": len(report.get("shared", []))}
+        written[name] = {
+            "dir": str(d),
+            "files": len(w["manifest"]["entries"]),
+            "write": w["write"],
+            "remove": w["remove"],
+            "keep": w["keep"],
+            "cloned": w["cloned"],
+            "linked": w["linked"],
+            "copied": w["copied"],
+            "failed": len(w["failed"]),
+            "collisions": len(report["collisions"]),
+            "shared": len(report.get("shared", [])),
+        }
         unplaced += len(w["failed"])
-        ws.log(f"layout {name}: placed {w['cloned'] + w['linked'] + w['copied']}: {w['cloned']} cloned / "
-               f"{w['linked']} hard-linked (read-only) / {w['copied']} copied"
-               + (f"; {len(w['failed'])} not placed (layout-{name}.json)" if w["failed"] else ""))
+        ws.log(
+            f"layout {name}: placed {w['cloned'] + w['linked'] + w['copied']}: {w['cloned']} cloned / "
+            f"{w['linked']} hard-linked (read-only) / {w['copied']} copied"
+            + (f"; {len(w['failed'])} not placed (layout-{name}.json)" if w["failed"] else "")
+        )
         _write_report(reports, f"layout-{name}.json", dict(report, failed=w["failed"]) if w["failed"] else report)
     manifest = run.write(shas, placement={"method": placement[0], "reason": placement[1]})
     write_calibration(ws.root, calibrate(run.log, ws.calibration, orch.worker_bytes))
@@ -1166,10 +1281,21 @@ def cmd_export(args, cfg, common):
     _write_report(reports, "sources.json", {"problems": ws.problems()})
     s = manifest["summary"]
     gaps = view_gaps(totals.views)
-    common.print_json({"run": manifest["id"], "selection": ws.selection, "tasks": {k: s[k] for k in (
-        "tasks", "hit", "ran", "failed")}, "items": s["items"], "artifacts": s["artifacts"],
-        "failures": len(run.failures()), "sources": dict(sorted(Counter(p["code"] for p in ws.problems()).items())),
-        "viewGaps": gaps, "placement": manifest["placement"], "layouts": written, "reports": str(reports)})
+    common.print_json(
+        {
+            "run": manifest["id"],
+            "selection": ws.selection,
+            "tasks": {k: s[k] for k in ("tasks", "hit", "ran", "failed")},
+            "items": s["items"],
+            "artifacts": s["artifacts"],
+            "failures": len(run.failures()),
+            "sources": dict(sorted(Counter(p["code"] for p in ws.problems()).items())),
+            "viewGaps": gaps,
+            "placement": manifest["placement"],
+            "layouts": written,
+            "reports": str(reports),
+        }
+    )
     if aborted:
         print(f"nnnotes: aborted: {aborted}", file=sys.stderr)
         sys.exit(EXIT_ABORTED)
@@ -1180,6 +1306,7 @@ def cmd_export(args, cfg, common):
 def link_mode(args, cfg) -> str:
     """How export places the layout files (layout.LINKS): --link, else [export] link, else auto."""
     from .layout import LINKS
+
     v = getattr(args, "link", None)
     if v:
         return v
@@ -1192,13 +1319,14 @@ def link_mode(args, cfg) -> str:
 # ---------------------------------------------------------------- plan
 def cmd_plan(args, cfg, common):
     from .orchestrate import Orchestrator
+
     layouts = []
     if args.out:
         try:
             layouts = parse_layouts(args.layout)
         except ValueError as e:
             args.usage(str(e))
-    use(cfg)                                          # the tools the atoms name are part of the keys
+    use(cfg)  # the tools the atoms name are part of the keys
     ws = Workspace(args, cfg, common)
     pipeline = ws.pipeline()
     params = ws.params(pipeline)
@@ -1208,9 +1336,17 @@ def cmd_plan(args, cfg, common):
     if args.census:
         ws.run_index()
         facts = ws.facts(["catalog.index", "unity.census"], fetch=True)
-        Orchestrator(ws.store, ws.scheduled, workers=ws.workers(), memory=ws.memory(),
-                     recycle_tasks=RECYCLE_TASKS, recycle_rss=ws.recycle_rss(), initializer=_worker_init,
-                     initargs=(cfg,), log=ws.log).run(["catalog.index", "unity.census"], facts=facts)
+        Orchestrator(
+            ws.store,
+            ws.scheduled,
+            workers=ws.workers(),
+            memory=ws.memory(),
+            recycle_tasks=RECYCLE_TASKS,
+            recycle_rss=ws.recycle_rss(),
+            initializer=_worker_init,
+            initargs=(cfg,),
+            log=ws.log,
+        ).run(["catalog.index", "unity.census"], facts=facts)
     p = ws.plan(pipeline, params, since=args.since, out=args.out, layouts=layouts)
     if args.emit_tasks:
         files = p.emit(args.emit_tasks)
@@ -1241,9 +1377,16 @@ def why(ws: Workspace, p, tid: str, since=None) -> dict:
     if old_task is not None and old_task.get("key"):
         doc = ws.store.result(old_task["key"])
         old = doc["keyParts"] if doc else None
-    return {"task": tid, "status": node["status"], "key": node["key"], "reasons": node["reasons"],
-            "previous": {"run": prev["id"], "key": old_task.get("key"), "status": old_task["status"]}
-            if old_task is not None else None, "keyParts": {"old": old, "new": new}}
+    return {
+        "task": tid,
+        "status": node["status"],
+        "key": node["key"],
+        "reasons": node["reasons"],
+        "previous": {"run": prev["id"], "key": old_task.get("key"), "status": old_task["status"]}
+        if old_task is not None
+        else None,
+        "keyParts": {"old": old, "new": new},
+    }
 
 
 # ---------------------------------------------------------------- run-stage
@@ -1258,6 +1401,7 @@ def _task_files(items) -> list[Path]:
 def cmd_run_stage(args, cfg, common):
     from .orchestrate import run_one
     from .store import Store
+
     problems, tasks = [], []
     for f in _task_files(args.tasks):
         try:
@@ -1272,8 +1416,10 @@ def cmd_run_stage(args, cfg, common):
         if s is None:
             problems.append(f"task {t.id}: no stage {t.stage} in this installation")
         elif s.version != t.version:
-            problems.append(f"task {t.id}: stage {t.stage} is version {s.version} here, the task was described "
-                            f"for version {t.version}")
+            problems.append(
+                f"task {t.id}: stage {t.stage} is version {s.version} here, the task was described "
+                f"for version {t.version}"
+            )
     if problems:
         for m in problems:
             print(f"nnnotes: incompatible task: {m}", file=sys.stderr)
@@ -1294,8 +1440,9 @@ def cmd_run_stage(args, cfg, common):
             if r["code"] == "config":
                 break
     n = Counter(o["status"] for o in out)
-    common.print_json({"tasks": out, "summary": {"tasks": len(tasks), "hit": n["hit"], "ran": n["ran"],
-                                                 "failed": n["failed"]}})
+    common.print_json(
+        {"tasks": out, "summary": {"tasks": len(tasks), "hit": n["hit"], "ran": n["ran"], "failed": n["failed"]}}
+    )
     if bad:
         sys.exit(EXIT_FAILED)
 
@@ -1303,18 +1450,22 @@ def cmd_run_stage(args, cfg, common):
 # ---------------------------------------------------------------- catalogs
 def _db(args, cfg):
     from .catalogdb import CatalogDB
+
     return CatalogDB(store_root(args, cfg))
 
 
 def _version_line(v: dict) -> str:
     apk = v["apk"]["sha256"][:12] if v.get("apk") else "-"
-    return (f"{v['seq']:>4}  {v['id'][:12]}  {','.join(v['labels']) or '-':<24}  {v.get('region') or '-':<6} "
-            f"{v.get('language') or '-':<8} remote {v['remote']['sha256'][:12]}  apk {apk}  "
-            f"resource {v.get('resourceVersion') or '-'}")
+    return (
+        f"{v['seq']:>4}  {v['id'][:12]}  {','.join(v['labels']) or '-':<24}  {v.get('region') or '-':<6} "
+        f"{v.get('language') or '-':<8} remote {v['remote']['sha256'][:12]}  apk {apk}  "
+        f"resource {v.get('resourceVersion') or '-'}"
+    )
 
 
 def cmd_catalogs_list(args, cfg, common):
     from .catalogdb import CATALOGS
+
     vs = _db(args, cfg).versions()
     if args.json:
         common.print_json({"schema": CATALOGS, "versions": vs})
@@ -1326,6 +1477,7 @@ def cmd_catalogs_list(args, cfg, common):
 
 def _apk_catalog(args, cfg) -> bytes | None:
     from .catalogdb import apk_catalog
+
     if getattr(args, "apk_catalog", None):
         return Path(args.apk_catalog).read_bytes()
     apk = cfg.path("paths", "apk")
@@ -1350,7 +1502,9 @@ def _import_resource_version(given: str | None, file: Path, source: dict | None)
             raise ValueError(f"--resource-version {given!r}: {e}") from None
     if source is not None:
         if given is not None and given != source["version"]:
-            raise ValueError(f"--resource-version {given} differs from the catalog's source version {source['version']}")
+            raise ValueError(
+                f"--resource-version {given} differs from the catalog's source version {source['version']}"
+            )
         return source["version"]
     if given is not None:
         return given
@@ -1367,12 +1521,19 @@ def cmd_catalogs_import(args, cfg, common):
         source = None
         if cfg.provider() == "jp":
             from .jp import read_source
+
             source = read_source(args.file, remote).to_dict()
         resource = _import_resource_version(args.resource_version, Path(args.file), source)
-        v = _db(args, cfg).add(remote, _apk_catalog(args, cfg), label=args.label,
-                               region=cfg.get("catalog", "region"), language=cfg.get("catalog", "language"),
-                               resource_version=resource,
-                               apk_version_name=_apk_version(cfg.path("paths", "apk")), source=source)
+        v = _db(args, cfg).add(
+            remote,
+            _apk_catalog(args, cfg),
+            label=args.label,
+            region=cfg.get("catalog", "region"),
+            language=cfg.get("catalog", "language"),
+            resource_version=resource,
+            apk_version_name=_apk_version(cfg.path("paths", "apk")),
+            source=source,
+        )
     except ValueError as e:
         args.usage(str(e))
     print(_version_line(v))
@@ -1381,15 +1542,23 @@ def cmd_catalogs_import(args, cfg, common):
 def cmd_catalogs_fetch(args, cfg, common):
     from . import catalogdb
     from .catalog import Catalog
+
     region = cfg.region()
     if cfg.provider(region) == "jp":
         from .jp import open_catalog
+
         cat = open_catalog(cfg, region, apk=cfg.path("paths", "apk"))
         src = cat.sources()
-        v = _db(args, cfg).add(src["remote"], src.get("apk"), label=args.label, region=region,
-                               language=cfg.get("catalog", "language") or "ja", source=cat.source.to_dict(),
-                               resource_version=cat.source.version,
-                               apk_version_name=_apk_version(cfg.path("paths", "apk")))
+        v = _db(args, cfg).add(
+            src["remote"],
+            src.get("apk"),
+            label=args.label,
+            region=region,
+            language=cfg.get("catalog", "language") or "ja",
+            source=cat.source.to_dict(),
+            resource_version=cat.source.version,
+            apk_version_name=_apk_version(cfg.path("paths", "apk")),
+        )
         print(_version_line(v))
         return
     cdn = cfg.cdn(region)
@@ -1398,14 +1567,23 @@ def cmd_catalogs_fetch(args, cfg, common):
     filename = Catalog.cache_file(language, Path("."), version=version).name
     try:
         data, hash_text = catalogdb.fetch(cdn, language, version=version)
-    except OSError as e:                             # URLError, HTTPError, timeouts (the message has no URL)
-        sys.exit(f"nnnotes: {filename} could not be fetched: {type(e).__name__}: "
-                 f"{getattr(e, 'reason', None) or getattr(e, 'code', None) or ''}".rstrip(": "))
+    except OSError as e:  # URLError, HTTPError, timeouts (the message has no URL)
+        sys.exit(
+            f"nnnotes: {filename} could not be fetched: {type(e).__name__}: "
+            f"{getattr(e, 'reason', None) or getattr(e, 'code', None) or ''}".rstrip(": ")
+        )
     resource = version if version != "main" else None
     try:
-        v = _db(args, cfg).add(data, _apk_catalog(args, cfg), label=args.label, region=region, language=language,
-                               hash_text=hash_text, resource_version=resource,
-                               apk_version_name=_apk_version(cfg.path("paths", "apk")))
+        v = _db(args, cfg).add(
+            data,
+            _apk_catalog(args, cfg),
+            label=args.label,
+            region=region,
+            language=language,
+            hash_text=hash_text,
+            resource_version=resource,
+            apk_version_name=_apk_version(cfg.path("paths", "apk")),
+        )
     except ValueError as e:
         args.usage(str(e))
     print(_version_line(v))
@@ -1421,8 +1599,14 @@ def addresses_of(store, vid: str) -> dict | None:
             continue
         if (doc.get("context", {}).get("catalog") or {}).get("id") != vid:
             continue
-        t = next((t for t in doc["tasks"] if t["id"] == contract.task_id("link.addresses", CATALOG_SUBJECT)
-                  and t["status"] != "failed"), None)
+        t = next(
+            (
+                t
+                for t in doc["tasks"]
+                if t["id"] == contract.task_id("link.addresses", CATALOG_SUBJECT) and t["status"] != "failed"
+            ),
+            None,
+        )
         res = store.result(t["key"]) if t else None
         if res:
             (a,) = res["artifacts"]
@@ -1433,6 +1617,7 @@ def addresses_of(store, vid: str) -> dict | None:
 def cmd_catalogs_diff(args, cfg, common):
     from . import catalogdb
     from .store import Store
+
     db = _db(args, cfg)
     vs = []
     for ref in (args.old, args.new):
@@ -1453,6 +1638,7 @@ def cmd_catalogs_diff(args, cfg, common):
 # ---------------------------------------------------------------- store
 def cmd_store_verify(args, cfg, common):
     from .store import Store
+
     r = Store(store_root(args, cfg)).verify(quick=args.quick, workers=args.workers or FETCH_WORKERS)
     common.print_json(r)
     if r["problems"]:
@@ -1463,6 +1649,7 @@ def cmd_store_verify(args, cfg, common):
 def default_common():
     """The helpers of the command line the handlers use (open_catalog, print_json)."""
     from . import cli
+
     return SimpleNamespace(open_catalog=cli.open_catalog, print_json=cli._print_json)
 
 
@@ -1482,21 +1669,40 @@ def _store_arg(c) -> None:
 
 def _run_args(c) -> None:
     """The selection and parameters shared by export and plan."""
-    c.add_argument("--select", action="append", metavar="SEL",
-                   help="group:<group>, key:<key prefix> or bundle:<glob> (repeatable; default: everything)")
-    c.add_argument("--views", metavar="all|none|a,b",
-                   help="semantic views to build (default: all when master data is set, else none)")
-    c.add_argument("--catalog-version", metavar="LABEL|SHA",
-                   help="an imported catalog version (`catalogs list`; default: the current catalog)")
+    c.add_argument(
+        "--select",
+        action="append",
+        metavar="SEL",
+        help="group:<group>, key:<key prefix> or bundle:<glob> (repeatable; default: everything)",
+    )
+    c.add_argument(
+        "--views",
+        metavar="all|none|a,b",
+        help="semantic views to build (default: all when master data is set, else none)",
+    )
+    c.add_argument(
+        "--catalog-version",
+        metavar="LABEL|SHA",
+        help="an imported catalog version (`catalogs list`; default: the current catalog)",
+    )
     c.add_argument("--png-level", type=int, metavar="N", help="PNG compression level 0-9 (changes the output)")
-    c.add_argument("--flac-level", type=int, metavar="N",
-                   help="FLAC compression level 0-12 of the CRI audio (default 8; every level decodes to the same "
-                        "samples; changes the files)")
+    c.add_argument(
+        "--flac-level",
+        type=int,
+        metavar="N",
+        help="FLAC compression level 0-12 of the CRI audio (default 8; every level decodes to the same "
+        "samples; changes the files)",
+    )
     c.add_argument("--only-class", metavar="C,...", help="export only objects of these classes")
-    c.add_argument("--workers", type=int,
-                   help="worker processes (default: the CPUs this process may use; 0: this process)")
-    c.add_argument("--memory", type=_gib, metavar="GiB",
-                   help="memory budget of the running tasks and workers (default: 80 %% of the physical memory)")
+    c.add_argument(
+        "--workers", type=int, help="worker processes (default: the CPUs this process may use; 0: this process)"
+    )
+    c.add_argument(
+        "--memory",
+        type=_gib,
+        metavar="GiB",
+        help="memory budget of the running tasks and workers (default: 80 %% of the physical memory)",
+    )
     c.add_argument("--fetch-workers", type=int, metavar="N", help=f"parallel downloads (default {FETCH_WORKERS})")
     c.add_argument("--layout", default="original", help="original, cas or original,cas (default original)")
     c.add_argument("--explain", action="store_true", help="print every setting of the run first")
@@ -1514,9 +1720,12 @@ def register(sub, common=None) -> None:
     c = sub.add_parser("export", help="every object of the selected bundles -> common formats (store + layouts)")
     c.add_argument("-o", "--out", required=True, help="output directory")
     _run_args(c)
-    c.add_argument("--link", choices=("auto", "clone", "hard", "copy"),
-                   help="how the layout files are made from the store: auto (default; [export] link): a clone where "
-                        "the file system makes them, else a hard link (read-only), else a copy; or that method only")
+    c.add_argument(
+        "--link",
+        choices=("auto", "clone", "hard", "copy"),
+        help="how the layout files are made from the store: auto (default; [export] link): a clone where "
+        "the file system makes them, else a hard link (read-only), else a copy; or that method only",
+    )
     c.add_argument("--strict", action="store_true", help="exit 1 when a view has gaps")
     c.add_argument("--dry-run", action="store_true", help="print the plan, run nothing")
     c.set_defaults(func=bind(cmd_export), usage=c.error)
@@ -1549,9 +1758,11 @@ def register(sub, common=None) -> None:
     m.add_argument("file", help="catalog_<version>_<language>.bin")
     m.add_argument("--label", help="label of the version (default: its resource version, else the sha256 prefix)")
     m.add_argument("--apk-catalog", help="the APK's catalog.bin (default: read from [paths] apk)")
-    m.add_argument("--resource-version",
-                   help="the game's resource version of this catalog (default: the JP source's version, else the "
-                        "version in the file name catalog_<version>_<language>.bin)")
+    m.add_argument(
+        "--resource-version",
+        help="the game's resource version of this catalog (default: the JP source's version, else the "
+        "version in the file name catalog_<version>_<language>.bin)",
+    )
     _store_arg(m)
     m.set_defaults(func=bind(cmd_catalogs_import), usage=m.error)
     m = csub.add_parser("fetch", help="fetch the region's current catalog and import it")
@@ -1577,9 +1788,21 @@ def register(sub, common=None) -> None:
 def main(argv=None) -> None:
     """The asset commands alone, with the global flags of the command line (tests; `nnnotes` has them too)."""
     from .cli import load_config
+
     p = argparse.ArgumentParser(prog="nnnotes")
-    for flag in ("--config", "--region", "--language", "--catalog", "--catalog-release", "--cache", "--master", "--apk", "--ffmpeg",
-                 "--vgmstream", "--node"):
+    for flag in (
+        "--config",
+        "--region",
+        "--language",
+        "--catalog",
+        "--catalog-release",
+        "--cache",
+        "--master",
+        "--apk",
+        "--ffmpeg",
+        "--vgmstream",
+        "--node",
+    ):
         p.add_argument(flag)
     sub = p.add_subparsers(dest="cmd", required=True, metavar="<command>")
     register(sub)
@@ -1592,5 +1815,5 @@ def main(argv=None) -> None:
         sys.exit(EXIT_USAGE)
 
 
-if __name__ == "__main__":                            # pragma: no cover
+if __name__ == "__main__":  # pragma: no cover
     main()

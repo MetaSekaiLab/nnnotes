@@ -3,6 +3,7 @@
 A catalog is `catalog_main_<code>.bin`; the client's LanguageMode picks the column of the text tables
 (MasterLoader.GetLocalizedText) and the fonts of LocalizeManager. Every region serves every language.
 """
+
 from __future__ import annotations
 
 from .config import Config, ConfigError, active

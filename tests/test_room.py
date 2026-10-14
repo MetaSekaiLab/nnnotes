@@ -1,6 +1,7 @@
 """room: material translation from the pass render state (property-driven values), empty material slots, and the
 glTF textures, images and materials of a bundle whose serialized files reuse path ids (synthetic shader / material
 typetrees and objects)."""
+
 import copy
 import json
 import struct
@@ -25,26 +26,59 @@ def fv(val, name=FIXED):
 def shader(name="Universal Render Pipeline/Lit", props=None, tags=(), **state):
     """A shader typetree: one subshader, one pass with render target 0 and the other states given (defaults:
     opaque, back-face culling, depth write on, LEqual, all colour channels)."""
-    rt = {"srcBlend": fv(1.0), "destBlend": fv(0.0), "srcBlendAlpha": fv(1.0), "destBlendAlpha": fv(0.0),
-          "blendOp": fv(0.0), "blendOpAlpha": fv(0.0), "colMask": fv(15.0)}
+    rt = {
+        "srcBlend": fv(1.0),
+        "destBlend": fv(0.0),
+        "srcBlendAlpha": fv(1.0),
+        "destBlendAlpha": fv(0.0),
+        "blendOp": fv(0.0),
+        "blendOpAlpha": fv(0.0),
+        "colMask": fv(15.0),
+    }
     st = {"culling": fv(2.0), "zWrite": fv(1.0), "zTest": fv(4.0), "alphaToMask": fv(0.0)}
     for k, v in state.items():
         (rt if k in rt else st)[k] = v
-    return {"m_ParsedForm": {
-        "m_Name": name,
-        "m_PropInfo": {"m_Props": [{"m_Name": n, "m_Type": 2, "m_DefValue[0]": d, "m_DefValue[1]": 0.0,
-                                    "m_DefValue[2]": 0.0, "m_DefValue[3]": 0.0} for n, d in (props or {}).items()]},
-        "m_SubShaders": [{"m_Tags": {"tags": list(tags)},
-                          "m_Passes": [{"m_State": {"rtBlend0": rt, **st}, "m_Tags": {"tags": []}}]}]}}
+    return {
+        "m_ParsedForm": {
+            "m_Name": name,
+            "m_PropInfo": {
+                "m_Props": [
+                    {
+                        "m_Name": n,
+                        "m_Type": 2,
+                        "m_DefValue[0]": d,
+                        "m_DefValue[1]": 0.0,
+                        "m_DefValue[2]": 0.0,
+                        "m_DefValue[3]": 0.0,
+                    }
+                    for n, d in (props or {}).items()
+                ]
+            },
+            "m_SubShaders": [
+                {
+                    "m_Tags": {"tags": list(tags)},
+                    "m_Passes": [{"m_State": {"rtBlend0": rt, **st}, "m_Tags": {"tags": []}}],
+                }
+            ],
+        }
+    }
 
 
 def material(floats=None, ints=None, name="m"):
-    return {"m_Name": name, "m_SavedProperties": {"m_TexEnvs": [], "m_Ints": list((ints or {}).items()),
-                                                  "m_Floats": list((floats or {}).items()), "m_Colors": []}}
+    return {
+        "m_Name": name,
+        "m_SavedProperties": {
+            "m_TexEnvs": [],
+            "m_Ints": list((ints or {}).items()),
+            "m_Floats": list((floats or {}).items()),
+            "m_Colors": [],
+        },
+    }
 
 
-LIT_BLEND = dict(srcBlend=fv(0.0, "_SrcBlend"), destBlend=fv(0.0, "_DstBlend"), culling=fv(0.0, "_Cull"),
-                 zWrite=fv(0.0, "_ZWrite"))
+LIT_BLEND = dict(
+    srcBlend=fv(0.0, "_SrcBlend"), destBlend=fv(0.0, "_DstBlend"), culling=fv(0.0, "_Cull"), zWrite=fv(0.0, "_ZWrite")
+)
 LIT_PROPS = {"_SrcBlend": 1.0, "_DstBlend": 0.0, "_Cull": 2.0, "_ZWrite": 1.0}
 
 
@@ -64,7 +98,7 @@ def test_property_driven_blend_takes_the_material_value():
 
 def test_missing_material_value_falls_back_to_the_shader_default_then_the_stored_value():
     sh = shader(props=LIT_PROPS, **LIT_BLEND)
-    rs = room.render_state(material({}), sh)                   # the material has none of the properties
+    rs = room.render_state(material({}), sh)  # the material has none of the properties
     assert (rs["srcBlend"], rs["dstBlend"], rs["cull"], rs["zWrite"]) == (1, 0, 2, 1)
     rs = room.render_state(material({}), shader(**LIT_BLEND))  # no shader default either: the stored value
     assert (rs["srcBlend"], rs["dstBlend"], rs["cull"], rs["zWrite"]) == (0, 0, 0, 0)
@@ -73,18 +107,28 @@ def test_missing_material_value_falls_back_to_the_shader_default_then_the_stored
     assert rs["cull"] == 2
 
 
-@pytest.mark.parametrize("key, field", [
-    ("srcBlend", "srcBlend"), ("dstBlend", "destBlend"), ("srcBlendAlpha", "srcBlendAlpha"),
-    ("dstBlendAlpha", "destBlendAlpha"), ("blendOp", "blendOp"), ("blendOpAlpha", "blendOpAlpha"),
-    ("colorMask", "colMask"), ("cull", "culling"), ("zWrite", "zWrite"), ("zTest", "zTest"),
-    ("alphaToMask", "alphaToMask"),
-])
+@pytest.mark.parametrize(
+    "key, field",
+    [
+        ("srcBlend", "srcBlend"),
+        ("dstBlend", "destBlend"),
+        ("srcBlendAlpha", "srcBlendAlpha"),
+        ("dstBlendAlpha", "destBlendAlpha"),
+        ("blendOp", "blendOp"),
+        ("blendOpAlpha", "blendOpAlpha"),
+        ("colorMask", "colMask"),
+        ("cull", "culling"),
+        ("zWrite", "zWrite"),
+        ("zTest", "zTest"),
+        ("alphaToMask", "alphaToMask"),
+    ],
+)
 def test_every_state_field_resolves_through_its_property(key, field):
     sh = shader(props={"_P": 3.0}, **{field: fv(7.0, "_P")})
-    assert room.render_state(material({"_P": 6.0}), sh)[key] == 6          # the material's float
-    assert room.render_state(material(ints={"_P": 5}), sh)[key] == 5        # or int
-    assert room.render_state(material(), sh)[key] == 3                      # the shader's default
-    assert room.render_state(material(), shader(**{field: fv(7.0, "_P")}))[key] == 7   # the stored value
+    assert room.render_state(material({"_P": 6.0}), sh)[key] == 6  # the material's float
+    assert room.render_state(material(ints={"_P": 5}), sh)[key] == 5  # or int
+    assert room.render_state(material(), sh)[key] == 3  # the shader's default
+    assert room.render_state(material(), shader(**{field: fv(7.0, "_P")}))[key] == 7  # the stored value
     assert room.render_state(material({"_P": 6.0}), shader(**{field: fv(7.0)}))[key] == 7  # fixed: stored value
 
 
@@ -101,8 +145,19 @@ def test_fixed_state_translation_is_unchanged():
     assert cutout["alphaMode"] == "MASK" and cutout["alphaCutoff"] == 0.5
     assert cutout["extensions"] == {"KHR_materials_unlit": {}}
     rs = cutout["extras"]["unityRenderState"]
-    assert rs == {"srcBlend": 1, "dstBlend": 0, "srcBlendAlpha": 1, "dstBlendAlpha": 0, "blendOp": 0,
-                  "blendOpAlpha": 0, "colorMask": 15, "cull": 2, "zWrite": 1, "zTest": 4, "alphaToMask": 0}
+    assert rs == {
+        "srcBlend": 1,
+        "dstBlend": 0,
+        "srcBlendAlpha": 1,
+        "dstBlendAlpha": 0,
+        "blendOp": 0,
+        "blendOpAlpha": 0,
+        "colorMask": 15,
+        "cull": 2,
+        "zWrite": 1,
+        "zTest": 4,
+        "alphaToMask": 0,
+    }
     with pytest.raises(NotImplementedError, match="shader not translated"):
         room.translate_material(material(), shader(name="Custom/Other"))
 
@@ -122,14 +177,15 @@ def test_empty_material_slots_are_skipped_and_reported():
         return p.path_id * 10
 
     prims = room.submesh_primitives(tris, mats, material_for, nulls.append)
-    assert nulls == [0] and used == [12]                   # the empty submesh 1 gives nothing, silently
+    assert nulls == [0] and used == [12]  # the empty submesh 1 gives nothing, silently
     assert len(prims) == 1 and prims[0][1] == 120
-    assert prims[0][0].tolist() == [2, 0, 3, 0, 3, 1]      # winding reversed for glTF
+    assert prims[0][0].tolist() == [2, 0, 3, 0, 3, 1]  # winding reversed for glTF
     assert room.submesh_primitives(tris[:1], mats[:1], material_for, nulls.append) == [] and nulls == [0, 0]
 
 
 class Obj:
     """A component: its typetree and the object UnityPy reads for it."""
+
     def __init__(self, tt, **fields):
         self.tt, self.fields = tt, fields
 
@@ -159,20 +215,28 @@ class Graph:
 
 def test_a_mesh_filter_without_a_mesh_is_skipped_and_reported():
     mesh = object()
-    mfs = {("f", 1): Obj({}, m_Mesh=Ref(21, mesh)), ("f", 2): Obj({}, m_Mesh=Ref(0)), ("f", 3): Obj({}, m_Mesh=Ref(0)),
-           ("f", 4): Obj({}, m_Mesh=Ref(24, mesh))}
-    mrs = {("f", 1): Obj({"m_Enabled": 1}, m_Materials=["m1"]), ("f", 2): Obj({"m_Enabled": 1}, m_Materials=[]),
-           ("f", 3): Obj({"m_Enabled": 0}, m_Materials=[]),         # 3: disabled renderer, 4: no renderer
-           ("g", 4): Obj({"m_Enabled": 1}, m_Materials=["m4"])}    # another file's GameObject 4
+    mfs = {
+        ("f", 1): Obj({}, m_Mesh=Ref(21, mesh)),
+        ("f", 2): Obj({}, m_Mesh=Ref(0)),
+        ("f", 3): Obj({}, m_Mesh=Ref(0)),
+        ("f", 4): Obj({}, m_Mesh=Ref(24, mesh)),
+    }
+    mrs = {
+        ("f", 1): Obj({"m_Enabled": 1}, m_Materials=["m1"]),
+        ("f", 2): Obj({"m_Enabled": 1}, m_Materials=[]),
+        ("f", 3): Obj({"m_Enabled": 0}, m_Materials=[]),  # 3: disabled renderer, 4: no renderer
+        ("g", 4): Obj({"m_Enabled": 1}, m_Materials=["m4"]),
+    }  # another file's GameObject 4
     nulls = []
     drawn = list(room.drawn_meshes(mfs, mrs, Graph(), nulls.append))
     assert drawn == [(11, mesh, ["m1"])]
-    assert nulls == ["Room/obj12"]                                  # the disabled one draws nothing either way
+    assert nulls == ["Room/obj12"]  # the disabled one draws nothing either way
 
 
 def test_extract_room_lists_what_draws_nothing(tmp_path, monkeypatch):
     """A mesh without triangles, a MeshFilter without a mesh and a submesh without a material are not written but
     listed in room.json."""
+
     class Mesh:
         def __init__(self, name):
             self.m_Name = name
@@ -192,9 +256,11 @@ def test_extract_room_lists_what_draws_nothing(tmp_path, monkeypatch):
             return True
 
     tri = np.array([[0, 1, 2]])
-    arrays = {"quad": (np.zeros((3, 3)), np.empty((0, 3)), np.zeros((3, 2)), [tri]),
-              "placeholder": (np.zeros((4, 3)), np.empty((0, 3)), np.zeros((4, 2)), [np.zeros((0, 3), int)]),
-              "bare": (np.zeros((4, 3)), np.empty((0, 3)), np.zeros((4, 2)), [])}
+    arrays = {
+        "quad": (np.zeros((3, 3)), np.empty((0, 3)), np.zeros((3, 2)), [tri]),
+        "placeholder": (np.zeros((4, 3)), np.empty((0, 3)), np.zeros((4, 2)), [np.zeros((0, 3), int)]),
+        "bare": (np.zeros((4, 3)), np.empty((0, 3)), np.zeros((4, 2)), []),
+    }
 
     def drawn(mf_by_go, mr_by_go, graph, on_null_mesh):
         on_null_mesh("Room/obj14")
@@ -209,8 +275,10 @@ def test_extract_room_lists_what_draws_nothing(tmp_path, monkeypatch):
     doc = room.extract_room(Cat(), "Spot/a/Background/b", tmp_path / "room.glb")
     assert doc["meshCount"] == 0 and doc["materials"] == []
     assert doc["nullMeshFilters"] == ["Room/obj14"]
-    assert doc["meshesWithoutTriangles"] == [{"mesh": "placeholder", "path": "Room/obj12"},
-                                             {"mesh": "bare", "path": "Room/obj13"}]
+    assert doc["meshesWithoutTriangles"] == [
+        {"mesh": "placeholder", "path": "Room/obj12"},
+        {"mesh": "bare", "path": "Room/obj13"},
+    ]
     assert doc["nullMaterialSubmeshes"] == [{"mesh": "quad", "path": "Room/obj11", "submesh": 0}]
     assert (tmp_path / "room.glb").is_file() and (tmp_path / "room.json").is_file()
 
@@ -231,6 +299,7 @@ def ref(pid, file_id=0):
 class File:
     """A serialized file as UnityPy's PPtr resolves it: name, objects by path id, externals (paths) and the bundle
     holding it (`parent`); a file outside the loaded bundles is not found."""
+
     def __init__(self, name, bundle, externals=()):
         self.name, self.parent, self.objects = name, bundle, {}
         self.externals = [SimpleNamespace(path=p) for p in externals]
@@ -238,8 +307,13 @@ class File:
         bundle.files[name] = self
 
     def add(self, kind, pid, tt, obj=None):
-        o = SimpleNamespace(type=SimpleNamespace(name=kind), path_id=pid, assets_file=self,
-                            read_typetree=lambda: copy.deepcopy(tt), read=lambda: obj)
+        o = SimpleNamespace(
+            type=SimpleNamespace(name=kind),
+            path_id=pid,
+            assets_file=self,
+            read_typetree=lambda: copy.deepcopy(tt),
+            read=lambda: obj,
+        )
         self.objects[pid] = o
         return o
 
@@ -261,8 +335,9 @@ def textured(name, **slots):
 
 
 def quad(name):
-    return unitypy_mesh(mesh_tt(name, 3, {POSITION: (F32, 3, np.eye(3)), UV0: (F32, 2, np.zeros((3, 2)))},
-                                [0, 1, 2], [submesh(0, 3)]))
+    return unitypy_mesh(
+        mesh_tt(name, 3, {POSITION: (F32, 3, np.eye(3)), UV0: (F32, 2, np.zeros((3, 2)))}, [0, 1, 2], [submesh(0, 3)])
+    )
 
 
 def two_file_room():
@@ -281,23 +356,57 @@ def two_file_room():
     a.add("Material", 6, textured("a_floor", _MainTex=tex_env(7, 1), _Detail=tex_env(7)))
     b.add("Material", 5, textured("b_wall", _MainTex=tex_env(7)))
     for f, name, filter_mode in ((a, "wall_a", 1), (b, "wall_b", 0)):
-        f.add("Texture2D", 7, {"m_Name": name, "m_MipCount": 1,
-                               "m_TextureSettings": {"m_FilterMode": filter_mode, "m_WrapU": 1, "m_WrapV": 1}},
-              pixels.copy())
+        f.add(
+            "Texture2D",
+            7,
+            {
+                "m_Name": name,
+                "m_MipCount": 1,
+                "m_TextureSettings": {"m_FilterMode": filter_mode, "m_WrapU": 1, "m_WrapV": 1},
+            },
+            pixels.copy(),
+        )
     a.add("AssetBundle", 1, {"m_Container": [[PREFAB.lower(), {"asset": ref(100)}]]})
     a.add("GameObject", 100, {"m_Name": "room", "m_IsActive": 1, "m_Layer": 0})
-    a.add("Transform", 200, {"m_GameObject": ref(100), "m_Father": ref(0), "m_LocalPosition": V0,
-                             "m_LocalRotation": Q0, "m_LocalScale": V1,
-                             "m_Children": [ref(201 + i) for i in range(len(ROOM_OBJECTS))]})
+    a.add(
+        "Transform",
+        200,
+        {
+            "m_GameObject": ref(100),
+            "m_Father": ref(0),
+            "m_LocalPosition": V0,
+            "m_LocalRotation": Q0,
+            "m_LocalScale": V1,
+            "m_Children": [ref(201 + i) for i in range(len(ROOM_OBJECTS))],
+        },
+    )
     for i, (name, mat, file_id) in enumerate(ROOM_OBJECTS):
         go, mesh = 101 + i, quad(f"{name}_mesh")
         a.add("GameObject", go, {"m_Name": name, "m_IsActive": 1, "m_Layer": 0})
-        a.add("Transform", 201 + i, {"m_GameObject": ref(go), "m_Father": ref(200), "m_Children": [],
-                                     "m_LocalPosition": V0, "m_LocalRotation": Q0, "m_LocalScale": V1})
-        a.add("MeshFilter", 301 + i, {"m_GameObject": ref(go)},
-              SimpleNamespace(m_Mesh=SimpleNamespace(path_id=21 + i, read=lambda mesh=mesh: mesh)))
-        a.add("MeshRenderer", 401 + i, {"m_GameObject": ref(go), "m_Enabled": 1},
-              SimpleNamespace(m_Materials=[a.pptr(mat, file_id)]))
+        a.add(
+            "Transform",
+            201 + i,
+            {
+                "m_GameObject": ref(go),
+                "m_Father": ref(200),
+                "m_Children": [],
+                "m_LocalPosition": V0,
+                "m_LocalRotation": Q0,
+                "m_LocalScale": V1,
+            },
+        )
+        a.add(
+            "MeshFilter",
+            301 + i,
+            {"m_GameObject": ref(go)},
+            SimpleNamespace(m_Mesh=SimpleNamespace(path_id=21 + i, read=lambda mesh=mesh: mesh)),
+        )
+        a.add(
+            "MeshRenderer",
+            401 + i,
+            {"m_GameObject": ref(go), "m_Enabled": 1},
+            SimpleNamespace(m_Materials=[a.pptr(mat, file_id)]),
+        )
     return SimpleNamespace(objects=[o for f in (a, b) for o in f.objects.values()])
 
 
@@ -318,17 +427,22 @@ def load_room(monkeypatch, env):
 def glb_json(path):
     data = path.read_bytes()
     (n,) = struct.unpack_from("<I", data, 12)
-    return json.loads(data[20:20 + n])
+    return json.loads(data[20 : 20 + n])
 
 
 def test_textures_with_the_same_png_bytes_share_one_image():
     glb = room._Glb()
     linear, point = room._sampler({}), room._sampler({"m_TextureSettings": {"m_FilterMode": 0}})
-    got = [glb.texture(png, name, s) for png, name, s in ((b"png-1", "a", linear), (b"png-1", "b", point),
-                                                          (b"png-2", "c", linear))]
+    got = [
+        glb.texture(png, name, s)
+        for png, name, s in ((b"png-1", "a", linear), (b"png-1", "b", point), (b"png-2", "c", linear))
+    ]
     assert got == [0, 1, 2]
-    assert glb.textures == [{"name": "a", "source": 0, "sampler": 0}, {"name": "b", "source": 0, "sampler": 1},
-                            {"name": "c", "source": 1, "sampler": 0}]
+    assert glb.textures == [
+        {"name": "a", "source": 0, "sampler": 0},
+        {"name": "b", "source": 0, "sampler": 1},
+        {"name": "c", "source": 1, "sampler": 0},
+    ]
     assert [im["name"] for im in glb.images] == ["a", "c"] and len(glb.bufferViews) == 2
 
 
@@ -339,7 +453,7 @@ def glb_chunks(path):
     chunks, at = [], 12
     while at < len(data):
         n, kind = struct.unpack_from("<II", data, at)
-        chunks.append((kind, data[at + 8:at + 8 + n]))
+        chunks.append((kind, data[at + 8 : at + 8 + n]))
         at += 8 + n
     return chunks
 
@@ -350,8 +464,11 @@ def test_a_room_without_geometry_is_a_valid_empty_gltf(tmp_path):
     chunks = glb_chunks(tmp_path / "room.glb")
     assert [kind for kind, _ in chunks] == [0x4E4F534A]
     doc = json.loads(chunks[0][1])
-    assert doc == {"asset": {"version": "2.0", "generator": "nnnotes/room", "extras": {"backgroundKey": "k"}},
-                   "scene": 0, "scenes": [{}]}
+    assert doc == {
+        "asset": {"version": "2.0", "generator": "nnnotes/room", "extras": {"backgroundKey": "k"}},
+        "scene": 0,
+        "scenes": [{}],
+    }
 
 
 def test_a_room_with_geometry_keeps_its_arrays_and_bin_chunk(tmp_path):
@@ -361,7 +478,7 @@ def test_a_room_with_geometry_keeps_its_arrays_and_bin_chunk(tmp_path):
     chunks = glb_chunks(tmp_path / "room.glb")
     assert [kind for kind, _ in chunks] == [0x4E4F534A, 0x004E4942]
     doc = json.loads(chunks[0][1])
-    assert doc["buffers"] == [{"byteLength": 5}] and len(chunks[1][1]) == 8   # the chunk is padded to 4 bytes
+    assert doc["buffers"] == [{"byteLength": 5}] and len(chunks[1][1]) == 8  # the chunk is padded to 4 bytes
     assert list(doc) == ["asset", "scene", "scenes", "bufferViews", "buffers", "textures", "images", "samplers"]
 
 
@@ -372,7 +489,9 @@ def test_mesh_components_are_keyed_by_file_and_game_object():
     mf_b = b.add("MeshFilter", 9, {"m_GameObject": ref(1)})
     mr_b = b.add("MeshRenderer", 10, {"m_GameObject": ref(1)})
     assert room.mesh_components(SimpleNamespace(objects=[mf_a, mf_b, mr_b])) == (
-        {("CAB-a", 1): mf_a, ("CAB-b", 1): mf_b}, {("CAB-b", 1): mr_b})
+        {("CAB-a", 1): mf_a, ("CAB-b", 1): mf_b},
+        {("CAB-b", 1): mr_b},
+    )
 
 
 def test_extract_room_keys_materials_and_textures_by_file(tmp_path, monkeypatch):
@@ -385,8 +504,10 @@ def test_extract_room_keys_materials_and_textures_by_file(tmp_path, monkeypatch)
     assert [p["material"] for m in gltf["meshes"] for p in m["primitives"]] == [0, 1, 2, 0]
     # texture 7 of CAB-a and of CAB-b are two textures, each with its sampler, of one image; a_floor takes CAB-b's
     assert [m["pbrMetallicRoughness"]["baseColorTexture"]["index"] for m in gltf["materials"]] == [0, 1, 1]
-    assert gltf["textures"] == [{"name": "wall_a", "source": 0, "sampler": 0},
-                                {"name": "wall_b", "source": 0, "sampler": 1}]
+    assert gltf["textures"] == [
+        {"name": "wall_a", "source": 0, "sampler": 0},
+        {"name": "wall_b", "source": 0, "sampler": 1},
+    ]
     assert [im["name"] for im in gltf["images"]] == ["wall_a"]
     assert [s["magFilter"] for s in gltf["samplers"]] == [room.LINEAR, room.NEAREST]
     assert doc["textures"] == ["wall_a", "wall_b"] and doc["samplers"] == gltf["samplers"]

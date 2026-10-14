@@ -7,8 +7,17 @@ import synth
 from nnnotes import contract
 from nnnotes.addressables import parse, parse_header, parse_keys, parse_locations
 from nnnotes.catalog import APK_OFFSET_BASE, Catalog, file_name, location_kind
-from nnnotes.catalogdb import (CatalogDB, IndexStage, default_label, diff, fetch, format_diff, index,
-                               stable_raw_name, version_id)
+from nnnotes.catalogdb import (
+    CatalogDB,
+    IndexStage,
+    default_label,
+    diff,
+    fetch,
+    format_diff,
+    index,
+    stable_raw_name,
+    version_id,
+)
 from nnnotes.stages import Env, describe, execute, registry
 from nnnotes.store import Store
 
@@ -21,8 +30,12 @@ def remote_entries(h_a=H1, h_b=H2, raw=RAW, tex_iid="Assets/Game/Char/A.png", ex
     return [
         ("Char/A", tex_iid, [2, 5], {"type": "UnityEngine.Texture2D"}),
         ("Char/B", "Assets/Game/Char/B.prefab", [3], {"type": "UnityEngine.GameObject"}),
-        (f"chara_a_{h_a}.bundle", synth.remote(f"chara_a_{h_a}.bundle"), [],
-         {"extra": {"crc": 11, "bundleSize": 1000}}),
+        (
+            f"chara_a_{h_a}.bundle",
+            synth.remote(f"chara_a_{h_a}.bundle"),
+            [],
+            {"extra": {"crc": 11, "bundleSize": 1000}},
+        ),
         (f"chara_b_{h_b}.bundle", synth.remote(f"chara_b_{h_b}.bundle"), [], b),
         ("Sound/bgm_a", "Assets/Game/Sound/bgm_a.acb", [6]),
         ("shared.bundle", synth.local("shared.bundle"), [], {"extra": {"bundleSize": 7, "crc": 5}}),
@@ -88,19 +101,23 @@ def test_every_field_decoded():
 
 
 def test_flags_and_dependency_hash():
-    data = build([("b.bundle", synth.remote("b.bundle"), [], {"extra": {"flags": 31, "hash": None},
-                                                               "dependency_hash": -7})])
+    data = build(
+        [("b.bundle", synth.remote("b.bundle"), [], {"extra": {"flags": 31, "hash": None}, "dependency_hash": -7})]
+    )
     (e,) = parse_locations(data)
     x = e["extra_data"]
     assert x["hash"] is None and e["dependency_hash"] == -7
-    assert (x["assetLoadMode"], x["chunkedTransfer"], x["useCrcForCachedBundle"],
-            x["useUnityWebRequestForLocalBundles"], x["clearOtherCachedVersionsWhenLoaded"]) == (1, True, True, True,
-                                                                                                True)
+    assert (
+        x["assetLoadMode"],
+        x["chunkedTransfer"],
+        x["useCrcForCachedBundle"],
+        x["useUnityWebRequestForLocalBundles"],
+        x["clearOtherCachedVersionsWhenLoaded"],
+    ) == (1, True, True, True, True)
 
 
 def test_other_extra_data_types_keep_their_type():
-    data = build([("k", "Assets/k.asset", [], {"extra_object": ("Example.Options", b"")}),
-                  ("j", "Assets/j.asset", [])])
+    data = build([("k", "Assets/k.asset", [], {"extra_object": ("Example.Options", b"")}), ("j", "Assets/j.asset", [])])
     k, j = parse_locations(data)
     assert k["extra_data"] == {"type": "Example.Options"} and j["extra_data"] is None
 
@@ -109,8 +126,9 @@ def test_other_extra_data_types_keep_their_type():
 def test_parse_agrees_with_full_decode(path_ids):
     data = build(remote_entries(), path_ids=path_ids)
     short, full = parse(data), parse_locations(data)
-    assert [(e["offset"], e["primary_key"], e["internal_id"], list(e["dependencies"])) for e in short] == \
-        [(e["offset"], e["primary_key"], e["internal_id"], e["dependencies"]) for e in full]
+    assert [(e["offset"], e["primary_key"], e["internal_id"], list(e["dependencies"])) for e in short] == [
+        (e["offset"], e["primary_key"], e["internal_id"], e["dependencies"]) for e in full
+    ]
 
 
 def test_rejects_other_formats():
@@ -153,7 +171,7 @@ def test_catalog_bundles_raw_files_locations(tmp_path):
 
     with_apk = Catalog(remote, tmp_path / "cache", apk=make_apk(tmp_path / "base.apk"))
     shared = [b for b in with_apk.bundles() if b.name == "shared.bundle"]
-    assert len(shared) == 1 and shared[0].offset >= APK_OFFSET_BASE        # the APK catalog's location wins
+    assert len(shared) == 1 and shared[0].offset >= APK_OFFSET_BASE  # the APK catalog's location wins
     assert [file_name(e["internal_id"]) for e in with_apk.raw_files()] == ["cri_emb/voice_" + H4, RAW]
     locs = with_apk.locations()
     apk_locs = [e for e in locs if e["catalog"] == "apk"]
@@ -161,7 +179,7 @@ def test_catalog_bundles_raw_files_locations(tmp_path):
     assert all(d >= APK_OFFSET_BASE for e in apk_locs for d in e["dependencies"])
     assert set(with_apk.sources()) == {"remote", "apk"}
     locs[0]["kind"] = "changed"
-    assert with_apk.locations()[0]["kind"] == "asset"                      # callers get copies
+    assert with_apk.locations()[0]["kind"] == "asset"  # callers get copies
 
 
 # ---------------------------------------------------------------- index
@@ -176,8 +194,9 @@ def test_index():
     ids = [loc["id"] for loc in doc["locations"]]
     assert ids[0].startswith("remote:") and ids[-1].startswith("apk:")
     a = doc["locations"][0]
-    assert a["primaryKey"] == "Char/A" and a["kind"] == "asset" and all(d.startswith("remote:")
-                                                                         for d in a["dependencies"])
+    assert (
+        a["primaryKey"] == "Char/A" and a["kind"] == "asset" and all(d.startswith("remote:") for d in a["dependencies"])
+    )
     bundles = {b["stable"]: b for b in doc["bundles"]}
     assert set(bundles) == {"chara_a", "chara_b", "shared"}
     a = bundles["chara_a"]
@@ -188,7 +207,7 @@ def test_index():
     raws = {r["stable"]: r for r in doc["rawFiles"]}
     assert set(raws) == {"cri_x/sound/bgm_a", "cri_emb/voice"} and raws["cri_x/sound/bgm_a"]["size"] == 300
     assert doc["collisions"] == {"bundles": [], "rawFiles": []}
-    assert contract.encode(index(remote, apk)) == contract.encode(doc)           # deterministic
+    assert contract.encode(index(remote, apk)) == contract.encode(doc)  # deterministic
     assert "apk" not in index(remote)["catalogs"]
 
 
@@ -210,8 +229,9 @@ def test_diff_identical_is_empty():
 
 def test_diff_synthetic_mutation():
     old = index(build(remote_entries()))
-    new_entries = remote_entries(h_b=H3, raw="cri_x/sound/bgm_a_" + "b" * 32,
-                                 tex_iid="Assets/Game/Char/A2.png")[:-1]                 # Story/物語 removed
+    new_entries = remote_entries(h_b=H3, raw="cri_x/sound/bgm_a_" + "b" * 32, tex_iid="Assets/Game/Char/A2.png")[
+        :-1
+    ]  # Story/物語 removed
     new_entries.append(("Char/C", "Assets/Game/Char/C.prefab", [8]))
     new_entries.append((f"chara_c_{H4}.bundle", synth.remote(f"chara_c_{H4}.bundle"), []))
     new = index(build(new_entries))
@@ -245,10 +265,28 @@ def test_diff_crc_only_change_affects_dependents():
 
 def test_diff_with_addresses():
     doc = index(build(remote_entries()))
-    addr = {"objects": {"chara_a/Assets/Game/Char/A.png": {"object": "CAB-1:5", "class": "Texture2D", "name": "A",
-                                                           "byteSize": 10, "typeHash": "00"}}}
-    moved = {"objects": {"chara_a/Assets/Game/Char/A.png": {"object": "CAB-2:5", "class": "Texture2D", "name": "A",
-                                                            "byteSize": 12, "typeHash": "00"}}}
+    addr = {
+        "objects": {
+            "chara_a/Assets/Game/Char/A.png": {
+                "object": "CAB-1:5",
+                "class": "Texture2D",
+                "name": "A",
+                "byteSize": 10,
+                "typeHash": "00",
+            }
+        }
+    }
+    moved = {
+        "objects": {
+            "chara_a/Assets/Game/Char/A.png": {
+                "object": "CAB-2:5",
+                "class": "Texture2D",
+                "name": "A",
+                "byteSize": 12,
+                "typeHash": "00",
+            }
+        }
+    }
     d = diff(doc, doc, addr, moved)
     assert d["summary"]["objects"]["changed"] == 1
     assert "~ object chara_a/Assets/Game/Char/A.png (object, byteSize)" in format_diff(d)
@@ -283,7 +321,8 @@ def test_catalog_db(tmp_path):
     ins = db.inputs(v)
     assert [i.role for i in ins] == ["remote", "apk"] and ins[0].locators[0]["path"] == str(db.path(rsha))
     assert (tmp_path / "store" / "catalogs" / "index.json").read_bytes() == contract.encode(
-        {"schema": "nnnotes.catalogs/1", "versions": db.versions()})
+        {"schema": "nnnotes.catalogs/1", "versions": db.versions()}
+    )
     assert default_label("ab" * 32) == "ab" * 6 and default_label("ab" * 32, "9.9") == "9.9"
 
 

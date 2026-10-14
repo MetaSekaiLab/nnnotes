@@ -12,6 +12,7 @@ declares must be used by a fixture. A record made with other library versions is
 may write other bytes for the same content) unless GOLDENS_STRICT=1, as in the pinned CI job, where it fails.
 GOLDENS_UPDATE=1 rewrites the records from the current code (after a version bump).
 """
+
 import importlib
 import os
 from pathlib import Path
@@ -57,16 +58,27 @@ def test_golden_record(path, tmp_path):
 def text_fixture(text: str):
     def build(store):
         from nnnotes.contract import Input, Task
+
         data = text.encode()
         sha = store.put(data)
-        return Task("toy.src", 1, text[:4], {"suffix": ""}, dict(Src.ATOMS),
-                    (Input("file", sha, len(data), None, ({"kind": "store"},)),))
+        return Task(
+            "toy.src",
+            1,
+            text[:4],
+            {"suffix": ""},
+            dict(Src.ATOMS),
+            (Input("file", sha, len(data), None, ({"kind": "store"},)),),
+        )
+
     return build
 
 
 def toy_provider():
-    return {"stage": Src(), "fixtures": {"plain": text_fixture("one\ntwo"), "items": text_fixture("x\n\nFAIL\n?q")},
-            "libraries": ["pytest"]}
+    return {
+        "stage": Src(),
+        "fixtures": {"plain": text_fixture("one\ntwo"), "items": text_fixture("x\n\nFAIL\n?q")},
+        "libraries": ["pytest"],
+    }
 
 
 def test_a_regenerated_record_matches(tmp_path):
@@ -80,8 +92,10 @@ def test_a_regenerated_record_matches(tmp_path):
 class Changed(Src):
     def run(self, task, store):
         out = super().run(task, store)
-        return Output(out.artifacts, [dict(i, reason=contract.reason("new", "x")) if i["status"] == "unsupported"
-                                      else i for i in out.items])
+        return Output(
+            out.artifacts,
+            [dict(i, reason=contract.reason("new", "x")) if i["status"] == "unsupported" else i for i in out.items],
+        )
 
 
 def test_an_output_change_without_a_version_bump_fails(tmp_path):
@@ -101,6 +115,7 @@ def _versioned(build, version):
     def b(store):
         t = build(store)
         return contract.Task(t.stage, version, t.subject, t.params, t.atoms, t.inputs, t.context)
+
     return b
 
 

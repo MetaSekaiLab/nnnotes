@@ -16,6 +16,7 @@ the callers take it from the client language they export (`[catalog] language`).
   text_style       one TMP text component -> its text record
   TextStyles       text records of an exporter's TMP texts (reads the localized materials and face info)
 """
+
 from __future__ import annotations
 
 import struct
@@ -28,7 +29,7 @@ FONT_PREFIX = "EmbFont/"
 
 # Fwk.Localization.LanguageMode / language field names of the text tables.
 JAPANESE_MODE = 0
-LANGUAGE_FIELDS = {mode: column[1:] for mode, column in LANGUAGES.values()}   # LanguageMode -> text field
+LANGUAGE_FIELDS = {mode: column[1:] for mode, column in LANGUAGES.values()}  # LanguageMode -> text field
 # LocalizeManager.ApplyLanguageLineSpacing: lineSpacing per LanguageMode
 # (immediates in code, not serialized data).
 LANGUAGE_LINE_SPACING = {0: 0.0, 1: -100.0, 2: 5.0, 3: 5.0, 4: 5.0}
@@ -37,24 +38,33 @@ LANGUAGE_LINE_SPACING = {0: 0.0, 1: -100.0, 2: 5.0, 3: 5.0, 4: 5.0}
 FONT_ROLES = ("primary", "number")
 
 # TMPro enums (flags for FontStyles).
-FONT_STYLES = {1: "bold", 2: "italic", 4: "underline", 8: "lowerCase", 16: "upperCase", 32: "smallCaps",
-               64: "strikethrough", 128: "superscript", 256: "subscript", 512: "highlight"}
+FONT_STYLES = {
+    1: "bold",
+    2: "italic",
+    4: "underline",
+    8: "lowerCase",
+    16: "upperCase",
+    32: "smallCaps",
+    64: "strikethrough",
+    128: "superscript",
+    256: "subscript",
+    512: "highlight",
+}
 HORIZONTAL_ALIGNMENT = {1: "left", 2: "center", 4: "right", 8: "justified", 16: "flush", 32: "geometry"}
-VERTICAL_ALIGNMENT = {256: "top", 512: "middle", 1024: "bottom", 2048: "baseline", 4096: "geometry",
-                      8192: "capline"}
+VERTICAL_ALIGNMENT = {256: "top", 512: "middle", 1024: "bottom", 2048: "baseline", 4096: "geometry", 8192: "capline"}
 WRAPPING = {0: "noWrap", 1: "normal", 2: "preserveWhitespace", 3: "preserveWhitespaceNoWrap"}
 OVERFLOW = {0: "overflow", 1: "ellipsis", 2: "masking", 3: "truncate", 4: "scrollRect", 5: "page", 6: "linked"}
 COLOR_MODE = {0: "single", 1: "horizontalGradient", 2: "verticalGradient", 3: "fourCornersGradient"}
-KERN = 0x6B65726E                      # OpenType feature tag "kern" (m_ActiveFontFeatures)
+KERN = 0x6B65726E  # OpenType feature tag "kern" (m_ActiveFontFeatures)
 
 # Keywords of the TMP distance-field shaders the style values cover.
 STYLE_KEYWORDS = {"OUTLINE_ON", "UNDERLAY_ON", "UNDERLAY_INNER", "RATIOS_OFF"}
-CLAMP = 1.0                            # ShaderUtilities.m_clamp
+CLAMP = 1.0  # ShaderUtilities.m_clamp
 
 UNITS = {
     "fontSize": "canvas units (fontSize, autoSize min / max)",
     "spacing": "characterSpacing, wordSpacing, lineSpacing, paragraphSpacing: 1/100 em, added to the advance / "
-               "line pitch as TMP does",
+    "line pitch as TMP does",
     "em": "*Em values: fraction of the font size the text is drawn at",
     "offsetEm": "[x, y], +x right, +y down",
     "color": "{r, g, b, a} as serialized; fill = color x face.color",
@@ -87,7 +97,7 @@ class _Reader:
 
     def string(self) -> str:
         n = self.i32()
-        s = self.raw[self.pos:self.pos + n].decode("utf-8")
+        s = self.raw[self.pos : self.pos + n].decode("utf-8")
         self.pos += n
         self.align()
         return s
@@ -105,16 +115,23 @@ def language_fonts(player: PlayerData) -> dict:
     _dontDestroyOnload, _languageDataList[{_languageMode, _fontNames[],
     _additionalFontNames[]}], _materialTypeList[]).
     """
-    hits = [o for o in player._by_type.get("MonoBehaviour", [])
-            if player.script(o)[1:] == ("Fwk.Localization", "LocalizeManager")]
+    hits = [
+        o
+        for o in player._by_type.get("MonoBehaviour", [])
+        if player.script(o)[1:] == ("Fwk.Localization", "LocalizeManager")
+    ]
     if len(hits) != 1:
         raise RuntimeError(f"LocalizeManager: {len(hits)} objects")
     r = _Reader(hits[0].get_raw_data())
-    r.i32(); r.i64()                      # m_GameObject
-    r.u8(); r.align()                     # m_Enabled
-    r.i32(); r.i64()                      # m_Script
-    r.string()                            # m_Name
-    r.u8(); r.align()                     # _dontDestroyOnload
+    r.i32()
+    r.i64()  # m_GameObject
+    r.u8()
+    r.align()  # m_Enabled
+    r.i32()
+    r.i64()  # m_Script
+    r.string()  # m_Name
+    r.u8()
+    r.align()  # _dontDestroyOnload
     langs = {}
     for _ in range(r.i32()):
         mode = r.i32()
@@ -142,7 +159,7 @@ def material_type(material_name: str | None) -> str:
     (Its ".mat" branch rewrites the literal "Default", a no-op.)"""
     if material_name is None or " - " not in material_name:
         return "Default"
-    return material_name[material_name.index(" - "):].replace(" - ", "").replace(" (Instance)", "")
+    return material_name[material_name.index(" - ") :].replace(" - ", "").replace(" (Instance)", "")
 
 
 def localize_text(path: str, font_asset: str, material: str, swap: dict, lang: dict, mode: int) -> dict:
@@ -156,8 +173,11 @@ def localize_text(path: str, font_asset: str, material: str, swap: dict, lang: d
     if mat_type not in lang["materialTypes"]:
         # ExistsFontMaterial false -> GetDefaultFontMaterial; the loaded handle set is not modelled
         raise NotImplementedError(f"{path}: material type {mat_type} not in LocalizeManager._materialTypeList")
-    return {"fontAsset": font_name, "material": f"{font_name[:-4]} - {mat_type}",
-            "lineSpacing": LANGUAGE_LINE_SPACING[mode]}
+    return {
+        "fontAsset": font_name,
+        "material": f"{font_name[:-4]} - {mat_type}",
+        "lineSpacing": LANGUAGE_LINE_SPACING[mode],
+    }
 
 
 def font_role(font_asset: str, lang: dict) -> str:
@@ -191,8 +211,12 @@ def scale_ratios(floats: dict, keywords) -> tuple[float, float]:
     c = 1.0
     if "_UnderlayOffsetX" in floats:
         rng = (weight + dilate) * (gs - CLAMP)
-        t = max(1.0, max(abs(floats["_UnderlayOffsetX"]), abs(floats.get("_UnderlayOffsetY", 0.0)))
-                + floats.get("_UnderlayDilate", 0.0) + floats.get("_UnderlaySoftness", 0.0))
+        t = max(
+            1.0,
+            max(abs(floats["_UnderlayOffsetX"]), abs(floats.get("_UnderlayOffsetY", 0.0)))
+            + floats.get("_UnderlayDilate", 0.0)
+            + floats.get("_UnderlaySoftness", 0.0),
+        )
         c = max(0.0, gs - CLAMP - rng) / (gs * t)
     return a, c
 
@@ -218,26 +242,33 @@ def material_style(material: dict, point_size: float, face_scale: float = 1.0) -
     if "_GradientScale" not in f:
         raise NotImplementedError(f"{material['material']}: not a distance-field text material")
     ra, rc = scale_ratios(f, kw)
-    em = f["_GradientScale"] * face_scale / point_size          # em per unit of SDF distance
+    em = f["_GradientScale"] * face_scale / point_size  # em per unit of SDF distance
 
     def r6(v: float) -> float:
         return round(v, 6)
 
-    face = {"color": c.get("_FaceColor", {"r": 1.0, "g": 1.0, "b": 1.0, "a": 1.0}),
-            "dilateEm": r6((f.get("_WeightNormal", 0.0) / 4 + f.get("_FaceDilate", 0.0)) * ra * em),
-            "boldDilateEm": r6((f.get("_WeightBold", 0.0) / 4 + f.get("_FaceDilate", 0.0)) * ra * em),
-            "softnessEm": r6(2 * f.get("_OutlineSoftness", 0.0) * ra * em)}
+    face = {
+        "color": c.get("_FaceColor", {"r": 1.0, "g": 1.0, "b": 1.0, "a": 1.0}),
+        "dilateEm": r6((f.get("_WeightNormal", 0.0) / 4 + f.get("_FaceDilate", 0.0)) * ra * em),
+        "boldDilateEm": r6((f.get("_WeightBold", 0.0) / 4 + f.get("_FaceDilate", 0.0)) * ra * em),
+        "softnessEm": r6(2 * f.get("_OutlineSoftness", 0.0) * ra * em),
+    }
     outline = None
     if "OUTLINE_ON" in kw:
-        outline = {"color": c["_OutlineColor"], "widthEm": r6(f["_OutlineWidth"] * ra * em),
-                   "softnessEm": face["softnessEm"]}
+        outline = {
+            "color": c["_OutlineColor"],
+            "widthEm": r6(f["_OutlineWidth"] * ra * em),
+            "softnessEm": face["softnessEm"],
+        }
     underlay = None
     if kw & {"UNDERLAY_ON", "UNDERLAY_INNER"}:
-        underlay = {"color": c["_UnderlayColor"],
-                    "offsetEm": [r6(f["_UnderlayOffsetX"] * rc * em), r6(-f["_UnderlayOffsetY"] * rc * em)],
-                    "dilateEm": r6(f["_UnderlayDilate"] * rc * em),
-                    "softnessEm": r6(2 * f["_UnderlaySoftness"] * rc * em),
-                    "inner": "UNDERLAY_INNER" in kw}
+        underlay = {
+            "color": c["_UnderlayColor"],
+            "offsetEm": [r6(f["_UnderlayOffsetX"] * rc * em), r6(-f["_UnderlayOffsetY"] * rc * em)],
+            "dilateEm": r6(f["_UnderlayDilate"] * rc * em),
+            "softnessEm": r6(2 * f["_UnderlaySoftness"] * rc * em),
+            "inner": "UNDERLAY_INNER" in kw,
+        }
     return {"face": face, "outline": outline, "underlay": underlay}
 
 
@@ -245,9 +276,11 @@ def face_metrics(face_info: dict, spacing: dict | None = None) -> dict:
     """Line metrics of a font asset in em (TMP line pitch = lineHeight + lineSpacing / 100 em), and the
     spacing it adds to every advance (normalSpacingOffset; boldSpacing for bold text) in 1/100 em."""
     k = face_info["m_Scale"] / face_info["m_PointSize"]
-    out = {"lineHeightEm": round(face_info["m_LineHeight"] * k, 6),
-           "ascentEm": round(face_info["m_AscentLine"] * k, 6),
-           "descentEm": round(face_info["m_DescentLine"] * k, 6)}
+    out = {
+        "lineHeightEm": round(face_info["m_LineHeight"] * k, 6),
+        "ascentEm": round(face_info["m_AscentLine"] * k, 6),
+        "descentEm": round(face_info["m_DescentLine"] * k, 6),
+    }
     if spacing is not None:
         out["spacingOffset"] = spacing["normalSpacingOffset"]
         out["boldSpacing"] = spacing["boldSpacing"]
@@ -283,20 +316,27 @@ def text_style(comp: dict, localize: dict | None, lang: dict, style: dict, mode:
         "richText": bool(comp["m_isRichText"]),
         "parseControlCharacters": bool(comp["m_parseCtrlCharacters"]),
         "fontSize": comp["m_fontSize"],
-        "autoSize": {"enabled": bool(comp["m_enableAutoSizing"]), "min": comp["m_fontSizeMin"],
-                     "max": comp["m_fontSizeMax"], "maxCharWidthAdjust": comp["m_charWidthMaxAdj"],
-                     "maxLineSpacingAdjust": comp["m_lineSpacingMax"]},
+        "autoSize": {
+            "enabled": bool(comp["m_enableAutoSizing"]),
+            "min": comp["m_fontSizeMin"],
+            "max": comp["m_fontSizeMax"],
+            "maxCharWidthAdjust": comp["m_charWidthMaxAdj"],
+            "maxLineSpacingAdjust": comp["m_lineSpacingMax"],
+        },
         "fontStyle": _flags(comp["m_fontStyle"], FONT_STYLES),
         "fontWeight": comp["m_fontWeight"],
-        "alignment": {"horizontal": _enum(comp["m_HorizontalAlignment"], HORIZONTAL_ALIGNMENT),
-                      "vertical": _enum(comp["m_VerticalAlignment"], VERTICAL_ALIGNMENT)},
+        "alignment": {
+            "horizontal": _enum(comp["m_HorizontalAlignment"], HORIZONTAL_ALIGNMENT),
+            "vertical": _enum(comp["m_VerticalAlignment"], VERTICAL_ALIGNMENT),
+        },
         "wrapping": _enum(comp["m_TextWrappingMode"], WRAPPING),
         "overflow": _enum(comp["m_overflowMode"], OVERFLOW),
         "margin": {"left": m["x"], "top": m["y"], "right": m["z"], "bottom": m["w"]},
-        "lineSpacing": {"serialized": comp["m_lineSpacing"],
-                        "applied": LANGUAGE_LINE_SPACING[mode] if localized else comp["m_lineSpacing"],
-                        "byLanguage": ({LANGUAGE_FIELDS[k]: v for k, v in LANGUAGE_LINE_SPACING.items()}
-                                       if localized else None)},
+        "lineSpacing": {
+            "serialized": comp["m_lineSpacing"],
+            "applied": LANGUAGE_LINE_SPACING[mode] if localized else comp["m_lineSpacing"],
+            "byLanguage": ({LANGUAGE_FIELDS[k]: v for k, v in LANGUAGE_LINE_SPACING.items()} if localized else None),
+        },
         "paragraphSpacing": comp["m_paragraphSpacing"],
         "characterSpacing": comp["m_characterSpacing"],
         "wordSpacing": comp["m_wordSpacing"],
@@ -320,6 +360,7 @@ class TextStyles:
 
     def __init__(self, ex: Exporter, player: PlayerData, mode: int, fonts=None):
         from . import fontsettings
+
         self.ex, self.mode = ex, mode
         self.fonts = fonts if fonts is not None else fontsettings.AssetFontSettings(ex)
         self.lang = language_fonts(player)
@@ -339,8 +380,7 @@ class TextStyles:
             fa, mat = loc["fontAsset"], loc["material"]
         if (fa, mat) not in self._styles:
             face, extra = self._face(fa)
-            self._styles[(fa, mat)] = material_style(self.fonts.material(fa, mat), face["m_PointSize"],
-                                                     face["m_Scale"])
+            self._styles[(fa, mat)] = material_style(self.fonts.material(fa, mat), face["m_PointSize"], face["m_Scale"])
         rec = text_style(comp, localize, self.lang, self._styles[(fa, mat)], self.mode)
         if rec["fontRole"] not in self.roles:
             face, extra = self._face(fa)

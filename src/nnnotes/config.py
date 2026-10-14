@@ -13,6 +13,7 @@ a ConfigError naming the TOML key and the environment variable. Values are never
 error message. Relative paths in the TOML file are relative to the file's directory; relative paths from the
 environment or the command line are relative to the working directory.
 """
+
 from __future__ import annotations
 
 import os
@@ -24,7 +25,7 @@ from pathlib import Path
 ENV_PREFIX = "NNNOTES_"
 ENV_CONFIG = "NNNOTES_CONFIG"
 DEFAULT_FILE = "nnnotes.toml"
-TEMPLATE = "nnnotes.example.toml"         # package data: every setting with an empty value
+TEMPLATE = "nnnotes.example.toml"  # package data: every setting with an empty value
 
 
 class ConfigError(Exception):
@@ -50,16 +51,19 @@ def user_file(environ: dict[str, str] | None = None) -> Path | None:
     return Path(base) / "nnnotes" / DEFAULT_FILE if base else None
 
 
-def config_files(path: str | Path | None = None,
-                 environ: dict[str, str] | None = None) -> list[tuple[str, Path | None]]:
+def config_files(
+    path: str | Path | None = None, environ: dict[str, str] | None = None
+) -> list[tuple[str, Path | None]]:
     """The config file candidates in lookup order, (how it is named, path or None): `--config`, NNNOTES_CONFIG, the
     working directory's nnnotes.toml, the per-user file. The first two are used when they are given (and must
     exist), the last two when they exist."""
     env = os.environ if environ is None else environ
-    return [("--config", Path(path) if path else None),
-            (ENV_CONFIG, Path(env[ENV_CONFIG]) if env.get(ENV_CONFIG) else None),
-            ("working directory", Path(DEFAULT_FILE)),
-            ("user", user_file(env))]
+    return [
+        ("--config", Path(path) if path else None),
+        (ENV_CONFIG, Path(env[ENV_CONFIG]) if env.get(ENV_CONFIG) else None),
+        ("working directory", Path(DEFAULT_FILE)),
+        ("user", user_file(env)),
+    ]
 
 
 def find_file(path: str | Path | None = None, environ: dict[str, str] | None = None) -> Path | None:
@@ -79,6 +83,7 @@ def find_file(path: str | Path | None = None, environ: dict[str, str] | None = N
 def template() -> bytes:
     """The config template shipped with the package (`nnnotes config init` writes it)."""
     from importlib import resources
+
     return resources.files(__package__).joinpath(TEMPLATE).read_bytes()
 
 
@@ -100,23 +105,36 @@ def describe(section: str, key: str, flag: str | None = None) -> str:
 class Config:
     """Merged settings. `overrides`: {(section, key): value} from command-line flags (None = not given)."""
 
-    def __init__(self, data: dict | None = None, base: Path | None = None, source: str | None = None,
-                 environ: dict[str, str] | None = None, overrides: dict | None = None, flags: dict | None = None):
+    def __init__(
+        self,
+        data: dict | None = None,
+        base: Path | None = None,
+        source: str | None = None,
+        environ: dict[str, str] | None = None,
+        overrides: dict | None = None,
+        flags: dict | None = None,
+    ):
         self._data = data or {}
         self._base = base
-        self.source = source                    # the TOML file read, if any (a path, shown in messages)
+        self.source = source  # the TOML file read, if any (a path, shown in messages)
         env = os.environ if environ is None else environ
         self._env = {k: v for k, v in env.items() if k.startswith(ENV_PREFIX) and k != ENV_CONFIG}
         self._over = {k: v for k, v in (overrides or {}).items() if v not in (None, "")}
-        self._flags = dict(flags or {})         # {(section, key): "--flag"} for messages
+        self._flags = dict(flags or {})  # {(section, key): "--flag"} for messages
 
-    def __repr__(self) -> str:                  # never the values
+    def __repr__(self) -> str:  # never the values
         return f"Config(source={self.source!r})"
 
     # ---------------------------------------------------------------- loading
     @classmethod
-    def load(cls, path: str | Path | None = None, *, environ: dict[str, str] | None = None,
-             overrides: dict | None = None, flags: dict | None = None) -> "Config":
+    def load(
+        cls,
+        path: str | Path | None = None,
+        *,
+        environ: dict[str, str] | None = None,
+        overrides: dict | None = None,
+        flags: dict | None = None,
+    ) -> "Config":
         env = os.environ if environ is None else environ
         file = find_file(path, env)
         if file is None:
@@ -125,8 +143,7 @@ class Config:
             data = tomllib.loads(file.read_text(encoding="utf-8"))
         except tomllib.TOMLDecodeError as e:
             raise ConfigError(f"config file {file}: invalid TOML ({e})") from None
-        return cls(data, base=file.resolve().parent, source=str(file), environ=env, overrides=overrides,
-                   flags=flags)
+        return cls(data, base=file.resolve().parent, source=str(file), environ=env, overrides=overrides, flags=flags)
 
     # ---------------------------------------------------------------- lookup
     def _table(self, section: str) -> dict:
@@ -168,6 +185,7 @@ class Config:
                     walk(v, f"{section}.{k}" if section else k)
                 else:
                     out.append((section, k))
+
         walk(self._data, "")
         return out
 
@@ -177,8 +195,10 @@ class Config:
 
     def missing(self, section: str, key: str) -> ConfigError:
         hint = "" if self.source else " (no config file was found: `nnnotes config init` writes one to fill in)"
-        return ConfigError(f"setting {section}.{key} is not set: give it as "
-                           f"{describe(section, key, self._flags.get((section, key)))}{hint}")
+        return ConfigError(
+            f"setting {section}.{key} is not set: give it as "
+            f"{describe(section, key, self._flags.get((section, key)))}{hint}"
+        )
 
     def _bad(self, section: str, key: str, what: str) -> ConfigError:
         return ConfigError(f"setting {section}.{key}: {what}")
@@ -282,6 +302,7 @@ class Config:
         value = self.get(section, key)
         if value is None and region and self.has(f"servers.{region}", "api"):
             from .gameapi import master_version
+
             value = master_version(self, region).resource_version
             section, key = f"servers.{region}", "api"
         elif value is None:

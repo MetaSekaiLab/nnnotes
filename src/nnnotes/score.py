@@ -19,6 +19,7 @@ the converted notes, the master rows and the decoded song for one music/difficul
 Game resources are only read from the user's own catalog/cache and written to
 the user's output directory.
 """
+
 from __future__ import annotations
 
 import gzip
@@ -34,25 +35,43 @@ from .jsonio import write_json
 
 f32 = np.float32
 
-LANE_COUNT = 24                      # MusicScore.LaneCount (SsMusicScoreConverter.Load sets 0x18)
-TICKS_PER_BEAT = 480                 # 60000 / (bpm * 480) in SsTickConverter.TickToTimeMs
-TICKS_PER_WHOLE = 1920               # ticks per measure = numerator * 1920 / denominator
-MAX_LINES = 20                       # LineIndexAssigner(0x14)
-DIFFICULTIES = ("easy", "normal", "hard", "expert")   # _easyID.._expertID -> file suffix _00.._03
+LANE_COUNT = 24  # MusicScore.LaneCount (SsMusicScoreConverter.Load sets 0x18)
+TICKS_PER_BEAT = 480  # 60000 / (bpm * 480) in SsTickConverter.TickToTimeMs
+TICKS_PER_WHOLE = 1920  # ticks per measure = numerator * 1920 / denominator
+MAX_LINES = 20  # LineIndexAssigner(0x14)
+DIFFICULTIES = ("easy", "normal", "hard", "expert")  # _easyID.._expertID -> file suffix _00.._03
 
 # SsNoteType / SsFlickDir / SsEase / SsFadeType (SsRootDeserializer.Parse*)
 NOTE_TYPES = {"tap": 0, "flick": 1, "trace": 2, "long": 3, "guide": 4, "node": 5}
 FLICK_DIRS = {"up": 0, "left": 1, "right": 2, "down": 3}
 EASES = {"linear": 0, "in": 1, "out": 2}
-FADES = {"none": 0, "in": 1, "out": 2}          # unknown string -> none (no exception)
+FADES = {"none": 0, "in": 1, "out": 2}  # unknown string -> none (no exception)
 
 # NoteOperateType
 OP_NAMES = {
-    0: "None", 1: "Normal", 20: "SlideBegin", 21: "SlideConnection", 22: "SlideEnd",
-    40: "Flick", 41: "SlideBeginFlick", 42: "SlideEndFlick", 60: "Trace", 61: "SlideBeginTrace",
-    62: "SlideEndTrace", 63: "SlideConnectionTrace", 80: "HiddenSlideBegin", 82: "HiddenSlideEnd",
-    100: "GuideBegin", 101: "GuideBeginNormal", 102: "GuideBeginFlick", 103: "GuideEnd",
-    104: "GuideBeginTrace", 105: "GuideEndTrace", 120: "Combo", 121: "ComboSkip", 122: "Hidden",
+    0: "None",
+    1: "Normal",
+    20: "SlideBegin",
+    21: "SlideConnection",
+    22: "SlideEnd",
+    40: "Flick",
+    41: "SlideBeginFlick",
+    42: "SlideEndFlick",
+    60: "Trace",
+    61: "SlideBeginTrace",
+    62: "SlideEndTrace",
+    63: "SlideConnectionTrace",
+    80: "HiddenSlideBegin",
+    82: "HiddenSlideEnd",
+    100: "GuideBegin",
+    101: "GuideBeginNormal",
+    102: "GuideBeginFlick",
+    103: "GuideEnd",
+    104: "GuideBeginTrace",
+    105: "GuideEndTrace",
+    120: "Combo",
+    121: "ComboSkip",
+    122: "Hidden",
     123: "InvalidHidden",
 }
 # NoteLineEaseType as the runtime names it (LiveCalculator.GetNoteLineTypeEasing):
@@ -60,15 +79,34 @@ OP_NAMES = {
 LINE_EASE_NAMES = {0: "Linear", 1: "EaseIn", 2: "EaseOut"}
 DIRECTION_NAMES = {0: "Normal", 1: "Left", 2: "Right"}
 # NoteJudgementType (FTLiveSimulator.Runtime)
-JUDGEMENT_TYPE_NAMES = {0: "None", 1: "Normal", 2: "EasyNormal", 5: "Flick", 10: "SlideBegin",
-                        11: "SlideEnd", 12: "SlideEndFlick", 15: "SlideBeginEasy", 21: "Trace",
-                        22: "SlideEndTrace"}
+JUDGEMENT_TYPE_NAMES = {
+    0: "None",
+    1: "Normal",
+    2: "EasyNormal",
+    5: "Flick",
+    10: "SlideBegin",
+    11: "SlideEnd",
+    12: "SlideEndFlick",
+    15: "SlideBeginEasy",
+    21: "Trace",
+    22: "SlideEndTrace",
+}
 # JudgementAreaOffsetType
-OFFSET_TYPE_NAMES = {0: "Default", 1: "Slide", 2: "SlideBegin", 3: "SlideEnd", 4: "Flick", 5: "Trace",
-                     6: "SlideMin", 7: "SlideMax", 8: "EasyDefault", 9: "EasySlideBegin"}
+OFFSET_TYPE_NAMES = {
+    0: "Default",
+    1: "Slide",
+    2: "SlideBegin",
+    3: "SlideEnd",
+    4: "Flick",
+    5: "Trace",
+    6: "SlideMin",
+    7: "SlideMax",
+    8: "EasyDefault",
+    9: "EasySlideBegin",
+}
 
-SLIDE_BEGIN_CLASS = {20, 41, 61, 80, 104}      # classes derived from SlideBeginNote (have AddCombo)
-SLIDE_END_CLASS = {22, 42, 62, 82, 105}        # classes derived from SlideEndNote (ISlideNoteEnd)
+SLIDE_BEGIN_CLASS = {20, 41, 61, 80, 104}  # classes derived from SlideBeginNote (have AddCombo)
+SLIDE_END_CLASS = {22, 42, 62, 82, 105}  # classes derived from SlideEndNote (ISlideNoteEnd)
 GUIDE_BEGIN_OPS = {100, 101, 102, 104}
 GUIDE_END_OPS = {103, 105}
 
@@ -84,12 +122,12 @@ def net_round(x: float) -> float:
         return float(math.floor(x + 0.5))
     if frac == -0.5:
         return ip - 1.0 if int(ip) & 1 else ip
-    return float(int(x - 0.5))                  # (double)(long)(x - 0.5): truncation toward zero
+    return float(int(x - 0.5))  # (double)(long)(x - 0.5): truncation toward zero
 
 
 def net_round_int(x: float) -> int:
     v = net_round(x)
-    return int(v) if math.isfinite(v) else -2**31
+    return int(v) if math.isfinite(v) else -(2**31)
 
 
 def is_judgement_note(op: int) -> bool:
@@ -123,7 +161,7 @@ def judgement_type(op: int, crit: bool) -> int:
     raise ValueError(f"ConvertJudgementType: operateType {op}")
 
 
-MATHF_EPSILON = f32(1.401298e-45)    # Mathf.Epsilon (denormal min; 1.17549435e-38 if flush-to-zero is on, assumed off)
+MATHF_EPSILON = f32(1.401298e-45)  # Mathf.Epsilon (denormal min; 1.17549435e-38 if flush-to-zero is on, assumed off)
 
 
 def mathf_approximately(a: float, b: float) -> bool:
@@ -137,19 +175,19 @@ def mathf_approximately(a: float, b: float) -> bool:
 # --------------------------------------------------------------------------- SsRoot (ReadNote/ReadEvents)
 @dataclass
 class SsNote:
-    type: int = 0            # SsNoteType, default Tap
+    type: int = 0  # SsNoteType, default Tap
     t: int = 0
     pos: np.float32 = f32(0.0)
     pos_auto: bool = False
-    size: np.float32 = f32(6.0)   # ReadNote writes 6.0f (0x40c00000) before parsing
+    size: np.float32 = f32(6.0)  # ReadNote writes 6.0f (0x40c00000) before parsing
     crit: bool = False
-    dir: int = 0             # SsFlickDir, default Up
-    ease_l: int = 0          # SsEase
+    dir: int = 0  # SsFlickDir, default Up
+    ease_l: int = 0  # SsEase
     ease_r: int = 0
-    visible: bool = True     # ReadNote writes 1 before parsing
-    alpha: int = 0           # SsFadeType
+    visible: bool = True  # ReadNote writes 1 before parsing
+    alpha: int = 0  # SsFadeType
     node: list | None = None
-    src: tuple = ()          # (note index, node index) in the shipped JSON, for traceability
+    src: tuple = ()  # (note index, node index) in the shipped JSON, for traceability
 
 
 def _to_int(v) -> int:
@@ -171,7 +209,7 @@ def _to_f32(v) -> np.float32:
 
 def _enum(table: dict, s: str, what: str) -> int:
     if s not in table:
-        raise ValueError(f"ss {what} value '{s}'")   # InvalidOperationException("ss" + s + ...)
+        raise ValueError(f"ss {what} value '{s}'")  # InvalidOperationException("ss" + s + ...)
     return table[s]
 
 
@@ -212,11 +250,11 @@ def read_note(n: dict, src: tuple = ()) -> SsNote:
 
 @dataclass
 class SsEvents:
-    bpm: list = field(default_factory=list)      # [(t, bpm f32)]
-    sig: list = field(default_factory=list)      # [(t, num, den)]
-    skill: list = field(default_factory=list)    # [t]
-    fever: list = field(default_factory=list)    # [(t0, t1)]
-    call: list = field(default_factory=list)     # [(t, [timing ints])]
+    bpm: list = field(default_factory=list)  # [(t, bpm f32)]
+    sig: list = field(default_factory=list)  # [(t, num, den)]
+    skill: list = field(default_factory=list)  # [t]
+    fever: list = field(default_factory=list)  # [(t0, t1)]
+    call: list = field(default_factory=list)  # [(t, [timing ints])]
 
 
 def read_events(ev: dict) -> SsEvents:
@@ -246,7 +284,7 @@ def parse(root: dict) -> tuple[SsEvents, list[SsNote]]:
     """SsRootDeserializer.ReadRoot/ReadScore: only `score` is read (`meta` is ignored)."""
     score = root.get("score")
     if not isinstance(score, dict):
-        raise ValueError("ss score")                 # SsMusicScoreConverter.Error("ss score")
+        raise ValueError("ss score")  # SsMusicScoreConverter.Error("ss score")
     ev = read_events(score["events"]) if isinstance(score.get("events"), dict) else SsEvents()
     notes = [read_note(n, (i,)) for i, n in enumerate(score.get("notes") or [])]
     return ev, notes
@@ -257,11 +295,11 @@ def parse(root: dict) -> tuple[SsEvents, list[SsNote]]:
 class BarPos:
     bar: int
     rhythm: int
-    unit: int                 # RhythmicUnit = ticks per measure of the segment
-    progress: np.float32      # (float)rhythm / (float)unit
+    unit: int  # RhythmicUnit = ticks per measure of the segment
+    progress: np.float32  # (float)rhythm / (float)unit
 
     @property
-    def key(self) -> np.float32:     # BarProgress + (float)Bar, the dictionary key of the converter
+    def key(self) -> np.float32:  # BarProgress + (float)Bar, the dictionary key of the converter
         return f32(self.progress + f32(self.bar))
 
 
@@ -275,13 +313,13 @@ class TickConverter:
     @staticmethod
     def _sig_segments(sigs):
         """BuildSigSegments -> [(startTick, startBar, ticksPerMeasure, num, den)]."""
-        s = sorted(sigs, key=lambda x: x[0])      # List.Sort(Comparison by T); ties keep chart order here
+        s = sorted(sigs, key=lambda x: x[0])  # List.Sort(Comparison by T); ties keep chart order here
         out = []
         if not s or s[0][0] > 0:
             out.append((0, 0, 1920, 4, 4))
         bar, prev_t, tpm = 0, 0, 1920
         for t, num, den in s:
-            q = int((t - prev_t) / tpm) if tpm != 0 else 0          # C# int division truncates
+            q = int((t - prev_t) / tpm) if tpm != 0 else 0  # C# int division truncates
             if t - prev_t != 0 and prev_t <= t:
                 bar += q
             tpm = int(num * 1920 / den) if den != 0 else 0
@@ -337,6 +375,7 @@ class TickConverter:
 @dataclass
 class Pos:
     """MusicScorePosition."""
+
     bar: int
     rhythm: int
     unit: int
@@ -362,13 +401,13 @@ def time_ms_from_bar(bar: int, progress, bpm_events: list, bar_events: list) -> 
     progress = f32(progress)
     ref = Pos(0, 0, 0, f32(0.0), 0)
     beats = f32(4.0)
-    for value, p in bar_events:                 # BarChangeEvent (ChangeBar, position)
+    for value, p in bar_events:  # BarChangeEvent (ChangeBar, position)
         if p.before(bar, progress):
             beats = value
             if p.ms > ref.ms:
                 ref = p
     bpm = f32(160.0)
-    for value, p in bpm_events:                 # BPMChangeEvent (ChangeBPM, position)
+    for value, p in bpm_events:  # BPMChangeEvent (ChangeBPM, position)
         if p.before(bar, progress):
             bpm = value
             if p.ms > ref.ms:
@@ -461,7 +500,7 @@ class NoteInfo:
     direction: int = 0
     ease: int = 0
     ease_r: int = 0
-    lines: list = field(default_factory=list)       # LineIndexList (line *indices*, 0..19)
+    lines: list = field(default_factory=list)  # LineIndexList (line *indices*, 0..19)
     src: tuple = ()
     tick: int = 0
     visible: bool = True
@@ -505,8 +544,27 @@ def _single_info(n: SsNote, tc: TickConverter, mirror: bool) -> NoteInfo:
         op, d = 60, 0
     else:
         op, d = 1, 0
-    return NoteInfo(bp.bar, bp.rhythm, bp.unit, bp.progress, lane, lane_f, width, n.size, op,
-                    False, n.crit, mirror_direction(d, mirror), 0, 0, [], n.src, n.t, n.visible, n.alpha)
+    return NoteInfo(
+        bp.bar,
+        bp.rhythm,
+        bp.unit,
+        bp.progress,
+        lane,
+        lane_f,
+        width,
+        n.size,
+        op,
+        False,
+        n.crit,
+        mirror_direction(d, mirror),
+        0,
+        0,
+        [],
+        n.src,
+        n.t,
+        n.visible,
+        n.alpha,
+    )
 
 
 def _long_node_op(nodes: list, i: int) -> int:
@@ -545,8 +603,15 @@ def _guide_node_op(nodes: list, i: int, guide_map: dict | None) -> int:
     return 122 if not n.visible else 63
 
 
-def _line_infos(chains: list, is_long: bool, tc: TickConverter, mirror: bool, out: list,
-                guide_map: dict | None, assigner: LineIndexAssigner) -> None:
+def _line_infos(
+    chains: list,
+    is_long: bool,
+    tc: TickConverter,
+    mirror: bool,
+    out: list,
+    guide_map: dict | None,
+    assigner: LineIndexAssigner,
+) -> None:
     """BuildLongOrGuideNoteInfos."""
     for _, chain in chains:
         nodes = chain.node
@@ -561,7 +626,7 @@ def _line_infos(chains: list, is_long: bool, tc: TickConverter, mirror: bool, ou
                 pos, size = nodes[0].pos, nodes[0].size
             else:
                 j = i
-                while True:                       # nearest non-auto node in [1, i-1], else node 0
+                while True:  # nearest non-auto node in [1, i-1], else node 0
                     if j < 2:
                         j = 0
                         break
@@ -569,7 +634,7 @@ def _line_infos(chains: list, is_long: bool, tc: TickConverter, mirror: bool, ou
                     if not nodes[j].pos_auto:
                         break
                 k = i + 1
-                while k < N - 1 and nodes[k].pos_auto:   # nearest non-auto node in [i+1, N-2], else N-1
+                while k < N - 1 and nodes[k].pos_auto:  # nearest non-auto node in [i+1, N-2], else N-1
                     k += 1
                 a, b = nodes[j], nodes[k]
                 span = b.t - a.t
@@ -590,10 +655,29 @@ def _line_infos(chains: list, is_long: bool, tc: TickConverter, mirror: bool, ou
                 if s is not None:
                     dir_src = s
             d = flick_direction(dir_src) if dir_src.type == 1 else 0
-            out.append(NoteInfo(bp.bar, bp.rhythm, bp.unit, bp.progress, lane, lane_f, width, size, op,
-                                nd.pos_auto, nd.crit, mirror_direction(d, mirror),
-                                convert_ease(nd.ease_l), convert_ease(nd.ease_r), [line_idx], nd.src,
-                                nd.t, nd.visible, nd.alpha))
+            out.append(
+                NoteInfo(
+                    bp.bar,
+                    bp.rhythm,
+                    bp.unit,
+                    bp.progress,
+                    lane,
+                    lane_f,
+                    width,
+                    size,
+                    op,
+                    nd.pos_auto,
+                    nd.crit,
+                    mirror_direction(d, mirror),
+                    convert_ease(nd.ease_l),
+                    convert_ease(nd.ease_r),
+                    [line_idx],
+                    nd.src,
+                    nd.t,
+                    nd.visible,
+                    nd.alpha,
+                )
+            )
         assigner.register(line_idx, end_tick)
 
 
@@ -617,7 +701,7 @@ def _build_note_infos(notes: list, tc: TickConverter, mirror: bool) -> list[Note
     for i, n in enumerate(notes):
         if i not in merged and n.type < 3:
             out.append(_single_info(n, tc, mirror))
-    order = lambda it: (it[1].node[0].t, it[0])                  # <BuildNoteInfoList>b__7_0/7_1
+    order = lambda it: (it[1].node[0].t, it[0])  # <BuildNoteInfoList>b__7_0/7_1
     longs = sorted(((i, n) for i, n in enumerate(notes) if n.type == 3 and n.node and len(n.node) > 1), key=order)
     assigner = LineIndexAssigner(MAX_LINES)
     _line_infos(longs, True, tc, mirror, out, None, assigner)
@@ -626,7 +710,7 @@ def _build_note_infos(notes: list, tc: TickConverter, mirror: bool) -> list[Note
     return out
 
 
-MERGEABLE = {20, 22, 41, 42, 61, 62, 80, 82, 100, 101, 102, 103, 104, 105}   # IsMergeableSlideEndpoint
+MERGEABLE = {20, 22, 41, 42, 61, 62, 80, 82, 100, 101, 102, 103, 104, 105}  # IsMergeableSlideEndpoint
 
 
 def _info_dictionary(infos: list[NoteInfo], log: list) -> dict:
@@ -636,8 +720,19 @@ def _info_dictionary(infos: list[NoteInfo], log: list) -> dict:
         lanes = d.setdefault(n.key, {})
         lst = lanes.setdefault(n.lane, [])
         if n.op in MERGEABLE and n.lines:
-            hit = next((e for e in lst if e.op == n.op and e.width == n.width and e.crit == n.crit
-                        and e.direction == n.direction and e.ease == n.ease and e.ease_r == n.ease_r), None)
+            hit = next(
+                (
+                    e
+                    for e in lst
+                    if e.op == n.op
+                    and e.width == n.width
+                    and e.crit == n.crit
+                    and e.direction == n.direction
+                    and e.ease == n.ease
+                    and e.ease_r == n.ease_r
+                ),
+                None,
+            )
             if hit is not None:
                 hit.lines.extend(n.lines)
                 continue
@@ -704,9 +799,24 @@ class _Creator:
 
     def _note(self, info: NoteInfo, pos: Pos, op: int, line_ids: list, offset: int) -> Note:
         # NoteBase(id, pos, noteInfo, lineIds, offsetType)
-        return Note(self.cur_id, pos, op, info.lane, info.lane + info.width - 1, info.lane_f,
-                    f32(f32(info.lane_f + info.width_f) - f32(1.0)), info.width_f, info.slide_along,
-                    info.crit, info.direction, line_ids, info.ease, info.ease_r, offset, info=info)
+        return Note(
+            self.cur_id,
+            pos,
+            op,
+            info.lane,
+            info.lane + info.width - 1,
+            info.lane_f,
+            f32(f32(info.lane_f + info.width_f) - f32(1.0)),
+            info.width_f,
+            info.slide_along,
+            info.crit,
+            info.direction,
+            line_ids,
+            info.ease,
+            info.ease_r,
+            offset,
+            info=info,
+        )
 
     def create(self, info: NoteInfo) -> Note | None:
         ms = time_ms_from_bar(info.bar, info.progress, self.bpm_events, self.bar_events)
@@ -722,7 +832,7 @@ class _Creator:
                 self.cur_line += 1
                 ids.append(self.cur_line)
                 self.line_arr[li] = self.cur_line
-            offset = {20: (9 if crit else 2), 41: 4, 61: 5, 80: 5}[op]      # Create*Begin*Note ctor argument
+            offset = {20: (9 if crit else 2), 41: 4, 61: 5, 80: 5}[op]  # Create*Begin*Note ctor argument
             note = self._note(info, pos, op, ids, offset)
             for lid in ids:
                 self.begin_by_line[lid] = note
@@ -775,9 +885,9 @@ class _Creator:
         else:
             self.log.append(f"noteId {self.cur_id} type {OP_NAMES.get(op, op)}")
             return None
-        if op in (1, 20, 22, 40, 41, 42):                     # IsPairNoteType
+        if op in (1, 20, 22, 40, 41, 42):  # IsPairNoteType
             t = self.pair_tmp
-            if t is not None and same_position(t.pos, note.pos):   # TrySetPairNoteId
+            if t is not None and same_position(t.pos, note.pos):  # TrySetPairNoteId
                 note.pair_id, t.pair_id = t.id, note.id
             self.pair_tmp = note
         note.fever = self._fever(note.pos.ms)
@@ -801,16 +911,16 @@ class _Creator:
                 break
             begins.append(begin)
             notes = [x for x in begin.view_notes if lid in x.line_ids]
-            notes.sort(key=lambda x: (x.pos.bar, float(x.pos.progress)))      # OrderBy(Bar).ThenBy(BarProgress)
+            notes.sort(key=lambda x: (x.pos.bar, float(x.pos.progress)))  # OrderBy(Bar).ThenBy(BarProgress)
             notes.append(end)
-            cur = next(x for x in notes if not x.slide_along)                 # First(!SlideAlong)
+            cur = next(x for x in notes if not x.slide_along)  # First(!SlideAlong)
             start_pos, end_pos = begin.pos, end.pos
-            mids = [x.pos for x in notes if x is not end and is_judgement_note(x.op)]   # <>c__DisplayClass43_0.b__4
+            mids = [x.pos for x in notes if x is not end and is_judgement_note(x.op)]  # <>c__DisplayClass43_0.b__4
             beats = list(_beats_between(start_pos, end_pos, mids, self.bpm_events, self.bar_events))
             prev = begin
             walk = 0
             for k, beat in enumerate(beats):
-                if any(is_judgement_note(x.op) and same_position(x.pos, beat) for x in notes):   # b__6
+                if any(is_judgement_note(x.op) and same_position(x.pos, beat) for x in notes):  # b__6
                     continue
                 window = 15000.0 / float(bpm_at_ms(beat.ms, self.bpm_events))
                 skip = any(float(mp.ms) - window <= float(beat.ms) and beat.ms < mp.ms for mp in mids)
@@ -818,7 +928,7 @@ class _Creator:
                     skip = True
                 if k == len(beats) - 1 and window > float(end_pos.ms - beat.ms):
                     skip = True
-                while cur.pos.key < beat.key:                                 # walk to the enclosing segment
+                while cur.pos.key < beat.key:  # walk to the enclosing segment
                     nxt = notes[walk]
                     walk += 1
                     if nxt.id != cur.id and not nxt.slide_along:
@@ -828,11 +938,26 @@ class _Creator:
                 ls, le = lane_position(beat, prev, cur)
                 cid = lid + k * 10000 + 10000
                 # SlideComboNote..ctor: LaneStart/EndIndex = floor (not truncation), Width = end - start + 1
-                combo = Note(cid, beat, 121 if skip else 120, int(math.floor(float(ls))), int(math.floor(float(le))),
-                             ls, le, f32(f32(le - ls) + f32(1.0)), False, False, 0, [lid], 0, 0, 1)
+                combo = Note(
+                    cid,
+                    beat,
+                    121 if skip else 120,
+                    int(math.floor(float(ls))),
+                    int(math.floor(float(le))),
+                    ls,
+                    le,
+                    f32(f32(le - ls) + f32(1.0)),
+                    False,
+                    False,
+                    0,
+                    [lid],
+                    0,
+                    0,
+                    1,
+                )
                 combo.begin_ref, combo.end_ref = begin, end
                 combo.fever = self._fever(beat.ms)
-                if begin.op in SLIDE_BEGIN_CLASS:                             # GuideBeginNote.AddCombo is empty
+                if begin.op in SLIDE_BEGIN_CLASS:  # GuideBeginNote.AddCombo is empty
                     begin.combo_notes.append(combo)
             self.begin_by_line.pop(lid, None)
         if ok:
@@ -880,24 +1005,27 @@ def lane_position(pos: Pos, a: Note, b: Note) -> tuple:
     else:
         e = ease(f32(f32(pos.key - a.pos.key) / span), a.ease)
     e = min(max(e, f32(0.0)), f32(1.0))
-    return (f32(a.lane_start_f + f32(e * f32(b.lane_start_f - a.lane_start_f))),
-            f32(a.lane_end_f + f32(e * f32(b.lane_end_f - a.lane_end_f))))
+    return (
+        f32(a.lane_start_f + f32(e * f32(b.lane_start_f - a.lane_start_f))),
+        f32(a.lane_end_f + f32(e * f32(b.lane_end_f - a.lane_end_f))),
+    )
 
 
 # --------------------------------------------------------------------------- convert
 @dataclass
 class RuntimeScore:
     """The runtime score SsMusicScoreConverter.Load builds, before it is written as JSON."""
-    by_key: dict           # position key -> notes, keys in the order CreateNoteDictionary adds them
-    infos: list            # NoteInfoData
+
+    by_key: dict  # position key -> notes, keys in the order CreateNoteDictionary adds them
+    infos: list  # NoteInfoData
     tc: TickConverter
     events: SsEvents
-    bpm_events: list       # (bpm, Pos), BpmChangeEventList
-    bar_events: list       # (beats per bar, Pos), BarChangeEventList
-    fevers: list           # (index, start Pos, end Pos) sorted by start, FeverList
-    skills: list           # (index, Pos) in chart order, SkillEventList
-    calls: list            # (Pos, rhythms), CallChangeEventList
-    bar_line_ms: list      # BarLineTimeMsList
+    bpm_events: list  # (bpm, Pos), BpmChangeEventList
+    bar_events: list  # (beats per bar, Pos), BarChangeEventList
+    fevers: list  # (index, start Pos, end Pos) sorted by start, FeverList
+    skills: list  # (index, Pos) in chart order, SkillEventList
+    calls: list  # (Pos, rhythms), CallChangeEventList
+    bar_line_ms: list  # BarLineTimeMsList
     log: list
 
     @property
@@ -914,24 +1042,30 @@ def runtime_score(root: dict, mirror: bool = False, start_note_id: int = 0) -> R
     tc = TickConverter(ev.sig, ev.bpm)
     infos = _build_note_infos(notes, tc, mirror)
 
-    bpm_events = [(b, make_position(t, tc)) for t, b in sorted(ev.bpm, key=lambda x: x[0])]         # BuildBpmEvents
-    bar_events = [(f32(f32(f32(n) * f32(4.0)) / f32(d)), make_position(t, tc))                       # BuildBarEvents
-                  for t, n, d in sorted(ev.sig, key=lambda x: x[0])]
-    fevers = [(i, make_position(a, tc), make_position(b, tc))                                        # BuildFeverList
-              for i, (a, b) in enumerate(sorted(ev.fever, key=lambda x: x[0]))]
-    skills = [(i, make_position(t, tc)) for i, t in enumerate(ev.skill)]                             # BuildSkillList
-    calls = []                                                                                        # BuildCallList
+    bpm_events = [(b, make_position(t, tc)) for t, b in sorted(ev.bpm, key=lambda x: x[0])]  # BuildBpmEvents
+    bar_events = [
+        (f32(f32(f32(n) * f32(4.0)) / f32(d)), make_position(t, tc))  # BuildBarEvents
+        for t, n, d in sorted(ev.sig, key=lambda x: x[0])
+    ]
+    fevers = [
+        (i, make_position(a, tc), make_position(b, tc))  # BuildFeverList
+        for i, (a, b) in enumerate(sorted(ev.fever, key=lambda x: x[0]))
+    ]
+    skills = [(i, make_position(t, tc)) for i, t in enumerate(ev.skill)]  # BuildSkillList
+    calls = []  # BuildCallList
     for t, timing in sorted(ev.call, key=lambda x: x[0]):
         n = len(timing)
-        calls.append((make_position(t, tc), [float(f32(f32(i + 1.0) / f32(n))) for i, v in enumerate(timing) if v == 1]))
+        calls.append(
+            (make_position(t, tc), [float(f32(f32(i + 1.0) / f32(n))) for i, v in enumerate(timing) if v == 1])
+        )
 
-    max_bar = max((n.bar for n in infos), default=-1)                                                # <Load>b__5_0
+    max_bar = max((n.bar for n in infos), default=-1)  # <Load>b__5_0
     bar_line_ms = [tc.time_ms(tc.bar_head_tick(b)) for b in range(max_bar + 1)]
 
     log: list[str] = []
     idict = _info_dictionary(infos, log)
     creator = _Creator(start_note_id, bpm_events, bar_events, fevers)
-    by_key: dict = {}                                                                                 # CreateNoteDictionary
+    by_key: dict = {}  # CreateNoteDictionary
     for key in sorted(idict):
         flat = [x for lst in idict[key].values() for x in lst]
         flat.sort(key=lambda x: _priority(x.op))
@@ -953,8 +1087,21 @@ def convert(root: dict, mirror: bool = False, start_note_id: int = 0) -> dict:
     """SsMusicScoreConverter.Load -> plain dict of the runtime score, notes in position order."""
     s = runtime_score(root, mirror, start_note_id)
     ordered = [n for k in sorted(s.by_key) for n in s.by_key[k]]
-    return _to_json(ordered, s.infos, s.tc, s.events, s.bpm_events, s.bar_events, s.fevers, s.skills, s.calls,
-                    s.bar_line_ms, s.log, mirror, start_note_id)
+    return _to_json(
+        ordered,
+        s.infos,
+        s.tc,
+        s.events,
+        s.bpm_events,
+        s.bar_events,
+        s.fevers,
+        s.skills,
+        s.calls,
+        s.bar_line_ms,
+        s.log,
+        mirror,
+        start_note_id,
+    )
 
 
 def _pos_json(p: Pos) -> dict:
@@ -967,42 +1114,74 @@ def _to_json(notes, infos, tc, ev, bpm_events, bar_events, fevers, skills, calls
     for n in notes:
         info = n.info
         rec = {
-            "id": n.id, "op": n.op, "opName": OP_NAMES[n.op],
-            "timeMs": n.pos.ms, "bar": n.pos.bar, "rhythm": n.pos.rhythm, "rhythmicUnit": n.pos.unit,
+            "id": n.id,
+            "op": n.op,
+            "opName": OP_NAMES[n.op],
+            "timeMs": n.pos.ms,
+            "bar": n.pos.bar,
+            "rhythm": n.pos.rhythm,
+            "rhythmicUnit": n.pos.unit,
             "barProgress": float(n.pos.progress),
-            "laneStart": n.lane_start, "laneEnd": n.lane_end,
-            "laneStartFloat": float(n.lane_start_f), "laneEndFloat": float(n.lane_end_f), "width": float(n.width),
-            "critical": n.crit, "direction": DIRECTION_NAMES[n.direction], "slideAlong": n.slide_along,
-            "lineIds": list(n.line_ids), "lineEase": LINE_EASE_NAMES[n.ease], "lineEaseR": LINE_EASE_NAMES[n.ease_r],
-            "pairNoteId": n.pair_id, "fever": n.fever,
-            "judgement": is_judgement_note(n.op), "flick": is_flick_type(n.op),
+            "laneStart": n.lane_start,
+            "laneEnd": n.lane_end,
+            "laneStartFloat": float(n.lane_start_f),
+            "laneEndFloat": float(n.lane_end_f),
+            "width": float(n.width),
+            "critical": n.crit,
+            "direction": DIRECTION_NAMES[n.direction],
+            "slideAlong": n.slide_along,
+            "lineIds": list(n.line_ids),
+            "lineEase": LINE_EASE_NAMES[n.ease],
+            "lineEaseR": LINE_EASE_NAMES[n.ease_r],
+            "pairNoteId": n.pair_id,
+            "fever": n.fever,
+            "judgement": is_judgement_note(n.op),
+            "flick": is_flick_type(n.op),
             "judgementType": JUDGEMENT_TYPE_NAMES[judgement_type(n.op, n.crit)] if n.op != 123 else None,
             "judgementAreaOffset": OFFSET_TYPE_NAMES[n.offset_type],
         }
         if info is not None:
-            rec.update({"tick": info.tick, "laneIndexFloat": float(info.lane_f), "widthFloat": float(info.width_f),
-                        "laneIndex": info.lane, "laneWidth": info.width, "lineIndices": list(info.lines),
-                        "visible": info.visible, "alpha": ["none", "in", "out"][info.alpha], "src": list(info.src)})
+            rec.update(
+                {
+                    "tick": info.tick,
+                    "laneIndexFloat": float(info.lane_f),
+                    "widthFloat": float(info.width_f),
+                    "laneIndex": info.lane,
+                    "laneWidth": info.width,
+                    "lineIndices": list(info.lines),
+                    "visible": info.visible,
+                    "alpha": ["none", "in", "out"][info.alpha],
+                    "src": list(info.src),
+                }
+            )
         else:  # SlideComboNote
             rec.update({"lineBeginId": n.begin_ref.id, "lineEndId": n.end_ref.id})
         out_notes.append(rec)
         for lid in n.line_ids:
-            ln = lines.setdefault(lid, {"lineId": lid, "type": "guide" if lid > start_id + 10000 else "long",
-                                         "noteIds": [], "comboIds": []})
+            ln = lines.setdefault(
+                lid,
+                {"lineId": lid, "type": "guide" if lid > start_id + 10000 else "long", "noteIds": [], "comboIds": []},
+            )
             (ln["comboIds"] if info is None else ln["noteIds"]).append(n.id)
     judged = sum(1 for n in notes if is_judgement_note(n.op))
     return {
         "format": "nnnotes.live-score/1",
-        "mirror": mirror, "startNoteId": start_id, "laneCount": LANE_COUNT,
+        "mirror": mirror,
+        "startNoteId": start_id,
+        "laneCount": LANE_COUNT,
         "judgementNoteCount": judged,
         "counts": {OP_NAMES[k]: v for k, v in sorted(_count_ops(notes).items())},
         "notes": out_notes,
         "lines": sorted(lines.values(), key=lambda x: x["lineId"]),
         "bpmChanges": [{"bpm": float(v), **_pos_json(p)} for v, p in bpm_events],
         "barChanges": [{"beatsPerBar": float(v), **_pos_json(p)} for v, p in bar_events],
-        "tickSegments": {"bpm": [{"startTick": a, "startTimeMs": b, "bpm": float(c)} for a, b, c in tc.bpm],
-                         "sig": [{"startTick": a, "startBar": b, "ticksPerMeasure": c, "numerator": d,
-                                  "denominator": e} for a, b, c, d, e in tc.sig]},
+        "tickSegments": {
+            "bpm": [{"startTick": a, "startTimeMs": b, "bpm": float(c)} for a, b, c in tc.bpm],
+            "sig": [
+                {"startTick": a, "startBar": b, "ticksPerMeasure": c, "numerator": d, "denominator": e}
+                for a, b, c, d, e in tc.sig
+            ],
+        },
         "barLineTimeMs": bar_line_ms,
         "fever": [{"index": i, "start": _pos_json(a), "end": _pos_json(b)} for i, a, b in fevers],
         "skill": [{"index": i, **_pos_json(p)} for i, p in skills],
@@ -1033,6 +1212,7 @@ def chart_key(file_name: str) -> str:
 def fetch_chart(cat, file_name: str) -> bytes:
     """Raw TextAsset bytes of a chart (still gzip, as shipped)."""
     from .unity import load_closure
+
     key = chart_key(file_name)
     name = file_name.rsplit("/", 1)[-1]
     for p in cat.fetch_key(key):
@@ -1073,15 +1253,26 @@ def music_rows(master_dir: Path, music_id: int) -> dict:
         "MasterLiveMusic": music,
         "MasterLiveMusicScore": {d: scores.get(music[f"_{d}ID"]) for d in DIFFICULTIES},
         "title": tx(music["_titleTextID"]),
-        "bands": [{"MasterBand": bands.get(b), "name": tx(bands[b]["_nameTextID"]) if b in bands else None}
-                  for b in music["_bandIDs"]],
+        "bands": [
+            {"MasterBand": bands.get(b), "name": tx(bands[b]["_nameTextID"]) if b in bands else None}
+            for b in music["_bandIDs"]
+        ],
         "music": snd(music["_musicSoundID"]),
         "jingle": snd(music["_jingleSoundID"]),
     }
 
 
-def extract_audio(cat, master_dir, music_id: int, out_dir, audio_fmt: str = "flac", *,
-                  flac_level: int = cri.FLAC_LEVEL, also=None, rows: dict | None = None) -> dict:
+def extract_audio(
+    cat,
+    master_dir,
+    music_id: int,
+    out_dir,
+    audio_fmt: str = "flac",
+    *,
+    flac_level: int = cri.FLAC_LEVEL,
+    also=None,
+    rows: dict | None = None,
+) -> dict:
     """<out>/audio/<cueSheet>/: the live BGM cue sheet decoded per cue + cues.json (cri.decode; `flac_level`,
     `also` as there). -> the `audio` entry of extract's summary (paths relative to out_dir)."""
     out_dir = Path(out_dir)
@@ -1092,12 +1283,29 @@ def extract_audio(cat, master_dir, music_id: int, out_dir, audio_fmt: str = "fla
 
     def rel(p) -> str:
         return Path(p).relative_to(out_dir).as_posix()
-    return {"cueSheet": sheet, "cue": cue, "file": rel(files[cue]) if cue in files else None,
-            "source": cri.layout(cat, sheet), "cues": {k: rel(v) for k, v in files.items()}}
+
+    return {
+        "cueSheet": sheet,
+        "cue": cue,
+        "file": rel(files[cue]) if cue in files else None,
+        "source": cri.layout(cat, sheet),
+        "cues": {k: rel(v) for k, v in files.items()},
+    }
 
 
-def extract(cat, master_dir, music_id: int, difficulty: str | int, out_dir, audio: bool = True,
-            audio_fmt: str = "flac", *, flac_level: int = cri.FLAC_LEVEL, also=None, mirror: bool = False) -> dict:
+def extract(
+    cat,
+    master_dir,
+    music_id: int,
+    difficulty: str | int,
+    out_dir,
+    audio: bool = True,
+    audio_fmt: str = "flac",
+    *,
+    flac_level: int = cri.FLAC_LEVEL,
+    also=None,
+    mirror: bool = False,
+) -> dict:
     """Write <out>/score/<file>.json (shipped chart JSON, un-gzipped), <file>.notes.json (converted runtime
     notes), <out>/score/master.json (master rows) and <out>/audio/<cueSheet>/ (the live BGM cue sheet decoded
     per cue + cues.json, extract_audio). `mirror`: also <file>.mirror.notes.json, the notes converted with the
@@ -1113,8 +1321,13 @@ def extract(cat, master_dir, music_id: int, difficulty: str | int, out_dir, audi
     txt = gzip.decompress(raw) if raw[:2] == b"\x1f\x8b" else raw
     base = fname.rsplit("/", 1)[-1]
     (sdir / f"{base}.json").write_bytes(txt)
-    source = {"key": chart_key(fname), "musicId": music_id, "difficulty": diff,
-              "masterLiveMusicScoreId": score_row["_id"], "fullComboCount": score_row["_fullComboCount"]}
+    source = {
+        "key": chart_key(fname),
+        "musicId": music_id,
+        "difficulty": diff,
+        "masterLiveMusicScoreId": score_row["_id"],
+        "fullComboCount": score_row["_fullComboCount"],
+    }
     root = load_bytes(raw)
     conv = convert(root)
     conv["source"] = source
@@ -1124,16 +1337,23 @@ def extract(cat, master_dir, music_id: int, difficulty: str | int, out_dir, audi
         conv_m["source"] = source
         write_json(sdir / f"{base}.mirror.notes.json", conv_m)
     write_json(sdir / "master.json", rows)
+
     def rel(p) -> str:  # paths in summary.json are relative to out_dir, POSIX separators (loadable as relative URLs)
         return Path(p).relative_to(out_dir).as_posix()
 
-    summary = {"chart": rel(sdir / f"{base}.json"), "notes": rel(sdir / f"{base}.notes.json"),
-               **({"notesMirror": rel(sdir / f"{base}.mirror.notes.json")} if mirror else {}),
-               "master": rel(sdir / "master.json"), "judgementNoteCount": conv["judgementNoteCount"],
-               "fullComboCount": score_row["_fullComboCount"], "noteCount": len(conv["notes"]),
-               "lastNoteTimeMs": conv["lastNoteTimeMs"]}
+    summary = {
+        "chart": rel(sdir / f"{base}.json"),
+        "notes": rel(sdir / f"{base}.notes.json"),
+        **({"notesMirror": rel(sdir / f"{base}.mirror.notes.json")} if mirror else {}),
+        "master": rel(sdir / "master.json"),
+        "judgementNoteCount": conv["judgementNoteCount"],
+        "fullComboCount": score_row["_fullComboCount"],
+        "noteCount": len(conv["notes"]),
+        "lastNoteTimeMs": conv["lastNoteTimeMs"],
+    }
     if audio:
-        summary["audio"] = extract_audio(cat, master_dir, music_id, out_dir, audio_fmt, flac_level=flac_level,
-                                         also=also, rows=rows)
+        summary["audio"] = extract_audio(
+            cat, master_dir, music_id, out_dir, audio_fmt, flac_level=flac_level, also=also, rows=rows
+        )
     write_json(out_dir / "score" / "summary.json", summary)
     return summary

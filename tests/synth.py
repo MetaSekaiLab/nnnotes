@@ -1,6 +1,7 @@
 """Synthetic inputs for the tests: made-up keys, an independent Rijndael encryptor, master data files and a master
 data CDN tree, bundle encryption, a binary catalog writer and a binary AndroidManifest.xml. Nothing here comes from
 game data. Helpers several test modules use live here (test modules do not import each other)."""
+
 from __future__ import annotations
 
 import gzip
@@ -20,7 +21,7 @@ MASTER_IV = bytes(range(32, 64))
 CATALOG_MAGIC = 0x0DE38942
 NONE = 0xFFFFFFFF
 LOCAL_PREFIX = "{UnityEngine.AddressableAssets.Addressables.RuntimePath}"
-REMOTE_BASE = "https://example.invalid"          # the catalog's own placeholder host (reserved name)
+REMOTE_BASE = "https://example.invalid"  # the catalog's own placeholder host (reserved name)
 
 
 # ---------------------------------------------------------------- Rijndael (any block / key length), encryption
@@ -40,7 +41,7 @@ def _mul(a: int, b: int) -> int:
 
 
 def _make_sbox() -> list[int]:
-    exp, log = [1] * 255, [0] * 256              # powers of the generator 3 in GF(2^8)
+    exp, log = [1] * 255, [0] * 256  # powers of the generator 3 in GF(2^8)
     for i in range(1, 255):
         exp[i] = _mul(exp[i - 1], 3)
         log[exp[i]] = i
@@ -64,7 +65,7 @@ def rijndael_encrypt_block(block: bytes, key: bytes) -> bytes:
     """One block (16, 24 or 32 bytes) under a 16, 24 or 32 byte key; bytes are the state column by column."""
     nb, nk = len(block) // 4, len(key) // 4
     nr = max(nb, nk) + 6
-    w = [list(key[4 * i:4 * i + 4]) for i in range(nk)]
+    w = [list(key[4 * i : 4 * i + 4]) for i in range(nk)]
     rcon = 1
     for i in range(nk, nb * (nr + 1)):
         t = list(w[i - 1])
@@ -92,7 +93,7 @@ def rijndael_encrypt_block(block: bytes, key: bytes) -> bytes:
             for c in range(nb):
                 a = [s[r][c] for r in range(4)]
                 for r in range(4):
-                    s[r][c] = (_mul(a[r], 2) ^ _mul(a[(r + 1) % 4], 3) ^ a[(r + 2) % 4] ^ a[(r + 3) % 4])
+                    s[r][c] = _mul(a[r], 2) ^ _mul(a[(r + 1) % 4], 3) ^ a[(r + 2) % 4] ^ a[(r + 3) % 4]
         add(rnd)
     return bytes(s[r][c] for c in range(nb) for r in range(4))
 
@@ -103,7 +104,7 @@ def rijndael256_cbc_encrypt(data: bytes, key: bytes, iv: bytes) -> bytes:
     data += bytes([pad]) * pad
     out, prev = bytearray(), iv
     for i in range(0, len(data), 32):
-        prev = rijndael_encrypt_block(bytes(a ^ b for a, b in zip(data[i:i + 32], prev)), key)
+        prev = rijndael_encrypt_block(bytes(a ^ b for a, b in zip(data[i : i + 32], prev)), key)
         out += prev
     return bytes(out)
 
@@ -172,9 +173,16 @@ def request_options(internal_id: str, **given) -> dict:
     parts = [hashlib.md5(b"bundle:" + name.encode()).hexdigest()]
     if name.endswith(".bundle"):
         parts.append(h[:12])
-    opts = {"hash": m.group(1) if m else h, "bundleName": "_".join(parts), "crc": 0, "bundleSize": 0,
-            "timeout": 0, "redirectLimit": 32, "retryCount": 0,
-            "flags": 4 if internal_id.startswith(LOCAL_PREFIX) else 0}
+    opts = {
+        "hash": m.group(1) if m else h,
+        "bundleName": "_".join(parts),
+        "crc": 0,
+        "bundleSize": 0,
+        "timeout": 0,
+        "redirectLimit": 32,
+        "retryCount": 0,
+        "flags": 4 if internal_id.startswith(LOCAL_PREFIX) else 0,
+    }
     opts.update(given)
     return opts
 
@@ -235,8 +243,9 @@ class CatalogWriter:
     def type_data(self, cls: str, assembly: str) -> int:
         """A TypeSerializer.Data {assembly, class} (both read with '.'), one per type."""
         if (cls, assembly) not in self._types:
-            self._types[(cls, assembly)] = self.value(struct.pack("<II", self.string(assembly, "."),
-                                                                  self.string(cls, ".")))
+            self._types[(cls, assembly)] = self.value(
+                struct.pack("<II", self.string(assembly, "."), self.string(cls, "."))
+            )
         return self._types[(cls, assembly)]
 
     def key_object(self, key: str) -> int:
@@ -256,8 +265,16 @@ class CatalogWriter:
         if common not in self._commons:
             self._commons[common] = self.value(struct.pack("<hBBi", *common))
         hash_id = NONE if opts["hash"] is None else self.value(bytes.fromhex(opts["hash"]))
-        data = self.value(struct.pack("<5I", hash_id, self.string(opts["bundleName"], "_"), opts["crc"],
-                                      opts["bundleSize"], self._commons[common]))
+        data = self.value(
+            struct.pack(
+                "<5I",
+                hash_id,
+                self.string(opts["bundleName"], "_"),
+                opts["crc"],
+                opts["bundleSize"],
+                self._commons[common],
+            )
+        )
         return self.value(struct.pack("<II", self.type_data(REQUEST_OPTIONS, RM_ASSEMBLY), data))
 
     def build(self, entries: list[tuple], path_ids: bool = False, *, build_hash: str = "0" * 32) -> bytes:
@@ -271,7 +288,7 @@ class CatalogWriter:
         table_len = 8 * len(by_key)
         self.buf += struct.pack("<I", table_len)
         keys = self.reserve(table_len)
-        records = [self.reserve(28) for _ in entries]           # packed back to back, no length prefix
+        records = [self.reserve(28) for _ in entries]  # packed back to back, no length prefix
         for rec, e in zip(records, entries):
             primary, internal, deps = e[:3]
             opts = e[3] if len(e) > 3 else {}
@@ -281,19 +298,37 @@ class CatalogWriter:
             rtype = opts.get("type", BUNDLE_TYPE if file else "UnityEngine.Object")
             extra = opts.get("extra", {}) if "extra" in opts or file else None
             extra_id = NONE if extra is None else self.request_options(request_options(internal, **extra))
-            if "extra_object" in opts:                              # (class name, bytes) of another extra type
+            if "extra_object" in opts:  # (class name, bytes) of another extra type
                 cls, raw = opts["extra_object"]
                 extra_id = self.value(struct.pack("<II", self.type_data(cls, CORE_ASSEMBLY), self.value(raw)))
-            struct.pack_into("<IIIIiII", self.buf, rec, self.string(primary, "/"), iid, self.string(provider, "."),
-                             self.array(records[d] for d in deps), opts.get("dependency_hash", 0), extra_id,
-                             self.type_data(rtype, RM_ASSEMBLY if rtype.startswith(RM) else CORE_ASSEMBLY))
+            struct.pack_into(
+                "<IIIIiII",
+                self.buf,
+                rec,
+                self.string(primary, "/"),
+                iid,
+                self.string(provider, "."),
+                self.array(records[d] for d in deps),
+                opts.get("dependency_hash", 0),
+                extra_id,
+                self.type_data(rtype, RM_ASSEMBLY if rtype.startswith(RM) else CORE_ASSEMBLY),
+            )
         for i, (k, idx) in enumerate(by_key.items()):
             struct.pack_into("<II", self.buf, keys + 8 * i, self.key_object(k), self.array(records[j] for j in idx))
         providers = [self.object_init(RM + n, RM + n) for n in ("AssetBundleProvider", "BundledAssetProvider")]
-        struct.pack_into("<iiIIIIII", self.buf, 0, CATALOG_MAGIC, 2, keys, self.text("AddressablesMainContentCatalog"),
-                         self.object_init(RM + "InstanceProvider", RM + "InstanceProvider"),
-                         self.object_init(RM + "SceneProvider", RM + "SceneProvider"), self.array(providers),
-                         self.text(build_hash))
+        struct.pack_into(
+            "<iiIIIIII",
+            self.buf,
+            0,
+            CATALOG_MAGIC,
+            2,
+            keys,
+            self.text("AddressablesMainContentCatalog"),
+            self.object_init(RM + "InstanceProvider", RM + "InstanceProvider"),
+            self.object_init(RM + "SceneProvider", RM + "SceneProvider"),
+            self.array(providers),
+            self.text(build_hash),
+        )
         return bytes(self.buf)
 
 
@@ -321,12 +356,15 @@ def axml(strings: list[str], version_index: int | None, utf8: bool = False) -> b
         pos += len(b)
     body = struct.pack(f"<{len(offsets)}I", *offsets) + b"".join(blobs)
     body += b"\x00" * (-len(body) % 4)
-    pool = struct.pack("<HHIIIIII", 0x0001, 28, 28 + len(body), len(strings), 0, 0x100 if utf8 else 0,
-                       28 + 4 * len(strings), 0) + body
+    pool = (
+        struct.pack(
+            "<HHIIIIII", 0x0001, 28, 28 + len(body), len(strings), 0, 0x100 if utf8 else 0, 28 + 4 * len(strings), 0
+        )
+        + body
+    )
     attrs = b""
     if version_index is not None:
-        attrs = struct.pack("<IIIHBBI", 0xFFFFFFFF, strings.index("versionName"), version_index, 8, 0, 3,
-                            version_index)
+        attrs = struct.pack("<IIIHBBI", 0xFFFFFFFF, strings.index("versionName"), version_index, 8, 0, 3, version_index)
     ext = struct.pack("<IIHHHHHH", 0xFFFFFFFF, strings.index("manifest"), 20, 20, 1 if attrs else 0, 0, 0, 0)
     elem_body = struct.pack("<II", 1, 0xFFFFFFFF) + ext + attrs
     elem = struct.pack("<HHI", 0x0102, 16, 8 + len(elem_body)) + elem_body

@@ -44,6 +44,7 @@ takes no space; a hard link is the store object itself, read-only like every obj
 instead of changing the store); a copy is independent and writable, and takes the space again. Every method gives
 the same files and the same manifest.
 """
+
 from __future__ import annotations
 
 import errno
@@ -61,30 +62,51 @@ from .store import write_doc, write_file
 MANIFEST = "manifest.json"
 JOURNAL = ".nnnotes-layout-journal.json"
 LAYOUTS = ("original", "cas")
-PLACEMENTS = ("clone", "hard", "copy")      # how a file is made from its byte source
-LINKS = ("auto", *PLACEMENTS)               # what a run may ask for: auto probes
-FICLONE = 0x40049409                        # Linux ioctl: make a file share another's blocks
+PLACEMENTS = ("clone", "hard", "copy")  # how a file is made from its byte source
+LINKS = ("auto", *PLACEMENTS)  # what a run may ask for: auto probes
+FICLONE = 0x40049409  # Linux ioctl: make a file share another's blocks
 DEFAULT_ROOT = "_tasks/{stage}/{subject}"
 # container extension -> the classes of the object that owns the container path (lower case, without the dot)
 EXT_CLASSES = {
-    **dict.fromkeys(("png", "jpg", "jpeg", "tga", "psd", "exr", "hdr", "tif", "tiff", "bmp", "gif", "iff", "pict"),
-                    ("Texture2D",)),
+    **dict.fromkeys(
+        ("png", "jpg", "jpeg", "tga", "psd", "exr", "hdr", "tif", "tiff", "bmp", "gif", "iff", "pict"), ("Texture2D",)
+    ),
     **dict.fromkeys(("prefab", "fbx", "obj", "blend", "dae", "3ds", "max", "ma", "mb"), ("GameObject",)),
-    **dict.fromkeys(("txt", "bytes", "json", "csv", "xml", "html", "htm", "yaml", "yml", "md", "fnt"),
-                    ("TextAsset",)),
+    **dict.fromkeys(("txt", "bytes", "json", "csv", "xml", "html", "htm", "yaml", "yml", "md", "fnt"), ("TextAsset",)),
     **dict.fromkeys(("wav", "mp3", "ogg", "aif", "aiff", "flac", "m4a"), ("AudioClip",)),
     **dict.fromkeys(("mp4", "mov", "webm", "avi", "m4v", "asf", "wmv", "mpg", "mpeg", "ogv", "vp8"), ("VideoClip",)),
     **dict.fromkeys(("ttf", "otf", "ttc", "fontsettings"), ("Font",)),
     **dict.fromkeys(("spriteatlas", "spriteatlasv2"), ("SpriteAtlas",)),
-    "mat": ("Material",), "anim": ("AnimationClip",), "controller": ("AnimatorController",),
-    "overridecontroller": ("AnimatorOverrideController",), "shader": ("Shader",),
-    "shadervariants": ("ShaderVariantCollection",), "mesh": ("Mesh",), "mask": ("AvatarMask",),
-    "physicmaterial": ("PhysicMaterial",), "cubemap": ("Cubemap",), "rendertexture": ("RenderTexture",),
-    "asset": ("MonoBehaviour",), "playable": ("MonoBehaviour",), "unity": ("SceneAsset",),
+    "mat": ("Material",),
+    "anim": ("AnimationClip",),
+    "controller": ("AnimatorController",),
+    "overridecontroller": ("AnimatorOverrideController",),
+    "shader": ("Shader",),
+    "shadervariants": ("ShaderVariantCollection",),
+    "mesh": ("Mesh",),
+    "mask": ("AvatarMask",),
+    "physicmaterial": ("PhysicMaterial",),
+    "cubemap": ("Cubemap",),
+    "rendertexture": ("RenderTexture",),
+    "asset": ("MonoBehaviour",),
+    "playable": ("MonoBehaviour",),
+    "unity": ("SceneAsset",),
 }
 _BAD = set('<>:"/\\|?*%') | {chr(c) for c in range(32)} | {"\x7f"}
-_RESERVED = {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(10)), *(f"LPT{i}" for i in range(10)),
-             "COM¹", "COM²", "COM³", "LPT¹", "LPT²", "LPT³"}
+_RESERVED = {
+    "CON",
+    "PRN",
+    "AUX",
+    "NUL",
+    *(f"COM{i}" for i in range(10)),
+    *(f"LPT{i}" for i in range(10)),
+    "COM¹",
+    "COM²",
+    "COM³",
+    "LPT¹",
+    "LPT²",
+    "LPT³",
+}
 
 
 class LayoutError(RuntimeError):
@@ -96,7 +118,7 @@ def escape_segment(s: str) -> str:
     """One path segment as a name every common file system accepts (reversible with unescape_path)."""
     out = "".join(f"%{ord(c):02X}" if c in _BAD else c for c in s)
     body = out.rstrip(". ")
-    tail = out[len(body):]
+    tail = out[len(body) :]
     out = body + "".join(f"%{ord(c):02X}" for c in tail)
     if out.split(".", 1)[0].upper() in _RESERVED:
         out = f"%{ord(out[0]):02X}" + out[1:]
@@ -112,8 +134,8 @@ def unescape_path(path: str) -> str:
     out, i = [], 0
     while i < len(path):
         c = path[i]
-        if c == "%" and _is_hex(path[i + 1:i + 3]):
-            out.append(chr(int(path[i + 1:i + 3], 16)))
+        if c == "%" and _is_hex(path[i + 1 : i + 3]):
+            out.append(chr(int(path[i + 1 : i + 3], 16)))
             i += 3
         else:
             out.append(c)
@@ -130,6 +152,7 @@ def _is_hex(s: str) -> bool:
 class Source:
     """The result of one task as layout input. `root`: the directory of its artifacts that have no container
     (default DEFAULT_ROOT)."""
+
     task: str
     result: dict
     root: str | None = None
@@ -178,8 +201,9 @@ def _split_ext(name: str) -> tuple[str, str]:
     return (stem, "." + ext) if dot and stem else (name, "")
 
 
-def original_entries(sources, *, case: dict | None = None, bundles: dict | None = None,
-                     object_roots: dict | None = None, extra=()) -> tuple[list[dict], dict]:
+def original_entries(
+    sources, *, case: dict | None = None, bundles: dict | None = None, object_roots: dict | None = None, extra=()
+) -> tuple[list[dict], dict]:
     """The entries of the `original` layout and its report: {"collisions": [{path, id, renamed}], "shared":
     [{container, sources}]} (container paths present in more than one bundle). `case`: {lower-case container path:
     the catalog's spelling}; `bundles`: {serialized file: stable bundle name} (default: the subject of the task
@@ -191,14 +215,14 @@ def original_entries(sources, *, case: dict | None = None, bundles: dict | None 
     for f, r in object_roots.items():
         root_files.setdefault(r, set()).add(f)
     placed: list[tuple[list[str], dict]] = [([s for s in e["path"].split("/") if s], dict(e)) for e in extra]
-    objects: dict[tuple, dict] = {}              # (file, pathId) -> {obj, records, src}
+    objects: dict[tuple, dict] = {}  # (file, pathId) -> {obj, records, src}
     for src in sorted(sources, key=lambda s: s.task):
         owners: dict[str, list[dict]] = {}
         for a in src.result["artifacts"]:
             owners.setdefault(contract.parse_artifact_id(a["id"])[0], []).append(a)
         for owner, records in sorted(owners.items()):
             obj = next((r["provenance"]["object"] for r in records if r.get("provenance", {}).get("object")), None)
-            if obj is None:                      # artifacts of no object
+            if obj is None:  # artifacts of no object
                 for r in records:
                     role = contract.parse_artifact_id(r["id"])[1]
                     segs = src.root_segments() + [s for s in role.split("/") if s]
@@ -206,10 +230,10 @@ def original_entries(sources, *, case: dict | None = None, bundles: dict | None 
             else:
                 o = objects.setdefault((obj["file"], int(obj["pathId"])), {"obj": obj, "records": [], "src": src})
                 o["records"] += records
-    files: dict[str, set] = {}                   # task -> serialized files of its objects
+    files: dict[str, set] = {}  # task -> serialized files of its objects
     for o in objects.values():
         files.setdefault(o["src"].task, set()).add(o["obj"]["file"])
-    groups: dict[str, list] = {}                 # container (folded) -> [(object facts, records, container, bundle)]
+    groups: dict[str, list] = {}  # container (folded) -> [(object facts, records, container, bundle)]
     for k in sorted(objects):
         obj, records, src = objects[k]["obj"], objects[k]["records"], objects[k]["src"]
         container = obj.get("container")
@@ -220,7 +244,7 @@ def original_entries(sources, *, case: dict | None = None, bundles: dict | None 
         else:
             root = object_roots.get(obj["file"])
             if root is None:
-                segs, several = src.root_segments(), len(files[src.task]) > 1   # scene bundles: shared path ids
+                segs, several = src.root_segments(), len(files[src.task]) > 1  # scene bundles: shared path ids
             else:
                 segs, several = [s for s in root.split("/") if s], len(root_files[root]) > 1
             name = f"{obj.get('name') or ''}~{obj['pathId']}"
@@ -319,11 +343,12 @@ def _resolve(placed: list) -> tuple[list[dict], dict]:
     else:
         raise LayoutError("path collisions do not resolve")
     exact: dict[str, str] = {}
-    for e in entries:                            # one path, one content (equal case: shared file)
+    for e in entries:  # one path, one content (equal case: shared file)
         if exact.setdefault(e["path"], e["sha256"]) != e["sha256"]:
             raise LayoutError(f"two contents at {e['path']}")
-    return sorted(entries, key=lambda e: (e["path"], e["id"])), {"collisions": sorted(
-        collisions, key=lambda c: (c["path"], c["id"]))}
+    return sorted(entries, key=lambda e: (e["path"], e["id"])), {
+        "collisions": sorted(collisions, key=lambda c: (c["path"], c["id"]))
+    }
 
 
 def entries(name: str, sources, **kw) -> tuple[list[dict], dict]:
@@ -424,7 +449,7 @@ def materialize(out_dir, name: str, params: dict, entries_: list[dict], source, 
     stats = {"cloned": 0, "linked": 0, "copied": 0}
     failed = []
 
-    def restore(p):                              # a replaced or removed hard link's store object: read-only again
+    def restore(p):  # a replaced or removed hard link's store object: read-only again
         if p in owned:
             try:
                 _read_only(Path(source(owned[p][0])))
@@ -445,12 +470,19 @@ def materialize(out_dir, name: str, params: dict, entries_: list[dict], source, 
     if lost:
         doc = dict(doc, entries=[e for e in doc["entries"] if e["path"] not in lost])
     sha = write_doc(out / MANIFEST, doc)
-    if lost:                                     # still owned: the next run replaces them
+    if lost:  # still owned: the next run replaces them
         write_file(out / JOURNAL, contract.encode({"write": sorted(lost), "remove": []}))
     else:
         (out / JOURNAL).unlink(missing_ok=True)
-    return {"manifest": doc, "sha256": sha, "write": len(write) - len(failed), "remove": len(remove),
-            "keep": len(files) - len(write), **stats, "failed": failed}
+    return {
+        "manifest": doc,
+        "sha256": sha,
+        "write": len(write) - len(failed),
+        "remove": len(remove),
+        "keep": len(files) - len(write),
+        **stats,
+        "failed": failed,
+    }
 
 
 def _same(p: Path, v: tuple[str, int]) -> bool:
@@ -466,7 +498,7 @@ def _place(src: Path, dst: Path, link: str, stats: dict, restore) -> None:
         if link == "clone":
             clone(src, tmp)
         elif link == "hard":
-            _read_only(src)                          # an object stored before the store made them read-only
+            _read_only(src)  # an object stored before the store made them read-only
             os.link(src, tmp)
         else:
             shutil.copyfile(src, tmp)
@@ -511,6 +543,7 @@ def clone(src: Path, dst: Path) -> None:
     FICLONE, macOS clonefile). OSError where the file system or the platform cannot."""
     if sys.platform.startswith("linux"):
         import fcntl
+
         fd = os.open(dst, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o666)
         try:
             with open(src, "rb") as f:
@@ -523,6 +556,7 @@ def clone(src: Path, dst: Path) -> None:
     elif sys.platform == "darwin":
         import ctypes
         import ctypes.util
+
         libc = ctypes.CDLL(ctypes.util.find_library("c"), use_errno=True)
         if libc.clonefile(os.fsencode(src), os.fsencode(dst), 0) != 0:
             e = ctypes.get_errno()
@@ -590,7 +624,7 @@ def _remove(out: Path, rel: str, restore=None) -> None:
     d = p.parent
     while d != out and out in d.parents:
         try:
-            d.rmdir()                            # only when empty
+            d.rmdir()  # only when empty
         except OSError:
             break
         d = d.parent

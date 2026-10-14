@@ -5,6 +5,7 @@ number of exported lines), toy.total (one global task: the sum over the counts t
 outcomes: "FAIL..." a failed item, "?..." an unsupported one, "" contained in the whole text; a file holding CRASH
 fails its task, DIE kills the worker running it.
 """
+
 import json
 import os
 from pathlib import Path
@@ -44,8 +45,14 @@ class Src(Stage):
         if b"DIE" in data:
             os._exit(3)
         whole = contract.artifact_id(task.id, "all.txt")
-        arts = [contract.artifact(whole, store.add(data.upper() + task.params["suffix"].encode(), "txt"),
-                                  contract.provenance(task), {"kind": "toy.text"})]
+        arts = [
+            contract.artifact(
+                whole,
+                store.add(data.upper() + task.params["suffix"].encode(), "txt"),
+                contract.provenance(task),
+                {"kind": "toy.text"},
+            )
+        ]
         items = []
         for i, line in enumerate(data.decode().split("\n")):
             oid = contract.object_id(f"F-{task.subject}", i + 1)
@@ -58,8 +65,14 @@ class Src(Stage):
                 items.append(contract.item(oid, "contained", within=whole, cls="Line"))
             else:
                 aid = contract.artifact_id(oid, "data")
-                arts.append(contract.artifact(aid, store.add(line.upper().encode(), "txt"),
-                                              contract.provenance(task, obj=obj), {"kind": "toy.line"}))
+                arts.append(
+                    contract.artifact(
+                        aid,
+                        store.add(line.upper().encode(), "txt"),
+                        contract.provenance(task, obj=obj),
+                        {"kind": "toy.line"},
+                    )
+                )
                 items.append(contract.item(oid, "exported", artifacts=[aid], cls="Line"))
         return Output(arts, items)
 
@@ -83,8 +96,14 @@ class Count(Stage):
         if self.version > 1:
             doc["chars"] = len(text)
         aid = contract.artifact_id(task.id, "count.json")
-        return Output([contract.artifact(aid, store.add(contract.encode(doc), "json"), contract.provenance(task),
-                                         {"kind": "toy.count"})], [])
+        return Output(
+            [
+                contract.artifact(
+                    aid, store.add(contract.encode(doc), "json"), contract.provenance(task), {"kind": "toy.count"}
+                )
+            ],
+            [],
+        )
 
 
 class Total(Stage):
@@ -105,8 +124,17 @@ class Total(Stage):
     def run(self, task, store):
         n = sum(json.loads(store.input_bytes(i))["lines"] for i in task.inputs)
         aid = contract.artifact_id(task.id, "total.json")
-        return Output([contract.artifact(aid, store.add(contract.encode({"lines": n}), "json"),
-                                         contract.provenance(task), {"kind": "toy.total"})], [])
+        return Output(
+            [
+                contract.artifact(
+                    aid,
+                    store.add(contract.encode({"lines": n}), "json"),
+                    contract.provenance(task),
+                    {"kind": "toy.total"},
+                )
+            ],
+            [],
+        )
 
 
 PIPELINE = ["toy.src", "toy.count", "toy.total"]
@@ -159,7 +187,7 @@ def test_execute_commits_then_hits(tmp_path):
     assert store.read(arts["toy.src:a#all.txt"]["content"]["sha256"]) == b"ONE\n\nFAIL\n?Q"
     assert "task" not in doc and doc["keyParts"] == t.key_parts()
     assert execute(t, store, toy_stages()).status == "hit"
-    assert execute(t, store, toy_stages(), force=True).status == "ran"     # identical output: accepted
+    assert execute(t, store, toy_stages(), force=True).status == "ran"  # identical output: accepted
 
 
 def test_execute_refuses_other_versions_and_unknown_stages(tmp_path):
@@ -181,7 +209,7 @@ def test_execute_verifies_inputs_and_caches_no_task_failure(tmp_path):
     with pytest.raises(RuntimeError, match="crash requested"):
         execute(tb, store, toy_stages())
     assert store.result(tb.key) is None
-    Path(files["a"]).write_bytes(b"y")                  # same size, other content: the input is refused
+    Path(files["a"]).write_bytes(b"y")  # same size, other content: the input is refused
     with pytest.raises(InputMissing, match="other content"):
         execute(ta, store, toy_stages())
     assert store.result(ta.key) is None
@@ -194,8 +222,14 @@ def test_a_stage_whose_output_is_not_a_function_of_its_key_is_caught(tmp_path):
         def run(self, task, store):
             Clock.n += 1
             aid = contract.artifact_id(task.id, "all.txt")
-            return Output([contract.artifact(aid, store.add(str(Clock.n).encode(), "txt"),
-                                             contract.provenance(task), {"kind": "toy.text"})], [])
+            return Output(
+                [
+                    contract.artifact(
+                        aid, store.add(str(Clock.n).encode(), "txt"), contract.provenance(task), {"kind": "toy.text"}
+                    )
+                ],
+                [],
+            )
 
     store = Store(tmp_path / "store")
     env = Env(store, {"files": toy_files(tmp_path / "in", {"a": "x"})})
@@ -249,6 +283,7 @@ def test_describe_gives_the_stage_its_parameters(tmp_path):
 
 class _Spawner(Stage):
     """A stage that runs an external program (as the CRI stages run vgmstream and ffmpeg)."""
+
     name, version = "toy.spawn", 1
 
     def subjects(self, env):
@@ -257,6 +292,7 @@ class _Spawner(Stage):
     def run(self, task, store):
         import subprocess
         import sys
+
         subprocess.run([sys.executable, "-c", "sum(i * i for i in range(3_000_000))"], check=True)
         return Output([], [])
 
@@ -264,10 +300,11 @@ class _Spawner(Stage):
 def test_the_cost_counts_the_child_processes(tmp_path):
     from nnnotes.contract import Task
     from nnnotes.stages import children_cpu
+
     store = Store(tmp_path / "s")
     ex = execute(Task("toy.spawn", 1, "s"), store, registry(_Spawner()))
     cost = ex.cost
-    if children_cpu() is None:                          # the platform does not report child processes
+    if children_cpu() is None:  # the platform does not report child processes
         assert cost["childCpuSeconds"] is None
     else:
         assert cost["childCpuSeconds"] > 0.05

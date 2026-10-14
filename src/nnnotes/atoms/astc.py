@@ -4,6 +4,7 @@ A 16-byte header (magic 0x5CA1AB13, block width, height and depth, then the imag
 24-bit little-endian integers) followed by the blocks of the first mip level, 16 bytes each, in the order they are
 stored (rows of blocks from the first stored row). Texture data holding further mip levels is cut after the first.
 """
+
 from __future__ import annotations
 
 import struct
@@ -11,8 +12,24 @@ import struct
 from . import estimate
 
 MAGIC = 0x5CA1AB13
-BLOCK_SIZES = frozenset({(4, 4), (5, 4), (5, 5), (6, 5), (6, 6), (8, 5), (8, 6), (8, 8), (10, 5), (10, 6), (10, 8),
-                         (10, 10), (12, 10), (12, 12)})
+BLOCK_SIZES = frozenset(
+    {
+        (4, 4),
+        (5, 4),
+        (5, 5),
+        (6, 5),
+        (6, 6),
+        (8, 5),
+        (8, 6),
+        (8, 8),
+        (10, 5),
+        (10, 6),
+        (10, 8),
+        (10, 10),
+        (12, 10),
+        (12, 12),
+    }
+)
 
 
 def level0_size(width: int, height: int, block: tuple[int, int]) -> int:
@@ -42,7 +59,7 @@ def parse_header(data: bytes) -> dict:
     magic, bx, by, bz = struct.unpack_from("<I3B", data)
     if magic != MAGIC:
         raise ValueError(f"ASTC header: magic {magic:#010x}")
-    size = tuple(int.from_bytes(data[7 + 3 * i:10 + 3 * i], "little") for i in range(3))
+    size = tuple(int.from_bytes(data[7 + 3 * i : 10 + 3 * i], "little") for i in range(3))
     return {"block": (bx, by, bz), "size": size}
 
 

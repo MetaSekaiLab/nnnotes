@@ -20,6 +20,7 @@ decoding any object.
 
 A census is a function of the bundle's bytes: it holds no file name, time or path.
 """
+
 from __future__ import annotations
 
 import re
@@ -31,7 +32,7 @@ from .stages import Output, Pending, Stage
 
 _ADDRESS = re.compile(r"0x[0-9a-fA-F]{6,}")
 HEAD_FIELDS = ("m_Name", "m_Script")
-CLIP_FIELDS = ("m_Name", "m_ClipBindingConstant")        # an AnimationClip is read up to its bindings
+CLIP_FIELDS = ("m_Name", "m_ClipBindingConstant")  # an AnimationClip is read up to its bindings
 
 
 def _ext_file(path: str) -> str:
@@ -86,8 +87,11 @@ class _Refs:
             return None
         fid = int(p.get("m_FileID", 0))
         f = self.file(fid)
-        return {"file": f, "pathId": int(p["m_PathID"])} if f is not None else {"fileId": fid,
-                                                                                "pathId": int(p["m_PathID"])}
+        return (
+            {"file": f, "pathId": int(p["m_PathID"])}
+            if f is not None
+            else {"fileId": fid, "pathId": int(p["m_PathID"])}
+        )
 
 
 def _pairs(v) -> list:
@@ -107,18 +111,31 @@ def _asset_bundle(d: dict, refs: _Refs, oid: tuple[str, int]) -> dict:
     for path, info in _pairs(d.get("m_Container")):
         info = info if isinstance(info, dict) else {}
         target = refs.ref(info.get("asset")) or {}
-        container.append({"path": path, "file": target.get("file"), "pathId": target.get("pathId"),
-                          "preloadIndex": info.get("preloadIndex"), "preloadSize": info.get("preloadSize")})
-    return {"file": oid[0], "pathId": oid[1], "name": d.get("m_Name"), "assetBundleName": d.get("m_AssetBundleName"),
-            "dependencies": list(d.get("m_Dependencies") or ()),
-            "isStreamedSceneAssetBundle": bool(d.get("m_IsStreamedSceneAssetBundle")),
-            "sceneHashes": [[k, v] for k, v in _pairs(d.get("m_SceneHashes"))], "container": container}
+        container.append(
+            {
+                "path": path,
+                "file": target.get("file"),
+                "pathId": target.get("pathId"),
+                "preloadIndex": info.get("preloadIndex"),
+                "preloadSize": info.get("preloadSize"),
+            }
+        )
+    return {
+        "file": oid[0],
+        "pathId": oid[1],
+        "name": d.get("m_Name"),
+        "assetBundleName": d.get("m_AssetBundleName"),
+        "dependencies": list(d.get("m_Dependencies") or ()),
+        "isStreamedSceneAssetBundle": bool(d.get("m_IsStreamedSceneAssetBundle")),
+        "sceneHashes": [[k, v] for k, v in _pairs(d.get("m_SceneHashes"))],
+        "container": container,
+    }
 
 
 def _binding_scripts(d: dict, refs: "_Refs") -> list:
     """The MonoScripts an AnimationClip's generic bindings name, {file, pathId} (or {fileId, pathId}), sorted."""
     out = {}
-    for b in ((d.get("m_ClipBindingConstant") or {}).get("genericBindings") or ()):
+    for b in (d.get("m_ClipBindingConstant") or {}).get("genericBindings") or ():
         r = refs.ref(b.get("script")) if isinstance(b, dict) else None
         if r is not None:
             out[(r.get("file") is None, r.get("file") or "", r.get("fileId", 0), r["pathId"])] = r
@@ -128,6 +145,7 @@ def _binding_scripts(d: dict, refs: "_Refs") -> list:
 def census_env(env) -> dict:
     """The census document of a loaded UnityPy environment holding one bundle."""
     from UnityPy.helpers.TypeTreeNode import TypeTreeNode
+
     heads: dict[tuple, tuple] = {}
 
     def head(node, fields=HEAD_FIELDS):
@@ -139,8 +157,15 @@ def census_env(env) -> dict:
         last = max((names.index(n) for n in fields if n in names), default=None)
         cut = None
         if last is not None:
-            cut = TypeTreeNode(node.m_Level, node.m_Type, node.m_Name, node.m_ByteSize, node.m_Version,
-                               m_MetaFlag=node.m_MetaFlag, m_Children=node.m_Children[:last + 1])
+            cut = TypeTreeNode(
+                node.m_Level,
+                node.m_Type,
+                node.m_Name,
+                node.m_ByteSize,
+                node.m_Version,
+                m_MetaFlag=node.m_MetaFlag,
+                m_Children=node.m_Children[: last + 1],
+            )
         heads[(id(node), fields)] = (node, cut)
         return cut
 
@@ -157,8 +182,13 @@ def census_env(env) -> dict:
                 cls = f"Class{o.class_id}"
             st = getattr(o, "serialized_type", None)
             th = getattr(st, "old_type_hash", None) if st is not None else None
-            rec = {"pathId": int(pid), "classId": int(o.class_id), "class": cls, "byteSize": int(o.byte_size),
-                   "typeHash": th.hex() if th else None}
+            rec = {
+                "pathId": int(pid),
+                "classId": int(o.class_id),
+                "class": cls,
+                "byteSize": int(o.byte_size),
+                "typeHash": th.hex() if th else None,
+            }
             classes[cls] = classes.get(cls, 0) + 1
             try:
                 node = o._get_typetree_node()
@@ -176,28 +206,53 @@ def census_env(env) -> dict:
                     bundles.append(_asset_bundle(o.read_typetree(), refs, (sf.name, int(pid))))
                 elif cls == "MonoScript":
                     m = o.read_typetree()
-                    scripts.append({"file": sf.name, "pathId": int(pid), "assembly": m.get("m_AssemblyName"),
-                                    "namespace": m.get("m_Namespace"), "class": m.get("m_ClassName"),
-                                    "name": m.get("m_Name")})
+                    scripts.append(
+                        {
+                            "file": sf.name,
+                            "pathId": int(pid),
+                            "assembly": m.get("m_AssemblyName"),
+                            "namespace": m.get("m_Namespace"),
+                            "class": m.get("m_ClassName"),
+                            "name": m.get("m_Name"),
+                        }
+                    )
             except Exception as e:
                 errors.append({"object": contract.object_id(sf.name, pid), "message": _message(e)})
             objects.append(rec)
-        files.append({"name": sf.name, "unityVersion": getattr(sf, "unity_version", None),
-                      "platform": int(getattr(sf, "_m_target_platform", getattr(sf, "target_platform", 0)) or 0),
-                      "typetree": bool(getattr(sf, "_enable_type_tree", True)),
-                      "externals": [{"file": _ext_file(x.path), "path": x.path,
-                                     "guid": x.guid.hex() if getattr(x, "guid", None) else None,
-                                     "type": getattr(x, "type", None)} for x in sf.externals],
-                      "objects": objects})
-    return {"schema": contract.CENSUS, "files": files, "resources": resources,
-            "assetBundles": sorted(bundles, key=lambda b: (b["file"], b["pathId"])),
-            "scripts": sorted(scripts, key=lambda s: (s["file"], s["pathId"])),
-            "classes": dict(sorted(classes.items())), "objects": sum(classes.values()), "errors": errors}
+        files.append(
+            {
+                "name": sf.name,
+                "unityVersion": getattr(sf, "unity_version", None),
+                "platform": int(getattr(sf, "_m_target_platform", getattr(sf, "target_platform", 0)) or 0),
+                "typetree": bool(getattr(sf, "_enable_type_tree", True)),
+                "externals": [
+                    {
+                        "file": _ext_file(x.path),
+                        "path": x.path,
+                        "guid": x.guid.hex() if getattr(x, "guid", None) else None,
+                        "type": getattr(x, "type", None),
+                    }
+                    for x in sf.externals
+                ],
+                "objects": objects,
+            }
+        )
+    return {
+        "schema": contract.CENSUS,
+        "files": files,
+        "resources": resources,
+        "assetBundles": sorted(bundles, key=lambda b: (b["file"], b["pathId"])),
+        "scripts": sorted(scripts, key=lambda s: (s["file"], s["pathId"])),
+        "classes": dict(sorted(classes.items())),
+        "objects": sum(classes.values()),
+        "errors": errors,
+    }
 
 
 def census_file(path) -> dict:
     """The census of a bundle file (decrypted UnityFS)."""
     from . import unity
+
     env = unity.load(path)
     try:
         return census_env(env)
@@ -231,8 +286,14 @@ def script_refs(doc: dict) -> list[str]:
 
 def facts(doc: dict) -> dict:
     """The facts a census artifact record carries (what planning reads without opening the document)."""
-    return {"files": len(doc["files"]), "objects": doc["objects"], "classes": doc["classes"],
-            "scripts": len(doc["scripts"]), "scriptRefs": len(script_refs(doc)), "errors": len(doc["errors"])}
+    return {
+        "files": len(doc["files"]),
+        "objects": doc["objects"],
+        "classes": doc["classes"],
+        "scripts": len(doc["scripts"]),
+        "scriptRefs": len(script_refs(doc)),
+        "errors": len(doc["errors"]),
+    }
 
 
 def bundle_subjects(index: dict) -> dict[str, dict]:
@@ -247,6 +308,7 @@ class CensusStage(Stage):
     (role "bundle": the decrypted bundle's sha256, size, name, locators)}; a bundle not fetched yet is Pending
     (raised by the fact, or given as a Pending / None). Artifact "<task id>#census". The census
     reads the bundle with UnityPy: its atom is the reader's ("reader", the UnityPy version)."""
+
     name = "unity.census"
     version = 2
     ATOMS = {"reader": impl_id(("UnityPy",), 1)}
@@ -256,9 +318,9 @@ class CensusStage(Stage):
 
     def inputs(self, subject: str, env) -> list[Input]:
         inp = env.fact("bundles")[subject]
-        if inp is None:                             # listed but not fetched yet
+        if inp is None:  # listed but not fetched yet
             raise Pending(f"fetch:{subject}")
-        if isinstance(inp, Exception):              # a bundle the orchestrator cannot give yet (Pending "fetch:...")
+        if isinstance(inp, Exception):  # a bundle the orchestrator cannot give yet (Pending "fetch:...")
             raise inp
         if inp.role != "bundle":
             raise ValueError(f"unity.census {subject}: input role {inp.role!r}, expected 'bundle'")
@@ -271,6 +333,10 @@ class CensusStage(Stage):
     def run(self, task, store) -> Output:
         doc = census_file(store.open_input(task.input("bundle")))
         content = store.add(contract.encode(doc), "json")
-        rec = contract.artifact(contract.artifact_id(task.id, "census"), content, contract.provenance(task),
-                                {"kind": "unity.census", "format": "json", "facts": facts(doc)})
+        rec = contract.artifact(
+            contract.artifact_id(task.id, "census"),
+            content,
+            contract.provenance(task),
+            {"kind": "unity.census", "format": "json", "facts": facts(doc)},
+        )
         return Output([rec], [])
