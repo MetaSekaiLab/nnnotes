@@ -14,7 +14,7 @@
   }
  },
  "libraries": {},
- "provider": "test_cristages:audio_golden",
+ "provider": "tests.pipeline.test_cristages:audio_golden",
  "stage": "cri.audio",
  "version": 1
 }

@@ -97,7 +97,7 @@
   "numpy": "2.4.6",
   "texture2ddecoder": "1.0.6"
  },
- "provider": "test_objexport:export_golden",
+ "provider": "tests.pipeline.test_objexport:export_golden",
  "stage": "unity.export",
  "version": 1
 }

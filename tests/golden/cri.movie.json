@@ -33,7 +33,7 @@
  "libraries": {
   "numpy": "2.4.6"
  },
- "provider": "test_cristages:movie_golden",
+ "provider": "tests.pipeline.test_cristages:movie_golden",
  "stage": "cri.movie",
  "version": 2
 }
