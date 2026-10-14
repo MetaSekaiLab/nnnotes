@@ -74,6 +74,8 @@ include = ["src"]
 pythonVersion = "3.11"
 pythonPlatform = "Linux"
 typeCheckingMode = "basic"
+# the configuration and source layers, and the schemas, are checked in strict mode
+strict = ["src/nnnotes/core", "src/nnnotes/source", "src/nnnotes/schemas"]
 
 [tool.importlinter]
 root_package = "nnnotes"

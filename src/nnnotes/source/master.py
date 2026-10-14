@@ -23,13 +23,17 @@ import re
 import time
 import urllib.error
 import urllib.request
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 
 from ..core import jsonio
+from ..core.cache import write_atomic
+from ..core.jsonio import is_array, is_object
 
 __all__ = ["DownloadError", "MasterKey", "decode", "decode_files", "download", "has_row", "table"]
 
@@ -46,7 +50,7 @@ class MasterKey:
     key: bytes = field(repr=False)
     iv: bytes = field(repr=False)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if len(self.key) != 32 or len(self.iv) != 32:
             raise ValueError("master key and IV must be 32 bytes each")
 
@@ -131,7 +135,7 @@ def decrypt_blocks(ct: np.ndarray, rk: np.ndarray) -> np.ndarray:
         s ^= rk[rnd]  # AddRoundKey
         if rnd:  # InvMixColumns
             a0, a1, a2, a3 = s[:, 0, :], s[:, 1, :], s[:, 2, :], s[:, 3, :]
-            s = np.stack(
+            s = np.stack(  # pyright: ignore[reportUnknownMemberType] (numpy stubs: partly untyped overloads)
                 [
                     MUL[14][a0] ^ MUL[11][a1] ^ MUL[13][a2] ^ MUL[9][a3],
                     MUL[9][a0] ^ MUL[14][a1] ^ MUL[11][a2] ^ MUL[13][a3],
@@ -147,9 +151,10 @@ def decrypt_cbc(data: bytes, key: bytes, iv: bytes, rk: np.ndarray | None = None
     """Rijndael-256 CBC decryption, padding kept."""
     if not data or len(data) % BLOCK:
         raise ValueError(f"ciphertext length {len(data)} is not a positive multiple of {BLOCK}")
-    ct = np.frombuffer(data, dtype=np.uint8).reshape(-1, BLOCK)
+    # pyright: ignore below: numpy stubs give frombuffer and vstack partly untyped overloads
+    ct = np.frombuffer(data, dtype=np.uint8).reshape(-1, BLOCK)  # pyright: ignore[reportUnknownMemberType]
     pt = decrypt_blocks(ct, round_keys(key) if rk is None else rk)
-    pt ^= np.vstack([np.frombuffer(iv, dtype=np.uint8)[None, :], ct[:-1]])
+    pt ^= np.vstack([np.frombuffer(iv, dtype=np.uint8)[None, :], ct[:-1]])  # pyright: ignore[reportUnknownMemberType]
     return pt.tobytes()
 
 
@@ -168,13 +173,13 @@ def table_json(text: bytes) -> str:
     return jsonio.dumps(json.loads(text.decode("utf-8")), ensure_ascii=False, indent=1)
 
 
-def decode_files(files: list[Path], out_dir: Path, key: MasterKey, workers: int = 8) -> dict:
+def decode_files(files: list[Path], out_dir: Path, key: MasterKey, workers: int = 8) -> dict[str, Any]:
     """Decode master data files into <out_dir>/<stem>.json. Returns {decoded, failed: [{file, error}]}."""
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     rk = round_keys(key.key)
 
-    def one(p: Path):
+    def one(p: Path) -> dict[str, str] | None:
         try:
             text = table_json(decode(p.read_bytes(), key, rk))
         except Exception as e:  # report and continue with the other tables
@@ -187,12 +192,12 @@ def decode_files(files: list[Path], out_dir: Path, key: MasterKey, workers: int 
     return {"decoded": len(files) - len(failed), "failed": failed, "out": str(out_dir)}
 
 
-def table(master_dir: Path, name: str) -> list[dict]:
+def table(master_dir: Path, name: str) -> list[dict[str, Any]]:
     """The rows of a decoded master table: `_allData` of <master_dir>/<name>.json."""
     return json.loads((Path(master_dir) / f"{name}.json").read_text(encoding="utf-8"))["_allData"]
 
 
-def has_row(master_dir: Path, name: str, row_id) -> bool:
+def has_row(master_dir: Path, name: str, row_id: object) -> bool:
     """Whether the decoded master table `name` has a row whose `_id` is `row_id`."""
     return any(r.get("_id") == row_id for r in table(master_dir, name))
 
@@ -231,24 +236,32 @@ def _get(url: str, retries: int = 3, timeout: int = 60) -> bytes:
     raise AssertionError("unreachable")
 
 
-def download(cdn: str, version: str, out_dir: Path, workers: int = 16, *, get=None, strict=False) -> dict:
+def download(
+    cdn: str,
+    version: str,
+    out_dir: Path,
+    workers: int = 16,
+    *,
+    get: Callable[[str], bytes] | None = None,
+    strict: bool = False,
+) -> dict[str, Any]:
     """Master data `version` from the CDN into <out_dir>/ (the manifest and every listed file, SHA-256 checked;
     files already present with the right hash are kept)."""
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     base = f"{cdn.rstrip('/')}/master/{version}"
-    get = get or _get
-    manifest_raw = get(f"{base}/MasterManifest.json")
+    fetch = get or _get
+    manifest_raw = fetch(f"{base}/MasterManifest.json")
     manifest = json.loads(manifest_raw.decode("utf-8"))
-    if strict and (not isinstance(manifest, dict) or manifest.get("version") != version):
+    if strict and (not is_object(manifest) or manifest.get("version") != version):
         raise DownloadError("master manifest version differs from the requested version")
     files = manifest.get("files", [])
     if strict:
-        if not isinstance(files, list) or not files:
+        if not is_array(files) or not files:
             raise DownloadError("JP master manifest has no file list")
-        seen = set()
+        seen: set[str] = set()
         for entry in files:
-            if not isinstance(entry, dict):
+            if not is_object(entry):
                 raise DownloadError("invalid JP master manifest entry")
             name = entry.get("name")
             if (
@@ -263,11 +276,9 @@ def download(cdn: str, version: str, out_dir: Path, workers: int = 16, *, get=No
             seen.add(name)
     else:
         # Preserve the original partial-download receipt even if a worker raises.
-        from ..core.cache import write_atomic
-
         write_atomic(out_dir / "MasterManifest.json", manifest_raw)
 
-    def one(f: dict):
+    def one(f: dict[str, Any]) -> dict[str, str] | str:
         name, sha = f["name"], (f.get("hash") or "").lower()
         if "/" in name or "\\" in name or name in ("", ".", ".."):
             return {"file": name, "error": "unexpected file name"}
@@ -279,7 +290,7 @@ def download(cdn: str, version: str, out_dir: Path, workers: int = 16, *, get=No
             and hashlib.sha256(dst.read_bytes()).hexdigest() == sha
         ):
             return "kept"
-        data = get(f"{base}/{name}")
+        data = fetch(f"{base}/{name}")
         if strict and (len(data) != f.get("size") or not sha):
             return {"file": name, "error": "size or hash missing/different from the manifest"}
         if sha and hashlib.sha256(data).hexdigest() != sha:
@@ -292,8 +303,6 @@ def download(cdn: str, version: str, out_dir: Path, workers: int = 16, *, get=No
     with ThreadPoolExecutor(max(1, workers)) as ex:
         results = list(ex.map(one, files))
     if not strict or not any(isinstance(r, dict) for r in results):
-        from ..core.cache import write_atomic
-
         write_atomic(out_dir / "MasterManifest.json", manifest_raw)
     return {
         "version": manifest.get("version", version),

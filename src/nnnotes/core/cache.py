@@ -28,12 +28,23 @@ import threading
 from collections import OrderedDict
 from importlib import metadata
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol, TypedDict, cast
 
 DISK_MAGIC = b"NNC1"
 DEFAULT_MEMORY_MB = 128
 
-_settings = {
+
+class Settings(TypedDict):
+    """The cache settings of a process (configure)."""
+
+    enabled: bool
+    memory: int  # byte budget of each bucket
+    directory: Path | None  # disk layer of the byte buckets
+    closures: int  # loaded bundle closures kept per thread
+    closure_bytes: int  # their bundle bytes
+
+
+_settings: Settings = {
     "enabled": True,
     "memory": DEFAULT_MEMORY_MB << 20,
     "directory": None,
@@ -48,10 +59,10 @@ def configure(
     *,
     enabled: bool | None = None,
     memory_mb: int | None = None,
-    directory=None,
+    directory: str | os.PathLike[str] | None = None,
     closures: int | None = None,
     closure_mb: int | None = None,
-) -> dict:
+) -> Settings:
     """Set the caches of this process: `enabled`; `memory_mb` (byte budget of each bucket); `directory` (disk layer
     of the byte buckets; "" or None for none); `closures` / `closure_mb` (loaded bundle closures kept by
     unity.load_closure, per thread: count and bundle bytes). Clears the buckets. Returns the settings."""
@@ -71,9 +82,9 @@ def configure(
         return settings()
 
 
-def settings() -> dict:
+def settings() -> Settings:
     """The current settings (a copy)."""
-    return dict(_settings)
+    return _settings.copy()
 
 
 def enabled() -> bool:
@@ -90,7 +101,7 @@ def bucket(name: str, *, salt: str = "", disk: bool = False, max_item: int | Non
         return b
 
 
-def stats() -> dict:
+def stats() -> dict[str, dict[str, int]]:
     """Per bucket: items, bytes, hits, misses, disk hits, disk writes, disk write errors."""
     return {n: b.stats() for n, b in sorted(_buckets.items())}
 
@@ -101,17 +112,22 @@ def clear() -> None:
 
 
 # ---------------------------------------------------------------- keys
-def _feed(h, part) -> None:
+class _Hash(Protocol):
+    def update(self, data: bytes | memoryview, /) -> None: ...
+
+
+def _feed(h: _Hash, part: object) -> None:
     if isinstance(part, (bytes, bytearray, memoryview)):
-        mv = memoryview(part).cast("B")
+        mv = memoryview(cast("bytes", part)).cast("B")  # any buffer, read as bytes
         h.update(b"b" + struct.pack("<Q", mv.nbytes))
         h.update(mv)
     elif isinstance(part, str):
         b = part.encode("utf-8", "surrogatepass")
         h.update(b"s" + struct.pack("<Q", len(b)) + b)
     elif isinstance(part, (tuple, list)):
-        h.update(b"t" + struct.pack("<Q", len(part)))
-        for p in part:
+        items = cast("list[object]", part)
+        h.update(b"t" + struct.pack("<Q", len(items)))
+        for p in items:
             _feed(h, p)
     elif part is None or isinstance(part, (bool, int, float)):
         r = repr(part).encode("ascii")
@@ -120,7 +136,7 @@ def _feed(h, part) -> None:
         raise TypeError(f"cache key part of type {type(part).__name__}")
 
 
-def key(*parts) -> str:
+def key(*parts: object) -> str:
     """sha256 hex of `parts` (bytes, str, int, float, bool, None and tuples / lists of them), unambiguous."""
     h = hashlib.sha256()
     _feed(h, parts)
@@ -130,14 +146,14 @@ def key(*parts) -> str:
 _salts: dict[str, str] = {}
 
 
-def source_salt(path, *dists: str) -> str:
+def source_salt(path: str | os.PathLike[str], *dists: str) -> str:
     """A salt for keys of values a module produces: sha256 of the module's source file and the installed versions
     of the distributions `dists` (a missing one counts as "-")."""
     p = Path(path)
     k = f"{p}|{'|'.join(dists)}"
     s = _salts.get(k)
     if s is None:
-        versions = []
+        versions: list[str] = []
         for d in dists:
             try:
                 versions.append(f"{d}={metadata.version(d)}")
@@ -147,7 +163,7 @@ def source_salt(path, *dists: str) -> str:
     return s
 
 
-def file_id(path) -> tuple:
+def file_id(path: str | os.PathLike[str]) -> tuple[str, int, int]:
     """(path, size, mtime) of a file: identifies an executable or input file in a key."""
     p = Path(path)
     st = p.stat()
@@ -156,14 +172,16 @@ def file_id(path) -> tuple:
 
 # ---------------------------------------------------------------- buckets
 class Bucket:
+    """A memo cache of values by content key (see the module documentation)."""
+
     def __init__(self, name: str, salt: str, disk: bool, max_item: int | None):
         self.name, self.salt, self.disk, self._max_item = name, salt, disk, max_item
-        self._items: OrderedDict[str, tuple] = OrderedDict()
+        self._items: OrderedDict[str, tuple[Any, int]] = OrderedDict()  # key -> (value, byte size)
         self._bytes = 0
         self._lock = threading.Lock()
         self.hits = self.misses = self.disk_hits = self.disk_writes = self.disk_errors = 0
 
-    def key(self, *parts) -> str:
+    def key(self, *parts: object) -> str:
         return key(self.name, self.salt, parts)
 
     def _limit(self) -> int:
@@ -180,8 +198,9 @@ class Bucket:
                 self._items.move_to_end(k)
                 self.hits += 1
                 return hit[0]
-        if self.disk and _settings["directory"] is not None:
-            data = _disk_read(self._path(k))
+        directory = _settings["directory"]
+        if self.disk and directory is not None:
+            data = _disk_read(self._path(directory, k))
             if data is not None:
                 with self._lock:
                     self.disk_hits += 1
@@ -191,21 +210,22 @@ class Bucket:
             self.misses += 1
         return None
 
-    def put(self, k: str, value, size: int | None = None) -> None:
+    def put(self, k: str, value: Any, size: int | None = None) -> None:
         """Store `value` (bytes for a disk bucket) under `k`; `size`: its byte size (default len(value))."""
         if not _settings["enabled"]:
             return
         n = len(value) if size is None else int(size)
         self._remember(k, value, n)
-        if self.disk and _settings["directory"] is not None and n <= max(self._limit(), 64 << 20):
-            ok = _disk_write(self._path(k), value)
+        directory = _settings["directory"]
+        if self.disk and directory is not None and n <= max(self._limit(), 64 << 20):
+            ok = _disk_write(self._path(directory, k), value)
             with self._lock:
                 if ok:
                     self.disk_writes += 1
                 else:
                     self.disk_errors += 1
 
-    def _remember(self, k: str, value, n: int) -> None:
+    def _remember(self, k: str, value: Any, n: int) -> None:
         if n > self._limit():
             return
         with self._lock:
@@ -219,15 +239,15 @@ class Bucket:
                 _, (_, m) = self._items.popitem(last=False)
                 self._bytes -= m
 
-    def _path(self, k: str) -> Path:
-        return _settings["directory"] / self.name / k[:2] / k
+    def _path(self, directory: Path, k: str) -> Path:
+        return directory / self.name / k[:2] / k
 
     def clear(self) -> None:
         with self._lock:
             self._items.clear()
             self._bytes = 0
 
-    def stats(self) -> dict:
+    def stats(self) -> dict[str, int]:
         with self._lock:
             return {
                 "items": len(self._items),
@@ -298,7 +318,7 @@ def unpack(data: bytes) -> tuple[bytes, list[bytes]]:
     pos = 8
     meta = data[pos : pos + n]
     pos += n
-    blobs = []
+    blobs: list[bytes] = []
     for _ in range(count):
         (m,) = struct.unpack_from("<Q", data, pos)
         pos += 8

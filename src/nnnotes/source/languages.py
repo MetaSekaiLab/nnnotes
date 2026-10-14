@@ -6,6 +6,9 @@ A catalog is `catalog_main_<code>.bin`; the client's LanguageMode picks the colu
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from typing import Any
+
 from .config import ConfigError
 
 # code -> (Fwk.Localization.LanguageMode, text table column)
@@ -35,6 +38,6 @@ def column(code: str) -> str:
     return LANGUAGES[check(code)][1]
 
 
-def texts(row: dict | None) -> dict:
+def texts(row: Mapping[str, Any] | None) -> dict[str, Any]:
     """{code: text} of a text table row in every language (None for a column the row lacks)."""
     return {code: (row or {}).get(col) for code, (_, col) in LANGUAGES.items()}

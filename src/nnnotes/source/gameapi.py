@@ -23,8 +23,10 @@ from __future__ import annotations
 import time
 import uuid
 import zipfile
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlsplit
 
 import grpc
@@ -143,7 +145,7 @@ def parse_version(buf: bytes) -> MasterVersion:
 
 
 def parse_server_list(buf: bytes) -> list[Server]:
-    out = []
+    out: list[Server] = []
     for num, v in fields(buf):
         if num != 1:
             continue
@@ -197,7 +199,7 @@ def call(
     timeout: float = TIMEOUT,
     attempts: int = ATTEMPTS,
     setting: str = "the API root",
-    response_metadata: dict | None = None,
+    response_metadata: dict[str, Any] | None = None,
 ) -> bytes:
     """One unary call with raw bytes; returns the response message's bytes. `setting` names the root in errors.
     Raises GameApiError."""
@@ -205,7 +207,9 @@ def call(
     name = method.rsplit("/", 1)[-1]  # e.g. Version
     channel = grpc.secure_channel(target, grpc.ssl_channel_credentials()) if tls else grpc.insecure_channel(target)
     try:
-        stub = channel.unary_unary(method)  # no (de)serializers: bytes in, bytes out
+        stub: grpc.UnaryUnaryMultiCallable[bytes, bytes] = channel.unary_unary(
+            method
+        )  # no (de)serializers: bytes in, bytes out
         attempts = max(1, attempts)
         for i in range(attempts):
             last = i + 1 == attempts
@@ -229,7 +233,7 @@ def call(
     raise AssertionError("unreachable")
 
 
-def failure(name: str, setting: str, code, trailers) -> str:
+def failure(name: str, setting: str, code: grpc.StatusCode | None, trailers: Iterable[Any] | None) -> str:
     """The one-line error of a failed call: status, a hint, and the game's error code when the server sent one."""
     status = code.name if code is not None else "no status"
     hint = STATUS_HINT.get(code) if code is not None else None
@@ -327,18 +331,18 @@ def server_list(cfg: Config, *, timeout: float = TIMEOUT) -> list[Server]:
 
 def configured_roots(cfg: Config) -> dict[str, set[str]]:
     """{region: its `cdn` and `api` settings, trailing `/` removed} of the configured regions."""
-    out = {}
+    out: dict[str, set[str]] = {}
     for r in cfg.regions():
         roots = {cfg.get(f"servers.{r}", k) for k in ("cdn", "api")}
         out[r] = {s.strip().rstrip("/") for s in roots if s}
     return out
 
 
-def server_summary(s: Server, configured: dict[str, set[str]], hosts: bool = False) -> dict:
+def server_summary(s: Server, configured: dict[str, set[str]], hosts: bool = False) -> dict[str, Any]:
     """A server list entry for printing: the configured region with one of its roots, root counts, and the roots
     themselves only when `hosts`."""
     region = next((r for r, roots in configured.items() if roots & {*s.cdn, *s.api}), None)
-    d = {
+    d: dict[str, Any] = {
         "name": s.name,
         "displayName": s.display_name,
         "areaId": s.area_id,
