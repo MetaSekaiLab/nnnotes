@@ -65,7 +65,7 @@ nnnotes --region jp master version
 nnnotes --region jp master download --latest -o work/jp-master-bin
 nnnotes master decode work/jp-master-bin -o work/jp-master
 nnnotes --region jp catalog keys --prefix Live/MusicScore/ --limit 10
-nnnotes --region jp bundle pull Live/MusicScore/0001/0001_00
+nnnotes --region jp bundle pull Live/MusicScore/0001/0001_00 -o bundles
 nnnotes --region jp catalog fetch
 nnnotes --region jp export assets --select key:Image/Jacket/jacket_temporary --views none -o out/jp-sample
 nnnotes --region jp music-data --decoded-master --no-bgm -o out/jp-music-data.json

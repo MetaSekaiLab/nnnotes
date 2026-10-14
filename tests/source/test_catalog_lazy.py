@@ -197,11 +197,12 @@ def test_pull_of_downloaded_bundles_needs_no_region_cdn_or_key(tmp_path, capsys,
     monkeypatch.setenv("NNNOTES_BUNDLE_KEY", synth.BUNDLE_KEY.hex())
     monkeypatch.setenv("NNNOTES_BUNDLE_NONCE_SEED", synth.BUNDLE_SEED.hex())
     monkeypatch.setenv("NNNOTES_SERVERS_ZZ_CDN", cdn_tree(tmp_path / "cdn"))
-    code, out, err = run(base + ["--region", "zz", "bundle", "pull", "Char/A"], capsys)
+    pull = ["bundle", "pull", "-o", str(tmp_path / "out")]
+    code, out, err = run(base + ["--region", "zz", *pull, "Char/A"], capsys)
     assert code == 0, err
     for name in ("NNNOTES_BUNDLE_KEY", "NNNOTES_BUNDLE_NONCE_SEED", "NNNOTES_SERVERS_ZZ_CDN"):
         monkeypatch.delenv(name)
-    code, again, err = run(base + ["bundle", "pull", "Char/A", "Char/B"], capsys)
+    code, again, err = run(base + [*pull, "Char/A", "Char/B"], capsys)
     assert code == 0, err
     assert again.splitlines() == out.splitlines() * 2
 
@@ -211,7 +212,8 @@ def test_pull_that_downloads_names_the_missing_setting_in_one_line(tmp_path, cap
     catbin.write_bytes(synth.CatalogWriter().build(ENTRIES))
     monkeypatch.setenv("NNNOTES_SERVERS_ZZ_CDN", cdn_tree(tmp_path / "cdn"))
     code, out, err = run(
-        ["--catalog", str(catbin), "--depot", str(tmp_path / "depot"), "--region", "zz", "bundle", "pull", "Char/A"],
+        ["--catalog", str(catbin), "--depot", str(tmp_path / "depot"), "--region", "zz", "bundle", "pull", "Char/A"]
+        + ["-o", str(tmp_path / "out")],
         capsys,
     )
     assert code == 2 and out == "" and len(err.strip().splitlines()) == 1

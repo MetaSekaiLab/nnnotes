@@ -128,11 +128,12 @@ keys, bundles, raw files (and objects) that differ between two catalog versions 
 
 ## nnnotes bundle pull
 
-fetch the bundle closure of keys into the depot (prints the downloaded bundle files)
+fetch the bundle closure of keys and copy the decrypted bundles to a directory (prints the bundle files)
 
 | Argument | Description |
 | --- | --- |
 | `KEY` ... | addressable keys (`catalog keys` lists them) |
+| `-o`, `--out` `OUT` | directory the bundles are copied to, under their file names (required) |
 
 ## nnnotes master version
 

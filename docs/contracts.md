@@ -235,7 +235,8 @@ described in [music-data.md](music-data.md).
 The depot is a directory: the downloaded game files, and the results of all stage work by content:
 
 ```
-<depot>/downloads/                   the game files as downloaded, under their own names ([commands.md](commands.md#downloads))
+<depot>/downloads/                   the game files as downloaded, under their own names; the bundles and raw files
+                                     are kept up to `[depot] downloads` ([commands.md](commands.md#downloads))
 <depot>/cas/sha256/ab/<sha256>       bytes by content id, written once (no extension: records carry it)
 <depot>/ac/ab/<key>.json             results by task key (written after the bytes they name)
 <depot>/inputs/<kind>.jsonl          input identities: name -> sha256, size, with the path, size and mtime of the
@@ -245,9 +246,11 @@ The depot is a directory: the downloaded game files, and the results of all stag
 <depot>/runs/<run>.log.jsonl         the log of the run's last execution
 <depot>/runs/selections/<digest>     the id of the latest run of a selection (key hash of the selection list)
 <depot>/costs/<key>.json             the measured cost of a task's last run
+<depot>/leases/<lease>.json          one per running command: {"host", "pid", "started"}
+<depot>/leases/.exclusive            held while a command runs alone (trimming the downloads, `depot gc`)
 ```
 
 Every file is written to a temporary name and renamed into place, so concurrent writers never see or leave a
 partial file and an interrupted task leaves no result. `cas/` and `ac/` depend only on the tasks run: two runs of the
-same tasks, with any number of workers, leave identical trees. `downloads/`, `inputs/`, `runs/*.log.jsonl` and
-`costs/` are local and not deterministic.
+same tasks, with any number of workers, leave identical trees. `downloads/`, `inputs/`, `runs/*.log.jsonl`,
+`costs/` and `leases/` are local and not deterministic.

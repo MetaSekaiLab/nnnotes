@@ -48,7 +48,7 @@ questions: `nnnotes config init --user --no-input --set SECTION.KEY=VALUE ...`.
 | `servers` | the game API's server list: regions with their CDN and API roots |
 | `catalog keys\|browse` | the addressable keys of a region's catalog; a local web page to browse catalogs and bundles |
 | `catalog versions\|import\|fetch\|diff` | catalog versions kept in the depot, and what changed between two |
-| `bundle pull` | fetch and decrypt the bundle closure of keys into the depot |
+| `bundle pull` | fetch the bundle closure of keys and copy the decrypted bundles to a directory |
 | `master version\|download\|decode` | the master data version a region serves, its download and its decoding to JSON |
 | `export assets` | every object of the selected bundles in common formats, through the content-addressed depot |
 | `export episode\|story\|live\|live2d\|spot\|room\|shader\|audio\|ui` | one subject: an ADV episode, a story, a live, a Live2D model, a spot, a room, shaders, a cue sheet, the UI library |

@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, TypeAlias, TypeVar, cast
 
 from ..core.cache import write_atomic as _write_atomic
+from ..core.downloads import touch
 from .addressables import (
     REMOTE_PREFIX,
     BundleKey,
@@ -341,22 +342,21 @@ class Catalog:
 
     # --- fetch -------------------------------------------------------------
     def downloaded(self, b: Bundle) -> Path | None:
-        """The file fetch(b) returns when the bundle is downloaded already, else None."""
+        """The file fetch(b) returns when the bundle is downloaded already (marked as used now), else None."""
         dst = (self.download_dir if b.remote else self.local_download_dir()) / "bundles" / b.name
-        return dst if dst.is_file() and dst.stat().st_size > 0 else None
+        return _used(dst)
 
     def downloaded_raw(self, e: Location) -> Path | None:
-        """The file fetch_raw(e) returns when it is downloaded already, else None."""
+        """The file fetch_raw(e) returns when it is downloaded already (marked as used now), else None."""
         rel = remote_path(e["internal_id"])
-        dst = self.download_dir / "raw" / rel.lstrip("/") if rel is not None else None
-        return dst if dst is not None and dst.is_file() and dst.stat().st_size > 0 else None
+        return _used(self.download_dir / "raw" / rel.lstrip("/")) if rel is not None else None
 
     def fetch(self, b: Bundle) -> Path:
-        """Local path to the decrypted bundle (CDN download or APK read)."""
+        """Local path to the decrypted bundle (CDN download or APK read), marked as used now."""
         dst = (self.download_dir if b.remote else self.local_download_dir()) / "bundles" / b.name
-        dst.parent.mkdir(parents=True, exist_ok=True)
-        if dst.exists() and dst.stat().st_size > 0:
+        if _used(dst) is not None:
             return dst
+        dst.parent.mkdir(parents=True, exist_ok=True)
         if b.remote:
             url = self._url(b.internal_id)
             key = self._bundle_key_for(b.name)  # before the download: a missing key fails first
@@ -410,14 +410,14 @@ class Catalog:
         raise KeyError(f"{key}: no bundle among its dependencies")
 
     def fetch_raw(self, e: Location) -> Path:
-        """A non-bundle CDN asset (e.g. CRI ACB/AWB data) as stored -- no decryption."""
+        """A non-bundle CDN asset (e.g. CRI ACB/AWB data) as stored -- no decryption; marked as used now."""
         iid = e["internal_id"]
         rel = remote_path(iid)
         if rel is None:
             raise ValueError(f"not a CDN asset: {iid}")
         dst = self.download_dir / "raw" / rel.lstrip("/")
-        dst.parent.mkdir(parents=True, exist_ok=True)
-        if not (dst.exists() and dst.stat().st_size > 0):
+        if _used(dst) is None:
+            dst.parent.mkdir(parents=True, exist_ok=True)
             _write_atomic(dst, self._download(self._url(iid)))
         return dst
 
@@ -435,7 +435,7 @@ class Catalog:
                 raise KeyError(f"{name_contains!r}: {len(names)} APK bundles match")
             name = names[0].rsplit("/", 1)[1]
             dst = self.local_download_dir() / "bundles" / name
-            if not (dst.exists() and dst.stat().st_size > 0):
+            if _used(dst) is None:
                 dst.parent.mkdir(parents=True, exist_ok=True)
                 self.check_apk(z)
                 data = z.read(names[0])
@@ -492,6 +492,18 @@ def _proxied(parts: urllib.parse.SplitResult) -> bool:
 def _urlopen(url: str, timeout: float) -> bytes:
     with urllib.request.urlopen(url, timeout=timeout) as r:
         return r.read()
+
+
+def _used(path: Path) -> Path | None:
+    """`path` when it is a downloaded file (not empty), marked as used now (the downloads are trimmed least recently
+    used first, core.downloads); else None."""
+    try:
+        if path.stat().st_size > 0:
+            touch(path)
+            return path
+    except OSError:
+        pass
+    return None
 
 
 def _setting(v: Lazy[T], needed_by: str) -> T | None:

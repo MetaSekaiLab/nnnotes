@@ -328,11 +328,14 @@ class CatalogFetcher:
     def _apk_file(self, internal_id: str, cat) -> Path:
         """A raw APK file through its snapshot's downloads; only a file not read yet needs the matching APK."""
         from ..core.cache import write_atomic
+        from ..core.downloads import touch
         from ..source.catalog import APK_AA_DIR
 
         rel = apk_rel(internal_id)
         dst = cat.local_download_dir() / "raw" / rel
-        if not (dst.is_file() and dst.stat().st_size > 0):
+        if dst.is_file() and dst.stat().st_size > 0:
+            touch(dst)
+        else:
             if cat.apk is None:
                 raise self.cfg.missing("paths", "apk")
             with ApkSet(cat.apk) as z:

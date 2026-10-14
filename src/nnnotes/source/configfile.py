@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any, TypeAlias, cast
 from urllib.parse import urlsplit
 
+from ..core.downloads import parse_budget
 from . import languages
 from .config import Config, ConfigError, check_catalog_version, env_name, template
 
@@ -152,6 +153,8 @@ def validate(setting: Setting, value: Value) -> None:
         channel_target(value)
     elif k == ("export", "link") and value not in LINKS:
         raise ValueError(f"must be one of {', '.join(LINKS)}")
+    elif k == ("depot", "downloads"):
+        parse_budget(value)
 
 
 # ---------------------------------------------------------------- TOML text

@@ -25,6 +25,7 @@ it runs.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import os
 import sys
 
@@ -40,6 +41,7 @@ from . import apk, bundle, catalog, config, depot, export, master, musicdata, se
 from .common import GLOBALS, Formatter, fill_globals, load_config
 
 GROUPS = (config, servers, catalog, bundle, master, export, apk, depot, voices, site, musicdata)
+NO_DEPOT = {"config", "servers", "master", "apk"}  # the groups whose commands never read the depot
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -64,12 +66,26 @@ def main(argv=None):
     args = parse_args(argv)
     try:
         cfg = load_config(args) if args.reads_config else None
-        args.func(args, cfg)
+        with depot_lease(args, cfg) as args.lease:
+            args.func(args, cfg)
     except ConfigError as e:
         print(f"nnnotes: {e}", file=sys.stderr)
         sys.exit(2)
     except GameApiError as e:
         sys.exit(f"nnnotes: {e}")
+
+
+def depot_lease(args, cfg):
+    """The lease a command holds on the depot while it runs (core.downloads.lease: the last command to end trims the
+    downloads to `[depot] downloads`; `args.lease` is its file); none for the commands that never read the depot or
+    without `[paths] depot`."""
+    if cfg is None or args.command in NO_DEPOT or cfg.path("paths", "depot") is None:
+        return contextlib.nullcontext()
+    from ..core.downloads import lease
+    from ..source.session import Session
+
+    session = Session(cfg)
+    return lease(session.depot_root(), session.downloads_budget())
 
 
 if __name__ == "__main__":
