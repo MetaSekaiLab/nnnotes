@@ -20,7 +20,7 @@ Lowest to highest:
 3. **Command-line flags**, for the settings that have one (table below).
 
 An empty value (`""`, `[]`, an empty environment variable, an empty flag) counts as unset, so a lower source still
-applies. The template [`nnnotes.example.toml`](../src/nnnotes/source/nnnotes.example.toml) ships with the package and lists
+applies. The template [`nnnotes.example.toml`](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/source/nnnotes.example.toml) ships with the package and lists
 every setting with an empty value; `nnnotes config init` writes it (below). `nnnotes.toml` and `*.local.toml` are in
 `.gitignore`; do not commit a filled-in copy.
 
@@ -56,7 +56,7 @@ nnnotes config path [--json]
 No `config` command prints a setting's value. The config files these commands write are readable by their owner only
 (mode 600 where the file system has modes).
 
-The global flags go **before** the command name:
+The global flags go before or after the command name:
 
 ```bash
 nnnotes --config ~/nnnotes.toml --cache /data/nnnotes-cache bundle pull <key>

@@ -100,7 +100,7 @@ The synthetic tests use local gRPC and HTTP servers, including gzip catalogs, sp
 rotation, redirects, 429, truncated responses, source isolation, APK-only and hash-only updates, offline replay
 and invalid paths.
 
-Live validation on 2026-09-30 used JP client 1.0.4 and local JP Android 1.0.3 data:
+A validation run with JP client 1.0.4 and JP Android 1.0.3 data gave:
 
 - 238 master tables downloaded with manifest hashes and decoded successfully;
 - a 73-note chart and a 512×512 jacket read successfully;
