@@ -669,7 +669,7 @@ def test_every_object_has_exactly_one_item(exported):
         oid(74): ("exported", None),
         oid(51): ("exported", None),
     }
-    assert items[oid(61)]["in"] == f"{oid(60)}#prefab" and items[oid(80)]["in"] == "unity.export:all#scripts.json"
+    assert items[oid(61)]["in"] == f"{oid(60)}#json" and items[oid(80)]["in"] == "unity.export:all#scripts.json"
     assert items[oid(1)]["in"] == "unity.export:all#bundle.json"
     assert items[oid(94)]["artifacts"] == [f"{oid(94)}#json"]
     assert doc["status"] == "ok" and all(i["class"] for i in doc["items"])
@@ -702,7 +702,7 @@ def test_provenance_facts_and_atoms(exported):
     assert a["provenance"]["inputs"] == [{"role": "bundle", "sha256": task.inputs[0].sha256}]
     g = art(doc, f"{oid(95)}#json")
     assert set(g["provenance"]["atoms"]) == {"reader", "sniff", "generic.json"}
-    assert task.atoms["tex.png"] == "tex.png/1" and task.atoms["reader"] == "fakeunity/1"
+    assert task.atoms["tex.png"] == "tex.png/2" and task.atoms["reader"] == "fakeunity/1"
 
 
 # ---------------------------------------------------------------- converters
@@ -756,11 +756,27 @@ def test_sprites_same_bundle(exported):
             canvas={"rect": tt["m_Rect"], "offset": src["textureRectOffset"], "pivot": tt["m_Pivot"]},
         )
         assert load(depot, doc, f"{oid(pid)}#image") == png.encode(want)
-        meta = obj(depot, doc, f"{oid(pid)}#meta")
-        assert meta["image"]["texture"] == {"$ref": {"file": CAB, "pathId": 10, "class": "Texture2D", "name": "tex"}}
+        meta = obj(depot, doc, f"{oid(pid)}#json")
+        rd = meta["renderData"]
+        assert rd["texture"] == {"$ref": {"file": CAB, "pathId": 10, "class": "Texture2D", "name": "tex"}}
+        assert rd["textureRect"] == src["textureRect"] and rd["uvTransform"] == src["uvTransform"]
+        assert rd["settingsRaw"] == src["settingsRaw"] and rd["alphaTexture"] is None
         assert meta["sprite"]["m_Name"] == tt["m_Name"]
-    meta = obj(depot, doc, f"{oid(12)}#meta")
-    assert meta["image"]["source"] == "atlas" and meta["image"]["atlas"]["$ref"]["pathId"] == 20
+        pos, idx = _sprite_mesh(tt["m_Rect"])
+        assert meta["mesh"]["positions"] == np.asarray(pos, np.float32).astype(float).tolist()
+        assert meta["mesh"]["submeshes"] == [np.asarray(idx).reshape(-1, 3).tolist()]
+        assert meta["image"] == {
+            "packed": bool(src["settingsRaw"] & 1),
+            "packingMode": (src["settingsRaw"] >> 1) & 1,
+            "packingRotation": (src["settingsRaw"] >> 2) & 0xF,
+            "width": int(tt["m_Rect"]["width"]),
+            "height": int(tt["m_Rect"]["height"]),
+        }
+        assert by_object(doc)[oid(pid)]["refs"] == [oid(10)] + ([oid(20)] if pid == 12 else [])
+    meta = obj(depot, doc, f"{oid(11)}#json")
+    assert meta["renderData"]["source"] == "renderData" and meta["renderData"]["atlas"] is None
+    meta = obj(depot, doc, f"{oid(12)}#json")
+    assert meta["renderData"]["source"] == "atlas" and meta["renderData"]["atlas"]["$ref"]["pathId"] == 20
     assert meta["sprite"]["m_RD"]["m_VertexData"]["m_DataSize"]["$hex"]  # small: inline
     refs = art(doc, f"{oid(12)}#image")["semantics"]["refs"]
     assert refs == [{"rel": "texture", "object": oid(10)}, {"rel": "atlas", "object": oid(20)}]
@@ -768,8 +784,8 @@ def test_sprites_same_bundle(exported):
 
 def test_sprite_with_its_atlas_elsewhere_gets_a_meta_only(exported):
     depot, _task, doc = exported
-    assert by_object(doc)[oid(13)]["artifacts"] == [f"{oid(13)}#meta"]
-    a = art(doc, f"{oid(13)}#meta")
+    assert by_object(doc)[oid(13)]["artifacts"] == [f"{oid(13)}#json"]
+    a = art(doc, f"{oid(13)}#json")
     assert a["semantics"]["facts"] == {"crop": CROP, "atlas": f"{ATLAS_CAB}:99"}
     meta = obj(depot, doc, a["id"])
     assert meta["image"] == {"source": "atlas", "atlas": {"$ref": {"file": ATLAS_CAB, "pathId": 99}}, "stage": CROP}
@@ -801,9 +817,48 @@ def test_text_and_fonts(exported):
     assert load(depot, doc, f["id"]) == _ttf() and f["content"]["ext"] == "ttf"
 
 
+def test_every_converted_object_has_its_json(exported):
+    depot, _task, doc = exported
+    tex = obj(depot, doc, f"{oid(10)}#json")
+    assert "image data" not in tex and tex["m_Width"] == W and tex["m_TextureFormat"] == 4
+    assert art(doc, f"{oid(10)}#json")["semantics"] == {"kind": "unity.object", "format": "json", "facts": {}}
+    assert obj(depot, doc, f"{oid(15)}#json")["m_MipCount"] == 2  # HDR ASTC: the .astc image and the json
+    mesh = obj(depot, doc, f"{oid(30)}#json")
+    assert "m_DataSize" not in mesh["m_VertexData"] and "m_IndexBuffer" not in mesh
+    assert mesh["m_VertexData"]["m_VertexCount"] == 3 and mesh["m_Name"] == "tri"
+    text = obj(depot, doc, f"{oid(40)}#json")
+    assert text == {"m_Name": "readme"}
+    font = obj(depot, doc, f"{oid(42)}#json")
+    assert font == {"m_Name": "font"}
+    items = by_object(doc)
+    for pid in (10, 11, 12, 15, 30, 40, 41, 42, 44, 45, 50, 60, 70, 73, 74, 90, 92, 95, 96):
+        assert f"{oid(pid)}#json" in items[oid(pid)]["artifacts"], pid
+    assert all(
+        i["status"] != "exported" or any(a.endswith("#json") for a in i["artifacts"]) or i["object"] == oid(13)
+        for i in doc["items"]
+        if i["class"] not in ("AssetBundle", "MonoScript")
+    )
+
+
+def test_items_name_the_objects_they_reference(exported):
+    _depot, _task, doc = exported
+    items = by_object(doc)
+    assert items[oid(50)]["refs"] == [oid(10), f"{ATLAS_CAB}:5"]  # the material's shader and texture
+    # a prefab: the objects its components reference outside it, other bundles' included; its own objects are named
+    # by their paths
+    assert items[oid(60)]["refs"] == [oid(10), "CAB-scripts:3", "CAB-scripts:7", "CAB-scripts:8"]
+    assert "refs" not in items[oid(61)] and "refs" not in items[oid(63)]  # contained in the prefab
+    assert items[oid(1)]["refs"] == [oid(10), oid(11), oid(40), oid(60)]  # the AssetBundle's container
+    assert items[oid(92)]["refs"] == [oid(90)]  # the controller's clip
+    assert items[oid(96)]["refs"] == ["CAB-scripts:12"]  # a clip binding's script
+    assert items[oid(13)]["refs"] == [f"{ATLAS_CAB}:99"]  # a sprite's atlas in another bundle
+    assert items[oid(70)]["refs"] == [oid(80)]  # its script
+    assert "refs" not in items[oid(30)] and "refs" not in items[oid(40)]
+
+
 def test_prefab(exported):
     depot, _task, doc = exported
-    p = obj(depot, doc, f"{oid(60)}#prefab")
+    p = obj(depot, doc, f"{oid(60)}#json")
     assert p["name"] == "root" and [n["path"] for n in p["nodes"]] == ["root", "root/child"]
     root, child = p["nodes"]
     assert root["pathId"] == 60 and root["transformPathId"] == 61 and root["layer"] == 5
@@ -814,9 +869,9 @@ def test_prefab(exported):
     assert fields["tex"] == {"$ref": {"file": CAB, "pathId": 10, "class": "Texture2D", "name": "tex"}}
     assert fields["m_Script"] == {"$ref": {"file": "CAB-scripts", "pathId": 7}}
     assert math.isnan(fields["value"]) and fields["small"] == {"$hex": "616263"}
-    assert b'{"$float": "nan"}' in load(depot, doc, f"{oid(60)}#prefab").replace(b"\n", b"").replace(
+    assert b'{"$float": "nan"}' in load(depot, doc, f"{oid(60)}#json").replace(b"\n", b"").replace(
         b" ", b""
-    ) or b'"$float"' in load(depot, doc, f"{oid(60)}#prefab")
+    ) or b'"$float"' in load(depot, doc, f"{oid(60)}#json")
     (c,) = child["components"]
     assert c["fields"]["up"] == {"transform": "root"}
     assert c["fields"]["comp"] == {"component": "MonoBehaviour", "gameObject": "root", "class": "Behaviour"}

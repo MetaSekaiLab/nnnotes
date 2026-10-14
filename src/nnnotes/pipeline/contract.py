@@ -63,7 +63,7 @@ RUN_TASK_STATUSES = ("hit", "ran", "failed")
 # locator kinds of a task input: where the bytes can be read (never part of the key)
 LOCATOR_KINDS = ("depot", "download", "file", "catalog")
 # an object's primary artifact is the one whose role comes first here; its other artifacts are secondary
-PRIMARY_ROLES = ("image", "mesh", "audio", "video", "font", "data", "prefab", "json")
+PRIMARY_ROLES = ("image", "mesh", "audio", "video", "font", "data", "json")
 _EXT = re.compile(r"[0-9a-z]+")
 _BUNDLE_SUFFIX = re.compile(r"(_[0-9a-f]{32})?\.bundle$")
 
@@ -324,11 +324,18 @@ def reason(code: str, message: str = "") -> dict:
 
 
 def item(
-    obj: str, status: str, *, artifacts=(), within: str | None = None, why: dict | None = None, cls: str | None = None
+    obj: str,
+    status: str,
+    *,
+    artifacts=(),
+    within: str | None = None,
+    why: dict | None = None,
+    cls: str | None = None,
+    refs=(),
 ) -> dict:
     """The outcome for one object of a task. exported: its artifacts; contained: `within` (the artifact it is part
     of); generic: its artifacts and why the specialized form was not made; unsupported: why (and artifacts, if
-    any); failed: why."""
+    any); failed: why. `refs`: the ids of the other objects its documents reference."""
     if status not in ITEM_STATUSES:
         raise ValueError(f"item {obj}: unknown status {status!r}")
     need_art = status in ("exported", "generic")
@@ -348,6 +355,8 @@ def item(
         d["artifacts"] = sorted(artifacts)
     if within is not None:
         d["in"] = within
+    if refs:
+        d["refs"] = sorted(set(refs))
     if why is not None:
         d["reason"] = why
     return d
