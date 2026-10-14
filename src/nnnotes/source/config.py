@@ -295,7 +295,7 @@ class Config:
 
     def catalog_pin(self, region: str | None = None) -> tuple[str, str, str] | None:
         """The pinned resource version of an international catalog, (value, section, key) of the setting that pins
-        it: the --catalog-release flag, else `[servers.<region>] catalog_version`, else `[catalog] version`; None
+        it: the --catalog-version flag, else `[servers.<region>] catalog_version`, else `[catalog] version`; None
         when nothing pins it (session.Session.catalog_version asks the API then)."""
         region = region or self.get("catalog", "region")
         section, key = "catalog", "version"

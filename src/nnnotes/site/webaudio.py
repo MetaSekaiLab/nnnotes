@@ -1,6 +1,6 @@
-"""The audio formats of a web build (`web --format`): per format the file suffix and the ffmpeg encoder flags (None:
-the FLAC of the decode itself). Imports nothing, so the command line lists the formats without loading the
-exporters."""
+"""The audio formats of a site build (`site build --format`): per format the file suffix and the ffmpeg encoder
+flags (None: the FLAC of the decode itself). Imports nothing, so the command line lists the formats without loading
+the exporters."""
 
 # BGM encodings for the web (ffmpeg). Chromium's decodeAudioData decodes each sample-aligned with the FLAC (encoder
 # delay / pre-skip removed). Default AAC-LC 160 kbit/s in MP4: decodes in Safari / iOS as well.

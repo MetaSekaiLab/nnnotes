@@ -12,7 +12,7 @@ from pathlib import Path
 from . import gameapi
 from .addressables import BundleKey
 from .catalog import Catalog
-from .config import Config, ConfigError, check_catalog_version
+from .config import Config, ConfigError, check_catalog_version, describe
 from .master import MasterKey
 
 
@@ -39,6 +39,19 @@ class Session:
         if p is not None and not (p.is_file() if kind == "file" else p.is_dir()):
             raise ConfigError(f"setting {section}.{key}: {kind} {p} not found")
         return p
+
+    def store_root(self) -> Path:
+        """The store directory: `[paths] store`, else the store/ directory of `[paths] cache`."""
+        p = self.cfg.path("paths", "store")
+        if p is not None:
+            return p
+        cache = self.cfg.path("paths", "cache")
+        if cache is not None:
+            return cache / "store"
+        raise ConfigError(
+            "setting paths.store is not set (nor paths.cache, whose store/ directory is the default): "
+            f"give it as {describe('paths', 'store', '--store')}"
+        )
 
     def apk(self, region: str | None = None) -> Path:
         """`[paths] apk` of `region`, required."""
@@ -67,7 +80,7 @@ class Session:
         )
 
     def catalog_version(self, region: str | None = None) -> str:
-        """The resource version of an international catalog: the --catalog-release flag, the regional or global pin,
+        """The resource version of an international catalog: the --catalog-version flag, the regional or global pin,
         the resource version the region's API serves, else `main`."""
         region = region or self.cfg.get("catalog", "region")
         pin = self.cfg.catalog_pin(region)

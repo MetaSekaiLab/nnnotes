@@ -613,7 +613,7 @@ def run(argv, capsys):
     """(exit code, stdout, stderr) of the command line; the message of sys.exit(message) is part of stderr."""
     code, message = 0, ""
     try:
-        cli.main(argv)
+        cli.main(["--json", *argv])
     except SystemExit as e:
         code, message = (e.code, "") if isinstance(e.code, int) else (1, str(e.code))
     out, err = capsys.readouterr()

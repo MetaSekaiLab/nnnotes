@@ -261,7 +261,7 @@ def chart_facts(live_dir: Path, summary: dict, difficulty: str, language: str) -
 
 
 # ---------------------------------------------------------------- store
-ENCODINGS = compress.ENCODINGS  # stored encodings of site assets (web --compress)
+ENCODINGS = compress.ENCODINGS  # stored encodings of site assets (site build --compress)
 
 
 _TEXTS = cache.bucket("webtext")  # (build, store, encoding, path, text) -> manifest entry

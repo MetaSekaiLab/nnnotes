@@ -108,8 +108,8 @@ resolver's name).
 
 ## Stages
 
-`nnnotes.pipeline.views:stages` gives one stage per view, `view.<name>` (docs/stages.md), run by `nnnotes export --views`
-and planned by `nnnotes plan`:
+`nnnotes.pipeline.views:stages` gives one stage per view, `view.<name>` (docs/stages.md), run by `nnnotes export assets
+--views` and planned by `nnnotes store plan`:
 
 - Subjects: the catalog subjects of `link.addresses` (the export command has one, `main`), when master data is set
   and the view is selected (the planning facts `master` and `views`).

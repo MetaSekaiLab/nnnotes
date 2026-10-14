@@ -237,7 +237,7 @@ def test_player_only_command(tmp_path, capsys):
     out = tmp_path / "site"
     (out / "assets").mkdir(parents=True)
     (out / "assets" / "unreferenced.json").write_bytes(b"{}")
-    cli.main(["web", str(out), "--player", str(fake_player(tmp_path / "p")), "--player-only"])
+    cli.main(["--json", "site", "build", "-o", str(out), "--player", str(fake_player(tmp_path / "p")), "--player-only"])
     r = json.loads(capsys.readouterr().out)
     assert (r["charts"], r["removedAssets"], r["pageFiles"]) == (0, 1, 2)
     assert json.loads((out / "charts.json").read_text(encoding="utf-8")) == {
@@ -252,14 +252,14 @@ def test_player_only_and_reingest_over_an_encoded_site(tmp_path, capsys):
     site, player = tmp_path / "site", str(fake_player(tmp_path / "p"))
     encoded_site(site)
     before = (site / "charts" / "1_easy.json").read_bytes()
-    cli.main(["web", str(site), "--player", player, "--player-only"])
+    cli.main(["--json", "site", "build", "-o", str(site), "--player", player, "--player-only"])
     r = json.loads(capsys.readouterr().out)
     assert (r["charts"], r["assets"], r["removedAssets"]) == (2, 3, 1)
-    cli.main(["web", str(site), "--player", player, "--reingest-json"])
+    cli.main(["--json", "site", "build", "-o", str(site), "--player", player, "--reingest-json"])
     r = json.loads(capsys.readouterr().out)
     assert (r["changedEntries"], r["assets"], r["removedAssets"]) == (0, 3, 0)
     assert json.loads((site / "charts" / "1_easy.json").read_bytes()) == json.loads(before)
-    cli.main(["web", str(site), "--player", player, "--reingest-json", "--compress", "none"])
+    cli.main(["--json", "site", "build", "-o", str(site), "--player", player, "--reingest-json", "--compress", "none"])
     r = json.loads(capsys.readouterr().out)
     assert (r["changedEntries"], r["assets"], r["removedAssets"]) == (2, 3, 1)
     man = json.loads((site / "charts" / "1_easy.json").read_text(encoding="utf-8"))
@@ -271,7 +271,7 @@ def test_player_only_on_a_new_directory(tmp_path, capsys):
     from nnnotes import cli
 
     out = tmp_path / "new-site"
-    cli.main(["web", str(out), "--player", str(fake_player(tmp_path / "p")), "--player-only"])
+    cli.main(["--json", "site", "build", "-o", str(out), "--player", str(fake_player(tmp_path / "p")), "--player-only"])
     r = json.loads(capsys.readouterr().out)
     assert (r["charts"], r["assets"], r["removedAssets"]) == (0, 0, 0)
     assert (out / "index.html").is_file() and (out / "charts.json").is_file()
@@ -293,7 +293,10 @@ def test_web_exit_status_follows_failed_charts(tmp_path, capsys, monkeypatch, fa
     try:
         cli.main(
             [
-                "web",
+                "--json",
+                "site",
+                "build",
+                "-o",
                 str(tmp_path / "s"),
                 "--player",
                 str(fake_player(tmp_path / "p")),
@@ -330,8 +333,36 @@ def test_web_compress_flag_reaches_the_build(tmp_path, capsys, monkeypatch):
     monkeypatch.setattr(web, "unknown_pairs", lambda cfg, pairs, regions=None: [])
     player = str(fake_player(tmp_path / "p"))
     for flag in ("br", "none"):
-        cli.main(["web", str(tmp_path / "s"), "--player", player, "--pair", "7:hard", "--compress", flag])
+        cli.main(
+            [
+                "--json",
+                "site",
+                "build",
+                "-o",
+                str(tmp_path / "s"),
+                "--player",
+                player,
+                "--pair",
+                "7:hard",
+                "--compress",
+                flag,
+            ]
+        )
     assert calls == ["br", "none"]
     with pytest.raises(SystemExit):
-        cli.main(["web", str(tmp_path / "s"), "--player", player, "--pair", "7:hard", "--compress", "zstd"])
+        cli.main(
+            [
+                "--json",
+                "site",
+                "build",
+                "-o",
+                str(tmp_path / "s"),
+                "--player",
+                player,
+                "--pair",
+                "7:hard",
+                "--compress",
+                "zstd",
+            ]
+        )
     capsys.readouterr()

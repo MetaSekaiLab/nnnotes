@@ -23,7 +23,7 @@ region = ""
 # catalog language: catalog_<version>_<language>.bin, one of ja, en, zh-Hant, zh-Hans, ko; also the client language of the
 # live start canvas, the story UI and the web model labels (flag --language)
 language = ""
-# optional international resource version (flag --catalog-release); empty: API resource_version when configured,
+# optional international resource version (flag --catalog-version); empty: API resource_version when configured,
 # otherwise legacy main. Set main explicitly to inspect the old catalog; JP uses its own version/hash discovery.
 version = ""
 
@@ -35,11 +35,11 @@ provider = ""
 client_version = ""
 # optional per-region APK, base.apk with adjacent splits, APKS/XAPK, or directory containing base.apk
 apk = ""
-# optional per-region catalog file; JP files use a .source.json sidecar written by catalogs fetch
+# optional per-region catalog file; JP files use a .source.json sidecar written by `catalog fetch`
 catalog = ""
-# optional per-region international catalog version; overrides [catalog] version, but not --catalog-release
+# optional per-region international catalog version; overrides [catalog] version, but not --catalog-version
 catalog_version = ""
-# label of the region in the local catalog browser (`nnnotes browse`)
+# label of the region in the local catalog browser (`nnnotes catalog browse`)
 name = ""
 # CDN base URL of the region: catalogs, bundles, raw audio data and master data are fetched below it
 cdn = ""
@@ -76,10 +76,10 @@ ffmpeg = ""
 vgmstream = ""
 # Node.js executable for the web build's read-set script; empty: node on PATH (flag --node)
 node = ""
-# ournotes-player checkout (built) or installed package for `nnnotes web` (flag --player)
+# ournotes-player checkout (built) or installed package for `nnnotes site build` (flag --player)
 player = ""
 
 [export]
-# how `nnnotes export` makes the layout files from the store: auto (a clone where the file system makes them, else
+# how `nnnotes export assets` makes the layout files from the store: auto (a clone where the file system makes them, else
 # a hard link to the read-only store object, else a copy), clone, hard or copy; empty: auto (flag --link)
 link = ""

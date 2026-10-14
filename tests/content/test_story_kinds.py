@@ -88,10 +88,9 @@ def test_missing_script_component_is_recorded(tmp_path):
 
 
 def test_story_no_audio_flag():
-    p = cli.build_parser()
-    args = p.parse_args(["story", "10001", "-o", "out", "--no-audio"])
+    args = cli.parse_args(["export", "story", "10001", "-o", "out", "--no-audio"])
     assert args.no_audio is True and args.format == "flac"
-    assert p.parse_args(["story", "10001", "-o", "out"]).no_audio is False
+    assert cli.parse_args(["export", "story", "10001", "-o", "out"]).no_audio is False
 
 
 class _Parsed:

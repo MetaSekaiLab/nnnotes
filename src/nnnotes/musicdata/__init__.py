@@ -384,7 +384,9 @@ class Deck:
         if not _int(seeds) or not 1 <= seeds <= native_max:
             raise MusicDataError("--seeds must be a positive integer supported by the native model")
         if workers is not None and (not _int(workers) or not 0 <= workers <= native_max):
-            raise MusicDataError("--workers must be a nonnegative integer supported by the native model (0: automatic)")
+            raise MusicDataError(
+                "--workers must be a nonnegative integer supported by the native model (0: one thread)"
+            )
         if module is None:
             try:
                 import ournotes_sim as module
@@ -393,7 +395,7 @@ class Deck:
                     "the deck model (the package ournotes-sim) is not installed: install "
                     "'nnnotes[deck]', or pass --no-deck"
                 ) from None
-        self.module, self.seeds, self.workers = module, seeds, None if workers == 0 else workers
+        self.module, self.seeds, self.workers = module, seeds, 1 if workers == 0 else workers
         self.aptitude = aptitude
         self.cache = None if cache is None else Path(cache)
         self.counts: dict | None = None  # native counters, or None when no cache was requested

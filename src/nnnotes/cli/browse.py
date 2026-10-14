@@ -1,5 +1,5 @@
 """A local catalog browser: the catalogs of the configured regions as directory listings, and their bundles as
-decrypted downloads (`nnnotes browse`)."""
+decrypted downloads (`nnnotes catalog browse`)."""
 
 from __future__ import annotations
 
@@ -166,7 +166,7 @@ def serve(regions: list[Region], bundle_key: BundleKey, cache: Path, port: int, 
     server.cache = Path(cache)
     server.catalogs = {}
     server.jp_catalogs = {}
-    print(f"nnnotes browse: serving on {host}:{port}", flush=True)
+    print(f"nnnotes catalog browse: serving on {host}:{port}", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

@@ -43,9 +43,9 @@ the episode objects the unity.export results hold ("episodes": asset -> part -> 
 (nnnotes.voices/1) is the artifact "view.voices:<subject>#view"; the `original` layout gets views/voices.json with
 the file of every stream.
 
-The command `nnnotes voices` lists, searches and fetches voices from that document or, without an export, from an
-index built from the configured master data and catalog (content only; the episodes named by --episode or a row id
-are read from the catalog). Nothing here imports UnityPy or numpy before a sheet is decoded or an episode loaded.
+Without an export, index_document builds the document from the configured master data and catalog (content only;
+the story episodes it is given are read from the catalog), and decode_cue decodes one cue from its sheet. Nothing
+here imports UnityPy or numpy before a sheet is decoded or an episode loaded.
 """
 
 from __future__ import annotations
@@ -55,7 +55,6 @@ import functools
 import json
 import re
 import shutil
-import sys
 import tempfile
 import unicodedata
 from pathlib import Path
@@ -1250,40 +1249,8 @@ def _story_summary(doc: dict) -> dict:
     }
 
 
-# ---------------------------------------------------------------- command line
-def _out(text: str) -> None:
-    sys.stdout.buffer.write(text.encode("utf-8"))
-
-
-def _print_json(obj) -> None:
-    from ..core.jsonio import dumps
-
-    _out(dumps(obj, ensure_ascii=False, indent=1) + "\n")
-
-
-def _label(doc: dict, ids, language: str) -> str:
-    names = {c["id"]: c for c in doc["characters"]}
-    out = []
-    for i in ids:
-        c = names.get(i)
-        n = ((c or {}).get("names", {}).get("name") or {}).get(language) if c else None
-        out.append(n or (c or {}).get("token") or str(i))
-    return ",".join(out) or "-"
-
-
-def _line(doc: dict, r: dict, language: str) -> str:
-    chars = r["characters"] or r.get("inferred", {}).get("characters", [])
-    text = ((r.get("text") or {}).get("texts") or {}).get(language) or ""
-    cat = r["category"].get("name") or r.get("inferred", {}).get("situation") or "-"
-    where = f"{r['sound'].get('sheet')}/{r['sound'].get('cue')}"
-    who = _label(doc, chars, language)
-    if "speaker" in r:
-        names = [(t.get("texts") or {}).get(language) for t in r["speaker"]["texts"]]
-        who = ",".join(n for n in names if n) or r["speaker"]["name"] or who
-    return "\t".join([r["id"], who, f"{r['source']['name']}.{cat}", where, r["status"], text.replace("\n", " ")]) + "\n"
-
-
-def _story_ids(tables, rules: dict, specs) -> dict:
+# ---------------------------------------------------------------- without an export
+def story_ids(tables, rules: dict, specs) -> dict:
     """{episode asset: adv id} of the story table's rows that `specs` name (an id or an asset each)."""
     st = rules[VIEW]["story"]
     want = {str(s).strip() for s in specs}
@@ -1295,126 +1262,39 @@ def _story_ids(tables, rules: dict, specs) -> dict:
     return out
 
 
-def _document(args, cfg, common, episodes=()) -> tuple[dict, Path | None]:
-    """The document of --from, else the index of the configured master data and catalog, with the story episodes
-    `episodes` (ids or assets) read from the catalog."""
-    if args.source_dir:
-        p = Path(args.source_dir)
-        f = p if p.is_file() else p / views.view_path(VIEW, views.MAIN_SUBJECT)
-        if not f.is_file():
-            args.usage(f"--from {p}: no {views.view_path(VIEW, views.MAIN_SUBJECT)} (export --views voices writes it)")
-        doc = contract.loads(f.read_bytes())
-        if doc.get("schema") != SCHEMA:
-            args.usage(f"{f}: not a voices document")
-        return doc, (f.parent.parent if not p.is_file() else None)
+def index_document(session, episodes=()) -> dict:
+    """The document of the master data and catalog of a session.Session, without an export (content only: no row is
+    exported), with the Story voices of the episodes `episodes` (MasterAdv ids or episode assets) read from the
+    catalog."""
     rules = load_rules()
-    tables = views.MasterTables(common.session(cfg).master_dir())
-    cat = common.session(cfg).catalog(bundles=False)
+    tables = views.MasterTables(session.master_dir())
+    cat = session.catalog(bundles=False)
     prefixes = [SHEET_PREFIX] + ([rules[VIEW]["story"]["key"].split("{", 1)[0]] if "story" in rules[VIEW] else [])
     index = views.AddressIndex({k: [] for p in prefixes for k in cat.keys(p)})
     story = {}
-    assets = _story_ids(tables, rules, episodes) if episodes and "story" in rules[VIEW] else {}
+    assets = story_ids(tables, rules, episodes) if episodes and "story" in rules[VIEW] else {}
     if assets:
-        full = common.session(cfg).catalog()
+        full = session.catalog()
         column = rules[VIEW]["sound"]["sheet"]
         for asset in sorted(assets):
             got = storyvoices.load_episode(full, story_keys(rules, asset))
             story[asset] = storyvoices.episode(
                 got.get("script"), got.get("text"), got.get("sound"), got.get("sheets"), sheet_column=column
             )
-    return build(rules, tables, index, story=story), None
+    return build(rules, tables, index, story=story)
 
 
-def _language(args, cfg) -> str:
-    lang = getattr(args, "language", None) or cfg.get("catalog", "language") or "ja"
-    if lang not in LANGUAGES:
-        args.usage(f"--language {lang}: one of {', '.join(LANGUAGES)}")
-    return lang
-
-
-def _filters(args, doc: dict) -> dict:
-    chars = None
-    if getattr(args, "character", None):
-        chars = character_ids(doc, args.character)
-        if not chars:
-            args.usage(f"--character {args.character}: no character of the master data has this id or name")
-    eps = None
-    if getattr(args, "episode", None):
-        eps = episode_ids(doc, args.episode)
-        if not eps:
-            args.usage(f"--episode {args.episode}: no episode of the master data has this id or asset")
-    return {
-        "characters": chars,
-        "category": getattr(args, "category", None),
-        "source": getattr(args, "source", None),
-        "status": getattr(args, "status", None),
-        "episodes": eps,
-    }
-
-
-def _emit(args, doc: dict, rows: list[dict], language: str) -> None:
-    rows = rows[: args.limit] if args.limit else rows
-    if args.json:
-        _print_json(rows)
-        return
-    for r in rows:
-        _out(_line(doc, r, language))
-
-
-def _episode_args(args) -> tuple:
-    return (args.episode,) if getattr(args, "episode", None) else ()
-
-
-def cmd_list(args, cfg, common) -> None:
-    doc, _ = _document(args, cfg, common, _episode_args(args))
-    lang = _language(args, cfg)
-    _emit(args, doc, select(doc, **_filters(args, doc)), lang)
-
-
-def cmd_search(args, cfg, common) -> None:
-    doc, _ = _document(args, cfg, common, _episode_args(args))
-    lang = _language(args, cfg)
-    only = args.language if args.language else None
-    _emit(args, doc, select(doc, **_filters(args, doc), text=args.text, language=only), lang)
-
-
-def cmd_summary(args, cfg, common) -> None:
-    doc, _ = _document(args, cfg, common)
-    s = summary(doc)
-    if args.json:
-        _print_json(s)
-        return
-    _out(f"rows {s['rows']}  gaps {s['gaps']}  " + "  ".join(f"{k} {v}" for k, v in s["statuses"].items()) + "\n")
-    for k, v in s["categories"].items():
-        _out(f"  {k}\t{v['rows']}\t{v['ok']} ok\n")
-    rev = s["reverse"]
-    _out(
-        f"reverse: {rev['keys']} keys, {sum(rev['unreferencedKeys'].values())} named by no row; {rev['streams']} "
-        f"decoded streams, {sum(rev['unreferencedStreams'].values())} reached by no row\n"
-    )
-    if "story" in s:
-        st = s["story"]
-        _out(
-            f"story: {st['episodes']} episodes ("
-            + ", ".join(f"{k} {v}" for k, v in st["statuses"].items())
-            + f"); {st['sharedCues']['rows']} voices share a cue with another source\n"
-        )
-        for k, v in st["kinds"].items():
-            _out(f"  {k}\t{v['episodes']} episodes\t{v['voices']} voices\n")
-
-
-def _decode_one(cfg, common, sheet: str, cue: str, fmt: str, level: int, dst: Path) -> list[Path]:
-    """The files of a cue's streams, decoded from its sheet alone (cri.decode, as the export decodes a sheet)."""
+def decode_cue(cat, sheet: str, cue: str, fmt: str, flac_level: int, dst: Path) -> list[Path]:
+    """The files of a cue's streams in `dst`, decoded from its sheet alone (cri.decode, as the export decodes a
+    sheet). LookupError when the sheet has no such cue."""
     from ..formats import cri
 
-    cfg.require_path("paths", "apk")
-    cat = common.session(cfg).catalog()
     files, _ = cri.acb_data(cat, sheet)
     c = acb.cue_streams(files["acb"]).get(cue)
     if c is None:
         raise LookupError(f"sheet {sheet} has no cue {cue}")
     with tempfile.TemporaryDirectory(prefix="nnnotes-voice-") as tmp:
-        cri.decode(cat, sheet, Path(tmp), fmt=fmt, flac_level=level)
+        cri.decode(cat, sheet, Path(tmp), fmt=fmt, flac_level=flac_level)
         streams = {s["stream"]: s for s in json.loads((Path(tmp) / "streams.json").read_text(encoding="utf-8"))}
         out = []
         for w in c["streams"]:
@@ -1424,106 +1304,3 @@ def _decode_one(cfg, common, sheet: str, cue: str, fmt: str, level: int, dst: Pa
             out.append(dst / s["file"])
             shutil.copyfile(Path(tmp) / s["file"], out[-1])
     return out
-
-
-def cmd_get(args, cfg, common) -> None:
-    head = f"{load_rules()[VIEW].get('story', {}).get('table')}:"
-    story = (args.id[len(head) :].split(":", 1)[0],) if args.id.startswith(head) else ()
-    doc, base = _document(args, cfg, common, story)
-    rows = rows_for(doc, args.id)
-    if not rows:
-        args.usage(f"{args.id}: no voice row or sound id of that number")
-    r = next((x for x in rows if x["status"] == "ok"), rows[0])
-    sheet, cue = r["sound"].get("sheet"), r["sound"].get("cue")
-    dst = Path(args.out)
-    dst.mkdir(parents=True, exist_ok=True)
-    written = []
-    streams = (r.get("audio") or {}).get("streams", [])
-    if base is not None and args.format == "flac" and streams and all(s.get("path") for s in streams):
-        for s in streams:
-            written.append(dst / s["file"])
-            shutil.copyfile(base / s["path"], written[-1])
-    elif sheet is None or cue is None or r["status"] in ("no-value", "missing-key", "missing-cue", "unsupported"):
-        print(f"nnnotes: {r['id']}: {r['status']}" + (f" ({r['detail']})" if r.get("detail") else ""), file=sys.stderr)
-        sys.exit(1)
-    else:
-        from ..formats.encoders import FLAC_LEVEL
-
-        try:
-            written = _decode_one(cfg, common, sheet, cue, args.format, FLAC_LEVEL, dst)
-        except LookupError as e:
-            print(f"nnnotes: {r['id']}: {e}", file=sys.stderr)
-            sys.exit(1)
-    from ..core.jsonio import dumps
-
-    (dst / "voice.json").write_text(
-        dumps({"rows": rows, "files": [p.name for p in written]}, ensure_ascii=False, indent=1) + "\n",
-        encoding="utf-8",
-        newline="\n",
-    )
-    for p in written:
-        _out(f"{p}\n")
-    if not written:
-        sys.exit(1)
-
-
-def register(sub, common) -> None:
-    """The `voices` command (common.session(cfg): the data sources, a session.Session)."""
-    c = sub.add_parser(
-        "voices", help="character voices of the master data and the story episodes: list, search, summary, get one"
-    )
-    vs = c.add_subparsers(dest="voices_cmd", required=True, metavar="<voices command>")
-
-    def base(p, text=True):
-        p.add_argument(
-            "--from",
-            dest="source_dir",
-            metavar="OUT",
-            help="an export directory with views/voices.json (export --views voices); else the index is "
-            "built from the configured master data and catalog (no files)",
-        )
-        if text:
-            p.add_argument("--character", help="a MasterCharacter id or a part of a name in any language")
-            p.add_argument(
-                "--category", help="a category (CharacterRankUp or character-rank-up), Source.Category or a source"
-            )
-            p.add_argument("--source", help="a source (Talk, CharacterVoice, ..., HomeSpot, Title, Sound, Story)")
-            p.add_argument(
-                "--episode",
-                metavar="ADV",
-                help="the Story voices of one episode: a MasterAdv id or an "
-                "episode asset (without --from: read from the catalog)",
-            )
-            p.add_argument("--status", choices=STATUSES, help="only the rows with this status")
-            p.add_argument("--limit", type=int, default=0, help="at most N rows (0: all)")
-            p.add_argument("--json", action="store_true", help="the rows as JSON")
-
-    def done(p, fn):
-        p.set_defaults(func=lambda args, cfg: fn(args, cfg, common), usage=p.error)
-
-    p = vs.add_parser("list", help="the voices matching the filters")
-    base(p)
-    p.add_argument("--language", choices=LANGUAGES, help="the language of the text column ([catalog] language)")
-    done(p, cmd_list)
-    p = vs.add_parser("search", help="the voices whose text (or cue name) contains TEXT")
-    p.add_argument("text", help="text to look for")
-    base(p)
-    p.add_argument("--language", choices=LANGUAGES, help="search this language only (default: all five)")
-    done(p, cmd_search)
-    p = vs.add_parser("summary", help="rows per status, category and character; gaps both ways")
-    base(p, text=False)
-    p.add_argument("--json", action="store_true", help="the summary as JSON")
-    done(p, cmd_summary)
-    p = vs.add_parser(
-        "get", help="the files of one voice: a row id (MasterTalk:561, MasterAdv:<id>:<command>) or a sound id"
-    )
-    p.add_argument("id", help="row id or sound id")
-    p.add_argument("-o", "--out", required=True, help="output directory")
-    base(p, text=False)
-    p.add_argument(
-        "--format",
-        choices=("flac", "ogg", "wav"),
-        default="flac",
-        help="flac (default: the exported files when --from has them), ogg or wav (decodes the sheet)",
-    )
-    done(p, cmd_get)

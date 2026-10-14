@@ -223,7 +223,7 @@ Documents written by particular stages (artifacts of no object: their ids are `<
 
 The catalog versions of a store, `nnnotes.catalogs/1` ([catalogs.schema.json](../src/nnnotes/schemas/catalogs.schema.json),
 `<store>/catalogs/index.json`), and the difference between two of them, `nnnotes.catalog-diff/1`
-([catalog-diff.schema.json](../src/nnnotes/schemas/catalog-diff.schema.json), `nnnotes catalogs diff --json`), are written
+([catalog-diff.schema.json](../src/nnnotes/schemas/catalog-diff.schema.json), `nnnotes catalog diff --json`), are written
 by the commands.
 
 The music data file of `nnnotes music-data`, `nnnotes.music-data/2`

@@ -1,8 +1,8 @@
-"""The model stages: Live2D models and Spine skeletons, written by the extractors of `nnnotes live2d` and
-`nnnotes spot` (unchanged) from the bundles of their tasks.
+"""The model stages: Live2D models and Spine skeletons, written by the extractors of `nnnotes export live2d` and
+`nnnotes export spot` (unchanged) from the bundles of their tasks.
 
-live2d.model, one task per Live2D model key (Character/Live2D/<group>/<name>/model/<name>, the keys `nnnotes live2d`
-takes) whose own bundle (the first dependency of the key's location) is selected:
+live2d.model, one task per Live2D model key (Character/Live2D/<group>/<name>/model/<name>, the keys `nnnotes export
+live2d` takes) whose own bundle (the first dependency of the key's location) is selected:
     inputs     "bundle:<n>": the bundles of the key's dependency closure in the order the catalog gives them
                (Catalog.resolve; n is the position: the extractor loads them in this order, so the order is part of
                the key)
@@ -21,7 +21,7 @@ SkeletonDataAsset) of a selected bundle; its subject is the asset's stable addre
                census holds (the built-in files) are left out
     context    {"object": the asset's object id}
     artifacts  "spine.skeleton:<subject>#<file>": the skeleton (.json or .skel), each of its atlases (.atlas) and
-               the atlas pages (PNG), as spot.write_skeleton writes them for `nnnotes spot`
+               the atlas pages (PNG), as spot.write_skeleton writes them for `nnnotes export spot`
     item       the asset: exported (its artifacts), or failed with the writer's error
 
 Both tasks name their extractor as their one atom ("live2d.extract_model", "spot.write_skeleton"), whose id carries
@@ -45,7 +45,7 @@ SPINE = "spine.skeleton"
 CENSUS = "unity.census"
 SCRIPTS = "link.scripts"
 SCRIPTS_TASK = contract.task_id(SCRIPTS, "all")
-# the model keys of `nnnotes live2d` (webmodel.MODEL_KEY; webmodel imports UnityPy)
+# the model keys of `nnnotes export live2d` (webmodel.MODEL_KEY; webmodel imports UnityPy)
 MODEL_KEY = re.compile(r"Character/Live2D/(?P<group>[^/]+)/(?P<name>[^/]+)/model/(?P=name)")
 SKELETON_CLASS = "SkeletonDataAsset"
 # the libraries the extractors' output depends on (export._LIBS, the salt of export's PNG cache)
@@ -221,8 +221,8 @@ def _tree(root: Path) -> list[tuple[str, Path]]:
 
 
 class Live2DStage(Stage):
-    """live2d.model: a Live2D model key -> the files of `nnnotes live2d` (module documentation). Subjects and inputs
-    come from the facts "index" (the catalog index), "selected" and "bundles" ({stable name: Input "bundle"})."""
+    """live2d.model: a Live2D model key -> the files of `nnnotes export live2d` (module documentation). Subjects and
+    inputs come from the facts "index" (the catalog index), "selected" and "bundles" ({stable name: Input "bundle"})."""
 
     name = LIVE2D
     version = 1
@@ -348,9 +348,9 @@ def reach(index: dict, file: str) -> list[str]:
 
 
 class SpineStage(Stage):
-    """spine.skeleton: a SkeletonDataAsset -> its Spine files as `nnnotes spot` writes them (module documentation).
-    Subjects from the census results, the script table (link.scripts:all) and the fact "selected"; inputs from the
-    fact "bundles". Waits for census tasks that have not run."""
+    """spine.skeleton: a SkeletonDataAsset -> its Spine files as `nnnotes export spot` writes them (module
+    documentation). Subjects from the census results, the script table (link.scripts:all) and the fact "selected";
+    inputs from the fact "bundles". Waits for census tasks that have not run."""
 
     name = SPINE
     version = 1

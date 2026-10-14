@@ -274,7 +274,7 @@ def read_source(path, data):
             raise ValueError()
         return Source.from_dict(doc["source"])
     except (OSError, ValueError, KeyError, TypeError):
-        raise ConfigError("JP catalog needs its matching .source.json sidecar (written by catalogs fetch)") from None
+        raise ConfigError("JP catalog needs its matching .source.json sidecar (written by `catalog fetch`)") from None
 
 
 def write_source(path, data, source):

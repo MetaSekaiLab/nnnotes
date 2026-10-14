@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from nnnotes import cli
+from nnnotes.cli import common
 from nnnotes.source import configfile
 from nnnotes.source.config import ConfigError, template
 
@@ -232,7 +233,7 @@ def test_check_does_not_turn_jp_language_defaults_into_flags(tmp_path, capsys):
     settings = {s["name"]: s for s in json.loads(out)["settings"]}
     assert settings["catalog.region"]["origin"] == "file"
     assert settings["catalog.language"]["status"] == "unset"
-    cfg = cli.load_config(cli.build_parser().parse_args(["--config", str(conf), "master", "version"]))
+    cfg = common.load_config(cli.parse_args(["--config", str(conf), "master", "version"]))
     assert cfg.require("catalog", "language") == "ja"  # normal commands still apply the JP default
 
 

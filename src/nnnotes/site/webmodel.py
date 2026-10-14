@@ -38,7 +38,7 @@ written (and skipped manifests keep theirs).
 
 Model sources: story.build takes the models of an episode from a source, `ensure(address) -> {"id", "motionSync"}`
 plus `story_fields(story_dir)` (what story.json gets besides `models`). ModelDir exports each model into <dir>/<id>/
-(the files above; `nnnotes story`), SiteModels reads model.json from the model manifests of a site (the site's
+(the files above; `nnnotes export story`), SiteModels reads model.json from the model manifests of a site (the site's
 stories).
 """
 
@@ -392,8 +392,8 @@ class ModelDir:
     exports a model whose directory does not exist, or every model once when `force`; `built` / `skipped`: the ids (a
     model another process installed meanwhile is skipped).
 
-    Processes may share `root` (several `nnnotes story` at once): a model directory appears in one rename, whole, and
-    the first process to install a model wins; the others drop their export (the same bytes: exports are
+    Processes may share `root` (several `nnnotes export story` at once): a model directory appears in one rename,
+    whole, and the first process to install a model wins; the others drop their export (the same bytes: exports are
     deterministic) and use it. `force` moves a previous directory aside before installing; a process that finds the
     directory gone in between exports the model itself."""
 

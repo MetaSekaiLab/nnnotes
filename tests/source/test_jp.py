@@ -12,7 +12,7 @@ from types import SimpleNamespace
 import pytest
 
 from nnnotes import cli
-from nnnotes.cli.cli_assets import CatalogFetcher
+from nnnotes.cli.assets import CatalogFetcher
 from nnnotes.musicdata import deckdata
 from nnnotes.pipeline import catalogdb
 from nnnotes.source import addressables, configfile, gameapi, jp
@@ -289,7 +289,7 @@ def test_apk_update_with_same_asset_snapshot_does_not_reuse_embedded_cache(tmp_p
     cache = tmp_path / "cache"
     db = catalogdb.CatalogDB(tmp_path / "store")
     cfg = Config({"catalog": {"region": "jp"}, "paths": {"apk": str(apk)}}, environ={})
-    from nnnotes.cli.cli_assets import Workspace
+    from nnnotes.cli.assets import Workspace
 
     for revision in (1, 2):
         local = synth.CatalogWriter().build(
@@ -459,7 +459,9 @@ def test_web_preflight_uses_the_selected_regions_apk(tmp_path, monkeypatch, kind
 
     monkeypatch.setattr(webmodel, "build", build)
     monkeypatch.setattr(storysite, "build", build)
-    cli.main(["--config", str(conf), "web", str(tmp_path / "site"), kind, "--region", region])
+    cli.main(
+        ["--config", str(conf), "--json", "site", "build", "-o", str(tmp_path / "site"), kind, "--site-region", region]
+    )
     assert seen == [(region, tmp_path / "target.apk")]
 
 
@@ -521,7 +523,7 @@ def test_jp_master_rejects_missing_or_malformed_file_lists(tmp_path, files):
 
 
 def test_export_cache_locator_uses_source_namespace(tmp_path):
-    from nnnotes.cli.cli_assets import Workspace
+    from nnnotes.cli.assets import Workspace
 
     source = jp.Source("jp", "1.0.0.300", HASH, "https://cdn.invalid")
     workspace = Workspace.__new__(Workspace)
