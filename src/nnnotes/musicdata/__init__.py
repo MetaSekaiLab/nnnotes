@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import hashlib
 import io
-import json
 import math
 import sys
 from collections import Counter
@@ -35,6 +34,16 @@ from pathlib import Path
 
 from ..source.languages import LANGUAGES
 from . import deckdata
+
+__all__ = [
+    "Deck",
+    "MusicDataError",
+    "build",
+    "export",
+    "published_seeds",
+    "validate_aptitude_statistics",
+    "validate_expectation",
+]
 
 FORMAT = "nnnotes.music-data/2"
 DIFFICULTIES = ("easy", "normal", "hard", "expert")
@@ -429,7 +438,7 @@ class Deck:
         except ValueError as e:
             raise MusicDataError(f"deck model: {e}") from None
         try:
-            doc = json.loads(text, parse_float=deckdata._Num)
+            doc = deckdata.loads(text)
         except (TypeError, ValueError):
             raise MusicDataError("deck model: the statistics are not a JSON document") from None
         if not isinstance(doc, dict) or doc.get("format") != DECK_STATS_FORMAT:
@@ -599,8 +608,10 @@ def _check_expectation_check(
             raise MusicDataError(f"{where}: expectation check exceeds its bound {check['bound']}: {error}")
 
 
-def _check_expectation(stats: dict, kinds: int, where: str) -> None:
-    """Validate /3 expectations and the independent deterministic Free Live measurements."""
+def validate_expectation(stats: dict, kinds: int, where: str) -> None:
+    """Check a chart's deck statistics (`charts[].deck` with the chart's `judgedNotes`, numbers read by
+    deckdata.loads): the nominal expectations of the Gekisou lives with their checks, and the deterministic Free Live
+    measurements. Raises MusicDataError naming `where`; `kinds`: the number of skill kinds."""
     positions, infos = stats.get("positions"), stats.get("ranges")
     if not _int(positions) or positions < 0:
         raise MusicDataError(f"{where}: invalid number of performance positions")
@@ -745,7 +756,7 @@ def plain_kind(kinds: list[dict]) -> int | None:
 
 def _number(v) -> bool:
     """Whether v is a finite number as the deck model writes it."""
-    if isinstance(v, bool) or not isinstance(v, (int, deckdata._Num)):
+    if isinstance(v, bool) or not isinstance(v, (int, deckdata.Num)):
         return False
     try:
         return math.isfinite(float(v))
@@ -1190,7 +1201,7 @@ def chart_deck(
     replay = stats.get("replaySeeds")
     if not isinstance(replay, list) or not all(_int(seed) for seed in replay) or replay != want:
         raise MusicDataError(f"{where}: replay seeds {replay!r} are not the chart's seed set {want}")
-    _check_expectation(stats, kinds, where)
+    validate_expectation(stats, kinds, where)
     return dict({k: stats.get(k) for k in DECK_CHART_KEYS}, gekisouAptitude=aptitude.chart(where, stats, plain))
 
 

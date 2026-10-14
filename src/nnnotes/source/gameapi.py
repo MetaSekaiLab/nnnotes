@@ -32,6 +32,8 @@ import grpc
 from .apkset import MANIFEST_IN_APK, ApkSet, manifest_version_name
 from .config import Config, ConfigError, describe
 
+__all__ = ["GameApiError", "MasterVersion", "Server", "apk_version_name", "fetch_master_version", "fetch_server_list"]
+
 VERSION_METHOD = "/app.masterdata.MasterdataService/Version"
 SERVER_LIST_METHOD = "/app.playerlogin.PlayerLoginService/GetServerList"
 PLATFORM = "android"
@@ -239,6 +241,8 @@ def failure(name: str, setting: str, code, trailers) -> str:
 def fetch_master_version(
     root: str, client_version: str, *, timeout: float = TIMEOUT, setting: str = "the API root"
 ) -> MasterVersion:
+    """The master data version the API root `root` serves now (an anonymous Version call with `client_version`);
+    a GameApiError naming `setting` when the call fails or the answer has no version."""
     body = call(root, VERSION_METHOD, b"", client_version, timeout=timeout, setting=setting)
     try:
         v = parse_version(body)
@@ -252,6 +256,8 @@ def fetch_master_version(
 def fetch_server_list(
     root: str, client_version: str, *, timeout: float = TIMEOUT, setting: str = "the bootstrap API root"
 ) -> list[Server]:
+    """The server list the bootstrap API root `root` serves (an anonymous GetServerList call with
+    `client_version`); a GameApiError naming `setting` when the call fails or the list is empty."""
     body = call(root, SERVER_LIST_METHOD, b"", client_version, timeout=timeout, setting=setting)
     try:
         servers = parse_server_list(body)

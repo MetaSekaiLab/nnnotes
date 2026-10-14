@@ -24,6 +24,8 @@ from urllib.parse import quote, unquote
 
 from Crypto.Cipher import AES
 
+__all__ = ["BundleKey", "decrypt", "parse", "parse_header", "parse_keys", "parse_locations"]
+
 UNITYFS = b"UnityFS\0"
 ENCRYPTED_BYTES = 16384  # only the first 16 KiB of a bundle are encrypted
 CATALOG_MAGIC = 0x0DE38942

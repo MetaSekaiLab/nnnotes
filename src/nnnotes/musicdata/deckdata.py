@@ -31,6 +31,8 @@ from pathlib import Path
 
 from ..source.apkset import ApkSet
 
+__all__ = ["DeckDataError", "MasterSource", "Num", "apk_master", "decoded_master", "loads", "master_files"]
+
 DECK_FORMAT = "nnnotes.deck-data/1"  # the deck model's input format (ournotes-sim data::FORMAT)
 CHART_FORMAT = "nnnotes.live-score/1"  # score.convert's format: the converter the notes come from
 CHART_PREFIX = "Live/MusicScore/"  # + MasterLiveMusicScore._musicScoreTextFileName
@@ -294,11 +296,17 @@ def read_master(src: MasterSource, key, tables=None) -> tuple[dict[str, list[dic
 
 
 # ---------------------------------------------------------------- canonical values
-class _Num(str):
-    """A number token, written as it is."""
+class Num(str):
+    """A number token of a JSON document, written back as it is."""
 
 
-def f32_token(v: float) -> _Num:
+def loads(text: str | bytes):
+    """The JSON document `text` with every non-integer number kept as its token (a Num), so that checks and writes
+    see the number as written."""
+    return json.loads(text, parse_float=Num)
+
+
+def f32_token(v: float) -> Num:
     """The shortest decimal that reads back as binary32(v); +/-infinity as 1e999 / -1e999; NaN raises ValueError."""
     import numpy as np
 
@@ -307,10 +315,10 @@ def f32_token(v: float) -> _Num:
     if np.isnan(x):
         raise ValueError("NaN (no JSON representation)")
     if np.isinf(x):
-        return _Num("1e999" if x > 0 else "-1e999")
+        return Num("1e999" if x > 0 else "-1e999")
     if x == 0 or 1e-4 <= abs(x) < 1e16:
-        return _Num(np.format_float_positional(x, unique=True, trim="0"))
-    return _Num(np.format_float_scientific(x, unique=True, trim="0"))
+        return Num(np.format_float_positional(x, unique=True, trim="0"))
+    return Num(np.format_float_scientific(x, unique=True, trim="0"))
 
 
 def _value(v, where: str):
@@ -472,7 +480,7 @@ def build(tables: dict[str, list[dict]], chart_records: list[dict], provenance: 
 
 
 def _emit(v, out: list) -> None:
-    if isinstance(v, _Num):
+    if isinstance(v, Num):
         out.append(v)
     elif isinstance(v, str):
         out.append(json.dumps(v, ensure_ascii=False))
@@ -505,7 +513,7 @@ def _emit(v, out: list) -> None:
                 out.append(",")
             _emit(x, out)
         out.append("]")
-    else:  # a float must have been made a _Num (f32_token)
+    else:  # a float must have been made a Num (f32_token)
         raise TypeError(f"no canonical form for {type(v).__name__}")
 
 
