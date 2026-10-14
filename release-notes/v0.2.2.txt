@@ -1,0 +1,6 @@
+nnnotes 0.2.2 pins the deck model of ournotes-deck 0.0.9, `ournotes-sim==0.0.9`.
+
+- **Chart statistics.** `music-data` writes the same statistics format with the same values; some LUCK interval estimates are slightly tighter.
+- **Statistics cache.** The deck model's source identity changes with the release, so `--stats-cache` starts a new namespace and the first build recomputes every chart's statistics.
+
+Validation: Python 3.11, 3.12, 3.13 and 3.14 CI with the deck model, strict golden records, the commit message check, and the wheel installed with `[deck]` in a fresh environment.
