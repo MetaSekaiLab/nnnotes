@@ -2,6 +2,12 @@
 
 A texture's image is decoded once per bundle: `texture` (or `decode_into`, when the task leaves textures out) puts it
 in a holder that the sprites cut from it read. Where a sprite's image comes from is its plan (`sprite_plan`).
+
+A sprite's `json` holds its typetree JSON (`sprite`), its decoded geometry (`mesh`: positions in the sprite's units,
+triangles per submesh, texture coordinates when stored; a texture coordinate of a position p is
+((p.x * uvTransform.x + uvTransform.y) / width, (p.y * uvTransform.z + uvTransform.w) / height) of the render data's
+texture), the render data its image was cut from (`renderData`: the sprite's own or its atlas' entry for it) and
+the image (`image`).
 """
 
 from __future__ import annotations
@@ -10,7 +16,7 @@ import json
 
 from ..atoms import Unsupported
 from ..ids import object_id
-from .objects import BundleObjects, encode_object, message, ref_object_id
+from .objects import BundleObjects, encode_object, message, omit, ref_object_id
 
 __all__ = [
     "atlas_entries",
@@ -24,13 +30,27 @@ __all__ = [
 ]
 
 
+# the fields of a sprite's render data (SpriteRenderData, or a SpriteAtlas entry) that say how it is drawn
+RENDER_FIELDS = (
+    "texture",
+    "alphaTexture",
+    "secondaryTextures",
+    "textureRect",
+    "textureRectOffset",
+    "atlasRectOffset",
+    "uvTransform",
+    "downscaleMultiplier",
+    "settingsRaw",
+)
+
+
 def _canon(v) -> str:
     return json.dumps(v, sort_keys=True, ensure_ascii=True)
 
 
 def texture(ctx: BundleObjects, info, holder: dict) -> None:
-    """`image`: PNG of the first mip level (HDR ASTC: the .astc file). The decoded image (or the error) goes into
-    `holder` for the texture's sprites."""
+    """`image`: PNG of the first mip level (HDR ASTC: the .astc file); `json`: the typetree JSON without the pixels
+    (`image data`). The decoded image (or the error) goes into `holder` for the texture's sprites."""
     from ..atoms.texture import ASTC_BLOCKS, format_name, is_hdr_astc
 
     key = (info.file, info.path_id)
@@ -54,6 +74,7 @@ def texture(ctx: BundleObjects, info, holder: dict) -> None:
         )
         data = ctx.fns["astc.container"](inp.data, w, h, ASTC_BLOCKS[fmt])
         ctx.emit(key, "image", data, "astc", "texture.image", "astc", facts)
+        _texture_json(ctx, key, tt)
         return
     try:
         img = ctx.fns["texture.decode"](inp)
@@ -64,6 +85,12 @@ def texture(ctx: BundleObjects, info, holder: dict) -> None:
     facts["mode"] = img.mode
     data = ctx.fns["png.encode"](img, ctx.png_level)
     ctx.emit(key, "image", data, "png", "texture.image", "png", facts)
+    _texture_json(ctx, key, tt)
+
+
+def _texture_json(ctx: BundleObjects, key: tuple, tt: dict) -> None:
+    doc = ctx.tree(ctx.readers[key], omit(tt, "image data"))
+    ctx.emit(key, "json", encode_object(doc), "json", "unity.object", "json", {})
 
 
 def decode_into(ctx: BundleObjects, info, holder: dict) -> None:
@@ -145,8 +172,8 @@ def sprite_plan(ctx: BundleObjects, key: tuple, atlases: dict) -> dict:
 
 
 def sprite(ctx: BundleObjects, info, plan: dict, holder: dict) -> None:
-    """`image`: PNG on the sprite's rect cut from its texture's image in `holder`; `meta`: the sprite's JSON and
-    where its image came from."""
+    """`image`: PNG on the sprite's rect cut from its texture's image in `holder`; `json`: the sprite's typetree
+    JSON, geometry, render data and image (see the module documentation)."""
     from ..atoms import sprite as sprite_atom
 
     err = holder.get("error")
@@ -161,7 +188,8 @@ def sprite(ctx: BundleObjects, info, plan: dict, holder: dict) -> None:
     alpha = ctx.fns["texture.decode"](ctx.view.texture_input(ctx.info[plan["alpha"]])) if plan["alpha"] else None
     raw = int(src["settingsRaw"])
     st = sprite_atom.settings(raw)
-    mesh = ctx.fns["mesh.arrays"](ctx.view.mesh_input(info)) if st.packing_mode == sprite_atom.TIGHT else None
+    m = ctx.fns["mesh.arrays"](ctx.view.mesh_input(info))
+    mesh = m if st.packing_mode == sprite_atom.TIGHT else None
     downscale = float(src.get("downscaleMultiplier", 1.0))
     img = ctx.fns["sprite.crop"](
         holder["image"],
@@ -179,30 +207,29 @@ def sprite(ctx: BundleObjects, info, plan: dict, holder: dict) -> None:
         refs.append({"rel": "atlas", "object": object_id(*plan["atlasKey"])})
     facts = {"width": img.width, "height": img.height, "mode": img.mode}
     ctx.emit(key, "image", data, "png", "sprite.image", "png", facts, refs=refs)
-    meta = {
+    owner = plan["owner"]
+    doc = {
         "sprite": ctx.tree(r, tt),
-        "image": {
+        "mesh": sprite_atom.mesh_values(m) if "position" in m.channels else None,
+        "renderData": {
             "source": "atlas" if plan["atlasKey"] is not None else "renderData",
             "atlas": None if plan["atlasKey"] is None else ctx.dref(plan["atlasKey"]),
-            "texture": ctx.dref(plan["texture"]),
-            "alphaTexture": None if plan["alpha"] is None else ctx.dref(plan["alpha"]),
-            "textureRect": src["textureRect"],
-            "textureRectOffset": src["textureRectOffset"],
-            "settingsRaw": raw,
+            **{k: ctx.value(owner, src[k]) for k in RENDER_FIELDS if k in src},
+        },
+        "image": {
             "packed": st.packed,
             "packingMode": st.packing_mode,
             "packingRotation": st.packing_rotation,
-            "downscaleMultiplier": downscale,
             "width": img.width,
             "height": img.height,
         },
     }
-    ctx.emit(key, "meta", encode_object(meta), "json", "sprite.meta", "json", {}, refs=refs)
+    ctx.emit(key, "json", encode_object(doc), "json", "sprite.meta", "json", {}, refs=refs)
 
 
 def sprite_external(ctx: BundleObjects, info, plan: dict, crop: str) -> None:
-    """`meta` of a sprite whose SpriteAtlas is in another bundle: its JSON, mesh and object facts, for the stage
-    `crop` that cuts its image from the atlas texture."""
+    """`json` of a sprite whose SpriteAtlas is in another bundle: its typetree JSON, geometry and object facts, for
+    the stage `crop` that cuts its image from the atlas texture."""
     from ..atoms import sprite as sprite_atom
 
     key = (info.file, info.path_id)
@@ -217,7 +244,7 @@ def sprite_external(ctx: BundleObjects, info, plan: dict, crop: str) -> None:
     }
     facts = {"crop": crop, "atlas": atlas_oid}
     refs = [{"rel": "atlas", "object": atlas_oid}]
-    ctx.emit(key, "meta", encode_object(meta), "json", "sprite.meta", "json", facts, refs=refs)
+    ctx.emit(key, "json", encode_object(meta), "json", "sprite.meta", "json", facts, refs=refs)
 
 
 # ---------------------------------------------------------------- sprites cut from an atlas of another bundle
@@ -233,7 +260,7 @@ def atlas_entry(entries: list, key):
 
 
 def crop_meta(meta: dict, entries: list, image, crop):
-    """The image of a sprite whose atlas is in another bundle, from its `meta` (sprite_external), its atlas'
+    """The image of a sprite whose atlas is in another bundle, from its `json` (sprite_external), its atlas'
     render data entries and `image(object id)`, the decoded image of an atlas texture; `crop`: atom sprite.crop."""
     from ..atoms import sprite as sprite_atom
 

@@ -147,7 +147,8 @@ no longer wanted, never touches other files, and continues an interrupted write 
 - other objects under the same container path: `stem[<name>].<ext>`, the Addressables sub-object form
   (`…/member_full[square].png`);
 - objects without a container path: `_bundles/<stable bundle name>/<Class>/<name>~<pathId>.<ext>`;
-- secondary artifacts beside the primary one: `<path>.<role>.<ext>` (`….meta.json`, `….blob.m_Data.moc3`);
+- secondary artifacts beside the primary one: `<path>.<role>.<ext>` (`….blob.m_Data.moc3`), `<path>.<ext>` for a
+  role that is its extension (`….png.json`, the `json` of a texture or sprite);
 - a container path present in two bundles: `stem@<stable bundle name>.ext` for each;
 - names Windows refuses, reserved device names and trailing dots are escaped as `%XX`; paths that coincide ignoring
   case get `~<8 hex>` and are listed in the layout report;
