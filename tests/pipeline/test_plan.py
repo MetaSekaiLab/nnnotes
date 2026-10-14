@@ -7,7 +7,8 @@ from nnnotes.pipeline.contract import Task
 from nnnotes.pipeline.depot import Depot
 from nnnotes.pipeline.orchestrate import Orchestrator
 from nnnotes.pipeline.plan import plan, why
-from tests.pipeline.test_stages import PIPELINE, toy_files, toy_stages
+from nnnotes.pipeline.stages import registry
+from tests.pipeline.test_stages import PIPELINE, Count, Src, Total, toy_files, toy_stages
 
 TEXTS = {"a": "alpha\nbeta", "b": "gamma", "c": "delta\n?x"}
 
@@ -165,6 +166,13 @@ def test_peak_estimate_oversize_and_layout_counts(tmp_path):
     assert "layout original: write 0 / remove 0 / keep 4" in p.text()
     p = plan(toy_stages(), PIPELINE, depot, facts=facts, workers=2, memory=None, worker_bytes=10)
     assert p.doc["summary"]["peakBytes"] == 1000 + 100 + 2 * 10
+
+    class OneBatch(Src):
+        def batch(self, task):
+            return "all"
+
+    p = plan(registry(OneBatch(), Count(), Total()), PIPELINE, depot, facts=facts, workers=2, worker_bytes=10)
+    assert p.doc["summary"]["peakBytes"] == 1000 + 2 * 10  # one job: its tasks run one after another
     run(depot, facts)
     p = plan(toy_stages(), PIPELINE, depot, facts=facts, layouts={"cas": {"write": 1, "remove": 0, "keep": 3}})
     assert p.check() == 1  # nothing runs, but a file would be written

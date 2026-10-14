@@ -4,17 +4,23 @@ Stages run in the order given; a stage's tasks are described once the stages bef
 the caller plus the keys of the tasks already done), so every input is known when a task is described. Per stage:
 a task whose result is in the depot is a hit; the others run in parallel, then the next stage starts.
 
-The pool: up to `workers` spawned processes (no more than a stage has tasks to run), long-lived (each imports
-what its stages need once), one task at a time each. Tasks start in order of decreasing estimated CPU (longest
-first), a task only when the estimated peak memory of the running tasks plus its own fits `memory` less
-`worker_bytes` per worker (what the processes hold before any task); a task estimated above that budget runs alone
-and is reported. A worker is replaced after `recycle_tasks` tasks, or when its resident memory after a task is
-above `recycle_rss`; the workers are stopped together at the end. `workers=0` runs the tasks in this process, one
-after another.
+Jobs: the tasks of a stage that share a batch (Stage.batch, e.g. the tasks reading one bundle) form one job, run
+one after another by one process, which loads what they share once and drops it at the job's end
+(Stage.end_batch); a task without a batch is a job alone. A job's estimate is the sum of its tasks' CPU and the
+largest of their peaks.
+
+The pool: up to `workers` spawned processes (no more than a stage has jobs to run), long-lived (each imports
+what its stages need once), one job at a time each. Jobs start in order of decreasing estimated CPU (longest
+first), a job only when the estimated peak memory of the running jobs plus its own fits `memory` less
+`worker_bytes` per worker (what the processes hold before any task); a job estimated above that budget runs alone
+and is reported. A worker is replaced after a job once it has run `recycle_tasks` tasks, or when its resident memory
+at the job's end is above `recycle_rss`; the workers are stopped together at the end. `workers=0` runs the jobs in
+this process, one after another.
 
 Failures: a failed object is an item of its task's result, cached with it. An exception out of a stage, an input
 that cannot be read, or a worker that dies fails the task: nothing of it is cached, the run records it
 (failures(), the run log) and goes on; a task that reads the result of a failed task fails as `upstream.failed`.
+The tasks of a job after the one its worker died in run in another worker.
 A ConfigError (a setting or tool the run needs) stops the run: no new task starts, and run() raises it once the
 running tasks have ended (their results stay valid).
 Stage results do not depend on the number of workers, their order or their timing: a run with one worker and a run
@@ -143,6 +149,8 @@ def run_one(task: Task, depot, stages: dict, force: bool) -> dict:
 
 
 def _worker_main(conn, depot, stages: dict, initializer, initargs) -> None:
+    """Run jobs ([task description], [force], batch) as they come: one reply per task, in order (none after a
+    ConfigError), then {"end": True, "rss"} once the batch is dropped; None stops the worker."""
     if initializer is not None:
         initializer(depot, *initargs)
     while True:
@@ -152,13 +160,20 @@ def _worker_main(conn, depot, stages: dict, initializer, initargs) -> None:
             return
         if msg is None:
             return
-        doc, force = msg
-        try:
-            task = Task.from_json(doc)
-        except Exception as e:
-            conn.send({"ok": False, "code": "task.incompatible", "message": str(e), "trace": "", "rss": rss()})
-            continue
-        conn.send(run_one(task, depot, stages, force))
+        docs, forces, batch = msg
+        for doc, force in zip(docs, forces):
+            try:
+                task = Task.from_json(doc)
+            except Exception as e:
+                reply = {"ok": False, "code": "task.incompatible", "message": str(e), "trace": "", "rss": rss()}
+            else:
+                reply = run_one(task, depot, stages, force)
+            conn.send(reply)
+            if reply.get("code") == "config":
+                break
+        if batch is not None:
+            stages[batch[0]].end_batch(batch[1])
+        conn.send({"end": True, "rss": rss()})
 
 
 class _Worker:
@@ -173,12 +188,13 @@ class _Worker:
         )
         self.proc.start()
         child.close()
-        self.task: Task | None = None
-        self.done = 0
+        self.job: Job | None = None
+        self.replied = 0  # replies received for the tasks of the job
+        self.done = 0  # tasks run
 
-    def send(self, task: Task, force: bool) -> None:
-        self.task = task
-        self.conn.send((task.to_json(), force))
+    def send(self, job: Job, forces: list[bool]) -> None:
+        self.job, self.replied = job, 0
+        self.conn.send(([t.to_json() for t in job.tasks], forces, job.batch))
 
     def ask_stop(self) -> None:
         try:
@@ -200,40 +216,86 @@ class _Worker:
 
 
 # ---------------------------------------------------------------- scheduling
-class Scheduler:
-    """The start order of a stage's tasks: decreasing estimated CPU (then id), admitted while the estimated peak
-    memory of the running tasks plus the next one fits `budget` (bytes; None: no limit). A task estimated above the
-    budget waits until nothing runs, then runs alone; no task behind it in the order starts before it."""
+@dataclass
+class Job:
+    """Tasks one process runs one after another: those of one batch (`batch`: (stage name, Stage.batch)), or a
+    task alone. Its estimate: the sum of its tasks' CPU, the largest of their peaks (one runs at a time)."""
 
-    def __init__(self, tasks, budget: int | None):
-        self.queue = sorted(tasks, key=lambda t: (-_cpu(t), t.id))
+    tasks: list
+    batch: tuple | None = None
+    cpu: float = field(init=False)
+    peak: int = field(init=False)
+
+    def __post_init__(self):
+        self.cpu = sum(_cpu(t) for t in self.tasks)
+        self.peak = max(_peak(t) for t in self.tasks)
+
+    @property
+    def id(self) -> str:
+        return self.tasks[0].id
+
+
+def jobs(tasks, stages: dict) -> list[Job]:
+    """The jobs of `tasks`: one per batch of a stage (its tasks by id), one per task without a batch."""
+    alone, batches = [], {}
+    for t in sorted(tasks, key=lambda t: t.id):
+        b = stages[t.stage].batch(t)
+        if b is None:
+            alone.append(Job([t]))
+        else:
+            batches.setdefault((t.stage, b), []).append(t)
+    return alone + [Job(ts, k) for k, ts in batches.items()]
+
+
+class Scheduler:
+    """The start order of a stage's jobs: decreasing estimated CPU (then id), admitted while the estimated peak
+    memory of the running jobs plus the next one fits `budget` (bytes; None: no limit). A job estimated above the
+    budget waits until nothing runs, then runs alone; no job behind it in the order starts before it."""
+
+    def __init__(self, jobs, budget: int | None):
+        self.queue = sorted(jobs, key=self._order)
         self.budget = budget
         self.running: dict[str, int] = {}
-        self.oversize: list[str] = []
+        self.oversize: list[str] = []  # task ids
+        self.stopped = False
+
+    @staticmethod
+    def _order(j: Job) -> tuple:
+        return (-j.cpu, j.id)
 
     def used(self) -> int:
         return sum(self.running.values())
 
-    def next(self) -> Task | None:
+    def next(self) -> Job | None:
         used = self.used()
-        for i, t in enumerate(self.queue):
-            need = _peak(t)
-            if self.budget is None or used + need <= self.budget:
+        for i, j in enumerate(self.queue):
+            if self.budget is None or used + j.peak <= self.budget:
                 return self._take(i)
-            if need > self.budget:
+            if j.peak > self.budget:
                 if self.running:
                     return None
-                self.oversize.append(t.id)
+                self.oversize += [t.id for t in j.tasks]
                 return self._take(i)
         return None
 
-    def _take(self, i: int) -> Task:
-        t = self.queue.pop(i)
-        self.running[t.id] = _peak(t)
-        return t
+    def _take(self, i: int) -> Job:
+        j = self.queue.pop(i)
+        self.running[j.id] = j.peak
+        return j
 
-    def finished(self, tid: str) -> None:
-        self.running.pop(tid, None)
+    def finished(self, jid: str) -> None:
+        self.running.pop(jid, None)
+
+    def put(self, job: Job) -> None:
+        """Queue `job` (the rest of a job whose worker died) in its place in the order; nothing once stopped."""
+        if not self.stopped:
+            self.queue.append(job)
+            self.queue.sort(key=self._order)
+
+    def stop(self) -> None:
+        """Start nothing more."""
+        self.queue.clear()
+        self.stopped = True
 
 
 def _cpu(t: Task) -> float:
@@ -594,22 +656,26 @@ class Orchestrator:
 
     # ---------------------------------------------------------------- execution
     def _execute(self, tasks: list[Task], force, run: Run) -> dict[str, dict]:
-        """Run `tasks`; {task id: reply}."""
+        """Run `tasks`; {task id: reply} (none for a task not started because the run stopped)."""
         if not tasks:
             return {}
-        sched = Scheduler(tasks, self.task_budget())
+        sched = Scheduler(jobs(tasks, self.stages), self.task_budget())
         replies: dict[str, dict] = {}
         if self.workers == 0:
             while True:
-                t = sched.next()
-                if t is None:
+                j = sched.next()
+                if j is None:
                     break
-                self._record(run, t, sched, None)
-                replies[t.id] = run_one(t, self.depot, self.stages, force(t))
-                self._done(run, t, replies[t.id], None)
-                sched.finished(t.id)
-                if replies[t.id].get("code") == "config":
-                    sched.queue.clear()
+                self._record(run, j, sched, None)
+                for t in j.tasks:
+                    replies[t.id] = run_one(t, self.depot, self.stages, force(t))
+                    self._done(run, t, replies[t.id], None)
+                    if replies[t.id].get("code") == "config":
+                        sched.stop()
+                        break
+                if j.batch is not None:
+                    self.stages[j.batch[0]].end_batch(j.batch[1])
+                sched.finished(j.id)
         else:
             self._pool_run(sched, force, replies, run)
         run.oversize += sched.oversize
@@ -620,59 +686,77 @@ class Orchestrator:
         return _Worker(mp.get_context("spawn"), self._started, self.depot, self.stages, self.initializer, self.initargs)
 
     def _pool_run(self, sched: Scheduler, force, replies: dict, run: Run) -> None:
-        while len(self._pool) < min(self.workers, len(sched.queue)):  # no more processes than tasks
+        while len(self._pool) < min(self.workers, len(sched.queue)):  # no more processes than jobs
             self._pool.append(self._spawn())
         try:
             while sched.queue or sched.running:
                 for i in range(len(self._pool)):
-                    if self._pool[i].task is None:
-                        t = sched.next()
-                        if t is None:
+                    if self._pool[i].job is None:
+                        j = sched.next()
+                        if j is None:
                             break
                         if not self._pool[i].proc.is_alive():  # died while idle
                             self._replace(self._pool[i])
                         w = self._pool[i]
-                        self._record(run, t, sched, w)
-                        w.send(t, force(t))
-                busy = [w for w in self._pool if w.task is not None]
+                        self._record(run, j, sched, w)
+                        w.send(j, [force(t) for t in j.tasks])
+                busy = [w for w in self._pool if w.job is not None]
                 ready = wait([w.conn for w in busy] + [w.proc.sentinel for w in busy])
                 for w in busy:
-                    if w.conn not in ready and w.proc.sentinel not in ready:
-                        continue
-                    t = w.task
-                    assert t is not None  # a busy worker has its task
-                    reply = None
-                    try:
-                        if w.conn.poll():
-                            reply = w.conn.recv()
-                    except (EOFError, OSError):
-                        reply = None
-                    if reply is None:
-                        w.proc.join(5)
-                        reply = {
-                            "ok": False,
-                            "code": "task.worker_died",
-                            "message": f"worker exited with code {w.proc.exitcode} while running the task",
-                            "trace": "",
-                            "rss": None,
-                        }
-                    replies[t.id] = reply
-                    self._done(run, t, reply, w)
-                    sched.finished(t.id)
-                    if reply.get("code") == "config":
-                        sched.queue.clear()
-                    w.task = None
-                    w.done += 1
-                    if not w.proc.is_alive() or reply.get("code") == "task.worker_died" or self._recycle(w, reply):
-                        self._replace(w)
+                    if w.conn in ready or w.proc.sentinel in ready:
+                        self._collect(w, sched, replies, run)
         except BaseException:
             self.close(kill=True)
             raise
 
-    def _recycle(self, w: _Worker, reply: dict) -> bool:
+    def _collect(self, w: _Worker, sched: Scheduler, replies: dict, run: Run) -> None:
+        """Take what worker `w` sent: the replies to its job's tasks, in order, then the job's end. A worker that
+        died fails the task it was running; the job's tasks after it are queued again."""
+        job = w.job
+        assert job is not None  # a busy worker has its job
+        while True:
+            try:
+                if not w.conn.poll():
+                    if w.proc.is_alive():
+                        return  # more to come
+                    break
+                msg = w.conn.recv()
+            except (EOFError, OSError):
+                break
+            if msg.get("end"):
+                sched.finished(job.id)
+                w.job = None
+                w.done += w.replied
+                if not w.proc.is_alive() or self._recycle(w, msg.get("rss")):
+                    self._replace(w)
+                return
+            t = job.tasks[w.replied]
+            w.replied += 1
+            replies[t.id] = msg
+            self._done(run, t, msg, w)
+            if msg.get("code") == "config":
+                sched.stop()
+        w.proc.join(5)
+        if w.replied < len(job.tasks):
+            t = job.tasks[w.replied]
+            replies[t.id] = {
+                "ok": False,
+                "code": "task.worker_died",
+                "message": f"worker exited with code {w.proc.exitcode} while running the task",
+                "trace": "",
+                "rss": None,
+            }
+            self._done(run, t, replies[t.id], w)
+            rest = job.tasks[w.replied + 1 :]
+            if rest:
+                sched.put(Job(rest, job.batch))
+        sched.finished(job.id)
+        w.job = None
+        self._replace(w)
+
+    def _recycle(self, w: _Worker, r: int | None) -> bool:
         if self.recycle_tasks and w.done >= self.recycle_tasks:
             return True
-        r = reply.get("rss")
         return bool(self.recycle_rss and r is not None and r > self.recycle_rss)
 
     def _replace(self, w: _Worker) -> None:
@@ -683,18 +767,20 @@ class Orchestrator:
             w.conn.close()
         self._pool[self._pool.index(w)] = self._spawn()
 
-    def _record(self, run: Run, t: Task, sched: Scheduler, w) -> None:
-        run.log.append(
-            {
-                "event": "start",
-                "task": t.id,
-                "key": t.key,
-                "worker": None if w is None else w.n,
-                "estimate": t.cost.to_json() if t.cost is not None else None,
-                "runningBytes": sched.used() - _peak(t),
-                "budget": sched.budget,
-            }
-        )
+    def _record(self, run: Run, j: Job, sched: Scheduler, w) -> None:
+        for t in j.tasks:
+            run.log.append(
+                {
+                    "event": "start",
+                    "task": t.id,
+                    "key": t.key,
+                    "job": j.id,
+                    "worker": None if w is None else w.n,
+                    "estimate": t.cost.to_json() if t.cost is not None else None,
+                    "runningBytes": sched.used() - j.peak,
+                    "budget": sched.budget,
+                }
+            )
 
     def _done(self, run: Run, t: Task, reply: dict, w) -> None:
         e = {
