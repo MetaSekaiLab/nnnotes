@@ -20,9 +20,9 @@ from pathlib import Path
 import pytest
 from test_stages import Src
 
-from nnnotes import contract
-from nnnotes.stages import Output, golden, golden_problems, library_versions
-from nnnotes.store import Store
+from nnnotes.pipeline import contract
+from nnnotes.pipeline.stages import Output, golden, golden_problems, library_versions
+from nnnotes.pipeline.store import Store
 
 GOLDEN_DIR = Path(__file__).resolve().parent / "golden"
 
@@ -57,7 +57,7 @@ def test_golden_record(path, tmp_path):
 # ---------------------------------------------------------------- the machinery itself (toy stage)
 def text_fixture(text: str):
     def build(store):
-        from nnnotes.contract import Input, Task
+        from nnnotes.pipeline.contract import Input, Task
 
         data = text.encode()
         sha = store.put(data)

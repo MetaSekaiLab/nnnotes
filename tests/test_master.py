@@ -5,8 +5,8 @@ import numpy as np
 import pytest
 import synth
 
-from nnnotes import master
-from nnnotes.master import MasterKey
+from nnnotes.source import master
+from nnnotes.source.master import MasterKey
 
 KEY = MasterKey(synth.MASTER_KEY, synth.MASTER_IV)
 TABLE = synth.MASTER_TABLE

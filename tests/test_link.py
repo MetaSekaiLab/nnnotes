@@ -1,11 +1,11 @@
 import pytest
 import synth
 
-from nnnotes import catalogdb, census, contract, link
-from nnnotes.catalogdb import CatalogDB, IndexStage, index
-from nnnotes.contract import Input
-from nnnotes.stages import Env, Pending, describe, execute, registry
-from nnnotes.store import Store
+from nnnotes.pipeline import catalogdb, census, contract, link
+from nnnotes.pipeline.catalogdb import CatalogDB, IndexStage, index
+from nnnotes.pipeline.contract import Input
+from nnnotes.pipeline.stages import Env, Pending, describe, execute, registry
+from nnnotes.pipeline.store import Store
 
 HA, HB, HC = "a" * 32, "b" * 32, "c" * 32
 CAB_A, CAB_B, CAB_S, CAB_M = (f"CAB-{c * 32}" for c in "1234")

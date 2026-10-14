@@ -86,7 +86,7 @@ nnnotes config check             # 每项设置的来源和格式是否有效，
 2. 环境变量：`NNNOTES_<节>_<键>`（如 `NNNOTES_BUNDLE_KEY`、`NNNOTES_SERVERS_TW_CDN`）
 3. 命令行参数：`--region`、`--language`、`--catalog`、`--cache`、`--master`、`--apk`、`--ffmpeg`、`--vgmstream`、`--node` 写在命令名之前；`--player` 是 `web` 的参数
 
-`nnnotes config init` 写出配置模板（每项设置为空，模板随包安装，仓库中为 [`src/nnnotes/nnnotes.example.toml`](src/nnnotes/nnnotes.example.toml)），在终端中会逐项询问；`config set` / `config unset` 修改单项并保留文件中的注释。需要的设置包括：资源包解密密钥与 nonce 种子、masterdata 的密钥与 IV、使用的区服 `[catalog] region` 与 catalog 语言 `[catalog] language`、每个区服的 CDN 地址与 API 根地址（`[servers.<区服>]` 的 `cdn`、`api`）、客户端版本 `[client] version`（未设置时读取 APK 的 versionName）、可选的引导 API 根地址 `[bootstrap] api`（`servers` 使用），以及缓存目录、APK、masterdata 目录、ournotes-player 和 vgmstream / FFmpeg / Node.js 的路径（三个工具未设置时在 `PATH` 中查找）。这些值都来自使用者自己的游戏客户端。
+`nnnotes config init` 写出配置模板（每项设置为空，模板随包安装，仓库中为 [`src/nnnotes/source/nnnotes.example.toml`](src/nnnotes/source/nnnotes.example.toml)），在终端中会逐项询问；`config set` / `config unset` 修改单项并保留文件中的注释。需要的设置包括：资源包解密密钥与 nonce 种子、masterdata 的密钥与 IV、使用的区服 `[catalog] region` 与 catalog 语言 `[catalog] language`、每个区服的 CDN 地址与 API 根地址（`[servers.<区服>]` 的 `cdn`、`api`）、客户端版本 `[client] version`（未设置时读取 APK 的 versionName）、可选的引导 API 根地址 `[bootstrap] api`（`servers` 使用），以及缓存目录、APK、masterdata 目录、ournotes-player 和 vgmstream / FFmpeg / Node.js 的路径（三个工具未设置时在 `PATH` 中查找）。这些值都来自使用者自己的游戏客户端。
 
 缺少或格式错误的设置会让命令以退出码 2 结束，并用一行说明对应的配置键、环境变量和命令行参数，不会输出任何设置值。`nnnotes.toml` 已在 `.gitignore` 中，请勿提交。
 

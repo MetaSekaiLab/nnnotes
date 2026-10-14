@@ -3,8 +3,8 @@ from pathlib import Path
 
 import pytest
 
-from nnnotes import config
-from nnnotes.config import Config, ConfigError, env_name
+from nnnotes.source import config
+from nnnotes.source.config import Config, ConfigError, env_name
 
 KEY_HEX = bytes(range(16)).hex()
 

@@ -115,7 +115,7 @@ overriding earlier ones:
    `--vgmstream`, `--node` go before the command name; `--player` is an option of `web`
 
 `nnnotes config init` writes the config template (every setting empty; it ships with the package, in the repository
-[`src/nnnotes/nnnotes.example.toml`](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/nnnotes.example.toml)),
+[`src/nnnotes/source/nnnotes.example.toml`](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/source/nnnotes.example.toml)),
 asking for each value in a terminal; `config set` / `config unset` change one value and keep the file's comments.
 The settings are: the bundle
 key and nonce seed, the master data key and IV, the region in use (`[catalog] region`) and the catalog language

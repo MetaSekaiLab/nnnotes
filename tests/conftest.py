@@ -2,7 +2,8 @@ import os
 
 import pytest
 
-from nnnotes import cache, config
+from nnnotes.core import cache
+from nnnotes.source import config
 
 CACHE_DEFAULTS = cache.settings()
 

@@ -6,10 +6,10 @@ from pathlib import Path
 
 import pytest
 
-from nnnotes import contract, layout
-from nnnotes.contract import Task
-from nnnotes.layout import LayoutError, Source, escape_segment, unescape_path
-from nnnotes.store import Store
+from nnnotes.pipeline import contract, layout
+from nnnotes.pipeline.contract import Task
+from nnnotes.pipeline.layout import LayoutError, Source, escape_segment, unescape_path
+from nnnotes.pipeline.store import Store
 
 
 def bundle(store, subject, objects, loose=(), root=True):

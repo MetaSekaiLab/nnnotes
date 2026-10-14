@@ -10,13 +10,14 @@ from pathlib import Path
 
 import pytest
 
-from nnnotes import contract, languages, views
-from nnnotes.contract import Input
-from nnnotes.orchestrate import Orchestrator
-from nnnotes.plan import plan
-from nnnotes.stages import Env, Output, Pending, Stage, describe, execute, registry
-from nnnotes.store import Store
-from nnnotes.views import AddressIndex, Obj, Recorder, ViewError, ViewStage
+from nnnotes.pipeline import contract, views
+from nnnotes.pipeline.contract import Input
+from nnnotes.pipeline.orchestrate import Orchestrator
+from nnnotes.pipeline.plan import plan
+from nnnotes.pipeline.stages import Env, Output, Pending, Stage, describe, execute, registry
+from nnnotes.pipeline.store import Store
+from nnnotes.pipeline.views import AddressIndex, Obj, Recorder, ViewError, ViewStage
+from nnnotes.source import languages
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -987,8 +988,8 @@ def test_views_plan_and_run_after_the_address_table(tmp_path):
 
 def test_views_import_neither_unitypy_nor_numpy():
     code = (
-        "import sys, nnnotes.views; "
-        "print(sorted(m for m in ('UnityPy', 'numpy', 'PIL', 'nnnotes.export') if m in sys.modules))"
+        "import sys, nnnotes.pipeline.views; "
+        "print(sorted(m for m in ('UnityPy', 'numpy', 'PIL', 'nnnotes.unity.export') if m in sys.modules))"
     )
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, cwd=ROOT, check=True).stdout
     assert out.strip() == "[]"

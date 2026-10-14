@@ -14,12 +14,15 @@ import synth
 from test_gameapi import server as grpc_server
 from test_gameapi import version_response
 
-from nnnotes import addressables, catalogdb, cli, configfile, deckdata, gameapi, jp
-from nnnotes.apkset import ApkSet
-from nnnotes.catalog import Catalog, file_name, location_kind
-from nnnotes.cli_assets import CatalogFetcher
-from nnnotes.config import Config, ConfigError
-from nnnotes.session import Session
+from nnnotes import cli
+from nnnotes.cli.cli_assets import CatalogFetcher
+from nnnotes.musicdata import deckdata
+from nnnotes.pipeline import catalogdb
+from nnnotes.source import addressables, configfile, gameapi, jp
+from nnnotes.source.apkset import ApkSet
+from nnnotes.source.catalog import Catalog, file_name, location_kind
+from nnnotes.source.config import Config, ConfigError
+from nnnotes.source.session import Session
 
 HASH = "a" * 32
 MASTER = "1.0.0.100/" + "b" * 32
@@ -279,14 +282,14 @@ def test_catalogdb_source_identity_and_fetcher(upstream, tmp_path):
 
 
 def test_apk_update_with_same_asset_snapshot_does_not_reuse_embedded_cache(tmp_path):
-    from nnnotes.catalog import APK_AA_DIR, APK_CATALOG
+    from nnnotes.source.catalog import APK_AA_DIR, APK_CATALOG
 
     source = jp.Source("jp", "1.0", HASH, "https://cdn.invalid")
     apk = tmp_path / "base.apk"
     cache = tmp_path / "cache"
     db = catalogdb.CatalogDB(tmp_path / "store")
     cfg = Config({"catalog": {"region": "jp"}, "paths": {"apk": str(apk)}}, environ={})
-    from nnnotes.cli_assets import Workspace
+    from nnnotes.cli.cli_assets import Workspace
 
     for revision in (1, 2):
         local = synth.CatalogWriter().build(
@@ -322,7 +325,7 @@ def local_catalog(revision=1):
 @pytest.mark.parametrize("apk_state", ["unset", "missing", "different", "broken"])
 @pytest.mark.parametrize("kind", ["bundles", "rawFiles"])
 def test_remote_replay_does_not_open_the_apk(upstream, tmp_path, apk_state, kind):
-    from nnnotes.catalog import APK_CATALOG
+    from nnnotes.source.catalog import APK_CATALOG
 
     cfg = upstream.cfg
     cfg._data["bundle"] = {"key": "00" * 16, "nonce_seed": "11"}
@@ -347,7 +350,7 @@ def test_remote_replay_does_not_open_the_apk(upstream, tmp_path, apk_state, kind
 @pytest.mark.parametrize("kind", ["bundles", "rawFiles"])
 @pytest.mark.parametrize("state", ["matching", "different", "no-catalog", "cached"])
 def test_local_replay_validates_only_on_cache_miss(tmp_path, kind, state):
-    from nnnotes.catalog import APK_AA_DIR, APK_CATALOG
+    from nnnotes.source.catalog import APK_AA_DIR, APK_CATALOG
 
     source = jp.Source("jp", "1.0", HASH, "https://cdn.invalid")
     apk = tmp_path / "base.apk"
@@ -431,7 +434,8 @@ def test_per_region_apk_and_client_settings(tmp_path):
 @pytest.mark.parametrize("kind", ["--all-live2d", "--all-stories"])
 @pytest.mark.parametrize("region", ["jp", "tw"])
 def test_web_preflight_uses_the_selected_regions_apk(tmp_path, monkeypatch, kind, region):
-    from nnnotes import sitefiles, storysite, tmpfont, webmodel
+    from nnnotes.site import sitefiles, storysite, webmodel
+    from nnnotes.unity import tmpfont
 
     conf = tmp_path / "nnnotes.toml"
     default = "jp" if region == "tw" else "tw"
@@ -460,7 +464,7 @@ def test_web_preflight_uses_the_selected_regions_apk(tmp_path, monkeypatch, kind
 
 
 def test_datapack_is_loaded_in_the_boot_environment(tmp_path, monkeypatch):
-    from nnnotes import player
+    from nnnotes.unity import player
 
     boot = SimpleNamespace(
         objects=[
@@ -487,7 +491,7 @@ def test_datapack_is_loaded_in_the_boot_environment(tmp_path, monkeypatch):
 
 
 def test_jp_master_manifest_checks_before_writing(tmp_path):
-    from nnnotes import master
+    from nnnotes.source import master
 
     manifest = {"version": MASTER, "files": [{"name": "../secret.bin", "hash": "a" * 64, "size": 128}]}
     seen = []
@@ -503,7 +507,7 @@ def test_jp_master_manifest_checks_before_writing(tmp_path):
 
 @pytest.mark.parametrize("files", [None, [], {}, [None]])
 def test_jp_master_rejects_missing_or_malformed_file_lists(tmp_path, files):
-    from nnnotes import master
+    from nnnotes.source import master
 
     with pytest.raises(master.DownloadError, match="manifest"):
         master.download(
@@ -517,7 +521,7 @@ def test_jp_master_rejects_missing_or_malformed_file_lists(tmp_path, files):
 
 
 def test_export_cache_locator_uses_source_namespace(tmp_path):
-    from nnnotes.cli_assets import Workspace
+    from nnnotes.cli.cli_assets import Workspace
 
     source = jp.Source("jp", "1.0.0.300", HASH, "https://cdn.invalid")
     workspace = Workspace.__new__(Workspace)
@@ -547,7 +551,7 @@ def test_music_data_preserves_asset_hash(tmp_path):
 
 
 def test_directory_hca_key_tracks_replaced_base_apk(tmp_path, monkeypatch):
-    from nnnotes import cri
+    from nnnotes.formats import cri
 
     apk = tmp_path / "base.apk"
     apk.write_bytes(b"first")

@@ -7,7 +7,8 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
-from nnnotes import cache, sitefiles, web
+from nnnotes.core import cache
+from nnnotes.site import sitefiles, web
 
 
 def run(musics, extract, read, ingest, window=2, workers=2, readers=3):
@@ -147,7 +148,7 @@ def test_web_audio_takes_the_encoding_made_with_the_decode(tmp_path, monkeypatch
 def test_catalog_cached(tmp_path):
     import synth
 
-    from nnnotes.catalog import Bundle, Catalog
+    from nnnotes.source.catalog import Bundle, Catalog
 
     cat = Catalog(synth.CatalogWriter().build([("k", synth.remote("b_1.bundle"), [])]), tmp_path)
     b = Bundle(1, synth.remote("b_1.bundle"), "b_1.bundle", True)

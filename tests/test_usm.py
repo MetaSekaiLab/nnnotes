@@ -10,8 +10,9 @@ from pathlib import Path
 
 import pytest
 
-from nnnotes import advvideo, usm
-from nnnotes.usm import Stream
+from nnnotes.content import advvideo
+from nnnotes.formats import usm
+from nnnotes.formats.usm import Stream
 
 KEY = 0x0123456789ABCDEF  # made up
 M1, M2, AM = usm.masks(KEY)
@@ -692,7 +693,7 @@ def test_story_export_keeps_its_command(tmp_path, monkeypatch):
         build([(b"@SFV", 0, None, VP9, "video"), (b"@SFA", 0, None, [adx(samples=100) + rand(4 * 36, 1)], "audio")])
     )
     monkeypatch.setattr(advvideo, "usm_asset", lambda cat, key: (info, movie))
-    monkeypatch.setattr("nnnotes.config.tool", lambda name, exe: name)
+    monkeypatch.setattr("nnnotes.source.config.tool", lambda name, exe: name)
     calls = []
 
     def fake_run(args, **kw):

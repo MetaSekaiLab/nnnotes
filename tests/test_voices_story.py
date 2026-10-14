@@ -12,11 +12,13 @@ import pytest
 from test_views import addresses_doc, write_master
 from test_voices import KEYS, SHEETS, TABLES, Cfg, Paths, audio, audio_task, command, planning, row, text
 
-from nnnotes import advcommand, contract, languages, storyvoices, voices
-from nnnotes.contract import Task
-from nnnotes.stages import Pending, describe, execute, registry
-from nnnotes.store import Store
-from nnnotes.views import AddressIndex, Obj, ViewError
+from nnnotes.content import advcommand, storyvoices
+from nnnotes.pipeline import contract, voices
+from nnnotes.pipeline.contract import Task
+from nnnotes.pipeline.stages import Pending, describe, execute, registry
+from nnnotes.pipeline.store import Store
+from nnnotes.pipeline.views import AddressIndex, Obj, ViewError
+from nnnotes.source import languages
 
 RULES = voices.load_rules()
 STORY_SHEET = "adv_voice_x_01"
@@ -653,7 +655,7 @@ class Catalog:
 def test_command_without_an_export_reads_one_episode(tmp_path, capsysbinary, monkeypatch):
     from test_voices import sheet_acb, stream_files
 
-    from nnnotes import cri
+    from nnnotes.formats import cri
 
     mdir = write_master(tmp_path / "m", tables())
     loaded = []

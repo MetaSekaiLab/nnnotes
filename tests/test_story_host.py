@@ -10,8 +10,8 @@ import numpy as np
 import pytest
 from test_room import ROOM_KEY, File, RoomCatalog, load_room, two_file_room
 
-from nnnotes import advui, room, storyhost
-from nnnotes.unity import SceneGraph
+from nnnotes.content import advui, room, storyhost
+from nnnotes.unity.reader import SceneGraph
 
 V0 = {"x": 0.0, "y": 0.0, "z": 0.0}
 V1 = {"x": 1.0, "y": 1.0, "z": 1.0}
@@ -792,7 +792,7 @@ def test_clip_view_keys_child_bindings_discrete_dense_and_lost_paths():
 
 def test_ui_only_characters():
     """The characters of a UI alone: storyfonts.shown_characters over the empty episode storyhost passes."""
-    from nnnotes import storyfonts
+    from nnnotes.content import storyfonts
 
     ui_doc = {"nodes": [], "masterIdTexts": {"a": {"text": "Ab"}}}
     assert storyfonts.shown_characters(storyhost.NO_EPISODE, ui_doc, None, "japanese") == [ord("A"), ord("b")]

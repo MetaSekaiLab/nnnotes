@@ -10,9 +10,13 @@ from types import SimpleNamespace
 import pytest
 import synth
 
-from nnnotes import browse, catalog, catalogdb, cli, configfile, deckdata, gameapi
-from nnnotes.config import Config, ConfigError
-from nnnotes.session import Session
+from nnnotes import cli
+from nnnotes.cli import browse
+from nnnotes.musicdata import deckdata
+from nnnotes.pipeline import catalogdb
+from nnnotes.source import catalog, configfile, gameapi
+from nnnotes.source.config import Config, ConfigError
+from nnnotes.source.session import Session
 
 MODEL = "Character/Live2D/test/new/model/new"
 EPISODE = "Adv/Episode/event_new/event_new"
@@ -36,7 +40,7 @@ def config(tmp_path, *, api=True, version=None, region="tw"):
 
 
 def test_auto_discovery_ignores_stale_main_and_advances_resource_version(tmp_path, monkeypatch):
-    from nnnotes.webmodel import catalog_models
+    from nnnotes.site.webmodel import catalog_models
 
     cfg = config(tmp_path)
     cache = cfg.require_path("paths", "cache")
@@ -158,8 +162,8 @@ def test_build_workers_inherit_the_version_pin(tmp_path, monkeypatch):
     command = [
         sys.executable,
         "-c",
-        "from nnnotes.config import Config; from nnnotes.session import Session; "
-        "from nnnotes.webmodel import catalog_models; c=Session(Config.load()).catalog(bundles=False); "
+        "from nnnotes.source.config import Config; from nnnotes.source.session import Session; "
+        "from nnnotes.site.webmodel import catalog_models; c=Session(Config.load()).catalog(bundles=False); "
         "assert 'new' in catalog_models(c); print(c.resource_version)",
     ]
     child = subprocess.run(command, env=os.environ.copy(), text=True, capture_output=True, check=True)

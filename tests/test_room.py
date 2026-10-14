@@ -13,8 +13,8 @@ from fakeunity import F32, POSITION, UV0, mesh_tt, submesh, unitypy_mesh
 from PIL import Image
 from UnityPy.classes import PPtr as UnityPPtr
 
-from nnnotes import room
-from nnnotes.unity import DEFAULT_RESOURCES
+from nnnotes.content import room
+from nnnotes.unity.reader import DEFAULT_RESOURCES
 
 FIXED = "<noninit>"
 

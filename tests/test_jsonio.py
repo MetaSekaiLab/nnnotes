@@ -3,7 +3,7 @@ import math
 
 import pytest
 
-from nnnotes.jsonio import dumps, write_json
+from nnnotes.core.jsonio import dumps, write_json
 
 
 def test_infinity_literals():

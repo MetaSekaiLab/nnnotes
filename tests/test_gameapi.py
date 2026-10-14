@@ -10,9 +10,10 @@ import grpc
 import pytest
 import synth
 
-from nnnotes import cli, gameapi
-from nnnotes.config import Config, ConfigError
-from nnnotes.session import Session
+from nnnotes import cli
+from nnnotes.source import gameapi
+from nnnotes.source.config import Config, ConfigError
+from nnnotes.source.session import Session
 
 API = "https://api.example.test"
 CDN_A, CDN_B = "https://cdn-a.example.test/prod/a1", "https://cdn-b.example.test/prod/a1"

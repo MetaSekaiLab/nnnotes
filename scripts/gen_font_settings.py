@@ -3,7 +3,7 @@ nnnotes).
 
 With `--fonts open` (the default) the story, start canvas and talk window exports give each localized game font
 asset an open font asset with that asset's point size, padding, render mode, style settings, line metrics, fallback
-chain and text materials. nnnotes ships these values in `src/nnnotes/fontsettings.json` (fontsettings.FORMAT), so
+chain and text materials. nnnotes ships these values in `src/nnnotes/unity/fontsettings.json` (fontsettings.FORMAT), so
 those exports read no game font asset; this script reads them from the game's font assets and writes the file.
 
 Supporting a new game version
@@ -27,14 +27,16 @@ import sys
 import tempfile
 from pathlib import Path
 
-from nnnotes import fontsettings, tmpfont
-from nnnotes.config import Config, use
-from nnnotes.export import Exporter
-from nnnotes.web import open_data
+from nnnotes.site.web import open_data
+from nnnotes.source.config import Config, use
+from nnnotes.unity import fontsettings, tmpfont
+from nnnotes.unity.export import Exporter
 
 
 def main(argv=None) -> None:
-    p = argparse.ArgumentParser(description="regenerate src/nnnotes/fontsettings.json from the game's font assets")
+    p = argparse.ArgumentParser(
+        description="regenerate src/nnnotes/unity/fontsettings.json from the game's font assets"
+    )
     p.add_argument("--region", help="region of the catalog (default: [catalog] region)")
     p.add_argument("--game-version", help="game version to record (default: the APK manifest's versionName)")
     p.add_argument("-o", "--out", type=Path, default=fontsettings.FILE, help="output file")

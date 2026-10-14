@@ -19,10 +19,10 @@ from fakeunity import (
 )
 from UnityPy.export.SpriteHelper import get_image_from_sprite
 
-from nnnotes.atoms import ATOMS, Unsupported, sprite
-from nnnotes.atoms.mesh import arrays
-from nnnotes.atoms.reader import mesh_input_from_typetree
-from nnnotes.atoms.texture import TextureInput, decode
+from nnnotes.pipeline.atoms import ATOMS, Unsupported, sprite
+from nnnotes.pipeline.atoms.mesh import arrays
+from nnnotes.pipeline.atoms.reader import mesh_input_from_typetree
+from nnnotes.pipeline.atoms.texture import TextureInput, decode
 
 W, H = 64, 48
 TEX = 3

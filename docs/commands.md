@@ -617,7 +617,7 @@ root), and `stories.json` counts their files in `size.models`. The format is des
   window of an Overlay story is handled the same way. Each generated asset takes the
   point size, padding, style settings and render mode of the game font asset the texts use in that language, so the
   game's text materials apply unchanged; those values, the game's fallback chains, the characters the game's assets
-  have and the text materials come from the table of them shipped with nnnotes (`src/nnnotes/fontsettings.json`,
+  have and the text materials come from the table of them shipped with nnnotes (`src/nnnotes/unity/fontsettings.json`,
   `fontsettings.FORMAT`), so an open-font export reads no game font asset, material or font bundle;
   its face info and glyph metrics come from the font file (FreeType, no
   hinting), its distance field from the generator `--fonts game` uses for runtime glyphs (supersampled render modes

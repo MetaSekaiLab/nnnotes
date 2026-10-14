@@ -8,8 +8,8 @@ from unittest.mock import Mock
 import pytest
 from test_jp import cat_bytes, zip_bytes
 
-from nnnotes import apkset
-from nnnotes.catalog import APK_AA_DIR, APK_CATALOG, Catalog
+from nnnotes.source import apkset
+from nnnotes.source.catalog import APK_AA_DIR, APK_CATALOG, Catalog
 
 
 @pytest.fixture(autouse=True)

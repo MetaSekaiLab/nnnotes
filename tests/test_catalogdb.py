@@ -4,10 +4,8 @@ import zipfile
 import pytest
 import synth
 
-from nnnotes import contract
-from nnnotes.addressables import parse, parse_header, parse_keys, parse_locations
-from nnnotes.catalog import APK_OFFSET_BASE, Catalog, file_name, location_kind
-from nnnotes.catalogdb import (
+from nnnotes.pipeline import contract
+from nnnotes.pipeline.catalogdb import (
     CatalogDB,
     IndexStage,
     default_label,
@@ -18,8 +16,10 @@ from nnnotes.catalogdb import (
     stable_raw_name,
     version_id,
 )
-from nnnotes.stages import Env, describe, execute, registry
-from nnnotes.store import Store
+from nnnotes.pipeline.stages import Env, describe, execute, registry
+from nnnotes.pipeline.store import Store
+from nnnotes.source.addressables import parse, parse_header, parse_keys, parse_locations
+from nnnotes.source.catalog import APK_OFFSET_BASE, Catalog, file_name, location_kind
 
 H1, H2, H3, H4 = ("1" * 32, "2" * 32, "3" * 32, "4" * 32)
 RAW = "cri_x/sound/bgm_a_" + "a" * 32

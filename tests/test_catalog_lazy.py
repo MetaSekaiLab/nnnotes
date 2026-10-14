@@ -7,10 +7,11 @@ from pathlib import Path
 import pytest
 import synth
 
-from nnnotes import catalog, cli
-from nnnotes.addressables import BundleKey
-from nnnotes.catalog import Catalog
-from nnnotes.config import ConfigError
+from nnnotes import cli
+from nnnotes.source import catalog
+from nnnotes.source.addressables import BundleKey
+from nnnotes.source.catalog import Catalog
+from nnnotes.source.config import ConfigError
 
 KEY = BundleKey(synth.BUNDLE_KEY, synth.BUNDLE_SEED)
 ENTRIES = [
@@ -131,7 +132,7 @@ def test_load_reads_the_cdn_only_for_an_uncached_catalog(tmp_path):
 
 
 def test_write_atomic_temporary_name_is_short_and_unique(tmp_path, monkeypatch):
-    from nnnotes import cache
+    from nnnotes.core import cache
 
     long_name = "b" * 244 + ".bundle"  # 251 characters: name + pid + thread id + .part > 255
     dst = tmp_path / long_name
@@ -155,7 +156,7 @@ def test_write_atomic_temporary_name_is_short_and_unique(tmp_path, monkeypatch):
 
 
 def test_write_atomic_removes_the_temporary_file_on_failure(tmp_path, monkeypatch):
-    from nnnotes import cache
+    from nnnotes.core import cache
 
     def refuse(a, b):
         raise PermissionError("in use")
@@ -167,7 +168,7 @@ def test_write_atomic_removes_the_temporary_file_on_failure(tmp_path, monkeypatc
 
 
 def test_disk_cache_entries_use_the_short_temporary_name(tmp_path):
-    from nnnotes import cache
+    from nnnotes.core import cache
 
     p = tmp_path / "ab" / ("c" * 64)
     assert cache._disk_write(p, b"payload") and cache._disk_read(p) == b"payload"

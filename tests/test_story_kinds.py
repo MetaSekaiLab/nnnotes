@@ -2,7 +2,8 @@
 
 import pytest
 
-from nnnotes import adv, advmedia, cli, story
+from nnnotes import cli
+from nnnotes.content import adv, advmedia, story
 
 
 def res(kind, address, present=True):

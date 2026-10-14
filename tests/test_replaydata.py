@@ -7,7 +7,8 @@ import tarfile
 import pytest
 from test_musicdata import CHARTS, KEY, PROV, FakeDeck, bgm, export
 
-from nnnotes import deckdata, musicdata, replaydata
+from nnnotes import musicdata
+from nnnotes.musicdata import deckdata, replaydata
 
 
 def test_export_replay_keeps_main_file_small_and_preserves_runtime_input(tmp_path):
@@ -56,7 +57,7 @@ def test_replay_label_binding_rejects_other_snapshots(tmp_path, change):
 
     from test_musicdata import TABLE_ROWS
 
-    from nnnotes import deckdata
+    from nnnotes.musicdata import deckdata
 
     hashes = {name: hashlib.sha256(name.encode()).hexdigest() for name in replaydata.LABEL_TABLES}
     provenance = {

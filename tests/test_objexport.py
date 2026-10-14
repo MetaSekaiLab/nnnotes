@@ -30,14 +30,14 @@ from fakeunity import (
 )
 from PIL import Image
 
-from nnnotes import census as census_mod
-from nnnotes import contract, objexport
-from nnnotes.atoms import Impl, astc, estimate, gltf
-from nnnotes.atoms.reader import UnityBundle
-from nnnotes.contract import IncompatibleTask, Input, Task
-from nnnotes.objexport import CONVERTERS, CROP, EXPORT, ExportStage, SpriteCropStage, export_atoms
-from nnnotes.stages import Env, describe, execute, registry
-from nnnotes.store import Store
+from nnnotes.pipeline import census as census_mod
+from nnnotes.pipeline import contract, objexport
+from nnnotes.pipeline.atoms import Impl, astc, estimate, gltf
+from nnnotes.pipeline.atoms.reader import UnityBundle
+from nnnotes.pipeline.contract import IncompatibleTask, Input, Task
+from nnnotes.pipeline.objexport import CONVERTERS, CROP, EXPORT, ExportStage, SpriteCropStage, export_atoms
+from nnnotes.pipeline.stages import Env, describe, execute, registry
+from nnnotes.pipeline.store import Store
 
 ROOT = Path(__file__).resolve().parents[1]
 CAB, ATLAS_CAB = "CAB-a", "CAB-atlas"
@@ -712,7 +712,7 @@ def test_textures(exported):
     assert img.size == (W, H) and img.mode == "RGBA"
     expected = Image.frombytes("RGBA", (W, H), TEX_PIXELS).transpose(Image.Transpose.FLIP_TOP_BOTTOM)
     assert img.tobytes() == expected.tobytes()
-    from nnnotes.export import texture_png
+    from nnnotes.unity.export import texture_png
 
     tex = bundle_all().assets[0].objects[10].obj
     assert png == texture_png(tex)  # the other commands' bytes
@@ -734,10 +734,10 @@ def test_textures(exported):
 
 def test_sprites_same_bundle(exported):
     store, _task, doc = exported
-    from nnnotes.atoms import png, sprite
-    from nnnotes.atoms.mesh import arrays
-    from nnnotes.atoms.reader import mesh_input_from_typetree
-    from nnnotes.atoms.texture import TextureInput, decode
+    from nnnotes.pipeline.atoms import png, sprite
+    from nnnotes.pipeline.atoms.mesh import arrays
+    from nnnotes.pipeline.atoms.reader import mesh_input_from_typetree
+    from nnnotes.pipeline.atoms.texture import TextureInput, decode
 
     env = bundle_all()
     f = env.assets[0]
@@ -844,7 +844,7 @@ def test_scriptable_objects_blobs_and_strings(exported):
 
 def test_cue_sheets_held_in_the_bundle(exported):
     store, _task, doc = exported
-    from nnnotes import cri
+    from nnnotes.formats import cri
 
     a = art(doc, f"{oid(73)}#acb")
     assert load(store, doc, a["id"]) == SPLIT_ACB == cri.split_acb(SPLIT_CHUNKS)
@@ -913,7 +913,7 @@ def test_the_movie_converter_is_keyed_by_the_script_context(tmp_path):
 
 
 def test_acb_layouts(tmp_path):
-    from nnnotes import cri
+    from nnnotes.formats import cri
 
     assert objexport.acb_asset({"_cueSheetName": "x", "_chunks": []})["layout"] == "split"
     t = {
@@ -966,7 +966,7 @@ def test_a_split_sheet_with_a_missing_chunk_gives_the_typetree(tmp_path, monkeyp
 
 def test_shader(exported):
     store, _task, doc = exported
-    from nnnotes import shader
+    from nnnotes.formats import shader
 
     env = bundle_all()
     r = env.assets[0].objects[51]
@@ -1257,7 +1257,7 @@ def test_describe_reads_the_census_and_the_script_table(tmp_path):
     assert a.context == {} and "mesh.glb" not in a.atoms
     assert t.cost.peak_bytes >= 72 << 20
     fresh = Env(store, env.facts)
-    from nnnotes.stages import Pending
+    from nnnotes.pipeline.stages import Pending
 
     fresh.waiting("unity.census:all")
     with pytest.raises(Pending):
@@ -1318,7 +1318,7 @@ def test_sprite_crop_waits_for_exports(tmp_path):
     store = Store(tmp_path / "s")
     env = planning_env(store)
     env.waiting("unity.export:all")
-    from nnnotes.stages import Pending
+    from nnnotes.pipeline.stages import Pending
 
     with pytest.raises(Pending):
         SpriteCropStage().subjects(env)
@@ -1326,8 +1326,8 @@ def test_sprite_crop_waits_for_exports(tmp_path):
 
 def test_modules_import_without_unitypy():
     code = (
-        "import sys; import nnnotes.objexport as o; o.ExportStage().ATOMS; o.SpriteCropStage().ATOMS; "
-        "print(sorted(m for m in ('UnityPy', 'PIL', 'nnnotes.export') if m in sys.modules))"
+        "import sys; import nnnotes.pipeline.objexport as o; o.ExportStage().ATOMS; o.SpriteCropStage().ATOMS; "
+        "print(sorted(m for m in ('UnityPy', 'PIL', 'nnnotes.unity.export') if m in sys.modules))"
     )
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, cwd=ROOT, check=True)
     assert out.stdout.strip() == "[]"
@@ -1337,7 +1337,8 @@ def test_modules_import_without_unitypy():
 def test_every_reason_code_and_converter_is_documented():
     doc = (ROOT / "docs" / "stages.md").read_text(encoding="utf-8")
     documented = set(re.findall(r"^\| `([a-z_]+(?:\.[A-Za-z_]+)+)` \|", doc, re.M))
-    sources = [ROOT / "src" / "nnnotes" / "objexport.py", *sorted((ROOT / "src" / "nnnotes" / "atoms").glob("*.py"))]
+    pipeline = ROOT / "src" / "nnnotes" / "pipeline"
+    sources = [pipeline / "objexport.py", *sorted((pipeline / "atoms").glob("*.py"))]
     raised = set(objexport.REASONS)
     for p in sources:
         text = p.read_text(encoding="utf-8")
@@ -1401,7 +1402,7 @@ def test_golden_providers_cover_every_converter():
 
 
 def test_a_converter_change_without_a_version_bump_fails_its_golden(tmp_path, monkeypatch):
-    from nnnotes.stages import golden, golden_problems, library_versions
+    from nnnotes.pipeline.stages import golden, golden_problems, library_versions
 
     expected = contract.loads((ROOT / "tests" / "golden" / "unity.export.json").read_bytes())
     if library_versions(expected["libraries"]) != expected["libraries"]:

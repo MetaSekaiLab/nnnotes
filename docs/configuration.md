@@ -20,7 +20,7 @@ Lowest to highest:
 3. **Command-line flags**, for the settings that have one (table below).
 
 An empty value (`""`, `[]`, an empty environment variable, an empty flag) counts as unset, so a lower source still
-applies. The template [`nnnotes.example.toml`](../src/nnnotes/nnnotes.example.toml) ships with the package and lists
+applies. The template [`nnnotes.example.toml`](../src/nnnotes/source/nnnotes.example.toml) ships with the package and lists
 every setting with an empty value; `nnnotes config init` writes it (below). `nnnotes.toml` and `*.local.toml` are in
 `.gitignore`; do not commit a filled-in copy.
 

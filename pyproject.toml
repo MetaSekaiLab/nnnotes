@@ -26,7 +26,7 @@ classifiers = [
 dynamic = ["version"]
 
 [project.optional-dependencies]
-test = ["pytest>=8", "ruff>=0.15", "jsonschema>=4.18"]
+test = ["pytest>=8", "ruff>=0.15", "jsonschema>=4.18", "import-linter>=2.1"]
 fonts = ["fonttools>=4.50", "freetype-py>=2.5", "scipy>=1.13"]
 # the deck model of music-data: one nnnotes version carries one ournotes-deck release (.github/workflows/deck.yml moves
 # the pin when ournotes-deck publishes a newer one)
@@ -65,4 +65,22 @@ select = ["E", "W", "F", "I", "UP", "B"]
 ignore = ["B023", "B905"]
 
 [tool.ruff.lint.flake8-bugbear]
-extend-immutable-calls = ["nnnotes.liveoptions.LiveOptions"]
+extend-immutable-calls = ["nnnotes.content.liveoptions.LiveOptions"]
+
+[tool.importlinter]
+root_package = "nnnotes"
+
+[[tool.importlinter.contracts]]
+name = "Layers: each subpackage imports only the layers below it"
+type = "layers"
+layers = [
+    "cli",
+    "site | musicdata",
+    "pipeline",
+    "content",
+    "unity",
+    "formats",
+    "source",
+    "core",
+]
+containers = ["nnnotes"]

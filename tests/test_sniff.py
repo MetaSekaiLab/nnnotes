@@ -8,9 +8,9 @@ import zipfile
 
 import pytest
 
-from nnnotes import contract
-from nnnotes.atoms import ATOMS
-from nnnotes.atoms.sniff import MAGIC, Sniffed, sniff, spine_binary_version
+from nnnotes.pipeline import contract
+from nnnotes.pipeline.atoms import ATOMS
+from nnnotes.pipeline.atoms.sniff import MAGIC, Sniffed, sniff, spine_binary_version
 
 
 def sfnt(tag: bytes, tables: int = 3) -> bytes:

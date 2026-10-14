@@ -12,10 +12,10 @@ from pathlib import Path
 
 import pytest
 
-from nnnotes import contract
-from nnnotes.contract import Cost, IncompatibleTask, Input
-from nnnotes.stages import Env, Output, Pending, Stage, describe, execute, registry
-from nnnotes.store import InputMissing, Store, StoreConflict
+from nnnotes.pipeline import contract
+from nnnotes.pipeline.contract import Cost, IncompatibleTask, Input
+from nnnotes.pipeline.stages import Env, Output, Pending, Stage, describe, execute, registry
+from nnnotes.pipeline.store import InputMissing, Store, StoreConflict
 
 
 class Src(Stage):
@@ -261,7 +261,7 @@ def test_registry_refuses_repeated_names():
 
 
 def test_describe_gives_the_stage_its_parameters(tmp_path):
-    from nnnotes.contract import Task
+    from nnnotes.pipeline.contract import Task
 
     class Selective(Stage):
         name, version = "toy.sel", 1
@@ -298,8 +298,8 @@ class _Spawner(Stage):
 
 
 def test_the_cost_counts_the_child_processes(tmp_path):
-    from nnnotes.contract import Task
-    from nnnotes.stages import children_cpu
+    from nnnotes.pipeline.contract import Task
+    from nnnotes.pipeline.stages import children_cpu
 
     store = Store(tmp_path / "s")
     ex = execute(Task("toy.spawn", 1, "s"), store, registry(_Spawner()))

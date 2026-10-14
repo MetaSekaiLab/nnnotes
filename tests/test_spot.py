@@ -6,7 +6,7 @@ import io
 import pytest
 from PIL import Image
 
-from nnnotes import spot
+from nnnotes.content import spot
 
 
 class Ref:

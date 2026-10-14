@@ -1,4 +1,4 @@
-"""Tests for nnnotes.crilips using only synthetic ELF fixtures and a synthetic version table.
+"""Tests for nnnotes.formats.crilips using only synthetic ELF fixtures and a synthetic version table.
 
 No game data is used: we build a tiny ELF64 whose .rodata holds random blocks, register a synthetic
 Version table keyed by their sha256, and check that extraction locates, orders and verifies them.
@@ -11,8 +11,8 @@ import struct
 
 import pytest
 
-from nnnotes import crilips
-from nnnotes.crilips import Block, Const, CriLipsError, Version
+from nnnotes.formats import crilips
+from nnnotes.formats.crilips import Block, Const, CriLipsError, Version
 
 
 def _sha16(b: bytes) -> str:
@@ -193,7 +193,7 @@ def _prefab(*classes):
 
 
 def test_has_motion_sync_needs_both_components_on_the_root():
-    from nnnotes import webmodel
+    from nnnotes.site import webmodel
 
     assert webmodel.has_motion_sync(
         _prefab("CubismModel", "CubismMotionSyncController", "Live2DMotionSyncCriAudioInput")
@@ -207,7 +207,7 @@ def _talk(names, voices, **kw):
 
 
 def test_needs_cri_lips():
-    from nnnotes import story
+    from nnnotes.content import story
 
     def ep(*rows):
         return {"commands": list(rows)}

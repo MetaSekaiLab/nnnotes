@@ -14,12 +14,14 @@ from pathlib import Path
 import pytest
 import synth
 
-from nnnotes import cli, cli_assets, contract
-from nnnotes.census import CensusStage
-from nnnotes.config import ConfigError
-from nnnotes.contract import Cost
-from nnnotes.stages import Output, Stage
-from nnnotes.store import Store
+from nnnotes import cli
+from nnnotes.cli import cli_assets
+from nnnotes.pipeline import contract
+from nnnotes.pipeline.census import CensusStage
+from nnnotes.pipeline.contract import Cost
+from nnnotes.pipeline.stages import Output, Stage
+from nnnotes.pipeline.store import Store
+from nnnotes.source.config import ConfigError
 
 HASHES = {n: hashlib.md5(n.encode()).hexdigest() for n in ("card_1", "card_2", "shared", "bg_x")}
 NAMES = {
@@ -299,7 +301,7 @@ def test_selection_items_and_groups():
 
 
 def test_select_adds_the_dependencies_to_the_census():
-    from nnnotes.catalogdb import index
+    from nnnotes.pipeline.catalogdb import index
 
     idx = index(catalog_bytes())
     stable = {n: contract.stable_bundle_name(NAMES[n]) for n in NAMES}
@@ -460,7 +462,7 @@ def test_the_flac_level_is_a_parameter_of_the_stages_that_encode_flac(tmp_path, 
 def test_the_placement_is_probed_once_and_never_changes_the_files(tmp_path, capsys, fake, monkeypatch):
     import errno
 
-    from nnnotes import layout
+    from nnnotes.pipeline import layout
 
     def clone_by_copy(src, dst):
         with open(dst, "xb") as f:
@@ -553,10 +555,10 @@ def test_plan_and_run_stage_do_not_import_unitypy(tmp_path):
     d = setup_data(tmp_path)
     script = f"""
 import sys
-from nnnotes import cli_assets
+from nnnotes.cli import cli_assets
 args = {[str(a) for a in flags(d)]!r}
 from pathlib import Path
-from nnnotes import contract
+from nnnotes.pipeline import contract
 def main(argv):
     try:
         cli_assets.main(argv)
@@ -728,7 +730,7 @@ def test_derived_documents_read_the_paths_of_the_objects_they_name(tmp_path, cap
 def test_views_are_placed_with_paths_and_every_document_validates(tmp_path, capsys, monkeypatch):
     from test_contract import validators
 
-    from nnnotes import views
+    from nnnotes.pipeline import views
 
     monkeypatch.setattr(cli_assets, "STAGE_SOURCES", FAKE_SOURCES + (REAL["view."],))
     rules = views.load_rules()
@@ -939,7 +941,7 @@ class Tooled(Stage):
         return ["s"]
 
     def uses(self, subject, env):
-        from nnnotes.config import active
+        from nnnotes.source.config import active
 
         cfg = active()
         return {"tool": str(cfg.path("paths", "ffmpeg")) if cfg is not None else "unset"}
@@ -949,7 +951,7 @@ class Tooled(Stage):
 
 
 def test_named_contents_are_placed_under_each_name(tmp_path, capsys, monkeypatch):
-    from nnnotes import layout
+    from nnnotes.pipeline import layout
 
     monkeypatch.setattr(
         cli_assets,
@@ -1207,7 +1209,7 @@ def test_a_setting_the_raw_fetch_lacks_aborts_the_run(tmp_path, capsys, monkeypa
 def test_an_interrupt_starts_no_more_raw_fetches(tmp_path, capsys, monkeypatch):
     import threading
 
-    from nnnotes import orchestrate
+    from nnnotes.pipeline import orchestrate
 
     apk, name = raw_apk(tmp_path, monkeypatch)
     ended = threading.Event()
@@ -1238,7 +1240,8 @@ def test_worker_counts_follow_the_cpus_this_process_may_use(monkeypatch):
     import os
     from types import SimpleNamespace
 
-    from nnnotes import config, cri
+    from nnnotes.formats import cri
+    from nnnotes.source import config
 
     monkeypatch.setattr(os, "cpu_count", lambda: 64)
     monkeypatch.setattr(os, "process_cpu_count", lambda: 6, raising=False)

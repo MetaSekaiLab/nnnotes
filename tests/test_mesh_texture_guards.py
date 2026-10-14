@@ -6,7 +6,8 @@ import numpy as np
 import pytest
 from UnityPy.enums import TextureFormat
 
-from nnnotes import export, unity
+from nnnotes.unity import export
+from nnnotes.unity import reader as unity
 
 
 def fake_handler(monkeypatch, **fields):

@@ -4,8 +4,8 @@ import json
 
 import pytest
 
-from nnnotes import live, liveaudio, livenotes, liveoptions, livescene, score
-from nnnotes.liveoptions import LiveOptions, OptionSpecError, parse_specs, resolve
+from nnnotes.content import live, liveaudio, livenotes, liveoptions, livescene, score
+from nnnotes.content.liveoptions import LiveOptions, OptionSpecError, parse_specs, resolve
 
 SWITCHES = {
     4,

@@ -37,6 +37,7 @@ jobs:
         run: |
           python -m ruff check .
           python -m ruff format --check .
+          lint-imports
       - name: Command line
         run: python -m nnnotes --help
       - name: Test

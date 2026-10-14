@@ -15,11 +15,13 @@ from types import SimpleNamespace
 import pytest
 from test_views import FakeAddresses, addresses_doc, write_master
 
-from nnnotes import acb, contract, languages, voices
-from nnnotes.contract import Input, Task
-from nnnotes.stages import Env, Pending, describe, execute, registry
-from nnnotes.store import Store
-from nnnotes.views import AddressIndex, ViewError
+from nnnotes.formats import acb
+from nnnotes.pipeline import contract, voices
+from nnnotes.pipeline.contract import Input, Task
+from nnnotes.pipeline.stages import Env, Pending, describe, execute, registry
+from nnnotes.pipeline.store import Store
+from nnnotes.pipeline.views import AddressIndex, ViewError
+from nnnotes.source import languages
 
 ROOT = Path(__file__).resolve().parents[1]
 RATE = 48000
@@ -958,7 +960,7 @@ def test_get_copies_the_exported_files(tmp_path, capsysbinary):
 
 
 def test_get_without_an_export_decodes_the_one_sheet(tmp_path, capsysbinary, monkeypatch):
-    from nnnotes import cri
+    from nnnotes.formats import cri
 
     mdir = write_master(tmp_path / "m", TABLES)
     calls = []
@@ -989,8 +991,9 @@ def test_get_without_an_export_decodes_the_one_sheet(tmp_path, capsysbinary, mon
 # ---------------------------------------------------------------- laziness and documentation
 def test_voices_import_nothing_heavy():
     code = (
-        "import sys, nnnotes.voices, nnnotes.acb, nnnotes.storyvoices, nnnotes.advcommand; "
-        "print(sorted(m for m in ('UnityPy', 'numpy', 'PIL', 'nnnotes.cri') if m in sys.modules))"
+        "import sys, nnnotes.pipeline.voices, nnnotes.formats.acb, nnnotes.content.storyvoices, "
+        "nnnotes.content.advcommand; "
+        "print(sorted(m for m in ('UnityPy', 'numpy', 'PIL', 'nnnotes.formats.cri') if m in sys.modules))"
     )
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, cwd=ROOT, check=True).stdout
     assert out.strip() == "[]"

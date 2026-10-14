@@ -4,7 +4,7 @@ nnnotes).
 nnnotes reads a few MonoBehaviours of the APK's boot data (`assets/bin/Data/data.unity3d`): the URP pipeline
 assets, renderer data, renderer features and post-process data, DOTween and TextMeshPro settings, and the sound
 and app-config defaults. IL2CPP player builds strip script typetrees from that data, so nnnotes ships the
-typetrees of exactly these classes (CLASSES below) in `src/nnnotes/typetrees/<Unity version>.json`, one file per
+typetrees of exactly these classes (CLASSES below) in `src/nnnotes/unity/typetrees/<Unity version>.json`, one file per
 Unity version. Each entry holds the typetree nodes as [level, type, name, meta flag] rows and the type hash the
 serialized file records for the class; the file also records the game version it was generated from.
 
@@ -28,7 +28,7 @@ yet", regenerate the file from the new APK:
        python scripts/gen_typetrees.py <base.apk> --dll <DummyDll folder>
 
    It reads every object of each class in CLASSES with the generated typetree (the read must consume exactly the
-   object's serialized size), then writes `src/nnnotes/typetrees/<Unity version>.json` (`-o` for another
+   object's serialized size), then writes `src/nnnotes/unity/typetrees/<Unity version>.json` (`-o` for another
    directory; `--game-version` when the APK's manifest has no versionName). A class that is not in the boot data,
    has a field Unity's layout is not known for here (a `[SerializeReference]` field, another array form), or does
    not read back stops the script without writing anything.
@@ -47,7 +47,7 @@ from pathlib import Path
 
 from UnityPy.helpers.TypeTreeGenerator import TypeTreeGenerator
 
-from nnnotes.player import TYPETREE_FORMAT, PlayerData, dump_typetrees, typetree_key, typetree_node
+from nnnotes.unity.player import TYPETREE_FORMAT, PlayerData, dump_typetrees, typetree_key, typetree_node
 
 # (assembly, namespace, class) as the MonoScript objects name them
 CLASSES = (
@@ -69,7 +69,7 @@ CLASSES = (
     ("Unity.TextMeshPro", "TMPro", "TMP_Settings"),
     ("Unity.TextMeshPro", "TMPro", "TMP_StyleSheet"),
 )
-DEFAULT_OUT = Path(__file__).resolve().parents[1] / "src" / "nnnotes" / "typetrees"
+DEFAULT_OUT = Path(__file__).resolve().parents[1] / "src" / "nnnotes" / "unity" / "typetrees"
 
 ALIGN = 0x4000  # TransferMetaFlags.kAlignBytesFlag
 # the MonoBehaviour header: field -> meta flag
@@ -241,7 +241,7 @@ def generate(player: PlayerData, gen: TypeTreeGenerator, game_version: str) -> d
 
 
 def main(argv=None) -> None:
-    p = argparse.ArgumentParser(description="regenerate src/nnnotes/typetrees/<Unity version>.json from an APK")
+    p = argparse.ArgumentParser(description="regenerate src/nnnotes/unity/typetrees/<Unity version>.json from an APK")
     p.add_argument("apk", type=Path, help="base.apk of the game version")
     g = p.add_mutually_exclusive_group(required=True)
     g.add_argument("--dll", type=Path, help="folder of managed assembly stubs (e.g. Il2CppDumper DummyDll)")

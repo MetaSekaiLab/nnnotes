@@ -12,8 +12,8 @@ from UnityPy.helpers.TypeTreeHelper import read_typetree
 from UnityPy.streams.EndianBinaryReader import EndianBinaryReader
 
 from nnnotes import cli
-from nnnotes.config import ConfigError
-from nnnotes.player import (
+from nnnotes.source.config import ConfigError
+from nnnotes.unity.player import (
     HEADER,
     TYPETREE_FORMAT,
     PlayerData,
@@ -25,7 +25,7 @@ from nnnotes.player import (
     typetree_node,
 )
 
-TYPETREE_DIR = resources.files("nnnotes").joinpath("typetrees")
+TYPETREE_DIR = resources.files("nnnotes.unity").joinpath("typetrees")
 EMBEDDED = sorted(f.name[: -len(".json")] for f in TYPETREE_DIR.iterdir() if f.name.endswith(".json"))
 ALIGN = 0x4000
 
