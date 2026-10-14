@@ -10,18 +10,21 @@ import base64
 import hashlib
 import http.client
 import json
+import os
 import re
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from typing import Any, cast
 from urllib.parse import urlsplit
 
 from ..core.cache import write_atomic
 from . import gameapi
-from .addressables import parse_header, relative_path
+from .addressables import BundleKey, parse_header, relative_path
 from .catalog import Catalog
-from .config import ConfigError
+from .config import Config, ConfigError
 
 __all__ = ["Client", "Observation", "Source", "origin"]
 
@@ -30,7 +33,7 @@ CATALOG_LIMIT = 64 * 1024 * 1024
 FILE_LIMIT = 1024 * 1024 * 1024
 
 
-def numeric_version(value):
+def numeric_version(value: object) -> tuple[int, ...]:
     if not isinstance(value, str) or not re.fullmatch(r"[0-9]+(?:\.[0-9]+){1,3}", value):
         raise ValueError("invalid numeric version")
     parts = tuple(map(int, value.split(".")))
@@ -39,29 +42,31 @@ def numeric_version(value):
     return parts + (0,) * (4 - len(parts))
 
 
-def master_version(value):
+def master_version(value: object) -> str:
     if not isinstance(value, str) or not re.fullmatch(r"[0-9]+(?:\.[0-9]+){1,3}/[0-9a-f]{32}", value):
         raise ValueError("invalid JP master version")
     return value
 
 
-def select_asset(raw, client) -> tuple[str, str] | None:
+def select_asset(raw: str | None, client: str) -> tuple[str, str] | None:
     """Select the largest applicable live minimum; no top-level fallback when live has no match."""
     if not raw:
         return None
     try:
-        data = json.loads(raw)
+        data: object = json.loads(raw)
         if not isinstance(data, dict):
             raise ValueError()
+        data = cast("dict[str, object]", data)
         live = data.get("live")
         if live:
             if not isinstance(live, list):
                 raise ValueError()
             current = numeric_version(client)
-            candidates = []
-            for entry in live:
+            candidates: list[tuple[tuple[int, ...], dict[str, object]]] = []
+            for entry in cast("list[object]", live):
                 if not isinstance(entry, dict):
                     continue
+                entry = cast("dict[str, object]", entry)
                 try:
                     minimum = numeric_version(entry.get("minClientVersion"))
                 except ValueError:
@@ -80,7 +85,7 @@ def select_asset(raw, client) -> tuple[str, str] | None:
         raise gameapi.GameApiError("JP Version: invalid asset metadata") from None
 
 
-def origin(value):
+def origin(value: str) -> str:
     """The origin (`scheme://host[:port]`, without a default port) of an HTTPS URL with no path, query or
     credentials (HTTP only on a loopback host); a ConfigError for any other value."""
     try:
@@ -114,7 +119,7 @@ class Source:
     cdn: str = field(repr=False)
     platform: str = "Android"
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.provider != "jp" or self.platform != "Android":
             raise ValueError("unsupported JP asset source")
         numeric_version(self.version)
@@ -124,28 +129,31 @@ class Source:
             raise ValueError("JP source CDN is not a canonical origin")
 
     @property
-    def root(self):
+    def root(self) -> str:
         return f"{self.cdn}/asset/{self.version}/Android/{self.hash}"
 
     @property
-    def catalog_url(self):
+    def catalog_url(self) -> str:
         return self.root + "/catalog_main.bin"
 
-    def url(self, internal_id):
+    def url(self, internal_id: str) -> str:
         if not internal_id.startswith(PLACEHOLDER):
             raise ValueError("JP resource has no remote asset placeholder")
         return self.root + "/" + relative_path(internal_id[len(PLACEHOLDER) :])
 
-    def to_dict(self):
+    def to_dict(self) -> dict[str, str]:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, data):
-        if not isinstance(data, dict) or set(data) != {"provider", "version", "hash", "cdn", "platform"}:
+    def from_dict(cls, data: object) -> Source:
+        if not isinstance(data, dict):
             raise ValueError("invalid JP source metadata")
-        return cls(**data)
+        fields = cast("dict[str, Any]", data)
+        if set(fields) != {"provider", "version", "hash", "cdn", "platform"}:
+            raise ValueError("invalid JP source metadata")
+        return cls(**fields)
 
-    def cache_dir(self, cache):
+    def cache_dir(self, cache: str | os.PathLike[str]) -> Path:
         site = hashlib.sha256(self.cdn.encode()).hexdigest()[:16]
         return Path(cache) / "jp" / site / self.version / self.hash
 
@@ -164,13 +172,13 @@ class Client:
     asset source and CDN credential; `get()` downloads a file of one source or master version with that credential,
     observing again when it is older than five minutes."""
 
-    def __init__(self, cfg, region):
+    def __init__(self, cfg: Config, region: str):
         self.cfg, self.region = cfg.for_region(region), region
-        self._observation = None
-        self._created = 0
+        self._observation: Observation | None = None
+        self._created = 0.0
         self._lock = threading.RLock()
 
-    def observe(self, *, timeout=gameapi.TIMEOUT):
+    def observe(self, *, timeout: float = gameapi.TIMEOUT) -> Observation:
         """Ask the API for the current Observation: master version, asset source, CDN and its credential."""
         with self._lock:
             section = f"servers.{self.region}"
@@ -178,7 +186,7 @@ class Client:
             api = origin(api if "://" in api else "https://" + api)
             allowed = origin(self.cfg.cdn(self.region))
             client = gameapi.client_version(self.cfg, self.region)
-            headers = {}
+            headers: dict[str, Any] = {}
             body = gameapi.call(
                 api,
                 gameapi.VERSION_METHOD,
@@ -211,13 +219,15 @@ class Client:
             self._observation, self._created = result, time.monotonic()
             return result
 
-    def _current(self):
+    def _current(self) -> Observation:
         with self._lock:
             if self._observation is None or time.monotonic() - self._created > 300:
                 return self.observe()
             return self._observation
 
-    def get(self, url, *, source=None, master=None, limit=FILE_LIMIT):
+    def get(
+        self, url: str, *, source: Source | None = None, master: str | None = None, limit: int = FILE_LIMIT
+    ) -> bytes:
         """Download against one immutable source. Auth refresh never changes the requested snapshot."""
         for attempt in range(2):
             observation = self._current()
@@ -244,15 +254,14 @@ class Client:
                 response = connection.getresponse()
                 status = response.status
                 if status == 200:
-                    length = response.getheader("Content-Length")
-                    if length is not None and not response.chunked:
-                        if not length.isdecimal():
+                    header = response.getheader("Content-Length")
+                    length = None
+                    if header is not None and not response.chunked:
+                        if not header.isdecimal():
                             raise gameapi.GameApiError("JP download has invalid Content-Length")
-                        length = int(length)
+                        length = int(header)
                         if length > limit:
                             raise gameapi.GameApiError("JP download exceeds the size limit")
-                    else:
-                        length = None
                     data = response.read(limit + 1)
                     if len(data) > limit:
                         raise gameapi.GameApiError("JP download exceeds the size limit")
@@ -272,11 +281,11 @@ class Client:
         raise AssertionError("unreachable")
 
 
-def sidecar(path):
+def sidecar(path: str | os.PathLike[str]) -> Path:
     return Path(str(path) + ".source.json")
 
 
-def read_source(path, data):
+def read_source(path: str | os.PathLike[str], data: bytes) -> Source:
     try:
         doc = json.loads(sidecar(path).read_bytes())
         if doc["catalog_sha256"] != hashlib.sha256(data).hexdigest():
@@ -286,15 +295,21 @@ def read_source(path, data):
         raise ConfigError("JP catalog needs its matching .source.json sidecar (written by `catalog fetch`)") from None
 
 
-def write_source(path, data, source):
-    from ..core.cache import write_atomic
-
+def write_source(path: str | os.PathLike[str], data: bytes, source: Source) -> None:
     doc = {"catalog_sha256": hashlib.sha256(data).hexdigest(), "source": source.to_dict()}
     write_atomic(sidecar(path), (json.dumps(doc, sort_keys=True) + "\n").encode())
 
 
-def open_catalog(cfg, region, *, catalog_file=None, bundle_key=None, apk=None):
-
+def open_catalog(
+    cfg: Config,
+    region: str,
+    *,
+    catalog_file: str | os.PathLike[str] | None = None,
+    bundle_key: BundleKey | Callable[[], BundleKey] | None = None,
+    apk: Path | None = None,
+) -> Catalog:
+    """The catalog of the JP region `region`: `catalog_file` with its .source.json sidecar, else the catalog of the
+    asset version the API serves now (from the cache, downloaded on first use)."""
     client = Client(cfg, region)
     if catalog_file is not None:
         data = Path(catalog_file).read_bytes()

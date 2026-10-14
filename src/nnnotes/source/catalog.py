@@ -13,15 +13,27 @@ import sys
 import threading
 import urllib.parse
 import urllib.request
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TypeAlias, TypeVar, cast
+from typing import TYPE_CHECKING, TypeAlias, TypeVar, cast
 
 from ..core.cache import write_atomic as _write_atomic
-from .addressables import REMOTE_PREFIX, BundleKey, decrypt, parse, parse_locations, relative_path, remote_path
+from .addressables import (
+    REMOTE_PREFIX,
+    BundleKey,
+    Location,
+    decrypt,
+    parse,
+    parse_locations,
+    relative_path,
+    remote_path,
+)
 from .apkset import ApkSet
 from .config import ConfigError, apk_missing, check_catalog_version
+
+if TYPE_CHECKING:
+    from .jp import Client, Source
 
 __all__ = ["Bundle", "Catalog"]
 
@@ -63,7 +75,7 @@ def file_name(internal_id: str) -> str:
     rel = remote_path(internal_id)
     if rel is None:
         rel = internal_id[len(LOCAL_PREFIX) :] if internal_id.startswith(LOCAL_PREFIX) else internal_id
-    head, sep, tail = rel.partition("/Android/")
+    _, sep, tail = rel.partition("/Android/")
     return tail if sep else rel.rsplit("/", 1)[-1]
 
 
@@ -96,8 +108,8 @@ class Catalog:
         cdn: Lazy[str] = None,
         bundle_key: Lazy[BundleKey] = None,
         apk: Path | None = None,
-        source=None,
-        client=None,
+        source: Source | None = None,
+        client: Client | None = None,
         apk_catalog: bytes | None = None,
         resource_version: str | None = None,
     ):
@@ -108,15 +120,15 @@ class Catalog:
         self.source, self.client = source, client
         self.resource_version = resource_version
         self._sources = {"remote": catalog_bytes}
-        self._locations: list[dict] | None = None
-        self._parsed: tuple | None = None
+        self._locations: list[Location] | None = None
+        self._parsed: tuple[list[Location], dict[int, Location], dict[str, list[Location]]] | None = None
         if apk_catalog is not None:
             self._sources["apk"] = apk_catalog
         elif self.apk is not None:
             with ApkSet(self.apk) as z:
                 self._sources["apk"] = z.read(APK_CATALOG)
 
-    def check_apk(self, archive) -> None:
+    def check_apk(self, archive: ApkSet) -> None:
         """Before extracting a JP local file, verify the APK against this catalog's snapshot."""
         if self.source is not None and "apk" in self._sources:
             try:
@@ -132,7 +144,7 @@ class Catalog:
             return self.cache_dir / "apk" / hashlib.sha256(self._sources["apk"]).hexdigest()
         return self.cache_dir
 
-    def _parse(self) -> tuple:
+    def _parse(self) -> tuple[list[Location], dict[int, Location], dict[str, list[Location]]]:
         """(entries, by offset, by primary key), parsed the first time a lookup needs them (a command that only
         wants the catalog files, sources(), does not pay for it)."""
         if self._parsed is None:
@@ -142,22 +154,22 @@ class Catalog:
                     e["offset"] += APK_OFFSET_BASE
                     e["dependencies"] = [d + APK_OFFSET_BASE for d in e["dependencies"]]
                     entries.append(e)
-            by_key: dict[str, list[dict]] = {}
+            by_key: dict[str, list[Location]] = {}
             for e in entries:
                 by_key.setdefault(e["primary_key"], []).append(e)
             self._parsed = (entries, {e["offset"]: e for e in entries}, by_key)
         return self._parsed
 
     @property
-    def entries(self) -> list[dict]:
+    def entries(self) -> list[Location]:
         return self._parse()[0]
 
     @property
-    def _by_off(self) -> dict[int, dict]:
+    def _by_off(self) -> dict[int, Location]:
         return self._parse()[1]
 
     @property
-    def _by_key(self) -> dict[str, list[dict]]:
+    def _by_key(self) -> dict[str, list[Location]]:
         return self._parse()[2]
 
     # --- construction ------------------------------------------------------
@@ -230,10 +242,10 @@ class Catalog:
     def has(self, key: str) -> bool:
         return key in self._by_key
 
-    def entries_for(self, key: str) -> list[dict]:
+    def entries_for(self, key: str) -> list[Location]:
         return list(self._by_key.get(key, []))
 
-    def entry(self, key: str) -> dict:
+    def entry(self, key: str) -> Location:
         """The location of `key`: its asset location (internal id under Assets/ or Packages/) when it has one, else
         its first location. KeyError when the catalog lacks the key."""
         ents = self._by_key.get(key)
@@ -244,13 +256,13 @@ class Catalog:
                 return e
         return ents[0]
 
-    def dependencies(self, key: str) -> list[dict]:
+    def dependencies(self, key: str) -> list[Location]:
         """The locations the location of `key` (entry) depends on, in its dependency order (those the catalogs
         hold)."""
         return [self._by_off[d] for d in self.entry(key)["dependencies"] if d in self._by_off]
 
     @staticmethod
-    def as_bundle(e: dict) -> Bundle | None:
+    def as_bundle(e: Location) -> Bundle | None:
         """The bundle file a location names (a remote or APK-local .bundle), else None."""
         iid = e["internal_id"]
         if iid.endswith(".bundle") and remote_path(iid) is not None:
@@ -263,12 +275,12 @@ class Catalog:
         """The catalog files this catalog was made of: {"remote": bytes, "apk": bytes (with an APK)}."""
         return dict(self._sources)
 
-    def locations(self) -> list[dict]:
+    def locations(self) -> list[Location]:
         """Every location of the remote catalog and (with an APK) of the APK catalog, fully decoded
         (addressables.parse_locations), with `catalog` ("remote" / "apk") and `kind` (location_kind). Offsets and
         dependencies are those of `entries` (APK ones in their own namespace)."""
         if self._locations is None:
-            out = []
+            out: list[Location] = []
             for name, base in (("remote", 0), ("apk", APK_OFFSET_BASE)):
                 if name not in self._sources:
                     continue
@@ -292,11 +304,11 @@ class Catalog:
                 out.setdefault(b.name, b)
         return [out[n] for n in sorted(out)]
 
-    def raw_files(self) -> list[dict]:
+    def raw_files(self) -> list[Location]:
         """Every raw file the catalogs name (a CDN or APK file that is not a bundle, e.g. CRI ACB/AWB/USM data), one
         entry per file name (file_name), sorted by name, preferring the APK catalog's as bundles() does. Remote ones
         are what fetch_raw takes."""
-        out: dict[str, dict] = {}
+        out: dict[str, Location] = {}
         for e in sorted(self.entries, key=lambda e: (e["offset"] < APK_OFFSET_BASE, e["offset"])):
             if location_kind(e["internal_id"]) == "raw":
                 out.setdefault(file_name(e["internal_id"]), e)
@@ -329,7 +341,7 @@ class Catalog:
         dst = (self.cache_dir if b.remote else self.local_cache_dir()) / "bundles" / b.name
         return dst if dst.is_file() and dst.stat().st_size > 0 else None
 
-    def cached_raw(self, e: dict) -> Path | None:
+    def cached_raw(self, e: Location) -> Path | None:
         """The file fetch_raw(e) returns when it is in the cache already, else None."""
         rel = remote_path(e["internal_id"])
         dst = self.cache_dir / "raw" / rel.lstrip("/") if rel is not None else None
@@ -368,14 +380,14 @@ class Catalog:
             raise ValueError(f"{internal_id}: not a remote location")
         return cdn.rstrip("/") + path
 
-    def _download(self, url):
+    def _download(self, url: str) -> bytes:
         if self.source is not None:
             if self.client is None:
                 raise ConfigError("JP downloads require a configured JP client")
             return self.client.get(url, source=self.source)
         return download(url)
 
-    def fetch_key(self, key: str, skip=frozenset()) -> list[Path]:
+    def fetch_key(self, key: str, skip: Collection[str] = frozenset()) -> list[Path]:
         """Every bundle of the key's closure but those named in `skip`; APK-local ones only when an APK is set."""
         return [self.fetch(b) for b in self.resolve(key) if (b.remote or self.apk) and b.name not in skip]
 
@@ -393,7 +405,7 @@ class Catalog:
                 return b
         raise KeyError(f"{key}: no bundle among its dependencies")
 
-    def fetch_raw(self, e: dict) -> Path:
+    def fetch_raw(self, e: Location) -> Path:
         """A non-bundle CDN asset (e.g. CRI ACB/AWB data) as stored -- no decryption."""
         iid = e["internal_id"]
         rel = remote_path(iid)
@@ -440,7 +452,7 @@ def download(url: str, timeout: float = 120) -> bytes:
     parts = urllib.parse.urlsplit(url)
     if parts.scheme not in ("http", "https") or _proxied(parts):
         return _urlopen(url, timeout)
-    conns = _KEPT.__dict__.setdefault("conns", {})
+    conns: dict[tuple[str, str], http.client.HTTPConnection] = _KEPT.__dict__.setdefault("conns", {})
     key = (parts.scheme, parts.netloc)
     path = (parts.path or "/") + (f"?{parts.query}" if parts.query else "")
     for _ in range(2):
@@ -468,7 +480,7 @@ def download(url: str, timeout: float = 120) -> bytes:
     return _urlopen(url, timeout)
 
 
-def _proxied(parts) -> bool:
+def _proxied(parts: urllib.parse.SplitResult) -> bool:
     proxies = urllib.request.getproxies()
     return parts.scheme in proxies and not urllib.request.proxy_bypass(parts.hostname or "")
 

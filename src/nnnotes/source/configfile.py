@@ -13,8 +13,10 @@ import json
 import os
 import re
 import tomllib
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, TypeAlias, cast
 from urllib.parse import urlsplit
 
 from . import languages
@@ -39,6 +41,10 @@ _KEYVAL = re.compile(r"^(\s*)([A-Za-z0-9_-]+)\s*=\s*(.*)$")
 _REGION_NAME = re.compile(r"[A-Za-z0-9_-]+")
 
 
+# the value of a setting: a string (a path made absolute), or a list of strings
+Value: TypeAlias = "str | list[str]"
+
+
 @dataclass(frozen=True)
 class Setting:
     section: str  # "bundle", REGION, FONTS, ...
@@ -49,7 +55,9 @@ class Setting:
 
 
 def _template_settings() -> list[Setting]:
-    out, section, comment = [], None, []
+    out: list[Setting] = []
+    section: str | None = None
+    comment: list[str] = []
     for line in template().decode("utf-8").splitlines():
         s = line.strip()
         if not s:
@@ -97,9 +105,10 @@ def resolve(name: str) -> tuple[Setting, str]:
     raise ConfigError(f"unknown setting {name}: `nnnotes config check` lists the settings")
 
 
-def parse_value(setting: Setting, text: str):
+def parse_value(setting: Setting, text: str) -> Value:
     """The value of a setting from its text form (a list: comma-separated; a path: made absolute), checked."""
     text = text.strip()
+    value: Value
     if setting.kind == "list":
         value = [s.strip() for s in text.split(",") if s.strip()]
     elif setting.kind == "path" and text:
@@ -111,10 +120,16 @@ def parse_value(setting: Setting, text: str):
     return value
 
 
-def validate(setting: Setting, value) -> None:
+def validate(setting: Setting, value: Value) -> None:
     """Raise ValueError (a message without the value) when `value` is not a valid value of `setting`."""
     k = (setting.section, setting.key)
-    if k in HEX_BYTES:
+    if k == ("catalog", "language") or k == (REGION, "languages"):
+        for v in value if isinstance(value, list) else [value]:
+            if v not in languages.LANGUAGES:
+                raise ValueError(f"not one of the game's languages ({', '.join(languages.LANGUAGES)})")
+    elif isinstance(value, list):
+        pass  # the other settings with a list value take any strings
+    elif k in HEX_BYTES:
         s = value[2:] if value[:2].lower() == "0x" else value
         try:
             b = bytes.fromhex(s)
@@ -123,10 +138,6 @@ def validate(setting: Setting, value) -> None:
         size = HEX_BYTES[k]
         if size is not None and len(b) != size:
             raise ValueError(f"must be {size} bytes ({2 * size} hex digits)")
-    elif k == ("catalog", "language") or k == (REGION, "languages"):
-        for v in value if isinstance(value, list) else [value]:
-            if v not in languages.LANGUAGES:
-                raise ValueError(f"not one of the game's languages ({', '.join(languages.LANGUAGES)})")
     elif k == (REGION, "cdn"):
         u = urlsplit(value)
         if u.scheme not in ("https", "http") or not u.netloc:
@@ -144,7 +155,7 @@ def validate(setting: Setting, value) -> None:
 
 
 # ---------------------------------------------------------------- TOML text
-def _toml(value) -> str:
+def _toml(value: Value) -> str:
     if isinstance(value, list):
         return "[" + ", ".join(_toml(v) for v in value) + "]"
     if "'" not in value and not re.search(r"[\x00-\x1f\x7f]", value):
@@ -170,7 +181,7 @@ def _region_block(region: str) -> list[str]:
     return [f"[servers.{region}]\n"]
 
 
-def _set_line(text: str, section: str, key: str, value) -> str:
+def _set_line(text: str, section: str, key: str, value: Value) -> str:
     lines = text.splitlines(keepends=True)
     if lines and not lines[-1].endswith("\n"):
         lines[-1] += "\n"
@@ -200,14 +211,14 @@ def _set_line(text: str, section: str, key: str, value) -> str:
     return _set_line(text, section, key, value)
 
 
-def _lookup(data: dict, section: str, key: str):
-    t = data
+def _lookup(data: dict[str, Any], section: str, key: str) -> object:
+    t: object = data
     for part in section.split("."):
-        t = t.get(part) if isinstance(t, dict) else None
-    return t.get(key) if isinstance(t, dict) else None
+        t = cast("dict[str, object]", t).get(part) if isinstance(t, dict) else None
+    return cast("dict[str, object]", t).get(key) if isinstance(t, dict) else None
 
 
-def edit(text: str, values: list[tuple[str, str, object]], where: str) -> str:
+def edit(text: str, values: list[tuple[str, str, Value]], where: str) -> str:
     """`text` with each (section, key, value) set in place; the result is checked to read back as those values."""
     for section, key, value in values:
         text = _set_line(text, section, key, value)
@@ -227,7 +238,7 @@ def edit(text: str, values: list[tuple[str, str, object]], where: str) -> str:
     return text
 
 
-def render(values: list[tuple[str, str, object]], regions: list[str]) -> str:
+def render(values: list[tuple[str, str, Value]], regions: list[str]) -> str:
     """The template with one region table per region (the example table renamed, repeated) and the values set."""
     text = template().decode("utf-8")
     if regions:
@@ -254,13 +265,16 @@ def write(path: Path, text: str) -> None:
 
 # ---------------------------------------------------------------- prompts
 def prompt(
-    regions_hint: str = TEMPLATE_REGION, ask=input, ask_secret=getpass.getpass, say=print
-) -> tuple[list[tuple[str, str, object]], list[str]]:
+    regions_hint: str = TEMPLATE_REGION,
+    ask: Callable[[str], str] = input,
+    ask_secret: Callable[[str], str] = getpass.getpass,
+    say: Callable[[str], object] = print,
+) -> tuple[list[tuple[str, str, Value]], list[str]]:
     """Ask for every setting in the terminal (Enter leaves one empty; the keys are read without echo) -> (values,
     regions)."""
-    values: list[tuple[str, str, object]] = []
+    values: list[tuple[str, str, Value]] = []
 
-    def one(s: Setting, section: str, default: str = ""):
+    def one(s: Setting, section: str, default: str = "") -> None:
         name = f"[{section}] {s.key}"
         hint = " (hidden)" if s.secret else " (comma-separated)" if s.kind == "list" else ""
         say(f"# {s.description}" if s.description else "#")
@@ -280,7 +294,7 @@ def prompt(
         if s.section in ("bundle", "master"):
             one(s, s.section)
     say("# regions to configure: names of your choice, one [servers.<region>] table each")
-    regions = []
+    regions: list[str] = []
     while not regions:
         text = ask(f"regions (comma-separated) [{regions_hint}]: ") or regions_hint
         regions = [r.strip() for r in text.split(",") if r.strip()]
@@ -320,7 +334,7 @@ def _status(cfg: Config, s: Setting, section: str) -> tuple[str, str | None]:
             elif (s.section, s.key) in DIRS and not p.is_dir():
                 return "not found", "no such directory"
         else:
-            v = cfg.get(section, s.key)
+            v = cfg.require(section, s.key)  # set (its origin is known)
             validate(s, v)
             if (section, s.key) == ("catalog", "region") and v not in cfg.regions():
                 return "invalid", f"names no [servers.{v}] table and no {env_name(f'servers.{v}', 'cdn')}"
@@ -331,13 +345,13 @@ def _status(cfg: Config, s: Setting, section: str) -> tuple[str, str | None]:
     return "ok", None
 
 
-def check(cfg: Config) -> dict:
+def check(cfg: Config) -> dict[str, Any]:
     """Every setting with its origin (flag, env, file or None) and status (ok, unset, invalid, not found), plus the
     keys of the file and the NNNOTES_ environment variables that name no setting (unknown). No values."""
-    out = []
-    known_env = set()
+    out: list[dict[str, Any]] = []
+    known_env: set[str] = set()
 
-    def record(s: Setting, section: str, status: str, reason: str | None, origin: str | None):
+    def record(s: Setting, section: str, status: str, reason: str | None, origin: str | None) -> None:
         env = env_name(section, s.key)
         known_env.add(env)
         out.append(

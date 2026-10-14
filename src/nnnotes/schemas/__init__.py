@@ -3,6 +3,7 @@ each with the `$id` `urn:nnnotes:schema:<name>` that the others reference."""
 
 import json
 from importlib import resources
+from typing import Any
 
 __all__ = ["load", "names"]
 
@@ -15,7 +16,7 @@ def names() -> list[str]:
     return sorted(p.name[: -len(SUFFIX)] for p in files.iterdir() if p.name.endswith(SUFFIX))
 
 
-def load(name: str) -> dict:
+def load(name: str) -> dict[str, Any]:
     """The schema `name` (`music-data` for music-data.schema.json)."""
     path = resources.files("nnnotes.schemas") / f"{name}{SUFFIX}"
     if not path.is_file():

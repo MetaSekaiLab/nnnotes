@@ -19,12 +19,18 @@ import gzip
 import hashlib
 import io
 import struct
+from collections.abc import Sequence
 from dataclasses import dataclass, field
+from typing import Any, TypeAlias
 from urllib.parse import quote, unquote
 
 from Crypto.Cipher import AES
 
 __all__ = ["BundleKey", "decrypt", "parse", "parse_header", "parse_keys", "parse_locations"]
+
+# a location of a catalog: {offset, primary_key, internal_id, dependencies} (parse), with the fields parse_locations
+# decodes
+Location: TypeAlias = "dict[str, Any]"
 
 UNITYFS = b"UnityFS\0"
 ENCRYPTED_BYTES = 16384  # only the first 16 KiB of a bundle are encrypted
@@ -57,7 +63,7 @@ class BundleKey:
     key: bytes = field(repr=False)
     seed: bytes = field(repr=False)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if len(self.key) != 16:
             raise ValueError("bundle key must be 16 bytes")
 
@@ -67,11 +73,11 @@ def decrypt(data: bytes, filename: str, key: BundleKey) -> bytes:
     if data.startswith(UNITYFS):
         return data
     nonce = hashlib.sha256(key.seed + filename.encode("utf-8")).digest()[:8]
-    aes = AES.new(key.key, AES.MODE_CTR, nonce=nonce, initial_value=0)
+    aes = AES.new(key.key, AES.MODE_CTR, nonce=nonce, initial_value=0)  # pyright: ignore[reportUnknownMemberType] (pycryptodome stubs: untyped overloads)
     return aes.decrypt(data[:ENCRYPTED_BYTES]) + data[ENCRYPTED_BYTES:]
 
 
-def relative_path(value):
+def relative_path(value: str) -> str:
     """A JP remote asset path (below the CDN base), checked and quoted; ValueError when it is not one."""
     decoded = unquote(value)
     if (
@@ -100,23 +106,23 @@ def remote_path(internal_id: str) -> str | None:
     return slash + path
 
 
-def parse(data: bytes) -> list[dict]:
+def parse(data: bytes) -> list[Location]:
     """Every location of a binary catalog: {offset, primary_key, internal_id, dependencies (location offsets)}."""
     data = catalog_bytes(data)
 
-    def u32(offset):
+    def u32(offset: int) -> int:
         return struct.unpack_from("<I", data, offset)[0]
 
-    def array(offset):
+    def array(offset: int) -> Sequence[int]:
         if offset == NONE:
             return []
         return struct.unpack_from(f"<{u32(offset - 4) // 4}I", data, offset)
 
-    def text(offset):
+    def text(offset: int) -> str:
         if offset == NONE:
             return ""
         if offset & 0x40000000:  # a path of parts, stored last part first
-            parts = []
+            parts: list[str] = []
             while offset != NONE:
                 part, offset = struct.unpack_from("<II", data, offset & 0x3FFFFFFF)
                 parts.append(text(part))
@@ -127,10 +133,10 @@ def parse(data: bytes) -> list[dict]:
     magic, version, keys = struct.unpack_from("<III", data)
     if magic != CATALOG_MAGIC or version != CATALOG_VERSION:
         raise ValueError("unsupported catalog format")
-    locations = set()
+    locations: set[int] = set()
     for pos in range(keys, keys + u32(keys - 4), 8):
         locations.update(array(u32(pos + 4)))
-    result = []
+    result: list[Location] = []
     for pos in sorted(locations):
         primary, internal, _, deps = struct.unpack_from("<4I", data, pos)
         result.append(
@@ -169,7 +175,7 @@ class _Buffer:
     def __init__(self, data: bytes):
         self.data = data
         self._plain: dict[int, str] = {}
-        self._types: dict[int, tuple] = {}
+        self._types: dict[int, tuple[str | None, str | None]] = {}
 
     def u32(self, offset: int) -> int:
         return struct.unpack_from("<I", self.data, offset)[0]
@@ -199,7 +205,8 @@ class _Buffer:
             return self.plain(offset)
         if not sep:
             raise ValueError(f"catalog string at {offset & OFFSET_MASK}: a part list where a plain string belongs")
-        parts, link, seen = [], offset, set()
+        parts: list[str] = []
+        link, seen = offset, set[int]()
         while link != NONE:
             pos = link & OFFSET_MASK
             if pos in seen:
@@ -221,7 +228,7 @@ class _Buffer:
             t = self._types[offset] = (self.string(assembly, "."), self.string(cls, "."))
         return t
 
-    def object_init(self, offset: int) -> dict | None:
+    def object_init(self, offset: int) -> dict[str, Any] | None:
         """ObjectInitializationData.Serializer.Data {id, type, data}: id and data plain strings, type a
         TypeSerializer.Data."""
         if offset == NONE:
@@ -242,24 +249,24 @@ class _Buffer:
             return cls, struct.unpack_from("<i", self.data, obj)[0]
         return cls, None
 
-    def extra(self, offset: int) -> dict | None:
+    def extra(self, offset: int) -> dict[str, Any] | None:
         """A location's extra data (ObjectTypeData {type, object}): {"type": class name} plus, for
         AssetBundleRequestOptions, the decoded options; None for null."""
         if offset == NONE:
             return None
         typ, obj = struct.unpack_from("<II", self.data, offset)
         cls = (self.type_name(typ) or (None, None))[1]
-        out: dict = {"type": cls}
+        out: dict[str, Any] = {"type": cls}
         if cls == REQUEST_OPTIONS and obj != NONE:
             out.update(self.request_options(obj))
         return out
 
-    def request_options(self, offset: int) -> dict:
+    def request_options(self, offset: int) -> dict[str, Any]:
         """AssetBundleRequestOptionsSerializationAdapter.SerializedData {u32 hash, u32 bundleName, u32 crc,
         u32 bundleSize, u32 common}: hash a Hash128 (16 raw bytes, hex in stored order), bundleName read with '_',
         common a SerializedData.Common {i16 timeout, u8 redirectLimit, u8 retryCount, i32 flags}."""
         hash_id, name_id, crc, size, common = struct.unpack_from("<5I", self.data, offset)
-        out = {
+        out: dict[str, Any] = {
             "hash": None if hash_id == NONE else self.data[hash_id : hash_id + 16].hex(),
             "bundleName": self.string(name_id, "_"),
             "crc": crc,
@@ -275,7 +282,7 @@ class _Buffer:
         return out
 
 
-def parse_header(data: bytes) -> dict:
+def parse_header(data: bytes) -> dict[str, Any]:
     """The header of a binary catalog: magic, version, keysOffset, locatorId, instanceProvider, sceneProvider
     ({id, assembly, type, data}), initObjects (the same, the providers the catalog initializes), buildResultHash."""
     data = catalog_bytes(data)
@@ -297,13 +304,13 @@ def parse_header(data: bytes) -> dict:
     }
 
 
-def parse_keys(data: bytes) -> list[dict]:
+def parse_keys(data: bytes) -> list[dict[str, Any]]:
     """The key table of a binary catalog in stored order (ContentCatalogData.ResourceLocator.KeyData {u32 key object,
     u32 location set}): {"key": value, "type": the key's type name, "locations": location offsets}."""
     data = catalog_bytes(data)
     header = parse_header(data)
     buf = _Buffer(data)
-    out = []
+    out: list[dict[str, Any]] = []
     table = header["keysOffset"]
     n = buf.u32(table - 4)
     if n % 8:
@@ -315,7 +322,7 @@ def parse_keys(data: bytes) -> list[dict]:
     return out
 
 
-def parse_locations(data: bytes) -> list[dict]:
+def parse_locations(data: bytes) -> list[Location]:
     """Every location of a binary catalog, fully decoded, by offset: what parse() gives (offset, primary_key,
     internal_id, dependencies) plus provider, dependency_hash, resource_type (class names) and extra_data.
 
@@ -331,7 +338,7 @@ def parse_locations(data: bytes) -> list[dict]:
     table = header["keysOffset"]
     for pos in range(table, table + buf.u32(table - 4), 8):
         offsets.update(buf.array(buf.u32(pos + 4)))
-    out = []
+    out: list[Location] = []
     for pos in sorted(offsets):
         if pos + LOCATION.size > len(data):
             raise ValueError(f"catalog location at {pos}: past the end of the catalog")

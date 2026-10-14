@@ -7,6 +7,7 @@ at most two idle APK sets retained per process; active readers keep their set al
 
 from __future__ import annotations
 
+import os
 import shutil
 import struct
 import tempfile
@@ -15,6 +16,7 @@ import zipfile
 from contextlib import ExitStack
 from functools import lru_cache
 from pathlib import Path
+from typing import IO, Any
 
 from ..core.cache import file_id
 
@@ -23,7 +25,7 @@ MANIFEST_IN_APK = "AndroidManifest.xml"
 
 
 @lru_cache(maxsize=2)
-def _expanded_apks(identity):
+def _expanded_apks(identity: tuple[str, int, int]) -> tuple[tempfile.TemporaryDirectory[str], list[Path]]:
     """An owned temporary directory and its APK paths; readers retain it across cache eviction."""
     with zipfile.ZipFile(identity[0]) as outer:
         names = [n for n in outer.namelist() if n.lower().endswith(".apk")]
@@ -32,7 +34,7 @@ def _expanded_apks(identity):
             raise ValueError("APK archive must contain exactly one base.apk")
         directory = tempfile.TemporaryDirectory(prefix="nnnotes-apks-")
         try:
-            paths = []
+            paths: list[Path] = []
             for i, name in enumerate(bases + sorted(n for n in names if n not in bases)):
                 path = Path(directory.name) / f"{i}.apk"
                 with outer.open(name) as stream, path.open("wb") as target:
@@ -45,13 +47,15 @@ def _expanded_apks(identity):
 
 
 class ApkSet:
-    def __init__(self, source):
+    """The members of an APK set (see the module documentation), read as one archive inside a `with` block."""
+
+    def __init__(self, source: str | os.PathLike[str] | IO[bytes]):
         self.source = source
         self._stack = ExitStack()
-        self._members = {}
-        self._expanded = None
+        self._members: dict[str, tuple[zipfile.ZipFile, zipfile.ZipInfo]] = {}
+        self._expanded: tuple[tempfile.TemporaryDirectory[str], list[Path]] | None = None
 
-    def __enter__(self):
+    def __enter__(self) -> ApkSet:
         try:
             self._open()
             return self
@@ -59,13 +63,13 @@ class ApkSet:
             self.__exit__(None, None, None)
             raise
 
-    def _add(self, source):
+    def _add(self, source: str | os.PathLike[str] | IO[bytes]) -> None:
         archive = self._stack.enter_context(zipfile.ZipFile(source))
         for info in archive.infolist():
             self._members.setdefault(info.filename, (archive, info))
 
-    def _open(self):
-        if hasattr(self.source, "read"):
+    def _open(self) -> None:
+        if not isinstance(self.source, (str, os.PathLike)):
             self._add(self.source)
             return
         path = Path(self.source)
@@ -85,20 +89,20 @@ class ApkSet:
         for apk in paths:
             self._add(apk)
 
-    def namelist(self):
+    def namelist(self) -> list[str]:
         return list(self._members)
 
-    def infolist(self):
+    def infolist(self) -> list[zipfile.ZipInfo]:
         return [info for _, info in self._members.values()]
 
-    def read(self, name):
+    def read(self, name: str | zipfile.ZipInfo) -> bytes:
         name = name.filename if isinstance(name, zipfile.ZipInfo) else name
         archive, info = self._members[name]
         return archive.read(info)
 
-    def __exit__(self, *args):
+    def __exit__(self, *args: Any) -> None:
         try:
-            return self._stack.__exit__(*args)
+            self._stack.__exit__(*args)
         finally:
             self._members.clear()
             self._expanded = None
@@ -109,13 +113,13 @@ def _manifest_attribute(data: bytes, attribute: str) -> tuple[str | None, int | 
     """An attribute of the <manifest> element of a binary AndroidManifest.xml: (its string, None when it has no
     string value; the Res_value data type; the Res_value data). None when absent or unreadable."""
     try:
-        pos, strings = 8, []
+        pos, strings = 8, list[str]()
         while pos + 8 <= len(data):
             typ, hsize, size = struct.unpack_from("<HHI", data, pos)
             if typ == 0x0001:  # string pool
                 count, _styles, flags, start = struct.unpack_from("<IIII", data, pos + 8)
                 for off in struct.unpack_from(f"<{count}I", data, pos + hsize):
-                    q = pos + start + off
+                    q: int = pos + start + off
                     if flags & 0x100:  # UTF-8: UTF-16 length, UTF-8 length, bytes
                         q += 2 if data[q] & 0x80 else 1
                         n = data[q]

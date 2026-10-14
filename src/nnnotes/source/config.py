@@ -20,8 +20,9 @@ import os
 import re
 import shutil
 import tomllib
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path
+from typing import Any, cast
 
 __all__ = ["Config", "ConfigError", "config_files", "user_file"]
 
@@ -35,7 +36,7 @@ class ConfigError(Exception):
     """A setting is missing or malformed (the message names the setting, never its value)."""
 
 
-def check_catalog_version(value: str) -> str:
+def check_catalog_version(value: object) -> str:
     """One safe international catalog filename component, including the legacy main selector."""
     if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", value) or ".." in value:
         raise ValueError("must be a single catalog version without path separators")
@@ -110,14 +111,14 @@ class Config:
 
     def __init__(
         self,
-        data: dict | None = None,
+        data: dict[str, Any] | None = None,
         base: Path | None = None,
         source: str | None = None,
         environ: Mapping[str, str] | None = None,
-        overrides: dict | None = None,
-        flags: dict | None = None,
+        overrides: Mapping[tuple[str, str], object] | None = None,
+        flags: Mapping[tuple[str, str], str] | None = None,
     ):
-        self._data = data or {}
+        self._data: dict[str, Any] = data or {}
         self._base = base
         self.source = source  # the TOML file read, if any (a path, shown in messages)
         env = os.environ if environ is None else environ
@@ -135,8 +136,8 @@ class Config:
         path: str | Path | None = None,
         *,
         environ: Mapping[str, str] | None = None,
-        overrides: dict | None = None,
-        flags: dict | None = None,
+        overrides: Mapping[tuple[str, str], object] | None = None,
+        flags: Mapping[tuple[str, str], str] | None = None,
     ) -> Config:
         env = os.environ if environ is None else environ
         file = find_file(path, env)
@@ -149,13 +150,13 @@ class Config:
         return cls(data, base=file.resolve().parent, source=str(file), environ=env, overrides=overrides, flags=flags)
 
     # ---------------------------------------------------------------- lookup
-    def _table(self, section: str) -> dict:
-        t = self._data
+    def _table(self, section: str) -> dict[str, Any]:
+        t: object = self._data
         for part in section.split("."):
-            t = t.get(part) if isinstance(t, dict) else None
-        return t if isinstance(t, dict) else {}
+            t = cast("dict[str, object]", t).get(part) if isinstance(t, dict) else None
+        return cast("dict[str, Any]", t) if isinstance(t, dict) else {}
 
-    def _raw(self, section: str, key: str):
+    def _raw(self, section: str, key: str) -> tuple[object, str | None]:
         """(value, origin) with origin 'flag', 'env' or 'file'; (None, None) when unset."""
         if (section, key) in self._over:
             return self._over[(section, key)], "flag"
@@ -180,12 +181,12 @@ class Config:
 
     def file_keys(self) -> list[tuple[str, str]]:
         """(section, key) of every value of the TOML file, a nested table as a dotted section ('' at the top)."""
-        out = []
+        out: list[tuple[str, str]] = []
 
-        def walk(table: dict, section: str) -> None:
+        def walk(table: dict[str, Any], section: str) -> None:
             for k, v in table.items():
                 if isinstance(v, dict):
-                    walk(v, f"{section}.{k}" if section else k)
+                    walk(cast("dict[str, Any]", v), f"{section}.{k}" if section else k)
                 else:
                     out.append((section, k))
 
@@ -222,14 +223,14 @@ class Config:
 
     def get_list(self, section: str, key: str) -> list[str]:
         """A list of strings (TOML array; comma-separated in the environment or on the command line)."""
-        v, origin = self._raw(section, key)
+        v, _ = self._raw(section, key)
         if v is None:
             return []
         if isinstance(v, str):
             return [s.strip() for s in v.split(",") if s.strip()]
-        if not isinstance(v, list) or not all(isinstance(s, str) for s in v):
+        if not isinstance(v, list) or not all(isinstance(s, str) for s in cast("list[object]", v)):
             raise self._bad(section, key, "must be a list of strings")
-        return list(v)
+        return list(cast("list[str]", v))
 
     def path(self, section: str, key: str) -> Path | None:
         if section == "paths" and key in ("apk", "catalog") and self.origin(section, key) != "flag":
@@ -241,7 +242,7 @@ class Config:
             return None
         if not isinstance(v, (str, os.PathLike)):
             raise self._bad(section, key, "must be a path string")
-        p = Path(v).expanduser()
+        p = Path(cast("str | os.PathLike[str]", v)).expanduser()
         if origin == "file" and not p.is_absolute() and self._base is not None:
             p = self._base / p
         return p
@@ -334,7 +335,7 @@ def usable_cpus() -> int:
     """The CPUs this process may run on, which sizes the default worker counts: its affinity mask (taskset, a
     container's cpuset), not the machine's CPU count. os.process_cpu_count (Python 3.13), else the affinity mask where
     the platform reports one, else os.cpu_count; at least 1."""
-    count = getattr(os, "process_cpu_count", None)
+    count: Callable[[], int | None] | None = getattr(os, "process_cpu_count", None)
     if count is not None:
         n = count()
     elif hasattr(os, "sched_getaffinity"):
