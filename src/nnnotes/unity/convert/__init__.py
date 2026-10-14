@@ -38,6 +38,10 @@ Object JSON (canon/1 in the object's own field order):
 - a string whose stored bytes are not UTF-8 is {"$hex": "<the stored bytes>"};
 - NaN is {"$float": "nan"}, infinities 1e999 / -1e999.
 
+A file of the player itself (the APK's built-in files) stores no type trees: its MonoBehaviours are read with the
+type trees nnnotes ships for their classes (nnnotes.unity.scripttypes), and an object that can be read only in part
+gives that part with `unsupported.typetree` (objects.py).
+
 A converter's documented limit raises atoms.Unsupported with a reason code; the reason codes are listed in
 docs/stages.md.
 """
@@ -76,7 +80,7 @@ CONVERTERS = {
     "scripts.json": 1,
     "bundle.json": 1,
     "shader.json": 1,
-    "generic.json": 1,
+    "generic.json": 2,
     "cri.usm": 1,
 }
 # class -> the converters its objects may use (every class may fall back to generic.json)
@@ -118,6 +122,7 @@ REASONS = (
     "no_data.font",
     "unsupported.sprite.external_texture",
     "unsupported.cri.awb_external",
+    "unsupported.typetree",
     "failed.read",
     "failed.export",
     *(f"unsupported.class.{c}" for c in UNSUPPORTED_CLASSES),

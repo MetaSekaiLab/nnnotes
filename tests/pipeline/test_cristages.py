@@ -15,7 +15,7 @@ import pytest
 
 from nnnotes.core import cache
 from nnnotes.formats import cri, crikey
-from nnnotes.pipeline import contract, cristages
+from nnnotes.pipeline import builtins, contract, cristages
 from nnnotes.pipeline.contract import IncompatibleTask, Input, Task
 from nnnotes.pipeline.cristages import AUDIO, AudioStage, MovieStage
 from nnnotes.pipeline.depot import Depot
@@ -106,14 +106,19 @@ def catalog_index(keys: dict, bundles=()) -> dict:
     }
 
 
+def boot_input(depot, tmp) -> Input:
+    apk = tmp / "base.apk"
+    with zipfile.ZipFile(apk, "w") as z:
+        z.writestr(builtins.DATA_DIR + "data.unity3d", b"UnityFS boot data")
+    return cristages.boot_input(builtins.inputs(depot, apk))
+
+
 def planning(depot, tmp, files: dict, keys=None, boot=True, bundles=()) -> Env:
     raw = {s: file_input(depot, tmp, s, d) for s, d in files.items()}
-    b = tmp / "data.unity3d"
-    b.write_bytes(b"UnityFS boot data")
     facts = {
         "raw": raw,
         "index": catalog_index(keys or {}, bundles),
-        "boot": cristages.boot_input(depot, b) if boot else None,
+        "boot": boot_input(depot, tmp) if boot else None,
     }
     return Env(depot, facts)
 
@@ -163,28 +168,17 @@ def load(depot, doc, aid):
 
 
 # ---------------------------------------------------------------- the key's source
-def test_boot_input_from_an_apk_is_stored_once(tmp_path):
+def test_boot_input_is_the_data_of_the_apk(tmp_path):
     depot = Depot(tmp_path / "s")
-    apk = tmp_path / "base.apk"
-    with zipfile.ZipFile(apk, "w") as z:
-        z.writestr(cristages.BOOT_IN_APK, b"UnityFS boot")
-        z.writestr("classes.dex", b"dex")
-    a = cristages.boot_input(depot, apk)
+    a = boot_input(depot, tmp_path)
     assert (a.role, a.sha256, a.size, a.name, a.locators) == (
         "boot",
-        contract.sha256(b"UnityFS boot"),
-        12,
+        contract.sha256(b"UnityFS boot data"),
+        17,
         "data.unity3d",
         ({"kind": "depot"},),
     )
-    assert depot.read(a.sha256) == b"UnityFS boot"
-    with mock.patch.object(zipfile, "ZipFile", side_effect=AssertionError("read again")):
-        assert cristages.boot_input(Depot(tmp_path / "s"), apk) == a  # remembered by the APK's content
-    d = tmp_path / "data.unity3d"
-    d.write_bytes(b"UnityFS other")
-    b = cristages.boot_input(depot, d)
-    assert b.sha256 == contract.sha256(b"UnityFS other") and b.locators[0]["kind"] == "file"
-    assert cristages.boot_input(depot, None) is None
+    assert cristages.boot_input({}) is None
 
 
 def test_hca_key_is_read_once_per_content(tmp_path):

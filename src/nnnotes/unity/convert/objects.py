@@ -7,6 +7,14 @@ task-level name `owner`) and returns (artifact id, content record).
 
 Every object a document names by {"$ref"} is recorded in `seen` (by object id, other bundles' objects included):
 the objects an object's documents reference, which the caller clears before converting an object.
+
+A file that stores no type trees (a player build's own files) gives its MonoBehaviours only their header; they are
+read with the task's type tree of their script class (`typetrees`, nnnotes.unity.scripttypes), checked against the
+type hash the file stores and the object's size. One without such a tree is `unsupported.typetree` (TYPETREE): its
+header is still read. Its other objects are read with the type trees of their classes UnityPy has for the file's
+Unity version; for a class whose tree reads the stored layout right only up to a field (PREFIXES, by the type hash
+the file stores) the typetree JSON is the fields up to it, also `unsupported.typetree`. The objects read in part are
+in `partial`, with the reason.
 """
 
 from __future__ import annotations
@@ -17,10 +25,14 @@ from dataclasses import dataclass, field
 from typing import cast
 
 from ...core.canon import encode
+from ..atoms import Unsupported
 from ..ids import object_id
+from ..scripttypes import typetree_node
 
 __all__ = [
     "NO_SCRIPT",
+    "PREFIXES",
+    "TYPETREE",
     "BundleObjects",
     "Capture",
     "ReadError",
@@ -33,6 +45,10 @@ __all__ = [
 ]
 
 NO_SCRIPT = "\0none"  # the script entry of a MonoBehaviour whose m_Script is null
+TYPETREE = "unsupported.typetree"  # an object of a file without type trees read in part
+# classes whose type tree (UnityPy's, for the file's Unity version) reads the stored layout right only up to a field,
+# by the type hash the file stores: {(class, type hash): the last field read right}
+PREFIXES = {("PlayerSettings", "936fd1913a4f0b5da2ce7cadb0ce9666"): "m_ActiveColorSpace"}
 _BYTE_TYPES = frozenset({"UInt8", "SInt8", "char"})
 _SCALARS = (int, float, str, bool, type(None))
 _ADDRESS = re.compile(r"0x[0-9a-fA-F]{6,}")
@@ -135,6 +151,24 @@ def _ref_type_node(ref: dict, assets_file):
     raise ValueError(f"referenced type {asm}|{ns}|{cls} is not among the file's reference types")
 
 
+def _cut(node, last: str):
+    """A type tree cut after its field `last` (None when it has no such field)."""
+    names = [c.m_Name for c in node.m_Children]
+    if last not in names:
+        return None
+    from UnityPy.helpers.TypeTreeNode import TypeTreeNode
+
+    return TypeTreeNode(
+        node.m_Level,
+        node.m_Type,
+        node.m_Name,
+        node.m_ByteSize,
+        node.m_Version,
+        m_MetaFlag=node.m_MetaFlag,
+        m_Children=node.m_Children[: names.index(last) + 1],
+    )
+
+
 class ReadError(Exception):
     """An object's typetree could not be read."""
 
@@ -156,17 +190,33 @@ class Capture:
 class BundleObjects:
     """The objects of one bundle (`view`, a reader atom's BundleView). `fns`: the atom functions by name; `scripts`:
     the script table entries the bundle's objects use ({MonoScript object id: "assembly|namespace|class"});
-    `blob_min`: byte arrays of this size or more are blobs; `png_level`: the zlib level of PNG files."""
+    `typetrees`: the type trees of script classes for the files that store none ({script entry: {"typeHash",
+    "nodes"}}); `blob_min`: byte arrays of this size or more are blobs; `png_level`: the zlib level of PNG files."""
 
-    def __init__(self, view, fns: dict, *, scripts: dict, blob_min: int, png_level: int, emit: Emit):
+    def __init__(
+        self,
+        view,
+        fns: dict,
+        *,
+        scripts: dict,
+        blob_min: int,
+        png_level: int,
+        emit: Emit,
+        typetrees: dict | None = None,
+    ):
         self.view, self.fns, self.emit = view, fns, emit
         self.scripts, self.blob_min, self.png_level = dict(scripts), int(blob_min), int(png_level)
+        self.typetrees = dict(typetrees or {})
         self.infos = view.objects()
         self.info = {(i.file, i.path_id): i for i in self.infos}
         self.readers = {k: view.reader(i) for k, i in self.info.items()}
         self.files = view.files()
         self.ext_files = {f: [_file_name(p) for p in view.externals(f)] for f in self.files}
         self.versions = {f: view.unity_version(f) for f in self.files}
+        self.stripped = frozenset(f for f in self.files if not view.stores_typetrees(f))
+        self.partial: dict[tuple, str] = {}  # objects read in part -> why
+        self._nodes: dict[tuple, object] = {}  # objects read with a type tree of `typetrees` -> its node
+        self._script_nodes: dict[str, object] = {}
         self.containers: dict[tuple, str] = {}
         for path, file, pid in view.container():
             k = (file, int(pid))
@@ -209,21 +259,7 @@ class BundleObjects:
         node = r._get_typetree_node()
         hit = self._heads.get(id(node))
         if hit is None or hit[0] is not node:
-            names = [c.m_Name for c in node.m_Children]
-            cut = None
-            if "m_Name" in names:
-                from UnityPy.helpers.TypeTreeNode import TypeTreeNode
-
-                cut = TypeTreeNode(
-                    node.m_Level,
-                    node.m_Type,
-                    node.m_Name,
-                    node.m_ByteSize,
-                    node.m_Version,
-                    m_MetaFlag=node.m_MetaFlag,
-                    m_Children=node.m_Children[: names.index("m_Name") + 1],
-                )
-            hit = self._heads[id(node)] = (node, cut)
+            hit = self._heads[id(node)] = (node, _cut(node, "m_Name"))
         if hit[1] is None:
             return None
         name = r.read_typetree(hit[1], check_read=False).get("m_Name")
@@ -241,15 +277,71 @@ class BundleObjects:
             self.names[key] = name
         return self.names[key]
 
-    def tt(self, key: tuple) -> dict:
-        """The object's typetree (ReadError when it cannot be read)."""
+    def tt(self, key: tuple, *, whole: bool = True) -> dict:
+        """The object's typetree (ReadError when it cannot be read). An object of a file that stores no type trees
+        that can be read only in part (see the module documentation) raises Unsupported(TYPETREE); with `whole` False
+        it gives that part (and is in `partial`)."""
+        info = self.info[key]
+        if info.class_name == "MonoBehaviour" and info.file in self.stripped:
+            return self._script_tt(key, info, whole)
         try:
-            tt = self.view.typetree(self.info[key])
+            tt = self.view.typetree(info)
         except Exception as e:
-            raise ReadError(message(e)) from None
+            last = PREFIXES.get((info.class_name, info.type_hash)) if info.file in self.stripped else None
+            if last is None:
+                raise ReadError(message(e)) from None
+            why = f"{info.class_name}: {message(e)}; read up to {last}, which its type tree reads right"
+            if whole:
+                raise Unsupported(TYPETREE, why) from None
+            tt = self._prefix(self.readers[key], last)
+            self.partial[key] = why
         name = tt.get("m_Name")
         self.names[key] = name if isinstance(name, str) else None
         return tt
+
+    def _script_tt(self, key: tuple, info, whole: bool) -> dict:
+        r = self.readers[key]
+        try:
+            head = r.read_typetree(check_read=False)  # the class's own tree: the header
+        except Exception as e:
+            raise ReadError(message(e)) from None
+        entry = self.mono_script(key, head)
+        t = self.typetrees.get(entry) if entry is not None else None
+        if entry is None or entry == NO_SCRIPT:
+            s = head.get("m_Script") or {}
+            why = f"script {s.get('m_FileID')}:{s.get('m_PathID')} is unknown and the file stores no type trees"
+        elif t is None:
+            why = f"the file stores no type trees and the task has none for {entry}"
+        elif t["typeHash"] != info.type_hash:
+            why = f"{entry}: the file's type hash {info.type_hash} is not the type tree's {t['typeHash']}"
+        else:
+            node = self._script_nodes.get(entry)
+            if node is None:
+                node = self._script_nodes[entry] = typetree_node(t["nodes"])
+            try:
+                tt = r.read_typetree(node, check_read=True)
+            except Exception as e:
+                why = f"{entry}: the type tree does not fit the object ({message(e)})"
+            else:
+                self._nodes[key] = node
+                self.partial.pop(key, None)
+                name = tt.get("m_Name")
+                self.names[key] = name if isinstance(name, str) else None
+                return tt
+        if whole:
+            raise Unsupported(TYPETREE, why)
+        self.partial[key] = why
+        return head
+
+    def _prefix(self, r, last: str) -> dict:
+        """An object's typetree up to the field `last` (its class's tree cut after it)."""
+        cut = _cut(r._get_typetree_node(), last)
+        if cut is None:
+            raise ReadError(f"its type tree has no field {last}")
+        try:
+            return r.read_typetree(cut, check_read=False)
+        except Exception as e:
+            raise ReadError(message(e)) from None
 
     def facts(self, key: tuple) -> dict:
         """The object facts of an artifact's provenance: file, path id, class, name, type hash, Unity version,
@@ -286,7 +378,7 @@ class BundleObjects:
     def script_class(self, key: tuple) -> str | None:
         """The class name of a MonoBehaviour from the script table (None when unknown)."""
         if key not in self._mono_scripts:
-            self.mono_script(key, self.tt(key))
+            self.mono_script(key, self.tt(key, whole=False))
         e = self._mono_scripts[key]
         return e.rsplit("|", 1)[-1] if e and e != NO_SCRIPT else None
 
@@ -342,7 +434,8 @@ class BundleObjects:
         name of an object of the prefab being walked (None for any other)."""
         self._captures, self._local = dict(captures or {}), local
         try:
-            doc = cast(dict, self._walk(owner, owner._get_typetree_node(), tt, ""))
+            node = self._nodes.get(self.key(owner)) or owner._get_typetree_node()
+            doc = cast(dict, self._walk(owner, node, tt, ""))
             left = self._captures
         finally:
             self._captures, self._local = {}, None

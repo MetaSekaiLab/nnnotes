@@ -18,7 +18,8 @@ decoding any object.
     classes        objects per class; `objects` the total
     errors         [{object, message}] of the objects whose header could not be read
 
-A census is a function of the bundle's bytes: it holds no file name, time or path.
+A census is a function of the bundle's bytes: it holds no file name, time or path (a serialized file outside a
+bundle, one of the APK's built-in files, has the name its subject gives: builtins.serialized_name).
 """
 
 from __future__ import annotations
@@ -26,7 +27,7 @@ from __future__ import annotations
 import re
 
 from ..unity.atoms import impl_id
-from . import contract
+from . import builtins, contract
 from .contract import Cost, Input
 from .stages import Output, Pending, Stage
 
@@ -249,11 +250,11 @@ def census_env(env) -> dict:
     }
 
 
-def census_file(path) -> dict:
-    """The census of a bundle file (decrypted UnityFS)."""
+def census_file(path, name: str | None = None) -> dict:
+    """The census of a bundle file (decrypted UnityFS), or of a serialized file named `name`."""
     from ..unity import reader as unity
 
-    env = unity.load(path)
+    env = unity.load(path, name)
     try:
         return census_env(env)
     finally:
@@ -305,9 +306,10 @@ def bundle_subjects(index: dict) -> dict[str, dict]:
 # ---------------------------------------------------------------- stage
 class CensusStage(Stage):
     """unity.census: one bundle -> its census. Subjects and inputs come from the fact "bundles": {subject: Input
-    (role "bundle": the decrypted bundle's sha256, size, name, locators)}; a bundle not fetched yet is Pending
-    (raised by the fact, or given as a Pending / None). Artifact "<task id>#census". The census
-    reads the bundle with UnityPy: its atom is the reader's ("reader", the UnityPy version)."""
+    (role "bundle": the decrypted bundle's sha256, size, name, locators)}, the APK's built-in files included
+    (builtins); a bundle not fetched yet is Pending (raised by the fact, or given as a Pending / None). Artifact
+    "<task id>#census". The census reads the bundle with UnityPy: its atom is the reader's ("reader", the UnityPy
+    version)."""
 
     name = "unity.census"
     version = 2
@@ -331,7 +333,7 @@ class CensusStage(Stage):
         return Cost(0.002 + size / 40e6, (32 << 20) + 12 * size)
 
     def run(self, task, depot) -> Output:
-        doc = census_file(depot.open_input(task.input("bundle")))
+        doc = census_file(depot.open_input(task.input("bundle")), builtins.serialized_name(task.subject))
         content = depot.add(contract.encode(doc), "json")
         rec = contract.artifact(
             contract.artifact_id(task.id, "census"),

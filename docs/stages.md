@@ -19,15 +19,15 @@ gzip input and Japanese remote asset placeholders).
 | Stage | Subject | Inputs | Outputs |
 |---|---|---|---|
 | `catalog.index` | a catalog (remote + APK) | the catalog files | every location (with the bundle hash, crc and size), bundles and raw remote files |
-| `unity.census` | a bundle | the bundle | serialized files, externals, objects (file, path id, class, size, type hash, name, script, the scripts an AnimationClip's bindings name), container, scene hashes, dependencies, script fields |
+| `unity.census` | a bundle, or a built-in file of the APK | the bundle | serialized files, externals, objects (file, path id, class, size, type hash, name, script, the scripts an AnimationClip's bindings name), container, scene hashes, dependencies, script fields |
 | `link.scripts` | global | the censuses holding MonoScripts | serialized file and path id -> assembly, namespace, class |
-| `unity.export` | a bundle | the bundle, the script entries its MonoBehaviours use | the objects' artifacts and one item per object |
+| `unity.export` | a bundle, or a built-in file of the APK | the bundle, the script entries its MonoBehaviours use (and, for files without type trees, the type trees nnnotes ships for their classes) | the objects' artifacts and one item per object |
 | `sprite.crop` | a SpriteAtlas | the atlas' JSON, the images of its textures, the metas of the sprites of other bundles it packs | the sprites' images |
 | `cri.audio` | ACB content | `acb` (a raw file of the catalog, or the `acb` artifact of a cue sheet held in a bundle), `awb` (an AWB the catalog pairs with it), `boot` (the game's boot data: the key's source) | FLAC per stream, `cues.json`, `streams.json` |
 | `cri.movie` | USM content | `usm` (a raw file of the catalog, or the `usm` artifact of a movie held in a bundle), `boot` | every stream as stored (video, alpha, audio, subtitles), `movie.mkv` (or `movie.webm`) |
 | `live2d.model` | a Live2D model key (`Character/Live2D/<group>/<name>/model/<name>`) whose bundle is selected | `bundle:<n>`: the bundles of the key's dependency closure in the order the extractor loads them (the order is part of the key); context `internalId` (the key's location); atom `live2d.extract_model` (the extractor of `nnnotes export live2d`, run unchanged) | `live2d.model:<key>#<path>`: every file `nnnotes export live2d` writes for the model, `<path>` relative to the model's directory; placed under `<key>/` |
 | `spine.skeleton` | a SkeletonDataAsset of a selected bundle, by its stable address `<bundle>:<pathId>` (in a bundle of several serialized files the file's tag follows the bundle name, as in `link.addresses`) | `bundle:<stable name>`: the bundles holding the serialized files the asset's file reaches through its externals; context `object` (the asset's object id); atom `spot.write_skeleton` (the Spine writer of `nnnotes export spot`) | `spine.skeleton:<subject>#<file>`: the skeleton (`.json` or `.skel`), its atlases (`.atlas`) and their page images, the bytes `nnnotes export spot` writes into `spine/`; one item for the asset |
-| `link.addresses` | global | catalog index, censuses | key -> objects, serialized file -> bundle, bundle -> keys |
+| `link.addresses` | global | catalog index, censuses (the built-in files' too) | key -> objects, serialized file -> bundle or built-in file, bundle -> keys |
 | `link.artifacts` | global | the above, the results | object id -> artifact ids |
 | `view.<name>` | a catalog (`main`) | `master:<Table>` per master table it reads, `rules` (the view's rule and the resolvers it uses), `addresses` (the part of the address table it read: the keys looked up and the prefixes listed); no parameters, atoms or context | `view.<name>:<subject>#view` (facts: rows, entries, gaps, unreferenced) |
 | `view.voices` | a catalog (`main`) | `master:<Table>` per master table its rules read, `rules`, `addresses`, `sheets` (each cue sheet the `cri.audio` results are known by that a voice names or the rules' prefixes list: its task and ACB content id), `acb:<sha256>` (the ACB of each decoded one), `episodes` (per story episode and part, the `unity.export` artifact holding the object its key names), `adv:<sha256>` (those contents); context `audio` (the keys of those `cri.audio` results); runs after `unity.export` and `cri.audio` | `view.voices:<subject>#view` (facts: rows, entries, gaps, unreferenced streams) |
@@ -61,7 +61,7 @@ with its reason code; any other error of a converter gives it with `generic.erro
 | Font | `font/2` | `font`: the font file, `json`: the typetree without `m_FontData` | `sniff` | |
 | MonoScript | `scripts.json/1` | `<task id>#scripts.json`: every MonoScript of the bundle | | |
 | AssetBundle | `bundle.json/1` | `<task id>#bundle.json`: serialized files, externals, the AssetBundle objects | | |
-| any other class | `generic.json/1` | `json`: the typetree | `sniff` | |
+| any other class | `generic.json/2` | `json`: the typetree | `sniff` | an object that can be read only in part (see below): that part, `unsupported.typetree` |
 
 Every object a converter takes has a `json` artifact or is contained in another object's. Each item lists in
 `refs` the objects its documents reference (by object id, other bundles' objects included, the objects of its own
@@ -74,6 +74,32 @@ data, `atlas` for its SpriteAtlas' entry; `atlas`; and that render data's `textu
 `settingsRaw`) and `image` (`packed`, `packingMode`, `packingRotation`, `width`, `height`). The texture coordinate
 of a position `p` is `((p.x * uvTransform.x + uvTransform.y) / width, (p.y * uvTransform.z + uvTransform.w) /
 height)` of the render data's texture.
+
+### The APK's built-in files
+
+With `[paths] apk` set, the player's own Unity files under `assets/bin/Data/` of the APK are subjects of
+`unity.census` and `unity.export` like the bundles, named `apk/<path under assets/bin/Data>`:
+
+| Subject | Holds |
+|---|---|
+| `apk/data.unity3d` | `globalgamemanagers` (player, graphics and quality settings, the resource table), `globalgamemanagers.assets` (render pipeline assets, renderer data and features, post-process data, shaders), `level0`, `resources.assets`, `sharedassets0.assets`, `unity_builtin_extra` (built-in shaders) |
+| `apk/datapack.unity3d` | `resources.assets` in split builds |
+| `apk/Resources/unity default resources` | the serialized file of the engine's default meshes, textures, shaders and font |
+
+Their objects have the ids of any serialized file's (`unity_builtin_extra:12`, `unity default resources:10`), so a
+bundle's reference into them names an object these tasks export, and `link.addresses` maps their files to their
+subjects. Census always covers them; everything and `--select bundle:apk/*` export them.
+
+These files store no type trees. Objects of the engine's classes are read with the type trees UnityPy has for the
+file's Unity version; MonoBehaviours with the type trees nnnotes ships for the game's classes it reads there
+(`nnnotes.unity.scripttypes`, generated by `scripts/gen_typetrees.py`): the render pipeline assets, renderer data,
+renderer features, post-process data and the game's settings objects. A shipped type tree is used only when the type
+hash the file stores is the one it was made for and its read consumes exactly the object's bytes; the task's
+context holds the shipped type trees its MonoBehaviours use, so a new shipped tree runs those tasks again. A
+MonoBehaviour without one is `unsupported.typetree` with its header (`m_GameObject`, `m_Enabled`, `m_Script`,
+`m_Name`) as its typetree JSON; inside a hierarchy its component keeps that header and the prefab records the
+issue. PlayerSettings, whose type tree reads the stored layout right up to `m_ActiveColorSpace` (by its stored
+type hash), gives the fields up to it.
 
 A task's key includes the atoms `reader` and `sniff`, the converter `generic.json`, and the converters (with their
 atoms) of the classes the bundle's census lists, so a converter's version bump runs again exactly the bundles holding
@@ -153,7 +179,8 @@ and multi-audio paths are tested on synthetic movies only.
 The ids of the external tools are `<tool>-<version>+sha256.<sha256 of the executable>/<revision>` (the version as
 `vgmstream-cli -V` / `ffmpeg -version` report it): another build of a tool runs the tasks that use it again, and a
 task described for another build is refused as incompatible. The tools are `[paths] vgmstream` and `[paths] ffmpeg`,
-else found on PATH. The `boot` input is the APK's `assets/bin/Data/data.unity3d` (`[paths] apk`), stored once.
+else found on PATH. The `boot` input is the APK's `assets/bin/Data/data.unity3d` (`[paths] apk`), the input of
+the `apk/data.unity3d` tasks.
 
 ## Atoms
 
@@ -242,6 +269,7 @@ The codes of items that are `generic`, `unsupported` or `failed`, and of limits 
 | `no_data.sprite` | a sprite whose render data names no texture, or whose texture has no image |
 | `unsupported.sprite.external_texture` | a sprite whose render data texture (not an atlas) is in another bundle |
 | `generic.error` | a converter failed on the object (the message says how); its typetree JSON instead |
+| `unsupported.typetree` | an object of a file without type trees read in part: a MonoBehaviour without a shipped type tree of its class (its header), a class whose type tree fits only up to a field (those fields) |
 | `failed.read` | the object's typetree could not be read |
 | `failed.export` | the object's typetree JSON could not be made |
 | `source.absent` | a catalog entry whose file is not there (an APK entry without a file) |
