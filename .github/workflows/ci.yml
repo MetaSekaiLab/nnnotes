@@ -32,7 +32,7 @@ jobs:
       - name: Install (with the deck model and the fonts extra)
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e ".[test,deck,fonts]"
+          python -m pip install -e ".[test,deck,fonts,remote]"
       - name: Lint
         run: |
           python -m ruff check .
@@ -55,7 +55,7 @@ jobs:
       - name: Install
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e ".[test,deck,fonts]"
+          python -m pip install -e ".[test,deck,fonts,remote]"
       - name: Type check
         run: python -m pyright
 

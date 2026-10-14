@@ -190,7 +190,7 @@ def cmd_fetch(args, cfg):
 
 def cmd_diff(args, cfg):
     from ..pipeline import catalogdb
-    from ..pipeline.depot import Depot
+    from ..pipeline.depot import open_depot
     from .assets import addresses_of
 
     db = _db(cfg)
@@ -200,7 +200,7 @@ def cmd_diff(args, cfg):
             vs.append(db.get(ref))
         except (KeyError, ValueError) as e:
             usage(args, f"{ref}: {e.args[0] if e.args else e}")
-    depot = Depot(Session(cfg).depot_root())
+    depot = open_depot(cfg)
     a, b = vs
     d = catalogdb.diff(db.index(a), db.index(b), addresses_of(depot, a["id"]), addresses_of(depot, b["id"]))
     if args.json:

@@ -36,6 +36,29 @@ def leaves(table, section=""):
             yield f"{section}.{k}" if section else k, v
 
 
+@pytest.mark.parametrize(
+    "name, value, ok",
+    [
+        ("depot.remote", "s3://bucket/prefix", True),
+        ("depot.remote", "file:///srv/depot", True),
+        ("depot.remote", "s3:///prefix", False),
+        ("depot.remote", "https://bucket/prefix", False),
+        ("depot.remote", "file://host/share", False),
+        ("depot.endpoint", "https://storage.example", True),
+        ("depot.endpoint", "storage.example", False),
+        ("depot.downloads", "20GiB", True),
+        ("depot.downloads", "lots", False),
+    ],
+)
+def test_depot_settings_are_checked(name, value, ok):
+    setting, _ = configfile.resolve(name)
+    if ok:
+        configfile.validate(setting, value)
+    else:
+        with pytest.raises(ValueError):
+            configfile.validate(setting, value)
+
+
 def test_settings_are_the_documented_ones():
     doc = (ROOT / "docs" / "configuration.md").read_text(encoding="utf-8")
     documented = set()
@@ -54,7 +77,14 @@ def test_template_values_are_empty():
     data = tomllib.loads(template().decode("utf-8"))
     assert all(v in ("", []) for _, v in leaves(data))
     secrets = {f"{s.section}.{s.key}" for s in configfile.SETTINGS if s.secret}
-    assert secrets == {"bundle.key", "bundle.nonce_seed", "master.key", "master.iv"}
+    assert secrets == {
+        "bundle.key",
+        "bundle.nonce_seed",
+        "master.key",
+        "master.iv",
+        "depot.access_key_id",
+        "depot.secret_access_key",
+    }
 
 
 def test_resolve():
@@ -170,7 +200,7 @@ def test_prompt_asks_every_setting():
     got = {f"{s}.{k}": v for s, k, v in values}
     assert regions == ["tw", "kr"]
     assert got == {"bundle.key": KEY, "master.key": MKEY, "catalog.region": "tw", "catalog.language": "zh-Hant"}
-    assert len(secret_prompts) == 5 and all("(hidden)" in p for p in secret_prompts)
+    assert len(secret_prompts) == 7 and all("(hidden)" in p for p in secret_prompts)
     assert any(p.startswith("[servers.kr] cdn") for p in prompts)
     text = configfile.render(values, regions)
     assert set(tomllib.loads(text)["servers"]) == {"tw", "kr"}
