@@ -1,29 +1,33 @@
-"""Stages `unity.export` (one bundle -> an artifact per object) and `sprite.crop` (the images of the sprites whose atlas
-is in another bundle).
+"""Stages `unity.export` (one unit of a bundle -> the artifacts of its objects) and `sprite.crop` (the images of the
+sprites whose atlas is in another bundle).
 
-unity.export reads one bundle alone (atom `reader`) and runs the converters of nnnotes.unity.convert over it, giving
-every object exactly one item (contract.item): `exported` (its artifacts), `contained` (part of another artifact:
-the objects of a hierarchy in its root's prefab, the MonoScripts in `scripts.json`, the AssetBundle objects in
-`bundle.json`), `generic` (the object's typetree JSON, with the reason its converter gave for not making the
-specialized form), `unsupported` (a class this stage does not convert; its typetree JSON is written all the same) or
-`failed` (not even the typetree JSON could be made). A converter's documented limit (atoms.Unsupported) gives the
-typetree JSON with its reason code; any other error of a converter gives it with `generic.error` and the error's
-message. The reason codes are listed in docs/stages.md. A bundle's task key includes only the converters of the
-classes its census lists.
+unity.export: one task per unit (pipeline.units: a hierarchy, or an object outside any hierarchy) of a request. A
+task reads its bundle alone (atom `reader`) and runs the converters of nnnotes.unity.convert over its unit, giving
+every object of the unit exactly one item (contract.item): `exported` (its artifacts), `contained` (an object of a
+hierarchy, in its root's prefab), `generic` (the object's typetree JSON, with the reason its converter gave for not
+making the specialized form), `unsupported` (a class this stage does not convert; its typetree JSON is written all
+the same) or `failed` (not even the typetree JSON could be made). A converter's documented limit
+(atoms.Unsupported) gives the typetree JSON with its reason code; any other error of a converter gives it with
+`generic.error` and the error's message. The reason codes are listed in docs/stages.md. A task's key holds the
+bundle, the unit's root object, the converters of the classes of its objects and the script entries and shipped
+type trees they use, so a unit converts again only when one of those changes.
 
-A texture is converted before the sprites cut from it (they read its decoded image) and a hierarchy before the
-MonoBehaviours outside it; the objects no converter took get their typetree JSON last.
+The tasks of one bundle are one batch (Stage.batch): a worker loads the bundle once for them and keeps, until the
+batch ends, what depends on the bundle alone: the index of its objects, its hierarchies, its atlases' render data
+and the last textures it decoded. A unit's result depends on neither the other units of its batch nor their order.
+A sprite cut from a texture of its bundle reads the texture's decoded image; a hierarchy that cannot be walked
+gives each of its objects the typetree JSON with the reason.
 
-sprite.crop: a sprite whose SpriteAtlas is in another bundle gets its `meta` from unity.export (with the sprite's
-mesh and object facts); one sprite.crop task per atlas then reads the atlas' JSON, the images of its textures and the
-metas, and makes "<sprite object id>#image" exactly as unity.export makes the image of a sprite whose atlas is in its
-own bundle.
+sprite.crop: a sprite whose SpriteAtlas is in another bundle gets its `json` from unity.export (with the sprite's
+mesh and object facts) and no image; one sprite.crop task per atlas then reads the atlas' JSON, the images of its
+textures and those sprites' documents, and makes "<sprite object id>#image" exactly as unity.export makes the image
+of a sprite whose atlas is in its own bundle.
 """
 
 from __future__ import annotations
 
 import io
-from collections import defaultdict
+from collections import OrderedDict, defaultdict
 
 from ..unity import scripttypes
 from ..unity.atoms import ATOMS as ATOM_REGISTRY
@@ -48,22 +52,21 @@ from ..unity.convert import (
 )
 from ..unity.convert.objects import (
     TYPETREE,
+    BundleIndex,
     BundleObjects,
     ReadError,
-    encode_object,
     label,
     message,
     ref_object_id,
 )
-from . import builtins, contract, link
-from . import census as census_mod
+from . import builtins, contract, link, units
 from .contract import Cost, IncompatibleTask, Input
 from .stages import Output, Pending, Stage
 
 EXPORT, CROP, CENSUS, SCRIPTS = "unity.export", "sprite.crop", "unity.census", "link.scripts"
 SCRIPTS_TASK = contract.task_id(SCRIPTS, "all")
 ATOM_NAMES = frozenset(ATOM_REGISTRY)
-# class -> (converter, function), in the order they run after the textures and sprites
+# class -> (converter, function) of the classes converted by one function alone
 _SIMPLE = (
     ("Mesh", "mesh.glb", files.mesh),
     ("TextAsset", "data", files.text),
@@ -74,26 +77,80 @@ _SIMPLE = (
     ("AnimatorController", "controller.json", animation.controller),
     ("AnimatorOverrideController", "controller.json", animation.controller),
 )
+DECODED_PIXELS = 1 << 25  # the decoded textures a batch keeps: the last ones, up to this many pixels
 
 
-# ---------------------------------------------------------------- one bundle
-class BundleRun:
-    """unity.export on one bundle: the converters over its objects (the task's `classes` only), one item per
-    object, the artifacts in the depot."""
+# ---------------------------------------------------------------- one bundle in a worker
+class _Bundle:
+    """What the tasks of one bundle share in a worker: the bundle's view and BundleIndex, its hierarchies (valid
+    roots by GameObject key, and the objects of the hierarchies that cannot be walked with the reason), its atlases'
+    render data and the last decoded textures."""
 
-    def __init__(self, view, task, depot, fns: dict):
-        self.task, self.depot = task, depot
+    def __init__(self, sha: str, view):
+        self.sha, self.view = sha, view
+        self.index = BundleIndex(view)
+        self.atlases: dict = {}
+        self._h = None
+        self.roots: dict[tuple, prefab.Root] = {}
+        self.broken: dict[tuple, str] = {}
+        self._decoded: OrderedDict = OrderedDict()
+        self._pixels = 0
+
+    def hierarchies(self, ctx: BundleObjects):
+        if self._h is None:
+            h = prefab.hierarchies(ctx)
+            for root in h.roots:
+                go = (root.file, root.game_object)
+                info = self.index.info.get(go)
+                if root.error is None and info is not None and info.class_name == "GameObject":
+                    self.roots[go] = root
+            for root in h.roots:
+                if (root.file, root.game_object) in self.roots:
+                    continue
+                why = root.error or f"transform {root.transform}: no GameObject"
+                for k in root.members:
+                    if k in self.index.info and k not in h.member:
+                        self.broken.setdefault(k, f"hierarchy at transform {root.transform}: {why}")
+            self._h = h
+        return self._h
+
+    def decoded(self, ctx: BundleObjects, info) -> dict:
+        """A texture's decoded image or the error (textures.decode_into), kept while it is among the last
+        DECODED_PIXELS pixels decoded."""
+        k = (info.file, info.path_id)
+        holder = self._decoded.get(k)
+        if holder is not None:
+            self._decoded.move_to_end(k)
+            return holder
+        holder = {}
+        textures.decode_into(ctx, info, holder)
+        img = holder.get("image")
+        self._decoded[k] = holder
+        self._pixels += img.width * img.height if img is not None else 0
+        while self._pixels > DECODED_PIXELS and len(self._decoded) > 1:
+            _, old = self._decoded.popitem(last=False)
+            img = old.get("image")
+            self._pixels -= img.width * img.height if img is not None else 0
+        return holder
+
+
+# ---------------------------------------------------------------- one unit
+class UnitRun:
+    """unity.export on one unit: its converters over its objects, one item per object, the artifacts in the
+    depot."""
+
+    def __init__(self, bundle: _Bundle, task, depot, fns: dict):
+        self.task, self.depot, self.bundle = task, depot, bundle
         self.ctx = BundleObjects(
-            view,
+            bundle.view,
             fns,
             scripts=task.context.get("scripts", {}),
             blob_min=int(task.params["blobMin"]),
             png_level=int(task.params["png"]["level"]),
             emit=self._emit,
             typetrees=task.context.get("typetrees", {}),
+            index=bundle.index,
         )
-        classes = task.params.get("classes")
-        self.selected = None if classes is None else frozenset(classes)
         self.usm_assets = USM_CONVERTER in task.atoms
         self.items: dict[str, dict] = {}
         self.artifacts: list[dict] = []
@@ -175,8 +232,6 @@ class BundleRun:
 
     def _convert(self, info, conv: str, fn, *args, **kw) -> bool:
         """Run a converter on one object: its artifacts (exported), else the typetree JSON with the reason."""
-        if info.id in self.items:
-            return False
         self._need(conv)
         self._begin(conv)
         try:
@@ -213,124 +268,61 @@ class BundleRun:
         else:
             self._commit(info, "generic", contract.reason(TYPETREE, label(why)))
 
-    def _selected(self, cls: str) -> bool:
-        return self.selected is None or cls in self.selected
-
-    def _of(self, cls: str) -> list:
-        """The objects of `cls` this task converts (none when the task's `classes` leave the class out)."""
-        return self.ctx.of(cls) if self._selected(cls) else []
-
-    # ---------------------------------------------------------------- the bundle
+    # ---------------------------------------------------------------- the unit
     def run(self) -> tuple[list, list]:
-        self._textures_sprites()
-        for cls, conv, fn in _SIMPLE:
-            for i in self._of(cls):
-                self._convert(i, conv, fn)
-        self._prefabs()
-        for i in self._of("MonoBehaviour"):
-            self._convert(i, "mono.json", mono.mono, usm_assets=self.usm_assets)
-        for conv, (cls, kind) in generic.LOOSE.items():
-            self._loose(cls, conv, kind)
-        for i in self.ctx.infos:
-            if i.id in self.items or not self._selected(i.class_name):
-                continue
-            if i.class_name in UNSUPPORTED_CLASSES:
-                self._fallback(
-                    i, f"unsupported.class.{i.class_name}", f"{i.class_name} is not converted", status="unsupported"
-                )
-            else:
-                self._generic(i)
+        key = contract.parse_object_id(self.task.context["unit"])
+        info = self.ctx.info.get(key)
+        if info is None:
+            raise IncompatibleTask(f"task {self.task.id}: object {self.task.context['unit']} is not in the bundle")
+        cls = info.class_name
+        self.bundle.hierarchies(self.ctx)
+        simple = {c: (conv, fn) for c, conv, fn in _SIMPLE}
+        if key in self.bundle.broken:
+            self._fallback(info, "generic.error", self.bundle.broken[key])
+        elif key in self.bundle.roots:
+            self._prefab(info, self.bundle.roots[key])
+        elif cls == "Sprite":
+            self._sprite(info)
+        elif cls == "Texture2D":
+            self._convert(info, "tex.png", textures.texture, self.bundle.decoded(self.ctx, info))
+        elif cls in simple:
+            self._convert(info, *simple[cls])
+        elif cls == "MonoBehaviour":
+            self._convert(info, "mono.json", mono.mono, usm_assets=self.usm_assets)
+        elif cls in UNSUPPORTED_CLASSES:
+            self._fallback(info, f"unsupported.class.{cls}", f"{cls} is not converted", status="unsupported")
+        else:
+            self._generic(info)
         return self.artifacts, list(self.items.values())
 
-    def _textures_sprites(self) -> None:
-        waiting, atlases = defaultdict(list), {}
-        for s in self._of("Sprite"):
-            self._need("sprite.png")
-            self._begin("sprite.png")
-            try:
-                plan = textures.sprite_plan(self.ctx, (s.file, s.path_id), atlases)
-            except Unsupported as e:
-                self._fallback(s, e.code, e.message)
-                continue
-            except Exception as e:
-                self._fallback(s, "generic.error", message(e))
-                continue
-            if plan["external"]:
-                self._convert(s, "sprite.png", textures.sprite_external, plan, CROP)
-            else:
-                waiting[plan["texture"]].append((s, plan))
-        export_textures = self._selected("Texture2D")
-        for t in self.ctx.of("Texture2D"):
-            sprites = waiting.pop((t.file, t.path_id), ())
-            if not sprites and not export_textures:
-                continue
-            holder: dict = {}
-            if export_textures:
-                self._convert(t, "tex.png", textures.texture, holder)
-            else:
-                textures.decode_into(self.ctx, t, holder)
-            for s, plan in sprites:
-                self._convert(s, "sprite.png", textures.sprite, plan, holder)
-            holder.clear()
-        for tkey, rest in waiting.items():
-            for s, _plan in rest:
-                self._fallback(s, "no_data.sprite", f"texture {contract.object_id(*tkey)} is not decoded")
-
-    def _prefabs(self) -> None:
-        if not self._selected("GameObject"):
+    def _sprite(self, info) -> None:
+        self._need("sprite.png")
+        self._begin("sprite.png")
+        try:
+            plan = textures.sprite_plan(self.ctx, (info.file, info.path_id), self.bundle.atlases)
+        except Unsupported as e:
+            self._fallback(info, e.code, e.message)
             return
-        h = prefab.hierarchies(self.ctx)
-        info_of = self.ctx.info
-        for root in h.roots:
-            info = info_of.get((root.file, root.game_object))
-            if root.error is not None or info is None or info.class_name != "GameObject":
-                why = root.error or f"transform {root.transform}: no GameObject"
-                for k in root.members:
-                    if k in info_of and info_of[k].id not in self.items:
-                        self._fallback(info_of[k], "generic.error", f"hierarchy at transform {root.transform}: {why}")
-                continue
-            if self._convert(info, "prefab.json", prefab.prefab, h, root):
-                within = contract.artifact_id(info.id, "json")
-                for k in root.members:
-                    i = info_of[k]
-                    if i.id != info.id:
-                        self.items[i.id] = contract.item(i.id, "contained", within=within, cls=i.class_name)
-            else:
-                why = self.items[info.id].get("reason") or {"code": "generic.error", "message": ""}
-                for k in root.members:
-                    i = info_of[k]
-                    if i.id not in self.items:
-                        self._fallback(i, why["code"], f"hierarchy of {info.id}: {why['message']}")
-
-    def _loose(self, cls: str, conv: str, kind: str) -> None:
-        """Objects of `cls` in one task-level artifact "<task id>#<conv>" (contained in it)."""
-        infos = [i for i in self._of(cls) if i.id not in self.items]
-        if not infos:
+        except Exception as e:
+            self._fallback(info, "generic.error", message(e))
             return
-        self._need(conv)
-        self._begin(conv)
-        entries, done, failed = {}, [], []
-        for i in infos:
-            mark = len(self.staged)
-            key = (i.file, i.path_id)
-            self.ctx.seen.clear()
-            try:
-                entries[i.id] = self.ctx.tree(self.ctx.readers[key], self.ctx.tt(key))
-                done.append((i, self._refs(i)))
-            except Exception as e:
-                del self.staged[mark:]
-                failed.append((i, e))
-        if done:
-            doc = encode_object(generic.loose_doc(self.ctx, conv, entries))
-            aid = self._emit(None, conv, doc, "json", kind, "json", {"objects": len(done)}, owner=self.task.id)[0]
-            self._publish()
-            for i, refs in done:
-                self.items[i.id] = contract.item(i.id, "contained", within=aid, cls=i.class_name, refs=refs)
-        for i, e in failed:
-            if isinstance(e, ReadError):
-                self._failed(i, e)
-            else:
-                self._fallback(i, "generic.error", message(e))
+        if plan["external"]:
+            self._convert(info, "sprite.png", textures.sprite_external, plan, CROP)
+        else:
+            holder = self.bundle.decoded(self.ctx, self.ctx.info[plan["texture"]])
+            self._convert(info, "sprite.png", textures.sprite, plan, holder)
+
+    def _prefab(self, info, root: prefab.Root) -> None:
+        h = self.bundle.hierarchies(self.ctx)
+        members = [self.ctx.info[k] for k in root.members if k != (info.file, info.path_id)]
+        if self._convert(info, "prefab.json", prefab.prefab, h, root):
+            within = contract.artifact_id(info.id, "json")
+            for i in members:
+                self.items[i.id] = contract.item(i.id, "contained", within=within, cls=i.class_name)
+            return
+        why = self.items[info.id].get("reason") or {"code": "generic.error", "message": ""}
+        for i in members:
+            self._fallback(i, why["code"], f"hierarchy of {info.id}: {why['message']}")
 
 
 # ---------------------------------------------------------------- stages
@@ -361,7 +353,7 @@ def _check_atoms(task, reader: Impl | None = None) -> None:
 
 
 class _Docs:
-    """A few JSON documents of the depot by content id (the planning reads each census several times)."""
+    """A few JSON documents of the depot by content id (the planning reads some several times)."""
 
     def __init__(self, size: int = 64):
         self.size, self.docs = size, {}
@@ -377,29 +369,27 @@ class _Docs:
 
 
 class ExportStage(Stage):
-    """unity.export: one bundle -> an artifact per object, one item per object (see the module documentation).
+    """unity.export: one unit -> the artifacts of its objects, one item per object (see the module documentation).
 
-    Subjects: the selected bundles (the fact "selected", stable bundle names) and, when a selected bundle holds
-    sprites, the bundles of the fact "bundles" (the selection's closure) that hold a SpriteAtlas: a sprite reaches its
-    atlas texture through the atlas' bundle, whose export makes the texture's image (sprite.crop reads it). Inputs:
-    "bundles" {subject: Input (role "bundle")}, as unity.census. It reads the census of its bundle
-    (unity.census:<subject>) for the classes (the converters and atoms of its key) and the MonoScripts its objects
-    reference, and the script table (link.scripts:all) for the entries of those: its context
-    {"scripts": {object id: "assembly|namespace|class"}}, and for the MonoBehaviours of files that store no type trees
-    (the APK's built-in files) the type trees nnnotes ships for their type hashes: "typetrees" {type hash: nodes}.
-    Parameters: `blobMin` (bytes; byte arrays of this size or
-    more are blobs), `png.level` (zlib level of the PNG files). `reader`: another implementation of the reader atom
-    (its id enters the keys)."""
+    Subjects: the units of the request (pipeline.units.table: the facts "selected", "bundles" and "classes", and
+    the censuses of the bundles). Inputs: the unit's bundle ("bundles" {stable name: Input (role "bundle")}, as
+    unity.census). It reads the script table (link.scripts:all) for the entries of the MonoScripts its objects
+    name. Context: "unit" (the root object's id), "bundle" (the stable bundle name), "scripts" {object id:
+    "assembly|namespace|class"} and, for the MonoBehaviours of files that store no type trees (the APK's built-in
+    files), "typetrees" {type hash: nodes}: the type trees nnnotes ships for their type hashes. Parameters:
+    `blobMin` (bytes; byte arrays of this size or more are blobs), `png.level` (zlib level of the PNG files).
+    `reader`: another implementation of the reader atom (its id enters the keys). Batch: the bundle's content id."""
 
     name = EXPORT
-    version = 1
+    version = 2
     after = (CENSUS, SCRIPTS)
-    PARAMS = {"blobMin": 4096, "classes": None, "png": {"level": 6}}
-    LAYOUT_ROOT = "_bundles/{subject}"
+    PARAMS = {"blobMin": 4096, "png": {"level": 6}}
 
     def __init__(self, reader: Impl | None = None):
         self.reader = reader
         self._docs = _Docs()
+        self._atoms_memo: dict[tuple, dict] = {}
+        self._loaded: _Bundle | None = None
 
     def __getstate__(self):
         return {"reader": self.reader}
@@ -426,101 +416,87 @@ class ExportStage(Stage):
         blob = p.get("blobMin", 4096)
         if not isinstance(blob, int) or isinstance(blob, bool) or blob < 1:
             raise ValueError(f"stage {self.name}: blobMin {blob!r}: expected a positive integer")
-        classes = p.get("classes")
-        if classes is not None:
-            if isinstance(classes, str) or not all(isinstance(c, str) and c for c in classes):
-                raise ValueError(f"stage {self.name}: classes {classes!r}: expected a list of class names")
-            classes = sorted(set(classes))
-        return {"blobMin": blob, "classes": classes, "png": _png_params(p.get("png"))}
+        return {"blobMin": blob, "png": _png_params(p.get("png"))}
 
     def subjects(self, env) -> list[str]:
-        selected = set(env.fact("selected"))
-        out = set(selected)
-        if any("Sprite" in _census_classes(env, s) for s in sorted(selected)):
-            out.update(s for s in env.fact("bundles") if s not in out and "SpriteAtlas" in _census_classes(env, s))
-        return sorted(out)
+        return units.table(env).subjects()
+
+    def unit(self, subject: str, env) -> units.Unit:
+        return units.table(env).unit(subject)
 
     def inputs(self, subject: str, env) -> list[Input]:
-        inp = env.fact("bundles")[subject]
+        u = self.unit(subject, env)
+        inp = env.fact("bundles")[u.bundle]
         if inp.role != "bundle":
             raise ValueError(f"{self.name} {subject}: input role {inp.role!r}, expected 'bundle'")
         return [inp]
 
-    def census(self, subject: str, env) -> dict:
-        inp = env.input_of(contract.task_id(CENSUS, subject), "census")
-        return self._docs.get(env.depot, inp.sha256)
-
     def uses(self, subject: str, env) -> dict:
-        """The atoms and converters of the classes the bundle's census lists; with the task's `classes` (env.params
-        while the task is described), of those of them only; converter cri.usm when a MonoBehaviour of the bundle is
-        a movie asset (its script context names the class)."""
-        classes = list(self.census(subject, env)["classes"])
-        only = (getattr(env, "params", None) or {}).get("classes")
-        if only is not None:
-            keep = set(only)
-            classes = [c for c in classes if c in keep]
-        atoms = export_atoms(classes, self.reader_id())
-        if "MonoBehaviour" in classes and USM_ASSET_SCRIPT in self.context(subject, env).get("scripts", {}).values():
-            atoms = dict(sorted({**atoms, USM_CONVERTER: converter_id(USM_CONVERTER)}.items()))
+        """The atoms and converters of the classes of the unit's objects; converter cri.usm when one of them is a
+        movie asset (its script context names the class)."""
+        u = self.unit(subject, env)
+        usm = (
+            "MonoBehaviour" in u.classes and USM_ASSET_SCRIPT in self.context(subject, env).get("scripts", {}).values()
+        )
+        k = (u.classes, usm)
+        atoms = self._atoms_memo.get(k)
+        if atoms is None:
+            atoms = export_atoms(u.classes, self.reader_id())
+            if usm:
+                atoms = dict(sorted({**atoms, USM_CONVERTER: converter_id(USM_CONVERTER)}.items()))
+            self._atoms_memo[k] = atoms
         return atoms
 
     def context(self, subject: str, env) -> dict:
-        doc = self.census(subject, env)
-        out = {}
-        refs = census_mod.script_refs(doc)
-        if refs:
+        u = self.unit(subject, env)
+        out: dict = {"unit": u.root, "bundle": u.bundle}
+        if u.scripts:
             table = self._docs.get(env.depot, env.input_of(SCRIPTS_TASK, "scripts").sha256)["scripts"]
-            out["scripts"] = link.script_context(table, refs)
-        types = _script_types(doc)
-        if types:
-            out["typetrees"] = types
+            scripts = link.script_context(table, u.scripts)
+            if scripts:
+                out["scripts"] = scripts
+        trees = {}
+        for version, h in u.trees:
+            nodes = scripttypes.script_types(version).get(h)
+            if nodes is not None:
+                trees[h] = nodes
+        if trees:
+            out["typetrees"] = dict(sorted(trees.items()))
         return out
 
     def depends(self, subject: str, env) -> list[str]:
-        return [contract.task_id(CENSUS, subject), SCRIPTS_TASK]
+        return [contract.task_id(CENSUS, self.unit(subject, env).bundle), SCRIPTS_TASK]
 
     def estimate(self, subject: str, env, inputs: list[Input]) -> Cost:
-        """From the bundle's size, its census' object count and the size of its resource files (least squares over
-        a whole catalog: CPU seconds; peak resident bytes of a worker process, which grow with the objects)."""
+        """CPU: the unit's share of loading its bundle (from the bundle's size, among the requested units of the
+        bundle) and its own (its objects and their bytes); peak: the worker's for the whole bundle (from its size
+        and object count), which the tasks of its batch hold together."""
+        u = self.unit(subject, env)
+        t = units.table(env)
         size = sum(i.size for i in inputs)
-        try:
-            doc = self.census(subject, env)
-            n = int(doc["objects"])
-            res = sum(int(r.get("size") or 0) for r in doc.get("resources") or ())
-        except Exception:
-            n = res = 0
-        return Cost(0.12 + size * 3.3e-7 + n * 8.8e-5 + res * 6.6e-8, (80 << 20) + 80 * size + 17500 * n)
+        n = t.objects.get(u.bundle, 0)
+        load = 0.12 + size * 3.3e-7
+        cpu = load / max(1, t.per_bundle[u.bundle]) + len(u.members) * 8.8e-5 + u.size * 6.6e-8
+        return Cost(cpu, (80 << 20) + 80 * size + 17500 * n)
+
+    def batch(self, task) -> str:
+        return task.input("bundle").sha256
+
+    def end_batch(self, batch: str) -> None:
+        if self._loaded is not None and self._loaded.sha == batch:
+            self._loaded = None
 
     def run(self, task, depot) -> Output:
         reader = self.reader if self.reader is not None else resolve("reader")
         _check_atoms(task, reader)
-        view = reader.fn(depot.input_bytes(task.input("bundle")), builtins.serialized_name(task.subject))
+        inp = task.input("bundle")
+        if self._loaded is None or self._loaded.sha != inp.sha256:
+            self._loaded = None
+            name = builtins.serialized_name(task.context["bundle"])
+            self._loaded = _Bundle(inp.sha256, reader.fn(depot.input_bytes(inp), name))
         fns = {n: resolve(n).fn for n in task.atoms if n in ATOM_NAMES and n != "reader"}
-        arts, items = BundleRun(view, task, depot, fns).run()
+        arts, items = UnitRun(self._loaded, task, depot, fns).run()
         return Output(arts, items)
-
-
-def _script_types(doc: dict) -> dict:
-    """{type hash: nodes} of the embedded type trees (nnnotes.unity.scripttypes, of each file's Unity version) of the
-    type hashes of the MonoBehaviours in the census' files that store no type trees ({} when it has none)."""
-    out = {}
-    for f in doc["files"]:
-        if f["typetree"]:
-            continue
-        types = scripttypes.script_types(f["unityVersion"] or "")
-        for o in f["objects"]:
-            h = o["typeHash"] if o["class"] == "MonoBehaviour" else None
-            if h in types:
-                out[h] = types[h]
-    return dict(sorted(out.items()))
-
-
-def _census_classes(env, subject: str) -> dict:
-    """{class: objects} of a bundle's census ({} when its census has no result)."""
-    try:
-        return env.artifact(contract.task_id(CENSUS, subject), "census")["semantics"]["facts"]["classes"]
-    except (Pending, KeyError):
-        return {}
 
 
 def _store_input(role: str, record: dict) -> Input:
@@ -528,11 +504,16 @@ def _store_input(role: str, record: dict) -> Input:
     return Input(role, c["sha256"], c["size"], None, ({"kind": "depot"},))
 
 
+def _artifact(env, tid: str, aid: str) -> dict | None:
+    return next((a for a in env.result(tid)["artifacts"] if a["id"] == aid), None)
+
+
 class SpriteCropStage(Stage):
-    """sprite.crop: the images of the sprites whose SpriteAtlas is in another bundle. One task per atlas, subject
-    "<unity.export subject of the atlas' bundle>:<atlas pathId>"; inputs: "atlas" (the atlas' JSON), "sprite:<object
-    id>" (each sprite's meta), "texture:<object id>" (the image of each atlas texture the sprites use), all artifacts
-    of unity.export results. Waits for unity.export tasks that have not run. Artifacts "<sprite object id>#image"."""
+    """sprite.crop: the images of the sprites whose SpriteAtlas is in another bundle. One task per atlas, subject the
+    unity.export subject of the atlas' unit; inputs: "atlas" (the atlas' JSON), "sprite:<object id>" (each sprite's
+    JSON), "texture:<object id>" (the image of each atlas texture the sprites use), all artifacts of unity.export
+    results. The sprites are those of the unity.export tasks of Sprite units whose JSON names an atlas of another
+    bundle; waits for unity.export tasks that have not run. Artifacts "<sprite object id>#image"."""
 
     name = CROP
     version = 1
@@ -561,51 +542,40 @@ class SpriteCropStage(Stage):
             raise ValueError(f"stage {self.name}: unknown parameters {', '.join(unknown)}")
         return {"png": _png_params(p.get("png"))}
 
-    @staticmethod
-    def _may_hold(env, tid: str) -> bool:
-        subject = contract.parse_task_id(tid, EXPORT)[1]
-        try:
-            classes = env.artifact(contract.task_id(CENSUS, subject), "census")["semantics"]["facts"]["classes"]
-        except Exception:
-            return True
-        return "Sprite" in classes or "SpriteAtlas" in classes
-
     def index(self, env) -> dict:
-        """{subjects: {subject: (atlas object id, [(sprite object id, export task id, meta record)])}, atlases,
-        textures, missing: atlas object ids that sprites name but no result holds}."""
+        """{subjects: {atlas subject: (atlas object id, [(sprite object id, export task id, its JSON record)])},
+        missing: atlas object ids that sprites name but no unity.export result holds}."""
         pending = env.pending(EXPORT)
         if pending:
             raise Pending(pending[0])
-        tids = env.tasks(EXPORT)
-        sig = tuple(env.key(t) for t in tids)
+        table = units.table(env)
+        tids = []
+        for t in env.tasks(EXPORT):
+            u = table.units.get(contract.parse_task_id(t, EXPORT)[1])
+            if u is not None and u.cls == "Sprite":
+                tids.append(t)
+        sig = (id(table), tuple(env.key(t) for t in tids))
         if self._memo is not None and self._memo[0] == sig:
             return self._memo[1]
-        atlases, textures, requests = {}, {}, defaultdict(list)
+        requests = defaultdict(list)
         for tid in tids:
-            if not self._may_hold(env, tid):
-                continue
             for a in env.result(tid)["artifacts"]:
-                owner, role = contract.parse_artifact_id(a["id"])
-                sem, obj = a["semantics"], a["provenance"].get("object") or {}
-                facts = sem.get("facts") or {}
-                if sem["kind"] == "sprite.meta" and facts.get("crop") == CROP:
-                    requests[facts["atlas"]].append((owner, tid, a))
-                elif role == "json" and obj.get("class") == "SpriteAtlas":
-                    atlases[owner] = (tid, a)
-                elif role == "image" and sem["kind"] == "texture.image":
-                    textures[owner] = (tid, a)
-        subjects = {}
-        for atlas, reqs in requests.items():
-            if atlas in atlases:
-                tid = atlases[atlas][0]
-                subject = f"{contract.parse_task_id(tid, EXPORT)[1]}:{contract.parse_object_id(atlas)[1]}"
-                subjects[subject] = (atlas, sorted(reqs, key=lambda r: r[0]))
-        idx = {
-            "subjects": subjects,
-            "atlases": atlases,
-            "textures": textures,
-            "missing": sorted(set(requests) - set(atlases)),
-        }
+                facts = a["semantics"].get("facts") or {}
+                if a["semantics"]["kind"] == "sprite.meta" and facts.get("crop") == CROP:
+                    requests[facts["atlas"]].append((contract.parse_artifact_id(a["id"])[0], tid, a))
+        subjects, missing = {}, []
+        for atlas, reqs in sorted(requests.items()):
+            subject = table.subject_of(atlas)
+            if subject is None or not env.known(contract.task_id(EXPORT, subject)):
+                missing.append(atlas)
+                continue
+            try:
+                env.key(contract.task_id(EXPORT, subject))
+            except Pending:
+                missing.append(atlas)
+                continue
+            subjects[subject] = (atlas, sorted(reqs, key=lambda r: r[0]))
+        idx = {"subjects": subjects, "missing": missing}
         self._memo = (sig, idx)
         return idx
 
@@ -616,31 +586,53 @@ class SpriteCropStage(Stage):
         idx = self.index(env)
         if subject not in idx["subjects"]:
             raise ValueError(f"{self.name}: no sprites wait for atlas {subject}")
-        return idx, *idx["subjects"][subject]
+        return idx["subjects"][subject]
 
-    def inputs(self, subject: str, env) -> list[Input]:
-        idx, atlas, reqs = self._subject(subject, env)
-        rec = idx["atlases"][atlas][1]
-        ins = [_store_input("atlas", rec)]
+    def _textures(self, subject: str, env) -> tuple[dict, list]:
+        """(the atlas' JSON record, [(texture object id, the export task holding it)]) of the textures the
+        sprites use."""
+        atlas, reqs = self._subject(subject, env)
+        rec = _artifact(env, contract.task_id(EXPORT, subject), contract.artifact_id(atlas, "json"))
+        if rec is None:
+            raise ValueError(f"{self.name} {subject}: the atlas {atlas} has no JSON")
         entries = textures.atlas_entries(self._docs.get(env.depot, rec["content"]["sha256"]))
         needed = set()
-        for owner, _tid, meta in reqs:
-            ins.append(_store_input("sprite:" + owner, meta))
+        for _owner, _tid, meta in reqs:
             doc = self._docs.get(env.depot, meta["content"]["sha256"])
             entry = textures.atlas_entry(entries, doc["sprite"].get("m_RenderDataKey"))
             if entry is not None:
                 needed.update(
                     t for t in (ref_object_id(entry.get("texture")), ref_object_id(entry.get("alphaTexture"))) if t
                 )
-        ins += [_store_input("texture:" + t, idx["textures"][t][1]) for t in sorted(needed) if t in idx["textures"]]
+        table = units.table(env)
+        out = []
+        for t in sorted(needed):
+            s = table.subject_of(t)
+            if s is not None and env.known(contract.task_id(EXPORT, s)):
+                out.append((t, contract.task_id(EXPORT, s)))
+        return rec, out
+
+    def inputs(self, subject: str, env) -> list[Input]:
+        _atlas, reqs = self._subject(subject, env)
+        rec, texs = self._textures(subject, env)
+        ins = [_store_input("atlas", rec)]
+        ins += [_store_input("sprite:" + owner, meta) for owner, _tid, meta in reqs]
+        for t, tid in texs:
+            try:
+                img = _artifact(env, tid, contract.artifact_id(t, "image"))
+            except Pending:
+                continue
+            if img is not None and img["semantics"]["kind"] == "texture.image":
+                ins.append(_store_input("texture:" + t, img))
         return ins
 
     def uses(self, subject: str, env) -> dict:
         return dict(self.ATOMS)
 
     def depends(self, subject: str, env) -> list[str]:
-        idx, atlas, reqs = self._subject(subject, env)
-        return sorted({idx["atlases"][atlas][0], *(tid for _o, tid, _m in reqs)})
+        _atlas, reqs = self._subject(subject, env)
+        _rec, texs = self._textures(subject, env)
+        return sorted({contract.task_id(EXPORT, subject), *(tid for _o, tid, _m in reqs), *(tid for _t, tid in texs)})
 
     def estimate(self, subject: str, env, inputs: list[Input]) -> Cost:
         tex = sum(i.size for i in inputs if i.role.startswith("texture:"))

@@ -1,9 +1,8 @@
-"""unity.export and sprite.crop on synthetic bundles (fakeunity environments behind a stand-in reader atom): every
-object gets exactly one item, the converters' artifacts, references, byte arrays and float forms, the generic
-fallback with its reason codes, class selection, determinism, the cross-bundle sprite crop, and the golden records'
-providers."""
+"""unity.export and sprite.crop on synthetic bundles (fakeunity environments behind a stand-in reader atom, with
+their real censuses): one task per unit, every object exactly one item, the converters' artifacts, references, byte
+arrays and float forms, the generic fallback with its reason codes, unit selection, batches, determinism, the
+cross-bundle sprite crop, and the golden records' providers."""
 
-import json
 import math
 import re
 import subprocess
@@ -15,10 +14,10 @@ import pytest
 from PIL import Image
 
 from nnnotes.pipeline import census as census_mod
-from nnnotes.pipeline import contract, objexport
+from nnnotes.pipeline import contract, objexport, units
 from nnnotes.pipeline.contract import IncompatibleTask, Input, Task
 from nnnotes.pipeline.depot import Depot
-from nnnotes.pipeline.objexport import CROP, EXPORT, ExportStage, SpriteCropStage
+from nnnotes.pipeline.objexport import CROP, ExportStage, SpriteCropStage
 from nnnotes.pipeline.stages import Env, describe, execute, registry
 from nnnotes.unity.atoms import Impl, astc, estimate, gltf
 from nnnotes.unity.atoms.reader import UnityBundle
@@ -624,26 +623,70 @@ def classes_of(name):
     return sorted({r.type.name for f in BUNDLES[name]().assets for r in f.objects.values()})
 
 
-def task_for(depot, name, classes=None, params=None, scripts=None, typetrees=None):
-    data = f"fake:{name}".encode()
-    sha = depot.put(data)
-    stage = ExportStage(FAKE_READER)
-    p = stage.normalize(dict(params or {}, classes=classes))
-    return Task(
-        EXPORT,
-        1,
-        name,
-        p,
-        export_atoms(classes_of(name), FAKE_READER.id),
-        (Input("bundle", sha, len(data), f"{name}.bundle", ({"kind": "depot"},)),),
-        {"scripts": dict(SCRIPTS if scripts is None else scripts), **({"typetrees": typetrees} if typetrees else {})},
+def planning_env(depot, names=("all", "atlas"), selected=None, scripts=SCRIPTS, classes=None):
+    """A planning environment over fake bundles: their inputs, their censuses (census.census_env, the shipped type
+    trees read for files without type trees), the script table; `selected` (default: every bundle of `names`) and
+    `classes` as the export command gives them."""
+    names = tuple(sorted(set(names) | set(selected or ())))
+    bundles = {}
+    for n in names:
+        data = f"fake:{n}".encode()
+        bundles[n] = Input("bundle", depot.put(data), len(data), f"{n}.bundle", ({"kind": "depot"},))
+    facts = {"bundles": bundles, "selected": sorted(selected if selected is not None else names), "classes": classes}
+    env = Env(depot, facts)
+    for n in names:
+        t = Task(census_mod.CensusStage.name, census_mod.CensusStage.version, n, {}, {}, (bundles[n],))
+        doc = census_mod.census_env(BUNDLES[n](), shipped=True)
+        rec = contract.artifact(
+            contract.artifact_id(t.id, "census"),
+            depot.add(contract.encode(doc), "json"),
+            contract.provenance(t),
+            {"kind": "unity.census", "format": "json", "facts": census_mod.facts(doc)},
+        )
+        depot.commit(contract.result(t, [rec], []))
+        env.done(t.id, t.key)
+    doc = {"schema": "nnnotes.scripts/1", "scripts": scripts}
+    data = contract.encode(doc)  # its input: another table is another task
+    table = Task("link.scripts", 1, "all", {}, {}, (Input("census", depot.put(data), len(data), None, ()),))
+    committed(depot, env, table, "scripts", doc, "link.scripts")
+    return env
+
+
+def committed(depot, env, task, role, doc, kind):
+    rec = contract.artifact(
+        contract.artifact_id(task.id, role),
+        depot.add(contract.encode(doc), "json"),
+        contract.provenance(task),
+        {"kind": kind, "format": "json", "facts": {}},
     )
+    depot.commit(contract.result(task, [rec], []))
+    env.done(task.id, task.key)
 
 
-def run(depot, task):
-    stage = ExportStage(FAKE_READER)
-    execute(task, depot, registry(stage), force=True)
-    return depot.result(task.key)
+def unit_task(depot, env, subject, params=None):
+    return describe(ExportStage(FAKE_READER), subject, params, env)
+
+
+def export(depot, env, params=None, stage=None) -> dict:
+    """Run every unity.export task of a planning environment (in one stage object, as a worker runs a batch): the
+    results merged {"items", "artifacts"} with {"tasks": {task id: Task}, "status": {task id: result status}}."""
+    stage = stage or ExportStage(FAKE_READER)
+    out: dict = {"items": [], "artifacts": [], "tasks": {}, "status": {}}
+    for s in stage.subjects(env):
+        t = describe(stage, s, params, env)
+        execute(t, depot, registry(stage), force=True)
+        doc = depot.result(t.key)
+        env.done(t.id, t.key)
+        out["items"] += doc["items"]
+        out["artifacts"] += doc["artifacts"]
+        out["tasks"][t.id] = t
+        out["status"][t.id] = doc["status"]
+    return out
+
+
+def run_all(depot, names=("all",), params=None, classes=None, scripts=SCRIPTS) -> dict:
+    """export() of the units of the bundles `names` (only those of `classes` when given)."""
+    return export(depot, planning_env(depot, names, scripts=scripts, classes=classes), params)
 
 
 def by_object(doc):
@@ -669,19 +712,18 @@ def oid(pid, cab=CAB):
 @pytest.fixture
 def exported(tmp_path):
     depot = Depot(tmp_path / "depot")
-    task = task_for(depot, "all")
-    return depot, task, run(depot, task)
+    return depot, run_all(depot)
 
 
 # ---------------------------------------------------------------- items
 def test_every_object_has_exactly_one_item(exported):
-    depot, task, doc = exported
+    depot, doc = exported
     objects = [contract.object_id(f.name, pid) for f in bundle_all().assets for pid in f.objects]
     items = by_object(doc)
     assert sorted(items) == sorted(objects) and len(doc["items"]) == len(objects)
     status = {o: (i["status"], (i.get("reason") or {}).get("code")) for o, i in items.items()}
     assert status == {
-        oid(1): ("contained", None),
+        oid(1): ("exported", None),
         oid(10): ("exported", None),
         oid(11): ("exported", None),
         oid(12): ("exported", None),
@@ -705,7 +747,7 @@ def test_every_object_has_exactly_one_item(exported):
         oid(70): ("exported", None),
         oid(71): ("generic", "script.unresolved"),
         oid(72): ("generic", "script.missing"),
-        oid(80): ("contained", None),
+        oid(80): ("exported", None),
         oid(90): ("exported", None),
         oid(91): ("generic", "generic.clip.legacy"),
         oid(92): ("exported", None),
@@ -719,18 +761,21 @@ def test_every_object_has_exactly_one_item(exported):
         oid(74): ("exported", None),
         oid(51): ("exported", None),
     }
-    assert items[oid(61)]["in"] == f"{oid(60)}#json" and items[oid(80)]["in"] == "unity.export:all#scripts.json"
-    assert items[oid(1)]["in"] == "unity.export:all#bundle.json"
+    assert items[oid(61)]["in"] == f"{oid(60)}#json"
     assert items[oid(94)]["artifacts"] == [f"{oid(94)}#json"]
-    assert doc["status"] == "ok" and all(i["class"] for i in doc["items"])
+    assert set(doc["status"].values()) == {"ok"} and all(i["class"] for i in doc["items"])
     for a in doc["artifacts"]:
-        owner, _role = contract.parse_artifact_id(a["id"])
-        assert ("object" in a["provenance"]) == (not owner.startswith("unity.export:"))
-        assert depot.has(a["content"]["sha256"], a["content"]["size"])
+        assert "object" in a["provenance"] and depot.has(a["content"]["sha256"], a["content"]["size"])
+    # one task per unit: a hierarchy (its root's subject) or an object outside any
+    assert sorted(doc["tasks"]) == sorted(
+        f"unity.export:all:{contract.parse_object_id(o)[1]}"
+        for o in objects
+        if o not in {oid(p) for p in (61, 62, 63, 64, 65)}
+    )
 
 
 def test_provenance_facts_and_atoms(exported):
-    depot, task, doc = exported
+    depot, doc = exported
     a = art(doc, f"{oid(10)}#image")
     assert a["provenance"]["object"] == {
         "file": CAB,
@@ -749,7 +794,9 @@ def test_provenance_facts_and_atoms(exported):
         "astc.container",
         "tex.png",
     }
+    task = doc["tasks"]["unity.export:all:10"]
     assert a["provenance"]["inputs"] == [{"role": "bundle", "sha256": task.inputs[0].sha256}]
+    assert a["provenance"]["stage"]["version"] == ExportStage.version == 2
     g = art(doc, f"{oid(95)}#json")
     assert set(g["provenance"]["atoms"]) == {"reader", "sniff", "generic.json"}
     assert task.atoms["tex.png"] == "tex.png/2" and task.atoms["reader"] == "fakeunity/1"
@@ -757,7 +804,7 @@ def test_provenance_facts_and_atoms(exported):
 
 # ---------------------------------------------------------------- converters
 def test_textures(exported):
-    depot, _task, doc = exported
+    depot, doc = exported
     png = load(depot, doc, f"{oid(10)}#image")
     img = Image.open(__import__("io").BytesIO(png))
     assert img.size == (W, H) and img.mode == "RGBA"
@@ -784,7 +831,7 @@ def test_textures(exported):
 
 
 def test_sprites_same_bundle(exported):
-    depot, _task, doc = exported
+    depot, doc = exported
     from nnnotes.unity.atoms import png, sprite
     from nnnotes.unity.atoms.mesh import arrays
     from nnnotes.unity.atoms.reader import mesh_input_from_typetree
@@ -833,7 +880,7 @@ def test_sprites_same_bundle(exported):
 
 
 def test_sprite_with_its_atlas_elsewhere_gets_a_meta_only(exported):
-    depot, _task, doc = exported
+    depot, doc = exported
     assert by_object(doc)[oid(13)]["artifacts"] == [f"{oid(13)}#json"]
     a = art(doc, f"{oid(13)}#json")
     assert a["semantics"]["facts"] == {"crop": CROP, "atlas": f"{ATLAS_CAB}:99"}
@@ -843,7 +890,7 @@ def test_sprite_with_its_atlas_elsewhere_gets_a_meta_only(exported):
 
 
 def test_mesh(exported):
-    depot, _task, doc = exported
+    depot, doc = exported
     d, body = gltf.read(load(depot, doc, f"{oid(30)}#mesh"))
     (prim,) = d["meshes"][0]["primitives"]
     assert set(prim["attributes"]) == {"POSITION", "NORMAL", "TEXCOORD_0"} and prim["mode"] == 4
@@ -858,7 +905,7 @@ def test_mesh(exported):
 
 
 def test_text_and_fonts(exported):
-    depot, _task, doc = exported
+    depot, doc = exported
     a = art(doc, f"{oid(40)}#data")
     assert load(depot, doc, a["id"]) == b"hello\n" and a["content"]["ext"] == "txt"
     assert load(depot, doc, f"{oid(41)}#data") == b"\xff\xfe\x00bin"
@@ -868,7 +915,7 @@ def test_text_and_fonts(exported):
 
 
 def test_every_converted_object_has_its_json(exported):
-    depot, _task, doc = exported
+    depot, doc = exported
     tex = obj(depot, doc, f"{oid(10)}#json")
     assert "image data" not in tex and tex["m_Width"] == W and tex["m_TextureFormat"] == 4
     assert art(doc, f"{oid(10)}#json")["semantics"] == {"kind": "unity.object", "format": "json", "facts": {}}
@@ -886,12 +933,11 @@ def test_every_converted_object_has_its_json(exported):
     assert all(
         i["status"] != "exported" or any(a.endswith("#json") for a in i["artifacts"]) or i["object"] == oid(13)
         for i in doc["items"]
-        if i["class"] not in ("AssetBundle", "MonoScript")
     )
 
 
 def test_items_name_the_objects_they_reference(exported):
-    _depot, _task, doc = exported
+    _depot, doc = exported
     items = by_object(doc)
     assert items[oid(50)]["refs"] == [oid(10), f"{ATLAS_CAB}:5"]  # the material's shader and texture
     # a prefab: the objects its components reference outside it, other bundles' included; its own objects are named
@@ -907,7 +953,7 @@ def test_items_name_the_objects_they_reference(exported):
 
 
 def test_prefab(exported):
-    depot, _task, doc = exported
+    depot, doc = exported
     p = obj(depot, doc, f"{oid(60)}#json")
     assert p["name"] == "root" and [n["path"] for n in p["nodes"]] == ["root", "root/child"]
     root, child = p["nodes"]
@@ -930,7 +976,7 @@ def test_prefab(exported):
 
 
 def test_scriptable_objects_blobs_and_strings(exported):
-    depot, _task, doc = exported
+    depot, doc = exported
     m = obj(depot, doc, f"{oid(70)}#json")
     assert m["$script"] == "A|Game|Local" and m["m_Name"] == "moc"
     blob = m["_bytes"]["$blob"]
@@ -949,7 +995,7 @@ def test_scriptable_objects_blobs_and_strings(exported):
 
 
 def test_cue_sheets_held_in_the_bundle(exported):
-    depot, _task, doc = exported
+    depot, doc = exported
     from nnnotes.formats import cri
 
     a = art(doc, f"{oid(73)}#acb")
@@ -973,15 +1019,21 @@ def test_cue_sheets_held_in_the_bundle(exported):
         "$blob": {"sha256": contract.sha256(EMBEDDED_ACB), "size": len(EMBEDDED_ACB), "format": "acb"}
     }
     assert by_object(doc)[oid(74)]["artifacts"] == [f"{oid(74)}#acb", f"{oid(74)}#json"]  # no blob: artifact
-    small = run(depot, task_for(depot, "all", classes=["MonoBehaviour"], params={"blobMin": 1 << 20}))
+    small = run_all(depot, classes=["MonoBehaviour"], params={"blobMin": 1 << 20})
     assert load(depot, small, f"{oid(74)}#acb") == EMBEDDED_ACB  # whatever its size
 
 
 def movie_task(depot, converter=True):
-    """The task of the movie bundle: converter cri.usm in its atoms, as uses() gives it for that bundle."""
-    t = task_for(depot, "movie", scripts=USM_SCRIPTS)
-    atoms = {**t.atoms, "cri.usm": "cri.usm/1"} if converter else t.atoms
-    return Task(t.stage, t.version, t.subject, t.params, dict(sorted(atoms.items())), t.inputs, t.context)
+    """The task of the movie asset's unit: converter cri.usm in its atoms, as uses() gives it for that unit."""
+    env = planning_env(depot, ("movie",), scripts=USM_SCRIPTS)
+    t = unit_task(depot, env, "movie:2")
+    atoms = t.atoms if converter else {k: v for k, v in t.atoms.items() if k != "cri.usm"}
+    return Task(t.stage, t.version, t.subject, t.params, atoms, t.inputs, t.context)
+
+
+def run(depot, task):
+    execute(task, depot, registry(ExportStage(FAKE_READER)), force=True)
+    return depot.result(task.key)
 
 
 def test_movies_held_in_the_bundle(tmp_path):
@@ -1000,22 +1052,23 @@ def test_movies_held_in_the_bundle(tmp_path):
         "$blob": {"sha256": contract.sha256(WARMUP), "size": len(WARMUP), "format": "usm"}
     }
     assert by_object(doc)[m]["status"] == "exported" and by_object(doc)[m]["artifacts"] == [f"{m}#json", f"{m}#usm"]
-    assert load(depot, doc, f"{a}#acb") == EMBEDDED_ACB
     old = run(depot, movie_task(depot, converter=False))
     assert by_object(old)[m]["status"] == "generic" and by_object(old)[m]["reason"]["code"] == "generic.error"
-    assert f"{m}#usm" not in {x["id"] for x in old["artifacts"]} and load(depot, old, f"{a}#acb") == EMBEDDED_ACB
+    assert f"{m}#usm" not in {x["id"] for x in old["artifacts"]}
+    sheet = run_all(depot, ("movie",), scripts=USM_SCRIPTS)
+    assert load(depot, sheet, f"{a}#acb") == EMBEDDED_ACB
 
 
 def test_the_movie_converter_is_keyed_by_the_script_context(tmp_path):
     depot = Depot(tmp_path / "s")
     env = planning_env(depot, ("all", "movie"), scripts=USM_SCRIPTS)
     stage = ExportStage(FAKE_READER)
-    assert describe(stage, "movie", None, env).atoms["cri.usm"] == "cri.usm/1"
-    assert "cri.usm" not in describe(stage, "all", None, env).atoms
-    assert "cri.usm" not in describe(stage, "movie", {"classes": ["AssetBundle"]}, env).atoms
+    assert describe(stage, "movie:2", None, env).atoms["cri.usm"] == "cri.usm/1"
+    assert "cri.usm" not in describe(stage, "movie:3", None, env).atoms  # a cue sheet asset
+    assert "cri.usm" not in describe(stage, "all:70", None, env).atoms
     assert "cri.usm" in stage.ATOMS
     plain = planning_env(Depot(tmp_path / "p"), ("movie",))
-    assert "cri.usm" not in describe(stage, "movie", None, plain).atoms
+    assert "cri.usm" not in describe(stage, "movie:2", None, plain).atoms
 
 
 def test_acb_layouts(tmp_path):
@@ -1064,14 +1117,14 @@ def test_a_split_sheet_with_a_missing_chunk_gives_the_typetree(tmp_path, monkeyp
             dict(real(tt), chunks=[pptr(44), pptr(99, 1)]) if real(tt) and real(tt)["layout"] == "split" else real(tt)
         ),
     )
-    doc = run(depot, task_for(depot, "all", classes=["MonoBehaviour"]))
+    doc = run_all(depot, classes=["MonoBehaviour"])
     item = by_object(doc)[oid(73)]
     assert item["status"] == "generic" and item["reason"]["code"] == "generic.error"
     assert "is not a TextAsset of the bundle" in item["reason"]["message"]
 
 
 def test_shader(exported):
-    depot, _task, doc = exported
+    depot, doc = exported
     from nnnotes.formats import shader
 
     env = bundle_all()
@@ -1099,7 +1152,7 @@ def test_shader(exported):
 
 
 def test_clip_bindings_name_scripts_of_other_bundles(exported):
-    depot, _task, doc = exported
+    depot, doc = exported
     clip = obj(depot, doc, f"{oid(96)}#json")
     (b,) = clip["bindings"]
     assert b == {
@@ -1114,11 +1167,11 @@ def test_clip_bindings_name_scripts_of_other_bundles(exported):
         "script": {"$ref": {"file": "CAB-scripts", "pathId": 12}},
         "scriptClass": "Assembly-CSharp|Game|Fader",
     }
-    assert census_mod.script_refs(census_doc(open_fake(b"fake:all"))) == sorted(SCRIPTS) + ["CAB-scripts:9"]
+    assert census_mod.script_refs(census_mod.census_env(bundle_all())) == sorted(SCRIPTS) + ["CAB-scripts:9"]
 
 
 def test_material_clip_controller(exported):
-    depot, _task, doc = exported
+    depot, doc = exported
     mat = obj(depot, doc, f"{oid(50)}#json")
     assert mat["shader"] == {"$ref": {"file": ATLAS_CAB, "pathId": 5}}
     assert mat["textures"]["_MainTex"]["texture"]["$ref"]["pathId"] == 10
@@ -1160,19 +1213,11 @@ def test_material_clip_controller(exported):
     assert obj(depot, doc, f"{oid(95)}#json")["m_Speed"] == INF
 
 
-def test_loose_documents(exported):
-    depot, task, doc = exported
-    s = obj(depot, doc, "unity.export:all#scripts.json")
-    assert list(s["scripts"]) == [oid(80)] and s["scripts"][oid(80)]["m_ClassName"] == "Local"
-    b = obj(depot, doc, "unity.export:all#bundle.json")
-    assert b["files"] == [
-        {
-            "name": CAB,
-            "unityVersion": "6000.3.12f1",
-            "externals": ["archive:/CAB-atlas/CAB-atlas", "archive:/CAB-scripts/CAB-scripts"],
-        }
-    ]
-    ab = b["assetBundles"][oid(1)]
+def test_scripts_and_asset_bundles_have_their_typetree(exported):
+    depot, doc = exported
+    s = obj(depot, doc, f"{oid(80)}#json")
+    assert s["m_ClassName"] == "Local" and by_object(doc)[oid(80)]["artifacts"] == [f"{oid(80)}#json"]
+    ab = obj(depot, doc, f"{oid(1)}#json")
     assert ab["m_Container"][0] == [
         "assets/x/tex.png",
         {
@@ -1185,33 +1230,35 @@ def test_loose_documents(exported):
 
 def test_two_runs_are_identical(tmp_path):
     a, b = Depot(tmp_path / "a"), Depot(tmp_path / "b")
-    ta, tb = task_for(a, "all"), task_for(b, "all")
-    assert ta.key == tb.key
-    da, db = run(a, ta), run(b, tb)
-    assert contract.encode(da) == contract.encode(db)
+    da, db = run_all(a), run_all(b)
+    assert {k: x.key for k, x in da["tasks"].items()} == {k: x.key for k, x in db["tasks"].items()}
+    assert contract.encode(da["items"]) == contract.encode(db["items"])
+    assert contract.encode(da["artifacts"]) == contract.encode(db["artifacts"])
     for x in da["artifacts"]:
         assert a.read(x["content"]["sha256"]) == b.read(x["content"]["sha256"])
 
 
-def test_key_follows_the_census_classes_and_params(tmp_path):
+def test_a_units_key_holds_its_classes_and_the_params(tmp_path):
     depot = Depot(tmp_path / "s")
-    t = task_for(depot, "atlas")
+    env = planning_env(depot, ("atlas",))
+    t = unit_task(depot, env, "atlas:97")  # a sprite
     assert "mesh.glb" not in t.atoms and "mesh.arrays" in t.atoms  # sprites use mesh.arrays
-    assert {"tex.png", "sprite.png", "generic.json", "bundle.json"} <= set(t.atoms)
-    assert task_for(depot, "atlas", params={"png": {"level": 3}}).key != t.key
+    assert set(t.atoms) == set(export_atoms(["Sprite"], FAKE_READER.id))
+    assert t.context == {"unit": f"{ATLAS_CAB}:97", "bundle": "atlas"}
+    assert unit_task(depot, env, "atlas:97", {"png": {"level": 3}}).key != t.key
     assert export_atoms(["Texture2D"]) == export_atoms(["Texture2D", "Texture2D"])
     assert set(export_atoms(["Mesh"])) == {"reader", "sniff", "mesh.arrays", "gltf.write", "mesh.glb", "generic.json"}
     with pytest.raises(ValueError, match="png level"):
         ExportStage().normalize({"png": {"level": 11}})
     with pytest.raises(ValueError, match="unknown parameters"):
-        ExportStage().normalize({"mesh": "obj"})
-    assert ExportStage().normalize(None) == {"blobMin": 4096, "classes": None, "png": {"level": 6}}
+        ExportStage().normalize({"classes": ["Mesh"]})
+    assert ExportStage().normalize(None) == {"blobMin": 4096, "png": {"level": 6}}
 
 
 def test_png_level_changes_bytes_not_pixels(tmp_path):
     depot = Depot(tmp_path / "s")
-    d6 = run(depot, task_for(depot, "all", classes=["Texture2D"]))
-    d0 = run(depot, task_for(depot, "all", classes=["Texture2D"], params={"png": {"level": 0}}))
+    d6 = run_all(depot, classes=["Texture2D"])
+    d0 = run_all(depot, classes=["Texture2D"], params={"png": {"level": 0}})
     p6, p0 = load(depot, d6, f"{oid(10)}#image"), load(depot, d0, f"{oid(10)}#image")
     assert p6 != p0
     io = __import__("io")
@@ -1220,27 +1267,31 @@ def test_png_level_changes_bytes_not_pixels(tmp_path):
 
 def test_blob_threshold(tmp_path):
     depot = Depot(tmp_path / "s")
-    doc = run(depot, task_for(depot, "all", classes=["MonoBehaviour"], params={"blobMin": 1 << 20}))
+    doc = run_all(depot, classes=["MonoBehaviour"], params={"blobMin": 1 << 20})
     m = obj(depot, doc, f"{oid(70)}#json")
     assert m["_bytes"] == {"$hex": MOC.hex()}
 
 
-def test_class_selection(tmp_path):
+def test_classes_select_units_by_their_root(tmp_path):
     depot = Depot(tmp_path / "s")
-    doc = run(depot, task_for(depot, "all", classes=["Sprite"]))
+    doc = run_all(depot, classes=["Sprite"])
     items = by_object(doc)
-    assert set(items) == {oid(11), oid(12), oid(13)}  # textures decoded, not exported
+    assert set(items) == {oid(11), oid(12), oid(13)}  # their textures decoded, not exported
     assert all(i["status"] == "exported" for i in items.values())
-    doc = run(depot, task_for(depot, "all", classes=["GameObject"]))
+    doc = run_all(depot, classes=["GameObject"])
     assert set(by_object(doc)) == {oid(p) for p in (60, 61, 62, 63, 64, 65)}
+    assert list(doc["tasks"]) == ["unity.export:all:60"]
+    keys = {k: x.key for k, x in run_all(depot)["tasks"].items()}
+    assert keys["unity.export:all:60"] == doc["tasks"]["unity.export:all:60"].key  # a selection is no part of keys
 
 
 def test_scripts_come_from_the_context_only(tmp_path):
     depot = Depot(tmp_path / "s")
-    doc = run(depot, task_for(depot, "all", classes=["MonoBehaviour"], scripts={}))
+    doc = run_all(depot, classes=["MonoBehaviour", "GameObject"], scripts={})
     items = by_object(doc)
     assert items[oid(70)]["reason"]["code"] == "script.unresolved"
-    assert items[oid(62)]["reason"]["code"] == "script.unresolved"  # no hierarchy: one by one
+    issues = art(doc, f"{oid(60)}#json")["semantics"]["issues"]  # the components of a hierarchy
+    assert issues[0]["code"] == "script.unresolved" and issues[0]["message"].startswith("2 MonoBehaviours")
 
 
 def test_a_converter_error_gives_the_typetree(tmp_path, monkeypatch):
@@ -1250,7 +1301,7 @@ def test_a_converter_error_gives_the_typetree(tmp_path, monkeypatch):
         raise KeyError("m_SavedProperties")
 
     monkeypatch.setattr(material, "material_doc", broken)
-    doc = run(depot, task_for(depot, "all", classes=["Material"]))
+    doc = run_all(depot, classes=["Material"])
     item = by_object(doc)[oid(50)]
     assert item["status"] == "generic" and item["reason"] == {
         "code": "generic.error",
@@ -1266,7 +1317,7 @@ def test_a_broken_hierarchy_gives_its_objects_one_by_one(tmp_path, monkeypatch):
         raise RuntimeError("component failed")
 
     monkeypatch.setattr(prefab, "_component", broken)
-    doc = run(depot, task_for(depot, "all", classes=["GameObject"]))
+    doc = run_all(depot, classes=["GameObject"])
     items = by_object(doc)
     assert {i["status"] for i in items.values()} == {"generic"}
     assert all(i["reason"]["code"] == "generic.error" for i in items.values())
@@ -1283,14 +1334,16 @@ def test_unreadable_objects_fail(tmp_path, monkeypatch):
         return real(self, o)
 
     monkeypatch.setattr(UnityBundle, "typetree", typetree)
-    doc = run(depot, task_for(depot, "all", classes=["Animator"]))
+    doc = run_all(depot, classes=["Animator"])
     (item,) = doc["items"]
-    assert item["status"] == "failed" and item["reason"]["code"] == "failed.read" and doc["status"] == "partial"
+    assert item["status"] == "failed" and item["reason"]["code"] == "failed.read"
+    assert doc["status"] == {"unity.export:all:95": "partial"}
 
 
 def test_task_with_other_atoms_is_refused(tmp_path):
     depot = Depot(tmp_path / "s")
-    t = task_for(depot, "all")
+    env = planning_env(depot, ("all",))
+    t = unit_task(depot, env, "all:10")
     bad = Task(t.stage, t.version, t.subject, t.params, {**t.atoms, "tex.png": "tex.png/0"}, t.inputs, t.context)
     with pytest.raises(IncompatibleTask, match="tex.png"):
         execute(bad, depot, registry(ExportStage(FAKE_READER)))
@@ -1299,119 +1352,90 @@ def test_task_with_other_atoms_is_refused(tmp_path):
         t.version,
         t.subject,
         t.params,
-        {k: v for k, v in t.atoms.items() if k != "mesh.glb"},
+        {k: v for k, v in t.atoms.items() if k != "tex.png"},
         t.inputs,
         t.context,
     )
-    with pytest.raises(IncompatibleTask, match="mesh.glb"):
+    with pytest.raises(IncompatibleTask, match="tex.png"):
         execute(missing, depot, registry(ExportStage(FAKE_READER)))
+    other = Task(t.stage, t.version, t.subject, t.params, t.atoms, t.inputs, {**t.context, "unit": f"{CAB}:999"})
+    with pytest.raises(IncompatibleTask, match="not in the bundle"):
+        execute(other, depot, registry(ExportStage(FAKE_READER)))
 
 
 # ---------------------------------------------------------------- describing tasks
-def census_doc(view: UnityBundle) -> dict:
-    """The part of a census the export stage reads (classes, objects, m_Script references)."""
-    files, classes = [], {}
-    for f in view.files():
-        objs = []
-        for o in view.objects():
-            if o.file != f:
-                continue
-            classes[o.class_name] = classes.get(o.class_name, 0) + 1
-            rec = {"pathId": o.path_id, "classId": o.class_id, "class": o.class_name, "typeHash": o.type_hash}
-            tt = view.reader(o).read_typetree(check_read=False)  # a header read, as the census'
-            ext = view.externals(f)
-
-            def ref(s):
-                file = f if not s["m_FileID"] else ext[s["m_FileID"] - 1].rsplit("/", 1)[-1]
-                return {"file": file, "pathId": s["m_PathID"]}
-
-            s = tt.get("m_Script")
-            if isinstance(s, dict) and s.get("m_PathID"):
-                rec["script"] = ref(s)
-            bindings = [
-                b["script"]
-                for b in (tt.get("m_ClipBindingConstant") or {}).get("genericBindings", ())
-                if b["script"].get("m_PathID")
-            ]
-            if bindings:
-                rec["bindingScripts"] = [ref(b) for b in bindings]
-            objs.append(rec)
-        files.append(
-            {"name": f, "unityVersion": view.unity_version(f), "typetree": view.stores_typetrees(f), "objects": objs}
-        )
-    return {
-        "schema": contract.CENSUS,
-        "files": files,
-        "resources": [],
-        "assetBundles": [],
-        "scripts": [],
-        "classes": dict(sorted(classes.items())),
-        "objects": sum(classes.values()),
-        "errors": [],
-    }
-
-
-def committed(depot, env, task, role, doc, kind):
-    rec = contract.artifact(
-        contract.artifact_id(task.id, role),
-        depot.add(contract.encode(doc), "json"),
-        contract.provenance(task),
-        {"kind": kind, "format": "json", "facts": {}},
-    )
-    depot.commit(contract.result(task, [rec], []))
-    env.done(task.id, task.key)
-
-
-def planning_env(depot, names=("all", "atlas"), selected=None, scripts=SCRIPTS):
-    names = tuple(sorted(set(names) | set(selected or ())))
-    bundles = {}
-    for n in names:
-        data = f"fake:{n}".encode()
-        bundles[n] = Input("bundle", depot.put(data), len(data), f"{n}.bundle", ({"kind": "depot"},))
-    env = Env(depot, {"bundles": bundles, "selected": sorted(selected if selected is not None else names)})
-    for n in names:
-        t = Task(census_mod.CensusStage.name, 1, n, {}, {}, (bundles[n],))
-        doc = census_doc(open_fake(f"fake:{n}".encode()))
-        rec = contract.artifact(
-            contract.artifact_id(t.id, "census"),
-            depot.add(contract.encode(doc), "json"),
-            contract.provenance(t),
-            {"kind": "unity.census", "format": "json", "facts": census_mod.facts(doc)},
-        )
-        depot.commit(contract.result(t, [rec], []))
-        env.done(t.id, t.key)
-    table = Task("link.scripts", 1, "all")
-    committed(depot, env, table, "scripts", {"schema": "nnnotes.scripts/1", "scripts": scripts}, "link.scripts")
-    return env
-
-
-def test_describe_reads_the_census_and_the_script_table(tmp_path):
+def test_describe_reads_the_units_and_the_script_table(tmp_path):
     depot = Depot(tmp_path / "s")
     env = planning_env(depot)
     stage = ExportStage(FAKE_READER)
-    assert stage.subjects(env) == ["all", "atlas"]
-    # every closure bundle holding a SpriteAtlas joins a selection that holds sprites (a sprite reaches its
-    # texture through its atlas' bundle); a selection without sprites stays as it is
-    assert stage.subjects(planning_env(Depot(tmp_path / "t"), selected=["all"])) == ["all", "atlas"]
-    assert stage.subjects(planning_env(Depot(tmp_path / "u"), selected=["plain"])) == ["plain"]
-    t = describe(stage, "all", None, env)
-    assert t.atoms == export_atoms(classes_of("all"), FAKE_READER.id)
-    assert t.context == {"scripts": SCRIPTS} and t.key == task_for(depot, "all").key
-    assert stage.depends("all", env) == ["unity.census:all", "link.scripts:all"]
-    a = describe(stage, "atlas", None, env)
-    assert a.context == {} and "mesh.glb" not in a.atoms
-    assert t.cost.peak_bytes >= 72 << 20
+    subjects = stage.subjects(env)
+    assert "all:60" in subjects and "all:61" not in subjects and "atlas:1" in subjects
+    # a selection's units and the units their objects reach in other bundles (a sprite's atlas, its texture and
+    # the sprites it packs); not the rest of those bundles
+    assert [
+        s for s in stage.subjects(planning_env(Depot(tmp_path / "t"), selected=["all"])) if s.startswith("atlas")
+    ] == [
+        "atlas:97",
+        "atlas:98",
+        "atlas:99",
+    ]
+    assert stage.subjects(planning_env(Depot(tmp_path / "u"), selected=["plain"])) == ["plain:1", "plain:2"]
+    t = describe(stage, "all:10", None, env)
+    assert t.atoms == export_atoms(["Texture2D"], FAKE_READER.id) and t.subject == "all:10"
+    assert t.context == {"unit": oid(10), "bundle": "all"}
+    assert stage.depends("all:10", env) == ["unity.census:all", "link.scripts:all"]
+    m = describe(stage, "all:70", None, env)
+    assert m.context["scripts"] == {oid(80): "A|Game|Local"}
+    p = describe(stage, "all:60", None, env)  # a hierarchy: its objects' classes and scripts
+    assert set(p.atoms) == set(export_atoms(["GameObject", "MonoBehaviour", "Transform"], FAKE_READER.id))
+    assert p.context["scripts"] == {
+        "CAB-scripts:7": SCRIPTS["CAB-scripts:7"],
+        "CAB-scripts:8": SCRIPTS["CAB-scripts:8"],
+    }
+    clip = describe(stage, "all:96", None, env)  # its bindings' scripts
+    assert clip.context["scripts"] == {"CAB-scripts:12": "Assembly-CSharp|Game|Fader"}
+    assert t.cost.peak_bytes >= 72 << 20 and stage.batch(t) == t.inputs[0].sha256 == stage.batch(p)
     fresh = Env(depot, env.facts)
     from nnnotes.pipeline.stages import Pending
 
     fresh.waiting("unity.census:all")
     with pytest.raises(Pending):
-        describe(stage, "all", None, fresh)
+        stage.subjects(fresh)
 
 
-def test_files_without_type_trees_read_their_scripts_with_the_shipped_ones(tmp_path):
+def test_the_tasks_of_a_bundle_load_it_once_and_their_order_changes_nothing(tmp_path):
+    opened = []
+
+    def counting(data, name=None):
+        opened.append(bytes(data))
+        return open_fake(data, name)
+
+    reader = Impl("fakeunity/1", counting, lambda facts: estimate(0.01, 1 << 20))
     depot = Depot(tmp_path / "s")
-    doc = run(depot, task_for(depot, "player", scripts=PLAYER_SCRIPTS, typetrees=PLAYER_TYPETREES))
+    env = planning_env(depot, ("all",))
+    stage = ExportStage(reader)
+    subjects = stage.subjects(env)
+    tasks = [describe(stage, s, None, env) for s in subjects]
+    results = {}
+    for t in tasks:
+        results[t.id] = stage.run(t, depot)
+    assert opened == [b"fake:all"]
+    stage.end_batch(stage.batch(tasks[0]))
+    assert stage._loaded is None
+    backwards = ExportStage(reader)
+    for t in reversed(tasks):
+        out = backwards.run(t, depot)
+        assert contract.encode(out.items) == contract.encode(results[t.id].items), t.id
+        assert contract.encode(out.artifacts) == contract.encode(results[t.id].artifacts), t.id
+    assert len(opened) == 2
+
+
+def test_files_without_type_trees_read_their_scripts_with_the_shipped_ones(tmp_path, monkeypatch):
+    from nnnotes.unity import scripttypes
+
+    monkeypatch.setattr(scripttypes, "script_types", lambda version: PLAYER_TYPETREES)
+    depot = Depot(tmp_path / "s")
+    doc = run_all(depot, ("player",), scripts=PLAYER_SCRIPTS)
     items = by_object(doc)
 
     def p(pid):
@@ -1469,39 +1493,35 @@ def test_the_context_holds_the_shipped_type_trees_of_its_scripts(tmp_path, monke
     trees = {**PLAYER_TYPETREES, shipped["typeHash"]: shipped["nodes"]}
     monkeypatch.setattr(scripttypes, "script_types", lambda version: trees)
     env = planning_env(Depot(tmp_path / "s"), names=("player",), scripts=PLAYER_SCRIPTS)
-    t = describe(ExportStage(FAKE_READER), "player", None, env)
-    assert t.context["typetrees"] == PLAYER_TYPETREES  # the trees of its MonoBehaviours' type hashes
-    assert (
-        "typetrees" not in describe(ExportStage(FAKE_READER), "all", None, planning_env(Depot(tmp_path / "t"))).context
-    )
-
-
-def test_class_selection_keeps_only_its_converters_in_the_key(tmp_path):
-    depot = Depot(tmp_path / "s")
-    env = planning_env(depot)
     stage = ExportStage(FAKE_READER)
-    full = describe(stage, "all", None, env)
-    assert full.key == describe(stage, "all", {"classes": None}, env).key == task_for(depot, "all").key
-    meshes = describe(stage, "all", {"classes": ["Mesh"]}, env)
-    assert meshes.atoms == export_atoms(["Mesh"], FAKE_READER.id) and meshes.params["classes"] == ["Mesh"]
-    assert "tex.png" not in meshes.atoms and meshes.key != full.key
-    assert describe(stage, "all", {"classes": ["Mesh", "Nothing"]}, env).atoms == meshes.atoms
-    assert describe(stage, "all", {"classes": ["Nothing"]}, env).atoms == export_atoms([], FAKE_READER.id)
-    assert env.params == {}  # set while describing only
-    for classes in (["Mesh"], ["Sprite"], ["GameObject"], ["Material", "AnimationClip"]):
-        t = describe(stage, "all", {"classes": classes}, env)
-        execute(t, depot, registry(stage))
-        doc = depot.result(t.key)
-        assert doc["items"] and all(i["class"] in {*classes, "Transform", "MonoBehaviour"} for i in doc["items"])
+    # the trees of its MonoBehaviours' type hashes; a hierarchy whose component has none: no trees
+    assert describe(stage, "player:2", None, env).context["typetrees"] == {PLAYER_HASH: SETTINGS_ROWS}
+    assert describe(stage, "player:4", None, env).context["typetrees"] == {OTHER_HASH: SETTINGS_ROWS[:-1]}
+    assert "typetrees" not in describe(stage, "player:20", None, env).context
+    assert "typetrees" not in describe(stage, "all:70", None, planning_env(Depot(tmp_path / "t"))).context
+
+
+def test_the_unit_table(tmp_path):
+    env = planning_env(Depot(tmp_path / "s"), ("all", "atlas", "plain"), selected=["all"], classes=["Sprite"])
+    t = units.table(env)
+    assert t.subjects() == ["all:11", "all:12", "all:13", "atlas:97"]
+    u = t.unit("all:13")
+    assert (u.bundle, u.root, u.cls, u.members) == ("all", oid(13), "Sprite", (oid(13),))
+    assert t.subject_of(oid(62)) == "all:60" and t.subject_of(f"{ATLAS_CAB}:98") == "atlas:98"
+    assert t.subject_of("CAB-plain:2") == "plain:2" and t.subject_of("CAB-x:1") is None
+    assert t.files == {CAB: "all", ATLAS_CAB: "atlas", "CAB-plain": "plain"}
+    assert t.per_bundle == {"all": 3, "atlas": 1} and t.classes == {"Sprite": 4}
+    assert units.table(env) is t  # kept for the same planning state
+    h = units.table(planning_env(Depot(tmp_path / "t"), ("all",))).unit("all:60")
+    assert h.members == tuple(oid(p) for p in (60, 61, 62, 63, 64, 65))
+    assert h.counts == (("GameObject", 2), ("MonoBehaviour", 2), ("Transform", 2))
+    with pytest.raises(ValueError, match="no requested unit"):
+        t.unit("all:61")
 
 
 def crop_setup(depot):
     env = planning_env(depot)
-    stage = ExportStage(FAKE_READER)
-    for n in ("all", "atlas"):
-        t = describe(stage, n, None, env)
-        execute(t, depot, registry(stage))
-        env.done(t.id, t.key)
+    export(depot, env)
     return env
 
 
@@ -1512,7 +1532,11 @@ def test_sprite_crop_equals_the_same_sprite_cropped_in_its_atlas_bundle(tmp_path
     assert stage.subjects(env) == ["atlas:99"]
     t = describe(stage, "atlas:99", None, env)
     assert [i.role for i in t.inputs] == ["atlas", f"sprite:{oid(13)}", f"texture:{ATLAS_CAB}:98"]
-    assert stage.depends("atlas:99", env) == ["unity.export:all", "unity.export:atlas"]
+    assert stage.depends("atlas:99", env) == [
+        "unity.export:all:13",
+        "unity.export:atlas:98",
+        "unity.export:atlas:99",
+    ]
     assert set(t.atoms) == {"png.encode", "sprite.crop"}
     execute(t, depot, registry(stage))
     doc = depot.result(t.key)
@@ -1520,7 +1544,7 @@ def test_sprite_crop_equals_the_same_sprite_cropped_in_its_atlas_bundle(tmp_path
     assert item == {"object": oid(13), "status": "exported", "artifacts": [f"{oid(13)}#image"], "class": "Sprite"}
     a = doc["artifacts"][0]
     assert a["provenance"]["object"]["name"] == "remote" and a["provenance"]["object"]["file"] == CAB
-    local = depot.result(env.key("unity.export:atlas"))
+    local = depot.result(env.key("unity.export:atlas:97"))
     same = art(local, f"{ATLAS_CAB}:97#image")
     assert a["content"] == same["content"]  # the same bytes as a local crop
     assert Image.open(__import__("io").BytesIO(depot.read(a["content"]["sha256"]))).size == (8, 8)
@@ -1529,7 +1553,7 @@ def test_sprite_crop_equals_the_same_sprite_cropped_in_its_atlas_bundle(tmp_path
 def test_sprite_crop_waits_for_exports(tmp_path):
     depot = Depot(tmp_path / "s")
     env = planning_env(depot)
-    env.waiting("unity.export:all")
+    env.waiting("unity.export:all:13")
     from nnnotes.pipeline.stages import Pending
 
     with pytest.raises(Pending):
@@ -1570,34 +1594,32 @@ def test_every_reason_code_and_converter_is_documented():
 
 
 # ---------------------------------------------------------------- golden records
-CONVERTER_CLASSES = {
-    "tex.png": ["Texture2D"],
-    "sprite.png": ["Sprite"],
-    "mesh.glb": ["Mesh"],
-    "prefab.json": ["GameObject"],
-    "material.json": ["Material"],
-    "clip.json": ["AnimationClip"],
-    "controller.json": ["AnimatorController", "AnimatorOverrideController"],
-    "mono.json": ["MonoBehaviour"],
-    "data": ["TextAsset"],
-    "font": ["Font"],
-    "shader.json": ["Shader"],
-    "scripts.json": ["MonoScript"],
-    "bundle.json": ["AssetBundle"],
-    "generic.json": ["Animator", "AudioClip", "SpriteAtlas"],
+# converter -> the unit of the synthetic bundles its golden fixture converts
+CONVERTER_UNITS = {
+    "tex.png": "all:10",
+    "sprite.png": "all:12",
+    "mesh.glb": "all:30",
+    "prefab.json": "all:60",
+    "material.json": "all:50",
+    "clip.json": "all:96",
+    "controller.json": "all:92",
+    "mono.json": "all:73",
+    "data": "all:40",
+    "font": "all:42",
+    "shader.json": "all:51",
+    "generic.json": "all:95",
 }
 LIBRARIES = ["Pillow", "UnityPy", "astc-encoder-py", "numpy", "texture2ddecoder"]
 
 
 def export_golden():
-    """Provider of tests/golden/unity.export.json: one fixture per converter (the synthetic bundle with the
-    classes the converter takes), and the whole bundle."""
+    """Provider of tests/golden/unity.export.json: one fixture per converter (a unit of the synthetic bundles that
+    the converter converts)."""
 
-    def fixture(classes):
-        return lambda depot: task_for(depot, "all", classes=classes)
+    def fixture(subject):
+        return lambda depot: unit_task(depot, planning_env(depot, ("all",)), subject)
 
-    fixtures = {name: fixture(classes) for name, classes in CONVERTER_CLASSES.items()}
-    fixtures["all"] = fixture(None)
+    fixtures = {name: fixture(subject) for name, subject in CONVERTER_UNITS.items()}
     fixtures["cri.usm"] = movie_task
     return {"stage": ExportStage(FAKE_READER), "fixtures": fixtures, "libraries": LIBRARIES}
 
@@ -1614,8 +1636,7 @@ def crop_golden():
 
 def test_golden_providers_cover_every_converter():
     p = export_golden()
-    assert set(p["fixtures"]) == set(CONVERTERS) | {"all"}
-    assert json.dumps(CONVERTER_CLASSES)  # every converter named once
+    assert set(p["fixtures"]) == set(CONVERTERS)
 
 
 def test_a_converter_change_without_a_version_bump_fails_its_golden(tmp_path, monkeypatch):
@@ -1639,5 +1660,4 @@ def test_a_converter_change_without_a_version_bump_fails_its_golden(tmp_path, mo
     actual = golden(p["stage"], p["fixtures"], Depot(tmp_path / "s"), p["libraries"])
     problems = golden_problems(expected, actual, p["stage"])
     assert "unity.export: fixture font: output changed without a version bump" in problems
-    assert "unity.export: fixture all: output changed without a version bump" in problems
     assert not any("fixture tex.png" in x for x in problems)

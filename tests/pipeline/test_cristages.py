@@ -21,6 +21,7 @@ from nnnotes.pipeline.cristages import AUDIO, AudioStage, MovieStage
 from nnnotes.pipeline.depot import Depot
 from nnnotes.pipeline.stages import Env, Pending, describe, execute, registry
 from tests.formats.test_usm import ADX, HCA, KEY, MPEG1, VP9, audio_header, build, chunk, rand, sbt, video_header
+from tests.helpers import units as unit_results
 from tests.unity.test_speed_exact import FakeTools
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -123,31 +124,29 @@ def planning(depot, tmp, files: dict, keys=None, boot=True, bundles=()) -> Env:
     return Env(depot, facts)
 
 
-def export_result(depot, env, subject: str, acbs: dict, usms=None) -> str:
-    """A committed unity.export result holding `cri.acb` artifacts {cue sheet: ACB bytes} and `cri.usm` artifacts
-    {movie asset name: USM bytes}."""
-    t = Task(EXPORT, 1, subject, {}, {}, (Input("bundle", depot.put(subject.encode()), len(subject)),))
-    recs = [
-        contract.artifact(
-            f"CAB-{subject}:{i + 1}#acb",
-            depot.add(data, "acb"),
-            contract.provenance(t),
+def export_result(env, bundle: str, acbs: dict, usms=None) -> dict:
+    """Committed unity.export results of `bundle`: a MonoBehaviour unit per `cri.acb` artifact {cue sheet: ACB bytes}
+    and per `cri.usm` artifact {movie asset name: USM bytes}; -> {sheet or movie name: task id}."""
+    held = [
+        (
+            i + 1,
+            sheet,
+            data,
+            "acb",
             {"kind": "cri.acb", "format": "acb", "facts": {"cueSheet": sheet, "layout": "embedded"}},
         )
         for i, (sheet, data) in enumerate(sorted(acbs.items()))
     ]
-    recs += [
-        contract.artifact(
-            f"CAB-{subject}:{100 + i}#usm",
-            depot.add(data, "usm"),
-            contract.provenance(t),
-            {"kind": "cri.usm", "format": "usm", "facts": {"movie": name}},
-        )
+    held += [
+        (100 + i, name, data, "usm", {"kind": "cri.usm", "format": "usm", "facts": {"movie": name}})
         for i, (name, data) in enumerate(sorted((usms or {}).items()))
     ]
-    depot.commit(contract.result(t, recs, []))
-    env.done(t.id, t.key)
-    return t.id
+    file = f"CAB-{bundle}"
+    unit_results.add_census(env, bundle, file, [(pid, "MonoBehaviour") for pid, *_ in held])
+    return {
+        name: unit_results.add_unit(env, bundle, file, pid, [(role, data, role, semantics)])
+        for pid, name, data, role, semantics in held
+    }
 
 
 EXPORT = "unity.export"
@@ -219,12 +218,13 @@ def test_audio_subjects_by_content(tmp_path, tools):
         {"cri_assets_cri/sound/bgm_x": ACB, "cri_assets_cri/video/m": usm_file()[0]},
         {"Cri/Sound/bgm_x": ["cri_assets_cri/sound/bgm_x"], "Cri/Video/m": ["cri_assets_cri/video/m"]},
     )
-    tid = export_result(depot, env, "cri_bundle", {"bgm_x": ACB, "se_live": other})
+    tids = export_result(env, "cri_bundle", {"bgm_x": ACB, "se_live": other})
+    tid = tids["bgm_x"]
     stage = AudioStage()
     sha, other_sha = contract.sha256(ACB), contract.sha256(other)
     assert stage.subjects(env) == sorted([sha, other_sha])  # the raw ACB and its bundle copy: one
     assert stage.names(env) == {sha: ["Cri/Sound/bgm_x"], other_sha: ["se_live"]}
-    assert stage.depends(sha, env) == [tid] and stage.depends(other_sha, env) == [tid]
+    assert stage.depends(sha, env) == [tid] and stage.depends(other_sha, env) == [tids["se_live"]]
     t = describe(stage, sha, None, env)
     assert t.id == f"{AUDIO}:{sha}" and [i.role for i in t.inputs] == ["acb", "boot"]
     assert t.input("acb").locators[0]["kind"] == "file" and t.atoms == FAKE_ATOMS
@@ -559,12 +559,13 @@ def test_movie_held_in_a_bundle(tmp_path, tools):
         },
         bundles=("embcri_video_common",),
     )
-    tid = export_result(depot, env, "embcri_video_common", {}, {"warmup": held, "loose": raw})
+    tids = export_result(env, "embcri_video_common", {}, {"warmup": held, "loose": raw})
+    tid = tids["warmup"]
     stage = MovieStage()
     sha, raw_sha = contract.sha256(held), contract.sha256(raw)
     assert stage.subjects(env) == sorted([sha, raw_sha])
     assert stage.names(env) == {sha: ["EmbCri/Video/common/warmup"], raw_sha: ["Cri/Video/m", "loose"]}
-    assert stage.depends(sha, env) == [tid] and stage.depends(raw_sha, env) == [tid]
+    assert stage.depends(sha, env) == [tid] and stage.depends(raw_sha, env) == [tids["loose"]]
     with fake_tools(key=KEY):
         t = describe(stage, sha, None, env)
         assert t.input("usm").locators == ({"kind": "depot"},) and sorted(i.role for i in t.inputs) == ["boot", "usm"]

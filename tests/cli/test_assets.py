@@ -16,7 +16,7 @@ import pytest
 from nnnotes import cli
 from nnnotes.cli import assets, common
 from nnnotes.cli import catalog as catalog_cli
-from nnnotes.pipeline import contract
+from nnnotes.pipeline import contract, units
 from nnnotes.pipeline.census import CensusStage
 from nnnotes.pipeline.contract import Cost
 from nnnotes.pipeline.depot import Depot
@@ -34,12 +34,14 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 # ---------------------------------------------------------------- synthetic data
-def obj(pid, cls, name=None, script=None):
+def obj(pid, cls, name=None, script=None, unit=None):
     o = {"pathId": pid, "classId": 0, "class": cls, "byteSize": 10, "typeHash": None}
     if name is not None:
         o["name"] = name
     if script is not None:
         o["script"] = script
+    if unit is not None:
+        o["unit"] = unit
     return o
 
 
@@ -82,7 +84,8 @@ def cdoc(file: str, objs: list, container=(), scripts=(), bundle_name=None) -> d
 
 def censuses(broken: bool = True) -> dict:
     """{bundle: census document}: two cards (a texture with a sub-sprite, a script-driven MonoBehaviour), the
-    shared bundle holding the MonoScript, a background bundle with an object that fails (`broken`)."""
+    shared bundle holding the MonoScript, a background bundle with a prefab (a GameObject and its Transform) and an
+    object that fails (`broken`)."""
     script = {"file": CABS["shared"], "pathId": 42}
     out = {}
     for n in ("card_1", "card_2"):
@@ -113,7 +116,8 @@ def censuses(broken: bool = True) -> dict:
     )
     out["bg_x"] = cdoc(
         CABS["bg_x"],
-        [obj(1, "AssetBundle", "ab"), obj(3, "Mesh", "floor")] + ([obj(4, "Broken", "bad")] if broken else []),
+        [obj(1, "AssetBundle", "ab"), obj(2, "Transform", "", unit=f"{CABS['bg_x']}:3"), obj(3, "GameObject", "x")]
+        + ([obj(4, "Broken", "bad")] if broken else []),
         [("assets/game/bg/x.prefab", 3)],
     )
     return out
@@ -189,26 +193,34 @@ class FakeCensus(CensusStage):
 
 
 class FakeExport(Stage):
-    """unity.export: one JSON artifact per object of the census (MonoBehaviours name their script class from the
-    link.scripts table), the AssetBundle object contained in the bundle's first artifact, class `Broken` failed."""
+    """unity.export: one task per unit (pipeline.units), one JSON artifact for its root object (a MonoBehaviour
+    names its script class from the link.scripts table) that contains its other members, class `Broken` failed,
+    class `Crash` a ConfigError."""
 
     name = "unity.export"
     version = 1
     after = ("unity.census", "link.scripts")
-    PARAMS = {"png": {"encoder": "pillow", "level": 6}, "classes": None}
+    PARAMS = {"png": {"encoder": "pillow", "level": 6}}
     ATOMS = {"png.encode": "fake/1"}
 
     def subjects(self, env):
-        return list(env.fact("selected"))
+        return units.table(env).subjects()
 
-    def _census(self, subject):
-        return contract.task_id("unity.census", subject)
+    def _census(self, subject, env):
+        return contract.task_id("unity.census", units.table(env).unit(subject).bundle)
 
     def depends(self, subject, env):
-        return [self._census(subject), "link.scripts:all"]
+        return [self._census(subject, env), "link.scripts:all"]
 
     def inputs(self, subject, env):
-        return [env.input_of(self._census(subject), "census"), env.input_of("link.scripts:all", "scripts")]
+        return [env.input_of(self._census(subject, env), "census"), env.input_of("link.scripts:all", "scripts")]
+
+    def context(self, subject, env):
+        unit = units.table(env).unit(subject)
+        return {"unit": unit.root, "members": list(unit.members)}
+
+    def batch(self, task):
+        return task.input("census").sha256
 
     def estimate(self, subject, env, inputs):
         return Cost(0.01, 1 << 20)
@@ -216,55 +228,31 @@ class FakeExport(Stage):
     def run(self, task, depot):
         doc = contract.loads(depot.input_bytes(task.input("census")))
         scripts = contract.loads(depot.input_bytes(task.input("scripts")))["scripts"]
-        if any(o["class"] == "Crash" for f in doc["files"] for o in f["objects"]):
-            raise ConfigError("setting paths.tool is not set")
         container = {(e["file"], e["pathId"]): e["path"] for b in doc["assetBundles"] for e in b["container"]}
-        only = task.params["classes"]
-        arts, items, first = [], [], None
-        for f in doc["files"]:
-            for o in f["objects"]:
-                oid = contract.object_id(f["name"], o["pathId"])
-                if only is not None and o["class"] not in only:
-                    continue
-                if o["class"] == "AssetBundle":
-                    continue
-                if o["class"] == "Broken":
-                    items.append(
-                        contract.item(oid, "failed", why=contract.reason("fake.broken", "broken"), cls=o["class"])
-                    )
-                    continue
-                body = {"object": oid, "class": o["class"], "level": task.params["png"]["level"]}
-                if o.get("script"):
-                    body["script"] = scripts.get(contract.object_id(o["script"]["file"], o["script"]["pathId"]))
-                facts = {
-                    "file": f["name"],
-                    "pathId": o["pathId"],
-                    "classId": 0,
-                    "class": o["class"],
-                    "name": o.get("name", ""),
-                }
-                if (f["name"], o["pathId"]) in container:
-                    facts["container"] = container[(f["name"], o["pathId"])]
-                aid = contract.artifact_id(oid, "json")
-                arts.append(
-                    contract.artifact(
-                        aid,
-                        depot.add(contract.encode(body), "json"),
-                        contract.provenance(task, obj=facts),
-                        {"kind": "fake.json"},
-                    )
-                )
-                items.append(contract.item(oid, "exported", artifacts=[aid], cls=o["class"]))
-                first = first or aid
-        for f in doc["files"]:
-            for o in f["objects"]:
-                if o["class"] == "AssetBundle" and first and (only is None or "AssetBundle" in only):
-                    items.append(
-                        contract.item(
-                            contract.object_id(f["name"], o["pathId"]), "contained", within=first, cls="AssetBundle"
-                        )
-                    )
-        return Output(arts, items)
+        file, pid = contract.parse_object_id(task.context["unit"])
+        (f,) = [f for f in doc["files"] if f["name"] == file]
+        (o,) = [o for o in f["objects"] if o["pathId"] == pid]
+        oid = task.context["unit"]
+        if o["class"] == "Crash":
+            raise ConfigError("setting paths.tool is not set")
+        if o["class"] == "Broken":
+            return Output(
+                [], [contract.item(oid, "failed", why=contract.reason("fake.broken", "broken"), cls="Broken")]
+            )
+        body = {"object": oid, "class": o["class"], "level": task.params["png"]["level"]}
+        if o.get("script"):
+            body["script"] = scripts.get(contract.object_id(o["script"]["file"], o["script"]["pathId"]))
+        facts = {"file": f["name"], "pathId": o["pathId"], "classId": 0, "class": o["class"], "name": o.get("name", "")}
+        if (f["name"], o["pathId"]) in container:
+            facts["container"] = container[(f["name"], o["pathId"])]
+        aid = contract.artifact_id(oid, "json")
+        art = contract.artifact(
+            aid, depot.add(contract.encode(body), "json"), contract.provenance(task, obj=facts), {"kind": "fake.json"}
+        )
+        items = [contract.item(oid, "exported", artifacts=[aid], cls=o["class"])]
+        cls = {contract.object_id(g["name"], m["pathId"]): m["class"] for g in doc["files"] for m in g["objects"]}
+        items += [contract.item(m, "contained", within=aid, cls=cls[m]) for m in task.context["members"][1:]]
+        return Output([art], items)
 
 
 REAL = {s.name: s for s in assets.STAGE_SOURCES}
@@ -273,8 +261,7 @@ FAKE_SOURCES = (
     assets.StageSource("unity.census", "tests.cli.test_assets:FakeCensus"),
     REAL["link.scripts"],
     REAL["link.addresses"],
-    assets.StageSource("unity.export", "tests.cli.test_assets:FakeExport", output=True, root="_bundles/{subject}"),
-    REAL["link.artifacts"],
+    assets.StageSource("unity.export", "tests.cli.test_assets:FakeExport", output=True),
 )
 
 
@@ -370,7 +357,7 @@ def test_the_built_in_files_of_the_apk_are_exported(tmp_path, capsys, fake, monk
     base = [*flags(d), "--apk", apk, "depot", "plan", "--depot", tmp_path / "s", "--json"]
     code, out, err = nn(capsys, *base, "--select", "group:bg")
     ids = {n["id"] for n in json.loads(out)["nodes"]}
-    assert "unity.census:apk/data.unity3d" in ids and "unity.export:apk/data.unity3d" not in ids
+    assert "unity.census:apk/data.unity3d" in ids and not any(i.startswith("unity.export:apk/") for i in ids)
     code, out, err = nn(
         capsys,
         *flags(d),
@@ -409,7 +396,7 @@ def test_export_writes_layouts_reports_and_hits_the_second_time(tmp_path, capsys
     code, out, err = export(capsys, tmp_path, d, "depot", "out")
     assert code == 1, err  # the broken object is a failed item
     summary = json.loads(out)
-    assert summary["items"] == {"exported": 8, "contained": 4, "generic": 0, "unsupported": 0, "failed": 1}
+    assert summary["items"] == {"exported": 12, "contained": 1, "generic": 0, "unsupported": 0, "failed": 1}
     files = tree(tmp_path / "out")
     assert "Assets/Game/Card/1/full.png.json" in files  # the catalog's case of the container path
     assert "Assets/Game/Card/1/full[card1].png.json" in files  # the sub-sprite
@@ -422,15 +409,16 @@ def test_export_writes_layouts_reports_and_hits_the_second_time(tmp_path, capsys
     assert [(f["code"], f["object"]) for f in fails] == [("fake.broken", f"{CABS['bg_x']}:4")]
     cov = contract.loads((reports / "coverage.json").read_bytes())["classes"]
     assert cov["Texture2D"]["total"] == 2 and cov["Texture2D"]["exported"] == 2
-    assert cov["AssetBundle"] == {
-        "total": 4,
+    assert cov["Transform"] == {
+        "total": 1,
         "missing": 0,
         "exported": 0,
-        "contained": 4,
+        "contained": 1,
         "generic": 0,
         "unsupported": 0,
         "failed": 0,
     }
+    assert cov["AssetBundle"]["total"] == cov["AssetBundle"]["exported"] == 4
     run = contract.loads((reports / "run.json").read_bytes())
     assert Depot(tmp_path / "depot").run(run["id"]) == run
     assert run["context"]["catalog"]["sha"] == contract.sha256(d["catalog"].read_bytes())
@@ -518,7 +506,7 @@ def test_plan_emit_tasks_and_run_stage_give_the_exported_depot(tmp_path, capsys,
         code, out, err = nn(capsys, *flags(d), "depot", "run", tasks, "--depot", tmp_path / "q")
         assert code in (0, 1), err
         rounds += 1
-    assert rounds == 4  # index + census; scripts + addresses; export; artifacts
+    assert rounds == 3  # index + census; scripts + addresses; export
     skip = ["inputs", "runs", "costs", "catalogs", "downloads"]
     assert tree(tmp_path / "orch", skip) == tree(tmp_path / "q", skip)
 
@@ -857,7 +845,8 @@ def test_derived_documents_read_the_paths_of_the_objects_they_name(tmp_path, cap
     card = f"{CABS['card_1']}:5"
     assert doc["CAB-none:9"] == {} and doc[f"{CABS['bg_x']}:4"] == {}  # unknown; failed
     assert doc[card] == {f"{card}#json": "Assets/Game/Card/1/full.png.json"}
-    assert doc[f"{CABS['card_1']}:1"] == doc[card]  # contained in it
+    prefab = f"{CABS['bg_x']}:3"
+    assert doc[f"{CABS['bg_x']}:2"] == doc[prefab] == {f"{prefab}#json": "Assets/Game/Bg/x.prefab.json"}  # contained
     assert (tmp_path / "o" / "Assets" / "Game" / "Card" / "1" / "full.png.json").is_file()
     code, out, _ = nn(capsys, *flags(d), "depot", "plan", "-o", tmp_path / "o", "--depot", tmp_path / "s", "--check")
     assert code == 0, out
@@ -928,7 +917,6 @@ def test_views_are_placed_with_paths_and_every_document_validates(tmp_path, caps
         contract.VIEW,
         "nnnotes.scripts/1",
         "nnnotes.addresses/1",
-        "nnnotes.artifacts/1",
     }, checked
     code, out, _ = nn(
         capsys,
@@ -1028,7 +1016,7 @@ def test_export_records_the_calibration_and_plan_uses_it(tmp_path, capsys, fake)
     d = setup_data(tmp_path)
     export(capsys, tmp_path, d, "s", "o")
     cal = tmp_path / "s" / "costs" / assets.CALIBRATION
-    assert contract.loads(cal.read_bytes()) == {"stages": {}}  # four bundles: too few
+    assert contract.loads(cal.read_bytes())["stages"]["unity.export"]["samples"] == 13  # one per unit run
     assets.write_calibration(tmp_path / "s", {"unity.export": {"cpu": 2.0, "peak": 3.0, "samples": 50}})
     code, out, err = nn(
         capsys, *flags(d), "depot", "plan", "--depot", tmp_path / "s", "--json", "--png-level", "1", "--explain"
@@ -1208,7 +1196,7 @@ def test_names_see_the_tasks_that_ran(tmp_path, capsys, monkeypatch):
     code, out, err = export(capsys, tmp_path, d, "s", "o")
     assert code == 0, err
     placed = tree(tmp_path / "o")
-    assert "Named/4/a.flac" in placed and "Named/0/a.flac" not in placed  # four bundles were exported
+    assert "Named/12/a.flac" in placed and "Named/0/a.flac" not in placed  # the twelve units were exported
     code, out, _ = nn(capsys, *flags(d), "depot", "plan", "-o", tmp_path / "o", "--depot", tmp_path / "s", "--check")
     assert code == 0, out  # plan places them the same way
 

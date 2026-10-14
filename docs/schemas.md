@@ -16,7 +16,6 @@ schemas.load("plan")  # the schema as a dict
 |---|---|---|
 | `addresses` | `nnnotes.addresses/1` | the address table of a catalog version and the censuses of its bundles |
 | `artifact` | `nnnotes.artifact/1` | the content, provenance and semantics of one output file |
-| `artifacts` | `nnnotes.artifacts/1` | the artifact table: the artifacts of every object, with content id, size and extension |
 | `catalog-diff` | `nnnotes.catalog-diff/1` | the difference between two catalog versions (`catalog diff`) |
 | `catalog-index` | `nnnotes.catalog-index/1` | the index of a catalog pair: remote and APK catalogs, every location in catalog order |
 | `catalogs` | `nnnotes.catalogs/1` | the catalog versions of a depot (`catalog versions`) |
