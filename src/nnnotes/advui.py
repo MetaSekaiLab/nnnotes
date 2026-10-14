@@ -80,7 +80,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from . import adv, fontsettings, languages, textstyle
+from . import adv, advscene, fontsettings, languages, textstyle, tmpfont
 from .catalog import Catalog
 from .export import Exporter, TexelPacker, _safe
 from .jsonio import write_json
@@ -291,7 +291,6 @@ MENU_VIEW_SPRITES = (
 )
 EMOJI_SPRITE_ASSET_KEY = "Font/SiriusEmoji/SiriusEmojiData"  # LocalizeManager.EmojiSpriteAssetAddress
 EMOJI_CLASSES = ("RubyEmojiTextMeshProUGUI",)
-FONT_ADDRESS = "Font/"  # LocalizeManager.FontAddressablePath; the embedded fonts are at "Emb" + address
 # TMP_Text.GetUnderlineSpecialCharacter: the underline and the text highlight (DrawTextHighlight) draw with the '_'
 # of the text's font asset (no fallback), sampled on the asset's first atlas page
 UNDERLINE_CHARACTER = 0x5F
@@ -336,6 +335,7 @@ TMP_FIELDS = (
     "m_text",
     "m_monospaceDistEm",  # TMP_EmojiTextUGUI (the emoji text classes)
 )
+BLUR_FEATURE = "Fwk.UI.Rendering.UIRendererFeature"
 FONT_MODES = ("open", "game")
 IMAGE_FIELDS = (
     "m_Enabled",
@@ -592,8 +592,6 @@ def extract(
     mode, field = languages.mode(language), languages.column(language)[1:]
     game = fonts == "game"
     if game:
-        from . import tmpfont
-
         tmpfont.require_extra()
     ui_dir = Path(out_dir) / "ui"
     ui_dir.mkdir(parents=True, exist_ok=True)
@@ -630,7 +628,8 @@ def extract(
     for d in drawn:
         if d not in {n["path"] for n in nodes}:
             raise RuntimeError(f"{d} missing from the prefabs")
-    styles = textstyle.TextStyles(ex, player, mode, None if game else fontsettings.builtin())
+    fonts_of = tmpfont.AssetFontSettings(ex) if game else fontsettings.builtin()
+    styles = textstyle.TextStyles(ex, player, mode, fonts_of)
     dialog_nodes = {name: ex.prefab(key)["nodes"] for name, key in DIALOG_KEYS.items()}
     catalogs = pictogram_catalogs(widget + window + [n for dn in dialog_nodes.values() for n in dn])
 
@@ -988,13 +987,34 @@ def backdrop_path(widget: list[dict], comp: dict) -> str:
     return path
 
 
+def blur_record(graphics: dict) -> dict:
+    """blur: the UIRendererFeature of renderer 0 (UIBlurController.ExecBlur -> UIRenderPass CaptureAndBlur): its
+    Dual Kawase iterations, offset, downsample, blend rate maximum and shader name, read from the player data
+    (renderer 0 of every pipeline must be the same renderer)."""
+    first = {p["m_RendererDataList"][0] for p in graphics["pipelines"].values()}
+    if len(first) != 1:
+        raise NotImplementedError(f"renderer 0 differs between the pipelines: {sorted(first)}")
+    name = advscene.camera_renderer(graphics, graphics["defaultPipeline"], 0)
+    feats = [f for f in graphics["renderers"][name]["m_RendererFeatures"] if f["class"] == BLUR_FEATURE]
+    if len(feats) != 1:
+        raise RuntimeError(f"renderer {name}: {len(feats)} {BLUR_FEATURE}")
+    f = feats[0]
+    return {
+        "renderer": name,
+        "active": bool(f["m_Active"]),
+        "iterations": f["_blurIterations"],
+        "offset": f["_blurOffset"],
+        "downsample": f["_blurDownsample"],
+        "blendRateMax": f["_blurBlendRateMax"],
+        "shader": f["_dualKawaseBlurShader"],
+    }
+
+
 def blur_settings(player: PlayerData) -> tuple[dict, object]:
     """ui.json `blur` and its Shader object, for a backdrop-filter talk window (UIAdvWidget.UpdateAdvBlurAndBackdrop ->
-    UIManager.UseBlur): the UIRendererFeature of renderer 0 (storyhost.blur_record; CameraManager and
-    UICameraController set renderer 0 on the main, sub and UI cameras, and the UI overlay camera runs the pass)."""
-    from . import storyhost  # storyhost imports this module: resolved at call time
-
-    blur = storyhost.blur_record(player.graphics())
+    UIManager.UseBlur): the UIRendererFeature of renderer 0 (blur_record; CameraManager and UICameraController set
+    renderer 0 on the main, sub and UI cameras, and the UI overlay camera runs the pass)."""
+    blur = blur_record(player.graphics())
     if not blur["active"]:
         raise NotImplementedError(f"renderer {blur['renderer']}: the UIRendererFeature is not active")
     objs = [o for o in player.renderer_shaders(blur["renderer"]) if o.read().m_ParsedForm.m_Name == blur["shader"]]
@@ -1261,17 +1281,6 @@ def master_id_texts(settings: dict, master: Path, field: str) -> dict:
     return {k: {"id": i, "text": texts[i]} for k, i in ids.items()}
 
 
-def font_key(cat, font_asset: str, name: str) -> str:
-    """The address of `name` (a font asset or one of its materials) in the folder of `font_asset`: the embedded copy
-    "EmbFont/<font>/" (textstyle.font_dir) when the catalog has it, else LocalizeManager's "Font/<font>/"
-    (FONT_ADDRESS; the additional fonts)."""
-    key = textstyle.font_dir(font_asset) + name
-    if cat.has(key):
-        return key
-    base = font_asset[:-4] if font_asset.endswith(" SDF") else font_asset
-    return f"{FONT_ADDRESS}{base}/{name}"
-
-
 def _lookup_lang(lang: dict) -> dict:
     """`lang` (textstyle.language_fonts) with the Japanese font names of LocalizeManager.InitJapaneseFontLookUpTable:
     the Japanese font names, then its additional font names (the table TryGetFontIndex searches)."""
@@ -1448,8 +1457,6 @@ def _game_fonts(
     the glyph coverage of the characters the episode shows (in the text field `field`; `master_ids`:
     AdvMasterIdSettings; `ui_texts`: texts of the UI itself) and the text materials.
     -> (materials, the inputs of tmpfont.export_fonts + coverage)."""
-    from . import tmpfont
-
     fonts = tmpfont.FontSet(ex)
     used_text_nodes = [n for n in out_nodes if "text" in n]
     primaries = {}
@@ -1460,7 +1467,7 @@ def _game_fonts(
         )
         primaries[t["localized"]["fontAsset"]] = None
     for fname in primaries:
-        primaries[fname] = fonts.by_key(textstyle.font_dir(fname) + fname)
+        primaries[fname] = fonts.by_key(fontsettings.font_dir(fname) + fname)
 
     # -- characters the episode shows ------------------------------------------
     shown = shown_texts(episode, master_ids, field) + list(ui_texts)

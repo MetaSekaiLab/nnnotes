@@ -223,7 +223,7 @@ def test_open_asset(font):
     a = storyfonts.open_asset(font, font.asset_name, chars, game(), {"Game - OutlineX": outline_material()})
     f = a["font"]
     assert a["missing"] == {ord("Z")}
-    assert set(f["characters"]) >= {str(ord(c)) for c in "AB口 \n"} | {str(u) for u in tmpfont.TMP_SYNTHESIZED}
+    assert set(f["characters"]) >= {str(ord(c)) for c in "AB口 \n"} | {str(u) for u in fontsettings.TMP_SYNTHESIZED}
     assert str(ord("Z")) not in f["characters"]
     assert f["characters"]["10"]["glyph"] == 0 and f["glyphs"]["0"]["metrics"]["m_HorizontalAdvance"] == 0.0
     assert f["atlasRenderMode"] == 4134 and f["atlasPopulationMode"] == 0 and f["atlasPadding"] == 4
@@ -581,7 +581,7 @@ def test_missing_glyph():
     assert tmpfont.missing_glyph(Fonts({0x03: p}), p, [0x42])["unicode"] == 0x03
     assert tmpfont.missing_glyph(fonts, p, [0x42], 0x3F)["unicode"] == 0x20  # a set missingGlyphCharacter
     assert [
-        u for u in (0xFDFF, 0xFE00, 0xFE0F, 0xFE10, 0xE0100, 0xE01EF, 0xE01F0) if tmpfont.is_variation_selector(u)
+        u for u in (0xFDFF, 0xFE00, 0xFE0F, 0xFE10, 0xE0100, 0xE01EF, 0xE01F0) if fontsettings.is_variation_selector(u)
     ] == [0xFE00, 0xFE0F, 0xE0100, 0xE01EF]
     tmpfont.check_glyph_variants(fonts, p, ["A\ufe0f", "\u2661", "\u26a1\ufe0f"])
     with pytest.raises(NotImplementedError, match="glyph variant of U\\+2661 U\\+FE0F"):

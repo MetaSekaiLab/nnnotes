@@ -688,9 +688,9 @@ def open_asset(
 
     # characters -> glyphs (a synthesized control character the font lacks: TMP's zero glyph 0)
     characters, glyph_of, missing = {}, {}, set()
-    for u in sorted(set(chars) | set(tmpfont.TMP_SYNTHESIZED) | ({UNDERLINE_CHARACTER} if underline else set())):
+    for u in sorted(set(chars) | set(fontsettings.TMP_SYNTHESIZED) | ({UNDERLINE_CHARACTER} if underline else set())):
         gi = gen.glyph_index(u)
-        if gi == 0 and u not in tmpfont.TMP_SYNTHESIZED:
+        if gi == 0 and u not in fontsettings.TMP_SYNTHESIZED:
             if u in chars:  # a font without '_' has no underline glyph, nothing is shown
                 missing.add(u)
             continue
@@ -824,7 +824,7 @@ def fallback_chains(ex: Exporter, primaries: set, exported: set) -> dict[str, li
     asset names): the fallback list of a font record once the assets that serve no shown character are left out."""
     fs = tmpfont.FontSet(ex)
     for n in sorted(primaries):
-        fs.by_key(textstyle.font_dir(n) + n)
+        fs.by_key(fontsettings.font_dir(n) + n)
     missing = sorted(exported - set(fs.fonts))
     if missing:
         raise RuntimeError(f"font assets {missing} are not reachable from {sorted(primaries)}")
@@ -1001,7 +1001,7 @@ def open_font_set(
         )
         steps = chain(name, language)
         for u in want:
-            if u in tmpfont.TMP_SYNTHESIZED:  # every asset synthesizes these: found in the primary
+            if u in fontsettings.TMP_SYNTHESIZED:  # every asset synthesizes these: found in the primary
                 held[own].add(u)
                 continue
             hit = next((k for k in steps if file_of(k[1]).maps(u)), own)
@@ -1496,7 +1496,7 @@ def game_fonts(
         fs = tmpfont.FontSet(ex)
 
         def lookup(name, u):
-            return fs.lookup(fs.by_key(advui.font_key(ex.cat, name, name)), u)
+            return fs.lookup(fs.by_key(fontsettings.font_key(ex.cat, name, name)), u)
 
         drawn = set().union(*drawn_by_sprites(rec, [texts[p] for p in sorted(driven)], chars, lookup).values())
         if sprite_needs(rec, shown, drawn):
@@ -1515,7 +1515,7 @@ def game_fonts(
         materials[sprites["material"]["material"]] = sprites["material"]
     for n in sorted({t["localized"]["material"] for t in texts.values()}):  # the text shaders for text_shaders
         fa = next(t["localized"]["fontAsset"] for t in texts.values() if t["localized"]["material"] == n)
-        ex.material(ex.key_object(textstyle.font_dir(fa) + n))
+        ex.material(ex.key_object(fontsettings.font_dir(fa) + n))
     keywords = text_shaders(ex, ui_dir, materials)
     cov = doc["glyphCoverage"]
     if sprites is not None:

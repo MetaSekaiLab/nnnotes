@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 from test_room import ROOM_KEY, File, RoomCatalog, load_room, two_file_room
 
-from nnnotes import room, storyhost
+from nnnotes import advui, room, storyhost
 from nnnotes.unity import SceneGraph
 
 V0 = {"x": 0.0, "y": 0.0, "z": 0.0}
@@ -489,7 +489,7 @@ def test_world_trs_composes_the_parents():
 
 def test_blur_record_reads_renderer_zero():
     feat = {
-        "class": storyhost.BLUR_FEATURE,
+        "class": advui.BLUR_FEATURE,
         "m_Active": 1,
         "_blurIterations": 3,
         "_blurOffset": 1.0,
@@ -505,7 +505,7 @@ def test_blur_record_reads_renderer_zero():
         },
         "renderers": {"R0": {"m_RendererFeatures": [{"class": "Other"}, feat]}, "R1": {"m_RendererFeatures": []}},
     }
-    assert storyhost.blur_record(g) == {
+    assert advui.blur_record(g) == {
         "renderer": "R0",
         "active": True,
         "iterations": 3,
@@ -516,7 +516,7 @@ def test_blur_record_reads_renderer_zero():
     }
     g["pipelines"]["Q"]["m_RendererDataList"] = ["R1"]
     with pytest.raises(NotImplementedError):
-        storyhost.blur_record(g)
+        advui.blur_record(g)
 
 
 def write_table(d, name, rows):

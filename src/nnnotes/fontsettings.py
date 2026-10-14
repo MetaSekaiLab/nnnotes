@@ -6,8 +6,9 @@ its fallbacks take TextMeshPro's missing glyph (storyfonts.open_font_set). These
 
   builtin()         the table shipped with nnnotes (fontsettings.json, FORMAT), so the open-font exports read no
                     game font asset, material or font bundle
-  AssetFontSettings the same values read from the game's font assets through an Exporter (`--fonts game`, and
-                    build(), which writes the table)
+  tmpfont.AssetFontSettings
+                    the same values read from the game's font assets through an Exporter (`--fonts game`, and
+                    tmpfont.build_font_settings, which makes the table)
 
 The table holds, per font asset LocalizeManager lists for a language and per asset of their fallback chains:
 `faceInfo` (m_FaceInfo), `atlasPadding`, `atlasRenderMode`, the style settings (STYLE_KEYS), `material` (the name of
@@ -35,6 +36,33 @@ FILE = Path(__file__).with_name("fontsettings.json")
 STYLE_KEYS = ("normalStyle", "normalSpacingOffset", "boldStyle", "boldSpacing", "italicStyle", "tabSize")
 FONT_CLASS = "TMP_FontAsset"
 UNDERLINE = 0x5F
+FONT_PREFIX = "EmbFont/"  # the embedded font assets and their materials: <prefix><font>/
+FONT_ADDRESS = "Font/"  # LocalizeManager.FontAddressablePath; the embedded fonts are at "Emb" + address
+# TextMeshPro synthesized control characters (TMP_FontAsset.AddSynthesizedCharactersAndFaceMetrics):
+# zero-metric glyphs used when the font file does not map them.
+TMP_SYNTHESIZED = (0x03, 0x09, 0x0A, 0x0B, 0x0D, 0x061C, 0x200B, 0x200E, 0x200F, 0x2028, 0x2029, 0x2060)
+SPACE, END_OF_TEXT = 0x20, 0x03
+
+
+def is_variation_selector(u: int) -> bool:
+    """U+FE00..U+FE0F, U+E0100..U+E01EF (SetArraySizes: next >> 4 == 0xFE0 or next - 0xE0100 < 0xF0)."""
+    return u >> 4 == 0xFE0 or 0xE0100 <= u < 0xE01F0
+
+
+def font_dir(font_asset: str) -> str:
+    """Addressable folder of a font asset and its materials: EmbFont/<font name without " SDF">/."""
+    return f"{FONT_PREFIX}{font_asset[:-4] if font_asset.endswith(' SDF') else font_asset}/"
+
+
+def font_key(cat, font_asset: str, name: str) -> str:
+    """The address of `name` (a font asset or one of its materials) in the folder of `font_asset`: the embedded copy
+    "EmbFont/<font>/" (font_dir) when the catalog has it, else LocalizeManager's "Font/<font>/"
+    (FONT_ADDRESS; the additional fonts)."""
+    key = font_dir(font_asset) + name
+    if cat.has(key):
+        return key
+    base = font_asset[:-4] if font_asset.endswith(" SDF") else font_asset
+    return f"{FONT_ADDRESS}{base}/{name}"
 
 
 def encode_coverage(code_points) -> str:
@@ -72,14 +100,21 @@ class FontSettings:
             raise KeyError(f"font asset {name} not in the font settings ({self.where()})")
         return f
 
+    def bundles(self, cat) -> frozenset:
+        """The names of the bundles that hold the table's font assets: an addressable asset's bundle in `cat` now,
+        else the one recorded."""
+        names = set()
+        for n, f in sorted(self.fonts.items()):
+            k = font_key(cat, n, n)
+            names.add(cat.bundle_of(k).name if cat.has(k) else f["bundle"])
+        return frozenset(names)
+
     def fallbacks(self, name: str) -> list[str]:
         return list(self.font(name)["fallbacks"])
 
     def has(self, name: str, u: int) -> bool:
         """Whether the font asset itself finds the code point (GetCharacterFromFontAsset without fallbacks: its
         characters, its dynamic characters, TextMeshPro's synthesized control characters)."""
-        from .tmpfont import TMP_SYNTHESIZED
-
         if u in TMP_SYNTHESIZED:
             return True
         if name not in self._bits:
@@ -121,8 +156,6 @@ class FontSettings:
     def missing_glyph(self, name: str, chars, character: int) -> dict | None:
         """tmpfont.missing_glyph of the asset `name`: {unicode: the substitute (`character` when the chain has it,
         else U+0020, else U+0003), characters: the code points of `chars` the chain lacks}, or None."""
-        from .tmpfont import END_OF_TEXT, SPACE
-
         miss = sorted(u for u in chars if self.lookup(name, u) is None)
         if not miss:
             return None
@@ -132,8 +165,6 @@ class FontSettings:
     def check_glyph_variants(self, name: str, texts) -> None:
         """tmpfont.check_glyph_variants of the asset `name`: NotImplementedError when a character of `texts` the
         chain has is followed by a variation selector that the asset holding it maps to a variant glyph."""
-        from .tmpfont import is_variation_selector
-
         for s in texts:
             cps = [ord(c) for c in s]
             for base, vs in zip(cps, cps[1:]):
@@ -178,72 +209,6 @@ def builtin() -> FontSettings:
     return FontSettings(json.loads(FILE.read_text(encoding="utf-8")))
 
 
-class AssetFontSettings(FontSettings):
-    """FontSettings read from the game's font assets (`ex`: an Exporter of the catalog and player data): a font asset
-    at its address (advui.font_key), its fallbacks through their references (tmpfont.FontSet), its materials at their
-    addresses. Needs the `fonts` extra for the source font files of dynamic assets."""
-
-    def __init__(self, ex):
-        super().__init__({"format": FORMAT, "fonts": {}, "materials": {}})
-        self.ex = ex
-        self._set = None
-        self._mat_objs: dict[str, object] = {}  # material name -> its object
-
-    def _fontset(self):
-        if self._set is None:
-            from .tmpfont import FontSet
-
-            self._set = FontSet(self.ex)
-        return self._set
-
-    def _font_obj(self, name: str):
-        fs = self._fontset()
-        if name not in fs.fonts:
-            from .advui import font_key
-
-            fs.by_key(font_key(self.ex.cat, name, name))
-        return fs.fonts[name]
-
-    def font(self, name: str) -> dict:
-        if name not in self.fonts:
-            f = self._font_obj(name)
-            mat = self.ex.material(f.material_obj)
-            self.materials.setdefault(mat["material"], mat)
-            self._mat_objs.setdefault(mat["material"], f.material_obj)
-            tt = f.tt
-            self.fonts[name] = {
-                "faceInfo": tt["m_FaceInfo"],
-                "atlasPadding": tt["m_AtlasPadding"],
-                "atlasRenderMode": tt["m_AtlasRenderMode"],
-                **{k: tt[k] for k in STYLE_KEYS},
-                "material": mat["material"],
-                "fallbacks": [fb.name for fb in self._fontset().fallbacks(f)],
-                "coverage": encode_coverage(set(f.chars) | (f.cmap if f.dynamic else set())),
-                "variants": sorted([b, vs] for b, vs in f.variants),
-                "bundle": f.obj.assets_file.parent.name,
-            }
-        return self.fonts[name]
-
-    def has_material(self, font: str, name: str) -> bool:
-        from .advui import font_key
-
-        return name in self.materials or self.ex.cat.has(font_key(self.ex.cat, font, name))
-
-    def material(self, font: str | None, name: str) -> dict:
-        if name not in self.materials:
-            from .advui import font_key
-
-            key = font_key(self.ex.cat, font, name)
-            if not self.ex.cat.has(key):
-                raise KeyError(f"material key {key}")
-            self._mat_objs[name] = self.ex.key_object(key)
-            self.materials[name] = self.ex.material(self._mat_objs[name])
-        return copy.deepcopy(self.materials[name])
-
-    def where(self) -> str:
-        return "the game's font assets"
-
-
 def table_material(m: dict) -> dict:
     """A material record as the table stores it: its texture references reduced to {name, width, height, format},
     the values the open-font exports take from them."""
@@ -253,41 +218,6 @@ def table_material(m: dict) -> dict:
         if t is not None:
             v["texture"] = {"name": t["name"], "width": t["width"], "height": t["height"], "format": t.get("format")}
     return m
-
-
-def build(ex, player, game_version: str) -> dict:
-    """The table (FORMAT) from the game's assets: every font asset LocalizeManager lists for a language (font names
-    and additional font names) with the assets of their fallback chains, their default materials and the localized
-    text materials of the listed assets that the catalog has (table_material), and the objects index of those
-    assets."""
-    from . import textstyle
-
-    lang = textstyle.language_fonts(player)
-    settings = AssetFontSettings(ex)
-    listed = sorted({f"{n} SDF" for d in lang["languages"].values() for n in d["fontNames"] + d["additionalFontNames"]})
-    todo, seen = list(listed), set()
-    while todo:
-        name = todo.pop(0)
-        if name not in seen:
-            seen.add(name)
-            todo += settings.font(name)["fallbacks"]
-    for name in listed:
-        base = name[:-4] if name.endswith(" SDF") else name
-        for t in lang["materialTypes"]:
-            if settings.has_material(name, f"{base} - {t}"):
-                settings.material(name, f"{base} - {t}")
-    fs = settings._fontset()
-    objects = {
-        str(fs.fonts[n].obj.path_id): {"type": "MonoBehaviour", "class": FONT_CLASS, "name": n} for n in sorted(seen)
-    }
-    objects.update({str(o.path_id): {"type": "Material", "name": n} for n, o in sorted(settings._mat_objs.items())})
-    return {
-        "format": FORMAT,
-        "gameVersion": game_version,
-        "fonts": {n: settings.fonts[n] for n in sorted(seen)},
-        "materials": {n: table_material(settings.materials[n]) for n in sorted(settings.materials)},
-        "objects": dict(sorted(objects.items(), key=lambda kv: int(kv[0]))),
-    }
 
 
 def write(doc: dict, path: Path = FILE) -> None:
