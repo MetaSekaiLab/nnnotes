@@ -256,5 +256,29 @@ The depot is a directory: the downloaded game files, and the results of all stag
 
 Every file is written to a temporary name and renamed into place, so concurrent writers never see or leave a
 partial file and an interrupted task leaves no result; a record that changes is one file, replaced whole. `cas/` and
-`ac/` depend only on the tasks run: two runs of the same tasks, with any number of workers, leave identical trees.
-`downloads/`, `inputs/`, `runs/*.log.jsonl`, `costs/` and `leases/` are local and not deterministic.
+`ac/` depend only on the tasks run: two runs of the same tasks, with any number of workers, leave identical trees;
+`inputs/`, `runs/`, `costs/` and `leases/` are not deterministic.
+
+### Depot remote
+
+`[depot] remote` gives the depot a remote shared by the machines that use it: `s3://<bucket>/<prefix>` in
+S3-compatible object storage (`pip install 'nnnotes[remote]'`; path-style requests, so stores other than AWS answer
+them) or `file:///<directory>`. The remote holds the same keys as the depot directory, below its prefix:
+
+```
+cas/sha256/ab/<sha256>          contents
+ac/ab/<key>.json                results
+inputs/<kind>/ab/<digest>.json  input identities by name
+runs/<run>.json                 run manifests
+runs/selections/<digest>        the id of the latest run of a selection
+```
+
+The depot directory is the remote's cache. A content, result, input identity or run the depot lacks is read from the
+remote and kept; a content read from the remote is checked against its content id. What the depot adds goes to the
+remote as well: the bytes a result names before the result, a run manifest before the pointer to it. A result that
+differs from the remote's result of the same key is a conflict, as in the depot itself. The latest run of a selection
+is the one any machine wrote last, and the results of its tasks are known to be on the remote without asking for each
+of them. Downloads, file identities by path (`inputs/paths/`), catalog versions, measured costs, run logs and leases
+stay in the depot directory.
+
+Every request names one object; only `depot gc --remote` lists the remote.

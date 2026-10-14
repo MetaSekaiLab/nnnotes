@@ -356,6 +356,7 @@ remove the runs, results and contents no kept run reaches
 | --- | --- |
 | `--keep` `N` | keep the N latest runs of each selection (default: every run; the latest run of a selection is kept) |
 | `--dry-run` | count what would be removed, remove nothing |
+| `--remote` | also collect the depot's remote, by its runs (its results and contents younger than a day stay) |
 
 ## nnnotes voices list
 

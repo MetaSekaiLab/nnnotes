@@ -388,6 +388,21 @@ def test_a_depot_that_keeps_no_downloads_hits_without_them(tmp_path, capsys, fak
     assert again["layouts"]["original"]["write"] == 0
 
 
+def test_a_second_depot_with_the_same_remote_hits_without_downloads(tmp_path, capsys, fake, monkeypatch):
+    monkeypatch.setenv("NNNOTES_DEPOT_REMOTE", (tmp_path / "remote").as_uri())
+    d = setup_data(tmp_path, depots=("a",))
+    code, out, err = export(capsys, tmp_path, d, "a", "out-a")
+    assert code == 1, err
+    first = json.loads(out)
+    code, out, err = export(capsys, tmp_path, d, "b", "out-b")  # a depot with no downloads and no CDN
+    assert out, err
+    again = json.loads(out)
+    assert code == 1 and again["tasks"]["ran"] == 0 and again["run"] == first["run"], err
+    skip = [f"{assets.REPORTS}/run.json"]  # the statuses: ran, then hit
+    assert tree(tmp_path / "out-b", skip) == tree(tmp_path / "out-a", skip)
+    assert not [p for p in (tmp_path / "b").glob("downloads/**/*") if p.is_file()]  # nothing downloaded
+
+
 def test_export_is_the_same_with_worker_processes(tmp_path, capsys, fake):
     d = setup_data(tmp_path, depots=("s0", "s2"))
     export(capsys, tmp_path, d, "s0", "o0")
