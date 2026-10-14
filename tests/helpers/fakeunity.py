@@ -520,12 +520,15 @@ class FakeObjectReader:
         node=None,
         bytes_fields=(),
         short_read: bool = False,
+        broken: bool = False,
+        byte_size: int | None = None,
     ):
         self.assets_file, self.path_id, self.tt, self.obj, self.raw = assets_file, path_id, tt, obj, raw
         self.short_read = short_read  # its class's tree reads fewer bytes than it has: a checked whole read fails
+        self.broken = broken  # no read succeeds
         self.class_id = CLASS_IDS[class_name]
         self.type = SimpleNamespace(name=class_name, value=self.class_id)
-        self.byte_size = len(raw)
+        self.byte_size = len(raw) if byte_size is None else byte_size
         self.serialized_type = SimpleNamespace(old_type_hash=type_hash)
         self.version, self.platform = version, platform
         self.typetree_reads = 0
@@ -539,6 +542,8 @@ class FakeObjectReader:
         """The typetree (a copy); with a cut node (UnityPy's head reads) only the fields the node names. A stripped
         MonoBehaviour read with a tree that does not name all its fields fails the size check."""
         self.typetree_reads += 1
+        if self.broken:
+            raise ValueError(f"cannot read <obj at 0x{id(self):x}>")
         tt = copy.deepcopy(self.tt)
         if nodes is None and self._stripped():
             nodes = self._get_typetree_node()
@@ -583,8 +588,13 @@ class FakeSerializedFile:
     ):
         self.name, self.environment, self.version, self.unity_version = name, environment, version, unity_version
         self._enable_type_tree = typetrees
+        self._m_target_platform = ANDROID
         self.objects: dict[int, FakeObjectReader] = {}
-        self.externals = [SimpleNamespace(path=p) for p in externals]
+        # an external: its path, or (path, guid bytes, type)
+        self.externals = [
+            SimpleNamespace(path=p) if isinstance(p, str) else SimpleNamespace(path=p[0], guid=p[1], type=p[2])
+            for p in externals
+        ]
         self.container = SimpleNamespace(container=[])
         self.ref_types: list = []
 
@@ -614,3 +624,10 @@ class FakeEnvironment:
     def get_cab(self, name: str):
         self.lookups.append(name)
         return FakeResource(self.resources[name]) if name in self.resources else None
+
+    @property
+    def files(self) -> dict:
+        """The loaded files as UnityPy lists them: one bundle holding the serialized files and resource files."""
+        inner: dict = {f.name: f for f in self.assets}
+        inner.update({n: SimpleNamespace(Length=len(d)) for n, d in self.resources.items()})
+        return {"fake.bundle": SimpleNamespace(files=inner)}

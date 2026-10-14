@@ -218,7 +218,7 @@ Documents written by particular stages (artifacts of no object: their ids are `<
 | Document | Stage | Schema |
 |---|---|---|
 | `nnnotes.catalog-index/1` | `catalog.index` | [catalog-index.schema.json](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/schemas/catalog-index.schema.json) |
-| `nnnotes.census/1` | `unity.census` | [census.schema.json](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/schemas/census.schema.json) |
+| `nnnotes.census/2` | `unity.census` | [census.schema.json](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/schemas/census.schema.json) |
 | `nnnotes.scripts/1` | `link.scripts` | [scripts.schema.json](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/schemas/scripts.schema.json) |
 | `nnnotes.addresses/1` | `link.addresses` | [addresses.schema.json](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/schemas/addresses.schema.json) |
 | `nnnotes.artifacts/1` | `link.artifacts` | [artifacts.schema.json](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/schemas/artifacts.schema.json) |

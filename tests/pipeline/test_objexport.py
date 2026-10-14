@@ -560,10 +560,10 @@ def bundle_movie() -> FakeEnvironment:
     return env
 
 
-# a player's own file: no type trees; MonoBehaviours whose classes have a shipped type tree (one of another type
-# hash), and none
+# a player's own file: no type trees; MonoBehaviours whose type hashes have a shipped type tree (one that does not
+# fit the object), and none
 PLAYER = "globalgamemanagers.assets"
-PLAYER_HASH, OTHER_HASH = "a1" * 16, "b2" * 16
+PLAYER_HASH, OTHER_HASH, IMAGE_HASH = "a1" * 16, "b2" * 16, "c3" * 16
 SETTINGS, IMAGE, CHANGED = "Fwk|Fwk.Sound|SoundVolumeSettings", "UnityEngine.UI|UnityEngine.UI|Image", "Game|Game|Moved"
 PLAYER_SCRIPTS = {f"{PLAYER}:50": SETTINGS, f"{PLAYER}:51": IMAGE, f"{PLAYER}:52": CHANGED}
 SETTINGS_ROWS = [
@@ -581,10 +581,7 @@ SETTINGS_ROWS = [
     [2, "SInt64", "m_PathID", 0],
     [1, "float", "volume", 0],
 ]
-PLAYER_TYPETREES = {
-    SETTINGS: {"typeHash": PLAYER_HASH, "nodes": SETTINGS_ROWS},
-    CHANGED: {"typeHash": OTHER_HASH, "nodes": SETTINGS_ROWS},
-}
+PLAYER_TYPETREES = {PLAYER_HASH: SETTINGS_ROWS, OTHER_HASH: SETTINGS_ROWS[:-1]}  # the second lacks a field
 
 
 def bundle_player() -> FakeEnvironment:
@@ -595,9 +592,10 @@ def bundle_player() -> FakeEnvironment:
     f.add(1, "PlayerSettings", settings, type_hash=bytes.fromhex("936fd1913a4f0b5da2ce7cadb0ce9666"), short_read=True)
     f.add(6, "PlayerSettings", settings, type_hash=h, short_read=True)
     f.add(2, "MonoBehaviour", _mono(0, pptr(50), "volume", target=pptr(10, 1), volume=0.5), type_hash=h)
-    f.add(3, "MonoBehaviour", _mono(20, pptr(51), "", m_Sprite=pptr(10, 1)), type_hash=h)
-    f.add(4, "MonoBehaviour", _mono(0, pptr(52), "moved", target=pptr(0), volume=1.0), type_hash=h)
-    f.add(5, "MonoBehaviour", _mono(0, pptr(51), "image", m_Sprite=pptr(10, 1)), type_hash=h)
+    image, other = bytes.fromhex(IMAGE_HASH), bytes.fromhex(OTHER_HASH)
+    f.add(3, "MonoBehaviour", _mono(20, pptr(51), "", m_Sprite=pptr(10, 1)), type_hash=image)
+    f.add(4, "MonoBehaviour", _mono(0, pptr(52), "moved", target=pptr(0), volume=1.0), type_hash=other)
+    f.add(5, "MonoBehaviour", _mono(0, pptr(51), "image", m_Sprite=pptr(10, 1)), type_hash=image)
     f.add(20, "GameObject", _go("Canvas", [21, 3]))
     f.add(21, "Transform", _transform(20))
     for pid, entry in ((50, SETTINGS), (51, IMAGE), (52, CHANGED)):
@@ -1319,7 +1317,7 @@ def census_doc(view: UnityBundle) -> dict:
             if o.file != f:
                 continue
             classes[o.class_name] = classes.get(o.class_name, 0) + 1
-            rec = {"pathId": o.path_id, "classId": o.class_id, "class": o.class_name}
+            rec = {"pathId": o.path_id, "classId": o.class_id, "class": o.class_name, "typeHash": o.type_hash}
             tt = view.reader(o).read_typetree(check_read=False)  # a header read, as the census'
             ext = view.externals(f)
 
@@ -1433,8 +1431,11 @@ def test_files_without_type_trees_read_their_scripts_with_the_shipped_ones(tmp_p
         "volume": 0.5,
     }
     assert items[p(2)]["refs"] == [p(50), "unity default resources:10"]
-    # a class without a shipped type tree, or with one of another type hash: its header, and the reason
-    for pid, why in ((5, f"has none for {IMAGE}"), (4, f"type hash {PLAYER_HASH} is not the type tree's")):
+    # a type hash without a shipped type tree, or with one that does not fit the object: its header, and the reason
+    for pid, why in (
+        (5, f"none is given for {IMAGE} (type hash {IMAGE_HASH})"),
+        (4, f"type tree of {CHANGED} does not fit"),
+    ):
         assert items[p(pid)]["status"] == "generic"
         assert items[p(pid)]["reason"]["code"] == "unsupported.typetree" and why in items[p(pid)]["reason"]["message"]
     assert obj(depot, doc, f"{p(5)}#json") == {
@@ -1460,14 +1461,16 @@ def test_files_without_type_trees_read_their_scripts_with_the_shipped_ones(tmp_p
     assert items[p(3)]["status"] == "contained"
 
 
-def test_the_context_holds_the_shipped_type_trees_of_its_scripts(tmp_path):
+def test_the_context_holds_the_shipped_type_trees_of_its_scripts(tmp_path, monkeypatch):
     from nnnotes.unity import scripttypes
 
     shipped = scripttypes.load_typetrees("6000.3.12f1")["classes"]["DOTween.dll|DG.Tweening.Core|DOTweenSettings"]
-    entry = "DOTween|DG.Tweening.Core|DOTweenSettings"  # as the script table names it
-    env = planning_env(Depot(tmp_path / "s"), names=("player",), scripts={**PLAYER_SCRIPTS, f"{PLAYER}:50": entry})
+    assert scripttypes.script_types("6000.3.12f1")[shipped["typeHash"]] == shipped["nodes"]
+    trees = {**PLAYER_TYPETREES, shipped["typeHash"]: shipped["nodes"]}
+    monkeypatch.setattr(scripttypes, "script_types", lambda version: trees)
+    env = planning_env(Depot(tmp_path / "s"), names=("player",), scripts=PLAYER_SCRIPTS)
     t = describe(ExportStage(FAKE_READER), "player", None, env)
-    assert t.context["typetrees"] == {entry: shipped}
+    assert t.context["typetrees"] == PLAYER_TYPETREES  # the trees of its MonoBehaviours' type hashes
     assert (
         "typetrees" not in describe(ExportStage(FAKE_READER), "all", None, planning_env(Depot(tmp_path / "t"))).context
     )
