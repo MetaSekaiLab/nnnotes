@@ -44,6 +44,7 @@ nav:
       - Python API: api.md
       - Contracts: contracts.md
       - Stages: stages.md
+      - Products: products.md
       - Views: views.md
       - Replay data: replay.md
       - UI library: ui.md

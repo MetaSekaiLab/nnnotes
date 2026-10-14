@@ -202,6 +202,13 @@ bytes nor keys; the file names of `original` and `cas` both follow from the reco
 `original` manifest alone. Documents derived for `original` from records and paths (the views with the files of
 their objects) are the exception: `original` has the derived documents, `cas` the artifacts they are made from.
 
+## Product manifest: nnnotes.product/1
+
+A product layout writes, for each product of `pipeline.assemble`, a manifest
+([product.schema.json](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/schemas/product.schema.json)): the product's
+files and the files of the objects it uses, each a content-addressed `assets/<sha256>.<ext>`. The product's object
+table is `nnnotes.objects/1`. See [products](products.md).
+
 ## Reports
 
 - Coverage, `nnnotes.coverage/1` ([coverage.schema.json](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/schemas/coverage.schema.json)): per class the census
@@ -224,6 +231,7 @@ Documents written by particular stages (artifacts of no object: their ids are `<
 | `nnnotes.scripts/1` | `link.scripts` | [scripts.schema.json](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/schemas/scripts.schema.json) |
 | `nnnotes.addresses/1` | `link.addresses` | [addresses.schema.json](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/schemas/addresses.schema.json) |
 | `nnnotes.view/1` | `view.<name>` | [view.schema.json](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/schemas/view.schema.json) |
+| `nnnotes.objects/1` | `pipeline.assemble` (a product's object table) | [objects.schema.json](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/schemas/objects.schema.json) |
 
 The catalog versions of a depot, `nnnotes.catalogs/1` ([catalogs.schema.json](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/schemas/catalogs.schema.json),
 `<depot>/catalogs/index.json`), and the difference between two of them, `nnnotes.catalog-diff/1`
