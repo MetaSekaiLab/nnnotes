@@ -11,9 +11,9 @@ another one for evaluation (docs/stages.md, "Atoms"). This script gives the numb
     m1       DIR --atom NAME=SPEC ...     conformance: every object of the checked classes through the reference
                                           and through each candidate; per check and class (or texture format):
                                           equal / differ / refused / ...
-    prepare  DIR --base STORE             census and link.scripts of the bundles into a base store (the tasks of
+    prepare  DIR --base DEPOT             census and link.scripts of the bundles into a base depot (the tasks of
                                           `m3` are described from it)
-    m3       DIR --base STORE --store S   cost of a stage per bundle: wall, user + system CPU and peak resident
+    m3       DIR --base DEPOT --depot D   cost of a stage per bundle: wall, user + system CPU and peak resident
                                           memory per task, in a worker pool (per-worker peak) or with --fresh in a
                                           new process per bundle (imports measured apart)
     imports  [--module M ...]             import cost of modules, each set in new processes
@@ -1036,12 +1036,12 @@ def versions() -> dict:
     return out
 
 
-# ---------------------------------------------------------------- prepare (base store)
+# ---------------------------------------------------------------- prepare (base depot)
 def _identify(job):
-    from nnnotes.pipeline.store import Store
+    from nnnotes.pipeline.depot import Depot
 
-    root, store, name = job
-    s, size = Store(store).identify(Path(root) / name)
+    root, depot, name = job
+    s, size = Depot(depot).identify(Path(root) / name)
     return name, s, size
 
 
@@ -1049,20 +1049,20 @@ def _census_task(task):
     from nnnotes.pipeline import census
     from nnnotes.pipeline.stages import execute
 
-    ex = execute(task, G["store"], {"unity.census": census.CensusStage()})
+    ex = execute(task, G["depot"], {"unity.census": census.CensusStage()})
     return task.subject, task.key, ex.status
 
 
 def cmd_prepare(a) -> dict:
     from nnnotes.pipeline import census, contract, link
     from nnnotes.pipeline.contract import Input
+    from nnnotes.pipeline.depot import Depot
     from nnnotes.pipeline.stages import Env, describe, execute
-    from nnnotes.pipeline.store import Store
 
     check_clean_env()
     root, base = Path(a.dir).resolve(), Path(a.base)
     items = bundle_list(root, a.bundles)
-    store = Store(base)
+    depot = Depot(base)
     t0 = time.perf_counter()
     ids = pool_map(
         _identify, [(str(root), str(base), n) for n, _ in sorted(items, key=lambda x: -x[1])], a.workers, maxtasks=None
@@ -1074,14 +1074,14 @@ def cmd_prepare(a) -> dict:
         subject = stable[names[n]]
         inputs[subject] = Input("bundle", s, size, names[n], ({"kind": "file", "path": str(root / n)},))
         subj_name[subject] = n
-    env = Env(store, {"bundles": inputs})
+    env = Env(depot, {"bundles": inputs})
     tasks = [describe(census.CensusStage(), s, None, env) for s in sorted(inputs, key=lambda s: -inputs[s].size)]
-    G["store"] = store
+    G["depot"] = depot
     res = pool_map(_census_task, tasks, a.workers)
     for t in tasks:
         env.done(t.id, t.key)
     st = describe(link.ScriptsStage(), "all", None, env)
-    execute(st, store, {"link.scripts": link.ScriptsStage()})
+    execute(st, depot, {"link.scripts": link.ScriptsStage()})
     doc = {
         "dir": str(root),
         "bundles": {
@@ -1101,8 +1101,8 @@ def cmd_prepare(a) -> dict:
 # ---------------------------------------------------------------- m3 (stage cost)
 def _prepared_env(base: Path):
     from nnnotes.pipeline.contract import Input
+    from nnnotes.pipeline.depot import Depot
     from nnnotes.pipeline.stages import Env
-    from nnnotes.pipeline.store import Store
 
     prep = json.loads((base / PREPARED).read_text(encoding="utf-8"))
     root = Path(prep["dir"])
@@ -1116,16 +1116,16 @@ def _prepared_env(base: Path):
         )
         for s, b in prep["bundles"].items()
     }
-    env = Env(Store(base), {"bundles": inputs})
+    env = Env(Depot(base), {"bundles": inputs})
     for s, k in prep["census"].items():
         env.done(f"unity.census:{s}", k)
     env.done("link.scripts:all", prep["scripts"])
     return prep, env
 
 
-def _new_store(base: Path, path: Path):
-    """A run store that knows the base store's input identities (so inputs are not hashed again)."""
-    from nnnotes.pipeline.store import Store
+def _new_depot(base: Path, path: Path):
+    """A run depot that knows the base depot's input identities (so inputs are not hashed again)."""
+    from nnnotes.pipeline.depot import Depot
 
     path.mkdir(parents=True, exist_ok=True)
     src = base / "inputs"
@@ -1134,7 +1134,7 @@ def _new_store(base: Path, path: Path):
         for f in src.iterdir():
             if f.is_file() and not (path / "inputs" / f.name).exists():
                 shutil.copyfile(f, path / "inputs" / f.name)
-    return Store(path)
+    return Depot(path)
 
 
 def _stage(name: str):
@@ -1144,7 +1144,7 @@ def _stage(name: str):
     return {"unity.export": ExportStage, "unity.census": census.CensusStage}[name]()
 
 
-def _run_task(task, store, stage_name: str) -> dict:
+def _run_task(task, depot, stage_name: str) -> dict:
     from nnnotes.pipeline.stages import execute
 
     hwm = reset_hwm()
@@ -1152,7 +1152,7 @@ def _run_task(task, store, stage_name: str) -> dict:
     t0 = time.perf_counter()
     rec = {"subject": task.subject, "key": task.key}
     try:
-        ex = execute(task, store, {stage_name: _stage(stage_name)}, force=True)
+        ex = execute(task, depot, {stage_name: _stage(stage_name)}, force=True)
         rec.update(status=ex.status, result=ex.result_status)
     except Exception as e:  # noqa: BLE001
         rec.update(status="error", error=message(e), trace=traceback.format_exc()[-1200:])
@@ -1169,7 +1169,7 @@ def _run_task(task, store, stage_name: str) -> dict:
 
 
 def _m3_worker(task) -> dict:
-    return _run_task(task, G["store"], G["stage"])
+    return _run_task(task, G["depot"], G["stage"])
 
 
 def _apply_atoms(atoms) -> None:
@@ -1229,19 +1229,19 @@ def summarize_runs(recs: list) -> dict:
 
 def cmd_m3(a) -> dict:
     check_clean_env()
-    base, out_store = Path(a.base), Path(a.store)
+    base, out_depot = Path(a.base), Path(a.depot)
     atoms = parse_atoms(a.atom)
     params = parse_params(a.param) or None
     prep, env = _prepared_env(base)
     subjects = _subjects(prep, a.bundles)
     if a.fresh:
-        return m3_fresh(a, base, out_store, atoms, params, prep, subjects)
+        return m3_fresh(a, base, out_depot, atoms, params, prep, subjects)
     imp = _import_stage_modules()
     _apply_atoms(atoms)
     tasks = _describe_all(a.stage, subjects, params, env)
     tasks.sort(key=lambda t: -t.inputs[0].size)
-    store = _new_store(base, out_store)
-    G.update(store=store, stage=a.stage)
+    depot = _new_depot(base, out_depot)
+    G.update(depot=depot, stage=a.stage)
     log("m3", a.stage, len(tasks), "tasks,", a.workers, "workers, atoms", dict(atoms), "params", params)
     jsonl = Path(a.out).with_suffix(".jsonl") if a.out else None
     fo = open(jsonl, "w", encoding="utf-8", newline="\n") if jsonl else None
@@ -1266,7 +1266,7 @@ def cmd_m3(a) -> dict:
         "maxtasks": a.maxtasks,
         "atoms": dict(atoms),
         "params": params,
-        "store": str(out_store.resolve()),
+        "depot": str(out_depot.resolve()),
         "taskAtoms": tasks[0].atoms if tasks else None,
         "wall": round(time.perf_counter() - t0, 2),
         "childrenCpu": round((c1.children_user - c0.children_user) + (c1.children_system - c0.children_system), 2),
@@ -1281,18 +1281,18 @@ def cmd_m3(a) -> dict:
     return doc
 
 
-def m3_fresh(a, base, out_store, atoms, params, prep, subjects) -> dict:
+def m3_fresh(a, base, out_depot, atoms, params, prep, subjects) -> dict:
     """One new process per bundle: its wall, user + system CPU and peak RSS (wait4), and inside it the import
     time and the task's own cost."""
-    _new_store(base, out_store)
+    _new_depot(base, out_depot)
     cmd = [
         sys.executable,
         str(Path(__file__).resolve()),
         "m3-one",
         "--base",
         str(base),
-        "--store",
-        str(out_store),
+        "--depot",
+        str(out_depot),
         "--stage",
         a.stage,
     ]
@@ -1306,7 +1306,7 @@ def m3_fresh(a, base, out_store, atoms, params, prep, subjects) -> dict:
     queue = sorted(subjects, key=lambda s: -sizes[s])
     running: dict[int, tuple] = {}
     recs = []
-    tmp = out_store / ".atom_eval"
+    tmp = out_depot / ".atom_eval"
     tmp.mkdir(exist_ok=True)
     jsonl = Path(a.out).with_suffix(".jsonl") if a.out else None
     fo = open(jsonl, "w", encoding="utf-8", newline="\n") if jsonl else None
@@ -1362,7 +1362,7 @@ def m3_fresh(a, base, out_store, atoms, params, prep, subjects) -> dict:
         "workers": a.workers,
         "atoms": dict(atoms),
         "params": params,
-        "store": str(out_store.resolve()),
+        "depot": str(out_depot.resolve()),
         "wall": round(time.perf_counter() - t0, 2),
         "tasks": len(recs),
         "ok": len(ok),
@@ -1400,9 +1400,9 @@ def cmd_m3_one(a) -> None:
     prep, env = _prepared_env(base)
     (task,) = _describe_all(a.stage, [a.subject], parse_params(a.param) or None, env)
     describe_cost = {"wall": round(time.perf_counter() - t0, 4), "cpu": round(time.process_time() - cd, 4)}
-    from nnnotes.pipeline.store import Store
+    from nnnotes.pipeline.depot import Depot
 
-    rec = _run_task(task, Store(a.store), a.stage)
+    rec = _run_task(task, Depot(a.depot), a.stage)
     rec.update(imports=imp, describe=describe_cost, processCpuInside=round(time.process_time() - c0, 4))
     print(json.dumps(rec, ensure_ascii=False))
 
@@ -1525,10 +1525,10 @@ def _compare_job(job) -> dict:
 
 
 def cmd_compare(a) -> dict:
-    from nnnotes.pipeline.store import Store
+    from nnnotes.pipeline.depot import Depot
 
     ra, rb = (json.loads(Path(p).read_text(encoding="utf-8")) for p in (a.run_a, a.run_b))
-    G.update(sa=Store(ra["store"]), sb=Store(rb["store"]))
+    G.update(sa=Depot(ra["depot"]), sb=Depot(rb["depot"]))
     ta, tb = ra["taskKeys"], rb["taskKeys"]
     jobs = [(s, ta.get(s), tb.get(s)) for s in sorted(ta.keys() | tb.keys())]
     total = {"counts": {}, "stats": {}, "examples": {}}
@@ -1536,8 +1536,8 @@ def cmd_compare(a) -> dict:
         merge(total, r)
     doc = {
         "command": "compare",
-        "a": {k: ra.get(k) for k in ("atoms", "params", "store", "workers", "mode")},
-        "b": {k: rb.get(k) for k in ("atoms", "params", "store", "workers", "mode")},
+        "a": {k: ra.get(k) for k in ("atoms", "params", "depot", "workers", "mode")},
+        "b": {k: rb.get(k) for k in ("atoms", "params", "depot", "workers", "mode")},
         "subjects": len(jobs),
         **total,
     }
@@ -1583,7 +1583,7 @@ def main(argv=None) -> int:
         else:
             p.add_argument("--subject", required=True)
         p.add_argument("--base", required=True)
-        p.add_argument("--store", required=True)
+        p.add_argument("--depot", required=True)
         p.add_argument("--stage", default="unity.export", choices=("unity.export", "unity.census"))
         p.add_argument("--atom", action="append")
         p.add_argument("--param", action="append", help="stage parameter path=value, e.g. png.level=1")
