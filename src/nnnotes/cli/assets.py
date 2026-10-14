@@ -104,13 +104,12 @@ STAGE_SOURCES = (
     StageSource("unity.census", "nnnotes.pipeline.census:CensusStage"),
     StageSource("link.scripts", "nnnotes.pipeline.link:ScriptsStage"),
     StageSource("link.addresses", "nnnotes.pipeline.link:AddressesStage"),
-    StageSource("unity.export", "nnnotes.pipeline.objexport:ExportStage", output=True, root="_bundles/{subject}"),
+    StageSource("unity.export", "nnnotes.pipeline.objexport:ExportStage", output=True),
     StageSource("sprite.crop", "nnnotes.pipeline.objexport:SpriteCropStage", output=True),
     StageSource("cri.audio", "nnnotes.pipeline.cristages:AudioStage", output=True),
     StageSource("cri.movie", "nnnotes.pipeline.cristages:MovieStage", output=True),
     StageSource("live2d.model", "nnnotes.pipeline.modelstages:Live2DStage", output=True),
     StageSource("spine.skeleton", "nnnotes.pipeline.modelstages:SpineStage", output=True),
-    StageSource("link.artifacts", "nnnotes.pipeline.link:ArtifactsStage"),
     StageSource("view.", "nnnotes.pipeline.views:stages", output=True),
     StageSource("view.voices", "nnnotes.pipeline.voices:VoiceStage", output=True),
 )
@@ -640,24 +639,22 @@ class Workspace:
                 usage(self.args, "--flac-level: no stage of the pipeline encodes FLAC")
             for n in takers:
                 out.setdefault(n, {})["flac"] = {**stages[n].PARAMS["flac"], "level": level}
-        only = getattr(self.args, "only_class", None)
-        if only:
-            classes = sorted({c.strip() for c in only.split(",") if c.strip()})
-            takers = [n for n in pipeline if "classes" in stages[n].PARAMS]
-            if not classes or not takers:
-                usage(
-                    self.args,
-                    "--only-class: "
-                    + ("no class given" if not classes else "no stage of the pipeline selects classes"),
-                )
-            for n in takers:
-                out.setdefault(n, {})["classes"] = classes
         for n, p in out.items():
             try:
                 stages[n].normalize(p)
             except ValueError as e:
                 usage(self.args, str(e))
         return out
+
+    def classes(self) -> list[str] | None:
+        """The classes of --only-class (the root objects of the units to export), None for every class."""
+        only = getattr(self.args, "only_class", None)
+        if only is None:
+            return None
+        classes = sorted({c.strip() for c in only.split(",") if c.strip()})
+        if not classes:
+            usage(self.args, "--only-class: no class given")
+        return classes
 
     def workers(self) -> int:
         w = getattr(self.args, "workers", None)
@@ -695,6 +692,7 @@ class Workspace:
             "master": self.master() if any(n.startswith("view.") for n in pipeline) else None,
             "views": sorted(n[5:] for n in pipeline if n.startswith("view.")),
             "bundles": inputs,
+            "classes": self.classes(),
             "raw": Inputs({}),
         }
         if any(n in pipeline for n in RAW_STAGES):
@@ -924,12 +922,12 @@ class Workspace:
         if name != "original":
             return layout.entries(name, sources)
         derives = lambda s: hasattr(stages[contract.parse_task_id(s.task)[0]], "derived")  # noqa: E731
-        roots = {}  # every object of a bundle under its export task's root
-        for s in sources:
-            if s.task.startswith(EXPORT_STAGE + ":") and s.root is not None:
-                for f in s.result["files"]:
-                    roots.setdefault(f, s.root)
-        entries, report = layout.entries(name, [s for s in sources if not derives(s)], case=case, object_roots=roots)
+        table = self.units()
+        files = table.files if table is not None else {}
+        roots = {f: f"_bundles/{b}" for f, b in files.items()}  # every object of a bundle under one root
+        entries, report = layout.entries(
+            name, [s for s in sources if not derives(s)], case=case, bundles=files, object_roots=roots
+        )
         report["names"] = named
         extra = self._derived(sources, entries, store_derived, placed.objects)
         taken = {e["path"].casefold() for e in entries}
@@ -942,6 +940,22 @@ class Workspace:
     def done(self, tasks: dict) -> None:
         """The tasks whose results the layouts place, {task id: key} (after a run: every task with a result)."""
         self._done, self._names = dict(tasks), {}
+
+    def units(self):
+        """The unit table of the request (pipeline.units) for the tasks given to done(), a census without a result
+        counted as failed; None when the run has no censuses."""
+        from ..pipeline import units
+
+        env = Env(self.depot, self._facts)
+        for tid, key in sorted(self._done.items()):
+            env.done(tid, key)
+        census = [contract.task_id("unity.census", b) for b in self._facts.get("bundles") or ()]
+        if not any(t in self._done for t in census):
+            return None
+        for t in census:
+            if t not in self._done:
+                env.waiting(t, failed=True)
+        return units.table(env)
 
     def names(self, stage_name: str) -> dict:
         """{subject: catalog names} of a stage that names its tasks' files (stage.names(env): the CRI stages root a
@@ -1014,11 +1028,7 @@ class LayoutInput:
             if obj:
                 slim["provenance"] = {"object": obj}
             arts.append(slim)
-        files = {}
-        if tid.startswith(EXPORT_STAGE + ":"):
-            for it in doc["items"]:
-                files.setdefault(contract.parse_object_id(it["object"])[0], None)
-        self.results.append((tid, {"artifacts": arts, "files": list(files)}))
+        self.results.append((tid, {"artifacts": arts}))
 
 
 class _Asked:
@@ -1118,23 +1128,19 @@ def parse_layouts(spec: str) -> list[str]:
 # ---------------------------------------------------------------- export
 class Totals:
     """What export reports of the results besides the run's counts, from its one reading of each (Run.scan): the
-    census totals of `subjects` ({class: objects}, the census artifacts' facts) and the results of the view tasks
-    (small; their master data tables and gaps)."""
+    census totals (`classes`: {class: objects} of the requested units, pipeline.units) and the results of the view
+    tasks (small; their master data tables and gaps)."""
 
-    def __init__(self, subjects):
-        self.want = {contract.task_id("unity.census", s) for s in subjects}
-        self.classes: Counter = Counter()
+    def __init__(self, classes: dict | None):
+        self.classes = None if classes is None else dict(sorted(classes.items()))
         self.views: list[tuple[str, dict]] = []
 
     def add(self, tid: str, doc: dict) -> None:
-        if tid in self.want:
-            for a in doc["artifacts"]:
-                self.classes.update(a["semantics"].get("facts", {}).get("classes", {}))
         if tid.startswith("view."):
             self.views.append((tid, doc))
 
-    def census(self) -> dict[str, int]:
-        return dict(sorted(self.classes.items()))
+    def census(self) -> dict[str, int] | None:
+        return self.classes
 
 
 def view_gaps(results) -> int:
@@ -1237,7 +1243,8 @@ def cmd_export(args, cfg):
     ws.done(done)
     output = {tid for tid in done if ws._output(contract.parse_task_id(tid)[0])}
     placed = ws.layout_input({tid: done[tid] for tid in output})
-    totals = Totals(sel.selected)
+    table = ws.units()
+    totals = Totals(table.classes if table is not None else None)
 
     def visit(tid, doc):
         totals.add(tid, doc)
@@ -1531,7 +1538,7 @@ def run_args(c) -> None:
         help="FLAC compression level 0-12 of the CRI audio (default 8; every level decodes to the same "
         "samples; changes the files)",
     )
-    c.add_argument("--only-class", metavar="C,...", help="export only objects of these classes")
+    c.add_argument("--only-class", metavar="C,...", help="export only the units whose root object is of these classes")
     c.add_argument(
         "--workers",
         type=nonnegative,

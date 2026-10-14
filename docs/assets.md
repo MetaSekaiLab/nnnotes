@@ -45,7 +45,7 @@ nnnotes depot verify [--quick] [--workers N]
 | `--stored-catalog` | a catalog version of the depot (`catalog versions`) instead of the current catalog |
 | `--png-level N` | zlib level 0-9 of the PNG files (default 6); part of the task keys |
 | `--flac-level N` | FLAC compression level 0-12 of the CRI audio and the movies' audio (default 8; every level decodes to the same samples; 12 writes files 0.2-1.3 % smaller in about five times the encoding time); part of the task keys |
-| `--only-class C,...` | export only objects of these Unity classes; part of the task keys |
+| `--only-class C,...` | export only the units whose root object is of these Unity classes (a prefab by `GameObject`, [stages.md](stages.md#units)) |
 | `--link` | how the layout files are made from the depot (below): `auto` (default; `[export] link`), `clone`, `hard` or `copy` |
 | `--strict` | exit 1 when a view has gaps: a required role whose address names no catalog key or no fitting sub-object (empty values and roles that do not apply are not gaps); in `voices`, a voice whose cue sheet has no catalog key or whose decoded sheet lacks its cue, and a story episode without a catalog key |
 | `--dry-run` | print the plan and stop |
@@ -53,10 +53,12 @@ nnnotes depot verify [--quick] [--workers N]
 
 A run resolves the context (region, language, catalog version) and indexes the catalog, identifies the selected
 bundles (the sha256 of each decrypted bundle, remembered by path, size and modification time; bundles not
-downloaded yet are fetched into the depot's `downloads/`), takes the census of each bundle, links the scripts and addresses, exports the bundles, runs the
+downloaded yet are fetched into the depot's `downloads/`), takes the census of each bundle, links the scripts and
+addresses, exports the units (one task per hierarchy or object outside any, [stages.md](stages.md#units)), runs the
 stages that need those results (atlas sprites, views), writes the layouts and the reports. The selected raw files
 (CRI audio and movies) not downloaded yet are fetched while the bundle stages run. The census also covers
-the bundles the selected ones depend on, so script classes and atlas textures in other bundles resolve.
+the bundles the selected ones depend on, so script classes and atlas textures in other bundles resolve, and the
+export covers the units of those bundles that the selected ones reference.
 
 Tasks run in spawned worker processes that stay alive between tasks. The tasks of a stage that read the same
 loaded data (a stage's batch, such as one bundle) form one job: one worker runs them one after another and loads the

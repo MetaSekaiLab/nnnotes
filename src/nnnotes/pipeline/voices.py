@@ -62,7 +62,7 @@ from pathlib import Path
 from ..content import advcommand, storyvoices
 from ..formats import acb
 from ..source import languages
-from . import contract, views
+from . import contract, units, views
 from .contract import Cost, Input
 from .stages import Output, Pending, Stage
 
@@ -820,16 +820,15 @@ def _sheet_name(name: str) -> str | None:
     return name if "/" not in name else None
 
 
-_address_cache: dict = {}  # content id of an address table -> (AddressIndex, files), the latest one
+_address_cache: dict = {}  # content id of an address table -> its AddressIndex, the latest one
 
 
-def _address_parts(env, tid: str) -> tuple:
-    """(AddressIndex, {serialized file: stable bundle name}) of the result of the link.addresses task `tid`."""
+def _address_index(env, tid: str):
+    """The AddressIndex of the result of the link.addresses task `tid`."""
     sha = env.artifact(tid, "addresses")["content"]["sha256"]
     hit = _address_cache.get(sha)
     if hit is None:
-        doc = contract.loads(env.depot.read(sha))
-        hit = (views.AddressIndex.from_addresses(doc), dict(doc.get("files") or {}))
+        hit = views.AddressIndex.from_addresses(contract.loads(env.depot.read(sha)))
         _address_cache.clear()
         _address_cache[sha] = hit
     return hit
@@ -930,7 +929,7 @@ class VoiceStage(Stage):
         )
         if self._memo is not None and self._memo[0] == sig:
             return self._memo[1]
-        index, files = _address_parts(env, link)
+        index = _address_index(env, link)
         tables = {
             i.role[len(views.MASTER_ROLE) :]: views._cached_rows(i.sha256, Path(i.locators[0]["path"]).read_bytes)
             for i in masters
@@ -945,15 +944,18 @@ class VoiceStage(Stage):
         }
         sheets = {s: v for s, v in found.items() if s in wanted}
         used = {v["acb"] for v in sheets.values()}
-        episodes, contents, read = self._episodes(env, rec, tables, files, set(exports))
+        episodes, contents, read = self._episodes(env, rec, tables, set(exports))
         plan = (masters, rec.subset(), sheets, [acbs[a] for a in sorted(acbs) if a in used], episodes, contents, read)
         self._memo = (sig, plan)
         return plan
 
-    def _episodes(self, env, index, tables, files: dict, exports: set) -> tuple[dict, list[Input], list[str]]:
+    def _episodes(self, env, index, tables, exports: set) -> tuple[dict, list[Input], list[str]]:
         """The story parts the unity.export results hold: the object a part's key names (the first of its class,
-        STORY_OBJECTS) in the bundle of its serialized file (the address table's `files`), and the artifact with
-        its content. ({asset: {part: {object, artifact, sha256}}}, the content inputs, the tasks read.)"""
+        STORY_OBJECTS) in the task of its unit (pipeline.units), and the artifact with its content. ({asset:
+        {part: {object, artifact, sha256}}}, the content inputs, the tasks read.)"""
+        if not exports:
+            return {}, [], []
+        table = units.table(env)
         arts: dict[str, dict] = {}
         out: dict = {}
         contents: dict[str, Input] = {}
@@ -965,8 +967,8 @@ class VoiceStage(Stage):
                 if not pick:
                     continue
                 oid = pick[0].id
-                stable = files.get(contract.parse_object_id(oid)[0])
-                tid = contract.task_id(EXPORT_STAGE, stable) if stable is not None else None
+                subject = table.subject_of(oid)
+                tid = contract.task_id(EXPORT_STAGE, subject) if subject is not None else None
                 if tid is None or tid not in exports:
                     continue
                 if tid not in arts:

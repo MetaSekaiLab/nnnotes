@@ -1,7 +1,8 @@
 """Texture2D (tex.png) and Sprite (sprite.png).
 
-A texture's image is decoded once per bundle: `texture` (or `decode_into`, when the task leaves textures out) puts it
-in a holder that the sprites cut from it read. Where a sprite's image comes from is its plan (`sprite_plan`).
+A texture's image is decoded by `decode_into` into a holder, which `texture` and the sprites cut from the texture read,
+so the caller decides how long a decoded image is kept. Where a sprite's image comes from is its plan
+(`sprite_plan`).
 
 A sprite's `json` holds its typetree JSON (`sprite`), its decoded geometry (`mesh`: positions in the sprite's units,
 triangles per submesh, texture coordinates when stored; a texture coordinate of a position p is
@@ -48,18 +49,14 @@ def _canon(v) -> str:
     return json.dumps(v, sort_keys=True, ensure_ascii=True)
 
 
-def texture(ctx: BundleObjects, info, holder: dict) -> None:
+def texture(ctx: BundleObjects, info, decoded: dict) -> None:
     """`image`: PNG of the first mip level (HDR ASTC: the .astc file); `json`: the typetree JSON without the pixels
-    (`image data`). The decoded image (or the error) goes into `holder` for the texture's sprites."""
+    (`image data`). `decoded`: the texture's decoded image or the error, as decode_into gives them."""
     from ..atoms.texture import ASTC_BLOCKS, format_name, is_hdr_astc
 
     key = (info.file, info.path_id)
-    try:
-        tt = ctx.tt(key)
-        inp = ctx.view.texture_input(info)
-    except Exception as e:
-        holder["error"] = e
-        raise
+    tt = ctx.tt(key)
+    inp = ctx.view.texture_input(info)
     fmt, w, h = int(inp.format), int(inp.width), int(inp.height)
     facts = {
         "width": w,
@@ -69,19 +66,13 @@ def texture(ctx: BundleObjects, info, holder: dict) -> None:
         "exportedMips": [0],
     }
     if w and h and is_hdr_astc(fmt):
-        holder["error"] = Unsupported(
-            "unsupported.texture.format", f"{format_name(fmt)} (HDR ASTC; the texture is exported as .astc)"
-        )
         data = ctx.fns["astc.container"](inp.data, w, h, ASTC_BLOCKS[fmt])
         ctx.emit(key, "image", data, "astc", "texture.image", "astc", facts)
         _texture_json(ctx, key, tt)
         return
-    try:
-        img = ctx.fns["texture.decode"](inp)
-    except Exception as e:
-        holder["error"] = e
-        raise
-    holder["image"] = img
+    if "error" in decoded:
+        raise decoded["error"]
+    img = decoded["image"]
     facts["mode"] = img.mode
     data = ctx.fns["png.encode"](img, ctx.png_level)
     ctx.emit(key, "image", data, "png", "texture.image", "png", facts)
@@ -94,7 +85,7 @@ def _texture_json(ctx: BundleObjects, key: tuple, tt: dict) -> None:
 
 
 def decode_into(ctx: BundleObjects, info, holder: dict) -> None:
-    """The texture's image for its sprites only (a task whose classes leave Texture2D out)."""
+    """The texture's decoded image into `holder` ("image"), or the error ("error"; HDR ASTC is not decoded)."""
     from ..atoms.texture import format_name, is_hdr_astc
 
     try:

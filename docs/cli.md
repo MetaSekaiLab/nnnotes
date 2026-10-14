@@ -174,7 +174,7 @@ every object of the selected bundles -> common formats (the depot and its layout
 | `--stored-catalog` `LABEL\|SHA` | a catalog version of the depot (`catalog versions`; default: the current catalog) |
 | `--png-level` `N` | PNG compression level 0-9 (changes the output) |
 | `--flac-level` `N` | FLAC compression level 0-12 of the CRI audio (default 8; every level decodes to the same samples; changes the files) |
-| `--only-class` `C,...` | export only objects of these classes |
+| `--only-class` `C,...` | export only the units whose root object is of these classes |
 | `--workers` `N` | worker processes (default: the CPUs this process may use; 0: this process) |
 | `--memory` `GiB` | memory budget of the running tasks and workers (default: 80 % of the physical memory) |
 | `--fetch-workers` `N` | parallel downloads (default 8) |
@@ -317,7 +317,7 @@ what `export assets` would run and why, without running it (--json: nnnotes.plan
 | `--stored-catalog` `LABEL\|SHA` | a catalog version of the depot (`catalog versions`; default: the current catalog) |
 | `--png-level` `N` | PNG compression level 0-9 (changes the output) |
 | `--flac-level` `N` | FLAC compression level 0-12 of the CRI audio (default 8; every level decodes to the same samples; changes the files) |
-| `--only-class` `C,...` | export only objects of these classes |
+| `--only-class` `C,...` | export only the units whose root object is of these classes |
 | `--workers` `N` | worker processes (default: the CPUs this process may use; 0: this process) |
 | `--memory` `GiB` | memory budget of the running tasks and workers (default: 80 % of the physical memory) |
 | `--fetch-workers` `N` | parallel downloads (default 8) |
