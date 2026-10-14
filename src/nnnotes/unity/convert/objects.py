@@ -4,6 +4,9 @@ of a typetree (references, byte arrays, strings that are not UTF-8; see the pack
 Artifacts go out through `emit(key, role, data, ext, kind, format, facts, *, issues=(), refs=(), owner=None)`, which
 the caller gives: it stores the bytes and records the artifact "<owner>#<role>" (owner: the object `key`, else the
 task-level name `owner`) and returns (artifact id, content record).
+
+Every object a document names by {"$ref"} is recorded in `seen` (by object id, other bundles' objects included):
+the objects an object's documents reference, which the caller clears before converting an object.
 """
 
 from __future__ import annotations
@@ -25,6 +28,7 @@ __all__ = [
     "encode_object",
     "label",
     "message",
+    "omit",
     "ref_object_id",
 ]
 
@@ -74,6 +78,21 @@ def encode_object(doc) -> bytes:
         return encode(doc, sort_keys=False)
     except UnicodeEncodeError:
         return encode(_stored(doc), sort_keys=False)
+
+
+def omit(tt: dict, *paths: str) -> dict:
+    """`tt` without the fields at `paths` (field names joined by "/"); the dictionaries on the way are copied."""
+    out = dict(tt)
+    for path in paths:
+        head, _, rest = path.partition("/")
+        if head not in out:
+            continue
+        if rest:
+            if isinstance(out[head], dict):
+                out[head] = omit(out[head], rest)
+        else:
+            del out[head]
+    return out
 
 
 def ref_object_id(v) -> str | None:
@@ -160,6 +179,7 @@ class BundleObjects:
         self._heads: dict[int, tuple] = {}
         self._captures: dict[str, Capture] = {}
         self._local: Callable[[tuple], dict | None] | None = None
+        self.seen: set[str] = set()
 
     # ---------------------------------------------------------------- identities and names
     @staticmethod
@@ -272,8 +292,9 @@ class BundleObjects:
 
     # ---------------------------------------------------------------- references and values
     def dref(self, key: tuple) -> dict:
-        """{"$ref"} of an object, with its class and name when it is in the bundle."""
+        """{"$ref"} of an object, with its class and name when it is in the bundle (recorded in `seen`)."""
         file, pid = key
+        self.seen.add(object_id(file, pid))
         d = {"file": label(file), "pathId": pid}
         r = self.readers.get(key)
         if r is not None:

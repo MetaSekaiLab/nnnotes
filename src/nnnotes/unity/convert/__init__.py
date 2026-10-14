@@ -6,9 +6,9 @@ provenance. Each converter carries a version (CONVERTERS); a task's key includes
 bundle holds, with the atoms they use (CONVERTER_ATOMS).
 
     Texture2D             tex.png          `image`: PNG of the first mip level (HDR ASTC: the .astc file)
-    Sprite                sprite.png       `image`: PNG on the sprite's rect; `meta`: JSON
+    Sprite                sprite.png       `image`: PNG on the sprite's rect; `json`: typetree, geometry, render data
     Mesh                  mesh.glb         `mesh`: binary glTF in the mesh's local space
-    GameObject (a root)   prefab.json      `prefab`: the hierarchy below it with its components
+    GameObject (a root)   prefab.json      `json`: the hierarchy below it with its components
     Material              material.json    `json`
     Shader                shader.json      `json`: the parsed form as `nnnotes export shader` writes it;
                                            `program:<platform>/s<S>p<P>_<stage>_<N>`: each compiled sub-program as
@@ -24,6 +24,9 @@ bundle holds, with the atoms they use (CONVERTER_ATOMS).
     MonoScript            scripts.json     "<task id>#scripts.json": every MonoScript of the bundle
     AssetBundle           bundle.json      "<task id>#bundle.json": serialized files, externals, AssetBundle objects
     any other class       generic.json     `json`: the object's typetree
+
+Every object a converter takes has a `json` artifact (or is contained in one): the converter's document, or the
+typetree JSON (a Texture2D, Mesh, TextAsset or Font without the bytes its other artifact holds).
 
 Object JSON (canon/1 in the object's own field order):
 - a reference is {"$ref": {"file", "pathId"}}, with "class" and "name" when the target is in the bundle; a null
@@ -60,16 +63,16 @@ __all__ = [
 
 # converter -> version
 CONVERTERS = {
-    "tex.png": 1,
-    "sprite.png": 1,
-    "mesh.glb": 1,
-    "prefab.json": 1,
+    "tex.png": 2,
+    "sprite.png": 2,
+    "mesh.glb": 2,
+    "prefab.json": 2,
     "material.json": 1,
     "clip.json": 2,
     "controller.json": 2,
     "mono.json": 2,
-    "data": 1,
-    "font": 1,
+    "data": 2,
+    "font": 2,
     "scripts.json": 1,
     "bundle.json": 1,
     "shader.json": 1,
