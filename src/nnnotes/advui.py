@@ -580,15 +580,15 @@ def extract(
     out_dir: Path,
     fonts: str = "open",
     *,
-    language: str | None = None,
+    language: str,
     master: Path | None = None,
 ) -> dict:
     """Write <out_dir>/ui/. `fonts`: "open" (text records only) or "game" (also the game's TMP font data);
-    `language`: the client language (a languages.LANGUAGES code; None: `[catalog] language` of the settings);
+    `language`: the client language (a languages.LANGUAGES code);
     `master`: the decoded master data (MasterText of `masterIdTexts`; None: no `masterIdTexts`)."""
     if fonts not in FONT_MODES:
         raise ValueError(f"fonts must be one of {FONT_MODES}, not {fonts!r}")
-    language = languages.check(language) if language is not None else languages.configured()
+    language = languages.check(language)
     mode, field = languages.mode(language), languages.column(language)[1:]
     game = fonts == "game"
     if game:

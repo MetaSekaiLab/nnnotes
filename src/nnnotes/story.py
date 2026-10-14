@@ -94,12 +94,14 @@ def build(
     *,
     models,
     ui: bool = True,
+    language: str | None = None,
     audio_options: dict | None = None,
 ) -> dict:
     """Build the story directory with the models of the model source `models` (module docstring). `audio=False`
     leaves the cue sheets undecoded (story.json `audio` is empty); `fonts`: "open" exports no font data of the game,
     "game" exports it (advmedia, advui). `ui=False` writes no ui/ (story.json still names ui/ui.json: the caller
-    writes it, e.g. per language as storysite does); `audio_options`: further cri.decode options of every cue sheet
+    writes it, e.g. per language as storysite does); `language`: the UI's client language (a languages.LANGUAGES
+    code, needed with the UI); `audio_options`: further cri.decode options of every cue sheet
     (flac_level, also). With audio, the CRI Lips data is read from the catalog's APK when a voice reaches it
     (needs_cri_lips; story.json `crilips`, else null)."""
     out_dir = Path(out_dir)
@@ -118,7 +120,7 @@ def build(
 
     media = advmedia.extract(cat, player, master, episode, out_dir, fonts=fonts)
     scene = advscene.extract(cat, player, episode, out_dir, shaders=media["shaders"])
-    ui = advui.extract(cat, player, episode, out_dir, fonts=fonts, master=master) if ui else None
+    ui = advui.extract(cat, player, episode, out_dir, fonts=fonts, language=language, master=master) if ui else None
     videos = advvideo.extract(cat, episode, out_dir)
     lips = None
     if audio:

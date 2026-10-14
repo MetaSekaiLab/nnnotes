@@ -4,8 +4,8 @@ import json
 
 import pytest
 
-from nnnotes import advui, config, fontsettings, languages, textstyle, tmpfont
-from nnnotes.config import Config, ConfigError
+from nnnotes import advui, fontsettings, languages, textstyle, tmpfont
+from nnnotes.config import ConfigError
 
 WHITE = {"r": 1.0, "g": 1.0, "b": 1.0, "a": 1.0}
 DARK = {"r": 0.2, "g": 0.2, "b": 0.2, "a": 0.8}
@@ -279,7 +279,7 @@ def test_text_styles_reads_the_localized_material(monkeypatch):
 def test_font_modes_and_extra(monkeypatch):
     assert advui.FONT_MODES == ("open", "game")
     with pytest.raises(ValueError, match="fonts must be one of"):
-        advui.extract(None, None, {}, ".", fonts="other")
+        advui.extract(None, None, {}, ".", fonts="other", language="ja")
     monkeypatch.setattr(tmpfont.importlib.util, "find_spec", lambda name: None)
     with pytest.raises(tmpfont.ConfigError, match=r"nnnotes\[fonts\]") as e:
         tmpfont.require_extra()
@@ -301,21 +301,14 @@ def test_the_language_is_an_argument():
     assert textstyle.text_style(component(), LOCALIZE, LANG, style, en)["lineSpacing"]["applied"] == -100.0
 
 
-def test_story_ui_language_follows_the_setting(tmp_path):
+def test_story_ui_language_records(tmp_path):
     assert advui.about("en") == "ADV front canvas UI data (UIAdvWidget + UIDefaultTalkWindow), en"
     assert advui.language_doc("en") == {"mode": 1, "field": "english", "lineSpacing": -100.0}
     assert advui.language_doc("zh-Hant") == {"mode": 2, "field": "traditionalChinese", "lineSpacing": 5.0}
     assert list(advui.language_doc("ko")) == ["mode", "field", "lineSpacing"]
-    # no language: the setting is named before anything is read
-    with pytest.raises(ConfigError, match="catalog.language"):
-        advui.extract(None, None, {}, tmp_path)
-    with pytest.raises(ConfigError, match="not one of the game's languages"):
+    # an unknown language is refused before anything is read, naming the setting
+    with pytest.raises(ConfigError, match="catalog.language: not one of the game's languages"):
         advui.extract(None, None, {}, tmp_path, language="xx")
-    config.use(Config(overrides={("catalog", "language"): "ko"}))
-    assert languages.configured() == "ko"
-    config.use(Config(overrides={("catalog", "language"): "xx"}))
-    with pytest.raises(ConfigError, match="catalog.language"):
-        languages.configured()
 
 
 def test_shown_texts_take_the_language_field():
