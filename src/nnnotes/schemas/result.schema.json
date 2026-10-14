@@ -68,6 +68,15 @@
         "in": {
           "$ref": "urn:nnnotes:schema:common#/$defs/artifactId"
         },
+        "refs": {
+          "description": "The ids of the other objects the object's documents reference, other bundles' objects included.",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1
+        },
         "reason": {
           "$ref": "urn:nnnotes:schema:common#/$defs/reason"
         }

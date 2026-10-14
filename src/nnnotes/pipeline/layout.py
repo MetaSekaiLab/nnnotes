@@ -11,7 +11,8 @@
     `~<pathId>` (stem[name]~123.png)
   - an object's primary artifact (contract.PRIMARY_ROLES) is written at that path, its extension appended unless
     the path already ends with it (x.prefab -> x.prefab.json, y.png -> y.png); its other artifacts at
-    `<path>.<role>.<ext>` (':' and '/' of the role as '.')
+    `<path>.<role>.<ext>` (':' and '/' of the role as '.'), `<path>.<ext>` for a role that is its extension
+    (y.png -> y.png.json)
   - objects without a container: `<root>/<Class>/<name>~<pathId>.<ext>`, root = the root of the object's
     serialized file when one is given (`object_roots`: the export command roots every object of a bundle at
     `_bundles/<stable bundle name>`, whichever task made the artifact), else the source's root; under a root whose
@@ -301,7 +302,8 @@ def _object_files(base: list[str], records: list[dict], append_ext: bool) -> lis
             segs = base[:-1] + [f"{base[-1]}.{ext}"] if append_ext else _with_ext(base, ext)
         else:
             role = contract.parse_artifact_id(r["id"])[1]
-            segs = base[:-1] + [f"{base[-1]}.{_role_segment(role)}.{ext}"]
+            name = f"{base[-1]}.{ext}" if role == ext else f"{base[-1]}.{_role_segment(role)}.{ext}"
+            segs = base[:-1] + [name]
         out.append((segs, _entry("", r)))
     return out
 

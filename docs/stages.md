@@ -48,20 +48,32 @@ with its reason code; any other error of a converter gives it with `generic.erro
 
 | Class | Converter | Artifacts | Atoms | Notes |
 |---|---|---|---|---|
-| Texture2D | `tex.png/1` | `image`: PNG of the first mip level (HDR ASTC: `.astc`) | `texture.decode`, `png.encode`, `astc.container` | further mip levels as facts; a texture without pixels: `empty.texture` |
-| Sprite | `sprite.png/1` | `image`: PNG on the sprite's rect (packing undone, tight mask applied), `meta`: JSON | `texture.decode`, `sprite.crop`, `png.encode`, `mesh.arrays` | the texture is decoded once per task; a sprite whose SpriteAtlas is in another bundle gets its `meta` here (with its mesh and object facts) and its `image` from `sprite.crop` |
-| Mesh | `mesh.glb/1` | `mesh`: binary glTF in the mesh's local space | `mesh.arrays`, `gltf.write` | see `gltf.write` below; limits of the skin and blend shapes as issues of the artifact |
-| GameObject (a root) | `prefab.json/1` | `prefab`: the hierarchy's nodes (path, path ids, transform) with their components' fields | | the objects below it are `contained`; a root of a scene's file names its scene |
+| Texture2D | `tex.png/2` | `image`: PNG of the first mip level (HDR ASTC: `.astc`), `json`: the typetree without `image data` (settings, colour space, mip count, stream data) | `texture.decode`, `png.encode`, `astc.container` | further mip levels as facts; a texture without pixels: `empty.texture` |
+| Sprite | `sprite.png/2` | `image`: PNG on the sprite's rect (packing undone, tight mask applied), `json`: the typetree, geometry, render data and image (see below) | `texture.decode`, `sprite.crop`, `png.encode`, `mesh.arrays` | the texture is decoded once per task; a sprite whose SpriteAtlas is in another bundle gets its `json` here (with its geometry and object facts) and its `image` from `sprite.crop` |
+| Mesh | `mesh.glb/2` | `mesh`: binary glTF in the mesh's local space, `json`: the typetree without the vertex, index and compressed mesh data | `mesh.arrays`, `gltf.write` | see `gltf.write` below; limits of the skin and blend shapes as issues of the artifact |
+| GameObject (a root) | `prefab.json/2` | `json`: the hierarchy's nodes (path, path ids, transform) with their components' fields | | the objects below it are `contained`; a root of a scene's file names its scene |
 | Material | `material.json/1` | `json`: shader, keywords, textures, floats, colours | | |
 | Shader | `shader.json/1` | `json`: the parsed form (the bytes of `nnnotes export shader`'s `<name>.json`), `program:<platform>/s<S>p<P>_<stage>_<N>`: each compiled sub-program as stored (`.glsl`, `.metal`, `.vkprog`), `index`: the variants (platform, subshader, pass, stage, GPU program type, keywords, program role), `typetree`: the typetree JSON | | a shader without a parsed form: its typetree with `generic.error` |
 | AnimationClip | `clip.json/2` | `json`: the Mecanim clip data and its bindings as stored (see below) | | a legacy or compressed clip: `generic.clip.legacy` |
 | AnimatorController | `controller.json/2` | `json`: name, clips (`$ref`), layers, state machines, parameters, default values | | an AnimatorOverrideController: `generic.controller.override` |
 | MonoBehaviour (not in a hierarchy) | `mono.json/2`, `cri.usm/1` | `json`: `$script` (assembly, namespace, class) and the typetree; a cue sheet asset also `acb`, a movie asset holding its USM also `usm` (see below) | `sniff` | the class from the task's script table |
-| TextAsset | `data/1` | `data`: the stored bytes | `sniff` | extension from the container path, else from the content |
-| Font | `font/1` | `font`: the font file | `sniff` | |
+| TextAsset | `data/2` | `data`: the stored bytes, `json`: the typetree without `m_Script` | `sniff` | extension from the container path, else from the content |
+| Font | `font/2` | `font`: the font file, `json`: the typetree without `m_FontData` | `sniff` | |
 | MonoScript | `scripts.json/1` | `<task id>#scripts.json`: every MonoScript of the bundle | | |
 | AssetBundle | `bundle.json/1` | `<task id>#bundle.json`: serialized files, externals, the AssetBundle objects | | |
 | any other class | `generic.json/1` | `json`: the typetree | `sniff` | |
+
+Every object a converter takes has a `json` artifact or is contained in another object's. Each item lists in
+`refs` the objects its documents reference (by object id, other bundles' objects included, the objects of its own
+prefab left out): the objects reachable from an object follow from the items alone.
+
+A sprite's `json` holds `sprite` (its typetree), `mesh` (its geometry decoded: `positions` in the sprite's units,
+`submeshes` of triangles, `uv0` when stored), `renderData` (`source`: `renderData` for the sprite's own render
+data, `atlas` for its SpriteAtlas' entry; `atlas`; and that render data's `texture`, `alphaTexture`,
+`secondaryTextures`, `textureRect`, `textureRectOffset`, `atlasRectOffset`, `uvTransform`, `downscaleMultiplier`,
+`settingsRaw`) and `image` (`packed`, `packingMode`, `packingRotation`, `width`, `height`). The texture coordinate
+of a position `p` is `((p.x * uvTransform.x + uvTransform.y) / width, (p.y * uvTransform.z + uvTransform.w) /
+height)` of the render data's texture.
 
 A task's key includes the atoms `reader` and `sniff`, the converter `generic.json`, and the converters (with their
 atoms) of the classes the bundle's census lists, so a converter's version bump runs again exactly the bundles holding
@@ -110,7 +122,7 @@ the same way: its `data.data` bytes, whatever their size, are the artifact `<obj
 only when the bundle's script context names that class, so no other bundle's key changes with it.
 
 `sprite.crop` makes one task per SpriteAtlas that sprites of other bundles use (subject `<the atlas bundle's
-subject>:<atlas path id>`). Its inputs are the atlas' JSON, the `meta` of each such sprite and the images of the
+subject>:<atlas path id>`). Its inputs are the atlas' JSON, the `json` of each such sprite and the images of the
 atlas textures they use; it writes `<sprite object id>#image` with the same bytes `unity.export` writes for a sprite
 whose atlas is in its own bundle.
 

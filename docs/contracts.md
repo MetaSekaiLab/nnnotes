@@ -109,7 +109,8 @@ One output file ([artifact.schema.json](https://github.com/MetaSekaiLab/nnnotes/
 `ext` is lower-case letters and digits. The bytes are stored once, by content id, whatever their names.
 
 Roles: an object's primary artifact is the one whose role comes first in `image`, `mesh`, `audio`, `video`, `font`,
-`data`, `prefab`, `json` (then by role name); its other artifacts (`meta`, `blob:<field path>`, …) are secondary.
+`data`, `json` (then by role name); its other artifacts (`json` beside an image, `blob:<field path>`, …) are
+secondary.
 
 ## Result: nnnotes.result/1
 
@@ -120,7 +121,7 @@ The result of a task, written after the bytes of all its artifacts are stored: i
 {"schema": "nnnotes.result/1", "key": "…", "keyParts": {…}, "status": "ok",
  "artifacts": [<artifact records, sorted by id>],
  "items": [{"object": "CAB-…:1", "class": "Texture2D", "status": "exported", "artifacts": ["CAB-…:1#image"]},
-           {"object": "CAB-…:2", "class": "Transform", "status": "contained", "in": "CAB-…:9#prefab"},
+           {"object": "CAB-…:2", "class": "Transform", "status": "contained", "in": "CAB-…:9#json"},
            {"object": "CAB-…:3", "class": "Texture2D", "status": "unsupported",
             "reason": {"code": "empty.texture", "message": "…"}}]}
 ```

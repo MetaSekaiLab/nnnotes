@@ -130,6 +130,7 @@ class BundleRun:
 
     def _begin(self, conv: str) -> None:
         self.staged, self.conv = [], conv
+        self.ctx.seen.clear()
 
     def _publish(self) -> list[str]:
         """Keep the staged artifacts; returns their ids."""
@@ -139,10 +140,15 @@ class BundleRun:
         self.staged = []
         return ids
 
+    def _refs(self, info) -> list[str]:
+        """The objects the documents of `info` made since the last _begin reference."""
+        return sorted(self.ctx.seen - {info.id})
+
     def _commit(self, info, status: str, why: dict | None = None) -> None:
-        """The item of `info`: the artifacts its conversion staged."""
+        """The item of `info`: the artifacts its conversion staged and the objects they reference."""
+        refs = self._refs(info)
         ids = self._publish()
-        self.items[info.id] = contract.item(info.id, status, artifacts=ids, why=why, cls=info.class_name)
+        self.items[info.id] = contract.item(info.id, status, artifacts=ids, why=why, cls=info.class_name, refs=refs)
 
     def _failed(self, info, e: Exception, prefix: str = "") -> None:
         self._begin("generic.json")
@@ -270,7 +276,7 @@ class BundleRun:
                         self._fallback(info_of[k], "generic.error", f"hierarchy at transform {root.transform}: {why}")
                 continue
             if self._convert(info, "prefab.json", prefab.prefab, h, root):
-                within = contract.artifact_id(info.id, "prefab")
+                within = contract.artifact_id(info.id, "json")
                 for k in root.members:
                     i = info_of[k]
                     if i.id != info.id:
@@ -293,9 +299,10 @@ class BundleRun:
         for i in infos:
             mark = len(self.staged)
             key = (i.file, i.path_id)
+            self.ctx.seen.clear()
             try:
                 entries[i.id] = self.ctx.tree(self.ctx.readers[key], self.ctx.tt(key))
-                done.append(i)
+                done.append((i, self._refs(i)))
             except Exception as e:
                 del self.staged[mark:]
                 failed.append((i, e))
@@ -303,8 +310,8 @@ class BundleRun:
             doc = encode_object(generic.loose_doc(self.ctx, conv, entries))
             aid = self._emit(None, conv, doc, "json", kind, "json", {"objects": len(done)}, owner=self.task.id)[0]
             self._publish()
-            for i in done:
-                self.items[i.id] = contract.item(i.id, "contained", within=aid, cls=i.class_name)
+            for i, refs in done:
+                self.items[i.id] = contract.item(i.id, "contained", within=aid, cls=i.class_name, refs=refs)
         for i, e in failed:
             if isinstance(e, ReadError):
                 self._failed(i, e)

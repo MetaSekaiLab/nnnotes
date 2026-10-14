@@ -145,7 +145,7 @@ def _component(ctx: BundleObjects, h: Hierarchies, o, root: tuple, unresolved: l
 
 
 def prefab(ctx: BundleObjects, info, h: Hierarchies, root: Root) -> None:
-    """`prefab`: {"name", "scene" (a root of a scene's file), "nodes"}: every node of the hierarchy in hierarchy
+    """`json`: {"name", "scene" (a root of a scene's file), "nodes"}: every node of the hierarchy in hierarchy
     order (path, name, path ids, active, layer, tag, local transform, rect, components with their fields)."""
     key = (info.file, info.path_id)
     g = h.graphs[info.file]
@@ -190,4 +190,4 @@ def prefab(ctx: BundleObjects, info, h: Hierarchies, root: Root) -> None:
         else []
     )
     facts = {"nodes": len(nodes), "objects": len(root.members)}
-    ctx.emit(key, "prefab", encode_object(doc), "json", "prefab", "json", facts, issues=issues)
+    ctx.emit(key, "json", encode_object(doc), "json", "prefab", "json", facts, issues=issues)
