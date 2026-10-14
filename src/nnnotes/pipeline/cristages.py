@@ -10,8 +10,10 @@ cri.audio   subject: the sha256 of an ACB ("cri.audio:<sha256>"). The ACB is a r
             itself never enters a key, a record or a log. Atoms: `hca.decode` (vgmstream) and `flac.encode` (ffmpeg),
             each named by the version the tool reports and the sha256 of its executable. Artifacts
             "cri.audio:<sha256>#<file>": one FLAC per vgmstream stream, `cues.json` and `streams.json`, the bytes
-            cri.decode writes for the sheet. Parameter `flac.level` (ffmpeg's FLAC compression level; every level
-            decodes to the same samples).
+            cri.decode writes for the sheet. Parameters `format`: flac (the default), ogg (Vorbis, encoded with
+            ffmpeg's bit-exact flags) or wav (the decoded samples as vgmstream writes them); `flac.level` (ffmpeg's
+            FLAC compression level; every level decodes to the same samples). The parameters of the default format
+            are `{"flac": {"level"}}`, of the others `{"format"}`.
 cri.movie   subject: the sha256 of a USM: a raw file of the catalog (fact "raw", magic `CRID`) or held in a bundle
             (the `cri.usm` artifacts of unity.export: a movie asset's CriSerializedBytesAssetImpl bytes), so a movie
             stored in several places is converted once. Inputs "usm", "boot" (the USM masks and the HCA cipher use
@@ -308,21 +310,41 @@ class AudioStage(_CriStage):
     version = 1
     after = (EXPORT,)
     CLASS = "ACB"
-    PARAMS = {"flac": {"level": FLAC_LEVEL}}
+    PARAMS = {"format": "flac", "flac": {"level": FLAC_LEVEL}}
+    FORMATS = ("flac", "ogg", "wav")
 
     @property
     def ATOMS(self) -> dict:
-        return {
-            "hca.decode": tool_id("vgmstream", _tool("vgmstream")),
-            "flac.encode": tool_id("ffmpeg", _tool("ffmpeg")),
-        }
+        return self.atoms("flac")
+
+    @staticmethod
+    def atoms(fmt: str) -> dict:
+        """The atoms of a task that writes `fmt`: the decoder, and the encoder of a format other than wav."""
+        out = {"hca.decode": tool_id("vgmstream", _tool("vgmstream"))}
+        if fmt != "wav":
+            out[f"{fmt}.encode"] = tool_id("ffmpeg", _tool("ffmpeg"))
+        return out
+
+    def _atoms(self, fmt: str) -> dict:
+        return self.ATOMS if fmt == "flac" else self.atoms(fmt)
 
     def normalize(self, params: dict | None) -> dict:
         p = dict(params or {})
         unknown = sorted(set(p) - set(self.PARAMS))
         if unknown:
             raise ValueError(f"stage {self.name}: unknown parameters {', '.join(unknown)}")
+        fmt = p.get("format", "flac")
+        if fmt not in self.FORMATS:
+            raise ValueError(f"stage {self.name}: format {fmt!r}: expected {', '.join(self.FORMATS)}")
+        if fmt != "flac":
+            if "flac" in p:
+                raise ValueError(f"stage {self.name}: flac parameters with format {fmt}")
+            return {"format": fmt}
         return {"flac": _flac_params(p.get("flac"))}
+
+    @staticmethod
+    def format(params: dict) -> str:
+        return params.get("format", "flac")
 
     def index(self, env) -> dict:
         """{content id: {acb, awb, depends, names}} of the raw ACBs and the ACB artifacts of the unity.export
@@ -371,7 +393,7 @@ class AudioStage(_CriStage):
         return [e["acb"], *([e["awb"]] if e["awb"] is not None else []), _boot(env)]
 
     def uses(self, subject: str, env) -> dict:
-        return self.ATOMS
+        return self._atoms(self.format(env.params))
 
     def estimate(self, subject: str, env, inputs: list[Input]) -> Cost:
         """From the ACB's size (a whole catalog: about 2 CPU seconds per MB, the tools' processes included)."""
@@ -381,8 +403,9 @@ class AudioStage(_CriStage):
     def run(self, task, store) -> Output:
         from ..formats import cri
 
-        vgm, ff = _tool("vgmstream"), _tool("ffmpeg")
-        self._check_atoms(task, {"hca.decode": tool_id("vgmstream", vgm), "flac.encode": tool_id("ffmpeg", ff)})
+        fmt = self.format(task.params)
+        self._check_atoms(task, self._atoms(fmt))
+        vgm, ff = _tool("vgmstream"), _tool("ffmpeg") if fmt != "wav" else None
         if any(i.role == "awb" for i in task.inputs):
             return self._item(
                 task,
@@ -392,14 +415,14 @@ class AudioStage(_CriStage):
             )
         acb = store.input_bytes(task.input("acb"))
         key = hca_key(store, task.input("boot"))
-        level = int(task.params["flac"]["level"])
+        level = int(task.params["flac"]["level"]) if fmt == "flac" else FLAC_LEVEL
         with tempfile.TemporaryDirectory(prefix="nnnotes-cri-") as tmp:
             out = Path(tmp)
             d = cri.decode_acb_bytes(
                 acb,
                 None,
                 key,
-                "flac",
+                fmt,
                 out,
                 name=ACB_NAME,
                 flac_level=level,
@@ -413,9 +436,9 @@ class AudioStage(_CriStage):
                     store,
                     s["file"],
                     (out / s["file"]).read_bytes(),
-                    "flac",
+                    fmt,
                     "audio.stream",
-                    "flac",
+                    fmt,
                     {k: v for k, v in s.items() if k != "file"},
                 )
                 for s in d.streams

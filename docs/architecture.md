@@ -36,9 +36,11 @@ decrypted bundles in the cache directory.
 
 ## Two ways to export
 
-- **One subject.** `export episode`, `export story`, `export live`, `export live2d`, `export spot`, `export room`,
-  `export shader`, `export audio`, `export ui`, `site build` and `music-data` read what one subject needs through the
-  Session and write their output directory directly ([Export stories and lives](export.md)).
+- **One subject.** `export live2d`, `export shader` and `export audio` run the stages of their subject through the
+  store, over the files the subject's catalog keys load, and copy the subject's files from the store into the output
+  directory; a second export of the same subject is a hit of the store. `export episode`, `export story`,
+  `export live`, `export spot`, `export room`, `export ui`, `site build` and `music-data` read what one subject needs
+  through the Session and write their output directory directly ([Export stories and lives](export.md)).
 - **Every asset.** `export assets` splits the work into stages ([stages](stages.md)). A task is one stage applied to
   one subject (a bundle, a content id, a view); its key covers exactly what its output depends on: the stage and
   converter versions, the input contents and the options ([contracts](contracts.md)). Results and their files are

@@ -61,7 +61,7 @@ TEXT_TYPES = {"GLES", "GLES3", "GLES31", "GLES31AEP", "GLCore32", "GLCore41", "G
 STAGES = ("progVertex", "progFragment", "progGeometry", "progHull", "progDomain")
 
 
-def _safe(name: str) -> str:
+def safe_name(name: str) -> str:
     return re.sub(r"[^0-9A-Za-z._-]", "_", name)
 
 
@@ -157,7 +157,7 @@ def _parsed_summary(tt: dict) -> dict:
 
 def _render(o, tt: dict, name: str) -> tuple[str, list[dict], list[bytes]]:
     """(parsed summary JSON text, variant records, variant program bytes) of one Shader object."""
-    safe = _safe(name)
+    safe = safe_name(name)
     text = dumps(_parsed_summary(tt), indent=1, ensure_ascii=False, default=str)
     recs, codes = [], []
     for plat, si, pi, stage, n, t, kws, code in variants(tt, platform_blobs(o.read())):
@@ -217,7 +217,7 @@ def dump_objects(shaders, out_dir: Path, source: str, index: list | None = None)
         if name in done:
             continue
         done.add(name)
-        safe = _safe(name)
+        safe = safe_name(name)
         (out_dir / f"{safe}.json").write_text(text, encoding="utf-8", newline="\n")  # as write_json writes it
         rec = {"name": name, "source": source, "parsed": f"{safe}.json", "variants": []}
         for v, code in zip(recs, codes):

@@ -1097,6 +1097,96 @@ def parse_layouts(spec: str) -> list[str]:
     return names
 
 
+# ---------------------------------------------------------------- single subjects
+def _literal(name: str) -> str:
+    """A stable name as a `bundle:` glob that matches that name only."""
+    return "".join(f"[{c}]" if c in "*?[" else c for c in name)
+
+
+def key_selection(index: dict, keys=(), files=()) -> list[str]:
+    """The selection of the bundles and raw files the catalog keys `keys` load (every location of each key and its
+    dependency closure) and of the files `files` (stable names), by stable name."""
+    from ..pipeline import catalogdb
+
+    want, reach = set(keys), catalogdb.closures(index)
+    names = set(files)
+    for loc in index["locations"]:
+        if loc["primaryKey"] in want:
+            names |= {stable for _, stable in reach[loc["id"]]}
+    return parse_selection([f"bundle:{_literal(stable)}" for stable in names])
+
+
+def subject_pipeline(stages: dict[str, Stage], want) -> list[str]:
+    """The stages `want` and the stages they read (Stage.after, transitively), in the order of the pipeline."""
+    need, stack = set(), list(want)
+    while stack:
+        name = stack.pop()
+        if name not in need:
+            need.add(name)
+            stack += [a for a in stages[name].after if a in stages]
+    return [n for n in stages if n in need or n == "catalog.index"]
+
+
+class SubjectRun:
+    """The stages of one command's subjects, run in this process: `run(want, params, keys=, files=)` runs the stages
+    `want` and those they read over the files the catalog keys `keys` load and the files `files` (key_selection);
+    `result(task id)` is a task's result. The store, catalog and settings are those of `export assets`."""
+
+    def __init__(self, args, cfg):
+        self.ws = Workspace(args, cfg)
+        self.ws.run_index()
+
+    @property
+    def store(self):
+        return self.ws.store
+
+    def index(self) -> dict:
+        return self.ws.index()
+
+    def run(self, want, params: dict | None = None, *, keys=(), files=()):
+        from ..pipeline.orchestrate import Orchestrator
+
+        ws = self.ws
+        ws.selection = key_selection(ws.index(), keys, files)
+        pipeline = subject_pipeline(ws.installed.stages, want)
+        facts = ws.facts(pipeline, fetch=True)
+        self.orch = Orchestrator(ws.store, ws.scheduled, workers=0, log=ws.log)
+        self.last = self.orch.run(pipeline, params=params, facts=facts, context=ws.context(), selection=ws.selection)
+        return self.last
+
+    def result(self, tid: str) -> dict:
+        """The result of task `tid` of the last run; when it failed or did not run (a file it reads could not be
+        read), the command exits with status 1 naming why."""
+        t = self.last.tasks.get(tid)
+        if t is None or t["status"] == "failed":
+            why = [f"{f['code']}: {f['message']}" for f in self.last.failures_ if f["task"] == tid]
+            why += [f"{p['name']}: {p['message']}" for p in self.ws.problems()]
+            sys.exit(f"nnnotes: {tid}: no result" + (f" ({'; '.join(why)})" if why else ""))
+        return self.store.committed(t["key"], tid)
+
+    def names(self, stage: str) -> dict:
+        """{subject: catalog names} of a stage that names its tasks' files (Workspace.names), after the last run."""
+        self.ws.done({tid: t["key"] for tid, t in self.last.tasks.items() if t["status"] != "failed"})
+        return self.ws.names(stage)
+
+
+def place(store, doc: dict, out: Path, roles=None) -> list[str]:
+    """Write the artifacts of a result into the directory `out`, each as the file its role names (the part of its
+    id after the task id), relative to `out`; `roles`: only those. Returns the files written, sorted."""
+    from ..pipeline.store import write_file
+
+    written = []
+    for a in doc["artifacts"]:
+        _, role = contract.parse_artifact_id(a["id"])
+        if roles is not None and role not in roles:
+            continue
+        dst = Path(out, *role.split("/"))
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        write_file(dst, store.read(a["content"]["sha256"]))
+        written.append(role)
+    return sorted(written)
+
+
 # ---------------------------------------------------------------- export
 class Totals:
     """What export reports of the results besides the run's counts, from its one reading of each (Run.scan): the

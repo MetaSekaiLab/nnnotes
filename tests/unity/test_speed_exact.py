@@ -424,7 +424,7 @@ def ref_dump_objects(shaders, out_dir: Path, source: str, index: list) -> list:
         if name in done:
             continue
         done.add(name)
-        safe = shader._safe(name)
+        safe = shader.safe_name(name)
         jsonio.write_json(out_dir / f"{safe}.json", shader._parsed_summary(tt), default=str)
         rec = {"name": name, "source": source, "parsed": f"{safe}.json", "variants": []}
         for plat, si, pi, stage, n, t, kws, code in shader.variants(tt, shader.platform_blobs(o.read())):
@@ -526,8 +526,12 @@ def ref_decode(sheet, out_dir: Path, fmt, level=encoders.FLAC_LEVEL):
         wav = work / f"{stem}.wav"
         cri.subprocess.run([vgm, "-i", "-s", str(i), "-o", str(wav), str(acb)], check=True, capture_output=True)
         dst = out_dir / f"{stem}.{fmt}"
-        codec = {"flac": ["-c:a", "flac", "-compression_level", str(level)], "ogg": ["-c:a", "libvorbis", "-q:a", "5"]}
-        cri.subprocess.run([ffmpeg, "-y", "-loglevel", "error", "-i", str(wav), *codec[fmt], str(dst)], check=True)
+        if fmt == "flac":
+            codec = ["-c:a", "flac", "-compression_level", str(level)]
+            cri.subprocess.run([ffmpeg, "-y", "-loglevel", "error", "-i", str(wav), *codec, str(dst)], check=True)
+        else:  # ogg, bit-exact
+            vorbis = ["-c:a", "libvorbis", "-q:a", "5"]
+            cri.subprocess.run([ffmpeg, *encoders.encode_args(wav, dst, vorbis)], check=True)
         wav.unlink()
         entry = {
             "file": dst.name,

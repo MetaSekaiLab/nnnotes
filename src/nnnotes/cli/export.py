@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 from ..core.jsonio import write_json
+from ..pipeline.store import write_file
 from ..source.session import Session
 from . import assets
 from .common import (
@@ -122,16 +123,24 @@ def cmd_live(args, cfg):
 
 
 def cmd_live2d(args, cfg):
+    from ..pipeline import contract
+    from ..pipeline.modelstages import LIVE2D
     from ..site import webmodel
-    from ..unity import live2d
 
     cfg.require_path("paths", "apk")  # the Cubism component classes are read from the APK
-    cat = Session(cfg).catalog()
+    run = assets.SubjectRun(args, cfg)
+    prefix = webmodel.LIVE2D_PREFIX
+    keys = {loc["primaryKey"] for loc in run.index()["locations"] if loc["primaryKey"].startswith(prefix)}
     try:  # a model id or a model key
-        (key,) = webmodel.catalog_models(cat, [args.key]).values()
+        (key,) = webmodel.select([args.key], webmodel.model_keys(sorted(keys))).values()
     except ValueError as e:
         usage(args, str(e))
-    report(args, live2d.extract_model(cat, key, Path(args.out)))
+    run.run([LIVE2D], keys=[key])
+    doc = run.result(contract.task_id(LIVE2D, key))
+    out = Path(args.out)
+    assets.place(run.store, doc, out)
+    (summary,) = [a["semantics"]["facts"] for a in doc["artifacts"] if a["semantics"]["kind"] == "live2d.model3"]
+    report(args, summary)
 
 
 def cmd_spot(args, cfg):
@@ -176,35 +185,82 @@ def cmd_room(args, cfg):
 
 def cmd_shader(args, cfg):
     from ..formats import shader
+    from ..pipeline import contract
+    from ..pipeline.modelstages import Closures
+    from ..pipeline.objexport import EXPORT
 
-    cat = Session(cfg).catalog()
+    if not args.key:
+        cfg.require_path("paths", "apk")
+    run = assets.SubjectRun(args, cfg)
+    index = run.index()
     if args.key:
-        known_keys(args, cat, [args.key])
-        bundles = cat.fetch_key(args.key)
+        if not any(loc["primaryKey"] == args.key for loc in index["locations"]):
+            usage(args, f"not a key of the catalog: {args.key}")
+        order = Closures(index).closure_bundles(args.key)  # the bundles of the key's closure, as the catalog loads them
     else:
-        if cat.apk is None:
-            cfg.require_path("paths", "apk")
-        bundles = []
+        order = []
         for s in args.apk_bundle:
-            try:
-                bundles.append(cat.apk_bundle(s))
-            except KeyError as e:  # none or several bundles match
-                usage(args, f"--apk-bundle {e.args[0]}")
-    r = shader.dump(bundles, Path(args.out))
+            names = [b["stable"] for b in index["bundles"] if not b["remote"] and s in b["name"]]
+            if len(names) != 1:
+                usage(args, f"--apk-bundle {s!r}: {len(names)} APK bundles match")
+            order += names
+    run.run([EXPORT], {EXPORT: {"classes": ["Shader"]}}, keys=[args.key] if args.key else (), files=order)
+    out = Path(args.out)
+    names = {b["stable"]: b["name"] for b in index["bundles"]}
+    records: list = []  # shaders.json: the first shader of each name, in bundle and object order
+    for stable in order:
+        doc = run.result(contract.task_id(EXPORT, stable))
+        arts = {a["id"]: a for a in doc["artifacts"]}
+        shaders = [it for it in doc["items"] if it.get("class") == "Shader"]
+        for it in sorted(shaders, key=lambda it: contract.parse_object_id(it["object"])):
+            if it["status"] != "exported":
+                sys.exit(f"nnnotes: shader {it['object']} of {names[stable]}: {it.get('why', {}).get('message')}")
+            obj = it["object"]
+            index_doc = contract.loads(run.store.read(arts[contract.artifact_id(obj, "index")]["content"]["sha256"]))
+            name = index_doc["name"]
+            if any(r["name"] == name for r in records):
+                continue
+            safe = shader.safe_name(name)
+            parsed = run.store.read(arts[contract.artifact_id(obj, "json")]["content"]["sha256"])
+            out.mkdir(parents=True, exist_ok=True)
+            write_file(out / f"{safe}.json", parsed)
+            variants = []
+            for v in index_doc["variants"]:
+                code = run.store.read(arts[contract.artifact_id(obj, v["role"])]["content"]["sha256"])
+                write_file(out.joinpath(*v["file"].split("/")), code)
+                variants.append({k: x for k, x in v.items() if k != "role"})
+            records.append({"name": name, "source": names[stable], "parsed": f"{safe}.json", "variants": variants})
+    r = shader.write_index(records, out)
     report(args, r, lambda r: [f"{r['count']} shaders, {r['variants']} variants", *(f"  {n}" for n in r["names"])])
 
 
 def cmd_audio(args, cfg):
-    from ..formats import cri
+    from ..pipeline import contract
+    from ..pipeline.cristages import AUDIO
 
     flac = flac_options(args)
-    cfg.require_path("paths", "apk")  # the HCA keycode is read from the APK
-    cat = Session(cfg).catalog()
-    if not cat.has(f"Cri/Sound/{args.cue_sheet}"):
-        usage(args, f"cue sheet {args.cue_sheet}: no key Cri/Sound/{args.cue_sheet} in the catalog")
+    cfg.require_path("paths", "apk")  # the HCA keycode is read from the APK's boot data
+    run = assets.SubjectRun(args, cfg)
+    key = f"Cri/Sound/{args.cue_sheet}"
+    if not any(loc["primaryKey"] == key for loc in run.index()["locations"]):
+        usage(args, f"cue sheet {args.cue_sheet}: no key {key} in the catalog")
+    params = {"format": args.format}
+    if "flac_level" in flac:
+        params["flac"] = {"level": flac["flac_level"]}
+    if args.format == "flac":
+        del params["format"]
+    run.run([AUDIO], {AUDIO: params}, keys=[key])
+    subjects = [s for s, names in run.names(AUDIO).items() if key in names]
+    if len(subjects) != 1:
+        sys.exit(f"nnnotes: cue sheet {args.cue_sheet}: {len(subjects)} ACBs have the key {key}")
+    doc = run.result(contract.task_id(AUDIO, subjects[0]))
+    (item,) = doc["items"]
+    if item["status"] != "exported":
+        sys.exit(f"nnnotes: cue sheet {args.cue_sheet}: {item['why']['message']}")
     out = Path(args.out)
-    cues = cri.decode(cat, args.cue_sheet, out, fmt=args.format, **flac)
-    report(args, {"out": str(out), "cues": len(cues)}, lambda r: [f"{r['out']}  ({r['cues']} cues)"])
+    assets.place(run.store, doc, out)
+    (cues,) = [a["semantics"]["facts"]["cues"] for a in doc["artifacts"] if a["semantics"]["kind"] == "cri.cues"]
+    report(args, {"out": str(out), "cues": cues}, lambda r: [f"{r['out']}  ({r['cues']} cues)"])
 
 
 def cmd_ui(args, cfg):

@@ -436,7 +436,6 @@ def test_flac_level_reaches_the_decode(data, tmp_path, capsys, monkeypatch):
     from types import SimpleNamespace
 
     from nnnotes.content import live, story
-    from nnnotes.formats import cri
     from nnnotes.source.session import Session
     from nnnotes.unity import player
 
@@ -444,11 +443,10 @@ def test_flac_level_reaches_the_decode(data, tmp_path, capsys, monkeypatch):
     monkeypatch.setattr(Session, "catalog", lambda self: SimpleNamespace(has=lambda key: True))
     monkeypatch.setattr(Session, "apk", lambda self, region=None: None)
     monkeypatch.setattr(player, "PlayerData", lambda apk: None)
-    monkeypatch.setattr(cri, "decode", lambda *a, **kw: seen.append(kw.get("flac_level")) or [])
     monkeypatch.setattr(story, "build", lambda *a, **kw: seen.append(kw["audio_options"].get("flac_level")) or {})
     monkeypatch.setattr(live, "resolve_band", lambda *a, **kw: None)
     monkeypatch.setattr(live, "build", lambda *a, **kw: seen.append(kw.get("flac_level")) or {})
-    for argv in (["export", "audio", "s"], ["export", "story", "1"], ["export", "live", "7"]):
+    for argv in (["export", "story", "1"], ["export", "live", "7"]):
         for flag, level in (([], None), (["--flac-level", "5"], 5)):
             seen.clear()
             code, _, err = run(data + argv + flag + ["-o", str(tmp_path / "o")], capsys)

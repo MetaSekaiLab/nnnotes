@@ -307,9 +307,22 @@ def test_audio_two_runs_and_levels(tmp_path, tools):
     assert ta.key == tb.key and contract.encode(da) == contract.encode(db)
     t0, d0 = run(AudioStage(), ea, contract.sha256(ACB), {"flac": {"level": 0}})
     assert t0.key != ta.key and load(a, d0, f"{t0.id}#a.flac") != load(a, da, f"{ta.id}#a.flac")
-    for bad in ({"flac": {"level": 13}}, {"flac": {"speed": 1}}, {"format": "ogg"}):
+    for bad in ({"flac": {"level": 13}}, {"flac": {"speed": 1}}, {"format": "mp3"}, {"format": "ogg", "flac": {}}):
         with pytest.raises(ValueError):
             AudioStage().normalize(bad)
+    assert AudioStage().normalize({"format": "flac"}) == AudioStage().normalize(None) == {"flac": {"level": 8}}
+
+
+@pytest.mark.parametrize("fmt, atoms", [("ogg", {"hca.decode", "ogg.encode"}), ("wav", {"hca.decode"})])
+def test_audio_formats_write_their_files_with_their_atoms(tmp_path, tools, fmt, atoms):
+    store = Store(tmp_path / "s")
+    env = planning(store, tmp_path, {"s/a": ACB})
+    t, doc = run(AudioStage(), env, contract.sha256(ACB), {"format": fmt})
+    assert t.params == {"format": fmt} and set(t.atoms) == atoms
+    streams = [a for a in doc["artifacts"] if a["semantics"]["kind"] == "audio.stream"]
+    assert streams and all(a["content"]["ext"] == fmt and a["semantics"]["format"] == fmt for a in streams)
+    flac, _ = run(AudioStage(), env, contract.sha256(ACB))
+    assert flac.key != t.key
 
 
 def test_an_acb_with_an_external_awb_is_unsupported(tmp_path, tools):

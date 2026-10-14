@@ -285,7 +285,9 @@ OUT/motions/<motion>.motion3.json motions (and motions/_fades.json)
 OUT/<name>.model3.json            file references, EyeBlink / LipSync groups
 ```
 
-Needs `[paths] apk` (component classes are resolved through the APK). Prints a JSON summary.
+Needs `[paths] apk` (component classes are resolved through the APK). The model is the `live2d.model` task of the
+store ([stages](stages.md)): the bundles of the model's closure are fetched into the cache, the task runs once and
+its files are copied from the store. Prints a JSON summary.
 
 ## export spot
 
@@ -348,6 +350,10 @@ OUT/<name>/<platform>/s<S>p<P>_<stage>_<N>.<ext>   every compiled sub-program (G
 OUT/shaders.json                                   index with the keywords of every variant
 ```
 
+The shaders are the `Shader` artifacts of the `unity.export` tasks of those bundles in the store (the export limited
+to the class `Shader`). A name met again later in the bundle order (the closure in the order the catalog loads it)
+keeps its first shader; `shaders.json` names the bundle file each shader comes from.
+
 ## export audio
 
 ```
@@ -356,9 +362,10 @@ nnnotes export audio CUE_SHEET -o OUT [--format flac|ogg|wav] [--flac-level N]
 
 Decodes the CRI cue sheet of the key `Cri/Sound/<CUE_SHEET>`: one file per stream (a name repeated within the
 sheet gets `<name>_<stream>`), `cues.json` (first stream per name: file, sample rate, channels, samples, loop
-points) and `streams.json` (every stream in order). `flac` (default) keeps the decoded PCM bit-exact; `ogg` is lossy.
-`--flac-level` (0 to 12, default 8) is ffmpeg's FLAC compression level; every level decodes to the same samples.
-The HCA keycode is read from `[paths] apk`.
+points) and `streams.json` (every stream in order). `flac` (default) keeps the decoded PCM bit-exact; `ogg` is lossy
+(encoded with ffmpeg's bit-exact flags: the same samples give the same file). `--flac-level` (0 to 12, default 8) is
+ffmpeg's FLAC compression level; every level decodes to the same samples. The HCA keycode is read from the boot data
+of `[paths] apk`. The sheet is the `cri.audio` task of its ACB in the store, with the format as a parameter.
 
 ## voices
 

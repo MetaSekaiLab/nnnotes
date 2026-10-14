@@ -219,7 +219,8 @@ def decode(
     """Decode every stream of a cue sheet. Returns {streamName: file of its first stream}.
 
     flac (default) keeps the decoded PCM bit-exact (`flac_level`: ffmpeg's compression level; any level decodes to
-    the same samples); ogg re-encodes (lossy). `workers`: streams decoded at once (default default_workers()).
+    the same samples); ogg re-encodes (lossy; bit-exact flags, so the same samples give the same file). `workers`:
+    streams decoded at once (default default_workers()).
     `also` = (extension, ffmpeg codec options): every stream is encoded a second time from the same decoded samples
     into `<stem><extension>` next to its file (encode_args: no metadata, bit-exact flags), e.g. the web format of a
     BGM, so that it need not be transcoded from the first file later; the manifests name the first file only.
@@ -360,13 +361,14 @@ def decode_acb_bytes(
         if fmt == "wav":
             dst = out_dir / wav.name
             shutil.move(str(wav), dst)
-        else:
-            dst = out_dir / f"{stem}.{fmt}"
-            codec = {
-                "flac": ["-c:a", "flac", "-compression_level", str(int(flac_level))],
-                "ogg": ["-c:a", "libvorbis", "-q:a", "5"],
-            }[fmt]
+        elif fmt == "flac":
+            dst = out_dir / f"{stem}.flac"
+            codec = ["-c:a", "flac", "-compression_level", str(int(flac_level))]
             subprocess.run([encoder, "-y", "-loglevel", "error", "-i", str(wav), *codec, str(dst)], check=True)
+            wav.unlink()
+        else:  # ogg: bit-exact, so that the same samples give the same file
+            dst = out_dir / f"{stem}.ogg"
+            subprocess.run([encoder, *encode_args(wav, dst, ["-c:a", "libvorbis", "-q:a", "5"])], check=True)
             wav.unlink()
         return dst
 
