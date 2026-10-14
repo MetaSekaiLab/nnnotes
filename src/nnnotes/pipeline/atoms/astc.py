@@ -8,6 +8,7 @@ stored (rows of blocks from the first stored row). Texture data holding further 
 from __future__ import annotations
 
 import struct
+from collections.abc import Sequence
 
 from . import estimate
 
@@ -37,17 +38,18 @@ def level0_size(width: int, height: int, block: tuple[int, int]) -> int:
     return -(-width // bx) * -(-height // by) * 16
 
 
-def container(blocks: bytes, width: int, height: int, block: tuple[int, int]) -> bytes:
+def container(blocks: bytes, width: int, height: int, block: Sequence[int]) -> bytes:
     """The .astc file of a `width` x `height` 2D image whose blocks (of `block` texels) start `blocks`."""
-    block = tuple(block)
-    if block not in BLOCK_SIZES:
-        raise ValueError(f"ASTC block {block}: not a 2D ASTC block size")
+    size = tuple(block)
+    if size not in BLOCK_SIZES:
+        raise ValueError(f"ASTC block {size}: not a 2D ASTC block size")
+    bx, by = size
     if not (0 < width < 1 << 24 and 0 < height < 1 << 24):
         raise ValueError(f"ASTC image {width}x{height}: sizes must be 1 .. 2^24 - 1")
-    need = level0_size(width, height, block)
+    need = level0_size(width, height, (bx, by))
     if len(blocks) < need:
-        raise ValueError(f"ASTC {width}x{height} {block[0]}x{block[1]}: {len(blocks)} bytes, {need} needed")
-    head = struct.pack("<I3B", MAGIC, block[0], block[1], 1)
+        raise ValueError(f"ASTC {width}x{height} {bx}x{by}: {len(blocks)} bytes, {need} needed")
+    head = struct.pack("<I3B", MAGIC, bx, by, 1)
     dims = b"".join(v.to_bytes(3, "little") for v in (width, height, 1))
     return head + dims + bytes(blocks[:need])
 

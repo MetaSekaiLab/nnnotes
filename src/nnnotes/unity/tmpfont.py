@@ -18,8 +18,11 @@ import hashlib
 import importlib.util
 import io
 import math
+from collections.abc import Callable
+from typing import cast
 
 import numpy as np
+from UnityPy.files import ObjectReader
 
 from ..source.config import ConfigError
 from .export import Exporter, TexelPacker, _key, grow_box
@@ -67,7 +70,7 @@ class Font:
         self.glyphs = {g["m_Index"]: g for g in tt["m_GlyphTable"]}
         self.dynamic = tt["m_AtlasPopulationMode"] == 1
         self.atlases = [ex.deref(obj, p) for p in tt["m_AtlasTextures"]]
-        self.material_obj = ex.deref(obj, tt["m_Material"])
+        self.material_obj = ex.referent(obj, tt["m_Material"])
         self.fallback_objs = [ex.deref(obj, p) for p in tt["m_FallbackFontAssetTable"]]
         if any(p["regularTypeface"]["m_PathID"] or p["italicTypeface"]["m_PathID"] for p in tt["m_FontWeightTable"]):
             raise NotImplementedError(f"{self.name}: font weight table typefaces")
@@ -272,7 +275,7 @@ class RuntimeGlyphs:
         from scipy.ndimage import distance_transform_edt
 
         self.ft = freetype
-        self.edt = distance_transform_edt
+        self.edt = cast(Callable[[np.ndarray], np.ndarray], distance_transform_edt)
         tt = font.tt
         mode = tt["m_AtlasRenderMode"]
         want = RASTER_MODE["1X"] | RASTER_MODE["SDF"] | RASTER_MODE["NO_HINTING"] | RASTER_MODE["MONO"]
@@ -288,6 +291,7 @@ class RuntimeGlyphs:
             raise NotImplementedError(f"{font.name}: fractional point size {self.point_size}")
         self.face = freetype.Face(io.BytesIO(font.font_data), tt["m_FaceInfo"]["m_FaceIndex"])
         self.face.set_char_size(int(self.point_size) * 64, 0, 72, 72)
+        self.fine = self.face
         if self.face.units_per_EM != tt["m_FaceInfo"]["m_UnitsPerEM"]:
             raise RuntimeError(f"{font.name}: units per EM differ from the face info")
 
@@ -309,7 +313,7 @@ class RuntimeGlyphs:
         if oversample < 1 or oversample != int(oversample):
             raise ValueError(f"oversample {oversample}")
         g = cls.__new__(cls)
-        g.ft, g.edt, g.font = freetype, distance_transform_edt, None
+        g.ft, g.edt, g.font = freetype, cast(Callable[[np.ndarray], np.ndarray], distance_transform_edt), None
         g.pad, g.spread, g.point_size, g.oversample = int(padding), int(padding) + 1, int(point_size), int(oversample)
         g.face = freetype.Face(io.BytesIO(data), face_index)
         g.face.set_char_size(g.point_size * 64, 0, 72, 72)
@@ -330,12 +334,12 @@ class RuntimeGlyphs:
         m = self.metrics(gi)
         xmin, ymin, w, h = self.pixel_box(m)
         rows, cols = h + 2 * margin, w + 2 * margin
-        self.fine.load_glyph(gi, ft.FT_LOAD_NO_HINTING)
-        self.fine.glyph.render(ft.FT_RENDER_MODE_MONO)
+        self.fine.load_glyph(gi, ft.FT_LOAD_FLAGS["FT_LOAD_NO_HINTING"])
+        self.fine.glyph.render(ft.FT_RENDER_MODES["FT_RENDER_MODE_MONO"])
         bm = self.fine.glyph.bitmap
         grid = np.zeros((rows * k, cols * k), bool)
         if bm.rows and bm.width:
-            if bm.pixel_mode != ft.FT_PIXEL_MODE_MONO:
+            if bm.pixel_mode != ft.FT_PIXEL_MODES["FT_PIXEL_MODE_MONO"]:
                 raise RuntimeError(f"glyph {gi}: FreeType returned pixel mode {bm.pixel_mode}")
             raw = np.frombuffer(bytes(bm.buffer), np.uint8).reshape(bm.rows, bm.pitch)
             bits = np.unpackbits(raw, axis=1)[:, : bm.width].astype(bool)[::-1]  # bottom row first
@@ -357,7 +361,7 @@ class RuntimeGlyphs:
         return self.face.get_char_index(u)
 
     def metrics(self, gi: int) -> dict:
-        self.face.load_glyph(gi, self.ft.FT_LOAD_NO_HINTING)
+        self.face.load_glyph(gi, self.ft.FT_LOAD_FLAGS["FT_LOAD_NO_HINTING"])
         m = self.face.glyph.metrics
         return {
             "m_Width": m.width / 64,
@@ -382,12 +386,12 @@ class RuntimeGlyphs:
         m = self.metrics(gi)
         xmin, ymin, w, h = self.pixel_box(m)
         p = self.pad
-        self.face.load_glyph(gi, ft.FT_LOAD_NO_HINTING)
-        self.face.glyph.render(ft.FT_RENDER_MODE_MONO)
+        self.face.load_glyph(gi, ft.FT_LOAD_FLAGS["FT_LOAD_NO_HINTING"])
+        self.face.glyph.render(ft.FT_RENDER_MODES["FT_RENDER_MODE_MONO"])
         bm = self.face.glyph.bitmap
         grid = np.zeros((h + 2 * p, w + 2 * p), bool)
         if bm.rows and bm.width:
-            if bm.pixel_mode != ft.FT_PIXEL_MODE_MONO:
+            if bm.pixel_mode != ft.FT_PIXEL_MODES["FT_PIXEL_MODE_MONO"]:
                 raise RuntimeError(f"glyph {gi}: FreeType returned pixel mode {bm.pixel_mode}")
             raw = np.frombuffer(bytes(bm.buffer), np.uint8).reshape(bm.rows, bm.pitch)
             bits = np.unpackbits(raw, axis=1)[:, : bm.width].astype(bool)[::-1]  # bottom row first
@@ -744,7 +748,7 @@ class AssetFontSettings(FontSettings):
         super().__init__({"format": FORMAT, "fonts": {}, "materials": {}})
         self.ex = ex
         self._set = None
-        self._mat_objs: dict[str, object] = {}  # material name -> its object
+        self._mat_objs: dict[str, ObjectReader] = {}  # material name -> its object
 
     def _fontset(self):
         if self._set is None:
@@ -782,6 +786,8 @@ class AssetFontSettings(FontSettings):
 
     def material(self, font: str | None, name: str) -> dict:
         if name not in self.materials:
+            if font is None:
+                raise KeyError(f"material {name}: not read yet, and no font asset to find it by")
             key = font_key(self.ex.cat, font, name)
             if not self.ex.cat.has(key):
                 raise KeyError(f"material key {key}")

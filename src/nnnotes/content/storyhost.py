@@ -40,7 +40,7 @@ from ..formats import shader as shader_mod
 from ..source import languages, master
 from ..unity import fontsettings, textstyle, tmpfont
 from ..unity.export import RECT_PROPS, Exporter, TexelPacker, streamed_frames
-from ..unity.reader import SceneGraph, deref, mesh_arrays, script_class
+from ..unity.reader import SceneGraph, deref, mesh_arrays, referent, script_class
 from . import advui, room, spot, storyfonts
 
 FORMAT = "ournotes.story-host/1"
@@ -158,9 +158,9 @@ def camera_target(nodes: list[dict]) -> dict:
     if crt is None:
         raise RuntimeError(f"{nodes[0]['path']}: no CameraTargetRenderer")
     stage, cam = advui._ref_path(crt["_stage"]), advui._ref_path(crt["_captureCamera"])
-    container = _parent(stage)
-    if not stage or not cam or _parent(cam) != container:
+    if not stage or not cam or _parent(cam) != _parent(stage):
         raise RuntimeError("CameraTargetRenderer: stage and capture camera not under one parent")
+    container = _parent(stage)
     node = _first(nodes, cam)
     c = [x for x in node["components"] if x["type"] == "Camera"]
     d = [x for x in node["components"] if x.get("class") == "UniversalAdditionalCameraData"]
@@ -453,7 +453,7 @@ class UiDoc:
                 if not (rec.get("localizeText") or {}).get("localizeEnabled"):
                     raise NotImplementedError(f"{n['path']}: text without LocalizeText")
                 rec["textStyle"] = self.styles.record(
-                    n["path"], advui._component(n, advui.TMP_CLASSES), advui._component(n, ("LocalizeText",))
+                    n["path"], advui._need_component(n, advui.TMP_CLASSES), advui._component(n, ("LocalizeText",))
                 )
                 del rec["text"]
             self.nodes.append(rec)
@@ -651,7 +651,7 @@ def background(cat, key: str, situation_name: str, ex: Exporter) -> dict:
     for p in mats:
         mat = p.deref()
         tt = mat.read_typetree()
-        sh = deref(mat, tt["m_Shader"])
+        sh = referent(mat, tt["m_Shader"])
         rows.append((mat, tt, sh.read_typetree()["m_ParsedForm"]["m_Name"], sh))
     tex_index = glb_textures([(mat, tt, name) for mat, tt, name, _ in rows])
     if len(volumes) > 1:
@@ -715,7 +715,7 @@ def spine_records(env, ex: Exporter) -> tuple[dict, list, dict]:
     SkeletonAnimation's MeshRenderer sorting order / layer and {atlas page: material name} (SpineAtlasAsset
     materials in page order), and the shaders the materials name. -> (materials, characters, {name: shader})."""
     graph = SceneGraph(env)
-    by_cls: dict[str, list] = {}
+    by_cls: dict[str | None, list] = {}
     mr_by_go = {}
     for o in env.objects:
         if o.type.name == "MonoBehaviour":
@@ -732,7 +732,7 @@ def spine_records(env, ex: Exporter) -> tuple[dict, list, dict]:
                 if a is None:
                     continue
                 att = a.read_typetree()
-                names = spot._atlas_pages(spot._text_bytes(deref(a, att["atlasFile"]).read()).decode("utf-8"))
+                names = spot._atlas_pages(spot._text_bytes(referent(a, att["atlasFile"]).read()).decode("utf-8"))
                 mats = [deref(a, m) for m in att["materials"]]
                 if len(names) != len(mats):
                     raise RuntimeError(f"atlas {att.get('m_Name')}: {len(names)} pages vs {len(mats)} materials")
@@ -938,13 +938,13 @@ def home_ui(ui: UiDoc, keys: dict) -> tuple[str, dict, list]:
     _transitionOut, which ends with the cover at 0 as well.
     -> (overlay root, layout root, opened sequences)."""
     nodes = ui.prefab(keys["spotWidget"])
-    w = advui._component(nodes[0], ("UISpotWidget",))
-    overlay = advui._ref_path(w["_afterTalkContents"])
-    seqs = [advui._ref_path(w[k]) for k in ("_transitionIn", "_transitionOut", "_fadeIn", "_fadeOut") if w.get(k)]
+    w = advui._need_component(nodes[0], ("UISpotWidget",))
+    overlay = advui._need_path(w["_afterTalkContents"])
+    seqs = [advui._need_path(w[k]) for k in ("_transitionIn", "_transitionOut", "_fadeIn", "_fadeOut") if w.get(k)]
     fade = f"{_parent(overlay)}/Fade"
     ui.add(keys["spotWidget"], nodes, [overlay, fade, *seqs], _call_targets(nodes, seqs))
     ui.add(keys["spotLetterbox"], ui.prefab(keys["spotLetterbox"]))
-    return overlay, layout_root(nodes, overlay), [advui._ref_path(w["_fadeIn"])]
+    return overlay, layout_root(nodes, overlay), [advui._need_path(w["_fadeIn"])]
 
 
 def _call_targets(nodes: list[dict], seqs: list[str]) -> list[str]:
@@ -965,7 +965,7 @@ def afterlive_ui(ui: UiDoc, keys: dict) -> tuple[str, dict, list, dict]:
     subtree, the widget's and UISoloLiveMusicResultView's _inAnimation sequences and the nodes their calls target.
     -> (overlay root, layout root, opened sequences, host.json `afterlive`)."""
     bnodes = ui.prefab(keys["resultBackground"])
-    bw = advui._component(bnodes[0], ("UILiveResultBackgroundWidget",))
+    bw = advui._need_component(bnodes[0], ("UILiveResultBackgroundWidget",))
     bg_path = advui._ref_path(bw["_backgroundImage"])
     recs = [r for r in ui.add(keys["resultBackground"], bnodes) if r["path"] == bg_path and r.get("image")]
     if len(recs) != 1:
@@ -973,8 +973,8 @@ def afterlive_ui(ui: UiDoc, keys: dict) -> tuple[str, dict, list, dict]:
     sprite = ui.sprite(keys["resultBackgroundSprite"])
     recs[0]["image"].update(sprite=sprite["name"], spriteRef=sprite["spriteRef"])
     nodes = ui.prefab(keys["resultWidget"])
-    rw = advui._component(nodes[0], ("UILiveResultWidget",))
-    overlay = advui._ref_path(rw["_advSimpleContents"])
+    rw = advui._need_component(nodes[0], ("UILiveResultWidget",))
+    overlay = advui._need_path(rw["_advSimpleContents"])
     view = [
         (n, c)
         for n in nodes
@@ -984,9 +984,9 @@ def afterlive_ui(ui: UiDoc, keys: dict) -> tuple[str, dict, list, dict]:
     if len(view) != 1:
         raise RuntimeError(f"{overlay}: {len(view)} UISoloLiveMusicResultView ancestors")
     seqs = [
-        advui._ref_path(bw["_inAnimation"]),
-        advui._ref_path(rw["_inAnimation"]),
-        advui._ref_path(view[0][1]["_inAnimation"]),
+        advui._need_path(bw["_inAnimation"]),
+        advui._need_path(rw["_inAnimation"]),
+        advui._need_path(view[0][1]["_inAnimation"]),
     ]
     ui.add(keys["resultWidget"], nodes, [overlay, *seqs[1:]], _call_targets(nodes, seqs[1:]))
     parts = overlay.split("/")
@@ -1272,7 +1272,7 @@ def text_bindings(ui: UiDoc, lang: dict, mode: int) -> dict[str, dict]:
         path = rec["path"]
         if path in out:
             raise RuntimeError(f"{path}: two text nodes")
-        c = advui._component(n, advui.TMP_CLASSES)
+        c = advui._need_component(n, advui.TMP_CLASSES)
         t = {k: c[k] for k in advui.TMP_FIELDS if k in c}
         t.update(
             {
@@ -1323,6 +1323,8 @@ def open_fonts(
     mode, field = languages.mode(language), languages.column(language)[1:]
     lang = textstyle.language_fonts(player)
     bindings = text_bindings(ui, lang, mode)
+    if ui.doc is None:
+        raise RuntimeError("the simple UI's texts are read from its written ui.json")
     shown = (
         storyfonts.shown_texts(episode, story_ui, master_dir, field)
         + storyfonts.shown_texts(NO_EPISODE, ui.doc, master_dir, field)
@@ -1440,12 +1442,12 @@ def build(
     lost = [lang for lang in language_dirs if lang not in font_files]
     if lost:
         raise ValueError(f"no font file for {lost}")
-    if font_of is None:
 
-        def font_of(code):
-            return font_files[code] if code in font_files else storyfonts.no_font_file(code)
+    def own_font(code):
+        return font_files[code] if code in font_files else storyfonts.no_font_file(code)
 
-    keys = {k: emb_key(cat, ADDRESSES[k]) for k in ("cameraTarget", "talkWindow")}
+    font_of = font_of or own_font
+    keys: dict = {k: emb_key(cat, ADDRESSES[k]) for k in ("cameraTarget", "talkWindow")}
     if host.get("talk") == "area":
         keys["systemMessage"] = emb_key(cat, ADDRESSES["systemMessage"])
     for k in KIND_KEYS[host["kind"]]:

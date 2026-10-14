@@ -42,6 +42,13 @@ class Session:
             raise ConfigError(f"setting {section}.{key}: {kind} {p} not found")
         return p
 
+    def required_path(self, section: str, key: str, kind: str = "file") -> Path:
+        """The path a required setting names, checked to exist (a ConfigError naming the setting when it is unset)."""
+        self.cfg.require_path(section, key)
+        p = self.path(section, key, kind)
+        assert p is not None  # require_path: the setting is set
+        return p
+
     def store_root(self) -> Path:
         """The store directory: `[paths] store`, else the store/ directory of `[paths] cache`."""
         p = self.cfg.path("paths", "store")
@@ -58,15 +65,13 @@ class Session:
     def apk(self, region: str | None = None) -> Path:
         """`[paths] apk` of `region`, required."""
         cfg = self.cfg.for_region(region) if region else self.cfg
-        cfg.require_path("paths", "apk")
-        return Session(cfg).path("paths", "apk")
+        return Session(cfg).required_path("paths", "apk")
 
     def master_dir(self, region: str | None = None) -> Path:
         """The decoded master data of `region`: the --master flag, else `[servers.<region>] master`, else
         `[paths] master`."""
         section, key = self.cfg.master(region or self.cfg.get("catalog", "region"))
-        self.cfg.require_path(section, key)
-        return self.path(section, key, "directory")
+        return self.required_path(section, key, "directory")
 
     def master_version(self, region: str | None = None, *, timeout: float = gameapi.TIMEOUT) -> gameapi.MasterVersion:
         """The master data version `region` serves now (its `[servers.<region>] api`)."""

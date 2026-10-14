@@ -105,6 +105,8 @@ def build(
     code, needed with the UI); `audio_options`: further cri.decode options of every cue sheet
     (flac_level, also). With audio, the CRI Lips data is read from the catalog's APK when a voice reaches it
     (needs_cri_lips; story.json `crilips`, else null)."""
+    if ui and language is None:
+        raise ValueError("language: the client language of the UI is needed with ui=True")
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     episode = adv.to_json(adv.extract(cat, master, adv_id))
@@ -121,7 +123,11 @@ def build(
 
     media = advmedia.extract(cat, player, master, episode, out_dir, fonts=fonts)
     scene = advscene.extract(cat, player, episode, out_dir, shaders=media["shaders"])
-    ui = advui.extract(cat, player, episode, out_dir, fonts=fonts, language=language, master=master) if ui else None
+    ui_summary = (
+        advui.extract(cat, player, episode, out_dir, fonts=fonts, language=language, master=master)
+        if ui and language is not None
+        else None
+    )
     videos = advvideo.extract(cat, episode, out_dir)
     lips = None
     if audio:
@@ -151,7 +157,7 @@ def build(
         "stages": scene["stages"],
         "shaders": scene["count"],
         "textures": scene["textures"],
-        "uiSummary": ui,
+        "uiSummary": ui_summary,
         "media": {"entries": media["counts"], "textures": media["textures"]},
         "videoCount": len(videos["videos"]) if videos else 0,
     }

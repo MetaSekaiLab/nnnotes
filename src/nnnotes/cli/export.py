@@ -26,6 +26,7 @@ from .common import (
     live_options,
     out_arg,
     report,
+    usage,
 )
 
 
@@ -56,7 +57,7 @@ def cmd_story(args, cfg):
     try:
         os.path.relpath(models, out)
     except ValueError:
-        args.usage(f"--models {models}: not on the drive of {out} (story.json names it relative to the story)")
+        usage(args, f"--models {models}: not on the drive of {out} (story.json names it relative to the story)")
     language = languages.check(cfg.require("catalog", "language"))  # the story UI's language
     md = Session(cfg).master_dir()
     known_row(args, md, "MasterAdv", args.adv_id, "episode")
@@ -92,16 +93,16 @@ def cmd_live(args, cfg):
     md = Session(cfg).master_dir()
     known_row(args, md, "MasterLiveMusic", args.music_id, "music")
     if (args.music_id, args.difficulty) not in all_pairs(md):
-        args.usage(f"music {args.music_id}: no {args.difficulty} chart (no MasterLiveMusicScore row)")
+        usage(args, f"music {args.music_id}: no {args.difficulty} chart (no MasterLiveMusicScore row)")
     try:
         options = liveoptions.resolve(request, md)
     except liveoptions.OptionSpecError as e:
-        args.usage(str(e))
+        usage(args, str(e))
     cat = Session(cfg).catalog()
     try:  # an unknown --leader-card, a --band without its scene keys
         live.resolve_band(cat, md, args.music_id, band=args.band, leader_card=args.leader_card)
     except (KeyError, ValueError) as e:
-        args.usage(e.args[0] if e.args else type(e).__name__)
+        usage(args, e.args[0] if e.args else type(e).__name__)
     r = live.build(
         cat,
         md,
@@ -129,7 +130,7 @@ def cmd_live2d(args, cfg):
     try:  # a model id or a model key
         (key,) = webmodel.catalog_models(cat, [args.key]).values()
     except ValueError as e:
-        args.usage(str(e))
+        usage(args, str(e))
     report(args, live2d.extract_model(cat, key, Path(args.out)))
 
 
@@ -188,7 +189,7 @@ def cmd_shader(args, cfg):
             try:
                 bundles.append(cat.apk_bundle(s))
             except KeyError as e:  # none or several bundles match
-                args.usage(f"--apk-bundle {e.args[0]}")
+                usage(args, f"--apk-bundle {e.args[0]}")
     r = shader.dump(bundles, Path(args.out))
     report(args, r, lambda r: [f"{r['count']} shaders, {r['variants']} variants", *(f"  {n}" for n in r["names"])])
 
@@ -200,7 +201,7 @@ def cmd_audio(args, cfg):
     cfg.require_path("paths", "apk")  # the HCA keycode is read from the APK
     cat = Session(cfg).catalog()
     if not cat.has(f"Cri/Sound/{args.cue_sheet}"):
-        args.usage(f"cue sheet {args.cue_sheet}: no key Cri/Sound/{args.cue_sheet} in the catalog")
+        usage(args, f"cue sheet {args.cue_sheet}: no key Cri/Sound/{args.cue_sheet} in the catalog")
     out = Path(args.out)
     cues = cri.decode(cat, args.cue_sheet, out, fmt=args.format, **flac)
     report(args, {"out": str(out), "cues": len(cues)}, lambda r: [f"{r['out']}  ({r['cues']} cues)"])
@@ -210,7 +211,7 @@ def cmd_ui(args, cfg):
     from ..content import ui
 
     if args.limit is not None and args.limit < 1:
-        args.usage("--limit must be positive")
+        usage(args, "--limit must be positive")
     index = ui.export_apk_library(
         cfg,
         args.out,

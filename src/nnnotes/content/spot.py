@@ -182,7 +182,7 @@ def extract(cat: Catalog, md: Path, spot_id: int, out_dir: Path) -> dict:
 
     env = UnityPy.load(*[str(p) for p in cat.fetch_key(sp["_situationAssetPath"])])
     graph = SceneGraph(env)
-    by_cls: dict[str, list] = {}
+    by_cls: dict[str | None, list] = {}
     for o in env.objects:
         if o.type.name == "MonoBehaviour":
             by_cls.setdefault(script_class(o), []).append(o)

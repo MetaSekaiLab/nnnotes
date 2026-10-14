@@ -284,7 +284,7 @@ def export_library(
 
     for key in keys:
         previous = assets.get(key)
-        if not force and _valid_record(out, previous):
+        if not force and previous is not None and _valid_record(out, previous):
             refs = previous.get("dependencies", {})
             valid_deps = (
                 not dependencies

@@ -45,7 +45,7 @@ def master_version(value):
     return value
 
 
-def select_asset(raw, client):
+def select_asset(raw, client) -> tuple[str, str] | None:
     """Select the largest applicable live minimum; no top-level fallback when live has no match."""
     if not raw:
         return None
@@ -73,7 +73,7 @@ def select_asset(raw, client):
             data = max(candidates, key=lambda x: x[0])[1]
         version, digest = data.get("version"), data.get("Android")
         numeric_version(version)
-        if not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{32}", digest):
+        if not isinstance(version, str) or not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{32}", digest):
             raise ValueError()
         return version, digest
     except (ValueError, TypeError):

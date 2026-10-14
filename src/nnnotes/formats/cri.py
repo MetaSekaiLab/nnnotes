@@ -161,6 +161,8 @@ def _checked(acb: bytes, cue_sheet: str, layout: str) -> bytes:
 def _asset_acb(cue_sheet: str, layout: str, objs, t: dict, impl: dict | None) -> bytes:
     if layout == SPLIT_ACB:
         return split_acb([text_bytes(objs[c["m_PathID"]].read().m_Script) for c in t["_chunks"]], cue_sheet)
+    if impl is None:
+        raise RuntimeError(f"{cue_sheet}: {layout} without its serialized bytes")
     return embedded_acb(t, impl, cue_sheet)
 
 
@@ -306,8 +308,7 @@ def decode_acb_bytes(
         raise NotImplementedError(f"cue sheet {name}: external AWB (streamed waveforms) not supported")
     _check_format(fmt, also)
     vgm = vgmstream or tool("vgmstream", "vgmstream-cli")
-    if ffmpeg is None and (fmt != "wav" or also):
-        ffmpeg = tool("ffmpeg", "ffmpeg")
+    encoder = (ffmpeg or tool("ffmpeg", "ffmpeg")) if fmt != "wav" or also else ""  # "": no ffmpeg run
     out_dir = Path(out_dir)
     work = out_dir / "_work"
     work.mkdir(parents=True, exist_ok=True)
@@ -352,7 +353,7 @@ def decode_acb_bytes(
         subprocess.run([vgm, "-i", "-s", str(i), "-o", str(wav), str(acb_file)], check=True, capture_output=True)
         if also is not None:
             r = subprocess.run(
-                [ffmpeg, *encode_args(wav, out_dir / f"{stem}{also[0]}", also[1])], capture_output=True, text=True
+                [encoder, *encode_args(wav, out_dir / f"{stem}{also[0]}", also[1])], capture_output=True, text=True
             )
             if r.returncode != 0:
                 raise RuntimeError(f"ffmpeg {also[0]} failed on {name} stream {i}: {r.stderr[-2000:]}")
@@ -365,7 +366,7 @@ def decode_acb_bytes(
                 "flac": ["-c:a", "flac", "-compression_level", str(int(flac_level))],
                 "ogg": ["-c:a", "libvorbis", "-q:a", "5"],
             }[fmt]
-            subprocess.run([ffmpeg, "-y", "-loglevel", "error", "-i", str(wav), *codec, str(dst)], check=True)
+            subprocess.run([encoder, "-y", "-loglevel", "error", "-i", str(wav), *codec, str(dst)], check=True)
             wav.unlink()
         return dst
 

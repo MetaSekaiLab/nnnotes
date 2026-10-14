@@ -857,12 +857,13 @@ class ReadSetServer:
             encoding="utf-8",
             errors="replace",
         )
+        stdin, stdout, stderr = self.proc.stdin, self.proc.stdout, self.proc.stderr
+        assert stdin is not None and stdout is not None and stderr is not None  # the pipes asked for
+        self.stdin = stdin
         self.lines: queue.Queue = queue.Queue()
         self.stderr: collections.deque = collections.deque(maxlen=50)
-        threading.Thread(target=self._pump, args=(self.proc.stdout, self.lines.put, True), daemon=True).start()
-        self._stderr_pump = threading.Thread(
-            target=self._pump, args=(self.proc.stderr, self.stderr.append, False), daemon=True
-        )
+        threading.Thread(target=self._pump, args=(stdout, self.lines.put, True), daemon=True).start()
+        self._stderr_pump = threading.Thread(target=self._pump, args=(stderr, self.stderr.append, False), daemon=True)
         self._stderr_pump.start()
 
     @staticmethod
@@ -876,8 +877,8 @@ class ReadSetServer:
         """The answer to `request`: {"ok": true, "result"} or {"ok": false, "error"}. ReadSetServerError when the
         process has exited, answers something else or nothing within `timeout` seconds."""
         try:
-            self.proc.stdin.write(json.dumps(request) + "\n")
-            self.proc.stdin.flush()
+            self.stdin.write(json.dumps(request) + "\n")
+            self.stdin.flush()
         except OSError:
             pass  # exited: the end of its stdout follows
         try:
@@ -899,7 +900,7 @@ class ReadSetServer:
     def close(self, wait: float = 10.0) -> None:
         """End of its stdin: the server exits (ended after `wait` seconds if it does not)."""
         try:
-            self.proc.stdin.close()
+            self.stdin.close()
         except OSError:
             pass
         try:
@@ -911,7 +912,7 @@ class ReadSetServer:
         self.proc.kill()
         self.proc.wait()
         try:
-            self.proc.stdin.close()
+            self.stdin.close()
         except OSError:
             pass
 
@@ -954,7 +955,8 @@ class ReadSetServers:
             raise ValueError(f"read set mode {mode}")
         name = Path(live_dir).name
         request = {"chart": str(Path(live_dir)), "plan": mode == "plan", **({"settings": settings} if settings else {})}
-        for attempt in (1, 2):
+        attempt = 1
+        while True:
             s = self._take()
             try:
                 doc = s.ask(request, self.timeout)
@@ -962,6 +964,7 @@ class ReadSetServers:
                 s.kill()
                 if e.hung or attempt == 2:
                     raise RuntimeError(f"read set of {name} failed: {e}") from None
+                attempt += 1
                 continue
             self._give(s)
             if not doc["ok"]:
@@ -997,7 +1000,8 @@ class ReadSets:
 
     def __init__(self, player_dir: Path, log=_log, check_every: int = READ_SET_CHECK):
         self.player_dir = Path(player_dir)
-        self.initial = self.mode = None
+        self.initial: str | None = None
+        self.mode: str | None = None
         self.check_every = max(1, check_every)
         self.log = log
         self.lock = threading.Lock()  # counters, mode
@@ -1018,6 +1022,7 @@ class ReadSets:
                 self.initial = self.mode = "plan" if "plan" in features else "full"
                 if self.initial == "plan" and "serve" in features:
                     self.servers = ReadSetServers(self.player_dir)
+            assert self.mode is not None
             return self.mode
 
     def close(self) -> None:
@@ -1271,17 +1276,19 @@ def _build_group(
                 "ingest": lambda m, charts, root: ingest_task(m, charts, root, job),
             }
 
-            def submit(name, *a):
+            def submit_here(name, *a):
                 return ex.submit(call[name], *a)
 
-            ctx = None
+            submit, ctx = submit_here, None
         else:
             ctx = mp.get_context("spawn")
             mgr = ctx.Manager()
             ex = ProcessPoolExecutor(workers, mp_context=ctx, initializer=_worker_init, initargs=(cfg, mgr.Lock(), job))
 
-            def submit(name, *a):
+            def submit_pooled(name, *a):
                 return ex.submit(_pool_call, f"{name}_task", *a)
+
+            submit = submit_pooled
 
         try:
             for b, f in [(b, submit("band", b, m)) for b, m in sorted(bands.items())]:

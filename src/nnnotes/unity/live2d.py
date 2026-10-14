@@ -140,8 +140,8 @@ def expression_json(tt: dict) -> dict:
     }
 
 
-def _classes(env) -> dict[str, list]:
-    by_cls: dict[str, list] = {}
+def _classes(env) -> dict[str | None, list]:
+    by_cls: dict[str | None, list] = {}
     for o in env.objects:
         if o.type.name == "MonoBehaviour":
             by_cls.setdefault(script_class(o), []).append(o)
@@ -165,7 +165,7 @@ class RuntimeExport:
     exporter: Exporter
     env: object
     graph: SceneGraph
-    classes: dict[str, list]
+    classes: dict[str | None, list]
 
 
 def export_runtime(cat: Catalog, key: str, out_dir: Path) -> RuntimeExport:

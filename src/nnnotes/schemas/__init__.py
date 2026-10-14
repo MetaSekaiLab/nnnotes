@@ -11,12 +11,13 @@ SUFFIX = ".schema.json"
 
 def names() -> list[str]:
     """The schema names (`music-data`, `plan`, ...), sorted."""
-    return sorted(p.name[: -len(SUFFIX)] for p in resources.files(__package__).iterdir() if p.name.endswith(SUFFIX))
+    files = resources.files("nnnotes.schemas")
+    return sorted(p.name[: -len(SUFFIX)] for p in files.iterdir() if p.name.endswith(SUFFIX))
 
 
 def load(name: str) -> dict:
     """The schema `name` (`music-data` for music-data.schema.json)."""
-    path = resources.files(__package__) / f"{name}{SUFFIX}"
+    path = resources.files("nnnotes.schemas") / f"{name}{SUFFIX}"
     if not path.is_file():
         raise KeyError(f"no schema {name!r} (schemas: {', '.join(names())})")
     return json.loads(path.read_text(encoding="utf-8"))

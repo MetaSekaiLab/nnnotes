@@ -1123,7 +1123,7 @@ def open_fonts(
         coverage["missingGlyph"] = [chr(u) for u in sorted(substituted)]
     sprites = None
     indices = sprite_needs(rec, shown, set().union(*sprite_drawn.values())) if rec is not None else []
-    if not indices:  # no sprite to draw: the data holds no sprite asset
+    if rec is None or not indices:  # no sprite to draw: the data holds no sprite asset
         for t in bindings:
             t.pop("spriteAsset", None)
             t.pop("m_tintAllSprites", None)
@@ -1348,27 +1348,27 @@ def open_sprite_asset(emoji: EmojiFont | None, game: dict, indices: list[int], n
     where, width, height = pack_cells(cells)
     if any(pg for pg, _, _ in where.values()):
         raise NotImplementedError(f"{name}: sprites on more than one page")
-    page = f"sprite_{name}" if images else None
-    arr = np.zeros((height, width, 4), np.uint8) if images else None
-    glyphs = {}
-    for gi in glyph_ids:
-        g = game["glyphs"][str(gi)]
-        rec = {
-            "metrics": g["metrics"],
+    glyphs = {
+        str(gi): {
+            "metrics": game["glyphs"][str(gi)]["metrics"],
             "rect": {"m_X": 0, "m_Y": 0, "m_Width": 0, "m_Height": 0},
-            "scale": g["scale"],
+            "scale": game["glyphs"][str(gi)]["scale"],
             "atlasIndex": 0,
         }
-        if gi in images:
-            a = images[gi]
+        for gi in glyph_ids
+    }
+    page, textures, pages = None, {}, []
+    if images:
+        page = f"sprite_{name}"
+        arr = np.zeros((height, width, 4), np.uint8)
+        for gi, a in images.items():
             _, x, y = where[gi]
             x, y = x + SPRITE_MARGIN, y + SPRITE_MARGIN
             arr[y : y + a.shape[0], x : x + a.shape[1]] = a
+            rec = glyphs[str(gi)]
             rec["rect"] = {"m_X": x, "m_Y": y, "m_Width": a.shape[1], "m_Height": a.shape[0]}
             rec["packed"] = {"texture": page, "dx": 0, "dy": 0}
-        glyphs[str(gi)] = rec
-    textures = (
-        {
+        textures = {
             page: {
                 "texture": f"{PAGES_DIR}/{_safe(page)}.png",
                 "name": page,
@@ -1378,9 +1378,7 @@ def open_sprite_asset(emoji: EmojiFont | None, game: dict, indices: list[int], n
                 "settings": dict(PAGE_SETTINGS),
             }
         }
-        if images
-        else {}
-    )
+        pages = [(page, arr)]
     material = _sheet_material(game["material"], f"{name} Material", page, width, height)
     asset = {
         "faceInfo": game["faceInfo"],
@@ -1394,7 +1392,7 @@ def open_sprite_asset(emoji: EmojiFont | None, game: dict, indices: list[int], n
     return {
         "asset": asset,
         "textures": textures,
-        "pages": [(page, arr)] if images else [],
+        "pages": pages,
         "material": material,
         "missing": missing,
     }
@@ -1409,7 +1407,7 @@ def game_sprite_asset(ex: Exporter, ui_dir: Path, rec: dict) -> dict:
     if sh["mipCount"] != 1:
         raise NotImplementedError(f"{rec['name']}: sprite sheet with {sh['mipCount']} mip levels")
     o = ex.key_object(advui.EMOJI_SPRITE_ASSET_KEY)
-    sheet = ex.deref(o, o.read_typetree()["spriteSheet"])
+    sheet = ex.referent(o, o.read_typetree()["spriteSheet"])
     page = f"sprite_{rec['name']}"
     dst = f"{PAGES_DIR}/{_safe(page)}.png"
     (Path(ui_dir) / PAGES_DIR).mkdir(parents=True, exist_ok=True)

@@ -9,7 +9,7 @@ from pathlib import Path
 
 from ..source.config import ConfigError, check_catalog_version
 from ..source.session import Session
-from .common import command, group, note, report, write
+from .common import command, group, note, report, usage, write
 
 CATALOG_FILE = re.compile(r"catalog_([A-Za-z0-9][A-Za-z0-9.-]*)_[A-Za-z0-9-]+\.bin")
 
@@ -114,7 +114,7 @@ def cmd_import(args, cfg):
     try:
         remote = Path(args.file).read_bytes()
     except OSError as e:
-        args.usage(f"{args.file}: {e.strerror or e}")
+        usage(args, f"{args.file}: {e.strerror or e}")
     try:
         source = None
         if cfg.provider() == "jp":
@@ -133,7 +133,7 @@ def cmd_import(args, cfg):
             source=source,
         )
     except ValueError as e:
-        args.usage(str(e))
+        usage(args, str(e))
     _version(args, v)
 
 
@@ -146,15 +146,16 @@ def cmd_fetch(args, cfg):
         from ..source.jp import open_catalog
 
         cat = open_catalog(cfg, region, apk=cfg.path("paths", "apk"))
-        src = cat.sources()
+        src, source = cat.sources(), cat.source
+        assert source is not None  # a JP catalog names its version source
         v = _db(cfg).add(
             src["remote"],
             src.get("apk"),
             label=args.label,
             region=region,
             language=cfg.get("catalog", "language") or "ja",
-            source=cat.source.to_dict(),
-            resource_version=cat.source.version,
+            source=source.to_dict(),
+            resource_version=source.version,
             apk_version_name=catalogdb.apk_version(cfg.path("paths", "apk")),
         )
         _version(args, v)
@@ -183,7 +184,7 @@ def cmd_fetch(args, cfg):
             apk_version_name=catalogdb.apk_version(cfg.path("paths", "apk")),
         )
     except ValueError as e:
-        args.usage(str(e))
+        usage(args, str(e))
     _version(args, v)
 
 
@@ -198,7 +199,7 @@ def cmd_diff(args, cfg):
         try:
             vs.append(db.get(ref))
         except (KeyError, ValueError) as e:
-            args.usage(f"{ref}: {e.args[0] if e.args else e}")
+            usage(args, f"{ref}: {e.args[0] if e.args else e}")
     store = Store(Session(cfg).store_root())
     a, b = vs
     d = catalogdb.diff(db.index(a), db.index(b), addresses_of(store, a["id"]), addresses_of(store, b["id"]))

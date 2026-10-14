@@ -22,6 +22,7 @@ from .common import (
     parse_pair,
     positive,
     report,
+    usage,
 )
 
 
@@ -33,16 +34,17 @@ def cmd_build(args, cfg):
     charts, models = bool(args.pair or args.all), bool(args.live2d or args.all_live2d)
     stories = bool(args.story or args.all_stories)
     if not (charts or models or stories or args.player_only or args.reingest_json):
-        args.usage(
+        usage(
+            args,
             "one of the arguments --pair --all --live2d --all-live2d --story --all-stories --player-only "
-            "--reingest-json is required"
+            "--reingest-json is required",
         )
     if models and (args.player_only or args.reingest_json):
-        args.usage("--player-only and --reingest-json build nothing: leave out --live2d / --all-live2d")
+        usage(args, "--player-only and --reingest-json build nothing: leave out --live2d / --all-live2d")
     if stories and (args.player_only or args.reingest_json):
-        args.usage("--player-only and --reingest-json build nothing: leave out --story / --all-stories")
+        usage(args, "--player-only and --reingest-json build nothing: leave out --story / --all-stories")
     if request and not charts:
-        args.usage("--live-option applies to charts: give --pair or --all")
+        usage(args, "--live-option applies to charts: give --pair or --all")
     player = cfg.path("paths", "player")
     out = Path(args.out)
     if args.player_only or args.reingest_json:
@@ -63,16 +65,17 @@ def cmd_build(args, cfg):
         base = {"region": regions[0]} if regions else {}
         unknown = web.unknown_pairs(cfg, args.pair, regions) if args.pair else []
         if unknown:
-            args.usage(
+            usage(
+                args,
                 f"chart{'s' if len(unknown) > 1 else ''} {', '.join(f'{m}:{d}' for m, d in unknown)}: no "
-                f"MasterLiveMusicScore row in the master data of the site's region(s)"
+                f"MasterLiveMusicScore row in the master data of the site's region(s)",
             )
         if request:  # a value a region's master data does not have
             try:
                 for md in sitefiles.region_masters(cfg, sitefiles.site_regions(cfg, regions)).values():
                     liveoptions.resolve(request, md)
             except liveoptions.OptionSpecError as e:
-                args.usage(str(e))
+                usage(args, str(e))
         r = {}
         encoding = args.compress
         if models:
@@ -80,7 +83,7 @@ def cmd_build(args, cfg):
             try:
                 selected = webmodel.catalog_models(Session(cfg).catalog(bundles=False, **base), args.live2d)
             except ValueError as e:
-                args.usage(str(e))
+                usage(args, str(e))
             r.update(
                 webmodel.build(
                     out,
@@ -124,9 +127,10 @@ def cmd_build(args, cfg):
             unknown = storysite.unknown_stories(cfg, args.story, regions) if args.story else []
             if unknown:
                 noun = "stories" if len(unknown) > 1 else "story"
-                args.usage(
+                usage(
+                    args,
                     f"{noun} {', '.join(map(str, unknown))}: no MasterAdv row in the master data of the "
-                    f"site's region(s)"
+                    f"site's region(s)",
                 )
             r.update(
                 storysite.build(

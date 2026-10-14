@@ -7,6 +7,7 @@ import argparse
 import re
 import sys
 from pathlib import Path
+from typing import NoReturn
 
 from ..core.jsonio import dumps
 from ..source.catalog import Catalog
@@ -110,9 +111,9 @@ def group(sub, name: str, text: str):
 
 def command(sub, name: str, func, text: str, *, reads_config: bool = True) -> argparse.ArgumentParser:
     """The parser of a command that runs `func(args, cfg)` (cfg: the settings, None when `reads_config` is false);
-    `args.usage(message)` exits with a usage error (status 2) of this command."""
+    `usage(args, message)` exits with a usage error (status 2) of this command."""
     p = sub.add_parser(name, help=text, description=text, parents=[GLOBALS], formatter_class=Formatter)
-    p.set_defaults(func=func, usage=p.error, reads_config=reads_config)
+    p.set_defaults(func=func, parser=p, reads_config=reads_config)
     return p
 
 
@@ -172,11 +173,16 @@ def report(args, doc, lines=None) -> None:
 
 
 # ---------------------------------------------------------------- usage errors
+def usage(args, message: str) -> NoReturn:
+    """Exit with a usage error (status 2) of the command `args` were parsed for."""
+    argparse.ArgumentParser.error(args.parser, message)
+
+
 def known_keys(args, cat: Catalog, keys) -> None:
     """A usage error (exit 2) naming the keys the catalog does not have."""
     unknown = [k for k in keys if not cat.has(k)]
     if unknown:
-        args.usage(f"not a key of the catalog: {', '.join(unknown)}")
+        usage(args, f"not a key of the catalog: {', '.join(unknown)}")
 
 
 def known_row(args, md: Path, table: str, row_id: int, what: str) -> None:
@@ -190,7 +196,7 @@ def known_row(args, md: Path, table: str, row_id: int, what: str) -> None:
             f"master data {md}: no {table}.json (a directory written by `nnnotes master decode`)"
         ) from None
     if not found:
-        args.usage(f"{what} {row_id}: no {table} row with this id")
+        usage(args, f"{what} {row_id}: no {table} row with this id")
 
 
 def flac_options(args) -> dict:
@@ -200,11 +206,11 @@ def flac_options(args) -> dict:
     if level is None:
         return {}
     if level not in FLAC_LEVELS:
-        args.usage(f"--flac-level {level}: expected 0 to 12")
+        usage(args, f"--flac-level {level}: expected 0 to 12")
     if args.format != "flac":
-        args.usage(f"--flac-level: --format {args.format} writes no FLAC")
+        usage(args, f"--flac-level: --format {args.format} writes no FLAC")
     if getattr(args, "no_audio", False):
-        args.usage("--flac-level: --no-audio decodes no audio")
+        usage(args, "--flac-level: --no-audio decodes no audio")
     return {"flac_level": level}
 
 
@@ -223,7 +229,7 @@ def live_options(args) -> dict:
     try:
         return parse_specs(args.live_option)
     except OptionSpecError as e:
-        args.usage(str(e))
+        usage(args, str(e))
 
 
 # ---------------------------------------------------------------- argument types and options

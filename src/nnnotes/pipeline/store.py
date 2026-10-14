@@ -169,7 +169,7 @@ class Store:
         self._have: set[str] = set()  # content ids this store object wrote or found
         self._memo: dict | None = None  # (path, size, mtime_ns) -> (sha256, size)
         self._names: dict[str, dict] = {}  # kind -> {name: (sha256, size)}
-        self._docs: dict[str, object] = {}  # the documents document() decoded last
+        self._docs: dict[str, dict] = {}  # the documents document() decoded last
         self._lock = threading.Lock()
 
     def __getstate__(self):  # a store crosses to worker processes as its settings
@@ -287,7 +287,7 @@ class Store:
     def read(self, sha: str) -> bytes:
         return self.path(sha).read_bytes()
 
-    def document(self, sha: str):
+    def document(self, sha: str) -> dict:
         """The JSON document stored as `sha`, decoded; the last two decoded are kept (a catalog index is read at
         planning and again by the stages it describes) and shared: callers must not change them."""
         with self._lock:
@@ -310,6 +310,13 @@ class Store:
         """The committed result of a task key, or None."""
         data = _read(self.result_path(key))
         return None if data is None else contract.loads(data)
+
+    def committed(self, key: str, task: str) -> dict:
+        """The committed result of a task key that has one (a FileNotFoundError naming `task` when it is missing)."""
+        doc = self.result(key)
+        if doc is None:
+            raise FileNotFoundError(f"{task}: its result {key} is not in the store")
+        return doc
 
     def has_result(self, key: str) -> bool:
         return self.result_path(key).is_file()
@@ -382,7 +389,7 @@ class Store:
         }
         _append(self.root / "inputs" / f"{kind}.jsonl", json.dumps(line, ensure_ascii=False, sort_keys=True) + "\n")
         with self._lock:
-            self._memo[memo_key] = hit
+            self._load_memo()[memo_key] = hit
             if name is not None:
                 self._names[kind][name] = hit
         return hit

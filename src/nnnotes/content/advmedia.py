@@ -119,7 +119,7 @@ class MediaExporter(Exporter):
                     "type": "MonoBehaviour",
                     "class": None,
                     "missingScript": True,
-                    **self.value(o, {k: v for k, v in tt.items() if k not in HEADER}),
+                    **{k: self.value(o, v) for k, v in tt.items() if k not in HEADER},
                 }
         return super().component(o)
 

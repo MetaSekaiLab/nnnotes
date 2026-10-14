@@ -323,7 +323,8 @@ class _Resolver:
         self.reached: dict[str, set] = {}
 
     def __call__(self, sheet, cue) -> dict:
-        out = {"availability": {"master": sheet is not None and cue is not None, "catalog": None, "exported": False}}
+        master = sheet is not None and cue is not None
+        out: dict = {"availability": {"master": master, "catalog": None, "exported": False}}
         if sheet is None or cue is None:
             return out
         present = self.index.objects(self.key.format(sheet=sheet)) is not None
@@ -481,7 +482,7 @@ def _code_sources(m: _Master, resolve: _Resolver) -> list[dict]:
     return out
 
 
-def _inferred(m: _Master, sheet: str | None, cue: str, near: dict) -> dict:
+def _inferred(m: _Master, sheet: str | None, cue: str | None, near: dict) -> dict:
     out = {}
     for s in m.v.get("situations", []):
         if re.fullmatch(s["cue"], cue or ""):
@@ -660,7 +661,7 @@ def _story_rows(m: _Master, resolve: _Resolver, index, story: dict) -> tuple[lis
                         "matches": matches,
                     }
                 res, why = sound_gap, None
-                if res is None:
+                if sounds is not None:
                     s = sounds.get(vid)
                     if s is None:
                         why = f"{keys['sound']} has no row {vid}"
@@ -668,7 +669,7 @@ def _story_rows(m: _Master, resolve: _Resolver, index, story: dict) -> tuple[lis
                         cue = s.get(sd["cue"]) or None
                         row["sound"].update(category=s.get(sd["category"]), sheet=None, cue=cue)
                         res = sheet_gap
-                        if res is None:
+                        if sheets is not None:
                             sh = sheets.get(s.get(sd["sheet"]))
                             if sh is None:
                                 why = f"{keys['sheets']} has no row {s.get(sd['sheet'])}"
@@ -966,7 +967,7 @@ class VoiceStage(Stage):
                 oid = pick[0].id
                 stable = files.get(contract.parse_object_id(oid)[0])
                 tid = contract.task_id(EXPORT_STAGE, stable) if stable is not None else None
-                if tid not in exports:
+                if tid is None or tid not in exports:
                     continue
                 if tid not in arts:
                     arts[tid] = {a["id"]: a for a in env.result(tid)["artifacts"]}

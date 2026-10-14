@@ -573,7 +573,8 @@ def _why(e: OSError, what: str) -> str:
         return "store on another file system"
     if "platform" in str(e):
         return f"{what} unsupported on this platform"
-    return f"{what} unsupported on this file system ({errno.errorcode.get(e.errno, e.errno)})"
+    code = e.errno if e.errno is None else errno.errorcode.get(e.errno, e.errno)
+    return f"{what} unsupported on this file system ({code})"
 
 
 def probe(out_dir, store_dir, want: str = "auto") -> tuple[str, str]:

@@ -28,6 +28,7 @@ from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from ..source.apkset import ApkSet
 
@@ -51,7 +52,7 @@ _WHOLE = None  # every column of the table, in the order the rows first have the
 
 # (table, columns), in file order. A table with a column list exports those columns; a whole table all of its own.
 TABLES: tuple[tuple[str, tuple[str, ...] | None], ...] = tuple(
-    (t, None if c is _WHOLE else tuple(c.split()))
+    (t, None if c is None else tuple(c.split()))
     for t, c in (
         (
             "MasterMemberCard",
@@ -321,7 +322,7 @@ def f32_token(v: float) -> Num:
     return Num(np.format_float_scientific(x, unique=True, trim="0"))
 
 
-def _value(v, where: str):
+def _value(v, where: str) -> Any:
     if isinstance(v, float):
         try:
             return f32_token(v)

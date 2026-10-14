@@ -28,9 +28,10 @@ import io
 import math
 import sys
 from collections import Counter
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from decimal import Decimal, localcontext
 from pathlib import Path
+from typing import TypeGuard
 
 from ..source.languages import LANGUAGES
 from . import deckdata
@@ -233,7 +234,9 @@ def jacket_webp(image, size: int = JACKET_SIZE) -> bytes:
         img = img.convert("RGB")
     w, h = img.size
     if max(w, h) > size:
-        img = img.resize((max(1, round(w * size / max(w, h))), max(1, round(h * size / max(w, h)))), Image.LANCZOS)
+        img = img.resize(
+            (max(1, round(w * size / max(w, h))), max(1, round(h * size / max(w, h)))), Image.Resampling.LANCZOS
+        )
     buf = io.BytesIO()
     img.save(buf, format="WEBP", quality=JACKET_QUALITY, method=6)
     return buf.getvalue()
@@ -407,7 +410,7 @@ class Deck:
         self.module, self.seeds, self.workers = module, seeds, 1 if workers == 0 else workers
         self.aptitude = aptitude
         self.cache = None if cache is None else Path(cache)
-        self.counts: dict | None = None  # native counters, or None when no cache was requested
+        self.counts: Mapping[str, object] | None = None  # native counters, or None when no cache was requested
 
     def info(self) -> dict:
         """The identity and statistics format of the installed model."""
@@ -489,7 +492,7 @@ def rank_bonus_percents(rows: list[dict], missions) -> list[list]:
     """The rank bonus percentages [range][rank - 1] of a song's missions from the MasterLiveGekisouRankingScoreBonus
     rows of its mission pattern (`_count`: the range 1..3, `_rank` 1..5; a later row wins; 0 without a row)."""
     pattern = mission_pattern(missions)
-    out = [[0] * RANKS for _ in range(GEKISOU_RANGES)]
+    out: list[list[int | None]] = [[0] * RANKS for _ in range(GEKISOU_RANGES)]
     for r in rows:
         c, k = (r.get("_count") or 0) - 1, (r.get("_rank") or 0) - 1
         if r.get("_missionPattern") == pattern and 0 <= c < GEKISOU_RANGES and 0 <= k < RANKS:
@@ -497,7 +500,7 @@ def rank_bonus_percents(rows: list[dict], missions) -> list[list]:
     return out
 
 
-def _int(v) -> bool:
+def _int(v) -> TypeGuard[int]:
     return isinstance(v, int) and not isinstance(v, bool)
 
 
@@ -1489,12 +1492,13 @@ def export(
             }
             if not full:
                 del doc["master"], doc["charts"]
-        jackets = sorted({s["jacket"] for s in doc["songs"] if s["jacket"]}) if jacket is not None else []
-        images = {name: jacket(name) for name in jackets}
+        images = {}
+        if jacket is not None and jackets_dir is not None:
+            images = {name: jacket(name) for name in sorted({s["jacket"] for s in doc["songs"] if s["jacket"]})}
         data = deckdata.encode(deckdata._value(doc, "music data"))
     except deckdata.DeckDataError as e:
         raise MusicDataError(str(e)) from None
-    if jackets:
+    if images and jackets_dir is not None:
         d = Path(jackets_dir)
         d.mkdir(parents=True, exist_ok=True)
         for name, image in images.items():
@@ -1518,7 +1522,7 @@ def export(
         "unplayable": sum(1 for c in charts if c["deck"] and c["deck"]["unplayable"]),
         "full": full,
         "bgm": bgm is not None,
-        "jackets": len(jackets),
+        "jackets": len(images),
         "bytes": len(data),
         "fileBytes": len(written),
         "sha256": hashlib.sha256(written).hexdigest(),

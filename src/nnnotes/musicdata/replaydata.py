@@ -71,11 +71,13 @@ def _read_package(source: Path, paths: tuple[str, ...], name: str) -> dict[str, 
         return {path: (source / path).read_bytes() for path in paths if (source / path).is_file()}
     try:
         with tarfile.open(source, "r:gz") as archive:
-            return {
-                member.name.partition("/")[2]: archive.extractfile(member).read()
-                for member in archive.getmembers()
-                if member.isfile() and member.name.partition("/")[2] in paths
-            }
+            out = {}
+            for member in archive.getmembers():
+                path = member.name.partition("/")[2]
+                f = archive.extractfile(member) if member.isfile() and path in paths else None
+                if f is not None:
+                    out[path] = f.read()
+            return out
     except (OSError, tarfile.TarError):
         raise deckdata.DeckDataError(f"{name}: {source} is neither a package directory nor a .tar.gz package") from None
 
@@ -105,7 +107,8 @@ def _package(
         raise deckdata.DeckDataError(
             f"{name}: {BUILD_INFO} commit {info.get('commit')!r} differs from the pinned deck model {model['commit']}"
         )
-    hashes = info.get("files") if isinstance(info.get("files"), dict) else {}
+    files_info = info.get("files")
+    hashes = files_info if isinstance(files_info, dict) else {}
     for path in (js, wasm):
         if path not in package:
             raise deckdata.DeckDataError(f"{name}: missing {path} in {source}")
@@ -113,10 +116,9 @@ def _package(
             raise deckdata.DeckDataError(f"{name}: {path} SHA-256 differs from {BUILD_INFO}")
     if not package[wasm].startswith(b"\x00asm\x01\x00\x00\x00"):
         raise deckdata.DeckDataError(f"{name}: not a WASM v1 module")
-    paths = tuple(f"{prefix}/{path.rsplit('/', 1)[-1]}" for path in (js, wasm, BUILD_INFO))
-    for path, data in zip(paths, (package[js], package[wasm], package[BUILD_INFO])):
-        files[path] = data
-    return paths
+    js_path, wasm_path, info_path = (f"{prefix}/{path.rsplit('/', 1)[-1]}" for path in (js, wasm, BUILD_INFO))
+    files[js_path], files[wasm_path], files[info_path] = package[js], package[wasm], package[BUILD_INFO]
+    return js_path, wasm_path, info_path
 
 
 def bundle(

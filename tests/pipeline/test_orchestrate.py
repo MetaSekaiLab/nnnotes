@@ -353,5 +353,7 @@ def test_a_scan_with_the_census_keeps_only_the_coverage_document(tmp_path):
     want = run.coverage({"Line": 6})
     run.scan(census=lambda: {"Line": 6})
     digest = run._scan[1]
-    assert digest.best is None and run.coverage({"Line": 6}) == want
+    assert digest.best == digest.kinds == digest.reasoned == {} and run.coverage({"Line": 6}) == want
+    with pytest.raises(RuntimeError, match="settled"):
+        digest.add("toy.src:a", {"items": []})
     assert run.coverage() == coverage(run.results()) and run._scan[1] is not digest  # another census: read again

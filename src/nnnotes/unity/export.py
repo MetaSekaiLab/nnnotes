@@ -29,9 +29,11 @@ import re
 import struct
 import zlib
 from pathlib import Path
+from typing import Literal
 
 import numpy as np
 from PIL import Image
+from UnityPy.files import ObjectReader
 from UnityPy.helpers import MeshHelper
 
 from ..core import cache
@@ -323,7 +325,7 @@ class TexelPacker:
         return self._pixels[k]
 
     @staticmethod
-    def _wrap(mode: int) -> str:
+    def _wrap(mode: int) -> Literal["wrap", "clip"]:
         if mode == 0:
             return "wrap"
         if mode == 1:
@@ -481,7 +483,7 @@ class Exporter:
         self._font_bundles: frozenset | None = None
         self._unwritten: dict[str, object] = {}  # defer_writes: file -> Texture2D
         self.textures: dict[tuple, dict] = {}
-        self.shaders: dict[str, object] = {}
+        self.shaders: dict[str, ObjectReader] = {}
         self.tex_objs: dict[str, object] = {}  # deferred: "file:pathID" -> Texture2D
         self.sprite_recs: dict[str, dict] = {}  # deferred: "file:pathID" -> sprite render record
         self.clips: dict[str, dict] = {}  # livenotes format: id -> clip
@@ -490,7 +492,7 @@ class Exporter:
         self._graph_of_file: dict[int, SceneGraph] = {}
         self._done: dict[tuple, dict] = {}  # MonoBehaviour/clip/controller/atlas -> reference once exported
         self._component_ref: dict[tuple, str] = {}
-        self._objects: dict[tuple, object] = {}
+        self._objects: dict[tuple, ObjectReader] = {}
         self._go_file: dict[int, str] = {}
         self._loaded: dict[str, tuple] = {}
         self._clip_recs: dict[tuple, dict] = {}
@@ -498,7 +500,7 @@ class Exporter:
         self._names_of: dict[tuple, list] = {}  # object -> flat field names
         self._names_by_class: dict = {}  # typeID | ("MonoBehaviour", class) -> names of exported components
         self._class_of: dict[tuple, str | None] = {}
-        self._rel_tables: dict[int, dict] = {}
+        self._rel_tables: dict[tuple, dict] = {}
         self._gos_at_cache: dict[tuple, list] = {}
         self._path_sources: list[tuple[str, dict]] = []
         self._crcs: dict[str, int] = {}
@@ -531,19 +533,36 @@ class Exporter:
         return env, graph
 
     def font_bundles(self) -> frozenset:
-        """With `font_stubs`: the names of the bundles that hold its font assets."""
+        """The names of the bundles that hold the font assets of `font_stubs` (none without it)."""
         if self._font_bundles is None:
-            self._font_bundles = self.font_stubs.bundles(self.cat)
+            self._font_bundles = frozenset() if self.font_stubs is None else self.font_stubs.bundles(self.cat)
         return self._font_bundles
 
     def font_stub(self, o: FontStub) -> dict:
         """The value of a reference into a font bundle left out (`font_stubs`): a material's record, a font asset's
         {asset, name}."""
-        if o.rec["type"] == "Material":
+        if o.rec["type"] == "Material" and self.font_stubs is not None:
             return self.font_stubs.material(None, o.rec["name"])
         return {"asset": o.rec["class"], "name": o.rec["name"]}
 
-    def deref(self, owner, pptr: dict):
+    def deref(self, owner, pptr: dict) -> ObjectReader | None:
+        """The object `pptr` (read from `owner`'s typetree) names; None for a null reference. A reference into a font
+        bundle left out (`font_stubs`) is an error here: only `ref` writes such a reference, as its record."""
+        o = self._lookup(owner, pptr)
+        if isinstance(o, FontStub):
+            raise FileNotFoundError(
+                f"path id {o.path_id} is in a font bundle left out of the closure ({o.rec['name']})"
+            )
+        return o
+
+    def referent(self, owner, pptr: dict) -> ObjectReader:
+        """The object a reference that must not be null names (KeyError naming `owner` for a null one)."""
+        o = self.deref(owner, pptr)
+        if o is None:
+            raise KeyError(f"{owner.type.name} {owner.path_id}: a required reference is null")
+        return o
+
+    def _lookup(self, owner, pptr: dict) -> ObjectReader | FontStub | None:
         if not pptr["m_PathID"]:
             return None
         if external_path(owner, pptr) == DEFAULT_RESOURCES:
@@ -576,7 +595,7 @@ class Exporter:
         return v
 
     def ref(self, owner, pptr: dict):
-        o = self.deref(owner, pptr)
+        o = self._lookup(owner, pptr)
         if o is None:
             return None
         if isinstance(o, FontStub):
@@ -604,7 +623,7 @@ class Exporter:
         if t in ("Transform", "RectTransform"):
             return {"transform": self.graph(o).path(o.path_id)}
         if _key(o) in self._component_ref:
-            desc = {"component": t, "gameObject": self._component_ref[_key(o)]}
+            desc: dict[str, str | None] = {"component": t, "gameObject": self._component_ref[_key(o)]}
             if t == "MonoBehaviour":
                 desc["class"] = self.script_class(o)
             return desc
@@ -704,7 +723,7 @@ class Exporter:
             return self._deferred_sprite(o, tt, src, owner)
         if src is None:
             return {"sprite": tt["m_Name"], "texture": None, "unboundAtlasTags": tt.get("m_AtlasTags")}
-        tex = self.ref(owner, src["texture"])
+        tex = self.texture(self.referent(owner, src["texture"]))
         rd = tt["m_RD"]
         vd = rd["m_VertexData"]
         raw = vd["m_DataSize"]
@@ -750,7 +769,7 @@ class Exporter:
     def _deferred_sprite(self, o, tt: dict, src, owner) -> dict:
         if src is None:
             raise RuntimeError(f"sprite {tt['m_Name']}: no texture and no atlas")
-        tex = self.deref(owner, src["texture"])
+        tex = self.referent(owner, src["texture"])
         if src["alphaTexture"]["m_PathID"] or src.get("secondaryTextures"):
             raise NotImplementedError(f"sprite {tt['m_Name']}: alpha/secondary textures")
         raw = src["settingsRaw"]
@@ -856,7 +875,7 @@ class Exporter:
         h = MeshHelper.MeshHandler(m)
         h.process()
         w, ix = h.m_BoneWeights, h.m_BoneIndices
-        if not w or len(w) != vertex_count or len(ix) != vertex_count:
+        if not w or not ix or len(w) != vertex_count or len(ix) != vertex_count:
             raise RuntimeError(f"mesh {tt['m_Name']}: {len(w or [])} bone weights for {vertex_count} vertices")
         skin = []
         for ws, bs in zip(w, ix):
@@ -905,7 +924,7 @@ class Exporter:
 
         An Animator binding path is relative to the Animator's GameObject, which need not be
         the hierarchy root, and the clip does not say which GameObject plays it."""
-        t = self._rel_tables.get(id(graph))
+        t = self._rel_tables.get(("relative", id(graph)))
         if t is None:
             t = {0: {""}}
             for tf_pid in graph.tf:
@@ -913,7 +932,7 @@ class Exporter:
                 for i in range(1, len(parts)):
                     s = "/".join(parts[i:])
                     t.setdefault(self._crc_of(s), set()).add(s)
-            self._rel_tables[id(graph)] = t
+            self._rel_tables[("relative", id(graph))] = t
         return t
 
     def _all_graphs(self) -> list[SceneGraph]:
@@ -1588,7 +1607,7 @@ class Exporter:
         as its state list (name, speed, loop, cycle offset, clip name) -- what the ADV UI runtime plays."""
         rec = self.controller_record(o)
         tt, tos = rec["tt"], rec["tos"]
-        clips = [self.deref(o, p).read().m_Name for p in tt["m_AnimationClips"]]
+        clips = [self.referent(o, p).read().m_Name for p in tt["m_AnimationClips"]]
         ctrl = tt["m_Controller"]
         if len(ctrl["m_StateMachineArray"]) != 1 or len(ctrl["m_LayerArray"]) != 1:
             raise NotImplementedError(f"controller {tt['m_Name']}: several layers")
@@ -1647,16 +1666,15 @@ class Exporter:
         if cls in self.stub_assets:
             return ref
         self._done[k] = ref
-        return {**ref, **self.value(o, {x: y for x, y in tt.items() if x not in HEADER})}
+        return {**ref, **{x: self.value(o, y) for x, y in tt.items() if x not in HEADER}}
 
     def component(self, o) -> dict:
         tt = o.read_typetree()
         self._register_names(o, tt)
-        body = {k: v for k, v in tt.items() if k not in HEADER}
         out = {"type": o.type.name}
         if o.type.name == "MonoBehaviour":
             out["class"] = self.script_class(o)
-        out.update(self.value(o, body))
+        out.update({k: self.value(o, v) for k, v in tt.items() if k not in HEADER})
         return out
 
     # --- hierarchies -----------------------------------------------------
@@ -1701,17 +1719,20 @@ class Exporter:
         return nodes
 
     # --- keys --------------------------------------------------------------
-    def _container_asset(self, env, internal_id: str):
+    def _container_asset(self, env, internal_id: str) -> ObjectReader:
         for o in env.objects:
             if o.type.name != "AssetBundle":
                 continue
             tt = o.read_typetree()
             for path, info in tt["m_Container"]:
                 if path.lower() == internal_id.lower():
-                    return self.deref(o, info["asset"])
+                    asset = self.deref(o, info["asset"])
+                    if asset is None:
+                        raise KeyError(f"{internal_id}: the container entry is a null reference")
+                    return asset
         raise KeyError(f"{internal_id} not in any AssetBundle container")
 
-    def key_object(self, key: str):
+    def key_object(self, key: str) -> ObjectReader:
         """The object an addressable key names (its bundle's container asset)."""
         env, _ = self.load(key)
         return self._container_asset(env, self.cat.entry(key)["internal_id"])

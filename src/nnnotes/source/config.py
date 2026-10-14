@@ -20,6 +20,7 @@ import os
 import re
 import shutil
 import tomllib
+from collections.abc import Mapping
 from pathlib import Path
 
 __all__ = ["Config", "ConfigError", "config_files", "user_file"]
@@ -41,7 +42,7 @@ def check_catalog_version(value: str) -> str:
     return value
 
 
-def user_file(environ: dict[str, str] | None = None) -> Path | None:
+def user_file(environ: Mapping[str, str] | None = None) -> Path | None:
     """The per-user config file: `%APPDATA%\\nnnotes\\nnnotes.toml` on Windows, else
     `$XDG_CONFIG_HOME/nnnotes/nnnotes.toml` (`~/.config` when XDG_CONFIG_HOME is unset); None when the environment
     names no such directory."""
@@ -54,7 +55,7 @@ def user_file(environ: dict[str, str] | None = None) -> Path | None:
 
 
 def config_files(
-    path: str | Path | None = None, environ: dict[str, str] | None = None
+    path: str | Path | None = None, environ: Mapping[str, str] | None = None
 ) -> list[tuple[str, Path | None]]:
     """The config file candidates in lookup order, (how it is named, path or None): `--config`, NNNOTES_CONFIG, the
     working directory's nnnotes.toml, the per-user file. The first two are used when they are given (and must
@@ -68,7 +69,7 @@ def config_files(
     ]
 
 
-def find_file(path: str | Path | None = None, environ: dict[str, str] | None = None) -> Path | None:
+def find_file(path: str | Path | None = None, environ: Mapping[str, str] | None = None) -> Path | None:
     """The config file that is read (config_files), or None when there is none."""
     for name, file in config_files(path, environ):
         if file is None:
@@ -86,7 +87,7 @@ def template() -> bytes:
     """The config template shipped with the package (`nnnotes config init` writes it)."""
     from importlib import resources
 
-    return resources.files(__package__).joinpath(TEMPLATE).read_bytes()
+    return resources.files("nnnotes.source").joinpath(TEMPLATE).read_bytes()
 
 
 def env_name(section: str, key: str) -> str:
@@ -112,7 +113,7 @@ class Config:
         data: dict | None = None,
         base: Path | None = None,
         source: str | None = None,
-        environ: dict[str, str] | None = None,
+        environ: Mapping[str, str] | None = None,
         overrides: dict | None = None,
         flags: dict | None = None,
     ):
@@ -133,7 +134,7 @@ class Config:
         cls,
         path: str | Path | None = None,
         *,
-        environ: dict[str, str] | None = None,
+        environ: Mapping[str, str] | None = None,
         overrides: dict | None = None,
         flags: dict | None = None,
     ) -> Config:

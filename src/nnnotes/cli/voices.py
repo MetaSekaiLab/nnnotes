@@ -11,7 +11,7 @@ from pathlib import Path
 from ..pipeline.voices import STATUSES
 from ..source.languages import LANGUAGES
 from ..source.session import Session
-from .common import AUDIO_CHOICES, command, flac_level_arg, flac_options, group, note, out_arg, print_json, write
+from .common import AUDIO_CHOICES, command, flac_level_arg, flac_options, group, note, out_arg, print_json, usage, write
 
 
 def _label(doc: dict, ids, language: str) -> str:
@@ -45,13 +45,14 @@ def _document(args, cfg, episodes=()) -> tuple[dict, Path | None]:
         p = Path(args.source_dir)
         f = p if p.is_file() else p / views.view_path(voices.VIEW, views.MAIN_SUBJECT)
         if not f.is_file():
-            args.usage(
+            usage(
+                args,
                 f"--from {p}: no {views.view_path(voices.VIEW, views.MAIN_SUBJECT)} "
-                "(export assets --views voices writes it)"
+                "(export assets --views voices writes it)",
             )
         doc = contract.loads(f.read_bytes())
         if doc.get("schema") != voices.SCHEMA:
-            args.usage(f"{f}: not a voices document")
+            usage(args, f"{f}: not a voices document")
         return doc, (f.parent.parent if not p.is_file() else None)
     return voices.index_document(Session(cfg), episodes), None
 
@@ -59,7 +60,7 @@ def _document(args, cfg, episodes=()) -> tuple[dict, Path | None]:
 def _language(args, cfg) -> str:
     lang = cfg.get("catalog", "language") or "ja"
     if lang not in LANGUAGES:
-        args.usage(f"--language {lang}: one of {', '.join(LANGUAGES)}")
+        usage(args, f"--language {lang}: one of {', '.join(LANGUAGES)}")
     return lang
 
 
@@ -70,12 +71,12 @@ def _filters(args, doc: dict) -> dict:
     if args.character:
         chars = voices.character_ids(doc, args.character)
         if not chars:
-            args.usage(f"--character {args.character}: no character of the master data has this id or name")
+            usage(args, f"--character {args.character}: no character of the master data has this id or name")
     eps = None
     if args.episode:
         eps = voices.episode_ids(doc, args.episode)
         if not eps:
-            args.usage(f"--episode {args.episode}: no episode of the master data has this id or asset")
+            usage(args, f"--episode {args.episode}: no episode of the master data has this id or asset")
     return {
         "characters": chars,
         "category": args.category,
@@ -155,7 +156,7 @@ def cmd_get(args, cfg) -> None:
     doc, base = _document(args, cfg, story)
     rows = voices.rows_for(doc, args.id)
     if not rows:
-        args.usage(f"{args.id}: no voice row or sound id of that number")
+        usage(args, f"{args.id}: no voice row or sound id of that number")
     r = next((x for x in rows if x["status"] == "ok"), rows[0])
     sheet, cue = r["sound"].get("sheet"), r["sound"].get("cue")
     dst = Path(args.out)

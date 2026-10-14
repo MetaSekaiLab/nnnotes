@@ -469,7 +469,7 @@ def item(
         raise ValueError(f"item {obj}: `in` is for contained items only")
     if status in ("contained", "failed") and artifacts:
         raise ValueError(f"item {obj}: {status} with artifacts")
-    d = {"object": obj, "status": status}
+    d: dict = {"object": obj, "status": status}
     if cls is not None:
         d["class"] = cls
     if artifacts:
