@@ -55,7 +55,7 @@ One stage applied to one subject, with everything needed to run it
  "params": {"png": {"encoder": "pillow", "level": 6}, "blobMin": 4096},
  "atoms": {"png.encode": "pillow-12.3.0/1", "texture.decode": "unitypy-1.25.3/1"},
  "inputs": [{"role": "bundle", "sha256": "…", "size": 123456, "name": "membercard_…_3fa…c2.bundle",
-             "locators": [{"kind": "store"}, {"kind": "cache", "path": "bundles/membercard_…_3fa…c2.bundle"}]}],
+             "locators": [{"kind": "depot"}, {"kind": "download", "path": "bundles/membercard_…_3fa…c2.bundle"}]}],
  "context": {"scripts": {"CAB-…:12345": "Assembly-CSharp|Fwk.Sound|SplitAcbData"}},
  "key": "…", "cost": {"cpuSeconds": 1.2, "peakBytes": 450000000}}
 ```
@@ -83,10 +83,10 @@ Locator kinds, tried in order to find an input's bytes (each checked against the
 
 | Kind | Where |
 |---|---|
-| `store` | the store's `cas/` |
-| `cache` | `path` relative to the cache directory |
+| `depot` | the depot's `cas/` |
+| `download` | `path` relative to the depot's `downloads/` |
 | `file` | an absolute `path` |
-| `catalog` | fetched through a catalog version of the store (`catalog`: its version id, `location`: the location id in its index) |
+| `catalog` | fetched through a catalog version of the depot (`catalog`: its version id, `location`: the location id in its index) |
 
 ## Artifact record: nnnotes.artifact/1
 
@@ -142,7 +142,7 @@ stage, an input that cannot be read, a worker process that dies) leaves no resul
 What one run covered ([run.schema.json](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/schemas/run.schema.json)): the context (region, language, the catalog
 version, and the master data its views read: the version named by `MasterManifest.json` and the sha256 of each
 table), the selection, the normalized parameters per stage, the stage versions, every task with its
-key (`null` when it could not be described) and status (`hit`: the result was in the store, `ran`, `failed`), the
+key (`null` when it could not be described) and status (`hit`: the result was in the depot, `ran`, `failed`), the
 sha256 of each layout manifest written, and a summary (task and item counts). The run id is the key hash of the
 context, selection, params, stages, the tasks' ids and keys, and the layouts, so a run with the same inputs has
 the same id whether its tasks ran or hit. The run log (`runs/<id>.log.jsonl`) holds what is not deterministic:
@@ -181,11 +181,11 @@ task id in the previous run manifest:
 | `params-changed` | run | a parameter changed (`path`, `old`, `new`) |
 | `context-changed` | run | a consumed context entry changed (`entry`) |
 | `previous-failed` | run | the task failed in the previous run |
-| `result-missing` | run | same key as before, but its result is not in the store |
+| `result-missing` | run | same key as before, but its result is not in the depot |
 | `key-changed` | run | the key changed for none of the reasons above |
 | `forced` | run | asked to run again |
 | `unchanged` | hit | same key as in the previous run |
-| `cached` | hit | the result is in the store from another run |
+| `cached` | hit | the result is in the depot from another run |
 | `pending` | unknown | the task reads the result of `task`, which would run first (`fetch:<file>`: an input file whose content is not known yet) |
 
 ## Layout manifest: nnnotes.layout/1
@@ -221,8 +221,8 @@ Documents written by particular stages (artifacts of no object: their ids are `<
 | `nnnotes.artifacts/1` | `link.artifacts` | [artifacts.schema.json](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/schemas/artifacts.schema.json) |
 | `nnnotes.view/1` | `view.<name>` | [view.schema.json](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/schemas/view.schema.json) |
 
-The catalog versions of a store, `nnnotes.catalogs/1` ([catalogs.schema.json](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/schemas/catalogs.schema.json),
-`<store>/catalogs/index.json`), and the difference between two of them, `nnnotes.catalog-diff/1`
+The catalog versions of a depot, `nnnotes.catalogs/1` ([catalogs.schema.json](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/schemas/catalogs.schema.json),
+`<depot>/catalogs/index.json`), and the difference between two of them, `nnnotes.catalog-diff/1`
 ([catalog-diff.schema.json](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/schemas/catalog-diff.schema.json), `nnnotes catalog diff --json`), are written
 by the commands.
 
@@ -230,23 +230,24 @@ The music data file of `nnnotes music-data`, `nnnotes.music-data/2`
 ([music-data.schema.json](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/schemas/music-data.schema.json)), names its format in a `format` field; it is
 described in [music-data.md](music-data.md).
 
-## Store
+## Depot
 
-The store is a directory, and the cache of all stage work:
+The depot is a directory: the downloaded game files, and the results of all stage work by content:
 
 ```
-<store>/cas/sha256/ab/<sha256>       bytes by content id, written once (no extension: records carry it)
-<store>/ac/ab/<key>.json             results by task key (written after the bytes they name)
-<store>/inputs/<kind>.jsonl          input identities: name -> sha256, size, with the path, size and mtime of the
+<depot>/downloads/                   the game files as downloaded, under their own names ([commands.md](commands.md#downloads))
+<depot>/cas/sha256/ab/<sha256>       bytes by content id, written once (no extension: records carry it)
+<depot>/ac/ab/<key>.json             results by task key (written after the bytes they name)
+<depot>/inputs/<kind>.jsonl          input identities: name -> sha256, size, with the path, size and mtime of the
                                      file that was hashed (bundles.jsonl, raw.jsonl, files.jsonl)
-<store>/catalogs/                    versioned catalogs
-<store>/runs/<run>.json              run manifests
-<store>/runs/<run>.log.jsonl         the log of the run's last execution
-<store>/runs/selections/<digest>     the id of the latest run of a selection (key hash of the selection list)
-<store>/costs/<key>.json             the measured cost of a task's last run
+<depot>/catalogs/                    versioned catalogs
+<depot>/runs/<run>.json              run manifests
+<depot>/runs/<run>.log.jsonl         the log of the run's last execution
+<depot>/runs/selections/<digest>     the id of the latest run of a selection (key hash of the selection list)
+<depot>/costs/<key>.json             the measured cost of a task's last run
 ```
 
 Every file is written to a temporary name and renamed into place, so concurrent writers never see or leave a
 partial file and an interrupted task leaves no result. `cas/` and `ac/` depend only on the tasks run: two runs of the
-same tasks, with any number of workers, leave identical trees. `inputs/`, `runs/*.log.jsonl` and `costs/` are
-local and not deterministic.
+same tasks, with any number of workers, leave identical trees. `downloads/`, `inputs/`, `runs/*.log.jsonl` and
+`costs/` are local and not deterministic.

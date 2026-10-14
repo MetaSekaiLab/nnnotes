@@ -41,7 +41,7 @@ def cmd_music_data(args, cfg):
             None if args.no_bgm else musicdata.catalog_bgm(cat),
             region=region,
             client=deckdata.apk_client(apk) if apk is not None else {},
-            catalog=deckdata.catalog_info(cat, session.store_root()),
+            catalog=deckdata.catalog_info(cat, session.depot_root()),
             deck=deck,
             full=args.full,
             jacket=musicdata.catalog_jacket(cat) if args.jackets else None,

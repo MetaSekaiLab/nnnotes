@@ -2,7 +2,7 @@
 
 Stages run in the order given; a stage's tasks are described once the stages before it are done (Env: the facts of
 the caller plus the keys of the tasks already done), so every input is known when a task is described. Per stage:
-a task whose result is in the store is a hit; the others run in parallel, then the next stage starts.
+a task whose result is in the depot is a hit; the others run in parallel, then the next stage starts.
 
 The pool: up to `workers` spawned processes (no more than a stage has tasks to run), long-lived (each imports
 what its stages need once), one task at a time each. Tasks start in order of decreasing estimated CPU (longest
@@ -39,7 +39,7 @@ from .contract import Task
 from .stages import Env, Pending, Stage, describe, execute
 
 if TYPE_CHECKING:
-    from .store import Store
+    from .depot import Depot
 
 WORKER_BYTES = 70 << 20  # resident memory of an idle worker process (interpreter and imports), per worker
 # failure codes of tasks (failed items carry the codes of their stages)
@@ -101,13 +101,13 @@ def failure(task: str, stage: str, code: str, message: str, inp: str | None = No
 
 def _error_code(e: BaseException) -> str:
     from .contract import IncompatibleTask
-    from .store import InputMissing, StoreConflict
+    from .depot import DepotConflict, InputMissing
 
     if isinstance(e, IncompatibleTask):
         return "task.incompatible"
     if isinstance(e, InputMissing):
         return "task.input"
-    if isinstance(e, StoreConflict):
+    if isinstance(e, DepotConflict):
         return "task.conflict"
     if isinstance(e, MemoryError):
         return "task.memory"
@@ -116,14 +116,14 @@ def _error_code(e: BaseException) -> str:
     return "task.error"
 
 
-def run_one(task: Task, store, stages: dict, force: bool) -> dict:
+def run_one(task: Task, depot, stages: dict, force: bool) -> dict:
     """Execute one task and measure it: the reply a worker sends (status, result status, cost, or error). The
     cost's peak memory is the process's, with the resident memory at the task's start (what the process held from
     its imports and earlier tasks) beside it."""
     start = rss()
     reset_peak()
     try:
-        ex = execute(task, store, stages, force=force)
+        ex = execute(task, depot, stages, force=force)
     except ConfigError as e:
         return {"ok": False, "code": "config", "message": str(e), "trace": "", "rss": rss()}
     except Exception as e:
@@ -137,14 +137,14 @@ def run_one(task: Task, store, stages: dict, force: bool) -> dict:
     reply = {"ok": True, "status": ex.status, "resultStatus": ex.result_status, "rss": rss()}
     if ex.cost is not None:
         cost = dict(ex.cost, peakRssBytes=peak_rss(), startRssBytes=start)
-        store.write_cost(task.key, cost)
+        depot.write_cost(task.key, cost)
         reply["cost"] = cost
     return reply
 
 
-def _worker_main(conn, store, stages: dict, initializer, initargs) -> None:
+def _worker_main(conn, depot, stages: dict, initializer, initargs) -> None:
     if initializer is not None:
-        initializer(store, *initargs)
+        initializer(depot, *initargs)
     while True:
         try:
             msg = conn.recv()
@@ -158,16 +158,16 @@ def _worker_main(conn, store, stages: dict, initializer, initargs) -> None:
         except Exception as e:
             conn.send({"ok": False, "code": "task.incompatible", "message": str(e), "trace": "", "rss": rss()})
             continue
-        conn.send(run_one(task, store, stages, force))
+        conn.send(run_one(task, depot, stages, force))
 
 
 class _Worker:
-    def __init__(self, ctx, n: int, store, stages, initializer, initargs):
+    def __init__(self, ctx, n: int, depot, stages, initializer, initargs):
         self.n = n
         self.conn, child = ctx.Pipe()
         self.proc = ctx.Process(
             target=_worker_main,
-            args=(child, store, stages, initializer, initargs),
+            args=(child, depot, stages, initializer, initargs),
             name=f"nnnotes-worker-{n}",
             daemon=True,
         )
@@ -251,7 +251,7 @@ class Run:
     The reports (summary, failures, coverage) come from one reading of every result (scan), kept while the tasks
     stay the same."""
 
-    store: Store
+    depot: Depot
     context: dict
     selection: list
     params: dict
@@ -267,7 +267,7 @@ class Run:
         for tid in sorted(self.tasks):
             t = self.tasks[tid]
             if t["status"] != "failed":
-                yield tid, self.store.committed(t["key"], tid)
+                yield tid, self.depot.committed(t["key"], tid)
 
     def scan(self, visit=None, census=None) -> None:
         """Read every result once, by task id, for the reports; `visit(task id, result)` sees each as well (what
@@ -328,7 +328,7 @@ class Run:
         """Write the run manifest (layouts: {name: sha256 of its layout manifest}; placement: how their files were
         made) and this execution's log."""
         doc = self.manifest(layouts, placement)
-        self.store.write_run(doc, self.log)
+        self.depot.write_run(doc, self.log)
         return doc
 
     def coverage(self, census: dict | None = None) -> dict:
@@ -447,12 +447,12 @@ def coverage(results, census: dict | None = None) -> dict:
 
 
 class Orchestrator:
-    """Runs pipelines of stages into a store (see the module documentation). `initializer(store, *initargs)` runs
-    first in every worker (settings, caches, the store's fetcher); it must be importable (spawned processes)."""
+    """Runs pipelines of stages into a depot (see the module documentation). `initializer(depot, *initargs)` runs
+    first in every worker (settings, caches, the depot's fetcher); it must be importable (spawned processes)."""
 
     def __init__(
         self,
-        store,
+        depot,
         stages: dict[str, Stage],
         *,
         workers: int = 0,
@@ -464,7 +464,7 @@ class Orchestrator:
         initargs: tuple = (),
         log=_log,
     ):
-        self.store, self.stages = store, stages
+        self.depot, self.stages = depot, stages
         self.workers, self.memory, self.worker_bytes = max(0, int(workers)), memory, int(worker_bytes)
         self.recycle_tasks, self.recycle_rss = recycle_tasks, recycle_rss
         self.initializer, self.initargs = initializer, tuple(initargs)
@@ -504,7 +504,7 @@ class Orchestrator:
     ) -> Run:
         """Run the stages named in `pipeline`, in order. `params`: {stage: parameters}; `facts`: the planning
         facts; `context` / `selection`: recorded in the run manifest; `force`: task ids or stage names ("*": all)
-        run again even when their result is in the store (the new result must be identical)."""
+        run again even when their result is in the depot (the new result must be identical)."""
         params = params or {}
         unknown = [n for n in pipeline if n not in self.stages]
         if unknown:
@@ -514,8 +514,8 @@ class Orchestrator:
             if late:
                 raise ValueError(f"stage {n} runs before {', '.join(late)}, which it reads")
         norm = {n: self.stages[n].normalize(params.get(n)) for n in pipeline}
-        run = Run(self.store, dict(context or {}), list(selection), norm, {n: self.stages[n].version for n in pipeline})
-        env = Env(self.store, facts)
+        run = Run(self.depot, dict(context or {}), list(selection), norm, {n: self.stages[n].version for n in pipeline})
+        env = Env(self.depot, facts)
         force = set(force)
         for line in self.explain():
             run.log.append({"event": "knob", "value": line})
@@ -564,7 +564,7 @@ class Orchestrator:
         forced = "*" in force or stage.name in force
         todo = []
         for t in sorted(tasks, key=lambda t: t.id):
-            if not (forced or t.id in force) and self.store.has_result(t.key):
+            if not (forced or t.id in force) and self.depot.has_result(t.key):
                 run.tasks[t.id] = {"id": t.id, "key": t.key, "status": "hit"}
                 env.done(t.id, t.key)
             else:
@@ -605,7 +605,7 @@ class Orchestrator:
                 if t is None:
                     break
                 self._record(run, t, sched, None)
-                replies[t.id] = run_one(t, self.store, self.stages, force(t))
+                replies[t.id] = run_one(t, self.depot, self.stages, force(t))
                 self._done(run, t, replies[t.id], None)
                 sched.finished(t.id)
                 if replies[t.id].get("code") == "config":
@@ -617,7 +617,7 @@ class Orchestrator:
 
     def _spawn(self) -> _Worker:
         self._started += 1
-        return _Worker(mp.get_context("spawn"), self._started, self.store, self.stages, self.initializer, self.initargs)
+        return _Worker(mp.get_context("spawn"), self._started, self.depot, self.stages, self.initializer, self.initargs)
 
     def _pool_run(self, sched: Scheduler, force, replies: dict, run: Run) -> None:
         while len(self._pool) < min(self.workers, len(sched.queue)):  # no more processes than tasks

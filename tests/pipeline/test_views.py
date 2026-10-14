@@ -12,10 +12,10 @@ import pytest
 
 from nnnotes.pipeline import contract, views
 from nnnotes.pipeline.contract import Input
+from nnnotes.pipeline.depot import Depot
 from nnnotes.pipeline.orchestrate import Orchestrator
 from nnnotes.pipeline.plan import plan
 from nnnotes.pipeline.stages import Env, Output, Pending, Stage, describe, execute, registry
-from nnnotes.pipeline.store import Store
 from nnnotes.pipeline.views import AddressIndex, Obj, Recorder, ViewError, ViewStage
 from nnnotes.source import languages
 
@@ -757,12 +757,12 @@ class FakeAddresses(Stage):
         return sorted(env.fact("catalogs"))
 
     def inputs(self, subject, env):
-        return [Input("doc", env.store.put(self.data), len(self.data), None, ({"kind": "store"},))]
+        return [Input("doc", env.depot.put(self.data), len(self.data), None, ({"kind": "depot"},))]
 
-    def run(self, task, store):
+    def run(self, task, depot):
         rec = contract.artifact(
             contract.artifact_id(task.id, "addresses"),
-            store.add(store.input_bytes(task.input("doc")), "json"),
+            depot.add(depot.input_bytes(task.input("doc")), "json"),
             contract.provenance(task),
             {"kind": "link.addresses", "format": "json"},
         )
@@ -787,12 +787,12 @@ def write_master(d: Path, tables: dict) -> Path:
     return d
 
 
-def env_with(store, doc: dict, master, **facts) -> Env:
+def env_with(depot, doc: dict, master, **facts) -> Env:
     """An environment where link.addresses:main has run with the address table `doc`."""
     link = FakeAddresses(doc)
-    env = Env(store, {"catalogs": {"main": []}, "master": master, **facts})
+    env = Env(depot, {"catalogs": {"main": []}, "master": master, **facts})
     t = describe(link, "main", None, env)
-    execute(t, store, {link.name: link})
+    execute(t, depot, {link.name: link})
     env.done(t.id, t.key)
     return env
 
@@ -810,29 +810,29 @@ def test_one_stage_per_view():
 
 
 def test_view_stage_subjects_and_dependencies(tmp_path):
-    store, mdir = Store(tmp_path / "s"), write_master(tmp_path / "m", STAGE_TABLES)
+    depot, mdir = Depot(tmp_path / "s"), write_master(tmp_path / "m", STAGE_TABLES)
     stage = ViewStage("cards", views.load_rules())
-    assert stage.subjects(Env(store, {"catalogs": {"main": []}, "master": None})) == []
-    assert stage.subjects(Env(store, {"catalogs": {"main": []}, "master": mdir, "views": ["stamps"]})) == []
-    assert stage.subjects(Env(store, {"catalogs": {"main": [], "b": []}, "master": mdir, "views": ["cards"]})) == [
+    assert stage.subjects(Env(depot, {"catalogs": {"main": []}, "master": None})) == []
+    assert stage.subjects(Env(depot, {"catalogs": {"main": []}, "master": mdir, "views": ["stamps"]})) == []
+    assert stage.subjects(Env(depot, {"catalogs": {"main": [], "b": []}, "master": mdir, "views": ["cards"]})) == [
         "b",
         "main",
     ]
-    env = Env(store, {"catalogs": {"main": []}, "master": mdir})
+    env = Env(depot, {"catalogs": {"main": []}, "master": mdir})
     assert stage.subjects(env) == ["main"] and stage.depends("main", env) == ["link.addresses:main"]
     with pytest.raises(Pending) as e:
         describe(stage, "main", None, env)
     assert e.value.task == "link.addresses:main"
     (mdir / "MasterBand.json").unlink()
     with pytest.raises(ViewError, match="MasterBand is not in the master data"):
-        describe(stage, "main", None, env_with(store, addresses_doc(stage_entries()), mdir))
+        describe(stage, "main", None, env_with(depot, addresses_doc(stage_entries()), mdir))
 
 
 def test_view_stage_runs_on_its_inputs_alone(tmp_path):
     rules = views.load_rules()
     stage = ViewStage("cards", rules)
     mdir, doc = write_master(tmp_path / "m", STAGE_TABLES), addresses_doc(stage_entries())
-    a = Store(tmp_path / "a")
+    a = Depot(tmp_path / "a")
     task = describe(stage, "main", None, env_with(a, doc, mdir))
     assert (task.id, task.version, task.atoms, task.context) == ("view.cards:main", 1, {}, {})
     assert [i.role for i in task.inputs] == [
@@ -851,26 +851,26 @@ def test_view_stage_runs_on_its_inputs_alone(tmp_path):
     assert view == views.build(rules, "cards", views.MasterTables(mdir), AddressIndex.from_addresses(doc))
     assert res["artifacts"][0]["semantics"]["facts"]["rows"] == 3
     assert res["artifacts"][0]["semantics"]["facts"]["gaps"] == 0
-    # the task description runs in another store holding only its stored inputs: the same result
-    b = Store(tmp_path / "b")
+    # the task description runs in another depot holding only its stored inputs: the same result
+    b = Depot(tmp_path / "b")
     for i in task.inputs:
-        if i.locators[0]["kind"] == "store":
+        if i.locators[0]["kind"] == "depot":
             b.put(a.read(i.sha256))
     again = contract.Task.from_json(json.loads(json.dumps(task.to_json())))
     execute(again, b, {stage.name: ViewStage("cards", rules)})
     assert contract.encode(b.result(task.key)) == contract.encode(res)
     # described again elsewhere: the same key; run again: the same output
-    assert describe(stage, "main", None, env_with(Store(tmp_path / "c"), doc, mdir)).key == task.key
+    assert describe(stage, "main", None, env_with(Depot(tmp_path / "c"), doc, mdir)).key == task.key
     assert execute(task, a, {stage.name: stage}, force=True).status == "ran"
 
 
 def test_view_keys_follow_only_their_own_inputs(tmp_path):
-    store, mdir = Store(tmp_path / "s"), write_master(tmp_path / "m", STAGE_TABLES)
+    depot, mdir = Depot(tmp_path / "s"), write_master(tmp_path / "m", STAGE_TABLES)
     rules = views.load_rules()
     entries = stage_entries()
 
     def keys(entries=entries, rules=rules):
-        env = env_with(store, addresses_doc(entries), mdir)
+        env = env_with(depot, addresses_doc(entries), mdir)
         return [describe(ViewStage(n, rules), "main", None, env).key for n in ("cards", "stamps")]
 
     cards, stamps = keys()
@@ -905,20 +905,20 @@ def test_view_keys_follow_only_their_own_inputs(tmp_path):
 
 
 def test_png_encoding_never_reaches_view_keys(tmp_path):
-    store, mdir = Store(tmp_path / "s"), write_master(tmp_path / "m", STAGE_TABLES)
+    depot, mdir = Depot(tmp_path / "s"), write_master(tmp_path / "m", STAGE_TABLES)
     stage = ViewStage("cards", views.load_rules())
     assert "png" not in stage.PARAMS
     with pytest.raises(ValueError, match="unknown parameters png"):
         stage.normalize({"png": {"level": 9}})
-    env = env_with(store, addresses_doc(stage_entries()), mdir)
+    env = env_with(depot, addresses_doc(stage_entries()), mdir)
     key = describe(stage, "main", None, env).key
     oid = card_entries()["MemberCard/10/member_full"][1].id
     for level in (6, 9):  # exports of the objects with other PNG bytes
         t = contract.Task("unity.export", 1, "b", {"png": {"encoder": "pillow", "level": level}})
         rec = contract.artifact(
-            f"{oid}#image", store.add(b"png %d" % level, "png"), contract.provenance(t), {"kind": "texture.image"}
+            f"{oid}#image", depot.add(b"png %d" % level, "png"), contract.provenance(t), {"kind": "texture.image"}
         )
-        store.commit(contract.result(t, [rec], [contract.item(oid, "exported", artifacts=[rec["id"]])]))
+        depot.commit(contract.result(t, [rec], [contract.item(oid, "exported", artifacts=[rec["id"]])]))
         env.done(t.id, t.key)
         assert describe(stage, "main", None, env).key == key
 
@@ -937,11 +937,11 @@ class Paths:
 
 
 def test_derived_view_document_has_layout_paths(tmp_path):
-    store, mdir = Store(tmp_path / "s"), write_master(tmp_path / "m", STAGE_TABLES)
+    depot, mdir = Depot(tmp_path / "s"), write_master(tmp_path / "m", STAGE_TABLES)
     stage = ViewStage("cards", views.load_rules())
-    task = describe(stage, "main", None, env_with(store, addresses_doc(stage_entries()), mdir))
-    execute(task, store, {stage.name: stage})
-    res = store.result(task.key)
+    task = describe(stage, "main", None, env_with(depot, addresses_doc(stage_entries()), mdir))
+    execute(task, depot, {stage.name: stage})
+    res = depot.result(task.key)
     full = next(
         x.id for x in card_entries()["MemberCard/10/member_full"] if x.name == "member_full" and x.cls == "Sprite"
     )
@@ -949,7 +949,7 @@ def test_derived_view_document_has_layout_paths(tmp_path):
         f"{full}#meta": "MemberCard/10/member_full[member_full].png.meta.json",
         f"{full}#image": "MemberCard/10/member_full[member_full].png",
     }
-    out = stage.derived(task.id, res, store, Paths(placed))
+    out = stage.derived(task.id, res, depot, Paths(placed))
     assert [p for p, _ in out] == ["views/cards.json"]
     doc = contract.loads(out[0][1])
     assert out[0][1] == contract.encode(doc) and doc["layout"] == "original"
@@ -960,7 +960,7 @@ def test_derived_view_document_has_layout_paths(tmp_path):
     assert "path" not in r10["roles"]["skill_sprite"]  # missing-key: no object
     assert "path" not in r10["roles"]["movie"][0]
     # everything else is the view document
-    view = contract.loads(store.read(res["artifacts"][0]["content"]["sha256"]))
+    view = contract.loads(depot.read(res["artifacts"][0]["content"]["sha256"]))
     for row in doc["rows"]:
         for e in (x for v in row["roles"].values() for x in (v if isinstance(v, list) else [v])):
             e.pop("path", None), e.pop("files", None)
@@ -970,20 +970,20 @@ def test_derived_view_document_has_layout_paths(tmp_path):
 
 
 def test_views_plan_and_run_after_the_address_table(tmp_path):
-    store, mdir = Store(tmp_path / "s"), write_master(tmp_path / "m", STAGE_TABLES)
+    depot, mdir = Depot(tmp_path / "s"), write_master(tmp_path / "m", STAGE_TABLES)
     vs = views.stages()
     reg = registry(FakeAddresses(addresses_doc(stage_entries())), *vs)
     pipeline = ["link.addresses"] + [s.name for s in vs]
     facts = {"catalogs": {"main": []}, "master": mdir, "views": ["cards", "stamps"]}
-    nodes = {n["id"]: n for n in plan(reg, pipeline, store, facts=facts).doc["nodes"]}
+    nodes = {n["id"]: n for n in plan(reg, pipeline, depot, facts=facts).doc["nodes"]}
     assert sorted(nodes) == ["link.addresses:main", "view.cards:main", "view.stamps:main"]
     assert nodes["view.cards:main"]["status"] == "unknown"
     assert nodes["view.cards:main"]["reasons"] == [{"code": "pending", "task": "link.addresses:main"}]
-    first = Orchestrator(store, reg, log=lambda m: None).run(pipeline, facts=facts)
+    first = Orchestrator(depot, reg, log=lambda m: None).run(pipeline, facts=facts)
     assert {t: v["status"] for t, v in first.tasks.items()} == dict.fromkeys(nodes, "ran")
-    second = Orchestrator(store, reg, log=lambda m: None).run(pipeline, facts=facts)
+    second = Orchestrator(depot, reg, log=lambda m: None).run(pipeline, facts=facts)
     assert {t: v["status"] for t, v in second.tasks.items()} == dict.fromkeys(nodes, "hit")
-    assert plan(reg, pipeline, store, facts=facts).check() == 0
+    assert plan(reg, pipeline, depot, facts=facts).check() == 0
 
 
 def test_views_import_neither_unitypy_nor_numpy():

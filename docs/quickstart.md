@@ -21,7 +21,7 @@ nnnotes config init --user
 ```
 
 In a terminal this asks for each setting in turn, among them the bundle and master data keys, the names of your
-regions with each region's CDN base and API root, the catalog language, and the paths of the cache, the APK and the
+regions with each region's CDN base and API root, the catalog language, and the paths of the depot, the APK and the
 tools. Enter leaves a setting empty; the keys are read without echo. The file is written to the per-user location,
 which every command reads from any directory (`nnnotes config path` shows it).
 
@@ -41,7 +41,7 @@ set it.
 nnnotes catalog keys --prefix Adv/ --limit 5
 ```
 
-The first command downloads the region's catalog into the cache; the keys it lists are the addressable keys of the
+The first command downloads the region's catalog into the depot; the keys it lists are the addressable keys of the
 game's assets. `nnnotes catalog browse` serves a local web page to browse the catalogs and bundles of every
 configured region.
 
@@ -74,5 +74,5 @@ where the next story reuses them. Add `--json` to any command to get its report 
 
 - [Export stories and lives](export.md): the other single-subject exports and their options.
 - [Build an ournotes-player site](site.md): charts, models and stories as one static site.
-- [Export every asset](assets.md): every object of the selected bundles through the content-addressed store.
+- [Export every asset](assets.md): every object of the selected bundles through the content-addressed depot.
 - [Command reference](cli.md): every command and option.

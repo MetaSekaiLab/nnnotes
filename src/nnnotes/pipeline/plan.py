@@ -1,6 +1,6 @@
 """Plan: what a run of a pipeline would do, and why, without running anything.
 
-Every subject of every stage is a node. A node is a `hit` (its result is in the store), `run` (it would run), or
+Every subject of every stage is a node. A node is a `hit` (its result is in the depot), `run` (it would run), or
 `unknown` (it reads the result of a task that would run first, or of one that has not run: its inputs are not known
 yet). Why a node runs is the difference between its key parts and those of the same task id in a previous run
 manifest (the latest of the same selection, or one named with --since):
@@ -12,9 +12,9 @@ manifest (the latest of the same selection, or one named with --since):
     params-changed{path,old,new}  an output-affecting parameter (path: /name/sub...)
     context-changed{entry}     a consumed context entry
     previous-failed            the task failed in the previous run
-    result-missing             same key as before, but the result is not in the store
+    result-missing             same key as before, but the result is not in the depot
     forced                     asked to run again
-Hit reasons: `unchanged` (same key as before), `cached` (the key's result is in the store from another run, e.g.
+Hit reasons: `unchanged` (same key as before), `cached` (the key's result is in the depot from another run, e.g.
 content that changed back). Unknown: `pending{task}`.
 
 The plan document (nnnotes.plan/1) lists the nodes in pipeline order with key, status, reasons and cost estimate,
@@ -27,9 +27,9 @@ from __future__ import annotations
 from pathlib import Path
 
 from . import contract
+from .depot import write_file
 from .orchestrate import WORKER_BYTES
 from .stages import Env, Pending, Stage, describe
-from .store import write_file
 
 
 def _leaves(old, new, path: str = ""):
@@ -138,7 +138,7 @@ def _short(v) -> str:
 def plan(
     stages: dict[str, Stage],
     pipeline: list[str],
-    store,
+    depot,
     *,
     params: dict | None = None,
     facts: dict | None = None,
@@ -154,7 +154,7 @@ def plan(
     `memory`, `worker_bytes`: as the orchestrator's, for the peak-memory estimate; `layouts`: {name: {write,
     remove, keep}} (layout.diff)."""
     params = params or {}
-    env = Env(store, facts)
+    env = Env(depot, facts)
     force = set(force)
     prev = {t["id"]: t for t in (previous or {}).get("tasks", [])}
     nodes, edges, runnable = [], set(), []
@@ -198,13 +198,13 @@ def plan(
                 )
                 continue
             old = prev.get(tid)
-            if not (forced or tid in force) and store.has_result(t.key):
+            if not (forced or tid in force) and depot.has_result(t.key):
                 env.done(tid, t.key)
                 reasons = [{"code": "unchanged" if old is not None and old.get("key") == t.key else "cached"}]
                 status = "hit"
             else:
                 env.waiting(tid)
-                reasons = _run_reasons(t, old, store, forced or tid in force)
+                reasons = _run_reasons(t, old, depot, forced or tid in force)
                 status = "run"
                 runnable.append(t)
             nodes.append(
@@ -220,7 +220,7 @@ def plan(
     return Plan(_doc(nodes, edges, runnable, workers, memory, worker_bytes, layouts or {}), runnable)
 
 
-def _run_reasons(t, old: dict | None, store, forced: bool) -> list[dict]:
+def _run_reasons(t, old: dict | None, depot, forced: bool) -> list[dict]:
     if forced:
         return [{"code": "forced"}]
     if old is None:
@@ -230,7 +230,7 @@ def _run_reasons(t, old: dict | None, store, forced: bool) -> list[dict]:
         out.append({"code": "previous-failed"})
     if old.get("key") == t.key:
         return out or [{"code": "result-missing"}]
-    prior = store.result(old["key"]) if old.get("key") else None
+    prior = depot.result(old["key"]) if old.get("key") else None
     if prior is not None:
         reasons = why(prior["keyParts"], t.key_parts()) or [{"code": "key-changed"}]
         for r in reasons:

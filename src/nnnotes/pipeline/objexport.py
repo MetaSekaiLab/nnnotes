@@ -309,10 +309,10 @@ class RefExporter(_ExporterBase):
     code runs here in reference mode: `ref` gives $ref values, `deref` resolves inside the bundle only (a MonoScript
     of another bundle from the script table), and MonoBehaviour classes come from the task's script table."""
 
-    def __init__(self, view, task, store, fns: dict):
+    def __init__(self, view, task, depot, fns: dict):
         # no catalog: the objects come from the task's bundle view
         super().__init__(None, Path("."), class_of=self._script_name)  # pyright: ignore[reportArgumentType]
-        self.view, self.task, self.store, self.fns = view, task, store, fns
+        self.view, self.task, self.depot, self.fns = view, task, depot, fns
         self.blob_min = int(task.params["blobMin"])
         self.png_level = int(task.params["png"]["level"])
         self.scripts = dict(task.context.get("scripts", {}))
@@ -631,11 +631,11 @@ class RefExporter(_ExporterBase):
         refs=(),
         owner: str | None = None,
     ) -> tuple[str, dict]:
-        """Store `data` and stage the artifact "<owner>#<role>" (owner: the object `key`, else a task-level name)."""
+        """Depot `data` and stage the artifact "<owner>#<role>" (owner: the object `key`, else a task-level name)."""
         aid = contract.artifact_id(owner or contract.object_id(*key), role)
         if aid in self.emitted or any(a["id"] == aid for a in self.staged):
             raise ValueError(f"artifact {aid} made twice")
-        content = self.store.add(data, ext)
+        content = self.depot.add(data, ext)
         prov = contract.provenance(self.task, atoms=self._atoms(self.conv), obj=None if owner else self._facts(key))
         sem = {"kind": kind, "format": fmt, "facts": facts}
         if issues:
@@ -1428,15 +1428,15 @@ def _check_atoms(task, reader: Impl | None = None) -> None:
 
 
 class _Docs:
-    """A few JSON documents of the store by content id (the planning reads each census several times)."""
+    """A few JSON documents of the depot by content id (the planning reads each census several times)."""
 
     def __init__(self, size: int = 64):
         self.size, self.docs = size, {}
 
-    def get(self, store, sha: str) -> dict:
+    def get(self, depot, sha: str) -> dict:
         doc = self.docs.get(sha)
         if doc is None:
-            doc = contract.loads(store.read(sha))
+            doc = contract.loads(depot.read(sha))
             if len(self.docs) >= self.size:
                 self.docs.pop(next(iter(self.docs)))
             self.docs[sha] = doc
@@ -1513,7 +1513,7 @@ class ExportStage(Stage):
 
     def census(self, subject: str, env) -> dict:
         inp = env.input_of(contract.task_id(CENSUS, subject), "census")
-        return self._docs.get(env.store, inp.sha256)
+        return self._docs.get(env.depot, inp.sha256)
 
     def uses(self, subject: str, env) -> dict:
         """The atoms and converters of the classes the bundle's census lists; with the task's `classes` (env.params
@@ -1533,7 +1533,7 @@ class ExportStage(Stage):
         refs = census_mod.script_refs(self.census(subject, env))
         if not refs:
             return {}
-        table = self._docs.get(env.store, env.input_of(SCRIPTS_TASK, "scripts").sha256)["scripts"]
+        table = self._docs.get(env.depot, env.input_of(SCRIPTS_TASK, "scripts").sha256)["scripts"]
         return {"scripts": link.script_context(table, refs)}
 
     def depends(self, subject: str, env) -> list[str]:
@@ -1551,12 +1551,12 @@ class ExportStage(Stage):
             n = res = 0
         return Cost(0.12 + size * 3.3e-7 + n * 8.8e-5 + res * 6.6e-8, (80 << 20) + 80 * size + 17500 * n)
 
-    def run(self, task, store) -> Output:
+    def run(self, task, depot) -> Output:
         reader = self.reader if self.reader is not None else resolve("reader")
         _check_atoms(task, reader)
-        view = reader.fn(store.input_bytes(task.input("bundle")))
+        view = reader.fn(depot.input_bytes(task.input("bundle")))
         fns = {n: resolve(n).fn for n in task.atoms if n in ATOM_NAMES and n != "reader"}
-        arts, items = exporter_type()(view, task, store, fns).run_bundle()
+        arts, items = exporter_type()(view, task, depot, fns).run_bundle()
         return Output(arts, items)
 
 
@@ -1570,7 +1570,7 @@ def _census_classes(env, subject: str) -> dict:
 
 def _store_input(role: str, record: dict) -> Input:
     c = record["content"]
-    return Input(role, c["sha256"], c["size"], None, ({"kind": "store"},))
+    return Input(role, c["sha256"], c["size"], None, ({"kind": "depot"},))
 
 
 def _pptr_oid(v) -> str | None:
@@ -1674,11 +1674,11 @@ class SpriteCropStage(Stage):
         idx, atlas, reqs = self._subject(subject, env)
         rec = idx["atlases"][atlas][1]
         ins = [_store_input("atlas", rec)]
-        entries = _entries(self._docs.get(env.store, rec["content"]["sha256"]))
+        entries = _entries(self._docs.get(env.depot, rec["content"]["sha256"]))
         needed = set()
         for owner, _tid, meta in reqs:
             ins.append(_store_input("sprite:" + owner, meta))
-            doc = self._docs.get(env.store, meta["content"]["sha256"])
+            doc = self._docs.get(env.depot, meta["content"]["sha256"])
             entry = _entry(entries, doc["sprite"].get("m_RenderDataKey"))
             if entry is not None:
                 needed.update(t for t in (_pptr_oid(entry.get("texture")), _pptr_oid(entry.get("alphaTexture"))) if t)
@@ -1697,7 +1697,7 @@ class SpriteCropStage(Stage):
         n = sum(1 for i in inputs if i.role.startswith("sprite:"))
         return Cost(0.05 + n * 0.01 + tex * 5e-8, (72 << 20) + 40 * tex)
 
-    def run(self, task, store) -> Output:
+    def run(self, task, depot) -> Output:
         from PIL import Image
 
         from .atoms import sprite as sprite_atom
@@ -1705,7 +1705,7 @@ class SpriteCropStage(Stage):
         _check_atoms(task)
         crop, encode = resolve("sprite.crop").fn, resolve("png.encode").fn
         level = int(task.params["png"]["level"])
-        entries = _entries(contract.loads(store.input_bytes(task.input("atlas"))))
+        entries = _entries(contract.loads(depot.input_bytes(task.input("atlas"))))
         images = {}
 
         def image(oid: str):
@@ -1714,7 +1714,7 @@ class SpriteCropStage(Stage):
                     inp = task.input("texture:" + oid)
                 except KeyError:
                     raise Unsupported("no_data.sprite", f"no image of the atlas texture {oid}") from None
-                im = Image.open(io.BytesIO(store.input_bytes(inp)))
+                im = Image.open(io.BytesIO(depot.input_bytes(inp)))
                 im.load()
                 images[oid] = im
             return images[oid]
@@ -1724,14 +1724,14 @@ class SpriteCropStage(Stage):
             if not inp.role.startswith("sprite:"):
                 continue
             oid = inp.role[len("sprite:") :]
-            meta = contract.loads(store.input_bytes(inp))
+            meta = contract.loads(depot.input_bytes(inp))
             try:
                 img = _crop_meta(meta, entries, image, crop, sprite_atom)
                 aid = contract.artifact_id(oid, "image")
                 arts.append(
                     contract.artifact(
                         aid,
-                        store.add(encode(img, level), "png"),
+                        depot.add(encode(img, level), "png"),
                         contract.provenance(task, obj=meta.get("object")),
                         {
                             "kind": "sprite.image",

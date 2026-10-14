@@ -19,7 +19,7 @@ schemas.load("plan")  # the schema as a dict
 | `artifacts` | `nnnotes.artifacts/1` | the artifact table: the artifacts of every object, with content id, size and extension |
 | `catalog-diff` | `nnnotes.catalog-diff/1` | the difference between two catalog versions (`catalog diff`) |
 | `catalog-index` | `nnnotes.catalog-index/1` | the index of a catalog pair: remote and APK catalogs, every location in catalog order |
-| `catalogs` | `nnnotes.catalogs/1` | the catalog versions of a store (`catalog versions`) |
+| `catalogs` | `nnnotes.catalogs/1` | the catalog versions of a depot (`catalog versions`) |
 | `census` | `nnnotes.census/1` | the census of one bundle: serialized files, type trees and objects, read without decoding |
 | `common` | | definitions shared by the other schemas |
 | `cost` | `nnnotes.cost/1` | the measured cost of a task's last run |
@@ -27,11 +27,11 @@ schemas.load("plan")  # the schema as a dict
 | `failures` | `nnnotes.failures/1` | the failed tasks and items of a run |
 | `layout` | `nnnotes.layout/1` | the files a layout owns in its output directory |
 | `music-data` | `nnnotes.music-data/2` | every song and chart of one master data version ([music data](music-data.md)) |
-| `plan` | `nnnotes.plan/1` | what a run would do and why (`store plan`) |
+| `plan` | `nnnotes.plan/1` | what a run would do and why (`depot plan`) |
 | `result` | `nnnotes.result/1` | the result of a task, a function of its key alone |
 | `run` | `nnnotes.run/1` | a run manifest: context, selection, tasks with keys and statuses, layouts |
 | `scripts` | `nnnotes.scripts/1` | every MonoScript of the censuses, by object id |
-| `task` | `nnnotes.task/1` | one stage applied to one subject, with everything needed to run it (`store run`) |
+| `task` | `nnnotes.task/1` | one stage applied to one subject, with everything needed to run it (`depot run`) |
 | `view` | `nnnotes.view/1` | a semantic view of a master table, each row with its names and the objects it names |
 
 The documents of the asset export are described in [contracts](contracts.md), the views in [views](views.md). The

@@ -47,13 +47,13 @@ questions: `nnnotes config init --user --no-input --set SECTION.KEY=VALUE ...`.
 | `config init\|set\|unset\|check\|path` | write, edit and check the config file |
 | `servers` | the game API's server list: regions with their CDN and API roots |
 | `catalog keys\|browse` | the addressable keys of a region's catalog; a local web page to browse catalogs and bundles |
-| `catalog versions\|import\|fetch\|diff` | catalog versions kept in the store, and what changed between two |
-| `bundle pull` | fetch and decrypt the bundle closure of keys into the cache |
+| `catalog versions\|import\|fetch\|diff` | catalog versions kept in the depot, and what changed between two |
+| `bundle pull` | fetch and decrypt the bundle closure of keys into the depot |
 | `master version\|download\|decode` | the master data version a region serves, its download and its decoding to JSON |
-| `export assets` | every object of the selected bundles in common formats, through the content-addressed store |
+| `export assets` | every object of the selected bundles in common formats, through the content-addressed depot |
 | `export episode\|story\|live\|live2d\|spot\|room\|shader\|audio\|ui` | one subject: an ADV episode, a story, a live, a Live2D model, a spot, a room, shaders, a cue sheet, the UI library |
 | `apk settings\|hca-key` | the player's graphics settings and the CRI HCA keycode of `base.apk` |
-| `store plan\|run\|verify` | what `export assets` would run and why, single tasks, the store's check |
+| `depot plan\|run\|verify\|gc` | what `export assets` would run and why, single tasks, the depot's check and collection |
 | `voices list\|search\|summary\|get` | the character and story voices of the master data |
 | `site build` | the static site of ournotes-player: charts, Live2D models and stories, in several regions and languages |
 | `music-data` | every song and chart in one JSON file, with the deck model's chart statistics |

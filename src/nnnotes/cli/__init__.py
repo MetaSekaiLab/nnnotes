@@ -13,7 +13,7 @@ errors go to standard error. Exit status 2 is a usage or settings error.
     nnnotes master version|download|decode
     nnnotes export assets|episode|story|live|live2d|spot|room|shader|audio|ui ... -o OUT
     nnnotes apk settings -o FILE | hca-key [--write DIR]
-    nnnotes store plan|run|verify
+    nnnotes depot plan|run|verify|gc
     nnnotes voices list|search|summary|get
     nnnotes site build -o SITE
     nnnotes music-data -o FILE
@@ -36,10 +36,10 @@ os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
 from .. import __version__
 from ..source.config import ConfigError
 from ..source.gameapi import GameApiError
-from . import apk, bundle, catalog, config, export, master, musicdata, servers, site, store, voices
+from . import apk, bundle, catalog, config, depot, export, master, musicdata, servers, site, voices
 from .common import GLOBALS, Formatter, fill_globals, load_config
 
-GROUPS = (config, servers, catalog, bundle, master, export, apk, store, voices, site, musicdata)
+GROUPS = (config, servers, catalog, bundle, master, export, apk, depot, voices, site, musicdata)
 
 
 def build_parser() -> argparse.ArgumentParser:

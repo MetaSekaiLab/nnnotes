@@ -25,7 +25,7 @@ apk = "/path/to/jp/base.apk"
 master = "/path/to/jp/master"
 
 [paths]
-cache = "/path/to/cache"
+depot = "/path/to/depot"
 ```
 
 Keep `[bundle] key/nonce_seed` and `[master] key/iv` in your configuration. Master keys are unnecessary when
@@ -79,17 +79,17 @@ the JP hash in `provenance.catalog.resourceHash`.
 JP catalogs are `catalog_main.bin` in a version/hash directory, without a language suffix. The HTTP payload can
 be gzip; nnnotes keeps its original bytes and SHA-256, and bounds decompression before parsing. Remote bundle and
 CRI locations use `{Fwk.Resource.RemoteAssetDir}`. These are indexed, resolved and downloaded through the selected
-snapshot, including in `catalog browse`, the other `catalog` commands, `export assets`, `store plan` and
-`store run`.
+snapshot, including in `catalog browse`, the other `catalog` commands, `export assets`, `depot plan` and
+`depot run`.
 
-The cache lives under `<cache>/jp/<CDN-origin-digest>/<asset-version>/<asset-hash>/`. It cannot reuse the
-international catalog cache. Embedded files are further isolated under `apk/<APK-catalog-SHA256>/`, so an APK
-update cannot reuse old local bundles when the CDN snapshot stays unchanged. Each cached `catalog_main.bin` has a `catalog_main.bin.source.json` with its SHA-256
+The downloads live under `<depot>/downloads/jp/<CDN-origin-digest>/<asset-version>/<asset-hash>/`, apart from the
+international downloads. Embedded files are further isolated under `apk/<APK-catalog-SHA256>/`, so an APK
+update cannot reuse old local bundles when the CDN snapshot stays unchanged. Each downloaded `catalog_main.bin` has a `catalog_main.bin.source.json` with its SHA-256
 and public source metadata. For an offline `--catalog` or `catalog import`, copy the pair together. Credentials
 are reacquired only when a missing file must be downloaded.
 
 Catalog database records include this source metadata, and JP catalog identity includes version/hash even when
-the catalog bytes remain the same. Old international records retain their previous IDs. Cached historical files
+the catalog bytes remain the same. Old international records retain their previous IDs. Downloaded historical files
 can be read offline; downloading a missing historical file fails if Version now selects a different snapshot.
 Refresh the catalog to use the new snapshot. Historical local bundles require the APK set matching the imported
 APK catalog. A JP master download likewise rejects a different current master snapshot.

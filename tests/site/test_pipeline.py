@@ -151,15 +151,15 @@ def test_catalog_cached(tmp_path):
 
     cat = Catalog(synth.CatalogWriter().build([("k", synth.remote("b_1.bundle"), [])]), tmp_path)
     b = Bundle(1, synth.remote("b_1.bundle"), "b_1.bundle", True)
-    assert cat.cached(b) is None
+    assert cat.downloaded(b) is None
     (tmp_path / "bundles").mkdir()
     (tmp_path / "bundles" / "b_1.bundle").write_bytes(b"UnityFS\0x")
-    assert cat.cached(b) == tmp_path / "bundles" / "b_1.bundle" == cat.fetch(b)
+    assert cat.downloaded(b) == tmp_path / "bundles" / "b_1.bundle" == cat.fetch(b)
     e = {"internal_id": synth.remote("x/raw_1")}
-    assert cat.cached_raw(e) is None and cat.cached_raw({"internal_id": "Assets/x"}) is None
+    assert cat.downloaded_raw(e) is None and cat.downloaded_raw({"internal_id": "Assets/x"}) is None
     (tmp_path / "raw" / "asset" / "Android" / "x").mkdir(parents=True)
     (tmp_path / "raw" / "asset" / "Android" / "x" / "raw_1").write_bytes(b"@UTF")
-    assert cat.cached_raw(e) == cat.fetch_raw(e)
+    assert cat.downloaded_raw(e) == cat.fetch_raw(e)
 
 
 def test_pipeline_window_keeps_the_read_set_slots_busy():

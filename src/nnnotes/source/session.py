@@ -12,7 +12,7 @@ from pathlib import Path
 from . import gameapi
 from .addressables import BundleKey
 from .catalog import Catalog
-from .config import Config, ConfigError, check_catalog_version, describe
+from .config import Config, ConfigError, check_catalog_version
 from .master import MasterKey
 
 __all__ = ["Session"]
@@ -49,18 +49,13 @@ class Session:
         assert p is not None  # require_path: the setting is set
         return p
 
-    def store_root(self) -> Path:
-        """The store directory: `[paths] store`, else the store/ directory of `[paths] cache`."""
-        p = self.cfg.path("paths", "store")
-        if p is not None:
-            return p
-        cache = self.cfg.path("paths", "cache")
-        if cache is not None:
-            return cache / "store"
-        raise ConfigError(
-            "setting paths.store is not set (nor paths.cache, whose store/ directory is the default): "
-            f"give it as {describe('paths', 'store', '--store')}"
-        )
+    def depot_root(self) -> Path:
+        """The depot directory: `[paths] depot`, required."""
+        return self.cfg.require_path("paths", "depot")
+
+    def downloads(self) -> Path:
+        """The directory of the depot that holds the downloaded game files (its downloads/ directory)."""
+        return self.depot_root() / "downloads"
 
     def apk(self, region: str | None = None) -> Path:
         """`[paths] apk` of `region`, required."""
@@ -106,20 +101,20 @@ class Session:
         """The catalog of `[catalog] language` (merged with the APK's when `[paths] apk` is set), fetching from the CDN
         of `region`. International versioned catalogs are isolated by CDN root and resource version. `bundles`:
         bundles will be fetched; else only the catalog is read. An explicit `[paths] catalog` file bypasses
-        discovery; a version pin bypasses the API but needs the CDN root to identify the cache. The bundle key is
+        discovery; a version pin bypasses the API but needs the CDN root to identify the downloads. The bundle key is
         only read for a missing encrypted bundle."""
         cfg = self.cfg.for_region(region) if region else self.cfg
         session = Session(cfg)
-        cache = cfg.require_path("paths", "cache")
+        downloads = session.downloads()
         catbin = session.path("paths", "catalog")
         apk = session.path("paths", "apk")
         key = (lambda: session.bundle_key()) if bundles else None
         if cfg.provider() == "jp":
             from .jp import open_catalog
 
-            return open_catalog(cfg, cfg.region(), catalog_file=catbin, bundle_key=key, apk=apk)
+            return open_catalog(cfg, cfg.region(), downloads, catalog_file=catbin, bundle_key=key, apk=apk)
         cdn = (lambda: cfg.cdn(region or cfg.region())) if bundles or catbin is None else None
         if catbin is not None:
-            return Catalog(catbin.read_bytes(), cache, cdn=cdn, bundle_key=key, apk=apk)
+            return Catalog(catbin.read_bytes(), downloads, cdn=cdn, bundle_key=key, apk=apk)
         language = cfg.require("catalog", "language")
-        return Catalog.load(language, cache, cdn=cdn, bundle_key=key, apk=apk, version=session.catalog_version())
+        return Catalog.load(language, downloads, cdn=cdn, bundle_key=key, apk=apk, version=session.catalog_version())

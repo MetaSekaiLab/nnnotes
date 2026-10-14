@@ -33,7 +33,7 @@ def config(tmp_path, *, api=True, version=None, region="tw"):
             "servers": {
                 region: {"cdn": "https://cdn.example/prod/" + region, **({"api": "https://api.example"} if api else {})}
             },
-            "paths": {"cache": str(tmp_path / "cache")},
+            "paths": {"depot": str(tmp_path / "depot")},
         },
         environ={},
     )
@@ -43,9 +43,9 @@ def test_auto_discovery_ignores_stale_main_and_advances_resource_version(tmp_pat
     from nnnotes.site.webmodel import catalog_models
 
     cfg = config(tmp_path)
-    cache = cfg.require_path("paths", "cache")
-    cache.mkdir()
-    catalog.Catalog.cache_file("en", cache).write_bytes(binary("Old"))
+    downloads = Session(cfg).downloads()
+    downloads.mkdir(parents=True)
+    (downloads / catalog.Catalog.file_name("en")).write_bytes(binary("Old"))
     publication = gameapi.MasterVersion("master-one", "1.0.0.201")
     seen = []
 
@@ -71,20 +71,20 @@ def test_auto_discovery_ignores_stale_main_and_advances_resource_version(tmp_pat
     publication = gameapi.MasterVersion("master-two", "1.0.0.202")
     second = Session(cfg).catalog(bundles=False)
     assert second.has("master-two") and not second.has("master-one")
-    assert first.cache_dir != second.cache_dir
+    assert first.download_dir != second.download_dir
     assert all("catalog_main" not in request for request in seen)
 
 
-def test_explicit_version_cache_is_offline_and_cdn_scoped(tmp_path, monkeypatch):
+def test_explicit_version_download_is_offline_and_cdn_scoped(tmp_path, monkeypatch):
     cfg = config(tmp_path, version="1.0.0.201")
     monkeypatch.setattr(Session, "master_version", lambda *args: pytest.fail("pin called Version"))
     monkeypatch.setattr(catalog, "download", lambda url: binary("First"))
     first = Session(cfg).catalog(bundles=False)
-    monkeypatch.setattr(catalog, "download", lambda url: pytest.fail("cached pin downloaded"))
+    monkeypatch.setattr(catalog, "download", lambda url: pytest.fail("downloaded pin downloaded"))
     assert Session(cfg).catalog(bundles=False).has("First")
     monkeypatch.setattr(catalog, "download", lambda url: binary("Other region"))
     other = Session(config(tmp_path, version="1.0.0.201", region="en")).catalog(bundles=False)
-    assert other.has("Other region") and first.cache_dir != other.cache_dir
+    assert other.has("Other region") and first.download_dir != other.download_dir
 
 
 def test_explicit_catalog_file_stays_offline(tmp_path, monkeypatch):
@@ -94,7 +94,7 @@ def test_explicit_catalog_file_stays_offline(tmp_path, monkeypatch):
         {
             "catalog": {"region": "tw", "version": "1.0.0.201"},
             "servers": {"tw": {"api": "https://api.example", "catalog": str(path)}},
-            "paths": {"cache": str(tmp_path / "cache")},
+            "paths": {"depot": str(tmp_path / "depot")},
         },
         environ={},
     )
@@ -104,9 +104,9 @@ def test_explicit_catalog_file_stays_offline(tmp_path, monkeypatch):
 
 def test_missing_versioned_catalog_does_not_fall_back_to_main(tmp_path, monkeypatch):
     cfg = config(tmp_path, version="1.0.0.201")
-    cache = cfg.require_path("paths", "cache")
-    cache.mkdir()
-    catalog.Catalog.cache_file("en", cache).write_bytes(binary("Old"))
+    downloads = Session(cfg).downloads()
+    downloads.mkdir(parents=True)
+    (downloads / catalog.Catalog.file_name("en")).write_bytes(binary("Old"))
     urls = []
 
     def missing(url):
@@ -117,7 +117,7 @@ def test_missing_versioned_catalog_does_not_fall_back_to_main(tmp_path, monkeypa
     with pytest.raises(urllib.error.HTTPError):
         Session(cfg).catalog(bundles=False)
     assert len(urls) == 1 and "catalog_1.0.0.201_en.bin" in urls[0]
-    assert not list((cache / "international").rglob("*.bin"))
+    assert not list((downloads / "international").rglob("*.bin"))
 
 
 def test_failed_discovery_does_not_claim_main_is_current(tmp_path, monkeypatch):
@@ -156,7 +156,7 @@ def test_build_workers_inherit_the_version_pin(tmp_path, monkeypatch):
     monkeypatch.setenv("NNNOTES_SERVERS_TW_CATALOG_VERSION", "1.0.0.201")
     monkeypatch.setenv("NNNOTES_SERVERS_TW_CDN", "https://cdn.example/prod/tw")
     monkeypatch.setenv("NNNOTES_SERVERS_TW_API", "https://unavailable.example")
-    monkeypatch.setenv("NNNOTES_PATHS_CACHE", str(tmp_path / "cache"))
+    monkeypatch.setenv("NNNOTES_PATHS_DEPOT", str(tmp_path / "depot"))
     monkeypatch.setattr(catalog, "download", lambda url: binary(MODEL, EPISODE))
     assert Session(Config.load()).catalog(bundles=False).has(MODEL)
     command = [
@@ -175,7 +175,7 @@ def test_invalid_version_cannot_be_used_as_a_path(tmp_path, version):
     with pytest.raises(ConfigError):
         Session(config(tmp_path, version=version)).catalog_version()
     with pytest.raises(ValueError):
-        catalog.Catalog.cache_file("en", tmp_path, version=version)
+        catalog.Catalog.file_name("en", version=version)
     with pytest.raises(ValueError):
         configfile.validate(configfile.resolve("catalog.version")[0], version)
 
@@ -187,11 +187,11 @@ def test_empty_api_version_fails_before_download(tmp_path, monkeypatch):
         Session(config(tmp_path)).catalog(bundles=False)
 
 
-def test_bad_download_is_not_installed_in_cache(tmp_path, monkeypatch):
+def test_bad_download_is_not_installed(tmp_path, monkeypatch):
     monkeypatch.setattr(catalog, "download", lambda url: b"not a catalog")
     with pytest.raises(ValueError):
         Session(config(tmp_path, version="1.0.0.201")).catalog(bundles=False)
-    assert not list((tmp_path / "cache").rglob("*.bin"))
+    assert not list((tmp_path / "depot").rglob("*.bin"))
 
 
 def test_fetch_queries_version_before_downloading_and_labels_matching_bytes(tmp_path, monkeypatch, capsys):
@@ -211,9 +211,9 @@ def test_fetch_queries_version_before_downloading_and_labels_matching_bytes(tmp_
 
     monkeypatch.setattr(Session, "master_version", observe)
     monkeypatch.setattr(catalogdb, "fetch", fetch)
-    cli.main(["--region", "tw", "--language", "en", "--cache", str(tmp_path / "cache"), "catalog", "fetch"])
+    cli.main(["--region", "tw", "--language", "en", "--depot", str(tmp_path / "depot"), "catalog", "fetch"])
     assert events == ["version", "1.0.0.201"]
-    version = catalogdb.CatalogDB(tmp_path / "cache" / "store").versions()[0]
+    version = catalogdb.CatalogDB(tmp_path / "depot").versions()[0]
     assert version["resourceVersion"] == "1.0.0.201"
     assert version["remote"]["sha256"] == hashlib.sha256(data).hexdigest()
     assert "1.0.0.201" in capsys.readouterr().out
@@ -235,7 +235,7 @@ def test_browser_uses_the_same_selector(tmp_path, monkeypatch):
     calls = []
     monkeypatch.setattr(catalog, "download", lambda url: calls.append(url) or binary(MODEL))
     handler = browse.Handler.__new__(browse.Handler)
-    handler.server = SimpleNamespace(catalogs={}, cache=tmp_path / "cache", bundle_key=None)
+    handler.server = SimpleNamespace(catalogs={}, downloads=tmp_path / "depot" / "downloads", bundle_key=None)
     handler.catalog(browse.Region("tw", "TW", cfg.cdn("tw"), ["en"], cfg), "en")
     assert len(calls) == 1 and calls[0].endswith("catalog_1.0.0.201_en.bin")
 

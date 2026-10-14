@@ -1,21 +1,24 @@
-"""The content-addressed store of the asset stages: a documented format, and the cache of their work.
+"""The depot: the files a configuration downloads, the results of the stages by content, and the record of runs.
 
-    <store>/cas/sha256/ab/<sha>          bytes by content id, write-once (no extension: the records carry it)
-    <store>/ac/ab/<key>.json             task results (nnnotes.result/1) by task key; written after every byte they
+    <depot>/downloads/                   the game files as downloaded: catalogs, decrypted bundles (bundles/<name>),
+                                         raw files (raw/<CDN path>), files read from the APK, each source in its own
+                                         directory (international/<CDN>/<version>/, jp/<site>/<version>/<hash>/)
+    <depot>/cas/sha256/ab/<sha>          bytes by content id, write-once (no extension: the records carry it)
+    <depot>/ac/ab/<key>.json             task results (nnnotes.result/1) by task key; written after every byte they
                                          name is in cas/, so a result present is a complete result (the commit)
-    <store>/inputs/<kind>.jsonl          input identities: name -> sha256, size, with the (path, size, mtime) of the
+    <depot>/inputs/<kind>.jsonl          input identities: name -> sha256, size, with the (path, size, mtime) of the
                                          file that was hashed (a memo: a file seen unchanged is not hashed again);
                                          bundles.jsonl, raw.jsonl, files.jsonl (files verified by path only)
-    <store>/catalogs/                    versioned catalogs (catalogdb)
-    <store>/runs/<run>.json              run manifests (nnnotes.run/1), deterministic
-    <store>/runs/<run>.log.jsonl         the log of the run's last execution (timings, workers, errors)
-    <store>/runs/selections/<digest>     the id of the latest run of a selection (digest of its selection)
-    <store>/costs/<key>.json             the measured cost of a task's last run (nnnotes.cost/1)
+    <depot>/catalogs/                    versioned catalogs (catalogdb)
+    <depot>/runs/<run>.json              run manifests (nnnotes.run/1), deterministic
+    <depot>/runs/<run>.log.jsonl         the log of the run's last execution (timings, workers, errors)
+    <depot>/runs/selections/<digest>     the id of the latest run of a selection (digest of its selection)
+    <depot>/costs/<key>.json             the measured cost of a task's last run (nnnotes.cost/1)
 
 Every file is written through a temporary file and a rename, so concurrent writers (threads, processes, machines on
 a shared file system) never see or leave a partial file, and a crash before a result's entry leaves no false hit.
 The files of cas/ are read-only (a layout may hard-link them: an edit of such a file fails instead of changing the
-store).
+depot).
 Only costs/, runs/ and inputs/ hold non-deterministic data; cas/ and ac/ are a function of the tasks run.
 """
 
@@ -39,15 +42,15 @@ class InputMissing(FileNotFoundError):
     """No locator of an input gives a file with its content id."""
 
 
-class StoreConflict(RuntimeError):
-    """A result already in the store differs from the one being committed for the same key: the stage's output is
+class DepotConflict(RuntimeError):
+    """A result already in the depot differs from the one being committed for the same key: the stage's output is
     not a function of its key (a nondeterministic stage, or a change without a version bump)."""
 
 
 def _replace(tmp: Path, dst: Path, same) -> bool:
     """Rename `tmp` onto `dst`; False when another writer put `dst` first (`same(dst)` true) and `tmp` was dropped.
     On some systems a rename onto (or a read of) a file another process is replacing or reading fails for a
-    moment: retried, as sitefiles.Store does."""
+    moment: retried, as sitefiles.Depot does."""
     try:
         for i in range(20):
             try:
@@ -61,7 +64,7 @@ def _replace(tmp: Path, dst: Path, same) -> bool:
                 except PermissionError:
                     pass
                 time.sleep(0.1 * (i + 1))
-        raise RuntimeError(f"could not store {dst}")
+        raise RuntimeError(f"could not depot {dst}")
     except BaseException:
         _drop(tmp)
         raise
@@ -90,7 +93,7 @@ def _read(p: Path) -> bytes | None:
 
 def _write(dst: Path, data: bytes, same=None, read_only: bool = False) -> bool:
     """Write `data` to `dst` atomically (creating the directory); with `same`, keep an existing `dst` for which
-    same(dst) holds; `read_only`: the file is read-only (store objects). True when this call wrote the file."""
+    same(dst) holds; `read_only`: the file is read-only (depot objects). True when this call wrote the file."""
     dst.parent.mkdir(parents=True, exist_ok=True)
     tmp = temp_path(dst)
     try:
@@ -157,29 +160,33 @@ def _lines(path: Path):
             continue
 
 
-class Store:
-    """A store directory. `cache`: the directory "cache" locators are relative to; `fetch(input, locator) -> Path`:
-    how a "catalog" locator is fetched (none: such locators are skipped)."""
+class Depot:
+    """A depot directory. `fetch(input, locator) -> Path`: how a "catalog" locator is fetched (none: such locators
+    are skipped)."""
 
-    def __init__(self, root, *, cache=None, fetch=None):
+    def __init__(self, root, *, fetch=None):
         self.root = Path(root)
-        self.cache = Path(cache) if cache else None
         self.fetch = fetch
         self.written = self.reused = 0
-        self._have: set[str] = set()  # content ids this store object wrote or found
+        self._have: set[str] = set()  # content ids this depot object wrote or found
         self._memo: dict | None = None  # (path, size, mtime_ns) -> (sha256, size)
         self._names: dict[str, dict] = {}  # kind -> {name: (sha256, size)}
         self._docs: dict[str, dict] = {}  # the documents document() decoded last
         self._lock = threading.Lock()
 
-    def __getstate__(self):  # a store crosses to worker processes as its settings
-        return {"root": self.root, "cache": self.cache, "fetch": self.fetch}
+    def __getstate__(self):  # a depot crosses to worker processes as its settings
+        return {"root": self.root, "fetch": self.fetch}
 
     def __setstate__(self, state):
-        self.__init__(state["root"], cache=state["cache"], fetch=state["fetch"])
+        self.__init__(state["root"], fetch=state["fetch"])
 
     def __repr__(self) -> str:
-        return f"Store({str(self.root)!r})"
+        return f"Depot({str(self.root)!r})"
+
+    @property
+    def downloads(self) -> Path:
+        """The directory of downloaded game files ("download" locators are relative to it)."""
+        return self.root / "downloads"
 
     @property
     def catalogs(self) -> Path:
@@ -315,7 +322,7 @@ class Store:
         """The committed result of a task key that has one (a FileNotFoundError naming `task` when it is missing)."""
         doc = self.result(key)
         if doc is None:
-            raise FileNotFoundError(f"{task}: its result {key} is not in the store")
+            raise FileNotFoundError(f"{task}: its result {key} is not in the depot")
         return doc
 
     def has_result(self, key: str) -> bool:
@@ -323,7 +330,7 @@ class Store:
 
     def commit(self, doc: dict) -> bool:
         """Write a result entry, after checking that the bytes of every artifact it names are stored. Write-once: an
-        entry already there must be identical (else StoreConflict). True when this call wrote it."""
+        entry already there must be identical (else DepotConflict). True when this call wrote it."""
         if doc.get("schema") != contract.RESULT:
             raise ValueError("not a result document")
         for a in doc["artifacts"]:
@@ -338,7 +345,7 @@ class Store:
             if old is None:
                 return False
             if old != data:
-                raise StoreConflict(f"result {doc['key']} differs from the one in the store ({dst})")
+                raise DepotConflict(f"result {doc['key']} differs from the one in the depot ({dst})")
             return True
 
         if same(dst):
@@ -401,27 +408,24 @@ class Store:
             return self._names.get(kind, {}).get(name)
 
     def open_input(self, inp: Input) -> Path:
-        """A file holding the bytes of `inp`: its locators in order (none: the store), each checked against the
-        content id (store: by name and size; files: hashed, memoized). Raises InputMissing."""
+        """A file holding the bytes of `inp`: its locators in order (none: the depot), each checked against the
+        content id (depot: by name and size; files: hashed, memoized). Raises InputMissing."""
         tried = []
-        for loc in inp.locators or ({"kind": "store"},):
+        for loc in inp.locators or ({"kind": "depot"},):
             kind = loc["kind"]
             try:
-                if kind == "store":
+                if kind == "depot":
                     if self.has(inp.sha256, inp.size):
                         return self.path(inp.sha256)
-                    tried.append("store: absent")
+                    tried.append("depot: absent")
                     continue
                 if kind == "catalog":
                     if self.fetch is None:
                         tried.append("catalog: no fetcher")
                         continue
                     p = Path(self.fetch(inp, loc))
-                elif kind == "cache":
-                    if self.cache is None:
-                        tried.append("cache: no cache directory")
-                        continue
-                    p = self.cache / loc["path"]
+                elif kind == "download":
+                    p = self.downloads / loc["path"]
                 else:
                     p = Path(loc["path"])
                 if not p.is_file() or p.stat().st_size != inp.size:
@@ -440,7 +444,7 @@ class Store:
 
     # ---------------------------------------------------------------- verification
     def verify(self, *, quick: bool = False, workers: int = 8, limit: int = 100) -> dict:
-        """Check the store: every cas/ file has the content its name says (`quick`: only that it is a file of a
+        """Check the depot: every cas/ file has the content its name says (`quick`: only that it is a file of a
         well-formed name; its size is checked against the results naming it), every ac/ entry is a result whose
         name is its key, whose key is the key of its parts and whose artifacts' bytes are stored with their size.
         -> {"contents", "results", "problems": [{path, problem}] (the first `limit`, sorted), "problemCount"}."""
@@ -540,3 +544,92 @@ class Store:
             return contract.loads((self.root / "costs" / f"{key}.json").read_bytes())
         except OSError:
             return None
+
+    # ---------------------------------------------------------------- collection
+    def gc(self, *, keep: int | None = None, dry_run: bool = False) -> dict:
+        """Remove what no kept run reaches. The kept runs: of each selection the `keep` latest by the time their
+        manifest was written (None: every run), and always the run the selection names as its latest. A kept run
+        reaches the results of its tasks, the contents those results name (their artifacts, and the inputs their key
+        parts name when the depot holds them) and the layout manifests it names with the contents they list.
+        Removed: the other runs (manifest and log), results and their measured costs, and contents. `dry_run`: count
+        only. -> {"runs", "results", "contents": {"kept", "removed"}, "bytesRemoved"}."""
+        runs_dir = self.root / "runs"
+        manifests = sorted(p for p in runs_dir.glob("*.json") if p.is_file())
+        latest = set()
+        for p in (runs_dir / "selections").glob("*"):
+            try:
+                latest.add(p.read_text(encoding="ascii").strip())
+            except OSError:
+                continue
+        by_selection: dict[str, list[tuple[int, Path, dict]]] = {}
+        for p in manifests:
+            try:
+                doc = contract.loads(p.read_bytes())
+            except (OSError, ValueError):
+                continue
+            sel = contract.digest(list(doc.get("selection") or ()))
+            by_selection.setdefault(sel, []).append((p.stat().st_mtime_ns, p, doc))
+        kept, dropped = [], []
+        for runs in by_selection.values():
+            runs.sort(key=lambda r: r[0], reverse=True)
+            for i, (_, p, doc) in enumerate(runs):
+                (kept if keep is None or i < keep or doc.get("id") in latest else dropped).append((p, doc))
+        keys: set[str] = set()
+        shas: set[str] = set()
+        for _, doc in kept:
+            for t in doc.get("tasks") or ():
+                if t.get("key"):
+                    keys.add(t["key"])
+            for sha in (doc.get("layouts") or {}).values():
+                shas.add(sha)
+                if self.has(sha):
+                    _collect_shas(contract.loads(self.read(sha)), shas)
+        for key in keys:
+            res = self.result(key)
+            if res is None:
+                continue
+            shas.update(a["content"]["sha256"] for a in res.get("artifacts", ()))
+            shas.update(sha for _, sha in (res.get("keyParts") or {}).get("inputs", ()))
+        removed_bytes = 0
+        out: dict = {"runs": {"kept": len(kept), "removed": len(dropped)}}
+        for p, _ in dropped:
+            if not dry_run:
+                p.unlink(missing_ok=True)
+                p.with_name(p.name[: -len(".json")] + ".log.jsonl").unlink(missing_ok=True)
+        n_kept = n_removed = 0
+        for p in sorted((self.root / "ac").glob("*/*.json")):
+            key = p.name[: -len(".json")]
+            if key in keys:
+                n_kept += 1
+                continue
+            n_removed += 1
+            if not dry_run:
+                p.unlink(missing_ok=True)
+                (self.root / "costs" / f"{key}.json").unlink(missing_ok=True)
+        out["results"] = {"kept": n_kept, "removed": n_removed}
+        n_kept = n_removed = 0
+        for p in sorted((self.root / "cas" / "sha256").glob("*/*")):
+            if p.name in shas:
+                n_kept += 1
+                continue
+            n_removed += 1
+            removed_bytes += p.stat().st_size
+            if not dry_run:
+                _drop(p)
+                self._have.discard(p.name)
+        out["contents"] = {"kept": n_kept, "removed": n_removed}
+        out["bytesRemoved"] = removed_bytes
+        return out
+
+
+def _collect_shas(doc, out: set[str]) -> None:
+    """Add every "sha256" value of a document (a layout manifest names its files' contents so)."""
+    if isinstance(doc, dict):
+        sha = doc.get("sha256")
+        if isinstance(sha, str) and contract.is_sha256(sha):
+            out.add(sha)
+        for v in doc.values():
+            _collect_shas(v, out)
+    elif isinstance(doc, list):
+        for v in doc:
+            _collect_shas(v, out)

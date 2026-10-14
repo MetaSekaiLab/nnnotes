@@ -103,8 +103,8 @@
       "properties": {
         "kind": {
           "enum": [
-            "store",
-            "cache",
+            "depot",
+            "download",
             "file",
             "catalog"
           ]
@@ -125,7 +125,7 @@
             "properties": {
               "kind": {
                 "enum": [
-                  "cache",
+                  "download",
                   "file"
                 ]
               }
