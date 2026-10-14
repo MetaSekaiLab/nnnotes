@@ -43,9 +43,8 @@ from collections import defaultdict
 from pathlib import Path
 
 from ..formats.encoders import FLAC_LEVEL
-from ..source.apkset import ApkSet
 from ..unity.atoms import impl_id
-from . import contract
+from . import builtins, contract
 from .contract import Cost, IncompatibleTask, Input
 from .stages import Output, Pending, Stage
 
@@ -53,7 +52,6 @@ AUDIO, MOVIE, EXPORT = "cri.audio", "cri.movie", "unity.export"
 ACB_MAGIC, AWB_MAGIC, USM_MAGIC = b"@UTF", b"AFS2", b"CRID"
 ACB_KIND = "cri.acb"  # semantics kind of the ACB artifacts of unity.export
 USM_KIND = "cri.usm"  # semantics kind of the USM artifacts of unity.export
-BOOT_IN_APK = "assets/bin/Data/data.unity3d"
 ACB_NAME = "sheet"  # the stem of the ACB file vgmstream reads (names come from its cues)
 TOOL_REVISION = 1
 FORMATS = ("mkv", "webm")
@@ -70,30 +68,11 @@ _keys: dict[str, int] = {}  # boot data content id -> HCA keycode
 
 
 # ---------------------------------------------------------------- inputs shared by the stages
-def boot_input(depot, apk) -> Input | None:
-    """The input "boot" of the CRI stages: the boot data of an APK (`assets/bin/Data/data.unity3d`, where the HCA
-    keycode is read), stored in `depot` once; the APK is hashed once (depot.identify memo) and its boot data is
-    remembered by the APK's content id. A path that is not an .apk / .zip is the boot data itself. None without an
-    APK."""
-    if apk is None:
-        return None
-    apk = Path(apk)
-    if not apk.is_dir() and apk.suffix.lower() not in (".apk", ".zip", ".apks", ".xapk"):
-        sha, size = depot.identify(apk)
-        return Input("boot", sha, size, apk.name, ({"kind": "file", "path": str(apk.resolve())},))
-    if apk.is_dir():
-        with ApkSet(apk) as z:
-            data = z.read(BOOT_IN_APK)
-        sha = depot.put(data)
-        return Input("boot", sha, len(data), "data.unity3d", ({"kind": "depot"},))
-    apk_sha, _ = depot.identify(apk)
-    name = f"boot:{apk_sha}"
-    known = depot.named("files", name)
-    if known is None or not depot.has(*known):
-        with ApkSet(apk) as z:
-            data = z.read(BOOT_IN_APK)
-        known = depot.identify(depot.local(depot.put(data)), "files", name)
-    return Input("boot", known[0], known[1], "data.unity3d", ({"kind": "depot"},))
+def boot_input(builtin: dict) -> Input | None:
+    """The input "boot" of the CRI stages: the APK's `assets/bin/Data/data.unity3d`, where the HCA keycode is read,
+    of its built-in files (`builtin`, builtins.inputs); None when they lack it (no APK)."""
+    inp = builtin.get(builtins.DATA)
+    return None if inp is None else Input("boot", inp.sha256, inp.size, inp.name, inp.locators)
 
 
 def _boot(env) -> Input:

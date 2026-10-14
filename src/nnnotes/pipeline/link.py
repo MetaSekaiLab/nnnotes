@@ -6,10 +6,11 @@ link.scripts (nnnotes.scripts/1), one global task: every MonoScript of the censu
     consumes.
 
 link.addresses (nnnotes.addresses/1), one task per catalog pair: the catalog index and the censuses of its bundles
-(by stable bundle name) ->
+(by stable bundle name) and of the APK's built-in files (subjects `apk/...`, pipeline.builtins) ->
     bundles    {stable name: {name, files, assetBundleName, keys}}: the file name in this catalog version, its
-               serialized files, the AssetBundle name the census found and the keys located in it
-    files      {serialized file: stable bundle name} (CAB -> bundle)
+               serialized files, the AssetBundle name the census found and the keys located in it; a built-in file
+               is listed by its subject, named by its path in the APK's `assets/bin/Data/`, without keys
+    files      {serialized file: stable bundle name} (CAB -> bundle; `unity_builtin_extra` -> `apk/data.unity3d`)
     keys       {primary key: [{location, type, internalId, bundle | raw, objects}]}: an asset location's bundle is the
                dependency whose container holds its internal id (compared ignoring case); `objects` the object ids
                the container path names (null when a dependency bundle has no census)
@@ -22,7 +23,8 @@ has changed with its bundle's content: "<bundle>/<container>" for the object tha
 its extension names, else the first by file and path id: the object the `original` layout puts at the path),
 "<bundle>/<container>[<name>]" for another object under it with a name no other object under it has, else
 "<bundle>:<pathId>". In a bundle of several serialized files (their path ids may coincide) the path id form names
-the file after the bundle: the part of the file name after its CAB-<hex> prefix ("scene_x.sharedAssets:12").
+the file after the bundle: the part of the file name after its CAB-<hex> prefix ("scene_x.sharedAssets:12"), or
+"|<file>" ("apk/data.unity3d|level0:3").
 Objects that no container path names are not listed; `address_of` gives any object's address.
 
 link.artifacts (nnnotes.artifacts/1), one global task: the results of the stages that export objects (unity.export,
@@ -41,7 +43,8 @@ from __future__ import annotations
 import json
 import re
 
-from . import catalogdb, census, contract
+from ..unity import scripttypes
+from . import builtins, catalogdb, census, contract
 from .contract import Cost, Input
 from .layout import EXT_CLASSES
 from .stages import Output, Pending, Stage
@@ -55,11 +58,8 @@ _CAB = re.compile(r"^CAB-[0-9a-f]+")
 
 # ---------------------------------------------------------------- scripts
 def script_entry(s: dict) -> str:
-    """ "assembly|namespace|class" of a census MonoScript record."""
-    asm = s.get("assembly") or ""
-    if asm.endswith(".dll"):
-        asm = asm[:-4]
-    return f"{asm}|{s.get('namespace') or ''}|{s.get('class') or ''}"
+    """ "assembly|namespace|class" of a census MonoScript record (scripttypes.script_entry)."""
+    return scripttypes.script_entry(s.get("assembly"), s.get("namespace"), s.get("class"))
 
 
 def scripts(censuses) -> dict:
@@ -81,12 +81,13 @@ def script_context(table: dict, refs) -> dict:
 # ---------------------------------------------------------------- addresses
 def file_tags(files) -> dict[str, str]:
     """{serialized file: the tag its path id addresses carry after the bundle name}: "" in a bundle of one file,
-    else the file name after its CAB-<hex> prefix ("" / ".sharedAssets"); "|<file>" where those coincide."""
+    else the file name after its CAB-<hex> prefix ("" / ".sharedAssets"); "|<file>" where those coincide or a file
+    has no such prefix."""
     files = list(files)
     if len(files) <= 1:
         return {f: "" for f in files}
     tags = {f: _CAB.sub("", f) for f in files}
-    if len(set(tags.values())) < len(tags):
+    if len(set(tags.values())) < len(tags) or not all(_CAB.match(f) for f in files):
         tags = {f: "|" + f for f in files}
     return tags
 
@@ -128,9 +129,10 @@ def _container_addresses(stable: str, entries: list[dict], info: dict, tags: dic
 
 
 def addresses(index: dict, censuses) -> dict:
-    """The address table (nnnotes.addresses/1) of a catalog index and the censuses of its bundles: {stable bundle
-    name: census document}, or (stable name, census document) pairs (read one at a time: only the container
-    entries and the objects they name are kept). Censuses of names the index does not list are ignored."""
+    """The address table (nnnotes.addresses/1) of a catalog index and the censuses of its bundles and of the APK's
+    built-in files: {stable bundle name or built-in subject: census document}, or (name, census document) pairs
+    (read one at a time: only the container entries and the objects they name are kept). Censuses of other names
+    the index does not list are ignored."""
     files_of = catalogdb.file_refs(index)
     listed = {b["stable"]: b for b in index["bundles"]}
     bundles, owners, info, groups, tags_of = {}, {}, {}, {}, {}
@@ -138,6 +140,8 @@ def addresses(index: dict, censuses) -> dict:
     pairs = sorted(censuses.items()) if isinstance(censuses, dict) else censuses
     for stable, doc in pairs:
         b = listed.get(stable)
+        if b is None and builtins.is_builtin(stable):
+            b = {"name": stable[len(builtins.PREFIX) :]}
         if b is None:
             continue
         names = [f["name"] for f in doc["files"]]
@@ -242,8 +246,12 @@ def reverse(doc: dict) -> dict[str, str]:
 
 
 # ---------------------------------------------------------------- stages
+def _subject(tid: str) -> str:
+    return contract.parse_task_id(tid, census.CensusStage.name)[1]
+
+
 def _census_input(env, tid: str) -> Input:
-    return env.input_of(tid, "census", as_role="census:" + contract.parse_task_id(tid, census.CensusStage.name)[1])
+    return env.input_of(tid, "census", as_role="census:" + _subject(tid))
 
 
 def _read(depot, task, role: str) -> dict:
@@ -289,9 +297,9 @@ class ScriptsStage(Stage):
 
 class AddressesStage(Stage):
     """link.addresses: a catalog index (input "index", the result of catalog.index:<subject>) and the censuses of its
-    bundles (inputs "census:<stable name>") -> the address table. Subjects: those of catalog.index (the fact
-    "catalogs"). Waits for census tasks of its bundles that have not run; skips failed ones. Artifact
-    "link.addresses:<subject>#addresses"."""
+    bundles and of the APK's built-in files (inputs "census:<stable name or subject>") -> the address table.
+    Subjects: those of catalog.index (the fact "catalogs"). Waits for census tasks of its bundles that have not run;
+    skips failed ones. Artifact "link.addresses:<subject>#addresses"."""
 
     name = "link.addresses"
     version = 1
@@ -305,6 +313,7 @@ class AddressesStage(Stage):
         idx = env.input_of(tid, "index")
         stables = {b["stable"] for b in env.depot.document(idx.sha256)["bundles"]}
         wanted = {contract.task_id(census.CensusStage.name, s) for s in stables}
+        wanted |= {t for t in env.tasks(census.CensusStage.name) if builtins.is_builtin(_subject(t))}
         pending = [t for t in env.pending(census.CensusStage.name) if t in wanted]
         if pending:
             raise Pending(pending[0])
