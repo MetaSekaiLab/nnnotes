@@ -2,34 +2,32 @@
 
 The asset export is built from three layers:
 
-- **Stages** apply one unit of work to one subject (a bundle, a content id, a model key, a view). Each has a name and
+- **Stages** apply one unit of work to one subject (a bundle, an object, a content id, a model key, a view). Each has a name and
   a version; a task is a stage applied to one subject, and its key covers exactly what its output depends on
   ([contracts.md](contracts.md)).
 - **Converters** turn the objects of one class inside `unity.export` into artifacts. Each carries its own version; a
-  bundle's task includes only the converters of the classes the bundle holds.
+  task includes only the converters of the classes its objects have.
 - **Atoms** are the pure functions stages and converters are made of: no file or network IO, no threads, the same
   output for the same input. Each atom has exactly one reference implementation.
 
 ## Stages
 
 Every stage is at version 1, except `unity.census` (version 3: it lists what every object references and the
-hierarchy holding it)
-and `cri.movie` (version 2: every stream kind, codec and channel of a USM), and `catalog.index` (version 2:
-gzip input and Japanese remote asset placeholders).
+hierarchy holding it), `unity.export` (version 2: one task per unit), `cri.movie` (version 2: every stream kind,
+codec and channel of a USM) and `catalog.index` (version 2: gzip input and Japanese remote asset placeholders).
 
 | Stage | Subject | Inputs | Outputs |
 |---|---|---|---|
 | `catalog.index` | a catalog (remote + APK) | the catalog files | every location (with the bundle hash, crc and size), bundles and raw remote files |
 | `unity.census` | a bundle, or a built-in file of the APK | the bundle | serialized files, externals, objects (file, path id, class, size, type hash, name, script, the scripts an AnimationClip's bindings name, the objects it references, the hierarchy holding it), container, scene hashes, dependencies, script fields |
 | `link.scripts` | global | the censuses holding MonoScripts | serialized file and path id -> assembly, namespace, class |
-| `unity.export` | a bundle, or a built-in file of the APK | the bundle, the script entries its MonoBehaviours use (and, for files without type trees, the type trees nnnotes ships for their type hashes) | the objects' artifacts and one item per object |
+| `unity.export` | a unit of a bundle or of a built-in file of the APK (below), by the stable address of its root object | the bundle; context `unit` (the root's object id), `bundle`, the script entries its objects use and, for files without type trees, the type trees nnnotes ships for their type hashes | its objects' artifacts and one item per object |
 | `sprite.crop` | a SpriteAtlas | the atlas' JSON, the images of its textures, the metas of the sprites of other bundles it packs | the sprites' images |
 | `cri.audio` | ACB content | `acb` (a raw file of the catalog, or the `acb` artifact of a cue sheet held in a bundle), `awb` (an AWB the catalog pairs with it), `boot` (the game's boot data: the key's source) | FLAC per stream, `cues.json`, `streams.json` |
 | `cri.movie` | USM content | `usm` (a raw file of the catalog, or the `usm` artifact of a movie held in a bundle), `boot` | every stream as stored (video, alpha, audio, subtitles), `movie.mkv` (or `movie.webm`) |
 | `live2d.model` | a Live2D model key (`Character/Live2D/<group>/<name>/model/<name>`) whose bundle is selected | `bundle:<n>`: the bundles of the key's dependency closure in the order the extractor loads them (the order is part of the key); context `internalId` (the key's location); atom `live2d.extract_model` (the extractor of `nnnotes export live2d`, run unchanged) | `live2d.model:<key>#<path>`: every file `nnnotes export live2d` writes for the model, `<path>` relative to the model's directory; placed under `<key>/` |
 | `spine.skeleton` | a SkeletonDataAsset of a selected bundle, by its stable address `<bundle>:<pathId>` (in a bundle of several serialized files the file's tag follows the bundle name, as in `link.addresses`) | `bundle:<stable name>`: the bundles holding the serialized files the asset's file reaches through its externals; context `object` (the asset's object id); atom `spot.write_skeleton` (the Spine writer of `nnnotes export spot`) | `spine.skeleton:<subject>#<file>`: the skeleton (`.json` or `.skel`), its atlases (`.atlas`) and their page images, the bytes `nnnotes export spot` writes into `spine/`; one item for the asset |
 | `link.addresses` | global | catalog index, censuses (the built-in files' too) | key -> objects, serialized file -> bundle or built-in file, bundle -> keys |
-| `link.artifacts` | global | the above, the results | object id -> artifact ids |
 | `view.<name>` | a catalog (`main`) | `master:<Table>` per master table it reads, `rules` (the view's rule and the resolvers it uses), `addresses` (the part of the address table it read: the keys looked up and the prefixes listed); no parameters, atoms or context | `view.<name>:<subject>#view` (facts: rows, entries, gaps, unreferenced) |
 | `view.voices` | a catalog (`main`) | `master:<Table>` per master table its rules read, `rules`, `addresses`, `sheets` (each cue sheet the `cri.audio` results are known by that a voice names or the rules' prefixes list: its task and ACB content id), `acb:<sha256>` (the ACB of each decoded one), `episodes` (per story episode and part, the `unity.export` artifact holding the object its key names), `adv:<sha256>` (those contents); context `audio` (the keys of those `cri.audio` results); runs after `unity.export` and `cri.audio` | `view.voices:<subject>#view` (facts: rows, entries, gaps, unreferenced streams) |
 
@@ -40,8 +38,8 @@ gzip input and Japanese remote asset placeholders).
 ## Converters (`unity.export`)
 
 The converters are the library `nnnotes.unity.convert`, one module per group of classes; `unity.export`
-(`nnnotes.pipeline.objexport`) runs them over one bundle read alone and gives every object of it exactly one item
-status: `exported`,
+(`nnnotes.pipeline.objexport`) runs them over one unit of a bundle read alone and gives every object of the unit
+exactly one item status: `exported`,
 `contained` (part of another artifact), `generic` (typetree JSON because the specialized form could not be made;
 the reason says why), `unsupported` (a class the stage does not convert; its typetree JSON is written as well) or
 `failed` (not even the typetree JSON could be made). A converter's documented limit gives the generic typetree JSON
@@ -50,7 +48,7 @@ with its reason code; any other error of a converter gives it with `generic.erro
 | Class | Converter | Artifacts | Atoms | Notes |
 |---|---|---|---|---|
 | Texture2D | `tex.png/2` | `image`: PNG of the first mip level (HDR ASTC: `.astc`), `json`: the typetree without `image data` (settings, colour space, mip count, stream data) | `texture.decode`, `png.encode`, `astc.container` | further mip levels as facts; a texture without pixels: `empty.texture` |
-| Sprite | `sprite.png/2` | `image`: PNG on the sprite's rect (packing undone, tight mask applied), `json`: the typetree, geometry, render data and image (see below) | `texture.decode`, `sprite.crop`, `png.encode`, `mesh.arrays` | the texture is decoded once per task; a sprite whose SpriteAtlas is in another bundle gets its `json` here (with its geometry and object facts) and its `image` from `sprite.crop` |
+| Sprite | `sprite.png/2` | `image`: PNG on the sprite's rect (packing undone, tight mask applied), `json`: the typetree, geometry, render data and image (see below) | `texture.decode`, `sprite.crop`, `png.encode`, `mesh.arrays` | the tasks of a bundle share the textures it decoded last; a sprite whose SpriteAtlas is in another bundle gets its `json` here (with its geometry and object facts) and its `image` from `sprite.crop` |
 | Mesh | `mesh.glb/2` | `mesh`: binary glTF in the mesh's local space, `json`: the typetree without the vertex, index and compressed mesh data | `mesh.arrays`, `gltf.write` | see `gltf.write` below; limits of the skin and blend shapes as issues of the artifact |
 | GameObject (a root) | `prefab.json/2` | `json`: the hierarchy's nodes (path, path ids, transform) with their components' fields | | the objects below it are `contained`; a root of a scene's file names its scene |
 | Material | `material.json/1` | `json`: shader, keywords, textures, floats, colours | | |
@@ -60,9 +58,7 @@ with its reason code; any other error of a converter gives it with `generic.erro
 | MonoBehaviour (not in a hierarchy) | `mono.json/2`, `cri.usm/1` | `json`: `$script` (assembly, namespace, class) and the typetree; a cue sheet asset also `acb`, a movie asset holding its USM also `usm` (see below) | `sniff` | the class from the task's script table |
 | TextAsset | `data/2` | `data`: the stored bytes, `json`: the typetree without `m_Script` | `sniff` | extension from the container path, else from the content |
 | Font | `font/2` | `font`: the font file, `json`: the typetree without `m_FontData` | `sniff` | |
-| MonoScript | `scripts.json/1` | `<task id>#scripts.json`: every MonoScript of the bundle | | |
-| AssetBundle | `bundle.json/1` | `<task id>#bundle.json`: serialized files, externals, the AssetBundle objects | | |
-| any other class | `generic.json/2` | `json`: the typetree | `sniff` | an object that can be read only in part (see below): that part, `unsupported.typetree` |
+| any other class (a MonoScript, an AssetBundle, ...) | `generic.json/2` | `json`: the typetree | `sniff` | an object that can be read only in part (see below): that part, `unsupported.typetree` |
 
 Every object a converter takes has a `json` artifact or is contained in another object's. Each item lists in
 `refs` the objects its documents reference (by object id, other bundles' objects included, the objects of its own
@@ -105,10 +101,25 @@ again. A MonoBehaviour without one is `unsupported.typetree` with its header (`m
 issue. PlayerSettings, whose type tree reads the stored layout right up to `m_ActiveColorSpace` (by its stored
 type hash), gives the fields up to it.
 
-A task's key includes the atoms `reader` and `sniff`, the converter `generic.json`, and the converters (with their
-atoms) of the classes the bundle's census lists, so a converter's version bump runs again exactly the bundles holding
-its classes. `classes` (a list of class names) limits a task to the objects of those classes and the objects their
-hierarchies contain.
+### Units
+
+A unit is what one `unity.export` task converts: a hierarchy (a root GameObject with the GameObjects, Transforms and
+components of its prefab: the objects whose census record names it as their `unit`) or an object outside any
+hierarchy. Its subject is the stable address of its root object, `<stable bundle name>:<pathId>` (in a bundle of
+several serialized files the file's tag follows the bundle name, as in `link.addresses`): path ids stay when a
+bundle's content changes, so a unit keeps its task across catalog versions.
+
+A run exports the units holding an object of the selected bundles and every unit reachable from those through what
+their objects reference (the census `refs`, across the censuses of the run); with `--only-class` only the units whose
+root object is of those classes. The selection is not part of any key: a unit's task is the same whichever request
+reaches it.
+
+A task's key includes the atoms `reader` and `sniff`, the converter `generic.json`, the converters (with their
+atoms) of the classes of the unit's objects, its bundle, its root and the script entries and shipped type trees its
+objects use, so a converter's version bump runs again exactly the units holding its classes. The tasks of one bundle
+are one batch: a worker loads the bundle once for them and keeps what depends on the bundle alone (the index of its
+objects, its hierarchies, its atlases and the textures it decoded last) until the batch ends. A unit's result
+depends on neither the other units of the batch nor their order.
 
 Object JSON is canon/1 in the object's own field order:
 
@@ -139,7 +150,7 @@ hierarchy that plays the clip, which the clip alone does not give.
 A cue sheet held in a bundle is a MonoBehaviour in one of two layouts; either gives the artifact
 `<object id>#acb` (kind `cri.acb`, facts: `cueSheet`, `layout`), which `cri.audio` decodes:
 
-- a SplitAcbData (fields `_cueSheetName`, `_chunks`): its chunk TextAssets (of the same bundle, exported as well) joined
+- a SplitAcbData (fields `_cueSheetName`, `_chunks`): its chunk TextAssets (of the same bundle, units it references) joined
   in order, every byte XORed with the one mask that gives the ACB signature `@UTF` (layout `split`; its refs name
   the chunks);
 - an asset named like the sheet whose `implementation` managed reference is a CriSerializedBytesAssetImpl: its
@@ -148,11 +159,11 @@ A cue sheet held in a bundle is a MonoBehaviour in one of two layouts; either gi
 
 A movie asset (CriWare.Assets `CriManaUsmAsset`) whose `implementation` is a CriSerializedBytesAssetImpl holds its USM
 the same way: its `data.data` bytes, whatever their size, are the artifact `<object id>#usm` (kind `cri.usm`, facts:
-`movie`, the asset's name), which `cri.movie` converts. Converter `cri.usm/1` does this; it is in the key of a bundle
-only when the bundle's script context names that class, so no other bundle's key changes with it.
+`movie`, the asset's name), which `cri.movie` converts. Converter `cri.usm/1` does this; it is in the key of a unit
+only when the scripts of its objects name that class, so no other unit's key changes with it.
 
-`sprite.crop` makes one task per SpriteAtlas that sprites of other bundles use (subject `<the atlas bundle's
-subject>:<atlas path id>`). Its inputs are the atlas' JSON, the `json` of each such sprite and the images of the
+`sprite.crop` makes one task per SpriteAtlas that sprites of other bundles use (subject: the `unity.export`
+subject of the atlas' unit). Its inputs are the atlas' JSON, the `json` of each such sprite and the images of the
 atlas textures they use; it writes `<sprite object id>#image` with the same bytes `unity.export` writes for a sprite
 whose atlas is in its own bundle.
 

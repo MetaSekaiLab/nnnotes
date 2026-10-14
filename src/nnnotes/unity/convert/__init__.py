@@ -2,8 +2,8 @@
 
 A converter reads one bundle alone through its `BundleObjects` (objects.py) and writes its artifacts through the
 `emit` function the caller gives it; the caller (the unity.export stage) keeps the items, the depot and the
-provenance. Each converter carries a version (CONVERTERS); a task's key includes the converters of the classes its
-bundle holds, with the atoms they use (CONVERTER_ATOMS).
+provenance. Each converter carries a version (CONVERTERS); a task's key includes the converters of the classes of the
+objects it converts, with the atoms they use (CONVERTER_ATOMS).
 
     Texture2D             tex.png          `image`: PNG of the first mip level (HDR ASTC: the .astc file)
     Sprite                sprite.png       `image`: PNG on the sprite's rect; `json`: typetree, geometry, render data
@@ -21,9 +21,7 @@ bundle holds, with the atoms they use (CONVERTER_ATOMS).
                                            also `usm`: its USM (kind cri.usm)
     TextAsset             data             `data`: the stored bytes
     Font                  font             `font`: the font file
-    MonoScript            scripts.json     "<task id>#scripts.json": every MonoScript of the bundle
-    AssetBundle           bundle.json      "<task id>#bundle.json": serialized files, externals, AssetBundle objects
-    any other class       generic.json     `json`: the object's typetree
+    any other class       generic.json     `json`: the object's typetree (a MonoScript, an AssetBundle, ...)
 
 Every object a converter takes has a `json` artifact (or is contained in one): the converter's document, or the
 typetree JSON (a Texture2D, Mesh, TextAsset or Font without the bytes its other artifact holds).
@@ -77,8 +75,6 @@ CONVERTERS = {
     "mono.json": 2,
     "data": 2,
     "font": 2,
-    "scripts.json": 1,
-    "bundle.json": 1,
     "shader.json": 1,
     "generic.json": 2,
     "cri.usm": 1,
@@ -96,8 +92,6 @@ CLASS_CONVERTERS = {
     "MonoBehaviour": ("mono.json",),
     "TextAsset": ("data",),
     "Font": ("font",),
-    "MonoScript": ("scripts.json",),
-    "AssetBundle": ("bundle.json",),
     "Shader": ("shader.json",),
 }
 ALWAYS = ("generic.json",)
@@ -134,7 +128,7 @@ def converter_id(name: str) -> str:
 
 
 def converters_for(classes) -> list[str]:
-    """The converters a bundle holding objects of `classes` may use."""
+    """The converters objects of `classes` may use."""
     out: set[str] = set(ALWAYS)
     for c in classes:
         out.update(CLASS_CONVERTERS.get(c, ()))
@@ -142,7 +136,7 @@ def converters_for(classes) -> list[str]:
 
 
 def export_atoms(classes, reader_id: str | None = None) -> dict:
-    """The atoms and converters a bundle holding `classes` uses (the `atoms` of its unity.export task)."""
+    """The atoms and converters objects of `classes` use (the `atoms` of a unity.export task)."""
     convs = converters_for(classes)
     names = set(BASE_ATOMS)
     for c in convs:

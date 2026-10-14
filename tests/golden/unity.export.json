@@ -1,7 +1,6 @@
 {
  "atoms": {
   "astc.container": "nnnotes/1",
-  "bundle.json": "bundle.json/1",
   "clip.json": "clip.json/2",
   "controller.json": "controller.json/2",
   "cri.usm": "cri.usm/1",
@@ -16,7 +15,6 @@
   "png.encode": "pillow-12.3.0/1",
   "prefab.json": "prefab.json/2",
   "reader": "fakeunity/1",
-  "scripts.json": "scripts.json/1",
   "shader.json": "shader.json/1",
   "sniff": "nnnotes/1",
   "sprite.crop": "pillow-12.3.0+numpy-2.4.6/1",
@@ -25,69 +23,57 @@
   "texture.decode": "unitypy-1.25.3+texture2ddecoder-1.0.6+astc-encoder-py-0.1.12+pillow-12.3.0/1"
  },
  "fixtures": {
-  "all": {
-   "key": "bfa791aaeaa8744197413dca21b95285355376a687dcb4a5b511410b4761bd28",
-   "result": "d9f811e5ca222529d22d1c5e2ec9cd89328d0229eac92b7e01d0cb59dbc56077"
-  },
-  "bundle.json": {
-   "key": "019bd61d3b8989c2f59289354d72d3857ed37cab1d90316359e6702ebab8a515",
-   "result": "f1516133579ff990af232a7b6d8b6303104c59997d20905f16aa280403d3a09e"
-  },
   "clip.json": {
-   "key": "a9f5fb2a87fbcb197a5bc37f1c520b7b5a4a6fd5b5ad38b1198e9f8601dc223b",
-   "result": "6448026702f2239970f8041906335b3a2302a4463536d2f0394daa36906d9c79"
+   "key": "c2211c68d3286636469c74023637e15b3c11dade0f858ab2380498aa319171eb",
+   "result": "1f6ad672b184cd8b4cf9eeeb9ee0b8512ba532eaf708cb36b86c538b19910b75"
   },
   "controller.json": {
-   "key": "472e6426b3af184e4fb17ccc0a147bd7b6fc9e5fc49f32d0ab2c2d79238417e1",
-   "result": "c43f0d2de335f10063d20f2d208b54cf7da37863860441a22781bce35f0cb1cc"
+   "key": "eaae782443b5874108271db45e6a0da404f91239f700dd827802081ba64dd184",
+   "result": "e63d57f287d5d388e1d6d2269bc03ffbf03165b11cb03a19d2ad003fb00cacf8"
   },
   "cri.usm": {
-   "key": "72cba01cb4fe8fa95d052a2fd17380eaacdd722dc0e5fc802bce8a301560e7a0",
-   "result": "9fecf00c65642c4ebb635839f79d9001cf4308b367711c2acaf82fa53326cff5"
+   "key": "c69fabc7e24dd038b2375b59a0421cd514a8ea5e5dc3a21c181dda809902dc3f",
+   "result": "d829f22ea9a736a478f2963470f2bdca4d6a3200e40a510606956fe771d63e00"
   },
   "data": {
-   "key": "1b44691876cbf5e28032ac2858d9616a8445e2357c543291e2806506c8c0a0b4",
-   "result": "cdaf30aeb760eef66ec41e029940a800af4d72b0ca0c4545c9c911b6c94fd331"
+   "key": "eec1daf7f06a873c434b64b5ab2d0629b61a71c331f16ed5434706b60ee3bee3",
+   "result": "493c173754a5a0088bc972fc8c373415d02b345060ab83df9ce41f8b0d0317f8"
   },
   "font": {
-   "key": "7d5549079bee9a0778d9d698545f21bfd0fea5466e0efa160661cfb527a83ea9",
-   "result": "d58abbc2a1b9990fadca993ac0502dc2d586b79e4947bfd1b6fb0a9f7bbc41b0"
+   "key": "81155f5c29ca33162b4b0ee97d7559fb0460ad02c46a187097bb6e4893792b7c",
+   "result": "d0da497a3f6207d7e92e31ac4313f289eb483b5fcf0496476a3fb50e235b830a"
   },
   "generic.json": {
-   "key": "22deb0da7906ad444ca282fb2a8f993106268f748f2fab35357c049e5b020410",
-   "result": "a41f325a63c894bfe54aba013c1ee7aa6d674fddd49715c5e3898b7f40e6559c"
+   "key": "76af5e1c7fd2b389a80c4725aa2b561ffb0ae552b0d65ce2eb4ad56710ae3201",
+   "result": "6d6d058a293360ee2065fbb205f35834198e7285a743f2e5b1dc847daa4cdad3"
   },
   "material.json": {
-   "key": "b8b07211d9dbc578b3541a0e59653b01506a211426cc70b6e0aa2e82a948167e",
-   "result": "09085e48baebbda4a78a076e5dc66eeb19ae1f53710ec9f9b3553bb86dfdefde"
+   "key": "c391d41f8afdc880c74e24f143560ff80c122c97f82241cd2b4f0cdf8f5fad1f",
+   "result": "0990d8b5ccdc04c6335b2779354b3d64727ebccc701490ffe6a46346719e90e2"
   },
   "mesh.glb": {
-   "key": "1c9b9a873c782e16650ef40cc0a41c17d37da55e05da6d44f47c488cc12d5027",
-   "result": "58304a1fd371109dbc38f99cd578ad8238453e769ae8c9d8562e1e187e2df1bc"
+   "key": "1e5a4fee78d3fd98334ce50a6b0b1cc56f5733252f2cb00ff974d515a362b911",
+   "result": "11949923ee05d67811b42f530d84313e9197afd74e203da44291761b8aa87994"
   },
   "mono.json": {
-   "key": "f2109d87be61d8cf5b0b527326d2cdc474785104091c55e770a18b31cd967b23",
-   "result": "02bc065f80513aad7e9afc21704d0f9591e0f110c9ff6fd818f357fe139686f8"
+   "key": "0aeed465e4e3f8a310b4a2bd3cc06fa899fcdd5fb0ae04d3a5c2a5ccd85d09ea",
+   "result": "9711bc6d921e7c49ef0b86b487808c12b95e106bb791655a880fef9257ec6da3"
   },
   "prefab.json": {
-   "key": "583e77337b68385457bb1f7ec789c943d69729706adc18b47d59354bd04fcf94",
-   "result": "3751c24516ea904f342e272234e57357b4c5d03ef6e90637c5c8bffbbca78d2a"
-  },
-  "scripts.json": {
-   "key": "6e6a37fb9135463601b78a8a5f699996221242585bcc31c63863158ca0a3f9dd",
-   "result": "9e9b03c721f1f163ed6e81c202b767a7af84be95e662d4d3b5a9b8d46bfe3392"
+   "key": "0c801dd911545b249a8b629b3dfa05c7ea6c466482d7f93252f126717419dc94",
+   "result": "96507449031bd9d046088f01b64602d7191aa87d7cf5af29ecde677c051d20fe"
   },
   "shader.json": {
-   "key": "f3c2c279ab2ed59a70932b19111c4f248593ec3ca9e0677b9402c38cb8505d03",
-   "result": "dac4f3d4f225dd3659ac78ab0b344daaa64e1a0a6f7dfe759f3ab49ffe3b3c43"
+   "key": "105e05e73efa131a339c80a936f0e8dc44a2cebe3c25d332f500b51871dfe83e",
+   "result": "0f670ee8b5f4ceb584329ecd3a4695d70dd5bf0b9690b4df63b87963fb83913b"
   },
   "sprite.png": {
-   "key": "d35fe9220f41f10d16b8506f48f31774e9303a8ce6e7b2deba3eb2b26edc56d9",
-   "result": "ebe1ea68a2fb3289366624724ec4a9335ff6e42156ce4003c7669106e3981482"
+   "key": "ab28c0f55b23cb58aaf5b94f4357231ab1f4be8ce16c6a02e69bfc1917a3509c",
+   "result": "82cf3a23fe661f24f5e9fc3189e2b70db39c287e39392397556e2b081beb4c2c"
   },
   "tex.png": {
-   "key": "1408f5b984cbcc1c74d23e3c6ef518288f2d112b6b2e4007aecb7f811ddfc809",
-   "result": "fec1a912d37045add008ea5c12941ea9c6e9eeb0cc0adb6b4d5be81c89ac26eb"
+   "key": "f5b96a51a6de3073767d863f7fbd7f835df241386588ae3fddbfa7eae4d02c5a",
+   "result": "ea26cd3f966ff9ebb9c7491f72e720aa311d5552f5ef0b136d9712958dac6ac7"
   }
  },
  "libraries": {
@@ -99,5 +85,5 @@
  },
  "provider": "tests.pipeline.test_objexport:export_golden",
  "stage": "unity.export",
- "version": 1
+ "version": 2
 }

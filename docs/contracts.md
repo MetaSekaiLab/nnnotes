@@ -36,14 +36,15 @@ The canonical JSON (`nnnotes.core.canon`) of every document nnnotes writes:
 | object | `<serialized file>:<pathId>` | `CAB-2f1e…:-4153…`, `unity default resources:10` |
 | artifact of an object | `<object id>#<role>` | `CAB-2f1e…:-4153…#image` |
 | artifact of no object | `<stage>:<subject>#<role>` | `cri.audio:<acb sha256>#bgm_x.flac` |
-| task | `<stage>:<subject>` | `unity.export:membercard_assets_membercard_100101` |
+| task | `<stage>:<subject>` | `unity.census:membercard_assets_membercard_100101`, `unity.export:membercard_assets_membercard_100101:-4153…` |
 | stable bundle name | the bundle file name without `_<32 hex>` and `.bundle` | `membercard_assets_membercard_100101` |
 | stable address | `<stable bundle>/<container>` (`[<name>]` for a sub-object), else `<stable bundle>:<pathId>` | `membercard_assets_membercard_100101/assets/…/member_full.png` |
 
 Stage names contain no `:` or `#`; an artifact's owner contains no `#` (its role may). A bundle's serialized file
 names change whenever its content changes, while its path ids stay: an object id names one content version of an
 object, and the stable address finds the same object in another catalog version. Bundle stages use the stable
-bundle name as their subject, so a task keeps its id across versions while its key follows the content. When two
+bundle name as their subject and object stages the `<stable bundle>:<pathId>` address of their object, so a task
+keeps its id across versions while its key follows the content. When two
 bundles of a catalog have the same stable name, both keep their full file names.
 
 ## Task: nnnotes.task/1
@@ -52,13 +53,14 @@ One stage applied to one subject, with everything needed to run it
 ([task.schema.json](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/schemas/task.schema.json)):
 
 ```json
-{"schema": "nnnotes.task/1", "id": "unity.export:membercard_assets_membercard_100101",
- "stage": {"name": "unity.export", "version": 1},
- "params": {"png": {"encoder": "pillow", "level": 6}, "blobMin": 4096},
+{"schema": "nnnotes.task/1", "id": "unity.export:membercard_assets_membercard_100101:-4153…",
+ "stage": {"name": "unity.export", "version": 2},
+ "params": {"blobMin": 4096, "png": {"level": 6}},
  "atoms": {"png.encode": "pillow-12.3.0/1", "texture.decode": "unitypy-1.25.3/1"},
  "inputs": [{"role": "bundle", "sha256": "…", "size": 123456, "name": "membercard_…_3fa…c2.bundle",
              "locators": [{"kind": "depot"}, {"kind": "download", "path": "bundles/membercard_…_3fa…c2.bundle"}]}],
- "context": {"scripts": {"CAB-…:12345": "Assembly-CSharp|Fwk.Sound|SplitAcbData"}},
+ "context": {"unit": "CAB-2f1e…:-4153…", "bundle": "membercard_assets_membercard_100101",
+             "scripts": {"CAB-…:12345": "Assembly-CSharp|Fwk.Sound|SplitAcbData"}},
  "key": "…", "cost": {"cpuSeconds": 1.2, "peakBytes": 450000000}}
 ```
 
@@ -97,7 +99,7 @@ One output file ([artifact.schema.json](https://github.com/MetaSekaiLab/nnnotes/
 ```json
 {"id": "CAB-…:-4153…#image",
  "content": {"sha256": "…", "size": 1234, "mediaType": "image/png", "ext": "png"},
- "provenance": {"stage": {"name": "unity.export", "version": 1, "params": "<key hash of the params>"},
+ "provenance": {"stage": {"name": "unity.export", "version": 2, "params": "<key hash of the params>"},
                 "atoms": {"texture.decode": "…", "png.encode": "…"},
                 "inputs": [{"role": "bundle", "sha256": "…"}],
                 "object": {"file": "CAB-…", "pathId": -4153, "classId": 28, "class": "Texture2D",
@@ -221,7 +223,6 @@ Documents written by particular stages (artifacts of no object: their ids are `<
 | `nnnotes.census/2` | `unity.census` | [census.schema.json](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/schemas/census.schema.json) |
 | `nnnotes.scripts/1` | `link.scripts` | [scripts.schema.json](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/schemas/scripts.schema.json) |
 | `nnnotes.addresses/1` | `link.addresses` | [addresses.schema.json](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/schemas/addresses.schema.json) |
-| `nnnotes.artifacts/1` | `link.artifacts` | [artifacts.schema.json](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/schemas/artifacts.schema.json) |
 | `nnnotes.view/1` | `view.<name>` | [view.schema.json](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/schemas/view.schema.json) |
 
 The catalog versions of a depot, `nnnotes.catalogs/1` ([catalogs.schema.json](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/schemas/catalogs.schema.json),
