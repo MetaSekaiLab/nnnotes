@@ -27,13 +27,13 @@ from dataclasses import dataclass, field
 from functools import cache
 from importlib import metadata
 
-from nnnotes.pipeline.atoms import Impl, Unsupported
-from nnnotes.pipeline.atoms import png as png_atom
-from nnnotes.pipeline.atoms import reader as reader_atom
-from nnnotes.pipeline.atoms import texture as texture_atom
-from nnnotes.pipeline.atoms.mesh import MeshInput
-from nnnotes.pipeline.atoms.reader import ObjectInfo, UnityBundle
-from nnnotes.pipeline.atoms.texture import TextureInput
+from nnnotes.unity.atoms import Impl, Unsupported
+from nnnotes.unity.atoms import png as png_atom
+from nnnotes.unity.atoms import reader as reader_atom
+from nnnotes.unity.atoms import texture as texture_atom
+from nnnotes.unity.atoms.mesh import MeshInput
+from nnnotes.unity.atoms.reader import ObjectInfo, UnityBundle
+from nnnotes.unity.atoms.texture import TextureInput
 
 FALLBACKS = {"png": 0}
 _KEEP = "unity_rs.image"
@@ -390,7 +390,7 @@ def png_encode_fast() -> Impl:
 def _mesh(inp: MeshInput):
     import numpy as np
 
-    from nnnotes.pipeline.atoms.mesh import Channel, MeshArrays, Primitive
+    from nnnotes.unity.atoms.mesh import Channel, MeshArrays, Primitive
 
     src = getattr(inp, "source", None)
     if src is None:
@@ -429,6 +429,6 @@ def _mesh(inp: MeshInput):
 
 @cache
 def mesh_arrays() -> Impl:
-    from nnnotes.pipeline.atoms import mesh as mesh_atom
+    from nnnotes.unity.atoms import mesh as mesh_atom
 
     return Impl(_id(_rs(), "obj"), _mesh, mesh_atom.cost)

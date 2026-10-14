@@ -128,14 +128,14 @@ else found on PATH. The `boot` input is the APK's `assets/bin/Data/data.unity3d`
 
 ## Atoms
 
-`nnnotes.pipeline.atoms.ATOMS[name]` is the reference implementation of an atom: its id, its function and its cost estimate.
+`nnnotes.unity.atoms.ATOMS[name]` is the reference implementation of an atom: its id, its function and its cost estimate.
 The id names the libraries whose behaviour the output depends on, with their installed versions, and the revision of
 the nnnotes code (`pillow-12.1.1/1`); `nnnotes/<revision>` when no library's behaviour is involved. Task keys include
 the ids of the atoms a task uses, so upgrading a library or changing an atom re-runs exactly the tasks that use it.
 
 | Atom | Reference implementation | Id | Does |
 |---|---|---|---|
-| `reader` | `nnnotes.pipeline.atoms.reader.open_bundle` (UnityPy) | `unitypy-<v>/1` | one bundle loaded alone from its bytes: serialized files, objects, raw bytes, typetrees, container, externals, and the inputs of `texture.decode` and `mesh.arrays` (resource files are read from inside the bundle only) |
+| `reader` | `nnnotes.unity.atoms.reader.open_bundle` (UnityPy) | `unitypy-<v>/1` | one bundle loaded alone from its bytes: serialized files, objects, raw bytes, typetrees, container, externals, and the inputs of `texture.decode` and `mesh.arrays` (resource files are read from inside the bundle only) |
 | `texture.decode` | UnityPy `Texture2DConverter.parse_image_data` | `unitypy-<v>+texture2ddecoder-<v>+astc-encoder-py-<v>+pillow-<v>/1` | the first mip level, top row first, as UnityPy's `Texture2D.image` |
 | `png.encode` | Pillow | `pillow-<v>/1` | PNG bytes; level 6 (the default) gives Pillow's default bytes, the ones the other commands write |
 | `astc.container` | nnnotes | `nnnotes/1` | the standard `.astc` file (16-byte header, first mip level's blocks) |

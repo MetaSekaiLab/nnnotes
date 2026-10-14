@@ -2,7 +2,7 @@
 """Measure candidate implementations of the export atoms against the reference implementations (maintainer tool;
 not installed, not needed to use nnnotes).
 
-`nnnotes.pipeline.atoms.ATOMS` holds one reference implementation per atom; `NNNOTES_ATOM_<NAME>=module:attribute` names
+`nnnotes.unity.atoms.ATOMS` holds one reference implementation per atom; `NNNOTES_ATOM_<NAME>=module:attribute` names
 another one for evaluation (docs/stages.md, "Atoms"). This script gives the numbers a switch is decided on:
 
     sample   DIR -o FILE                  a seeded stratified sample of a bundle directory: one bundle of every
@@ -42,7 +42,7 @@ compares, per check:
 
 A candidate view is the reader candidate's result; the optional methods census(), text_bytes(obj), font_bytes(obj),
 sprite_image(obj) and the attribute typetree_form serve the checks that have no atom of their own. A candidate
-raising NotImplementedError has no such facet ("absent"); `nnnotes.pipeline.atoms.Unsupported` is a refusal.
+raising NotImplementedError has no such facet ("absent"); `nnnotes.unity.atoms.Unsupported` is a refusal.
 
 Statuses: equal, differ, refused (the candidate raised where the reference gave a result), refused.both, extra (a
 result where the reference refused), absent, reference-error. Output: one JSON document (-o); m1 and m3 also write
@@ -133,7 +133,7 @@ def check_clean_env() -> None:
 
 def load_impl(spec: str):
     """The Impl named by module:attribute (an Impl, or a callable returning one)."""
-    from nnnotes.pipeline.atoms import Impl
+    from nnnotes.unity.atoms import Impl
 
     module, sep, attr = spec.partition(":")
     if not sep or not module or not attr:
@@ -146,7 +146,7 @@ def load_impl(spec: str):
 
 
 def parse_atoms(items) -> list[tuple[str, str]]:
-    from nnnotes.pipeline.atoms import ATOMS
+    from nnnotes.unity.atoms import ATOMS
 
     out = []
     for it in items or ():
@@ -449,7 +449,7 @@ def cmd_sample(a) -> dict:
 
 # ---------------------------------------------------------------- m1
 def m1_init(cfg: dict) -> None:
-    from nnnotes.pipeline.atoms import resolve
+    from nnnotes.unity.atoms import resolve
 
     G.clear()
     G.update(cfg)
@@ -477,7 +477,7 @@ def _key(info) -> tuple:
 
 def _call(fn, *args):
     """(result, None) or (None, refusal) where refusal is the Unsupported code or the error's message."""
-    from nnnotes.pipeline.atoms import Unsupported
+    from nnnotes.unity.atoms import Unsupported
 
     try:
         return fn(*args), None
@@ -700,7 +700,7 @@ def hdr_reference(inp):
     import numpy as np
     from PIL import Image
 
-    from nnnotes.pipeline.atoms.texture import ASTC_BLOCKS
+    from nnnotes.unity.atoms.texture import ASTC_BLOCKS
 
     bx, by = ASTC_BLOCKS[int(inp.format)]
     w, h = int(inp.width), int(inp.height)
@@ -723,7 +723,7 @@ def _hdr_library_image(inp):
 
 
 def check_textures(T: Tally, ref, cv, infos, cmap, checks) -> None:
-    from nnnotes.pipeline.atoms.texture import format_name, is_hdr_astc
+    from nnnotes.unity.atoms.texture import format_name, is_hdr_astc
 
     ref_dec, ref_png = G["ref"]["texture.decode"], G["ref"]["png.encode"]
     decs, pngs = G["cand"].get("texture.decode", []), G["cand"].get("png.encode", [])
@@ -1173,7 +1173,7 @@ def _m3_worker(task) -> dict:
 
 
 def _apply_atoms(atoms) -> None:
-    from nnnotes.pipeline.atoms import env_name, resolve
+    from nnnotes.unity.atoms import env_name, resolve
 
     for name, spec in atoms:
         os.environ[env_name(name)] = spec

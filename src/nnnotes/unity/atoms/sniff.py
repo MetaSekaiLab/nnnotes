@@ -13,7 +13,7 @@ import json
 import re
 from dataclasses import dataclass
 
-from .. import contract
+from ...core.media import media_type
 from . import estimate
 
 
@@ -99,7 +99,7 @@ _SPINE_VERSION = re.compile(r"[34]\.\d+(\.\d+)*")
 
 
 def _media(ext: str, fallback: str = "application/octet-stream") -> str:
-    m = contract.media_type(ext)
+    m = media_type(ext)
     return fallback if m == "application/octet-stream" else m
 
 

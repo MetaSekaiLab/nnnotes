@@ -631,7 +631,7 @@ class GoldenAudio(AudioStage):
 class GoldenMovie(MovieStage):
     @property
     def ATOMS(self) -> dict:
-        from nnnotes.pipeline.atoms import impl_id
+        from nnnotes.unity.atoms import impl_id
 
         return {
             "usm.demux": impl_id(("numpy",), cristages.USM_DEMUX_REVISION),

@@ -16,12 +16,12 @@ from PIL import Image
 
 from nnnotes.pipeline import census as census_mod
 from nnnotes.pipeline import contract, objexport
-from nnnotes.pipeline.atoms import Impl, astc, estimate, gltf
-from nnnotes.pipeline.atoms.reader import UnityBundle
 from nnnotes.pipeline.contract import IncompatibleTask, Input, Task
 from nnnotes.pipeline.depot import Depot
 from nnnotes.pipeline.objexport import CONVERTERS, CROP, EXPORT, ExportStage, SpriteCropStage, export_atoms
 from nnnotes.pipeline.stages import Env, describe, execute, registry
+from nnnotes.unity.atoms import Impl, astc, estimate, gltf
+from nnnotes.unity.atoms.reader import UnityBundle
 from tests.helpers.fakeunity import (
     F32,
     NORMAL,
@@ -734,10 +734,10 @@ def test_textures(exported):
 
 def test_sprites_same_bundle(exported):
     depot, _task, doc = exported
-    from nnnotes.pipeline.atoms import png, sprite
-    from nnnotes.pipeline.atoms.mesh import arrays
-    from nnnotes.pipeline.atoms.reader import mesh_input_from_typetree
-    from nnnotes.pipeline.atoms.texture import TextureInput, decode
+    from nnnotes.unity.atoms import png, sprite
+    from nnnotes.unity.atoms.mesh import arrays
+    from nnnotes.unity.atoms.reader import mesh_input_from_typetree
+    from nnnotes.unity.atoms.texture import TextureInput, decode
 
     env = bundle_all()
     f = env.assets[0]

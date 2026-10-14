@@ -25,8 +25,8 @@ from __future__ import annotations
 
 import re
 
+from ..unity.atoms import impl_id
 from . import contract
-from .atoms import impl_id
 from .contract import Cost, Input
 from .stages import Output, Pending, Stage
 
