@@ -20,7 +20,7 @@ The versions live in the store:
 dependencies, bundles and raw files named by their stable names), bundles and raw files matched by stable name (the
 name without its content hash: added, removed, changed with old and new name, size, hash, CRC) and the keys whose
 dependency closure reaches a file that changed (the affected keys). Objects are compared by their stable addresses
-(link.diff_addresses) when the address tables of both versions are given. Every list is sorted.
+(diff_addresses) when the address tables of both versions are given. Every list is sorted.
 """
 
 from __future__ import annotations
@@ -284,8 +284,6 @@ def diff(old: dict, new: dict, old_addresses: dict | None = None, new_addresses:
         "affectedKeys": sorted(affected),
     }
     if old_addresses is not None and new_addresses is not None:
-        from .link import diff_addresses
-
         out["objects"] = diff_addresses(old_addresses, new_addresses)
     out["summary"] = diff_summary(out)
     return out
@@ -293,6 +291,34 @@ def diff(old: dict, new: dict, old_addresses: dict | None = None, new_addresses:
 
 def _identity(doc: dict) -> dict:
     return {name: doc["catalogs"][name]["sha256"] if name in doc["catalogs"] else None for name in CATALOG_NAMES}
+
+
+# the fields of an address table object (link.addresses) that diff_addresses compares
+OBJECT_FIELDS = ("object", "class", "name", "byteSize", "typeHash")
+
+
+def diff_addresses(old: dict, new: dict) -> dict:
+    """The objects of two address tables compared by stable address: added, removed, changed (class, name, size or
+    type hash differ), rebuilt (only the object id differs: its bundle changed), unchanged (a count)."""
+    a, b = old["objects"], new["objects"]
+    changed, rebuilt, same = [], [], 0
+    for addr in sorted(set(a) & set(b)):
+        fields = [f for f in OBJECT_FIELDS if a[addr].get(f) != b[addr].get(f)]
+        if not fields:
+            same += 1
+        elif fields == ["object"]:
+            rebuilt.append({"address": addr, "old": a[addr]["object"], "new": b[addr]["object"]})
+        else:
+            changed.append({"address": addr, "fields": fields, "old": a[addr], "new": b[addr]})
+    out = {
+        "added": sorted(set(b) - set(a)),
+        "removed": sorted(set(a) - set(b)),
+        "changed": changed,
+        "rebuilt": rebuilt,
+        "unchanged": same,
+    }
+    out["summary"] = {k: (v if isinstance(v, int) else len(v)) for k, v in out.items()}
+    return out
 
 
 def diff_summary(d: dict) -> dict:
