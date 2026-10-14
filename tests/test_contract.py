@@ -9,11 +9,11 @@ from pathlib import Path
 import pytest
 from test_stages import PIPELINE, toy_files, toy_stages
 
-from nnnotes import contract, layout
-from nnnotes import plan as plan_mod
-from nnnotes.contract import Cost, IncompatibleTask, Input, Task
-from nnnotes.orchestrate import FAILURE_CODES, Orchestrator
-from nnnotes.store import Store
+from nnnotes.pipeline import contract, layout
+from nnnotes.pipeline import plan as plan_mod
+from nnnotes.pipeline.contract import Cost, IncompatibleTask, Input, Task
+from nnnotes.pipeline.orchestrate import FAILURE_CODES, Orchestrator
+from nnnotes.pipeline.store import Store
 
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMAS = ROOT / "src" / "nnnotes" / "schemas"

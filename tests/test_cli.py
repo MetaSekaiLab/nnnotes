@@ -85,7 +85,7 @@ class Probe:
             print(os.environ.get("OPENBLAS_NUM_THREADS"))
 sys.meta_path.insert(0, Probe())
 import nnnotes.cli
-import nnnotes.unity
+import nnnotes.unity.reader
 """
 
 
@@ -289,7 +289,7 @@ def test_apk_is_a_required_setting(argv, catalog_file, tmp_path, cdn, capsys, mo
 
 
 def test_crikey_write_creates_the_directory(tmp_path, capsys, monkeypatch):
-    from nnnotes import crikey
+    from nnnotes.formats import crikey
 
     apk = tmp_path / "base.apk"
     apk.write_bytes(b"not read")
@@ -375,7 +375,7 @@ def test_unknown_key_or_id_is_a_usage_error(data, argv, message, capsys):
 
 
 def test_known_id_reaches_the_extractor(data, tmp_path, capsys, monkeypatch):
-    from nnnotes import adv
+    from nnnotes.content import adv
 
     seen = []
     monkeypatch.setattr(adv, "extract", lambda cat, md, adv_id: seen.append(adv_id) or "x")
@@ -399,7 +399,7 @@ def test_story_needs_the_language(data, capsys):
 def test_the_command_line_starts_without_the_exporters():
     probe = (
         "import sys, nnnotes.cli as c; c.build_parser(); "
-        "print([m for m in ('UnityPy', 'nnnotes.web') if m in sys.modules])"
+        "print([m for m in ('UnityPy', 'nnnotes.site.web') if m in sys.modules])"
     )
     r = subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True, check=True)
     assert r.stdout.split() == ["[]"]
@@ -424,8 +424,10 @@ def test_flac_level_is_checked(data, argv, message, capsys):
 def test_flac_level_reaches_the_decode(data, tmp_path, capsys, monkeypatch):
     from types import SimpleNamespace
 
-    from nnnotes import cri, live, player, story
-    from nnnotes.session import Session
+    from nnnotes.content import live, story
+    from nnnotes.formats import cri
+    from nnnotes.source.session import Session
+    from nnnotes.unity import player
 
     seen = []
     monkeypatch.setattr(Session, "catalog", lambda self: SimpleNamespace(has=lambda key: True))
@@ -443,7 +445,8 @@ def test_flac_level_reaches_the_decode(data, tmp_path, capsys, monkeypatch):
 
 
 def test_live_passes_the_flac_level_to_its_decodes(tmp_path, monkeypatch):
-    from nnnotes import cri, live, liveaudio
+    from nnnotes.content import live, liveaudio
+    from nnnotes.formats import cri
 
     class Stop(Exception):
         pass

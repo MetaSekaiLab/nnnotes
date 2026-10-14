@@ -30,10 +30,10 @@ from fakeunity import (
 )
 from UnityPy.helpers.MeshHelper import MeshHandler
 
-from nnnotes import unity
-from nnnotes.atoms import ATOMS, Unsupported, gltf
-from nnnotes.atoms.mesh import MeshInput, arrays
-from nnnotes.atoms.reader import UnityBundle, handler_input, mesh_input_from_typetree
+from nnnotes.pipeline.atoms import ATOMS, Unsupported, gltf
+from nnnotes.pipeline.atoms.mesh import MeshInput, arrays
+from nnnotes.pipeline.atoms.reader import UnityBundle, handler_input, mesh_input_from_typetree
+from nnnotes.unity import reader as unity
 
 rng = np.random.default_rng(7)
 

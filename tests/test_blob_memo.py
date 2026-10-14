@@ -6,7 +6,8 @@ import pytest
 from UnityPy.helpers.TypeTreeNode import TypeTreeNode, get_common_strings
 from UnityPy.streams import EndianBinaryReader, EndianBinaryWriter
 
-from nnnotes import cache, unity
+from nnnotes.core import cache
+from nnnotes.unity import reader as unity
 
 ORIGINAL = TypeTreeNode.parse_blob.__func__._original
 COMMON = list(get_common_strings().values())

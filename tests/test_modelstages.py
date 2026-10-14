@@ -9,14 +9,14 @@ from pathlib import Path
 import pytest
 import synth
 
-from nnnotes import census, contract, link, modelstages
-from nnnotes.catalog import Catalog
-from nnnotes.catalogdb import index
-from nnnotes.census import CensusStage
-from nnnotes.contract import IncompatibleTask, Input, Task
-from nnnotes.modelstages import Closures, Live2DStage, SpineStage, TaskCatalog
-from nnnotes.stages import Env, Pending, describe, execute, registry
-from nnnotes.store import Store
+from nnnotes.pipeline import census, contract, link, modelstages
+from nnnotes.pipeline.catalogdb import index
+from nnnotes.pipeline.census import CensusStage
+from nnnotes.pipeline.contract import IncompatibleTask, Input, Task
+from nnnotes.pipeline.modelstages import Closures, Live2DStage, SpineStage, TaskCatalog
+from nnnotes.pipeline.stages import Env, Pending, describe, execute, registry
+from nnnotes.pipeline.store import Store
+from nnnotes.source.catalog import Catalog
 
 H = [f"{i:x}" * 32 for i in range(1, 10)]
 M1 = "Character/Live2D/g1/m1/model/m1"
@@ -200,7 +200,7 @@ def fake_extract(calls):
 
 
 def test_live2d_run_stores_every_file_of_the_extractor(tmp_path, monkeypatch):
-    from nnnotes import live2d
+    from nnnotes.unity import live2d
 
     calls = []
     monkeypatch.setattr(live2d, "extract_model", fake_extract(calls))
@@ -248,7 +248,8 @@ def test_live2d_run_stores_every_file_of_the_extractor(tmp_path, monkeypatch):
 
 
 def test_the_model_key_and_libraries_are_those_of_the_extractors():
-    from nnnotes import export, webmodel
+    from nnnotes.site import webmodel
+    from nnnotes.unity import export
 
     assert modelstages.MODEL_KEY.pattern == webmodel.MODEL_KEY.pattern
     assert modelstages.LIBRARIES == export._LIBS
@@ -256,7 +257,7 @@ def test_the_model_key_and_libraries_are_those_of_the_extractors():
 
 def test_importing_the_stages_does_not_import_unitypy():
     code = (
-        "import sys, nnnotes.modelstages as m; m.Live2DStage(); m.SpineStage(); "
+        "import sys, nnnotes.pipeline.modelstages as m; m.Live2DStage(); m.SpineStage(); "
         "assert 'UnityPy' not in sys.modules, 'UnityPy imported'"
     )
     r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
@@ -487,7 +488,7 @@ def fake_skeleton(pages=1):
 
 
 def test_spine_run_stores_the_files_of_the_skeleton(tmp_path, monkeypatch):
-    from nnnotes import unity
+    from nnnotes.unity import reader as unity
 
     stage, store = SpineStage(), Store(tmp_path / "s")
     env = spine_env(store)

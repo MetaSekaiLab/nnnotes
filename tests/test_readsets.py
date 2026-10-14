@@ -8,8 +8,8 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
-from nnnotes import sitefiles, web
-from nnnotes.config import ConfigError
+from nnnotes.site import sitefiles, web
+from nnnotes.source.config import ConfigError
 
 
 # ---------------------------------------------------------------- the player's modes
@@ -226,7 +226,7 @@ def test_a_first_chart_the_plan_cannot_list_is_simulated(player, monkeypatch, tm
 
 
 def test_the_read_set_key_includes_the_mode(tmp_path, monkeypatch):
-    from nnnotes import cache
+    from nnnotes.core import cache
 
     cache.configure(enabled=True)
     live = tmp_path / "live"
@@ -241,7 +241,7 @@ def test_the_read_set_key_includes_the_mode(tmp_path, monkeypatch):
 
 
 def test_a_read_set_run_by_a_server_is_stored_under_the_same_key(tmp_path, monkeypatch):
-    from nnnotes import cache
+    from nnnotes.core import cache
 
     cache.configure(enabled=True)
     live = tmp_path / "live-served"

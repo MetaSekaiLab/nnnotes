@@ -2,8 +2,8 @@
 
 A view answers, for every row of a master table, which objects of the catalog the game shows for it: the full
 illustration of a member card and its sub-sprites, the icon of a stamp, the jacket of a song, the banner of a story
-episode, the icon of a reward. The rules are data (`src/nnnotes/viewrules.json`, package data) read by
-`nnnotes.views`; a view document lists object ids, so it depends on the master data and the catalog, never on how
+episode, the icon of a reward. The rules are data (`src/nnnotes/pipeline/viewrules.json`, package data) read by
+`nnnotes.pipeline.views`; a view document lists object ids, so it depends on the master data and the catalog, never on how
 the objects are encoded.
 
 ## Rules
@@ -108,7 +108,7 @@ resolver's name).
 
 ## Stages
 
-`nnnotes.views:stages` gives one stage per view, `view.<name>` (docs/stages.md), run by `nnnotes export --views`
+`nnnotes.pipeline.views:stages` gives one stage per view, `view.<name>` (docs/stages.md), run by `nnnotes export --views`
 and planned by `nnnotes plan`:
 
 - Subjects: the catalog subjects of `link.addresses` (the export command has one, `main`), when master data is set
@@ -474,7 +474,7 @@ icon: `not-applicable`):
 
 ## Voices
 
-`view.voices` (`nnnotes.voices`) indexes the character voices the master data names and those of the story
+`view.voices` (`nnnotes.pipeline.voices`) indexes the character voices the master data names and those of the story
 episodes: per voice its source row, characters, category, text in the five languages and conditions, its cue sheet
 and cue, and the decoded streams of the export that play it. It is a stage of its own rather than a view of the
 rules above: besides master tables and the address table it reads the results of `unity.export` (the episodes) and
@@ -579,7 +579,7 @@ A voice of a home or after-live episode is often a cue that a row of another sou
 ### Cues and streams
 
 The sound's `_soundCueSheetID` names the cue sheet (MasterSoundCueSheet `_cueSheetName`, catalog key
-`Cri/Sound/<sheet>`) and `_cueName` the cue. The cue's streams come from the sheet's ACB tables (`nnnotes.acb`): a
+`Cri/Sound/<sheet>`) and `_cueName` the cue. The cue's streams come from the sheet's ACB tables (`nnnotes.formats.acb`): a
 cue references a waveform, a synth, a sequence or a block sequence; synths reference waveforms, synths and
 sequences; the tracks of sequences and blocks note on synths and sequences. A waveform of the memory AWB is the
 stream at its position in the AWB, the numbering of the sheet's `streams.json`. A cue may play several streams (a

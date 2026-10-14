@@ -12,7 +12,8 @@ from pathlib import Path
 import pytest
 from test_musicdata import CHARTS, KEY, PROV, FakeDeck, all_rows, bgm, master_dir, run
 
-from nnnotes import deckdata, musicdata
+from nnnotes import musicdata
+from nnnotes.musicdata import deckdata
 
 
 @pytest.fixture

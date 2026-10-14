@@ -7,9 +7,11 @@ from types import SimpleNamespace as NS
 import pytest
 from PIL import Image
 
-from nnnotes import cli, player, ui
-from nnnotes.config import Config
-from nnnotes.session import Session
+from nnnotes import cli
+from nnnotes.content import ui
+from nnnotes.source.config import Config
+from nnnotes.source.session import Session
+from nnnotes.unity import player
 
 KEY = "EmbUI/Example/Box"
 
@@ -159,7 +161,7 @@ def test_failure_is_an_explicit_index_entry(tmp_path, exporter):
 
 
 def test_cli_selects_the_jp_split_apk_and_keeps_public_provenance(tmp_path, exporter, monkeypatch, capsys):
-    from nnnotes import catalog
+    from nnnotes.source import catalog
 
     apk = tmp_path / "jp"
     apk.mkdir()

@@ -8,8 +8,10 @@ from pathlib import Path
 
 import pytest
 
-from nnnotes import jsonio, sitefiles, siteindex, storysite, tmpfont, webmodel
-from nnnotes.config import Config, ConfigError
+from nnnotes.core import jsonio
+from nnnotes.site import sitefiles, siteindex, storysite, webmodel
+from nnnotes.source.config import Config, ConfigError
+from nnnotes.unity import tmpfont
 
 
 def box(kind: bytes, payload: bytes) -> bytes:

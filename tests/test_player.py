@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from nnnotes.player import PlayerData
+from nnnotes.unity.player import PlayerData
 
 
 def bare_player() -> PlayerData:

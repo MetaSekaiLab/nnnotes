@@ -7,9 +7,9 @@ import threading
 
 import pytest
 
-from nnnotes import sitefiles, web
-from nnnotes.config import ConfigError
-from nnnotes.liveoptions import LiveOptions, parse_specs, resolve
+from nnnotes.content.liveoptions import LiveOptions, parse_specs, resolve
+from nnnotes.site import sitefiles, web
+from nnnotes.source.config import ConfigError
 
 
 # ---------------------------------------------------------------- read sets with settings
@@ -29,7 +29,7 @@ def test_read_set_passes_the_settings(tmp_path, monkeypatch):
 
 
 def test_the_read_set_key_includes_the_settings(tmp_path, monkeypatch):
-    from nnnotes import cache
+    from nnnotes.core import cache
 
     cache.configure(enabled=True)
     live = tmp_path / "live-settings"

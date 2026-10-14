@@ -18,9 +18,9 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import atom_eval  # noqa: E402
 from fakeunity import FakeEnvironment, FakeTexture2D, rgba_bytes  # noqa: E402
 
-from nnnotes.atoms import Impl, resolve  # noqa: E402
-from nnnotes.atoms.mesh import Channel, MeshArrays, Primitive  # noqa: E402
-from nnnotes.atoms.reader import UnityBundle  # noqa: E402
+from nnnotes.pipeline.atoms import Impl, resolve  # noqa: E402
+from nnnotes.pipeline.atoms.mesh import Channel, MeshArrays, Primitive  # noqa: E402
+from nnnotes.pipeline.atoms.reader import UnityBundle  # noqa: E402
 
 RGBA32, RGB24 = 4, 3
 

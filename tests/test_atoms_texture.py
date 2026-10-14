@@ -14,10 +14,10 @@ from fakeunity import ANDROID, VERSION, FakeEnvironment, FakeTexture2D, rgba_byt
 from PIL import Image
 from UnityPy.export.Texture2DConverter import parse_image_data
 
-from nnnotes import export
-from nnnotes.atoms import ATOMS, Impl, Unsupported, astc, env_name, ids, impl_id, png, resolve
-from nnnotes.atoms.reader import ObjectInfo, UnityBundle
-from nnnotes.atoms.texture import ASTC_BLOCKS, TextureInput, decode, is_hdr_astc
+from nnnotes.pipeline.atoms import ATOMS, Impl, Unsupported, astc, env_name, ids, impl_id, png, resolve
+from nnnotes.pipeline.atoms.reader import ObjectInfo, UnityBundle
+from nnnotes.pipeline.atoms.texture import ASTC_BLOCKS, TextureInput, decode, is_hdr_astc
+from nnnotes.unity import export
 
 RGBA32, RGB24, ALPHA8, ARGB4444, YUY2 = 4, 3, 1, 2, 21
 ASTC_4x4, ASTC_6x6, ASTC_HDR_6x6 = 54, 50, 68
@@ -278,7 +278,7 @@ def test_override_with_the_reference_id_is_refused(monkeypatch):
 
 def test_listing_the_registry_loads_no_image_or_unity_library():
     code = (
-        "import sys, nnnotes.atoms as a; a.ids(*a.ATOMS); "
+        "import sys, nnnotes.pipeline.atoms as a; a.ids(*a.ATOMS); "
         "print(sorted(m for m in ('UnityPy', 'PIL') if m in sys.modules))"
     )
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True).stdout
@@ -296,7 +296,7 @@ def test_every_atom_and_reason_code_is_documented():
     assert documented == set(ATOMS)
     codes = set(re.findall(r"^\| `([a-zA-Z_.]+)` \|", doc.split("## Reason codes", 1)[1], re.M))
     emitted = set()
-    for src in (root / "src" / "nnnotes" / "atoms").glob("*.py"):
+    for src in (root / "src" / "nnnotes" / "pipeline" / "atoms").glob("*.py"):
         emitted |= set(
             re.findall(
                 r"\"((?:empty|unsupported|partial|generic|no_data)\.[a-zA-Z_.]+)\"", src.read_text(encoding="utf-8")

@@ -4,8 +4,8 @@ import json
 
 import pytest
 
-from nnnotes import export, fontsettings
-from nnnotes.fontsettings import END_OF_TEXT, SPACE
+from nnnotes.unity import export, fontsettings
+from nnnotes.unity.fontsettings import END_OF_TEXT, SPACE
 
 FACE = {"m_PointSize": 40.0, "m_Scale": 1.0}
 STYLE = {

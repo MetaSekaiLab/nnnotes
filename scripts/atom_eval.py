@@ -2,7 +2,7 @@
 """Measure candidate implementations of the export atoms against the reference implementations (maintainer tool;
 not installed, not needed to use nnnotes).
 
-`nnnotes.atoms.ATOMS` holds one reference implementation per atom; `NNNOTES_ATOM_<NAME>=module:attribute` names
+`nnnotes.pipeline.atoms.ATOMS` holds one reference implementation per atom; `NNNOTES_ATOM_<NAME>=module:attribute` names
 another one for evaluation (docs/stages.md, "Atoms"). This script gives the numbers a switch is decided on:
 
     sample   DIR -o FILE                  a seeded stratified sample of a bundle directory: one bundle of every
@@ -42,7 +42,7 @@ compares, per check:
 
 A candidate view is the reader candidate's result; the optional methods census(), text_bytes(obj), font_bytes(obj),
 sprite_image(obj) and the attribute typetree_form serve the checks that have no atom of their own. A candidate
-raising NotImplementedError has no such facet ("absent"); `nnnotes.atoms.Unsupported` is a refusal.
+raising NotImplementedError has no such facet ("absent"); `nnnotes.pipeline.atoms.Unsupported` is a refusal.
 
 Statuses: equal, differ, refused (the candidate raised where the reference gave a result), refused.both, extra (a
 result where the reference refused), absent, reference-error. Output: one JSON document (-o); m1 and m3 also write
@@ -133,7 +133,7 @@ def check_clean_env() -> None:
 
 def load_impl(spec: str):
     """The Impl named by module:attribute (an Impl, or a callable returning one)."""
-    from nnnotes.atoms import Impl
+    from nnnotes.pipeline.atoms import Impl
 
     module, sep, attr = spec.partition(":")
     if not sep or not module or not attr:
@@ -146,7 +146,7 @@ def load_impl(spec: str):
 
 
 def parse_atoms(items) -> list[tuple[str, str]]:
-    from nnnotes.atoms import ATOMS
+    from nnnotes.pipeline.atoms import ATOMS
 
     out = []
     for it in items or ():
@@ -412,8 +412,8 @@ def merge(total: dict, rec: dict) -> None:
 
 # ---------------------------------------------------------------- sample
 def cmd_sample(a) -> dict:
-    from nnnotes import contract
-    from nnnotes.cli_assets import bundle_group
+    from nnnotes.cli.cli_assets import bundle_group
+    from nnnotes.pipeline import contract
 
     root = Path(a.dir)
     items = bundle_list(root, a.bundles)
@@ -449,7 +449,7 @@ def cmd_sample(a) -> dict:
 
 # ---------------------------------------------------------------- m1
 def m1_init(cfg: dict) -> None:
-    from nnnotes.atoms import resolve
+    from nnnotes.pipeline.atoms import resolve
 
     G.clear()
     G.update(cfg)
@@ -477,7 +477,7 @@ def _key(info) -> tuple:
 
 def _call(fn, *args):
     """(result, None) or (None, refusal) where refusal is the Unsupported code or the error's message."""
-    from nnnotes.atoms import Unsupported
+    from nnnotes.pipeline.atoms import Unsupported
 
     try:
         return fn(*args), None
@@ -578,8 +578,8 @@ def _census_facets(T: Tally, section: str, ra: dict, rb: dict | None, oid: str, 
 
 
 def check_census(T: Tally, ref, cv, bundle: str, data: bytes) -> None:
-    from nnnotes import census
-    from nnnotes.unity import load_bytes
+    from nnnotes.pipeline import census
+    from nnnotes.unity.reader import load_bytes
 
     if not hasattr(cv, "census"):
         T.add("census", "document", "absent", bundle)
@@ -700,7 +700,7 @@ def hdr_reference(inp):
     import numpy as np
     from PIL import Image
 
-    from nnnotes.atoms.texture import ASTC_BLOCKS
+    from nnnotes.pipeline.atoms.texture import ASTC_BLOCKS
 
     bx, by = ASTC_BLOCKS[int(inp.format)]
     w, h = int(inp.width), int(inp.height)
@@ -723,7 +723,7 @@ def _hdr_library_image(inp):
 
 
 def check_textures(T: Tally, ref, cv, infos, cmap, checks) -> None:
-    from nnnotes.atoms.texture import format_name, is_hdr_astc
+    from nnnotes.pipeline.atoms.texture import format_name, is_hdr_astc
 
     ref_dec, ref_png = G["ref"]["texture.decode"], G["ref"]["png.encode"]
     decs, pngs = G["cand"].get("texture.decode", []), G["cand"].get("png.encode", [])
@@ -1038,7 +1038,7 @@ def versions() -> dict:
 
 # ---------------------------------------------------------------- prepare (base store)
 def _identify(job):
-    from nnnotes.store import Store
+    from nnnotes.pipeline.store import Store
 
     root, store, name = job
     s, size = Store(store).identify(Path(root) / name)
@@ -1046,18 +1046,18 @@ def _identify(job):
 
 
 def _census_task(task):
-    from nnnotes import census
-    from nnnotes.stages import execute
+    from nnnotes.pipeline import census
+    from nnnotes.pipeline.stages import execute
 
     ex = execute(task, G["store"], {"unity.census": census.CensusStage()})
     return task.subject, task.key, ex.status
 
 
 def cmd_prepare(a) -> dict:
-    from nnnotes import census, contract, link
-    from nnnotes.contract import Input
-    from nnnotes.stages import Env, describe, execute
-    from nnnotes.store import Store
+    from nnnotes.pipeline import census, contract, link
+    from nnnotes.pipeline.contract import Input
+    from nnnotes.pipeline.stages import Env, describe, execute
+    from nnnotes.pipeline.store import Store
 
     check_clean_env()
     root, base = Path(a.dir).resolve(), Path(a.base)
@@ -1100,9 +1100,9 @@ def cmd_prepare(a) -> dict:
 
 # ---------------------------------------------------------------- m3 (stage cost)
 def _prepared_env(base: Path):
-    from nnnotes.contract import Input
-    from nnnotes.stages import Env
-    from nnnotes.store import Store
+    from nnnotes.pipeline.contract import Input
+    from nnnotes.pipeline.stages import Env
+    from nnnotes.pipeline.store import Store
 
     prep = json.loads((base / PREPARED).read_text(encoding="utf-8"))
     root = Path(prep["dir"])
@@ -1125,7 +1125,7 @@ def _prepared_env(base: Path):
 
 def _new_store(base: Path, path: Path):
     """A run store that knows the base store's input identities (so inputs are not hashed again)."""
-    from nnnotes.store import Store
+    from nnnotes.pipeline.store import Store
 
     path.mkdir(parents=True, exist_ok=True)
     src = base / "inputs"
@@ -1138,14 +1138,14 @@ def _new_store(base: Path, path: Path):
 
 
 def _stage(name: str):
-    from nnnotes import census
-    from nnnotes.objexport import ExportStage
+    from nnnotes.pipeline import census
+    from nnnotes.pipeline.objexport import ExportStage
 
     return {"unity.export": ExportStage, "unity.census": census.CensusStage}[name]()
 
 
 def _run_task(task, store, stage_name: str) -> dict:
-    from nnnotes.stages import execute
+    from nnnotes.pipeline.stages import execute
 
     hwm = reset_hwm()
     u0, s0 = cpu_now()
@@ -1173,7 +1173,7 @@ def _m3_worker(task) -> dict:
 
 
 def _apply_atoms(atoms) -> None:
-    from nnnotes.atoms import env_name, resolve
+    from nnnotes.pipeline.atoms import env_name, resolve
 
     for name, spec in atoms:
         os.environ[env_name(name)] = spec
@@ -1184,13 +1184,13 @@ def _apply_atoms(atoms) -> None:
 def _import_stage_modules() -> dict:
     """Import what a unity.export task needs, timed (wall, CPU)."""
     t0, c0 = time.perf_counter(), time.process_time()
-    for m in ("numpy", "PIL.Image", "nnnotes.objexport", "nnnotes.export"):
+    for m in ("numpy", "PIL.Image", "nnnotes.pipeline.objexport", "nnnotes.unity.export"):
         importlib.import_module(m)
     return {"wall": round(time.perf_counter() - t0, 4), "cpu": round(time.process_time() - c0, 4)}
 
 
 def _describe_all(stage_name: str, subjects, params, env):
-    from nnnotes.stages import describe
+    from nnnotes.pipeline.stages import describe
 
     stage = _stage(stage_name)
     return [describe(stage, s, params, env) for s in subjects]
@@ -1400,7 +1400,7 @@ def cmd_m3_one(a) -> None:
     prep, env = _prepared_env(base)
     (task,) = _describe_all(a.stage, [a.subject], parse_params(a.param) or None, env)
     describe_cost = {"wall": round(time.perf_counter() - t0, 4), "cpu": round(time.process_time() - cd, 4)}
-    from nnnotes.store import Store
+    from nnnotes.pipeline.store import Store
 
     rec = _run_task(task, Store(a.store), a.stage)
     rec.update(imports=imp, describe=describe_cost, processCpuInside=round(time.process_time() - c0, 4))
@@ -1409,7 +1409,7 @@ def cmd_m3_one(a) -> None:
 
 # ---------------------------------------------------------------- imports
 def cmd_imports(a) -> dict:
-    sets = [m.split(",") for m in (a.module or ["numpy,PIL.Image,nnnotes.objexport,nnnotes.export"])]
+    sets = [m.split(",") for m in (a.module or ["numpy,PIL.Image,nnnotes.pipeline.objexport,nnnotes.unity.export"])]
     code = (
         "import resource, sys, time, json\n"
         "t = time.perf_counter(); c = time.process_time()\n"
@@ -1525,7 +1525,7 @@ def _compare_job(job) -> dict:
 
 
 def cmd_compare(a) -> dict:
-    from nnnotes.store import Store
+    from nnnotes.pipeline.store import Store
 
     ra, rb = (json.loads(Path(p).read_text(encoding="utf-8")) for p in (a.run_a, a.run_b))
     G.update(sa=Store(ra["store"]), sb=Store(rb["store"]))

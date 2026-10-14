@@ -4,11 +4,11 @@ from pathlib import Path
 
 from test_stages import PIPELINE, toy_files, toy_stages
 
-from nnnotes import contract
-from nnnotes.contract import Task
-from nnnotes.orchestrate import Orchestrator
-from nnnotes.plan import plan, why
-from nnnotes.store import Store
+from nnnotes.pipeline import contract
+from nnnotes.pipeline.contract import Task
+from nnnotes.pipeline.orchestrate import Orchestrator
+from nnnotes.pipeline.plan import plan, why
+from nnnotes.pipeline.store import Store
 
 TEXTS = {"a": "alpha\nbeta", "b": "gamma", "c": "delta\n?x"}
 

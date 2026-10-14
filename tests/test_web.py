@@ -4,8 +4,8 @@ import json
 
 import pytest
 
-from nnnotes import compress, sitefiles, siteindex, web
-from nnnotes.config import ConfigError
+from nnnotes.site import compress, sitefiles, siteindex, web
+from nnnotes.source.config import ConfigError
 
 DOC = sitefiles._minify({"rows": [{"id": i, "name": f"row {i}", "tags": ["a", "b"]} for i in range(200)]}).encode()
 

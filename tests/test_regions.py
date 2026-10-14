@@ -6,9 +6,11 @@ from pathlib import Path
 
 import pytest
 
-from nnnotes import languages, liveui, score, sitefiles, siteindex, web
-from nnnotes.config import Config, ConfigError
-from nnnotes.session import Session
+from nnnotes.content import liveui, score
+from nnnotes.site import sitefiles, siteindex, web
+from nnnotes.source import languages
+from nnnotes.source.config import Config, ConfigError
+from nnnotes.source.session import Session
 
 LANGS = list(languages.LANGUAGES)
 
@@ -165,10 +167,10 @@ def test_region_groups_follow_the_chart_tables(tmp_path):
 
 
 def test_live_tables_cover_the_chart_build():
-    src = Path(web.__file__).parent
+    content = Path(web.__file__).parents[1] / "content"
     named = set()
     for mod in ("live", "liveaudio", "livescene", "livenotes", "liveui", "score"):
-        named |= set(re.findall(r'"(Master[A-Za-z]+)"', (src / f"{mod}.py").read_text(encoding="utf-8")))
+        named |= set(re.findall(r'"(Master[A-Za-z]+)"', (content / f"{mod}.py").read_text(encoding="utf-8")))
     assert named <= set(web.LIVE_TABLES), sorted(named - set(web.LIVE_TABLES))
 
 

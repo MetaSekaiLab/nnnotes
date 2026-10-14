@@ -18,9 +18,12 @@ import pytest
 from PIL import Image
 from UnityPy.helpers.TypeTreeNode import TypeTreeNode
 
-from nnnotes import cache, cri, encoders, export, jsonio, shader, unity
-from nnnotes.export import Exporter, TexelPacker
-from nnnotes.unity import SceneGraph
+from nnnotes.core import cache, jsonio
+from nnnotes.formats import cri, encoders, shader
+from nnnotes.unity import export
+from nnnotes.unity import reader as unity
+from nnnotes.unity.export import Exporter, TexelPacker
+from nnnotes.unity.reader import SceneGraph
 
 
 @pytest.fixture(autouse=True)

@@ -12,7 +12,9 @@ pytest.importorskip("freetype")
 pytest.importorskip("scipy")
 pytest.importorskip("fontTools")
 
-from nnnotes import advui, cache, fontsettings, storyfonts, tmpfont  # noqa: E402
+from nnnotes.content import advui, storyfonts
+from nnnotes.core import cache
+from nnnotes.unity import fontsettings, tmpfont  # noqa: E402
 
 UPEM = 1000
 

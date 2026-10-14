@@ -13,9 +13,13 @@ import numpy as np
 import pytest
 import synth
 
-from nnnotes import apkset, cli, deckdata, jsonio, master, score
-from nnnotes.catalogdb import CatalogDB
-from nnnotes.master import MasterKey
+from nnnotes import cli
+from nnnotes.content import score
+from nnnotes.core import jsonio
+from nnnotes.musicdata import deckdata
+from nnnotes.pipeline.catalogdb import CatalogDB
+from nnnotes.source import apkset, master
+from nnnotes.source.master import MasterKey
 
 KEY = MasterKey(synth.MASTER_KEY, synth.MASTER_IV)
 

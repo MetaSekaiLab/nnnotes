@@ -32,8 +32,8 @@ gzip input and Japanese remote asset placeholders).
 | `view.<name>` | a catalog (`main`) | `master:<Table>` per master table it reads, `rules` (the view's rule and the resolvers it uses), `addresses` (the part of the address table it read: the keys looked up and the prefixes listed); no parameters, atoms or context | `view.<name>:<subject>#view` (facts: rows, entries, gaps, unreferenced) |
 | `view.voices` | a catalog (`main`) | `master:<Table>` per master table its rules read, `rules`, `addresses`, `sheets` (each cue sheet the `cri.audio` results are known by that a voice names or the rules' prefixes list: its task and ACB content id), `acb:<sha256>` (the ACB of each decoded one), `episodes` (per story episode and part, the `unity.export` artifact holding the object its key names), `adv:<sha256>` (those contents); context `audio` (the keys of those `cri.audio` results); runs after `unity.export` and `cri.audio` | `view.voices:<subject>#view` (facts: rows, entries, gaps, unreferenced streams) |
 
-`view.voices` is a stage of its own (`nnnotes.voices:VoiceStage`), not one of the master-only views of
-`nnnotes.views:stages`: besides master tables and the address table it reads the story episodes of the
+`view.voices` is a stage of its own (`nnnotes.pipeline.voices:VoiceStage`), not one of the master-only views of
+`nnnotes.pipeline.views:stages`: besides master tables and the address table it reads the story episodes of the
 `unity.export` results, `cri.audio` results and ACB tables ([views.md](views.md#voices)).
 
 ## Converters (`unity.export`)
@@ -128,14 +128,14 @@ else found on PATH. The `boot` input is the APK's `assets/bin/Data/data.unity3d`
 
 ## Atoms
 
-`nnnotes.atoms.ATOMS[name]` is the reference implementation of an atom: its id, its function and its cost estimate.
+`nnnotes.pipeline.atoms.ATOMS[name]` is the reference implementation of an atom: its id, its function and its cost estimate.
 The id names the libraries whose behaviour the output depends on, with their installed versions, and the revision of
 the nnnotes code (`pillow-12.1.1/1`); `nnnotes/<revision>` when no library's behaviour is involved. Task keys include
 the ids of the atoms a task uses, so upgrading a library or changing an atom re-runs exactly the tasks that use it.
 
 | Atom | Reference implementation | Id | Does |
 |---|---|---|---|
-| `reader` | `nnnotes.atoms.reader.open_bundle` (UnityPy) | `unitypy-<v>/1` | one bundle loaded alone from its bytes: serialized files, objects, raw bytes, typetrees, container, externals, and the inputs of `texture.decode` and `mesh.arrays` (resource files are read from inside the bundle only) |
+| `reader` | `nnnotes.pipeline.atoms.reader.open_bundle` (UnityPy) | `unitypy-<v>/1` | one bundle loaded alone from its bytes: serialized files, objects, raw bytes, typetrees, container, externals, and the inputs of `texture.decode` and `mesh.arrays` (resource files are read from inside the bundle only) |
 | `texture.decode` | UnityPy `Texture2DConverter.parse_image_data` | `unitypy-<v>+texture2ddecoder-<v>+astc-encoder-py-<v>+pillow-<v>/1` | the first mip level, top row first, as UnityPy's `Texture2D.image` |
 | `png.encode` | Pillow | `pillow-<v>/1` | PNG bytes; level 6 (the default) gives Pillow's default bytes, the ones the other commands write |
 | `astc.container` | nnnotes | `nnnotes/1` | the standard `.astc` file (16-byte header, first mip level's blocks) |

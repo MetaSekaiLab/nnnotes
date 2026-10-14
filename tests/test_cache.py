@@ -2,7 +2,7 @@ import struct
 
 import pytest
 
-from nnnotes import cache
+from nnnotes.core import cache
 
 
 @pytest.fixture(autouse=True)

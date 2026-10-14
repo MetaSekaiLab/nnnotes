@@ -4,8 +4,10 @@ import json
 
 import pytest
 
-from nnnotes import advui, fontsettings, languages, textstyle, tmpfont
-from nnnotes.config import ConfigError
+from nnnotes.content import advui
+from nnnotes.source import languages
+from nnnotes.source.config import ConfigError
+from nnnotes.unity import fontsettings, textstyle, tmpfont
 
 WHITE = {"r": 1.0, "g": 1.0, "b": 1.0, "a": 1.0}
 DARK = {"r": 0.2, "g": 0.2, "b": 0.2, "a": 0.8}

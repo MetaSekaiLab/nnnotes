@@ -2,8 +2,8 @@
 
 import pytest
 
-from nnnotes import adv
-from nnnotes.config import ConfigError
+from nnnotes.content import adv
+from nnnotes.source.config import ConfigError
 
 CMD = {v: k for k, v in adv.COMMAND.items()}
 

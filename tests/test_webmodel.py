@@ -6,10 +6,13 @@ from types import SimpleNamespace
 
 import pytest
 
-from nnnotes import cli, jsonio, live2d, sitefiles, siteindex, web, webmodel
-from nnnotes import player as nnnotes_player
-from nnnotes.config import Config, ConfigError
-from nnnotes.session import Session
+from nnnotes import cli
+from nnnotes.core import jsonio
+from nnnotes.site import sitefiles, siteindex, web, webmodel
+from nnnotes.source.config import Config, ConfigError
+from nnnotes.source.session import Session
+from nnnotes.unity import live2d
+from nnnotes.unity import player as nnnotes_player
 
 KEY_A = "Character/Live2D/001_adv/adv_model_a/model/adv_model_a"
 KEY_B = "Character/Live2D/sub_x/adv_model_b/model/adv_model_b"
@@ -896,7 +899,7 @@ def test_model_dir_exports_a_model_moved_aside_after_the_check(tmp_path, monkeyp
 
 
 def test_story_command_exports_its_models_next_to_the_story(tmp_path, capsys, monkeypatch):
-    from nnnotes import story
+    from nnnotes.content import story
 
     player = fake_export(monkeypatch)
     monkeypatch.setattr(Session, "catalog", lambda self, bundles=True, region=None: None)

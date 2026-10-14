@@ -7,10 +7,10 @@ from pathlib import Path
 
 import pytest
 
-from nnnotes import contract
-from nnnotes import store as store_mod
-from nnnotes.contract import Input, Task
-from nnnotes.store import InputMissing, Store, StoreConflict
+from nnnotes.pipeline import contract
+from nnnotes.pipeline import store as store_mod
+from nnnotes.pipeline.contract import Input, Task
+from nnnotes.pipeline.store import InputMissing, Store, StoreConflict
 
 
 def a_result(s: Store, task: Task, payload: bytes) -> dict:
@@ -200,7 +200,7 @@ def test_a_store_crosses_processes_as_its_settings(tmp_path):
 
 
 def test_write_doc_writes_the_canonical_bytes_as_it_encodes(tmp_path):
-    from nnnotes.store import write_doc
+    from nnnotes.pipeline.store import write_doc
 
     docs = [
         {"b": [1, 2, {"é": "x\n"}], "a": {}, "c": [], "d": None, "e": 1.5, "f": "立ち絵" * 1000},

@@ -15,11 +15,13 @@ import pytest
 from test_speed_exact import FakeTools
 from test_usm import ADX, HCA, KEY, MPEG1, VP9, audio_header, build, chunk, rand, sbt, video_header
 
-from nnnotes import cache, contract, cri, crikey, cristages
-from nnnotes.contract import IncompatibleTask, Input, Task
-from nnnotes.cristages import AUDIO, AudioStage, MovieStage
-from nnnotes.stages import Env, Pending, describe, execute, registry
-from nnnotes.store import Store
+from nnnotes.core import cache
+from nnnotes.formats import cri, crikey
+from nnnotes.pipeline import contract, cristages
+from nnnotes.pipeline.contract import IncompatibleTask, Input, Task
+from nnnotes.pipeline.cristages import AUDIO, AudioStage, MovieStage
+from nnnotes.pipeline.stages import Env, Pending, describe, execute, registry
+from nnnotes.pipeline.store import Store
 
 ROOT = Path(__file__).resolve().parents[1]
 ACB = b"@UTF" + b"cue sheet bytes"
@@ -244,7 +246,7 @@ def test_audio_subjects_by_content(tmp_path, tools):
 
 
 def test_audio_waits_for_raw_files_not_fetched(tmp_path, tools):
-    from nnnotes.cli_assets import Inputs
+    from nnnotes.cli.cli_assets import Inputs
 
     store = Store(tmp_path / "s")
     env = planning(store, tmp_path, {"cri_assets_cri/sound/a": ACB})
@@ -348,7 +350,7 @@ def test_a_task_of_other_tools_is_incompatible(tmp_path, tools):
 
 # ---------------------------------------------------------------- cri.movie
 def test_movie_streams_as_stored_and_the_mkv(tmp_path, tools):
-    from nnnotes import usm
+    from nnnotes.formats import usm
 
     store = Store(tmp_path / "s")
     data, frames = usm_file()
@@ -416,7 +418,7 @@ EVERY = [
 def test_movie_every_stream_kind(tmp_path, tools):
     """MPEG-1 video and alpha, two ADX channels, an HCA channel (decoded by vgmstream with the key) and two subtitle
     channels: every stream as stored, the subtitles as JSON / SubRip / WebVTT, every track in the Matroska file."""
-    from nnnotes import usm
+    from nnnotes.formats import usm
 
     store = Store(tmp_path / "s")
     data = build(EVERY)
@@ -590,9 +592,9 @@ def test_movie_parameters():
 # ---------------------------------------------------------------- laziness and documentation
 def test_stage_modules_import_nothing_heavy():
     code = (
-        "import sys; import nnnotes.cristages as c; c.AudioStage().normalize(None); "
-        "print(sorted(m for m in ('UnityPy', 'numpy', 'PIL', 'nnnotes.cri', 'nnnotes.usm', 'nnnotes.export')"
-        " if m in sys.modules))"
+        "import sys; import nnnotes.pipeline.cristages as c; c.AudioStage().normalize(None); "
+        "heavy = ('UnityPy', 'numpy', 'PIL', 'nnnotes.formats.cri', 'nnnotes.formats.usm', 'nnnotes.unity.export'); "
+        "print(sorted(m for m in heavy if m in sys.modules))"
     )
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, cwd=ROOT, check=True)
     assert out.stdout.strip() == "[]"
@@ -601,7 +603,8 @@ def test_stage_modules_import_nothing_heavy():
 def test_reason_codes_and_stages_are_documented():
     doc = (ROOT / "docs" / "stages.md").read_text(encoding="utf-8")
     documented = set(re.findall(r"^\| `([a-z_]+(?:\.[A-Za-z_]+)+)` \|", doc, re.M))
-    text = "".join((ROOT / "src" / "nnnotes" / f).read_text(encoding="utf-8") for f in ("cristages.py", "usm.py"))
+    sources = ("pipeline/cristages.py", "formats/usm.py")
+    text = "".join((ROOT / "src" / "nnnotes" / f).read_text(encoding="utf-8") for f in sources)
     raised = set(cristages.REASONS) | set(re.findall(r'"(unsupported\.[a-z_.]+)"', text))
     assert raised - documented == set() and raised == set(cristages.REASONS)
     usm_codes = {c for c in documented if c.startswith("unsupported.usm.")}
@@ -628,7 +631,7 @@ class GoldenAudio(AudioStage):
 class GoldenMovie(MovieStage):
     @property
     def ATOMS(self) -> dict:
-        from nnnotes.atoms import impl_id
+        from nnnotes.pipeline.atoms import impl_id
 
         return {
             "usm.demux": impl_id(("numpy",), cristages.USM_DEMUX_REVISION),
@@ -698,7 +701,7 @@ def movie_golden():
 
 
 def test_golden_providers_run_twice_alike(tmp_path):
-    from nnnotes.stages import golden, golden_problems
+    from nnnotes.pipeline.stages import golden, golden_problems
 
     for provider in (audio_golden, movie_golden):
         p = provider()

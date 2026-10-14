@@ -3,10 +3,11 @@ from types import SimpleNamespace
 import pytest
 from UnityPy.helpers.TypeTreeNode import TypeTreeNode
 
-from nnnotes import census, contract, unity
-from nnnotes.contract import Input
-from nnnotes.stages import Env, Pending, describe, execute, registry
-from nnnotes.store import Store
+from nnnotes.pipeline import census, contract
+from nnnotes.pipeline.contract import Input
+from nnnotes.pipeline.stages import Env, Pending, describe, execute, registry
+from nnnotes.pipeline.store import Store
+from nnnotes.unity import reader as unity
 
 SCRIPTS = "CAB-5c1e0000000000000000000000000000"
 

@@ -6,12 +6,12 @@ from pathlib import Path
 import pytest
 from test_stages import PIPELINE, toy_files, toy_stages
 
-from nnnotes import contract
-from nnnotes.contract import Cost, Task
-from nnnotes.orchestrate import Orchestrator, Scheduler, coverage
-from nnnotes.plan import plan
-from nnnotes.stages import execute
-from nnnotes.store import Store
+from nnnotes.pipeline import contract
+from nnnotes.pipeline.contract import Cost, Task
+from nnnotes.pipeline.orchestrate import Orchestrator, Scheduler, coverage
+from nnnotes.pipeline.plan import plan
+from nnnotes.pipeline.stages import execute
+from nnnotes.pipeline.store import Store
 
 TEXTS = {
     "a": "alpha\nbeta\n\nFAIL here\n?what",
@@ -216,7 +216,7 @@ def test_unknown_or_misordered_stages_are_refused(tmp_path):
 def test_a_config_error_stops_the_run(tmp_path):
     from test_stages import Src
 
-    from nnnotes.config import ConfigError
+    from nnnotes.source.config import ConfigError
 
     class NeedsTool(Src):
         def run(self, task, store):
@@ -230,7 +230,7 @@ def test_a_config_error_stops_the_run(tmp_path):
 
 
 def test_a_stage_whose_subjects_need_a_failed_task_fails_once(tmp_path):
-    from nnnotes.stages import Pending, Stage
+    from nnnotes.pipeline.stages import Pending, Stage
 
     class AfterAll(Stage):
         name, version, after = "toy.after", 1, ("toy.src",)

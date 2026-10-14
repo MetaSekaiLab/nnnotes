@@ -6,7 +6,8 @@ import json
 
 import pytest
 
-from nnnotes import advui, fontsettings
+from nnnotes.content import advui
+from nnnotes.unity import fontsettings
 
 WHITE = {"spriteRef": "cab:1", "name": "WhiteRect"}
 

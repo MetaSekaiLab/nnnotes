@@ -7,8 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from nnnotes import cli, configfile
-from nnnotes.config import ConfigError, template
+from nnnotes import cli
+from nnnotes.source import configfile
+from nnnotes.source.config import ConfigError, template
 
 ROOT = Path(__file__).resolve().parents[1]
 KEY = bytes(range(16)).hex()
