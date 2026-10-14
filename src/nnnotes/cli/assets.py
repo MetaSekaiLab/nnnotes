@@ -456,13 +456,13 @@ class Workspace:
 
     def __init__(self, args, cfg, log=_log):
         from ..pipeline.catalogdb import CatalogDB
-        from ..pipeline.depot import Depot
+        from ..pipeline.depot import open_depot
 
         self.args, self.cfg, self.log = args, cfg, log
         self.root = Session(cfg).depot_root()
         self.apk = cfg.path("paths", "apk")
         self.fetcher = CatalogFetcher(self.root, cfg)
-        self.depot = Depot(self.root, fetch=self.fetcher)
+        self.depot = open_depot(cfg, fetch=self.fetcher)
         self.db = CatalogDB(self.root)
         try:
             self.selection = parse_selection(getattr(args, "select", None))
@@ -1399,7 +1399,7 @@ def _task_files(items) -> list[Path]:
 
 
 def cmd_run_stage(args, cfg):
-    from ..pipeline.depot import Depot
+    from ..pipeline.depot import open_depot
     from ..pipeline.orchestrate import run_one
 
     problems, tasks = [], []
@@ -1425,7 +1425,7 @@ def cmd_run_stage(args, cfg):
             print(f"nnnotes: incompatible task: {m}", file=sys.stderr)
         sys.exit(EXIT_INCOMPATIBLE)
     root = Session(cfg).depot_root()
-    depot = Depot(root, fetch=CatalogFetcher(root, cfg) if args.fetch else None)
+    depot = open_depot(cfg, fetch=CatalogFetcher(root, cfg) if args.fetch else None)
     use(cfg)
     out, bad = [], 0
     for t in tasks:

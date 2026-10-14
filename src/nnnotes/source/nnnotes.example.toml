@@ -81,6 +81,18 @@ player = ""
 # how much of <depot>/downloads (decrypted bundles, raw CDN files) to keep once no command uses the depot: a size such
 # as 20GiB or 500MB, or all; empty: 0 (the last command to end removes them; they are downloaded again when needed)
 downloads = ""
+# a remote of the depot, shared by the machines that use it: s3://<bucket>/<prefix> (S3-compatible object storage,
+# through boto3: pip install 'nnnotes[remote]') or file:///<directory>; the depot reads the contents, results, input
+# identities and runs it lacks from the remote and writes what it adds to it
+remote = ""
+# the endpoint URL of the S3-compatible object storage of the remote; empty: AWS S3
+endpoint = ""
+# the access key id of the object storage; empty: boto3 looks for credentials itself (AWS_ACCESS_KEY_ID, ~/.aws)
+access_key_id = ""
+# the secret access key of the object storage
+secret_access_key = ""
+# the region requests to the object storage are signed for; empty: us-east-1
+signing_region = ""
 
 [export]
 # how `nnnotes export assets` makes the layout files from the depot: auto (a clone where the file system makes them, else

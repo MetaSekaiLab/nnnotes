@@ -23,7 +23,14 @@ from ..core.downloads import parse_budget
 from . import languages
 from .config import Config, ConfigError, check_catalog_version, env_name, template
 
-SECRETS = {("bundle", "key"), ("bundle", "nonce_seed"), ("master", "key"), ("master", "iv")}
+SECRETS = {
+    ("bundle", "key"),
+    ("bundle", "nonce_seed"),
+    ("master", "key"),
+    ("master", "iv"),
+    ("depot", "access_key_id"),
+    ("depot", "secret_access_key"),
+}
 HEX_BYTES = {("bundle", "key"): 16, ("bundle", "nonce_seed"): None, ("master", "key"): 32, ("master", "iv"): 32}
 REGION = "servers.<region>"  # the section of the per-region settings
 TEMPLATE_REGION = "tw"  # the example region table of the template
@@ -155,6 +162,14 @@ def validate(setting: Setting, value: Value) -> None:
         raise ValueError(f"must be one of {', '.join(LINKS)}")
     elif k == ("depot", "downloads"):
         parse_budget(value)
+    elif k == ("depot", "remote"):
+        u = urlsplit(value)
+        if not ((u.scheme == "s3" and u.netloc) or (u.scheme == "file" and not u.netloc and u.path)):
+            raise ValueError("must be s3://<bucket>/<prefix> or file:///<directory>")
+    elif k == ("depot", "endpoint"):
+        u = urlsplit(value)
+        if u.scheme not in ("https", "http") or not u.netloc:
+            raise ValueError("must be an http(s):// URL")
 
 
 # ---------------------------------------------------------------- TOML text

@@ -94,3 +94,14 @@ def test_the_gc_command_runs_only_when_no_other_command_does(tmp_path, capsys):
     cli.main(argv)
     assert json.loads(capsys.readouterr().out)["contents"]["removed"] == 1 and not d.path(orphan).exists()
     assert not list((tmp_path / "leases").iterdir())
+
+
+def test_the_gc_command_collects_the_remote_with_remote(tmp_path, capsys, monkeypatch):
+    argv = ["--depot", str(tmp_path / "d"), "depot", "gc", "--remote", "--json"]
+    with pytest.raises(SystemExit):
+        cli.main(argv)
+    assert "the depot has no remote" in capsys.readouterr().err
+    monkeypatch.setenv("NNNOTES_DEPOT_REMOTE", (tmp_path / "remote").as_uri())
+    cli.main(argv)
+    r = json.loads(capsys.readouterr().out)
+    assert r["remote"]["runs"] == {"kept": 0, "removed": 0} and r["contents"] == {"kept": 0, "removed": 0}
