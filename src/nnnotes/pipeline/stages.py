@@ -102,6 +102,14 @@ class Stage:
     def run(self, task: Task, depot) -> Output:
         raise NotImplementedError
 
+    def batch(self, task: Task) -> str | None:
+        """The batch of a task to run: the tasks of a stage with the same batch run one after another in one process
+        (a job of the orchestrator), so what they share is loaded once. None: the task runs alone."""
+        return None
+
+    def end_batch(self, batch: str) -> None:
+        """The process ran the last task of `batch`: drop what the stage kept for it."""
+
 
 def registry(*stages: Stage) -> dict[str, Stage]:
     """{name: stage}; names must be unique."""

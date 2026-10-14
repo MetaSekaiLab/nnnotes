@@ -58,12 +58,15 @@ stages that need those results (atlas sprites, views), writes the layouts and th
 (CRI audio and movies) not downloaded yet are fetched while the bundle stages run. The census also covers
 the bundles the selected ones depend on, so script classes and atlas textures in other bundles resolve.
 
-Tasks run in spawned worker processes that stay alive between tasks (no more of them start than a stage has tasks to
-run). The longest tasks (by estimated CPU time) start first; a task starts only while the estimated peak memory of
-the running tasks and its own fits the budget, and a task estimated above the budget runs alone. A worker is
-replaced after 500 tasks or when its resident memory after a task is above 3 GiB, or above 40 % of its part of the
-memory budget (the budget divided by the workers) when that is less, but not below 256 MiB: a worker keeps much of
-its largest task's memory, which the budget does not count (`--explain` prints the threshold). The estimates come
+Tasks run in spawned worker processes that stay alive between tasks. The tasks of a stage that read the same
+loaded data (a stage's batch, such as one bundle) form one job: one worker runs them one after another and loads the
+data once. Every other task is a job alone. No more workers start than a stage has jobs to run. The longest jobs (by
+estimated CPU time, the sum over their tasks) start first; a job starts only while the estimated peak memory of the
+running jobs and its own (the largest of its tasks') fits the budget, and a job estimated above the budget runs
+alone. A worker is replaced after a job once it has run 500 tasks, or when its resident memory at the end of a job
+is above 3 GiB, or above 40 % of its part of the memory budget (the budget divided by the workers) when that is
+less, but not below 256 MiB: a worker keeps much of its largest task's memory, which the budget does not count
+(`--explain` prints the threshold). The estimates come
 from each stage's cost model, scaled per stage by the costs measured in earlier runs of the depot
 (`<depot>/costs/calibration.json`, updated after every export; a task's measured peak counts from its worker's
 memory at its start). None of this changes an output: a run with one worker and a run with many write the same depot
@@ -71,7 +74,7 @@ and the same files.
 
 A failed object is reported with its task's result and stays failed until something in its key changes. A task that
 fails as a whole (an exception, an input that cannot be read, a worker that dies) leaves no result and runs again
-next time.
+next time; when a worker dies, the tasks of its job after the failed one run in another worker.
 
 ### depot plan
 

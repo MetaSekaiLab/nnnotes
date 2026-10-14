@@ -1,6 +1,7 @@
 """The local orchestrator (toy stages of test_stages; spawned worker processes where the pool matters)."""
 
 import hashlib
+import os
 from pathlib import Path
 
 import pytest
@@ -8,10 +9,10 @@ import pytest
 from nnnotes.pipeline import contract
 from nnnotes.pipeline.contract import Cost, Task
 from nnnotes.pipeline.depot import Depot
-from nnnotes.pipeline.orchestrate import Orchestrator, Scheduler, coverage
+from nnnotes.pipeline.orchestrate import Job, Orchestrator, Scheduler, coverage, jobs
 from nnnotes.pipeline.plan import plan
-from nnnotes.pipeline.stages import execute
-from tests.pipeline.test_stages import PIPELINE, toy_files, toy_stages
+from nnnotes.pipeline.stages import execute, registry
+from tests.pipeline.test_stages import PIPELINE, Count, Src, Total, toy_files, toy_stages
 
 TEXTS = {
     "a": "alpha\nbeta\n\nFAIL here\n?what",
@@ -144,30 +145,126 @@ def test_a_bumped_stage_reruns_itself_and_what_reads_it(tmp_path):
     assert {t for t, v in st.items() if v == "ran"} == {f"toy.count:{s}" for s in TEXTS} | {"toy.total:all"}
 
 
+# ---------------------------------------------------------------- batches
+class Batched(Src):
+    """toy.src whose tasks are batched by the first letter of their subject; every process logs to <log>/<pid>.log
+    what it loads, runs and drops."""
+
+    def __init__(self, log: Path):
+        self.log, self.loaded = str(log), None
+
+    def batch(self, task):
+        return task.subject[0]
+
+    def run(self, task, depot):
+        if self.loaded != task.subject[0]:
+            self.loaded = task.subject[0]
+            self._note(f"load {self.loaded}")
+        self._note(f"run {task.subject}")
+        return super().run(task, depot)
+
+    def end_batch(self, batch):
+        self._note(f"drop {batch}")
+        self.loaded = None
+
+    def _note(self, line: str) -> None:
+        with open(Path(self.log) / f"{os.getpid()}.log", "a", encoding="utf-8") as f:
+            f.write(line + "\n")
+
+
+def batched(tmp_path, name, texts, workers):
+    log = tmp_path / f"{name}-log"
+    log.mkdir()
+    stages = registry(Batched(log), Count(), Total())
+    depot, run, orch = orchestrate(tmp_path, name, texts, workers=workers, stages=stages)
+    return depot, run, orch, [" ".join(f.read_text(encoding="utf-8").split()) for f in sorted(log.iterdir())]
+
+
+BATCHED = {"a1": "x", "a2": "y\nz", "a3": "w", "b1": "v", "b2": "FAIL"}
+
+
+def test_the_tasks_of_a_batch_run_in_one_process_which_drops_it_after_the_last(tmp_path):
+    plain, _, _ = orchestrate(tmp_path, "plain", BATCHED)
+    for workers in (0, 2):
+        depot, run, orch, logs = batched(tmp_path, f"w{workers}", BATCHED, workers)
+        assert tree(depot.root, "cas", "ac") == tree(plain.root, "cas", "ac")  # batches change no result
+        assert all(v["status"] == "ran" for v in run.tasks.values())
+        a, b = "load a run a1 run a2 run a3 drop a", "load b run b1 run b2 drop b"
+        if workers:
+            assert sorted(logs) == [a, b] and orch._started == 2
+        else:
+            assert logs == [f"{a} {b}"]  # equal estimates: by id
+        jobs_of = {e["task"]: e["job"] for e in run.log if e["event"] == "start" and e["task"].startswith("toy.src")}
+        assert jobs_of == {f"toy.src:{s}": f"toy.src:{s[0]}1" for s in BATCHED}
+
+
+def test_a_worker_dying_in_a_job_fails_its_task_and_the_rest_runs_in_another(tmp_path):
+    texts = {"a1": "x", "a2": "DIE", "a3": "y", "a4": "z", "b1": "v"}
+    _, run, orch, logs = batched(tmp_path, "s", texts, workers=1)
+    st = {t: v["status"] for t, v in run.tasks.items() if t.startswith("toy.src")}
+    assert st == {
+        "toy.src:a1": "ran",
+        "toy.src:a2": "failed",
+        "toy.src:a3": "ran",
+        "toy.src:a4": "ran",
+        "toy.src:b1": "ran",
+    }
+    assert [f["code"] for f in run.failures() if f["task"] == "toy.src:a2"] == ["task.worker_died"]
+    assert sorted(logs) == ["load a run a1 run a2", "load a run a3 run a4 drop a load b run b1 drop b"]
+    assert orch._started >= 2
+
+
+def test_jobs_group_a_stages_batches():
+    def task(stage, name, cpu, peak):
+        return Task(stage, 1, name, cost=Cost(cpu, peak))
+
+    class Firsts(Src):
+        def batch(self, task):
+            return task.subject[0] if task.subject != "a9" else None
+
+    stages = registry(Firsts(), Count())
+    ts = [task("toy.src", s, 1.0, p) for s, p in (("a1", 10), ("a2", 30), ("b1", 5), ("a9", 7))]
+    ts.append(task("toy.count", "a1", 2.0, 1))
+    js = jobs(reversed(ts), stages)
+    assert [([t.subject for t in j.tasks], j.batch) for j in js] == [
+        (["a1"], None),
+        (["a9"], None),
+        (["a1", "a2"], ("toy.src", "a")),
+        (["b1"], ("toy.src", "b")),
+    ]
+    assert (js[2].id, js[2].cpu, js[2].peak) == ("toy.src:a1", 2.0, 30)
+
+
 # ---------------------------------------------------------------- admission
-def toy_task(name, cpu, peak):
-    return Task("toy.src", 1, name, cost=Cost(cpu, peak))
+def toy_job(name, cpu, peak):
+    return Job([Task("toy.src", 1, name, cost=Cost(cpu, peak))])
 
 
 def test_scheduler_orders_longest_first_and_admits_within_the_budget():
-    s = Scheduler([toy_task("a", 1, 40), toy_task("b", 5, 70), toy_task("c", 3, 30), toy_task("d", 3, 20)], 100)
-    assert s.next().subject == "b"  # longest first
-    assert s.next().subject == "c"  # 70 + 30 fits
+    s = Scheduler([toy_job("a", 1, 40), toy_job("b", 5, 70), toy_job("c", 3, 30), toy_job("d", 3, 20)], 100)
+    assert s.next().id == "toy.src:b"  # longest first
+    assert s.next().id == "toy.src:c"  # 70 + 30 fits
     assert s.next() is None  # d (20) would pass 100
     s.finished("toy.src:b")
-    assert [s.next().subject, s.next().subject] == ["d", "a"]
+    assert [s.next().id, s.next().id] == ["toy.src:d", "toy.src:a"]
     assert s.next() is None and s.used() == 90 and s.oversize == []
+    s.put(toy_job("e", 9, 1))
+    assert s.next().id == "toy.src:e"  # queued again in its place
+    s.stop()
+    s.put(toy_job("f", 1, 1))
+    assert s.next() is None and s.queue == []
 
 
-def test_scheduler_runs_an_oversize_task_alone():
-    s = Scheduler([toy_task("big", 1, 500), toy_task("x", 9, 10), toy_task("y", 0.5, 10)], 100)
-    assert s.next().subject == "x"
+def test_scheduler_runs_an_oversize_job_alone():
+    big = Job([Task("toy.src", 1, n, cost=Cost(0.5, 500)) for n in ("big1", "big2")])
+    s = Scheduler([big, toy_job("x", 9, 10), toy_job("y", 0.5, 10)], 100)
+    assert s.next().id == "toy.src:x"
     assert s.next() is None  # big waits for the pool to drain; y must not pass it
     s.finished("toy.src:x")
-    assert s.next().subject == "big" and s.oversize == ["toy.src:big"]
+    assert s.next() is big and s.oversize == ["toy.src:big1", "toy.src:big2"]
     assert s.next() is None  # nothing joins it
-    s.finished("toy.src:big")
-    assert s.next().subject == "y"
+    s.finished("toy.src:big1")
+    assert s.next().id == "toy.src:y"
 
 
 def test_pool_admission_respects_the_budget(tmp_path):
