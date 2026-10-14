@@ -35,8 +35,8 @@ import tempfile
 from pathlib import Path
 
 from ..source.catalog import Bundle
+from ..unity.atoms import impl_id
 from . import catalogdb, contract, link
-from .atoms import impl_id
 from .contract import Cost, IncompatibleTask, Input
 from .stages import Output, Pending, Stage
 

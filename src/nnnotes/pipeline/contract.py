@@ -35,6 +35,10 @@ from dataclasses import dataclass, field
 from functools import cached_property
 
 from ..core import jsonio
+from ..core.media import MEDIA_TYPES as MEDIA_TYPES
+from ..core.media import media_type as media_type
+from ..unity.ids import object_id as object_id
+from ..unity.ids import parse_object_id as parse_object_id
 
 CANON = "canon/1"
 TASK = "nnnotes.task/1"
@@ -59,29 +63,6 @@ RUN_TASK_STATUSES = ("hit", "ran", "failed")
 LOCATOR_KINDS = ("depot", "download", "file", "catalog")
 # an object's primary artifact is the one whose role comes first here; its other artifacts are secondary
 PRIMARY_ROLES = ("image", "mesh", "audio", "video", "font", "data", "prefab", "json")
-MEDIA_TYPES = {
-    "png": "image/png",
-    "astc": "image/astc",
-    "jpg": "image/jpeg",
-    "json": "application/json",
-    "glb": "model/gltf-binary",
-    "flac": "audio/flac",
-    "wav": "audio/wav",
-    "ogg": "audio/ogg",
-    "mkv": "video/x-matroska",
-    "ivf": "video/x-ivf",
-    "adx": "audio/x-adx",
-    "ttf": "font/ttf",
-    "otf": "font/otf",
-    "ttc": "font/collection",
-    "woff": "font/woff",
-    "woff2": "font/woff2",
-    "txt": "text/plain",
-    "xml": "application/xml",
-    "csv": "text/csv",
-    "bin": "application/octet-stream",
-    "bytes": "application/octet-stream",
-}
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 _EXT = re.compile(r"[0-9a-z]+")
 _BUNDLE_SUFFIX = re.compile(r"(_[0-9a-f]{32})?\.bundle$")
@@ -181,18 +162,6 @@ def is_sha256(s) -> bool:
 
 
 # ---------------------------------------------------------------- identities
-def object_id(file: str, path_id: int) -> str:
-    return f"{file}:{int(path_id)}"
-
-
-def parse_object_id(oid: str) -> tuple[str, int]:
-    """(serialized file, pathId) of an object id."""
-    file, sep, pid = oid.rpartition(":")
-    if not sep or not file:
-        raise ValueError(f"not an object id: {oid!r}")
-    return file, int(pid)
-
-
 def artifact_id(owner: str, role: str) -> str:
     """The id of the artifact `role` of `owner` (an object id, or a task id for artifacts of no object)."""
     if "#" in owner:
@@ -260,10 +229,6 @@ def stable_address(
     if path_id is None:
         raise ValueError("an object without a container is addressed by its path id")
     return f"{bundle}:{int(path_id)}"
-
-
-def media_type(ext: str) -> str:
-    return MEDIA_TYPES.get(ext.lower(), "application/octet-stream")
 
 
 # ---------------------------------------------------------------- tasks

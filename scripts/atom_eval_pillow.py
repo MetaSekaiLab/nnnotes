@@ -1,6 +1,6 @@
 """Candidate `png.encode` implementations on Pillow, for scripts/atom_eval.py only.
 
-The reference (`nnnotes.pipeline.atoms.png.encode`) writes at the level a task's `png.level` parameter gives (6 by
+The reference (`nnnotes.unity.atoms.png.encode`) writes at the level a task's `png.level` parameter gives (6 by
 default). These fix the setting instead, so several can be measured side by side in one `atom_eval.py m1` run:
 
     level1, level3, level6, level9   Pillow at that zlib level
@@ -15,8 +15,8 @@ import io
 from functools import cache
 from importlib import metadata
 
-from nnnotes.pipeline.atoms import Impl
-from nnnotes.pipeline.atoms import png as png_atom
+from nnnotes.unity.atoms import Impl
+from nnnotes.unity.atoms import png as png_atom
 
 
 def _pillow() -> str:

@@ -69,10 +69,10 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, cast
 
+from ..unity.atoms import ATOMS as ATOM_REGISTRY
+from ..unity.atoms import Impl, Unsupported, atom_id, resolve
 from . import census as census_mod
 from . import contract, link
-from .atoms import ATOMS as ATOM_REGISTRY
-from .atoms import Impl, Unsupported, atom_id, resolve
 from .contract import Cost, IncompatibleTask, Input
 from .stages import Output, Pending, Stage
 
@@ -948,7 +948,7 @@ class RefExporter(_ExporterBase):
         return k
 
     def conv_texture(self, info, holder: dict) -> list:
-        from .atoms.texture import ASTC_BLOCKS, format_name, is_hdr_astc
+        from ..unity.atoms.texture import ASTC_BLOCKS, format_name, is_hdr_astc
 
         key = (info.file, info.path_id)
         try:
@@ -983,7 +983,7 @@ class RefExporter(_ExporterBase):
 
     def _decode_into(self, info, holder: dict) -> None:
         """The texture's image for its sprites (a task whose `classes` leave Texture2D out)."""
-        from .atoms.texture import format_name, is_hdr_astc
+        from ..unity.atoms.texture import format_name, is_hdr_astc
 
         try:
             inp = self.view.texture_input(info)
@@ -997,7 +997,7 @@ class RefExporter(_ExporterBase):
         return self.fns["texture.decode"](self.view.texture_input(self.info[key]))
 
     def conv_sprite(self, info, plan: dict, holder: dict) -> list:
-        from .atoms import sprite as sprite_atom
+        from ..unity.atoms import sprite as sprite_atom
 
         err = holder.get("error")
         if err is not None:
@@ -1060,7 +1060,7 @@ class RefExporter(_ExporterBase):
         return [image_id, meta_id]
 
     def conv_sprite_external(self, info, plan: dict) -> list:
-        from .atoms import sprite as sprite_atom
+        from ..unity.atoms import sprite as sprite_atom
 
         key = (info.file, info.path_id)
         m = self.fns["mesh.arrays"](self.view.mesh_input(info))
@@ -1700,7 +1700,7 @@ class SpriteCropStage(Stage):
     def run(self, task, depot) -> Output:
         from PIL import Image
 
-        from .atoms import sprite as sprite_atom
+        from ..unity.atoms import sprite as sprite_atom
 
         _check_atoms(task)
         crop, encode = resolve("sprite.crop").fn, resolve("png.encode").fn

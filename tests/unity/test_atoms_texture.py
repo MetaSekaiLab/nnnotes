@@ -13,10 +13,10 @@ import pytest
 from PIL import Image
 from UnityPy.export.Texture2DConverter import parse_image_data
 
-from nnnotes.pipeline.atoms import ATOMS, Impl, Unsupported, astc, env_name, ids, impl_id, png, resolve
-from nnnotes.pipeline.atoms.reader import ObjectInfo, UnityBundle
-from nnnotes.pipeline.atoms.texture import ASTC_BLOCKS, TextureInput, decode, is_hdr_astc
 from nnnotes.unity import export
+from nnnotes.unity.atoms import ATOMS, Impl, Unsupported, astc, env_name, ids, impl_id, png, resolve
+from nnnotes.unity.atoms.reader import ObjectInfo, UnityBundle
+from nnnotes.unity.atoms.texture import ASTC_BLOCKS, TextureInput, decode, is_hdr_astc
 from tests.helpers.fakeunity import ANDROID, VERSION, FakeEnvironment, FakeTexture2D, rgba_bytes
 
 RGBA32, RGB24, ALPHA8, ARGB4444, YUY2 = 4, 3, 1, 2, 21
@@ -255,7 +255,7 @@ def test_every_atom_has_one_reference_with_versioned_id():
 
 def test_evaluation_override(monkeypatch):
     assert env_name("png.encode") == "NNNOTES_ATOM_PNG_ENCODE"
-    monkeypatch.setenv("NNNOTES_ATOM_PNG_ENCODE", "tests.pipeline.test_atoms_texture:REPLACEMENT")
+    monkeypatch.setenv("NNNOTES_ATOM_PNG_ENCODE", "tests.unity.test_atoms_texture:REPLACEMENT")
     assert resolve("png.encode") is REPLACEMENT and ATOMS["png.encode"].fn(None) == b"replaced"
     assert ids("png.encode") == {"png.encode": "pillow-test/9"}  # keys change with the override
     monkeypatch.setenv("NNNOTES_ATOM_PNG_ENCODE", "no-colon")
@@ -268,17 +268,17 @@ def test_evaluation_override(monkeypatch):
 
 
 def test_override_with_the_reference_id_is_refused(monkeypatch):
-    import tests.pipeline.test_atoms_texture as me
+    import tests.unity.test_atoms_texture as me
 
     monkeypatch.setattr(me, "SAME", Impl(ATOMS["png.encode"].id, png.encode, png.cost), raising=False)
-    monkeypatch.setenv("NNNOTES_ATOM_PNG_ENCODE", "tests.pipeline.test_atoms_texture:SAME")
+    monkeypatch.setenv("NNNOTES_ATOM_PNG_ENCODE", "tests.unity.test_atoms_texture:SAME")
     with pytest.raises(ValueError, match="reference's id"):
         resolve("png.encode")
 
 
 def test_listing_the_registry_loads_no_image_or_unity_library():
     code = (
-        "import sys, nnnotes.pipeline.atoms as a; a.ids(*a.ATOMS); "
+        "import sys, nnnotes.unity.atoms as a; a.ids(*a.ATOMS); "
         "print(sorted(m for m in ('UnityPy', 'PIL') if m in sys.modules))"
     )
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True).stdout
@@ -296,7 +296,7 @@ def test_every_atom_and_reason_code_is_documented():
     assert documented == set(ATOMS)
     codes = set(re.findall(r"^\| `([a-zA-Z_.]+)` \|", doc.split("## Reason codes", 1)[1], re.M))
     emitted = set()
-    for src in (root / "src" / "nnnotes" / "pipeline" / "atoms").glob("*.py"):
+    for src in (root / "src" / "nnnotes" / "unity" / "atoms").glob("*.py"):
         emitted |= set(
             re.findall(
                 r"\"((?:empty|unsupported|partial|generic|no_data)\.[a-zA-Z_.]+)\"", src.read_text(encoding="utf-8")
