@@ -17,7 +17,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
 
-from .. import contract
+from ..ids import object_id
 from . import estimate
 from .mesh import CHANNELS, RAW_LAYOUT_SINCE, MeshInput, Submesh
 from .texture import TextureInput
@@ -37,7 +37,7 @@ class ObjectInfo:
 
     @property
     def id(self) -> str:
-        return contract.object_id(self.file, self.path_id)
+        return object_id(self.file, self.path_id)
 
 
 class BundleView(Protocol):
@@ -308,7 +308,7 @@ class UnityBundle:
 
 def open_bundle(data: bytes) -> UnityBundle:
     """The BundleView of a bundle's bytes (decrypted UnityFS), loaded alone."""
-    from ...unity.reader import load_bytes
+    from ..reader import load_bytes
 
     return UnityBundle(load_bytes(bytes(data)))
 

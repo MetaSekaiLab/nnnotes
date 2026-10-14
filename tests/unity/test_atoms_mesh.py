@@ -8,10 +8,10 @@ import numpy as np
 import pytest
 from UnityPy.helpers.MeshHelper import MeshHandler
 
-from nnnotes.pipeline.atoms import ATOMS, Unsupported, gltf
-from nnnotes.pipeline.atoms.mesh import MeshInput, arrays
-from nnnotes.pipeline.atoms.reader import UnityBundle, handler_input, mesh_input_from_typetree
 from nnnotes.unity import reader as unity
+from nnnotes.unity.atoms import ATOMS, Unsupported, gltf
+from nnnotes.unity.atoms.mesh import MeshInput, arrays
+from nnnotes.unity.atoms.reader import UnityBundle, handler_input, mesh_input_from_typetree
 from tests.helpers.fakeunity import (
     BLENDINDICES,
     BLENDWEIGHT,

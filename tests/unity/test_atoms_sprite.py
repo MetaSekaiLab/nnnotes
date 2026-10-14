@@ -7,10 +7,10 @@ import numpy as np
 import pytest
 from UnityPy.export.SpriteHelper import get_image_from_sprite
 
-from nnnotes.pipeline.atoms import ATOMS, Unsupported, sprite
-from nnnotes.pipeline.atoms.mesh import arrays
-from nnnotes.pipeline.atoms.reader import mesh_input_from_typetree
-from nnnotes.pipeline.atoms.texture import TextureInput, decode
+from nnnotes.unity.atoms import ATOMS, Unsupported, sprite
+from nnnotes.unity.atoms.mesh import arrays
+from nnnotes.unity.atoms.reader import mesh_input_from_typetree
+from nnnotes.unity.atoms.texture import TextureInput, decode
 from tests.helpers.fakeunity import (
     ANDROID,
     VERSION,
