@@ -3,6 +3,7 @@
 No game data is used: we build a tiny ELF64 whose .rodata holds random blocks, register a synthetic
 Version table keyed by their sha256, and check that extraction locates, orders and verifies them.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -34,15 +35,15 @@ def _elf_with_rodata(rodata: bytes, extra_strings: bytes = b"") -> bytes:
 
     ehdr = bytearray(64)
     ehdr[0:4] = b"\x7fELF"
-    ehdr[4] = 2       # ELFCLASS64
-    ehdr[5] = 1       # ELFDATA2LSB
-    ehdr[6] = 1       # EV_CURRENT
-    struct.pack_into("<H", ehdr, 0x10, 3)       # ET_DYN
-    struct.pack_into("<H", ehdr, 0x12, 183)     # EM_AARCH64
-    struct.pack_into("<Q", ehdr, 0x28, off_shdrs)   # e_shoff
-    struct.pack_into("<H", ehdr, 0x3a, 64)          # e_shentsize
-    struct.pack_into("<H", ehdr, 0x3c, n_sh)        # e_shnum
-    struct.pack_into("<H", ehdr, 0x3e, 2)           # e_shstrndx
+    ehdr[4] = 2  # ELFCLASS64
+    ehdr[5] = 1  # ELFDATA2LSB
+    ehdr[6] = 1  # EV_CURRENT
+    struct.pack_into("<H", ehdr, 0x10, 3)  # ET_DYN
+    struct.pack_into("<H", ehdr, 0x12, 183)  # EM_AARCH64
+    struct.pack_into("<Q", ehdr, 0x28, off_shdrs)  # e_shoff
+    struct.pack_into("<H", ehdr, 0x3A, 64)  # e_shentsize
+    struct.pack_into("<H", ehdr, 0x3C, n_sh)  # e_shnum
+    struct.pack_into("<H", ehdr, 0x3E, 2)  # e_shstrndx
 
     def shdr(name, sh_type, off, size):
         h = bytearray(64)
@@ -53,14 +54,15 @@ def _elf_with_rodata(rodata: bytes, extra_strings: bytes = b"") -> bytes:
         return bytes(h)
 
     shdrs = shdr(0, 0, 0, 0)
-    shdrs += shdr(name_rodata, 1, off_body, len(rodata))     # SHT_PROGBITS
-    shdrs += shdr(name_shstr, 3, off_shstr, len(shstrtab))   # SHT_STRTAB
+    shdrs += shdr(name_rodata, 1, off_body, len(rodata))  # SHT_PROGBITS
+    shdrs += shdr(name_shstr, 3, off_shstr, len(shstrtab))  # SHT_STRTAB
     return bytes(ehdr) + body + shstrtab + shdrs
 
 
 def _synthetic_version():
     """Build a synthetic version with two weight blocks and one constant, plus matching rodata."""
     import random
+
     rng = random.Random(1234)
     w1 = struct.pack("<%df" % 6, *[rng.uniform(-1, 1) for _ in range(6)])
     b1 = struct.pack("<%df" % 3, *[rng.uniform(-1, 1) for _ in range(3)])
@@ -69,7 +71,9 @@ def _synthetic_version():
     idstr = b"SYNTH Lips Ver.9.9.9\x00"
     rodata = b"\x00" * 16 + b1 + b"\x11\x22\x33\x44" + w1 + b"\x00" * 8 + c1 + idstr
     ver = Version(
-        version="9.9.9", core_version="9.9.9", id_string=b"SYNTH Lips Ver.9.9.9",
+        version="9.9.9",
+        core_version="9.9.9",
+        id_string=b"SYNTH Lips Ver.9.9.9",
         blocks=(
             Block("d1.w", 6, (2, 3), "dense_w", _sha16(w1)),
             Block("d1.b", 3, (3,), "bias", _sha16(b1)),
@@ -89,7 +93,7 @@ def test_extract_synthetic_locates_orders_and_verifies():
     assert [b["name"] for b in desc["blocks"]] == ["d1.w", "d1.b"]  # emitted in table order
     # d1.w is emitted first even though d1.b appears earlier in rodata
     assert desc["blocks"][0]["offset"] == 0
-    assert desc["blocks"][1]["offset"] == 6          # in floats
+    assert desc["blocks"][1]["offset"] == 6  # in floats
     assert desc["constants"]["flag"] == 7
     assert len(blob) == 9 * 4
 
@@ -107,8 +111,7 @@ def test_modified_block_is_an_error():
     corrupt[40] ^= 0xFF
     so = _elf_with_rodata(bytes(corrupt))
     # keep only d1.w so the failure is unambiguous
-    ver2 = Version(ver.version, ver.core_version, ver.id_string,
-                   (ver.blocks[0],), (), ver.frontend)
+    ver2 = Version(ver.version, ver.core_version, ver.id_string, (ver.blocks[0],), (), ver.frontend)
     with pytest.raises(CriLipsError):
         crilips.extract(so, tables=(ver2,))
 
@@ -120,6 +123,7 @@ def test_not_an_elf():
 
 def test_read_library_missing_entry(tmp_path):
     import zipfile
+
     apk = tmp_path / "base.apk"
     with zipfile.ZipFile(apk, "w") as z:
         z.writestr("classes.dex", b"x")
@@ -129,6 +133,7 @@ def test_read_library_missing_entry(tmp_path):
 
 def test_read_library_from_the_split_next_to_the_apk(tmp_path):
     import zipfile
+
     apk = tmp_path / "base.apk"
     with zipfile.ZipFile(apk, "w") as z:
         z.writestr("classes.dex", b"x")
@@ -150,9 +155,23 @@ def test_descriptor_shapes_and_kinds():
 
 def test_supported_versions_carry_the_player_configuration():
     # the player builds its analyzer from these keys only
-    need = {"frame_ms", "hop_ms", "mel_bands", "mel_high_hz", "resample_hz", "biquad_lpf_cutoff_hz",
-            "update_rate_hz", "silence_threshold_db", "window_internal_class", "window_vowel",
-            "motion_class_buffer", "labial_hold_sec", "discretizer", "mouth_open", "server_hz"}
+    need = {
+        "frame_ms",
+        "hop_ms",
+        "mel_bands",
+        "mel_high_hz",
+        "resample_hz",
+        "biquad_lpf_cutoff_hz",
+        "update_rate_hz",
+        "silence_threshold_db",
+        "window_internal_class",
+        "window_vowel",
+        "motion_class_buffer",
+        "labial_hold_sec",
+        "discretizer",
+        "mouth_open",
+        "server_hz",
+    }
     for ver in crilips.SUPPORTED:
         assert need <= set(ver.frontend), ver.version
         d = ver.frontend["discretizer"]
@@ -162,17 +181,25 @@ def test_supported_versions_carry_the_player_configuration():
 
 # --- story export: which episodes carry the CRI Lips data ------------------------------------------------------------
 
+
 def _prefab(*classes):
-    return {"key": "m", "nodes": [{"path": "m", "components": [{"class": c} for c in classes]},
-                                  {"path": "m/child", "components": [{"class": "CubismMotionSyncController"}]}]}
+    return {
+        "key": "m",
+        "nodes": [
+            {"path": "m", "components": [{"class": c} for c in classes]},
+            {"path": "m/child", "components": [{"class": "CubismMotionSyncController"}]},
+        ],
+    }
 
 
 def test_has_motion_sync_needs_both_components_on_the_root():
     from nnnotes import webmodel
-    assert webmodel.has_motion_sync(_prefab("CubismModel", "CubismMotionSyncController",
-                                            "Live2DMotionSyncCriAudioInput"))
+
+    assert webmodel.has_motion_sync(
+        _prefab("CubismModel", "CubismMotionSyncController", "Live2DMotionSyncCriAudioInput")
+    )
     assert not webmodel.has_motion_sync(_prefab("CubismModel", "CubismMotionSyncController"))
-    assert not webmodel.has_motion_sync(_prefab("CubismModel"))       # a child's controller does not count
+    assert not webmodel.has_motion_sync(_prefab("CubismModel"))  # a child's controller does not count
 
 
 def _talk(names, voices, **kw):
@@ -181,14 +208,20 @@ def _talk(names, voices, **kw):
 
 def test_needs_cri_lips():
     from nnnotes import story
+
     ep = lambda *rows: {"commands": list(rows)}
     one = _talk("a", [1])
     # a voiced row reaches the analysis on a model without MotionSync
     assert story.needs_cri_lips(ep(one), "・", [True, False])
     assert not story.needs_cri_lips(ep(one), "・", [True, True])
     # rows without lip sync never do
-    for row in (_talk("a", [1], IgnoreLipSync=1), _talk("a", [1], IgnoreData=1), _talk("", [1]), _talk("a", []),
-                {"cmd": "Bgm", "VoiceIDs": [1], "TargetName": "a"}):
+    for row in (
+        _talk("a", [1], IgnoreLipSync=1),
+        _talk("a", [1], IgnoreData=1),
+        _talk("", [1]),
+        _talk("a", []),
+        {"cmd": "Bgm", "VoiceIDs": [1], "TargetName": "a"},
+    ):
         assert not story.needs_cri_lips(ep(row), "・", [False])
     # a Voice row on a model without MotionSync
     assert story.needs_cri_lips(ep({"cmd": "Voice", "TargetName": "a", "VoiceIDs": [1]}), "・", [False])

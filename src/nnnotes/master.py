@@ -12,6 +12,7 @@ file at once). Key and IV come from the configuration (`[master] key`, `[master]
 (`{"version", "files": [{"name", "hash", "size"}]}`) and the files it lists, each checked against its SHA-256.
 The version a region serves now comes from the game's API (`gameapi.master_version`).
 """
+
 from __future__ import annotations
 
 import gzip
@@ -30,15 +31,16 @@ import numpy as np
 
 from . import jsonio
 
-PREFIX = 64                     # bytes before the ciphertext
-BLOCK = 32                      # 256-bit block
-NB = NK = 8                     # block / key length in 32-bit words
-NR = 14                         # rounds
+PREFIX = 64  # bytes before the ciphertext
+BLOCK = 32  # 256-bit block
+NB = NK = 8  # block / key length in 32-bit words
+NR = 14  # rounds
 
 
 @dataclass(frozen=True)
 class MasterKey:
     """Key and IV of the master data encryption (never shown in a repr)."""
+
     key: bytes = field(repr=False)
     iv: bytes = field(repr=False)
 
@@ -74,8 +76,13 @@ def _sbox() -> list[int]:
         q ^= (q << 4) & 0xFF
         if q & 0x80:
             q ^= 0x09
-        x = q ^ ((q << 1 | q >> 7) & 0xFF) ^ ((q << 2 | q >> 6) & 0xFF) \
-            ^ ((q << 3 | q >> 5) & 0xFF) ^ ((q << 4 | q >> 4) & 0xFF)
+        x = (
+            q
+            ^ ((q << 1 | q >> 7) & 0xFF)
+            ^ ((q << 2 | q >> 6) & 0xFF)
+            ^ ((q << 3 | q >> 5) & 0xFF)
+            ^ ((q << 4 | q >> 4) & 0xFF)
+        )
         box[p] = (x ^ 0x63) & 0xFF
         if p == 1:
             break
@@ -87,14 +94,14 @@ SBOX = _sbox()
 INV_SBOX = np.zeros(256, dtype=np.uint8)
 INV_SBOX[np.array(SBOX)] = np.arange(256, dtype=np.uint8)
 MUL = {k: np.array([_gmul(i, k) for i in range(256)], dtype=np.uint8) for k in (9, 11, 13, 14)}
-INV_SHIFT = (0, 1, 3, 4)        # InvShiftRows: row r moves right by INV_SHIFT[r] columns (Nb = 8)
+INV_SHIFT = (0, 1, 3, 4)  # InvShiftRows: row r moves right by INV_SHIFT[r] columns (Nb = 8)
 
 
 def round_keys(key: bytes) -> np.ndarray:
     """Key expansion (Nk = 8) -> (NR + 1, 4 rows, NB columns) uint8."""
     if len(key) != 32:
         raise ValueError("key must be 32 bytes")
-    words = [list(key[4 * i:4 * i + 4]) for i in range(NK)]
+    words = [list(key[4 * i : 4 * i + 4]) for i in range(NK)]
     rcon = 1
     for i in range(NK, NB * (NR + 1)):
         t = list(words[i - 1])
@@ -112,22 +119,25 @@ def round_keys(key: bytes) -> np.ndarray:
 def decrypt_blocks(ct: np.ndarray, rk: np.ndarray) -> np.ndarray:
     """(n, 32) ciphertext blocks -> (n, 32) block decryptions (no CBC chaining). A block's bytes are its state
     column by column."""
-    s = ct.reshape(-1, NB, 4).transpose(0, 2, 1).copy()          # (n, 4, NB): s[r][c]
+    s = ct.reshape(-1, NB, 4).transpose(0, 2, 1).copy()  # (n, 4, NB): s[r][c]
     s ^= rk[NR]
     cols = np.arange(NB)
     for rnd in range(NR - 1, -1, -1):
-        for r in range(4):                                       # InvShiftRows
+        for r in range(4):  # InvShiftRows
             s[:, r, :] = s[:, r, (cols - INV_SHIFT[r]) % NB]
-        s = INV_SBOX[s]                                          # InvSubBytes
-        s ^= rk[rnd]                                             # AddRoundKey
-        if rnd:                                                  # InvMixColumns
+        s = INV_SBOX[s]  # InvSubBytes
+        s ^= rk[rnd]  # AddRoundKey
+        if rnd:  # InvMixColumns
             a0, a1, a2, a3 = s[:, 0, :], s[:, 1, :], s[:, 2, :], s[:, 3, :]
-            s = np.stack([
-                MUL[14][a0] ^ MUL[11][a1] ^ MUL[13][a2] ^ MUL[9][a3],
-                MUL[9][a0] ^ MUL[14][a1] ^ MUL[11][a2] ^ MUL[13][a3],
-                MUL[13][a0] ^ MUL[9][a1] ^ MUL[14][a2] ^ MUL[11][a3],
-                MUL[11][a0] ^ MUL[13][a1] ^ MUL[9][a2] ^ MUL[14][a3],
-            ], axis=1)
+            s = np.stack(
+                [
+                    MUL[14][a0] ^ MUL[11][a1] ^ MUL[13][a2] ^ MUL[9][a3],
+                    MUL[9][a0] ^ MUL[14][a1] ^ MUL[11][a2] ^ MUL[13][a3],
+                    MUL[13][a0] ^ MUL[9][a1] ^ MUL[14][a2] ^ MUL[11][a3],
+                    MUL[11][a0] ^ MUL[13][a1] ^ MUL[9][a2] ^ MUL[14][a3],
+                ],
+                axis=1,
+            )
     return s.transpose(0, 2, 1).reshape(-1, BLOCK)
 
 
@@ -165,7 +175,7 @@ def decode_files(files: list[Path], out_dir: Path, key: MasterKey, workers: int 
     def one(p: Path):
         try:
             text = table_json(decode(p.read_bytes(), key, rk))
-        except Exception as e:                       # report and continue with the other tables
+        except Exception as e:  # report and continue with the other tables
             return {"file": p.name, "error": f"{type(e).__name__}: {e}"}
         (out_dir / f"{p.stem}.json").write_text(text, encoding="utf-8", newline="\n")
         return None
@@ -239,14 +249,20 @@ def download(cdn: str, version: str, out_dir: Path, workers: int = 16, *, get=No
             if not isinstance(entry, dict):
                 raise DownloadError("invalid JP master manifest entry")
             name = entry.get("name")
-            if (not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9_-]+\.bin", name)
-                    or name in seen or not re.fullmatch(r"[0-9a-fA-F]{64}", str(entry.get("hash", "")))
-                    or type(entry.get("size")) is not int or not 64 < entry["size"] <= 128 * 1024 * 1024):
+            if (
+                not isinstance(name, str)
+                or not re.fullmatch(r"[A-Za-z0-9_-]+\.bin", name)
+                or name in seen
+                or not re.fullmatch(r"[0-9a-fA-F]{64}", str(entry.get("hash", "")))
+                or type(entry.get("size")) is not int
+                or not 64 < entry["size"] <= 128 * 1024 * 1024
+            ):
                 raise DownloadError("invalid JP master manifest entry")
             seen.add(name)
     else:
         # Preserve the original partial-download receipt even if a worker raises.
         from .cache import write_atomic
+
         write_atomic(out_dir / "MasterManifest.json", manifest_raw)
 
     def one(f: dict):
@@ -254,8 +270,12 @@ def download(cdn: str, version: str, out_dir: Path, workers: int = 16, *, get=No
         if "/" in name or "\\" in name or name in ("", ".", ".."):
             return {"file": name, "error": "unexpected file name"}
         dst = out_dir / name
-        if (sha and dst.is_file() and (not strict or dst.stat().st_size == f["size"])
-                and hashlib.sha256(dst.read_bytes()).hexdigest() == sha):
+        if (
+            sha
+            and dst.is_file()
+            and (not strict or dst.stat().st_size == f["size"])
+            and hashlib.sha256(dst.read_bytes()).hexdigest() == sha
+        ):
             return "kept"
         data = get(f"{base}/{name}")
         if strict and (len(data) != f.get("size") or not sha):
@@ -271,7 +291,13 @@ def download(cdn: str, version: str, out_dir: Path, workers: int = 16, *, get=No
         results = list(ex.map(one, files))
     if not strict or not any(isinstance(r, dict) for r in results):
         from .cache import write_atomic
+
         write_atomic(out_dir / "MasterManifest.json", manifest_raw)
-    return {"version": manifest.get("version", version), "files": len(files),
-            "downloaded": results.count("downloaded"), "kept": results.count("kept"),
-            "failed": [r for r in results if isinstance(r, dict)], "out": str(out_dir)}
+    return {
+        "version": manifest.get("version", version),
+        "files": len(files),
+        "downloaded": results.count("downloaded"),
+        "kept": results.count("kept"),
+        "failed": [r for r in results if isinstance(r, dict)],
+        "out": str(out_dir),
+    }

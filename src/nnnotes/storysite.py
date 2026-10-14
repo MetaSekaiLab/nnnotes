@@ -36,6 +36,7 @@ Regions: as for charts, the regions are grouped by the story inputs of their mas
 group writes stories/<id>.json, another group stories/<region>/<id>.json unless its files equal the shared manifest's
 (then its regions join the shared one). A region offers the stories of its MasterAdv.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -50,28 +51,70 @@ from pathlib import Path
 
 from . import adv, advui, jsonio, languages, master, story, storyfonts, storyhost, webmodel
 from .config import Config, ConfigError, usable_cpus, use
-from .web import (MODELS_DIR, SPLIT_KEY, STORIES_DIR, STORIES_INDEX, WEB_AUDIO, Store, _dump, _lock_fetches, _log,
-                  _minify, check_player, collect, configure_caches, entry_assets, join_parts, merge_regions,
-                  mp4_priming, open_data, region_masters, region_meta, site_regions, site_store, text_asset)
+from .web import (
+    MODELS_DIR,
+    SPLIT_KEY,
+    STORIES_DIR,
+    STORIES_INDEX,
+    WEB_AUDIO,
+    Store,
+    _dump,
+    _lock_fetches,
+    _log,
+    _minify,
+    check_player,
+    collect,
+    configure_caches,
+    entry_assets,
+    join_parts,
+    merge_regions,
+    mp4_priming,
+    open_data,
+    region_masters,
+    region_meta,
+    site_regions,
+    site_store,
+    text_asset,
+)
 
 STORIES_FORMAT = "ournotes.stories/1"
 MANIFEST_FORMAT = "ournotes.story-manifest/2"
 FONT_SOURCES = storyfonts.SOURCES
-EMOJI_FONT = "emoji"                        # the emoji font's key in --font / [paths] fonts
+EMOJI_FONT = "emoji"  # the emoji font's key in --font / [paths] fonts
 # master tables a story build reads (adv, advmedia, the story groups): a region's story inputs
-STORY_TABLES = ("MasterAdv", "MasterAdvChat", "MasterCharacter", "MasterCharacterFriendship", "MasterHomeSpot",
-                "MasterStoryChapter", "MasterStoryEpisode", "MasterStoryFriendshipEpisode",
-                "MasterStoryHomeSpotTapTalkEpisode", "MasterStoryLiveResultEpisode", "MasterText")
+STORY_TABLES = (
+    "MasterAdv",
+    "MasterAdvChat",
+    "MasterCharacter",
+    "MasterCharacterFriendship",
+    "MasterHomeSpot",
+    "MasterStoryChapter",
+    "MasterStoryEpisode",
+    "MasterStoryFriendshipEpisode",
+    "MasterStoryHomeSpotTapTalkEpisode",
+    "MasterStoryLiveResultEpisode",
+    "MasterText",
+)
 # files stored split per top-level key whatever their size (their parts are shared between stories / languages)
 SPLIT_ALWAYS = ("scene.json", "ui/ui.json")
 # per-language files that go to the language group even when equal in every language
-LANGUAGE_FILES = (f"ui/{storyfonts.FONTS_DOC}", f"ui/{storyfonts.LANGUAGE_DOC}",
-                  f"ui/{storyhost.SIMPLE_DIR}/{storyfonts.FONTS_DOC}")
+LANGUAGE_FILES = (
+    f"ui/{storyfonts.FONTS_DOC}",
+    f"ui/{storyfonts.LANGUAGE_DOC}",
+    f"ui/{storyhost.SIMPLE_DIR}/{storyfonts.FONTS_DOC}",
+)
 LANGUAGE_DIRS = (f"ui/{storyfonts.PAGES_DIR}/", f"ui/{storyhost.SIMPLE_DIR}/{storyfonts.PAGES_DIR}/")
-STREAMS_DOC = "streams.json"                      # the cue sheets' every-stream list: not read by the player
+STREAMS_DOC = "streams.json"  # the cue sheets' every-stream list: not read by the player
 # the keys of the stories' model build (webmodel.build) in the summary's storyModels
-STORY_MODEL_KEYS = ("modelsBuilt", "modelsFailed", "modelsSkipped", "modelsRebuilt", "modelSeconds", "modelWorkers",
-                    "modelNames")
+STORY_MODEL_KEYS = (
+    "modelsBuilt",
+    "modelsFailed",
+    "modelsSkipped",
+    "modelsRebuilt",
+    "modelSeconds",
+    "modelWorkers",
+    "modelNames",
+)
 
 
 # ---------------------------------------------------------------- master data
@@ -88,8 +131,9 @@ def unknown_stories(cfg: Config, ids, regions=None) -> list[int]:
         try:
             have.update(all_stories(md))
         except FileNotFoundError as e:
-            raise ConfigError(f"master data {md}: no {Path(e.filename).name} (a directory written by "
-                              f"`nnnotes master decode`)") from None
+            raise ConfigError(
+                f"master data {md}: no {Path(e.filename).name} (a directory written by `nnnotes master decode`)"
+            ) from None
     return [i for i in dict.fromkeys(int(i) for i in ids) if i not in have]
 
 
@@ -122,46 +166,70 @@ def story_groups(master_dir: Path) -> dict[int, list[dict]]:
             return sorted(master.table(md, name), key=lambda r: r["_id"])
         except FileNotFoundError:
             return []
+
     texts = {r["_id"]: r for r in table("MasterText")}
 
     def names(text_id) -> dict:
         row = texts.get(text_id)
         return {c: t for c, t in languages.texts(row).items() if isinstance(t, str) and t} if row else {}
+
     chars = {r["_id"]: r for r in table("MasterCharacter")}
 
     def character(cid: int) -> dict:
         return {"id": cid, "names": names((chars.get(cid) or {}).get("_nameTextID"))}
+
     chapters = {r["_id"]: r for r in table("MasterStoryChapter")}
     friendships = {r["_id"]: r for r in table("MasterCharacterFriendship")}
     spots = {r["_id"]: r for r in table("MasterHomeSpot")}
 
     def spot(sid: int) -> dict:
         return {"id": sid, "names": names((spots.get(sid) or {}).get("_nameTextId"))}
+
     out: dict[int, list[dict]] = {}
     for r in table("MasterStoryEpisode"):
         ch = chapters.get(r["_chapterId"]) or {}
-        g = {"kind": "chapter", "id": r["_id"], "episodeNumber": r["_episodeNumber"],
-             "chapter": {"id": r["_chapterId"], "names": names(ch.get("_nameTextId")), "bandId": ch.get("_bandId", 0),
-                         "special": bool(ch.get("_isSpecialStory"))},
-             "characters": [character(r["_characterId"])] if r.get("_characterId") else []}
+        g = {
+            "kind": "chapter",
+            "id": r["_id"],
+            "episodeNumber": r["_episodeNumber"],
+            "chapter": {
+                "id": r["_chapterId"],
+                "names": names(ch.get("_nameTextId")),
+                "bandId": ch.get("_bandId", 0),
+                "special": bool(ch.get("_isSpecialStory")),
+            },
+            "characters": [character(r["_characterId"])] if r.get("_characterId") else [],
+        }
         out.setdefault(r["_advId"], []).append(g)
     for r in table("MasterStoryFriendshipEpisode"):
         f = friendships.get(r["_characterFriendshipId"]) or {}
         ids = [f[k] for k in ("_masterCharacterIdA", "_masterCharacterIdB") if f.get(k)]
-        out.setdefault(r["_advId"], []).append({"kind": "friendship", "id": r["_id"],
-                                                "episodeNumber": r["_episodeNumber"],
-                                                "characters": [character(c) for c in ids]})
+        out.setdefault(r["_advId"], []).append(
+            {
+                "kind": "friendship",
+                "id": r["_id"],
+                "episodeNumber": r["_episodeNumber"],
+                "characters": [character(c) for c in ids],
+            }
+        )
     for r in table("MasterStoryHomeSpotTapTalkEpisode"):
-        out.setdefault(r["_advId"], []).append({"kind": "spotTalk", "id": r["_id"], "spot": spot(r["_spotId"]),
-                                                "characters": [character(r["_characterId"])]
-                                                if r.get("_characterId") else []})
+        out.setdefault(r["_advId"], []).append(
+            {
+                "kind": "spotTalk",
+                "id": r["_id"],
+                "spot": spot(r["_spotId"]),
+                "characters": [character(r["_characterId"])] if r.get("_characterId") else [],
+            }
+        )
     for r in table("MasterStoryLiveResultEpisode"):
-        out.setdefault(r["_advId"], []).append({"kind": "liveResult", "id": r["_id"],
-                                                "characters": [character(c) for c in r.get("_characterIds") or []]})
+        out.setdefault(r["_advId"], []).append(
+            {"kind": "liveResult", "id": r["_id"], "characters": [character(c) for c in r.get("_characterIds") or []]}
+        )
     for r in table("MasterHomeSpot"):
         if r.get("_advId"):
-            out.setdefault(r["_advId"], []).append({"kind": "spot", "id": r["_id"], "spot": spot(r["_id"]),
-                                                    "characters": []})
+            out.setdefault(r["_advId"], []).append(
+                {"kind": "spot", "id": r["_id"], "spot": spot(r["_id"]), "characters": []}
+            )
     return out
 
 
@@ -178,27 +246,44 @@ def run_commands(episode: dict, scene: dict) -> list[str]:
 
 def episode_models(cat, master_dir: Path, adv_id: int) -> list[str]:
     """The keys of the Live2D models the episode loads that the catalog has (its live2d resources, adv.closure)."""
-    return sorted(r["address"] for r in adv.extract(cat, master_dir, adv_id).resources
-                  if r["kind"] == "live2d" and r["present"])
+    return sorted(
+        r["address"] for r in adv.extract(cat, master_dir, adv_id).resources if r["kind"] == "live2d" and r["present"]
+    )
 
 
 def needs_motion_sync(episode: dict) -> bool:
     """A Talk row (without IgnoreData) that maps a voice onto a character's lip sync: TargetName and VoiceIDs,
     IgnoreLipSync not set."""
-    return any(c["cmd"] == "Talk" and c.get("TargetName") and c.get("VoiceIDs") and not c.get("IgnoreLipSync")
-               and not c.get("IgnoreData") for c in episode["commands"])
+    return any(
+        c["cmd"] == "Talk"
+        and c.get("TargetName")
+        and c.get("VoiceIDs")
+        and not c.get("IgnoreLipSync")
+        and not c.get("IgnoreData")
+        for c in episode["commands"]
+    )
 
 
 def story_facts(episode: dict, scene: dict, groups: list[dict], story_languages: list[str], language: str) -> dict:
     """The story facts of a manifest (docs/story-data-format.md)."""
     title = episode.get("title") or {}
     row = episode["master"]
-    return {"advId": episode["advId"], "asset": episode["asset"], "sheetName": row.get("_sheetName", ""),
-            "playbackMode": row["_playbackMode"],
-            "titles": {c: title[languages.column(c)[1:]] for c in languages.LANGUAGES
-                       if isinstance(title.get(languages.column(c)[1:]), str) and title[languages.column(c)[1:]]},
-            "groups": groups, "commands": run_commands(episode, scene), "commandCount": episode["commandCount"],
-            "language": language, "languages": list(story_languages)}
+    return {
+        "advId": episode["advId"],
+        "asset": episode["asset"],
+        "sheetName": row.get("_sheetName", ""),
+        "playbackMode": row["_playbackMode"],
+        "titles": {
+            c: title[languages.column(c)[1:]]
+            for c in languages.LANGUAGES
+            if isinstance(title.get(languages.column(c)[1:]), str) and title[languages.column(c)[1:]]
+        },
+        "groups": groups,
+        "commands": run_commands(episode, scene),
+        "commandCount": episode["commandCount"],
+        "language": language,
+        "languages": list(story_languages),
+    }
 
 
 # ---------------------------------------------------------------- one story
@@ -233,8 +318,19 @@ def build_dirs(cat, master_dir: Path, player, adv_id: int, work: Path, job: dict
     opts = None
     if job["audio"] and WEB_AUDIO[fmt][1] is not None:
         opts = {"flac_level": 0, "also": (WEB_AUDIO[fmt][0], WEB_AUDIO[fmt][1])}
-    story.build(cat, master_dir, player, adv_id, sdir, audio_format="flac", audio=job["audio"], fonts="open",
-                models=webmodel.SiteModels(job["site"]), ui=False, audio_options=opts)
+    story.build(
+        cat,
+        master_dir,
+        player,
+        adv_id,
+        sdir,
+        audio_format="flac",
+        audio=job["audio"],
+        fonts="open",
+        models=webmodel.SiteModels(job["site"]),
+        ui=False,
+        audio_options=opts,
+    )
     episode = json.loads((sdir / "episode.json").read_text(encoding="utf-8"))
     scene = json.loads((sdir / "scene.json").read_text(encoding="utf-8"))
     dirs = {}
@@ -247,8 +343,17 @@ def build_dirs(cat, master_dir: Path, player, adv_id: int, work: Path, job: dict
             storyfonts.game_fonts(cat, player, gdir / "ui", ldir / "ui", lang, episode, master_dir)
             shutil.rmtree(gdir)
         else:
-            storyfonts.open_fonts(cat, player, episode, ldir / "ui", lang, font_file(job, lang), master_dir,
-                                  emoji=emoji_font(job), font_of=lambda code: font_file(job, code))
+            storyfonts.open_fonts(
+                cat,
+                player,
+                episode,
+                ldir / "ui",
+                lang,
+                font_file(job, lang),
+                master_dir,
+                emoji=emoji_font(job),
+                font_of=lambda code: font_file(job, code),
+            )
         dirs[lang] = ldir
     share_ui_shaders(dirs)
     return {"story": sdir, "languages": dirs, "episode": episode, "scene": scene}
@@ -261,12 +366,13 @@ def share_ui_shaders(dirs: dict[str, Path]) -> None:
     same dump); the index stays in name order when it is. A build of one language is left as it is."""
     if len(dirs) < 2:
         return
-    subs = sorted({p.parent.relative_to(d).as_posix() for d in dirs.values()
-                   for p in Path(d).glob("ui/**/shaders/shaders.json")})
+    subs = sorted(
+        {p.parent.relative_to(d).as_posix() for d in dirs.values() for p in Path(d).glob("ui/**/shaders/shaders.json")}
+    )
     for sub in subs:
         have = {lang: Path(d) / sub for lang, d in dirs.items() if (Path(d) / sub / "shaders.json").is_file()}
         index = {lang: json.loads((sd / "shaders.json").read_text(encoding="utf-8")) for lang, sd in have.items()}
-        source = {}                                     # shader name -> (language directory, index record)
+        source = {}  # shader name -> (language directory, index record)
         for lang, recs in index.items():
             for r in recs:
                 source.setdefault(r["name"], (have[lang], r))
@@ -397,19 +503,26 @@ def ingest(store: Store, site: Path, adv_id: int, dirs: dict, job: dict, groups:
     episode, scene = dirs["episode"], dirs["scene"]
     facts = story_facts(episode, scene, groups, job["languages"], job["language"])
     files = {p: put_file(store, p, d) for p, d in sorted(common.items())}
-    langs = {lang: {"files": {p: put_file(store, p, d) for p, d in sorted(per[lang].items())}}
-             for lang in job["languages"]}
+    langs = {
+        lang: {"files": {p: put_file(store, p, d) for p, d in sorted(per[lang].items())}} for lang in job["languages"]
+    }
     ids = json.loads((Path(dirs["story"]) / "story.json").read_text(encoding="utf-8"))["models"].values()
     prefix = job.get("prefix", "")
-    manifest = {"format": MANIFEST_FORMAT, "root": manifest_root(prefix),
-                "models": {i: f"{MODELS_DIR}/{i}.json" for i in sorted(set(ids))},
-                "advId": adv_id, "story": facts, "language": job["language"],
-                "audio": bool(job["audio"]), "audioFormat": job["audioFormat"] if job["audio"] else None,
-                "fonts": job["fonts"],
-                "requires": {"commands": facts["commands"], "cubismCore": True,
-                             "motionSync": needs_motion_sync(episode)},
-                "files": files, "languages": langs}
-    if dirs.get("host"):                      # Overlay stories: storyhost.build's entry (host/host.json, ui/simple/)
+    manifest = {
+        "format": MANIFEST_FORMAT,
+        "root": manifest_root(prefix),
+        "models": {i: f"{MODELS_DIR}/{i}.json" for i in sorted(set(ids))},
+        "advId": adv_id,
+        "story": facts,
+        "language": job["language"],
+        "audio": bool(job["audio"]),
+        "audioFormat": job["audioFormat"] if job["audio"] else None,
+        "fonts": job["fonts"],
+        "requires": {"commands": facts["commands"], "cubismCore": True, "motionSync": needs_motion_sync(episode)},
+        "files": files,
+        "languages": langs,
+    }
+    if dirs.get("host"):  # Overlay stories: storyhost.build's entry (host/host.json, ui/simple/)
         manifest["host"] = dirs["host"]
     path = manifest_file(site, adv_id, prefix)
     old = json.loads(path.read_text(encoding="utf-8")).get("regions") if path.is_file() else None
@@ -417,10 +530,17 @@ def ingest(store: Store, site: Path, adv_id: int, dirs: dict, job: dict, groups:
         manifest["regions"] = merge_regions(old, job.get("regions") or [])
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(_dump(manifest))
-    sizes = {"common": sum(e["size"] for e in files.values()),
-             "languages": {lang: sum(e["size"] for e in g["files"].values()) for lang, g in langs.items()}}
-    return {"id": str(adv_id), "ok": True, "files": len(files) + sum(len(g["files"]) for g in langs.values()),
-            "bytes": sizes["common"] + sum(sizes["languages"].values()), "size": sizes}
+    sizes = {
+        "common": sum(e["size"] for e in files.values()),
+        "languages": {lang: sum(e["size"] for e in g["files"].values()) for lang, g in langs.items()},
+    }
+    return {
+        "id": str(adv_id),
+        "ok": True,
+        "files": len(files) + sum(len(g["files"]) for g in langs.values()),
+        "bytes": sizes["common"] + sum(sizes["languages"].values()),
+        "size": sizes,
+    }
 
 
 # ---------------------------------------------------------------- per story (in a worker or in this process)
@@ -447,12 +567,20 @@ def story_task(adv_id: int, job: dict | None = None, data=None, groups: dict | N
     t0, stage = time.time(), "export"
     try:
         dirs = build_dirs(cat, master_dir, player, adv_id, work, job)
-        if job["fonts"] == "open":           # the host talk window has open fonts only: no host data with game fonts
+        if job["fonts"] == "open":  # the host talk window has open fonts only: no host data with game fonts
             stage = "host"
             dirs["host"] = storyhost.build(
-                cat, master_dir, player, dirs["episode"], dirs["story"], dirs["languages"], groups.get(adv_id, []),
-                fonts="open", font_files={lang: font_file(job, lang) for lang in job["languages"]},
-                font_of=lambda code: font_file(job, code))
+                cat,
+                master_dir,
+                player,
+                dirs["episode"],
+                dirs["story"],
+                dirs["languages"],
+                groups.get(adv_id, []),
+                fonts="open",
+                font_files={lang: font_file(job, lang) for lang in job["languages"]},
+                font_of=lambda code: font_file(job, code),
+            )
         stage = "ingest"
         r = ingest(site_store(site, job["encoding"]), site, adv_id, dirs, job, groups.get(adv_id, []))
         return {**r, "id": job.get("prefix", "") + r["id"], "seconds": round(time.time() - t0, 1)}
@@ -461,8 +589,13 @@ def story_task(adv_id: int, job: dict | None = None, data=None, groups: dict | N
     except Exception as e:
         cause = f"{type(e).__name__}: {e}"
         _log(f"{adv_id}: {stage} failed: {cause[:300]}")
-        return {"id": job.get("prefix", "") + str(adv_id), "ok": False, "stage": stage, "error": cause[:2000],
-                "trace": traceback.format_exc()[-3000:]}
+        return {
+            "id": job.get("prefix", "") + str(adv_id),
+            "ok": False,
+            "stage": stage,
+            "error": cause[:2000],
+            "trace": traceback.format_exc()[-3000:],
+        }
     finally:
         shutil.rmtree(work, ignore_errors=True)
 
@@ -531,7 +664,7 @@ def write_stories_index(site: Path, language: str | None = None, regions: list[d
             old = json.loads(index.read_text(encoding="utf-8"))
         except ValueError:
             old = {}
-    models: dict[str, tuple[int, set]] = {}          # model manifest path -> (decoded bytes, assets)
+    models: dict[str, tuple[int, set]] = {}  # model manifest path -> (decoded bytes, assets)
 
     def model(rel: str) -> tuple[int, set]:
         if rel not in models:
@@ -539,6 +672,7 @@ def write_stories_index(site: Path, language: str | None = None, regions: list[d
             files = json.loads(f.read_text(encoding="utf-8"))["files"].values() if f.is_file() else []
             models[rel] = (sum(e["size"] for e in files), {a for e in files for a in entry_assets(e)})
         return models[rel]
+
     entries, used = [], set()
     for p in story_manifests(site):
         man = json.loads(p.read_text(encoding="utf-8"))
@@ -546,12 +680,20 @@ def write_stories_index(site: Path, language: str | None = None, regions: list[d
         refs = [model(rel) for rel in (man.get("models") or {}).values()]
         for _, assets in refs:
             used |= assets
-        size = {"common": sum(e["size"] for e in man["files"].values()),
-                "languages": {lang: sum(e["size"] for e in g["files"].values())
-                              for lang, g in man["languages"].items()},
-                "models": sum(n for n, _ in refs)}
-        e = {"id": str(man["advId"]), "manifest": p.relative_to(site).as_posix(), "size": size,
-             "audio": man["audio"], "audioFormat": man["audioFormat"], "fonts": man["fonts"], **man["story"]}
+        size = {
+            "common": sum(e["size"] for e in man["files"].values()),
+            "languages": {lang: sum(e["size"] for e in g["files"].values()) for lang, g in man["languages"].items()},
+            "models": sum(n for n, _ in refs),
+        }
+        e = {
+            "id": str(man["advId"]),
+            "manifest": p.relative_to(site).as_posix(),
+            "size": size,
+            "audio": man["audio"],
+            "audioFormat": man["audioFormat"],
+            "fonts": man["fonts"],
+            **man["story"],
+        }
         if man.get("regions"):
             e["regions"] = man["regions"]
         entries.append(e)
@@ -580,9 +722,11 @@ def font_files(cfg: Config, story_languages: list[str], flags: dict[str, str] | 
         if p is None and lang not in story_languages:
             continue
         if p is None:
-            raise ConfigError(f"the story text of {lang} needs a font file: give it as `{lang}` in the "
-                              f"[paths.fonts] table of the config file (`fonts.{lang}` in [paths]), the environment "
-                              f"variable NNNOTES_PATHS_FONTS_{lang.upper().replace('-', '_')} or --font {lang}=PATH")
+            raise ConfigError(
+                f"the story text of {lang} needs a font file: give it as `{lang}` in the "
+                f"[paths.fonts] table of the config file (`fonts.{lang}` in [paths]), the environment "
+                f"variable NNNOTES_PATHS_FONTS_{lang.upper().replace('-', '_')} or --font {lang}=PATH"
+            )
         if not p.is_file():
             raise ConfigError(f"font file of {lang} not found (--font {lang} / paths.fonts.{lang})")
         out[lang] = str(p.resolve())
@@ -612,8 +756,9 @@ def check_languages(codes) -> list[str]:
     return [c for c in languages.LANGUAGES if c in set(codes)]
 
 
-def _run_group(site: Path, ids: list[int], cfg: Config, job: dict, workers: int, log,
-               kind: str = "story") -> list[dict]:
+def _run_group(
+    site: Path, ids: list[int], cfg: Config, job: dict, workers: int, log, kind: str = "story"
+) -> list[dict]:
     """The stories `ids` of one region group (job region / prefix / regions) -> one result per story: its build, or
     with `kind` "models" its pre-pass (models_task)."""
     results = []
@@ -622,8 +767,9 @@ def _run_group(site: Path, ids: list[int], cfg: Config, job: dict, workers: int,
         groups = story_groups(data[1]) if kind == "story" else None
         _W.update(job=job)
         for i in ids:
-            results.append(story_task(i, job, data=data, groups=groups) if kind == "story" else
-                           models_task(i, data=data))
+            results.append(
+                story_task(i, job, data=data, groups=groups) if kind == "story" else models_task(i, data=data)
+            )
         return results
     ctx = mp.get_context("spawn")
     with ctx.Manager() as mgr:
@@ -635,10 +781,24 @@ def _run_group(site: Path, ids: list[int], cfg: Config, job: dict, workers: int,
     return results
 
 
-def build(out_dir, adv_ids, cfg: Config, player_dir, audio_format: str = "aac", audio: bool = True,
-          force: bool = False, *, tmp_dir=None, log=None, workers: int | None = None, regions: list[str] | None = None,
-          story_languages=None, fonts: str = "open", fonts_flags: dict[str, str] | None = None,
-          encoding: str = "gzip") -> dict:
+def build(
+    out_dir,
+    adv_ids,
+    cfg: Config,
+    player_dir,
+    audio_format: str = "aac",
+    audio: bool = True,
+    force: bool = False,
+    *,
+    tmp_dir=None,
+    log=None,
+    workers: int | None = None,
+    regions: list[str] | None = None,
+    story_languages=None,
+    fonts: str = "open",
+    fonts_flags: dict[str, str] | None = None,
+    encoding: str = "gzip",
+) -> dict:
     """Add the stories `adv_ids` (MasterAdv ids; None: every story of every region's master data) to the site at
     `out_dir`, with the player of the ournotes-player checkout or package at `player_dir` (its page files are
     written, the indexes rebuilt). The data comes from the settings `cfg` (each worker process opens its own).
@@ -652,6 +812,7 @@ def build(out_dir, adv_ids, cfg: Config, player_dir, audio_format: str = "aac", 
     summary's `storyModels` holds that build's model lists."""
     from .web import write_index, write_player
     from .tmpfont import require_extra
+
     player_dir = check_player(player_dir)
     if audio_format not in WEB_AUDIO:
         raise ValueError(f"audio format {audio_format}: one of {', '.join(WEB_AUDIO)}")
@@ -675,13 +836,24 @@ def build(out_dir, adv_ids, cfg: Config, player_dir, audio_format: str = "aac", 
     tmp_root.mkdir(parents=True, exist_ok=True)
     log = log or _log
     t0 = time.time()
-    job0 = {"site": str(site), "tmp": str(tmp_root), "audioFormat": audio_format, "audio": bool(audio),
-            "languages": langs, "language": default, "fonts": fonts, "fontFiles": files, "emojiFile": emoji,
-            "cache": str(tmp_root / "cache"), "build": uuid.uuid4().hex, "encoding": encoding}
+    job0 = {
+        "site": str(site),
+        "tmp": str(tmp_root),
+        "audioFormat": audio_format,
+        "audio": bool(audio),
+        "languages": langs,
+        "language": default,
+        "fonts": fonts,
+        "fontFiles": files,
+        "emojiFile": emoji,
+        "cache": str(tmp_root / "cache"),
+        "build": uuid.uuid4().hex,
+        "encoding": encoding,
+    }
     configure_caches(job0)
     ids = None if adv_ids is None else list(dict.fromkeys(int(i) for i in adv_ids))
     results, skipped, folded, offered, used_workers = [], [], [], set(), 1
-    runs = []                                       # (job, todo, workers) per region group with stories to build
+    runs = []  # (job, todo, workers) per region group with stories to build
     for gi, group in enumerate(groups):
         rep = group[0]
         prefix = "" if gi == 0 else f"{rep}/"
@@ -705,20 +877,38 @@ def build(out_dir, adv_ids, cfg: Config, player_dir, audio_format: str = "aac", 
         keys.update(k for r in _run_group(site, todo, cfg, job, w, log, kind="models") for k in r["models"])
     model_build = None
     if keys:
-        model_build = webmodel.build(site, webmodel.model_keys(keys), cfg, player_dir, force, tmp_dir=tmp_root,
-                                     log=log, workers=workers, region=regions[0], encoding=encoding)
+        model_build = webmodel.build(
+            site,
+            webmodel.model_keys(keys),
+            cfg,
+            player_dir,
+            force,
+            tmp_dir=tmp_root,
+            log=log,
+            workers=workers,
+            region=regions[0],
+            encoding=encoding,
+        )
     for job, todo, w in runs:
         rep, prefix = job["region"], job["prefix"]
         used_workers = max(used_workers, w)
-        log(f"{len(todo)} stories{f' for {rep}' if prefix else ''}, {w} worker(s), languages {', '.join(langs)}, "
-            f"fonts {fonts}, audio {audio_format if audio else 'none'}")
+        log(
+            f"{len(todo)} stories{f' for {rep}' if prefix else ''}, {w} worker(s), languages {', '.join(langs)}, "
+            f"fonts {fonts}, audio {audio_format if audio else 'none'}"
+        )
         results += _run_group(site, todo, cfg, job, w, log)
         if prefix:
             folded += [prefix + str(i) for i in todo if fold_variant(site, i, prefix)]
     for i in ids or []:
         if i not in offered:
-            results.append({"id": str(i), "ok": False, "stage": "master",
-                            "error": f"no MasterAdv row {i} in the master data of {', '.join(regions)}"})
+            results.append(
+                {
+                    "id": str(i),
+                    "ok": False,
+                    "stage": "master",
+                    "error": f"no MasterAdv row {i} in the master data of {', '.join(regions)}",
+                }
+            )
     v = write_player(site, player_dir, stories=True)
     write_stories_index(site, base, region_meta(cfg, regions))
     idx = write_index(site)
@@ -726,10 +916,17 @@ def build(out_dir, adv_ids, cfg: Config, player_dir, audio_format: str = "aac", 
     failed = [r for r in results if not r["ok"]]
     if failed:
         (site.parent / f"{site.name}.story-failures.json").write_bytes(_dump(failed))
-    return {"site": str(site),
-            "storiesBuilt": [{k: r[k] for k in ("id", "files", "bytes", "size")} for r in results if r["ok"]],
-            "storiesFailed": [{k: r.get(k) for k in ("id", "stage", "error")} for r in failed],
-            "storiesSkipped": skipped, "storyRegionGroups": groups, "foldedStoryManifests": folded,
-            "storyModels": None if model_build is None else {k: model_build[k] for k in STORY_MODEL_KEYS},
-            "storyLanguages": langs, "storySeconds": round(time.time() - t0, 1), "storyWorkers": used_workers,
-            **v, **idx}
+    return {
+        "site": str(site),
+        "storiesBuilt": [{k: r[k] for k in ("id", "files", "bytes", "size")} for r in results if r["ok"]],
+        "storiesFailed": [{k: r.get(k) for k in ("id", "stage", "error")} for r in failed],
+        "storiesSkipped": skipped,
+        "storyRegionGroups": groups,
+        "foldedStoryManifests": folded,
+        "storyModels": None if model_build is None else {k: model_build[k] for k in STORY_MODEL_KEYS},
+        "storyLanguages": langs,
+        "storySeconds": round(time.time() - t0, 1),
+        "storyWorkers": used_workers,
+        **v,
+        **idx,
+    }

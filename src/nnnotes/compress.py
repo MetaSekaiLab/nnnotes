@@ -6,6 +6,7 @@ header is written here, the same on every platform (zlib's own gzip wrapper writ
 brotli: `brotli.compress(data, quality=11)` (the `brotli` module, imported when first used). The bytes are the same
 for the same zlib / brotli versions.
 """
+
 from __future__ import annotations
 
 import gzip
@@ -13,9 +14,9 @@ import struct
 import zlib
 from pathlib import Path
 
-ENCODINGS = ("gzip", "br", "none")                 # web --compress
+ENCODINGS = ("gzip", "br", "none")  # web --compress
 DEFAULT_ENCODING = "gzip"
-SUFFIXES = {"gzip": ".gz", "br": ".br"}            # stored name suffix of an encoded asset
+SUFFIXES = {"gzip": ".gz", "br": ".br"}  # stored name suffix of an encoded asset
 # extensions of the stored names worth encoding (text, meshes, raw PCM); images and compressed audio are left as
 # they are
 COMPRESSIBLE = frozenset({"json", "glsl", "moc3", "atlas", "skel", "bin", "wav", "glb"})
@@ -24,8 +25,11 @@ GZIP_HEADER = bytes.fromhex("1f 8b 08 00 00 00 00 00 02 ff")
 
 def gzip_bytes(data: bytes) -> bytes:
     """`data` as a gzip member (module docstring)."""
-    return (GZIP_HEADER + zlib.compress(data, level=9, wbits=-15)
-            + struct.pack("<II", zlib.crc32(data), len(data) & 0xFFFFFFFF))
+    return (
+        GZIP_HEADER
+        + zlib.compress(data, level=9, wbits=-15)
+        + struct.pack("<II", zlib.crc32(data), len(data) & 0xFFFFFFFF)
+    )
 
 
 def _brotli():

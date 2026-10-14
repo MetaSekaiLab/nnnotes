@@ -1,4 +1,5 @@
 """The content-addressed store: write-once bytes, results as the commit point, input identities, runs."""
+
 import hashlib
 import multiprocessing as mp
 import os
@@ -23,9 +24,13 @@ def test_put_is_write_once_and_content_addressed(tmp_path):
     assert sha == hashlib.sha256(b"hello").hexdigest()
     assert s.path(sha) == tmp_path / "cas" / "sha256" / sha[:2] / sha and s.read(sha) == b"hello"
     assert s.put(b"hello") == sha and (s.written, s.reused) == (1, 1)
-    assert Store(tmp_path).put(b"hello") == sha                     # another writer finds it
-    assert s.add(b"{}", "JSON") == {"sha256": contract.sha256(b"{}"), "size": 2, "mediaType": "application/json",
-                                    "ext": "json"}
+    assert Store(tmp_path).put(b"hello") == sha  # another writer finds it
+    assert s.add(b"{}", "JSON") == {
+        "sha256": contract.sha256(b"{}"),
+        "size": 2,
+        "mediaType": "application/json",
+        "ext": "json",
+    }
     src = tmp_path / "big.bin"
     src.write_bytes(os.urandom(3 << 20))
     sha2, size = s.put_file(src)
@@ -41,14 +46,23 @@ def test_commit_needs_the_bytes_and_is_write_once(tmp_path):
     assert s.commit(doc) is True and s.result(task.key) == doc and s.has_result(task.key)
     assert s.result_path(task.key) == tmp_path / "ac" / task.key[:2] / f"{task.key}.json"
     assert s.result_path(task.key).read_bytes() == contract.encode(doc)
-    assert s.commit(doc) is False                                   # identical: kept
+    assert s.commit(doc) is False  # identical: kept
     other = dict(doc, items=[contract.item("F:1", "unsupported", why=contract.reason("x"))])
     with pytest.raises(StoreConflict):
         s.commit(other)
     t2 = Task("t.x", 1, "b")
-    missing = contract.result(t2, [contract.artifact(contract.artifact_id(t2.id, "d.bin"),
-                                                     contract.content(b"never stored", "bin"),
-                                                     contract.provenance(t2), {"kind": "test"})], [])
+    missing = contract.result(
+        t2,
+        [
+            contract.artifact(
+                contract.artifact_id(t2.id, "d.bin"),
+                contract.content(b"never stored", "bin"),
+                contract.provenance(t2),
+                {"kind": "test"},
+            )
+        ],
+        [],
+    )
     with pytest.raises(RuntimeError, match="not stored"):
         s.commit(missing)
     assert s.result(t2.key) is None
@@ -58,7 +72,7 @@ def _crash_after_put(root: str, key_file: str) -> None:
     s = Store(root)
     task = Task("t.x", 1, "crash")
     Path(key_file).write_text(task.key)
-    a_result(s, task, b"written before the crash")              # bytes stored, result never committed
+    a_result(s, task, b"written before the crash")  # bytes stored, result never committed
     os._exit(9)
 
 
@@ -99,7 +113,7 @@ def test_concurrent_writers_across_processes(tmp_path):
         doc = s.result(task.key)
         assert s.read(doc["artifacts"][0]["content"]["sha256"]) == f"blob {i}".encode() * 1000
     assert len(list((tmp_path / "ac").rglob("*.json"))) == 10
-    assert sum(p.is_file() for p in (tmp_path / "cas").rglob("*")) == 50       # 10 blobs, 40 shared
+    assert sum(p.is_file() for p in (tmp_path / "cas").rglob("*")) == 50  # 10 blobs, 40 shared
     assert not list(tmp_path.rglob("*.part"))
     lines = (tmp_path / "inputs" / "files.jsonl").read_text(encoding="utf-8").splitlines()
     assert lines and all(line.startswith("{") and line.endswith("}") for line in lines)
@@ -114,14 +128,14 @@ def test_identify_memoizes_by_path_size_and_mtime(tmp_path, monkeypatch):
     calls = []
     real = store_mod.hashlib.file_digest
     monkeypatch.setattr(store_mod.hashlib, "file_digest", lambda *a: calls.append(1) or real(*a))
-    fresh = Store(tmp_path / "s")                               # the memo is on disk
+    fresh = Store(tmp_path / "s")  # the memo is on disk
     assert fresh.identify(f) == (contract.sha256(b"abc"), 3) and calls == []
     assert fresh.named("bundles", "in.bin")[1] == 3 and fresh.named("bundles", "other") is None
     f.write_bytes(b"abcd")
     os.utime(f, ns=(1, 1))
     assert fresh.identify(f) == (contract.sha256(b"abcd"), 4) and calls == [1]
     with open(tmp_path / "s" / "inputs" / "files.jsonl", "a", encoding="utf-8") as g:
-        g.write('{"torn": ')                                    # a writer that died mid-line
+        g.write('{"torn": ')  # a writer that died mid-line
     assert Store(tmp_path / "s").identify(f) == (contract.sha256(b"abcd"), 4)
 
 
@@ -132,9 +146,17 @@ def test_open_input_tries_locators_in_order(tmp_path):
     (tmp_path / "cache" / "bundles").mkdir(parents=True)
     (tmp_path / "cache" / "bundles" / "b.bundle").write_bytes(data)
     (tmp_path / "wrong.bin").write_bytes(b"other bytes!")
-    inp = Input("bundle", sha, len(data), "b.bundle",
-                ({"kind": "store"}, {"kind": "file", "path": str(tmp_path / "wrong.bin")},
-                 {"kind": "cache", "path": "bundles/b.bundle"}))
+    inp = Input(
+        "bundle",
+        sha,
+        len(data),
+        "b.bundle",
+        (
+            {"kind": "store"},
+            {"kind": "file", "path": str(tmp_path / "wrong.bin")},
+            {"kind": "cache", "path": "bundles/b.bundle"},
+        ),
+    )
     assert s.open_input(inp) == tmp_path / "cache" / "bundles" / "b.bundle"
     s.put(data)
     assert s.open_input(inp) == s.path(sha)
@@ -150,8 +172,15 @@ def test_open_input_tries_locators_in_order(tmp_path):
 
 def test_runs_costs_and_the_latest_run_of_a_selection(tmp_path):
     s = Store(tmp_path)
-    doc = contract.run_doc(context={"region": "r"}, selection=["group:a"], params={}, stages={"t.x": 1},
-                           tasks=[{"id": "t.x:a", "key": "0" * 64, "status": "ran"}], layouts={}, summary={})
+    doc = contract.run_doc(
+        context={"region": "r"},
+        selection=["group:a"],
+        params={},
+        stages={"t.x": 1},
+        tasks=[{"id": "t.x:a", "key": "0" * 64, "status": "ran"}],
+        layouts={},
+        summary={},
+    )
     s.write_run(doc, [{"event": "x"}])
     assert s.run(doc["id"]) == doc and s.latest_run(["group:a"]) == doc and s.latest_run(["group:b"]) is None
     assert (tmp_path / "runs" / f"{doc['id']}.log.jsonl").read_text(encoding="utf-8") == '{"event": "x"}\n'
@@ -162,6 +191,7 @@ def test_runs_costs_and_the_latest_run_of_a_selection(tmp_path):
 
 def test_a_store_crosses_processes_as_its_settings(tmp_path):
     import pickle
+
     s = Store(tmp_path / "s", cache=tmp_path / "c")
     s.put(b"x")
     t = pickle.loads(pickle.dumps(s))
@@ -170,9 +200,15 @@ def test_a_store_crosses_processes_as_its_settings(tmp_path):
 
 def test_write_doc_writes_the_canonical_bytes_as_it_encodes(tmp_path):
     from nnnotes.store import write_doc
-    docs = [{"b": [1, 2, {"é": "x\n"}], "a": {}, "c": [], "d": None, "e": 1.5, "f": "立ち絵" * 1000},
-            {"entries": [{"path": f"p/{i}", "sha256": "0" * 64, "size": i} for i in range(5000)]},
-            {"x": float("inf"), "y": [1, -float("inf")]}, [], "text", 3]
+
+    docs = [
+        {"b": [1, 2, {"é": "x\n"}], "a": {}, "c": [], "d": None, "e": 1.5, "f": "立ち絵" * 1000},
+        {"entries": [{"path": f"p/{i}", "sha256": "0" * 64, "size": i} for i in range(5000)]},
+        {"x": float("inf"), "y": [1, -float("inf")]},
+        [],
+        "text",
+        3,
+    ]
     for i, doc in enumerate(docs):
         sha = write_doc(tmp_path / "d" / f"{i}.json", doc)
         data = (tmp_path / "d" / f"{i}.json").read_bytes()

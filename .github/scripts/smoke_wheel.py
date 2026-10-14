@@ -1,4 +1,5 @@
 """Install the wheel with the deck model in a fresh environment and exercise its CLI and the deck model."""
+
 from pathlib import Path
 import os
 import subprocess
@@ -32,7 +33,7 @@ print(f"nnnotes {nnnotes.__version__}: {info['name']} {info['version']} ({info['
 
 
 def main(directory: str) -> None:
-    wheel, = Path(directory).resolve().glob("*.whl")
+    (wheel,) = Path(directory).resolve().glob("*.whl")
     with tempfile.TemporaryDirectory(prefix="nnnotes-wheel-") as directory:
         root = Path(directory)
         environment = root / "venv"
@@ -41,8 +42,7 @@ def main(directory: str) -> None:
         python = scripts / ("python.exe" if os.name == "nt" else "python")
         subprocess.run([python, "-I", "-m", "pip", "install", f"{wheel}[deck]"], cwd=root, check=True)
         subprocess.run([python, "-I", "-c", SMOKE], cwd=root, check=True)
-        subprocess.run([scripts / ("nnnotes.exe" if os.name == "nt" else "nnnotes"), "--help"],
-                       cwd=root, check=True)
+        subprocess.run([scripts / ("nnnotes.exe" if os.name == "nt" else "nnnotes"), "--help"], cwd=root, check=True)
 
 
 if __name__ == "__main__":

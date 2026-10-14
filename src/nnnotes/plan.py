@@ -21,6 +21,7 @@ The plan document (nnnotes.plan/1) lists the nodes in pipeline order with key, s
 the edges (Stage.depends) and a summary: counts, estimated CPU seconds and peak memory of what would run with the
 given workers and memory budget, and per output layout the files it would write, remove and keep.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -106,13 +107,17 @@ class Plan:
         lines += [f"{s:<8} {i:<{width}} {c:>8}  {w}" for s, i, c, w in rows]
         for stage, c in stages.items():
             more = shown.get(stage, 0) - (limit if limit is not None else shown.get(stage, 0))
-            lines.append(f"{stage}: {c['hit']} hits, {c['run']} to run, {c['unknown']} unknown"
-                         + (f" ({more} more not listed)" if more > 0 else ""))
+            lines.append(
+                f"{stage}: {c['hit']} hits, {c['run']} to run, {c['unknown']} unknown"
+                + (f" ({more} more not listed)" if more > 0 else "")
+            )
         s = self.doc["summary"]
         lines.append(f"{s['tasks']} tasks: {s['hit']} hits, {s['run']} to run, {s['unknown']} unknown")
         gib = f"{s['peakBytes'] / (1 << 30):.2f} GiB" if s["peakBytes"] else "0"
-        lines.append(f"estimated: {s['cpuSeconds']:.1f} CPU s, peak memory {gib}"
-                     + (f" ({len(s['oversize'])} tasks above the budget run alone)" if s["oversize"] else ""))
+        lines.append(
+            f"estimated: {s['cpuSeconds']:.1f} CPU s, peak memory {gib}"
+            + (f" ({len(s['oversize'])} tasks above the budget run alone)" if s["oversize"] else "")
+        )
         for name, v in s["layouts"].items():
             lines.append(f"layout {name}: write {v['write']} / remove {v['remove']} / keep {v['keep']}")
         return "\n".join(lines) + "\n"
@@ -130,9 +135,20 @@ def _short(v) -> str:
     return s[:12] if contract.is_sha256(s) else s
 
 
-def plan(stages: dict[str, Stage], pipeline: list[str], store, *, params: dict | None = None,
-         facts: dict | None = None, previous: dict | None = None, force=(), workers: int = 1,
-         memory: int | None = None, worker_bytes: int = WORKER_BYTES, layouts: dict | None = None) -> Plan:
+def plan(
+    stages: dict[str, Stage],
+    pipeline: list[str],
+    store,
+    *,
+    params: dict | None = None,
+    facts: dict | None = None,
+    previous: dict | None = None,
+    force=(),
+    workers: int = 1,
+    memory: int | None = None,
+    worker_bytes: int = WORKER_BYTES,
+    layouts: dict | None = None,
+) -> Plan:
     """The plan of running `pipeline` (stage names, in order) with `params` ({stage: parameters}) over `facts`.
     `previous`: the run manifest to explain against; `force`: task ids or stage names ("*": all); `workers`,
     `memory`, `worker_bytes`: as the orchestrator's, for the peak-memory estimate; `layouts`: {name: {write,
@@ -149,8 +165,16 @@ def plan(stages: dict[str, Stage], pipeline: list[str], store, *, params: dict |
         try:
             subjects = stage.subjects(env)
         except Pending as e:
-            nodes.append({"id": contract.task_id(name, "*"), "stage": name, "key": None, "status": "unknown",
-                          "reasons": [{"code": "pending", "task": e.task}], "cost": None})
+            nodes.append(
+                {
+                    "id": contract.task_id(name, "*"),
+                    "stage": name,
+                    "key": None,
+                    "status": "unknown",
+                    "reasons": [{"code": "pending", "task": e.task}],
+                    "cost": None,
+                }
+            )
             continue
         for subject in subjects:
             tid = contract.task_id(name, subject)
@@ -162,8 +186,16 @@ def plan(stages: dict[str, Stage], pipeline: list[str], store, *, params: dict |
                 t = describe(stage, subject, p, env)
             except Pending as e:
                 env.waiting(tid)
-                nodes.append({"id": tid, "stage": name, "key": None, "status": "unknown",
-                              "reasons": [{"code": "pending", "task": e.task}], "cost": None})
+                nodes.append(
+                    {
+                        "id": tid,
+                        "stage": name,
+                        "key": None,
+                        "status": "unknown",
+                        "reasons": [{"code": "pending", "task": e.task}],
+                        "cost": None,
+                    }
+                )
                 continue
             old = prev.get(tid)
             if not (forced or tid in force) and store.has_result(t.key):
@@ -175,8 +207,16 @@ def plan(stages: dict[str, Stage], pipeline: list[str], store, *, params: dict |
                 reasons = _run_reasons(t, old, store, forced or tid in force)
                 status = "run"
                 runnable.append(t)
-            nodes.append({"id": tid, "stage": name, "key": t.key, "status": status, "reasons": reasons,
-                          "cost": t.cost.to_json() if t.cost is not None else None})
+            nodes.append(
+                {
+                    "id": tid,
+                    "stage": name,
+                    "key": t.key,
+                    "status": status,
+                    "reasons": reasons,
+                    "cost": t.cost.to_json() if t.cost is not None else None,
+                }
+            )
     return Plan(_doc(nodes, edges, runnable, workers, memory, worker_bytes, layouts or {}), runnable)
 
 
@@ -200,8 +240,9 @@ def _run_reasons(t, old: dict | None, store, forced: bool) -> list[dict]:
     return out or [{"code": "previous-failed"}]
 
 
-def _doc(nodes: list, edges: set, runnable: list, workers: int, memory: int | None, worker_bytes: int,
-         layouts: dict) -> dict:
+def _doc(
+    nodes: list, edges: set, runnable: list, workers: int, memory: int | None, worker_bytes: int, layouts: dict
+) -> dict:
     count = {s: sum(n["status"] == s for n in nodes) for s in ("hit", "run", "unknown")}
     peaks = sorted((t.cost.peak_bytes if t.cost else 0 for t in runnable), reverse=True)
     procs = max(1, workers)
@@ -211,8 +252,13 @@ def _doc(nodes: list, edges: set, runnable: list, workers: int, memory: int | No
         peak = min(peak, max(budget, peaks[0]))
     peak += procs * worker_bytes if peaks else 0
     oversize = sorted({t.id for t in runnable if budget is not None and t.cost and t.cost.peak_bytes > budget})
-    summary = {"tasks": len(nodes), **count,
-               "cpuSeconds": round(sum(t.cost.cpu_seconds for t in runnable if t.cost), 3),
-               "peakBytes": int(peak), "budget": memory, "oversize": oversize,
-               "layouts": {k: dict(v) for k, v in sorted(layouts.items())}}
+    summary = {
+        "tasks": len(nodes),
+        **count,
+        "cpuSeconds": round(sum(t.cost.cpu_seconds for t in runnable if t.cost), 3),
+        "peakBytes": int(peak),
+        "budget": memory,
+        "oversize": oversize,
+        "layouts": {k: dict(v) for k, v in sorted(layouts.items())},
+    }
     return {"schema": contract.PLAN, "nodes": nodes, "edges": sorted([a, b] for a, b in edges), "summary": summary}

@@ -83,11 +83,14 @@ def test_missing_setting_message():
     assert "servers.tw.cdn" in str(e.value) and "NNNOTES_SERVERS_TW_CDN" in str(e.value)
 
 
-@pytest.mark.parametrize("value, what", [
-    ("zz" * 16, "must be a hex string"),
-    ("00ff", "must be 16 bytes (32 hex digits)"),
-    (bytes(range(17)).hex(), "must be 16 bytes (32 hex digits)"),
-])
+@pytest.mark.parametrize(
+    "value, what",
+    [
+        ("zz" * 16, "must be a hex string"),
+        ("00ff", "must be 16 bytes (32 hex digits)"),
+        (bytes(range(17)).hex(), "must be 16 bytes (32 hex digits)"),
+    ],
+)
 def test_malformed_hex(value, what):
     cfg = Config.load(environ={"NNNOTES_BUNDLE_KEY": value})
     with pytest.raises(ConfigError) as e:
@@ -103,11 +106,13 @@ def test_hex_forms():
 
 
 def test_wrong_types(tmp_path):
-    f = write(tmp_path / "c.toml", '[bundle]\nkey = 12345\n[paths]\ncache = 1\n[servers.x]\nlanguages = [1, 2]\n')
+    f = write(tmp_path / "c.toml", "[bundle]\nkey = 12345\n[paths]\ncache = 1\n[servers.x]\nlanguages = [1, 2]\n")
     cfg = Config.load(f, environ={})
-    for call, what in ((lambda: cfg.get("bundle", "key"), "must be a string"),
-                       (lambda: cfg.path("paths", "cache"), "must be a path string"),
-                       (lambda: cfg.get_list("servers.x", "languages"), "must be a list of strings")):
+    for call, what in (
+        (lambda: cfg.get("bundle", "key"), "must be a string"),
+        (lambda: cfg.path("paths", "cache"), "must be a path string"),
+        (lambda: cfg.get_list("servers.x", "languages"), "must be a list of strings"),
+    ):
         with pytest.raises(ConfigError) as e:
             call()
         assert what in str(e.value) and "12345" not in str(e.value)
@@ -180,8 +185,12 @@ def test_user_file_is_looked_up_last(tmp_path):
     assert Config.load(environ=env).source == str(user)
     write(tmp_path / "nnnotes.toml", '[catalog]\nregion = "cwd"\n')
     assert Config.load(environ=env).get("catalog", "region") == "cwd"
-    assert [n for n, _ in config.config_files(environ=env)] == ["--config", "NNNOTES_CONFIG", "working directory",
-                                                                 "user"]
+    assert [n for n, _ in config.config_files(environ=env)] == [
+        "--config",
+        "NNNOTES_CONFIG",
+        "working directory",
+        "user",
+    ]
 
 
 def test_missing_setting_hints_init_only_without_a_file(tmp_path):

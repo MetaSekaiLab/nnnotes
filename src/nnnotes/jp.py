@@ -3,6 +3,7 @@
 Addresses and client versions come from Config. Credentials remain in a Session, never in
 source metadata, cache records, task descriptions or exception messages.
 """
+
 from __future__ import annotations
 
 import base64
@@ -77,22 +78,40 @@ def select_asset(raw, client):
 def origin(value):
     try:
         u = urlsplit(value)
-        if (not u.hostname or u.username or u.password or u.query or u.fragment
-                or u.path not in ("", "/") or u.scheme not in ("https", "http")
-                or u.scheme == "http" and u.hostname not in ("localhost", "127.0.0.1", "::1")):
+        if (
+            not u.hostname
+            or u.username
+            or u.password
+            or u.query
+            or u.fragment
+            or u.path not in ("", "/")
+            or u.scheme not in ("https", "http")
+            or u.scheme == "http"
+            and u.hostname not in ("localhost", "127.0.0.1", "::1")
+        ):
             raise ValueError()
         port = u.port
         host = f"[{u.hostname}]" if ":" in u.hostname else u.hostname
         return f"{u.scheme}://{host}" + (f":{port}" if port and port != (443 if u.scheme == "https" else 80) else "")
     except (ValueError, TypeError, AttributeError):
-        raise ConfigError("JP origin must be HTTPS with no path or credentials (HTTP loopback is allowed for tests)") from None
+        raise ConfigError(
+            "JP origin must be HTTPS with no path or credentials (HTTP loopback is allowed for tests)"
+        ) from None
 
 
 def relative_path(value):
     decoded = unquote(value)
-    if (not value or value.startswith("/") or "\\" in decoded or "%" in decoded
-            or any(ord(c) < 32 for c in decoded) or any(p in ("", ".", "..") for p in decoded.split("/"))
-            or "?" in value or "#" in value or ":" in value):
+    if (
+        not value
+        or value.startswith("/")
+        or "\\" in decoded
+        or "%" in decoded
+        or any(ord(c) < 32 for c in decoded)
+        or any(p in ("", ".", "..") for p in decoded.split("/"))
+        or "?" in value
+        or "#" in value
+        or ":" in value
+    ):
         raise ValueError("invalid JP resource path")
     return quote(decoded, safe="/!$&'()+,;=@[]-._~")
 
@@ -125,7 +144,7 @@ class Source:
     def url(self, internal_id):
         if not internal_id.startswith(PLACEHOLDER):
             raise ValueError("JP resource has no remote asset placeholder")
-        return self.root + "/" + relative_path(internal_id[len(PLACEHOLDER):])
+        return self.root + "/" + relative_path(internal_id[len(PLACEHOLDER) :])
 
     def to_dict(self):
         return asdict(self)
@@ -165,8 +184,15 @@ class Session:
             allowed = origin(self.cfg.cdn(self.region))
             client = gameapi.client_version(self.cfg, self.region)
             headers = {}
-            body = gameapi.call(api, gameapi.VERSION_METHOD, b"", client, timeout=timeout,
-                                setting=f"[{section}] api", response_metadata=headers)
+            body = gameapi.call(
+                api,
+                gameapi.VERSION_METHOD,
+                b"",
+                client,
+                timeout=timeout,
+                setting=f"[{section}] api",
+                response_metadata=headers,
+            )
             try:
                 version = master_version(gameapi.parse_version(body).version)
                 cdn = origin(headers.get("x-sirius-env", ""))
@@ -180,8 +206,13 @@ class Session:
                 raise gameapi.GameApiError("JP Version: invalid master version or CDN metadata") from None
             source = Source("jp", *asset, cdn) if asset else None
             authorization = "Basic " + base64.b64encode(("sirius:" + credential).encode()).decode()
-            result = Observation(gameapi.MasterVersion(version, asset[0] if asset else "", asset[1] if asset else None),
-                                 source, cdn, authorization, "OurNotes/" + client)
+            result = Observation(
+                gameapi.MasterVersion(version, asset[0] if asset else "", asset[1] if asset else None),
+                source,
+                cdn,
+                authorization,
+                "OurNotes/" + client,
+            )
             self._observation, self._created = result, time.monotonic()
             return result
 
@@ -196,7 +227,9 @@ class Session:
         for attempt in range(2):
             observation = self._current()
             if source is not None and observation.source != source:
-                raise gameapi.GameApiError("JP assets changed: refresh the catalog before downloading missing resources")
+                raise gameapi.GameApiError(
+                    "JP assets changed: refresh the catalog before downloading missing resources"
+                )
             if master is not None and observation.version.version != master:
                 raise gameapi.GameApiError("JP master changed: start a new master download")
             parsed = urlsplit(url)
@@ -204,12 +237,15 @@ class Session:
             prefix = source.root + "/" if source else observation.cdn + "/master/" + master_version(master) + "/"
             if base != observation.cdn or not url.startswith(prefix):
                 raise gameapi.GameApiError("JP download URL is outside the selected source")
-            relative_path(url[len(prefix):])
+            relative_path(url[len(prefix) :])
             conn_type = http.client.HTTPSConnection if parsed.scheme == "https" else http.client.HTTPConnection
             connection = conn_type(parsed.netloc, timeout=120)
             try:
-                connection.request("GET", parsed.path, headers={"Authorization": observation.authorization,
-                                                               "User-Agent": observation.user_agent})
+                connection.request(
+                    "GET",
+                    parsed.path,
+                    headers={"Authorization": observation.authorization, "User-Agent": observation.user_agent},
+                )
                 response = connection.getresponse()
                 status = response.status
                 if status == 200:
@@ -257,6 +293,7 @@ def read_source(path, data):
 
 def write_source(path, data, source):
     from .cache import write_atomic
+
     doc = {"catalog_sha256": hashlib.sha256(data).hexdigest(), "source": source.to_dict()}
     write_atomic(sidecar(path), (json.dumps(doc, sort_keys=True) + "\n").encode())
 
@@ -265,6 +302,7 @@ def open_catalog(cfg, region, *, catalog_file=None, bundle_key=None, apk=None):
     from .addressables import parse_header
     from .cache import write_atomic
     from .catalog import Catalog
+
     session = Session(cfg, region)
     if catalog_file is not None:
         data = Path(catalog_file).read_bytes()
@@ -290,5 +328,11 @@ def open_catalog(cfg, region, *, catalog_file=None, bundle_key=None, apk=None):
             path.parent.mkdir(parents=True, exist_ok=True)
             write_atomic(path, data)
             write_source(path, data, source)
-    return Catalog(data, source.cache_dir(cfg.require_path("paths", "cache")), bundle_key=bundle_key,
-                   apk=apk, source=source, session=session)
+    return Catalog(
+        data,
+        source.cache_dir(cfg.require_path("paths", "cache")),
+        bundle_key=bundle_key,
+        apk=apk,
+        source=source,
+        session=session,
+    )

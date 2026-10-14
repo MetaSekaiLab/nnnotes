@@ -1,4 +1,5 @@
 """The typetree blob memo gives the trees a fresh parse gives (synthetic blobs in UnityPy's own blob format)."""
+
 import random
 
 import pytest
@@ -13,14 +14,21 @@ COMMON = list(get_common_strings().values())
 
 def random_tree(rng: random.Random, version: int) -> TypeTreeNode:
     def node(level):
-        n = TypeTreeNode(level, rng.choice(COMMON + ["MyType", "Vector3f", "PPtr<$Foo>"]),
-                         rng.choice(COMMON + ["m_Field", "_custom", "data", "x"]), rng.choice([-1, 1, 4, 8, 12]),
-                         rng.randint(1, 3), m_TypeFlags=rng.choice([0, 1]), m_Index=rng.randint(0, 999),
-                         m_MetaFlag=rng.choice([0, 0x4000, 0x8000]),
-                         m_RefTypeHash=rng.getrandbits(64) if version >= 19 else None)
+        n = TypeTreeNode(
+            level,
+            rng.choice(COMMON + ["MyType", "Vector3f", "PPtr<$Foo>"]),
+            rng.choice(COMMON + ["m_Field", "_custom", "data", "x"]),
+            rng.choice([-1, 1, 4, 8, 12]),
+            rng.randint(1, 3),
+            m_TypeFlags=rng.choice([0, 1]),
+            m_Index=rng.randint(0, 999),
+            m_MetaFlag=rng.choice([0, 0x4000, 0x8000]),
+            m_RefTypeHash=rng.getrandbits(64) if version >= 19 else None,
+        )
         if level < 4:
             n.m_Children = [node(level + 1) for _ in range(rng.randint(0, 4))]
         return n
+
     return node(0)
 
 
@@ -39,8 +47,11 @@ def parse(fn, data: bytes, version: int, endian: str, pad: int):
 
 
 def same_tree(a: TypeTreeNode, b: TypeTreeNode) -> bool:
-    return a.to_dict() == b.to_dict() and len(a.m_Children) == len(b.m_Children) and \
-        all(same_tree(x, y) for x, y in zip(a.m_Children, b.m_Children))
+    return (
+        a.to_dict() == b.to_dict()
+        and len(a.m_Children) == len(b.m_Children)
+        and all(same_tree(x, y) for x, y in zip(a.m_Children, b.m_Children))
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -63,7 +74,7 @@ def test_memo_parses_as_unitypy_and_reuses_the_tree(version, endian):
         got, end = parse(memo_fn, data, version, endian, i)
         again, end2 = parse(memo_fn, blob(tree, version, endian, pad=b"\x01" * (i + 3)), version, endian, i + 3)
         assert same_tree(got, want) and end == want_end and end2 == end + 3
-        assert again is got                                      # the same blob elsewhere: the tree parsed before
+        assert again is got  # the same blob elsewhere: the tree parsed before
     s = unity.blob_memo_stats()
     assert s["installed"] and s["hits"] >= 30 and s["misses"] <= 30
 
@@ -73,11 +84,11 @@ def test_a_different_blob_is_parsed_on_its_own():
     tree = random_tree(rng, 22)
     data = bytearray(blob(tree, 22, "<"))
     a, _ = parse(TypeTreeNode.parse_blob.__func__, bytes(data), 22, "<", 0)
-    data[9] ^= 1                                                 # one bit of the first node record
+    data[9] ^= 1  # one bit of the first node record
     b, _ = parse(TypeTreeNode.parse_blob.__func__, bytes(data), 22, "<", 0)
     want, _ = parse(ORIGINAL, bytes(data), 22, "<", 0)
     assert b is not a and same_tree(b, want) and not same_tree(a, b)
-    c, _ = parse(TypeTreeNode.parse_blob.__func__, blob(tree, 22, "<"), 21, "<", 0)   # other parse arguments
+    c, _ = parse(TypeTreeNode.parse_blob.__func__, blob(tree, 22, "<"), 21, "<", 0)  # other parse arguments
     assert c is not a
 
 

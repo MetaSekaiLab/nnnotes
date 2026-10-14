@@ -1,6 +1,7 @@
 """texture.decode, png.encode and astc.container on synthetic textures (decode = UnityPy's parse_image_data; PNG bytes
 = export.texture_png's), the reader's objects, containers and texture inputs through a fake environment, and the
 atom registry."""
+
 import io
 import re
 import struct
@@ -44,8 +45,15 @@ def fake(fmt, w=20, h=14, seed=0, extra=b""):
 
 
 def inp(tex):
-    return TextureInput(bytes(tex.get_image_data()), tex.m_Width, tex.m_Height, tex.m_TextureFormat, VERSION,
-                        ANDROID, bytes(tex.m_PlatformBlob))
+    return TextureInput(
+        bytes(tex.get_image_data()),
+        tex.m_Width,
+        tex.m_Height,
+        tex.m_TextureFormat,
+        VERSION,
+        ANDROID,
+        bytes(tex.m_PlatformBlob),
+    )
 
 
 FORMATS = [RGBA32, RGB24, ALPHA8, ARGB4444, ASTC_6x6, ASTC_4x4]
@@ -107,7 +115,7 @@ def test_png_is_lossless_at_every_level(mode):
     img = Image.fromarray(a[:, :, 0] if bands == 1 else a, mode)
     default = io.BytesIO()
     img.save(default, format="PNG")
-    assert png.encode(img) == default.getvalue()                   # level 6 = Pillow's default bytes
+    assert png.encode(img) == default.getvalue()  # level 6 = Pillow's default bytes
     for level in range(10):
         back = Image.open(io.BytesIO(png.encode(img, level)))
         assert back.mode == mode and back.tobytes() == img.tobytes()
@@ -123,7 +131,7 @@ def test_png_level_must_be_0_to_9(level):
 def test_astc_container_header_and_first_level():
     blocks = astc_blocks(340, 340, (6, 6))
     assert len(blocks) == 57 * 57 * 16
-    out = astc.container(blocks + b"\x01" * 4096, 340, 340, (6, 6))       # further mip levels are cut
+    out = astc.container(blocks + b"\x01" * 4096, 340, 340, (6, 6))  # further mip levels are cut
     assert out[:4] == bytes([0x13, 0xAB, 0xA1, 0x5C]) and out[4:7] == bytes([6, 6, 1])
     assert out[7:16] == (340).to_bytes(3, "little") * 2 + (1).to_bytes(3, "little")
     assert out[16:] == blocks
@@ -152,8 +160,13 @@ def bundle():
     a = env.file("CAB-aa", externals=["archive:/CAB-bb/CAB-bb", "Library/unity default resources"])
     inline = fake(RGBA32, 8, 6, seed=1)
     streamed_data = rgba_bytes(8, 4, 2)
-    streamed = FakeTexture2D(b"", 8, 4, RGBA32, stream=type("S", (), {"path": "archive:/CAB-aa/CAB-aa.resS",
-                                                                      "offset": 32, "size": len(streamed_data)})())
+    streamed = FakeTexture2D(
+        b"",
+        8,
+        4,
+        RGBA32,
+        stream=type("S", (), {"path": "archive:/CAB-aa/CAB-aa.resS", "offset": 32, "size": len(streamed_data)})(),
+    )
     empty = FakeTexture2D(b"", 0, 0, RGBA32, stream=type("S", (), {"path": "", "offset": 0, "size": 0})())
     env.resources["CAB-aa.resS"] = b"\0" * 32 + streamed_data
     a.add(1, "AssetBundle", {"m_Name": "b"}, raw=b"ab")
@@ -172,8 +185,12 @@ def test_reader_lists_files_objects_and_containers():
     assert view.files() == ["CAB-aa", "CAB-aa.sharedAssets"]
     objs = view.objects()
     assert [(o.file, o.path_id, o.class_name) for o in objs] == [
-        ("CAB-aa", 1, "AssetBundle"), ("CAB-aa", -5, "Texture2D"), ("CAB-aa", 7, "Texture2D"),
-        ("CAB-aa", 9, "Texture2D"), ("CAB-aa.sharedAssets", 3, "TextAsset")]
+        ("CAB-aa", 1, "AssetBundle"),
+        ("CAB-aa", -5, "Texture2D"),
+        ("CAB-aa", 7, "Texture2D"),
+        ("CAB-aa", 9, "Texture2D"),
+        ("CAB-aa.sharedAssets", 3, "TextAsset"),
+    ]
     tex = objs[1]
     assert tex == ObjectInfo("CAB-aa", -5, 28, "Texture2D", 10, bytes(range(16)).hex())
     assert tex.id == "CAB-aa:-5" and objs[0].type_hash is None
@@ -191,7 +208,7 @@ def test_reader_texture_inputs():
     assert view.texture_input(objs[7]).data == streamed_data and env.lookups == ["CAB-aa.resS"]
     env.lookups.clear()
     empty = view.texture_input(objs[9])
-    assert (empty.data, empty.width, empty.height) == (b"", 0, 0) and env.lookups == []   # nothing read
+    assert (empty.data, empty.width, empty.height) == (b"", 0, 0) and env.lookups == []  # nothing read
     with pytest.raises(Unsupported):
         decode(empty)
 
@@ -210,13 +227,22 @@ def test_reader_mesh_input_is_for_meshes_and_sprites():
 
 
 # ---------------------------------------------------------------- registry
-REPLACEMENT = Impl("pillow-test/9", lambda image, level=6: b"replaced", lambda facts: {"cpuSeconds": 0.0,
-                                                                                       "peakBytes": 0})
+REPLACEMENT = Impl(
+    "pillow-test/9", lambda image, level=6: b"replaced", lambda facts: {"cpuSeconds": 0.0, "peakBytes": 0}
+)
 
 
 def test_every_atom_has_one_reference_with_versioned_id():
-    assert set(ATOMS) == {"reader", "texture.decode", "png.encode", "astc.container", "sprite.crop", "mesh.arrays",
-                          "gltf.write", "sniff"}
+    assert set(ATOMS) == {
+        "reader",
+        "texture.decode",
+        "png.encode",
+        "astc.container",
+        "sprite.crop",
+        "mesh.arrays",
+        "gltf.write",
+        "sniff",
+    }
     for name in ATOMS:
         impl = ATOMS[name]
         assert re.fullmatch(r"(nnnotes|[a-z0-9.-]+-[^+/]+(\+[a-z0-9.-]+-[^+/]+)*)/\d+", impl.id), impl.id
@@ -231,7 +257,7 @@ def test_evaluation_override(monkeypatch):
     assert env_name("png.encode") == "NNNOTES_ATOM_PNG_ENCODE"
     monkeypatch.setenv("NNNOTES_ATOM_PNG_ENCODE", "test_atoms_texture:REPLACEMENT")
     assert resolve("png.encode") is REPLACEMENT and ATOMS["png.encode"].fn(None) == b"replaced"
-    assert ids("png.encode") == {"png.encode": "pillow-test/9"}                 # keys change with the override
+    assert ids("png.encode") == {"png.encode": "pillow-test/9"}  # keys change with the override
     monkeypatch.setenv("NNNOTES_ATOM_PNG_ENCODE", "no-colon")
     with pytest.raises(ValueError, match="module:attribute"):
         resolve("png.encode")
@@ -243,6 +269,7 @@ def test_evaluation_override(monkeypatch):
 
 def test_override_with_the_reference_id_is_refused(monkeypatch):
     import test_atoms_texture as me
+
     monkeypatch.setattr(me, "SAME", Impl(ATOMS["png.encode"].id, png.encode, png.cost), raising=False)
     monkeypatch.setenv("NNNOTES_ATOM_PNG_ENCODE", "test_atoms_texture:SAME")
     with pytest.raises(ValueError, match="reference's id"):
@@ -250,8 +277,10 @@ def test_override_with_the_reference_id_is_refused(monkeypatch):
 
 
 def test_listing_the_registry_loads_no_image_or_unity_library():
-    code = ("import sys, nnnotes.atoms as a; a.ids(*a.ATOMS); "
-            "print(sorted(m for m in ('UnityPy', 'PIL') if m in sys.modules))")
+    code = (
+        "import sys, nnnotes.atoms as a; a.ids(*a.ATOMS); "
+        "print(sorted(m for m in ('UnityPy', 'PIL') if m in sys.modules))"
+    )
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True).stdout
     assert out.strip() == "[]"
 
@@ -259,6 +288,7 @@ def test_listing_the_registry_loads_no_image_or_unity_library():
 # ---------------------------------------------------------------- docs as contract
 def test_every_atom_and_reason_code_is_documented():
     from pathlib import Path
+
     root = Path(__file__).resolve().parents[1]
     doc = (root / "docs" / "stages.md").read_text(encoding="utf-8")
     atoms_table = doc.split("## Atoms", 1)[1].split("## Reason codes", 1)[0]
@@ -267,6 +297,9 @@ def test_every_atom_and_reason_code_is_documented():
     codes = set(re.findall(r"^\| `([a-zA-Z_.]+)` \|", doc.split("## Reason codes", 1)[1], re.M))
     emitted = set()
     for src in (root / "src" / "nnnotes" / "atoms").glob("*.py"):
-        emitted |= set(re.findall(r"\"((?:empty|unsupported|partial|generic|no_data)\.[a-zA-Z_.]+)\"",
-                                  src.read_text(encoding="utf-8")))
+        emitted |= set(
+            re.findall(
+                r"\"((?:empty|unsupported|partial|generic|no_data)\.[a-zA-Z_.]+)\"", src.read_text(encoding="utf-8")
+            )
+        )
     assert emitted and emitted <= codes, sorted(emitted - codes)

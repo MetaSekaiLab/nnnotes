@@ -22,6 +22,7 @@ name without its content hash: added, removed, changed with old and new name, si
 dependency closure reaches a file that changed (the affected keys). Objects are compared by their stable addresses
 (link.diff_addresses) when the address tables of both versions are given. Every list is sorted.
 """
+
 from __future__ import annotations
 
 import re
@@ -66,18 +67,33 @@ def _stable_names(names, stable) -> tuple[dict[str, str], list[list[str]]]:
 
 
 def _location(catalog: str, e: dict) -> dict:
-    return {"id": f"{catalog}:{e['offset']}", "primaryKey": e["primary_key"], "internalId": e["internal_id"],
-            "kind": location_kind(e["internal_id"]), "provider": e["provider"], "type": e["resource_type"],
-            "dependencies": [f"{catalog}:{d}" for d in e["dependencies"]], "dependencyHash": e["dependency_hash"],
-            "extraData": e["extra_data"]}
+    return {
+        "id": f"{catalog}:{e['offset']}",
+        "primaryKey": e["primary_key"],
+        "internalId": e["internal_id"],
+        "kind": location_kind(e["internal_id"]),
+        "provider": e["provider"],
+        "type": e["resource_type"],
+        "dependencies": [f"{catalog}:{d}" for d in e["dependencies"]],
+        "dependencyHash": e["dependency_hash"],
+        "extraData": e["extra_data"],
+    }
 
 
 def _file(loc: dict, all_ids: list[str], stable: str) -> dict:
     x = loc["extraData"] or {}
-    return {"name": file_name(loc["internalId"]), "stable": stable,
-            "remote": remote_path(loc["internalId"]) is not None, "location": loc["id"], "locations": all_ids,
-            "hash": x.get("hash"), "bundleName": x.get("bundleName"), "crc": x.get("crc"), "size": x.get("bundleSize"),
-            "flags": x.get("flags")}
+    return {
+        "name": file_name(loc["internalId"]),
+        "stable": stable,
+        "remote": remote_path(loc["internalId"]) is not None,
+        "location": loc["id"],
+        "locations": all_ids,
+        "hash": x.get("hash"),
+        "bundleName": x.get("bundleName"),
+        "crc": x.get("crc"),
+        "size": x.get("bundleSize"),
+        "flags": x.get("flags"),
+    }
 
 
 def index(remote: bytes, apk: bytes | None = None) -> dict:
@@ -88,8 +104,13 @@ def index(remote: bytes, apk: bytes | None = None) -> dict:
             continue
         data = bytes(data)
         locs = [_location(name, e) for e in parse_locations(data)]
-        catalogs[name] = {"sha256": contract.sha256(data), "size": len(data), "header": parse_header(data),
-                          "keys": len(parse_keys(data)), "locations": len(locs)}
+        catalogs[name] = {
+            "sha256": contract.sha256(data),
+            "size": len(data),
+            "header": parse_header(data),
+            "keys": len(parse_keys(data)),
+            "locations": len(locs),
+        }
         locations += locs
     files: dict[tuple[str, str], list[dict]] = {}
     for loc in locations:
@@ -105,8 +126,14 @@ def index(remote: bytes, apk: bytes | None = None) -> dict:
             chosen = next((x for x in locs if x["id"].startswith("apk:")), locs[0])
             entries.append(_file(chosen, [x["id"] for x in locs], stables[n]))
         out[key] = entries
-    return {"schema": contract.CATALOG_INDEX, "catalogs": catalogs, "locations": locations,
-            "bundles": out["bundles"], "rawFiles": out["rawFiles"], "collisions": collisions}
+    return {
+        "schema": contract.CATALOG_INDEX,
+        "catalogs": catalogs,
+        "locations": locations,
+        "bundles": out["bundles"],
+        "rawFiles": out["rawFiles"],
+        "collisions": collisions,
+    }
 
 
 def index_catalog(cat: Catalog) -> dict:
@@ -120,10 +147,14 @@ def summary(doc: dict) -> dict:
     kinds: dict[str, int] = {}
     for loc in doc["locations"]:
         kinds[loc["kind"]] = kinds.get(loc["kind"], 0) + 1
-    return {"locations": len(doc["locations"]), "kinds": dict(sorted(kinds.items())),
-            "bundles": len(doc["bundles"]), "remoteBundles": sum(1 for b in doc["bundles"] if b["remote"]),
-            "rawFiles": len(doc["rawFiles"]),
-            "collisions": sum(len(g) for v in doc["collisions"].values() for g in v)}
+    return {
+        "locations": len(doc["locations"]),
+        "kinds": dict(sorted(kinds.items())),
+        "bundles": len(doc["bundles"]),
+        "remoteBundles": sum(1 for b in doc["bundles"] if b["remote"]),
+        "rawFiles": len(doc["rawFiles"]),
+        "collisions": sum(len(g) for v in doc["collisions"].values() for g in v),
+    }
 
 
 def by_id(doc: dict) -> dict[str, dict]:
@@ -181,8 +212,13 @@ def _key_signatures(doc: dict) -> dict[str, list[dict]]:
         if loc["kind"] in FILE_KINDS:
             continue
         out.setdefault(loc["primaryKey"], []).append(
-            {"internalId": loc["internalId"], "provider": loc["provider"], "type": loc["type"],
-             "dependencies": [dep(d) for d in loc["dependencies"]]})
+            {
+                "internalId": loc["internalId"],
+                "provider": loc["provider"],
+                "type": loc["type"],
+                "dependencies": [dep(d) for d in loc["dependencies"]],
+            }
+        )
     for sigs in out.values():
         sigs.sort(key=contract.key_text)
     return out
@@ -238,10 +274,18 @@ def diff(old: dict, new: dict, old_addresses: dict | None = None, new_addresses:
         for loc in doc["locations"]:
             if loc["kind"] not in FILE_KINDS and reach[loc["id"]] & touched:
                 affected.add(loc["primaryKey"])
-    out = {"schema": DIFF, "old": _identity(old), "new": _identity(new), "keys": keys,
-           "bundles": files["bundles"], "rawFiles": files["rawFiles"], "affectedKeys": sorted(affected)}
+    out = {
+        "schema": DIFF,
+        "old": _identity(old),
+        "new": _identity(new),
+        "keys": keys,
+        "bundles": files["bundles"],
+        "rawFiles": files["rawFiles"],
+        "affectedKeys": sorted(affected),
+    }
     if old_addresses is not None and new_addresses is not None:
         from .link import diff_addresses
+
         out["objects"] = diff_addresses(old_addresses, new_addresses)
     out["summary"] = diff_summary(out)
     return out
@@ -275,21 +319,23 @@ def format_diff(d: dict) -> str:
         for f in d[key]["removed"]:
             lines.append(f"- {label} {f['stable']} {f['name']} {f['size']}")
         for c in d[key]["changed"]:
-            lines.append(f"~ {label} {c['stable']} {c['old']['name']} -> {c['new']['name']} "
-                         f"({', '.join(c['fields'])})")
+            lines.append(f"~ {label} {c['stable']} {c['old']['name']} -> {c['new']['name']} ({', '.join(c['fields'])})")
     objects = d.get("objects", {})
     lines += [f"+ object {a}" for a in objects.get("added", [])]
     lines += [f"- object {a}" for a in objects.get("removed", [])]
     lines += [f"~ object {o['address']} ({', '.join(o['fields'])})" for o in objects.get("changed", [])]
     s = d["summary"]
-    lines.append(f"# keys +{s['keys']['added']} -{s['keys']['removed']} ~{s['keys']['changed']}; "
-                 f"bundles +{s['bundles']['added']} -{s['bundles']['removed']} ~{s['bundles']['changed']} "
-                 f"={s['bundles']['unchanged']}; raw files +{s['rawFiles']['added']} -{s['rawFiles']['removed']} "
-                 f"~{s['rawFiles']['changed']} ={s['rawFiles']['unchanged']}; affected keys {s['affectedKeys']}")
+    lines.append(
+        f"# keys +{s['keys']['added']} -{s['keys']['removed']} ~{s['keys']['changed']}; "
+        f"bundles +{s['bundles']['added']} -{s['bundles']['removed']} ~{s['bundles']['changed']} "
+        f"={s['bundles']['unchanged']}; raw files +{s['rawFiles']['added']} -{s['rawFiles']['removed']} "
+        f"~{s['rawFiles']['changed']} ={s['rawFiles']['unchanged']}; affected keys {s['affectedKeys']}"
+    )
     if "objects" in s:
         o = s["objects"]
-        lines.append(f"# objects +{o['added']} -{o['removed']} ~{o['changed']} rebuilt {o['rebuilt']} "
-                     f"={o['unchanged']}")
+        lines.append(
+            f"# objects +{o['added']} -{o['removed']} ~{o['changed']} rebuilt {o['rebuilt']} ={o['unchanged']}"
+        )
     return "\n".join(lines) + "\n"
 
 
@@ -299,6 +345,7 @@ def version_id(remote_sha: str, apk_sha: str | None, source: dict | None = None)
     identity = {"remote": remote_sha, "apk": apk_sha}
     if source is not None:
         from .jp import Source
+
         identity["source"] = Source.from_dict(source).to_dict()
     return contract.digest(identity)
 
@@ -321,7 +368,7 @@ def fetch(cdn: str, language: str, timeout: float = 120, *, version: str = "main
     with urllib.request.urlopen(base, timeout=timeout) as r:
         data = r.read()
     try:
-        with urllib.request.urlopen(base[:-len(".bin")] + ".hash", timeout=timeout) as r:
+        with urllib.request.urlopen(base[: -len(".bin")] + ".hash", timeout=timeout) as r:
             text = r.read().decode("ascii", "replace").strip()
     except (urllib.error.URLError, OSError, ValueError):
         text = None
@@ -353,8 +400,11 @@ class CatalogDB:
 
     def versions(self, region: str | None = None, language: str | None = None) -> list[dict]:
         """The versions in import order (of `region` / `language` when given)."""
-        return [v for v in self._load() if (region is None or v["region"] == region)
-                and (language is None or v["language"] == language)]
+        return [
+            v
+            for v in self._load()
+            if (region is None or v["region"] == region) and (language is None or v["language"] == language)
+        ]
 
     def _put(self, data: bytes) -> dict:
         sha = contract.sha256(data)
@@ -363,9 +413,19 @@ class CatalogDB:
             write_file(p, data)
         return {"sha256": sha, "size": len(data), "buildResultHash": parse_header(data)["buildResultHash"]}
 
-    def add(self, remote: bytes, apk: bytes | None = None, *, label: str | None = None, region: str | None = None,
-            language: str | None = None, hash_text: str | None = None, resource_version: str | None = None,
-            apk_version_name: str | None = None, source: dict | None = None) -> dict:
+    def add(
+        self,
+        remote: bytes,
+        apk: bytes | None = None,
+        *,
+        label: str | None = None,
+        region: str | None = None,
+        language: str | None = None,
+        hash_text: str | None = None,
+        resource_version: str | None = None,
+        apk_version_name: str | None = None,
+        source: dict | None = None,
+    ) -> dict:
         """Import a catalog pair (idempotent: a known pair gets the label and the facts it did not have yet); the
         version. A label names one version per region and language."""
         remote_rec = self._put(bytes(remote))
@@ -374,21 +434,41 @@ class CatalogDB:
         versions = self._load()
         v = next((x for x in versions if x["id"] == vid), None)
         if v is None:
-            v = {"id": vid, "seq": max((x["seq"] for x in versions), default=0) + 1, "labels": [],
-                 "region": region, "language": language, "remote": remote_rec, "apk": apk_rec, "hash": None,
-                 "resourceVersion": None, "apkVersionName": None}
+            v = {
+                "id": vid,
+                "seq": max((x["seq"] for x in versions), default=0) + 1,
+                "labels": [],
+                "region": region,
+                "language": language,
+                "remote": remote_rec,
+                "apk": apk_rec,
+                "hash": None,
+                "resourceVersion": None,
+                "apkVersionName": None,
+            }
             versions.append(v)
             if source is not None:
                 v["source"] = dict(source)
-        for k, given in (("region", region), ("language", language), ("hash", hash_text),
-                         ("resourceVersion", resource_version), ("apkVersionName", apk_version_name)):
+        for k, given in (
+            ("region", region),
+            ("language", language),
+            ("hash", hash_text),
+            ("resourceVersion", resource_version),
+            ("apkVersionName", apk_version_name),
+        ):
             if given is not None and v[k] is None:
                 v[k] = given
-        label = label or (f"{source['version']}/{source['hash']}/{vid[:12]}" if source else
-                          default_label(remote_rec["sha256"], resource_version))
+        label = label or (
+            f"{source['version']}/{source['hash']}/{vid[:12]}"
+            if source
+            else default_label(remote_rec["sha256"], resource_version)
+        )
         for other in versions:
-            if other is not v and label in other["labels"] and (other["region"], other["language"]) == (
-                    v["region"], v["language"]):
+            if (
+                other is not v
+                and label in other["labels"]
+                and (other["region"], other["language"]) == (v["region"], v["language"])
+            ):
                 raise ValueError(f"label {label!r} already names catalog version {other['id'][:12]}")
         if label not in v["labels"]:
             v["labels"].append(label)
@@ -409,8 +489,10 @@ class CatalogDB:
         if not hits:
             raise KeyError(f"no catalog version {ref!r}")
         if len(hits) > 1:
-            raise ValueError(f"{ref!r} names {len(hits)} catalog versions: "
-                             + ", ".join(f"{v['id'][:12]} ({v['region']}/{v['language']})" for v in hits))
+            raise ValueError(
+                f"{ref!r} names {len(hits)} catalog versions: "
+                + ", ".join(f"{v['id'][:12]} ({v['region']}/{v['language']})" for v in hits)
+            )
         return hits[0]
 
     def catalog_bytes(self, version: dict) -> tuple[bytes, bytes | None]:
@@ -428,8 +510,15 @@ class CatalogDB:
         for role in CATALOG_NAMES:
             rec = version[role]
             if rec:
-                out.append(Input(role, rec["sha256"], rec["size"], f"{rec['sha256']}.bin",
-                                 ({"kind": "file", "path": str(self.path(rec["sha256"]))},)))
+                out.append(
+                    Input(
+                        role,
+                        rec["sha256"],
+                        rec["size"],
+                        f"{rec['sha256']}.bin",
+                        ({"kind": "file", "path": str(self.path(rec["sha256"]))},),
+                    )
+                )
         return out
 
 
@@ -437,6 +526,7 @@ class CatalogDB:
 class IndexStage(Stage):
     """catalog.index: a catalog pair -> its index. Subjects and inputs come from the fact "catalogs": {subject:
     [Input "remote", Input "apk" (optional)]} (CatalogDB.inputs). Artifact "<task id>#index"."""
+
     name = "catalog.index"
     version = 2
 
@@ -456,9 +546,14 @@ class IndexStage(Stage):
 
     def run(self, task, store) -> Output:
         roles = {i.role for i in task.inputs}
-        doc = index(store.input_bytes(task.input("remote")),
-                    store.input_bytes(task.input("apk")) if "apk" in roles else None)
+        doc = index(
+            store.input_bytes(task.input("remote")), store.input_bytes(task.input("apk")) if "apk" in roles else None
+        )
         content = store.add(contract.encode(doc), "json")
-        rec = contract.artifact(contract.artifact_id(task.id, "index"), content, contract.provenance(task),
-                                {"kind": "catalog.index", "format": "json", "facts": summary(doc)})
+        rec = contract.artifact(
+            contract.artifact_id(task.id, "index"),
+            content,
+            contract.provenance(task),
+            {"kind": "catalog.index", "format": "json", "facts": summary(doc)},
+        )
         return Output([rec], [])

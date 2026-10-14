@@ -14,6 +14,7 @@ textureRectOffset -- where a tightly packed or trimmed sprite sits in its origin
 mesh is placed by its mesh bounds and the pivot. Sizes are rounded; when rounding fractional rects leaves the canvas
 one pixel narrower or lower than the cut, the canvas takes that pixel.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -27,9 +28,9 @@ ROTATIONS = {0: "none", 1: "flipHorizontal", 2: "flipVertical", 3: "rotate180", 
 @dataclass(frozen=True)
 class Settings:
     packed: bool
-    packing_mode: int            # 0 tight, 1 rectangle
-    packing_rotation: int        # 0 none, 1 flip horizontal, 2 flip vertical, 3 rotate 180, 4 rotate 90
-    mesh_type: int               # 0 full rect, 1 tight
+    packing_mode: int  # 0 tight, 1 rectangle
+    packing_rotation: int  # 0 none, 1 flip horizontal, 2 flip vertical, 3 rotate 180, 4 rotate 90
+    mesh_type: int  # 0 full rect, 1 tight
 
 
 def settings(raw: int) -> Settings:
@@ -43,22 +44,28 @@ def mesh_values(mesh) -> dict:
     to a task without its bundle): positions, triangles per submesh, texture coordinates (or None). Floats are the
     stored float32 values, so they read back exactly."""
     uv = mesh.channels.get("uv0")
-    return {"positions": mesh.channels["position"].data.astype(float).tolist(),
-            "submeshes": [p.indices.tolist() for p in mesh.primitives
-                          if p.topology == "triangles" and p.indices is not None],
-            "uv0": None if uv is None else uv.data.astype(float).tolist()}
+    return {
+        "positions": mesh.channels["position"].data.astype(float).tolist(),
+        "submeshes": [
+            p.indices.tolist() for p in mesh.primitives if p.topology == "triangles" and p.indices is not None
+        ],
+        "uv0": None if uv is None else uv.data.astype(float).tolist(),
+    }
 
 
 def mesh_from_values(values: dict):
     """The MeshArrays of mesh_values(...)."""
     import numpy as np
     from .mesh import Channel, MeshArrays, Primitive
+
     pos = np.asarray(values["positions"], np.float32).reshape(-1, 3)
     channels = {"position": Channel(pos)}
     if values.get("uv0") is not None:
         channels["uv0"] = Channel(np.asarray(values["uv0"], np.float32).reshape(len(pos), -1))
-    prims = [Primitive("triangles", np.asarray(t, np.int64).reshape(-1, 3), i)
-             for i, t in enumerate(values.get("submeshes") or [])]
+    prims = [
+        Primitive("triangles", np.asarray(t, np.int64).reshape(-1, 3), i)
+        for i, t in enumerate(values.get("submeshes") or [])
+    ]
     return MeshArrays("", len(pos), channels, prims)
 
 
@@ -66,6 +73,7 @@ def _cut(image, rect: dict):
     """The texture rect of a top-row-first image as UnityPy cuts it from the bottom-row-first image (Pillow's crop
     rounds the box and pads outside the image with zeros), still bottom row first."""
     from PIL.Image import Transpose
+
     x, y, w, h = rect["x"], rect["y"], rect["width"], rect["height"]
     if x + w < x or y + h < y:
         raise ValueError(f"texture rect {rect}: negative size")
@@ -76,6 +84,7 @@ def _cut(image, rect: dict):
 
 def _merge(rgb, alpha):
     from PIL import Image
+
     return Image.merge("RGBA", (*rgb.split()[:3], alpha.split()[0]))
 
 
@@ -88,12 +97,16 @@ def _positions(mesh) -> list:
 
 
 def _triangles(mesh) -> list[list[tuple]]:
-    return [[tuple(t) for t in p.indices.tolist()] for p in mesh.primitives
-            if p.topology == "triangles" and p.indices is not None]
+    return [
+        [tuple(t) for t in p.indices.tolist()]
+        for p in mesh.primitives
+        if p.topology == "triangles" and p.indices is not None
+    ]
 
 
 def _mask(mesh, image, ppu: float):
     from PIL import Image, ImageDraw
+
     positions = _positions(mesh)
     mask = Image.new("1", image.size, color=0)
     draw = ImageDraw.ImageDraw(mask)
@@ -114,11 +127,16 @@ def _copy_triangle(src, src_tri, dst, dst_tri) -> None:
     import numpy as np
     from PIL import Image, ImageDraw
     from PIL.Image import Transform
-    src_off = ((src_tri[1][0] - src_tri[0][0], src_tri[1][1] - src_tri[0][1]),
-               (src_tri[2][0] - src_tri[0][0], src_tri[2][1] - src_tri[0][1]))
-    dst_off = ((dst_tri[1][0] - dst_tri[0][0], dst_tri[1][1] - dst_tri[0][1]),
-               (dst_tri[2][0] - dst_tri[0][0], dst_tri[2][1] - dst_tri[0][1]))
-    if src_off == dst_off:                   # same shape: copy the triangle's box through a triangle mask
+
+    src_off = (
+        (src_tri[1][0] - src_tri[0][0], src_tri[1][1] - src_tri[0][1]),
+        (src_tri[2][0] - src_tri[0][0], src_tri[2][1] - src_tri[0][1]),
+    )
+    dst_off = (
+        (dst_tri[1][0] - dst_tri[0][0], dst_tri[1][1] - dst_tri[0][1]),
+        (dst_tri[2][0] - dst_tri[0][0], dst_tri[2][1] - dst_tri[0][1]),
+    )
+    if src_off == dst_off:  # same shape: copy the triangle's box through a triangle mask
         upper_left = (min(p[0] for p in src_tri), min(p[1] for p in src_tri))
         lower_right = (max(p[0] for p in src_tri), max(p[1] for p in src_tri))
         part = src.crop((*upper_left, *lower_right))
@@ -126,10 +144,16 @@ def _copy_triangle(src, src_tri, dst, dst_tri) -> None:
         ImageDraw.Draw(mask).polygon([(x - upper_left[0], y - upper_left[1]) for x, y in src_tri], fill=255)
         dst.paste(part, (int(min(p[0] for p in dst_tri)), int(min(p[1] for p in dst_tri))), mask=mask)
         return
-    (x11, x12), (x21, x22), (x31, x32) = src_tri   # the affine map from destination to source coordinates
+    (x11, x12), (x21, x22), (x31, x32) = src_tri  # the affine map from destination to source coordinates
     (y11, y12), (y21, y22), (y31, y32) = dst_tri
-    m = [[y11, y12, 1, 0, 0, 0], [y21, y22, 1, 0, 0, 0], [y31, y32, 1, 0, 0, 0],
-         [0, 0, 0, y11, y12, 1], [0, 0, 0, y21, y22, 1], [0, 0, 0, y31, y32, 1]]
+    m = [
+        [y11, y12, 1, 0, 0, 0],
+        [y21, y22, 1, 0, 0, 0],
+        [y31, y32, 1, 0, 0, 0],
+        [0, 0, 0, y11, y12, 1],
+        [0, 0, 0, y21, y22, 1],
+        [0, 0, 0, y31, y32, 1],
+    ]
     coeffs = np.linalg.solve(m, [x11, x21, x31, x12, x22, x32])
     moved = src.transform(dst.size, Transform.AFFINE, coeffs)
     mask = Image.new("1", dst.size)
@@ -141,6 +165,7 @@ def _render(mesh, texture, ppu: float):
     """The sprite drawn from its first submesh's triangles through their texture coordinates (bottom row first),
     and its mesh bounds' minimum corner in units."""
     from PIL import Image
+
     tris = _triangles(mesh)
     positions = _positions(mesh)
     uv = mesh.channels["uv0"].data
@@ -154,7 +179,7 @@ def _render(mesh, texture, ppu: float):
             break
     else:
         raise Unsupported("unsupported.sprite.tight_mask", "sprite mesh is not flat")
-    axes = axes[:i] + axes[i + 1:]
+    axes = axes[:i] + axes[i + 1 :]
     x_min, y_min, x_max, y_max = min(axes[0]), min(axes[1]), max(axes[0]), max(axes[1])
     pos = [(round((x - x_min) * ppu), round((y - y_min) * ppu)) for x, y in zip(*axes)]
     width, height = texture.size
@@ -165,8 +190,17 @@ def _render(mesh, texture, ppu: float):
     return sprite, (x_min, y_min)
 
 
-def crop(image, texture_rect: dict, settings_raw: int, mesh=None, pixels_to_units: float = 100.0, alpha=None, *,
-         downscale: float = 1.0, canvas: dict | None = None):
+def crop(
+    image,
+    texture_rect: dict,
+    settings_raw: int,
+    mesh=None,
+    pixels_to_units: float = 100.0,
+    alpha=None,
+    *,
+    downscale: float = 1.0,
+    canvas: dict | None = None,
+):
     """The sprite's PIL image, top row first.
 
     image / alpha: the decoded texture and alpha texture (texture.decode); texture_rect: {x, y, width, height} in
@@ -174,6 +208,7 @@ def crop(image, texture_rect: dict, settings_raw: int, mesh=None, pixels_to_unit
     pixels_to_units: Sprite.m_PixelsToUnits; downscale: the atlas' downscaleMultiplier (only 1 is supported);
     canvas: {rect: {width, height}, offset: textureRectOffset {x, y}, pivot: m_Pivot {x, y}}."""
     from PIL.Image import Transpose
+
     if downscale != 1.0:
         raise Unsupported("unsupported.sprite.downscale", f"downscaleMultiplier {downscale}")
     if alpha is not None and alpha.size != image.size:
@@ -183,8 +218,12 @@ def crop(image, texture_rect: dict, settings_raw: int, mesh=None, pixels_to_unit
         img = _merge(img, _cut(alpha, texture_rect))
     s = settings(settings_raw)
     if s.packed:
-        turn = {1: Transpose.FLIP_LEFT_RIGHT, 2: Transpose.FLIP_TOP_BOTTOM, 3: Transpose.ROTATE_180,
-                4: Transpose.ROTATE_270}.get(s.packing_rotation)
+        turn = {
+            1: Transpose.FLIP_LEFT_RIGHT,
+            2: Transpose.FLIP_TOP_BOTTOM,
+            3: Transpose.ROTATE_180,
+            4: Transpose.ROTATE_270,
+        }.get(s.packing_rotation)
         if turn is not None:
             img = img.transpose(turn)
     corner = None
@@ -206,6 +245,7 @@ def crop(image, texture_rect: dict, settings_raw: int, mesh=None, pixels_to_unit
 
 def _place(img, canvas: dict, corner, ppu: float, cut_rounded: bool = False):
     from PIL import Image
+
     rect, pivot = canvas["rect"], canvas.get("pivot") or {"x": 0.5, "y": 0.5}
     w, h = int(round(rect["width"])), int(round(rect["height"]))
     if corner is None:
@@ -220,8 +260,9 @@ def _place(img, canvas: dict, corner, ppu: float, cut_rounded: bool = False):
     if cut_rounded or rect["height"] % 1 or oy % 1:
         h = h + 1 if y + img.height == h + 1 else h
     if x < 0 or y < 0 or x + img.width > w or y + img.height > h:
-        raise Unsupported("unsupported.sprite.canvas", f"{img.width}x{img.height} image at ({x}, {y}) outside the "
-                                                       f"{w}x{h} rect")
+        raise Unsupported(
+            "unsupported.sprite.canvas", f"{img.width}x{img.height} image at ({x}, {y}) outside the {w}x{h} rect"
+        )
     if "A" not in img.getbands():
         img = img.convert("RGBA")
     out = Image.new(img.mode, (w, h))

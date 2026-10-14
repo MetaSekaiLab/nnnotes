@@ -3,6 +3,7 @@
 Level 6 (the default) gives the bytes Pillow writes without options (`image.save(f, "PNG")`), which the other
 commands write for textures; other levels (0-9) change the bytes, never the pixels.
 """
+
 from __future__ import annotations
 
 import io

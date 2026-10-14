@@ -24,6 +24,7 @@ spot (SpotManager), or the reward phase of a live result (LiveResultDisplayPrese
 
 Same inputs give the same bytes.
 """
+
 from __future__ import annotations
 
 import json
@@ -41,7 +42,7 @@ from .jsonio import dumps, write_json
 from .unity import SceneGraph, deref, mesh_arrays, script_class
 
 FORMAT = "ournotes.story-host/1"
-OVERLAY = 1                                   # MasterAdv._playbackMode of the episodes SimpleAdvPlayer plays
+OVERLAY = 1  # MasterAdv._playbackMode of the episodes SimpleAdvPlayer plays
 HOST_DIR = "host"
 HOST_DOC = f"{HOST_DIR}/host.json"
 HOST_UI_DOC = f"{HOST_DIR}/ui/ui.json"
@@ -61,26 +62,45 @@ ADDRESSES = {
     "resultBackground": "UI/Prefab/UILiveResultBackgroundWidget",
     "resultBackgroundSprite": "LowImage/LiveResult/live_result_background",
 }
-KIND_KEYS = {"home": ("spotWidget", "spotLetterbox", "spotScene"),
-             "afterlive": ("resultWidget", "resultBackground", "resultBackgroundSprite")}
+KIND_KEYS = {
+    "home": ("spotWidget", "spotLetterbox", "spotScene"),
+    "afterlive": ("resultWidget", "resultBackground", "resultBackgroundSprite"),
+}
 # story group kind (storysite.story_groups) -> (host kind, talk)
 HOST_GROUPS = {"spotTalk": ("home", "tap"), "spot": ("home", "area"), "liveResult": ("afterlive", None)}
 SUBSTITUTES = ["musicResultPanel", "rewardItems", "memberCard", "navigation", "gradeUpEffect"]
-CLONE = "(Clone)"                             # Object.Instantiate's name suffix, removed by SpotBackground.Prepare
-FLOOR_NAME, FLOOR_EXCLUDE, FLOOR_QUEUE = "floor", "shadow", 2000    # SpotSceneRoot.SetObject
+CLONE = "(Clone)"  # Object.Instantiate's name suffix, removed by SpotBackground.Prepare
+FLOOR_NAME, FLOOR_EXCLUDE, FLOOR_QUEUE = "floor", "shadow", 2000  # SpotSceneRoot.SetObject
 BLUR_FEATURE = "Fwk.UI.Rendering.UIRendererFeature"
 REWARD_PANEL = "RewardPanel"
 COMPONENT_HEADER = ("type", "class", "m_Name")
-NO_EPISODE = {"text": {}, "commands": []}    # the episode argument of storyfonts.shown_characters for a UI alone
-DOTWEEN_FIELDS = ("defaultEaseType", "defaultUpdateType", "defaultTimeScaleIndependent", "timeScale",
-                  "defaultEaseOvershootOrAmplitude", "defaultEasePeriod")
+NO_EPISODE = {"text": {}, "commands": []}  # the episode argument of storyfonts.shown_characters for a UI alone
+DOTWEEN_FIELDS = (
+    "defaultEaseType",
+    "defaultUpdateType",
+    "defaultTimeScaleIndependent",
+    "timeScale",
+    "defaultEaseOvershootOrAmplitude",
+    "defaultEasePeriod",
+)
 # components that light the renderers of a scene (lighting_components)
 LIGHTING_TYPES = ("Light", "ReflectionProbe")
 # RenderSettings values of the active scene the renderers' lighting depends on; object references by name (render_settings)
-RENDER_SETTINGS_FIELDS = ("m_Fog", "m_AmbientMode", "m_AmbientSkyColor", "m_AmbientEquatorColor", "m_AmbientGroundColor",
-                          "m_AmbientIntensity", "m_SubtractiveShadowColor", "m_DefaultReflectionMode",
-                          "m_DefaultReflectionResolution", "m_ReflectionBounces", "m_ReflectionIntensity",
-                          "m_UseRadianceAmbientProbe", "m_IndirectSpecularColor")
+RENDER_SETTINGS_FIELDS = (
+    "m_Fog",
+    "m_AmbientMode",
+    "m_AmbientSkyColor",
+    "m_AmbientEquatorColor",
+    "m_AmbientGroundColor",
+    "m_AmbientIntensity",
+    "m_SubtractiveShadowColor",
+    "m_DefaultReflectionMode",
+    "m_DefaultReflectionResolution",
+    "m_ReflectionBounces",
+    "m_ReflectionIntensity",
+    "m_UseRadianceAmbientProbe",
+    "m_IndirectSpecularColor",
+)
 RENDER_SETTINGS_REFS = ("m_SkyboxMaterial", "m_CustomReflection", "m_Sun")
 
 
@@ -91,15 +111,16 @@ def host_of(groups: list[dict]) -> dict:
     (SpotManager.PlayAreaTalkAsync), a liveResult group the live result reward phase. Exactly one such group."""
     hits = [g for g in groups if g.get("kind") in HOST_GROUPS]
     if len(hits) != 1:
-        raise ValueError(f"an Overlay story needs exactly one spotTalk, spot or liveResult group, not {len(hits)} "
-                         f"(groups: {[g.get('kind') for g in groups]})")
+        raise ValueError(
+            f"an Overlay story needs exactly one spotTalk, spot or liveResult group, not {len(hits)} "
+            f"(groups: {[g.get('kind') for g in groups]})"
+        )
     g = hits[0]
     kind, talk = HOST_GROUPS[g["kind"]]
     out = {"kind": kind, "group": {"kind": g["kind"], "id": g["id"]}}
     if kind == "home":
         chars = g.get("characters") or []
-        out.update(spotId=g["spot"]["id"], talk=talk,
-                   characterId=chars[0]["id"] if talk == "tap" and chars else None)
+        out.update(spotId=g["spot"]["id"], talk=talk, characterId=chars[0]["id"] if talk == "tap" and chars else None)
     return out
 
 
@@ -144,15 +165,27 @@ def camera_target(nodes: list[dict]) -> dict:
     if len(c) != 1 or len(d) != 1:
         raise RuntimeError(f"{cam}: {len(c)} Camera, {len(d)} UniversalAdditionalCameraData")
     c, d = c[0], d[0]
-    return {"container": {"path": container, **_trs(_first(nodes, container))},
-            "stage": {"path": stage, **_trs(_first(nodes, stage))},
-            "camera": {"path": cam, "localPosition": node["localPosition"], "localRotation": node["localRotation"],
-                       "fieldOfView": c["field of view"], "near": c["near clip plane"], "far": c["far clip plane"],
-                       "orthographic": bool(c["orthographic"]), "orthographicSize": c["orthographic size"],
-                       "clearFlags": c["m_ClearFlags"], "backgroundColor": c["m_BackGroundColor"],
-                       "hdr": bool(c["m_HDR"]), "allowMSAA": bool(c["m_AllowMSAA"]),
-                       "rendererIndex": d["m_RendererIndex"], "renderPostProcessing": bool(d["m_RenderPostProcessing"]),
-                       "antialiasing": d["m_Antialiasing"]}}
+    return {
+        "container": {"path": container, **_trs(_first(nodes, container))},
+        "stage": {"path": stage, **_trs(_first(nodes, stage))},
+        "camera": {
+            "path": cam,
+            "localPosition": node["localPosition"],
+            "localRotation": node["localRotation"],
+            "fieldOfView": c["field of view"],
+            "near": c["near clip plane"],
+            "far": c["far clip plane"],
+            "orthographic": bool(c["orthographic"]),
+            "orthographicSize": c["orthographic size"],
+            "clearFlags": c["m_ClearFlags"],
+            "backgroundColor": c["m_BackGroundColor"],
+            "hdr": bool(c["m_HDR"]),
+            "allowMSAA": bool(c["m_AllowMSAA"]),
+            "rendererIndex": d["m_RendererIndex"],
+            "renderPostProcessing": bool(d["m_RenderPostProcessing"]),
+            "antialiasing": d["m_Antialiasing"],
+        },
+    }
 
 
 def _fields(c: dict) -> dict:
@@ -171,19 +204,31 @@ def layout_root(nodes: list[dict], path: str) -> dict:
 def kept(path: str, subtrees=(), singles=()) -> bool:
     """A node kept in a host UI: inside one of `subtrees` (root included), one of `singles`, or an ancestor of
     either."""
-    return (any(path == s or path.startswith(s + "/") for s in subtrees)
-            or any(s == path or s.startswith(path + "/") for s in (*subtrees, *singles)))
+    return any(path == s or path.startswith(s + "/") for s in subtrees) or any(
+        s == path or s.startswith(path + "/") for s in (*subtrees, *singles)
+    )
 
 
 # serialized references kept as node paths: component class -> (record key, fields)
 REF_RECORDS = {
-    "UIAdvTalkWindow": ("talkWindowRefs", ("SpeakerText", "TalkText", "TalkArea", "_speakerNameObjects",
-                                           "_talkNextIndicator", "_talkBackground", "_autoIcon", "_fastIcon")),
+    "UIAdvTalkWindow": (
+        "talkWindowRefs",
+        (
+            "SpeakerText",
+            "TalkText",
+            "TalkArea",
+            "_speakerNameObjects",
+            "_talkNextIndicator",
+            "_talkBackground",
+            "_autoIcon",
+            "_fastIcon",
+        ),
+    ),
     "UISystemMessage": ("systemMessage", ("_message", "_showAnimation", "_canvasGroup", "_animator")),
     "SpotLetterboxBands": ("letterboxBands", ("_topBand", "_bottomBand", "_leftBand", "_rightBand")),
 }
 WIDGET_FIELDS = ("_canvasSortOrder", "_isMainWidget", "_useBlur", "_blurDuration", "_useGlassMorphism")
-TWEEN_EVENT = 1                          # DOTweenSequence command type of an event entry (persistent calls)
+TWEEN_EVENT = 1  # DOTweenSequence command type of an event entry (persistent calls)
 
 
 def _plain(v):
@@ -201,10 +246,18 @@ def tween_calls(entry: dict) -> list[dict]:
     out = []
     for x in calls:
         t, a = x.get("m_Target") or {}, x.get("m_Arguments") or {}
-        out.append({"target": advui._ref_path(t), "class": t.get("class") or t.get("component"),
-                    "method": x.get("m_MethodName"), "string": a.get("m_StringArgument"),
-                    "float": a.get("m_FloatArgument"), "int": a.get("m_IntArgument"),
-                    "bool": a.get("m_BoolArgument"), "mode": x.get("m_Mode")})
+        out.append(
+            {
+                "target": advui._ref_path(t),
+                "class": t.get("class") or t.get("component"),
+                "method": x.get("m_MethodName"),
+                "string": a.get("m_StringArgument"),
+                "float": a.get("m_FloatArgument"),
+                "int": a.get("m_IntArgument"),
+                "bool": a.get("m_BoolArgument"),
+                "mode": x.get("m_Mode"),
+            }
+        )
     return out
 
 
@@ -213,9 +266,15 @@ def node_record(node: dict) -> dict:
     components the host screens add: aspectRatioFitter, simpleAdvLayoutRoot, safeArea (UISafeArea), the
     references of UIAdvTalkWindow / UISystemMessage / SpotLetterboxBands as node paths, `widget` (the UIManager
     widget fields of a *Widget component) and, per DOTweenSequence event entry, its persistent `calls`."""
-    rec = {"path": node["path"], "name": node["name"], "active": node["active"],
-           "localPosition": node["localPosition"], "localRotation": node["localRotation"],
-           "localScale": node["localScale"], "rect": node.get("rect")}
+    rec = {
+        "path": node["path"],
+        "name": node["name"],
+        "active": node["active"],
+        "localPosition": node["localPosition"],
+        "localRotation": node["localRotation"],
+        "localScale": node["localScale"],
+        "rect": node.get("rect"),
+    }
     rec.update(advui._layout_components(node))
     for c in node["components"]:
         cls = c.get("class")
@@ -270,7 +329,7 @@ def clip_view(ex: Exporter, o, graph, root: str) -> dict:
             names = ["RectTransform." + attr]
         elif tid == 225 and attr == "m_Alpha":
             names = ["CanvasGroup.m_Alpha"]
-        elif tid == 4 and r["attributeCrc"] == 4:                    # localEulerAnglesRaw
+        elif tid == 4 and r["attributeCrc"] == 4:  # localEulerAnglesRaw
             names = [f"Transform.localEulerAngles.{a}" for a in "xyz"]
         elif tid == 4 and r["transformAttr"] and attr in TRANSFORM_CURVES:
             names = [f"Transform.{attr}.{a}" for a in TRANSFORM_CURVES[attr]]
@@ -288,7 +347,7 @@ def clip_view(ex: Exporter, o, graph, root: str) -> dict:
     if n_st + n_disc + n_de + len(const) != len(props):
         raise RuntimeError(f"clip {name}: curve count != bound properties")
     curves = {p: {"keys": []} for p in props[:n_st]}
-    curves.update({p: {"discrete": []} for p in props[n_st:n_st + n_disc]})
+    curves.update({p: {"discrete": []} for p in props[n_st : n_st + n_disc]})
     for t, keys in streamed_frames(st["data"]):
         for ci, c0, c1, c2, c3 in keys:
             if ci < n_st:
@@ -297,15 +356,24 @@ def clip_view(ex: Exporter, o, graph, root: str) -> dict:
                 curves[props[ci]]["discrete"].append([t, c3])
     samples = list(de["m_SampleArray"])
     for j in range(n_de):
-        curves[props[n_st + j]] = {"samples": samples[j::n_de][:de["m_FrameCount"]], "sampleRate": de["m_SampleRate"],
-                                   "beginTime": de["m_BeginTime"]}
+        curves[props[n_st + j]] = {
+            "samples": samples[j::n_de][: de["m_FrameCount"]],
+            "sampleRate": de["m_SampleRate"],
+            "beginTime": de["m_BeginTime"],
+        }
     for i, v in enumerate(const):
         curves[props[n_st + n_disc + n_de + i]] = {"constant": v}
-    out = {"name": name, "sampleRate": tt["m_SampleRate"], "startTime": mc["m_StartTime"],
-           "stopTime": mc["m_StopTime"], "loopTime": bool(mc["m_LoopTime"]), "events": tt["m_Events"],
-           "curves": curves,
-           "keyFormat": "[time, c0, c1, c2, c3]; value(t) = ((c0*x + c1)*x + c2)*x + c3, x = t - time, "
-                        "from the last key with time <= t (first key at -FLT_MAX)"}
+    out = {
+        "name": name,
+        "sampleRate": tt["m_SampleRate"],
+        "startTime": mc["m_StartTime"],
+        "stopTime": mc["m_StopTime"],
+        "loopTime": bool(mc["m_LoopTime"]),
+        "events": tt["m_Events"],
+        "curves": curves,
+        "keyFormat": "[time, c0, c1, c2, c3]; value(t) = ((c0*x + c1)*x + c2)*x + c3, x = t - time, "
+        "from the last key with time <= t (first key at -FLT_MAX)",
+    }
     if rec["pptrCurveMapping"]:
         refs = [ex.deref(o, p) for p in rec["pptrCurveMapping"]]
         out["pptrCurveMapping"] = [x.read_typetree().get("m_Name") if x is not None else None for x in refs]
@@ -357,13 +425,13 @@ class UiDoc:
     def __init__(self, cat, player, out_dir: Path, mode: int | None = None):
         self.player, self.dir = player, Path(out_dir)
         self.dir.mkdir(parents=True, exist_ok=True)
-        self.ex = Exporter(cat, self.dir, player=player, textures="deferred", stub_assets=TMP_STUBS,
-                           font_stubs=fontsettings.builtin())
+        self.ex = Exporter(
+            cat, self.dir, player=player, textures="deferred", stub_assets=TMP_STUBS, font_stubs=fontsettings.builtin()
+        )
         self.packer = TexelPacker(self.dir)
-        self.styles = (textstyle.TextStyles(self.ex, player, mode, fontsettings.builtin()) if mode is not None
-                       else None)
+        self.styles = textstyle.TextStyles(self.ex, player, mode, fontsettings.builtin()) if mode is not None else None
         self.nodes: list[dict] = []
-        self.sources: list[tuple[str, dict]] = []          # (key, prefab node) of each record
+        self.sources: list[tuple[str, dict]] = []  # (key, prefab node) of each record
         self.roots: list[dict] = []
         self.doc: dict | None = None
 
@@ -382,8 +450,9 @@ class UiDoc:
                     raise RuntimeError(f"{n['path']}: a text node in a UI without texts")
                 if not (rec.get("localizeText") or {}).get("localizeEnabled"):
                     raise NotImplementedError(f"{n['path']}: text without LocalizeText")
-                rec["textStyle"] = self.styles.record(n["path"], advui._component(n, advui.TMP_CLASSES),
-                                                      advui._component(n, ("LocalizeText",)))
+                rec["textStyle"] = self.styles.record(
+                    n["path"], advui._component(n, advui.TMP_CLASSES), advui._component(n, ("LocalizeText",))
+                )
                 del rec["text"]
             self.nodes.append(rec)
             self.sources.append((key, n))
@@ -448,9 +517,18 @@ class UiDoc:
         for rec in self.nodes:
             (rec.get("image") or {}).pop("spriteRef", None)
             (rec.get("buttonImageState") or {}).pop("selectedRef", None)
-        materials = {"Default UI Material": {"material": "Default UI Material", "shader": {"shader": "UI/Default"},
-                                             "keywords": [], "textures": {}, "ints": {}, "floats": {}, "colors": {},
-                                             "shaderDefaults": True}}
+        materials = {
+            "Default UI Material": {
+                "material": "Default UI Material",
+                "shader": {"shader": "UI/Default"},
+                "keywords": [],
+                "textures": {},
+                "ints": {},
+                "floats": {},
+                "colors": {},
+                "shaderDefaults": True,
+            }
+        }
         for _, n in self.sources:
             for c in n["components"]:
                 if c.get("class") in ("Image", "RawImage") and c.get("m_Material"):
@@ -466,14 +544,26 @@ class UiDoc:
             else:
                 raise RuntimeError(f"shader {name} not in the loaded bundles")
         index, summary = ex.dump_shaders(self.dir / "shaders", needed)
-        keywords = {k: gles3_keywords(index, m["shader"]["shader"], m["keywords"], f"material {k}")
-                    for k, m in materials.items()}
+        keywords = {
+            k: gles3_keywords(index, m["shader"]["shader"], m["keywords"], f"material {k}")
+            for k, m in materials.items()
+        }
         dts = self.player.mono(self.player.resource("DOTweenSettings"))
-        doc = {"about": about, **(head or {}), "roots": self.roots, "nodes": self.nodes, "sprites": sprites,
-               "textures": textures, "materials": materials, "materialKeywords": keywords, "clips": clips,
-               "controllers": controllers, "animatorsDropped": dropped,
-               "dotween": {k: dts[k] for k in DOTWEEN_FIELDS},
-               "shaders": {"index": "shaders/shaders.json", "names": summary["names"]}}
+        doc = {
+            "about": about,
+            **(head or {}),
+            "roots": self.roots,
+            "nodes": self.nodes,
+            "sprites": sprites,
+            "textures": textures,
+            "materials": materials,
+            "materialKeywords": keywords,
+            "clips": clips,
+            "controllers": controllers,
+            "animatorsDropped": dropped,
+            "dotween": {k: dts[k] for k in DOTWEEN_FIELDS},
+            "shaders": {"index": "shaders/shaders.json", "names": summary["names"]},
+        }
         if self.styles is not None:
             doc["textStyle"] = self.styles.summary()
         doc.update(tail or {})
@@ -514,7 +604,7 @@ def background(cat, key: str, situation_name: str, ex: Exporter) -> dict:
     env = UnityPy.load(*[str(p) for p in cat.fetch_key(key)])
     graph = SceneGraph(env)
     mf_by_go, mr_by_go = room.mesh_components(env)
-    rendered = {go for _, go in mr_by_go}         # SceneGraph: a GameObject path id is in one file only
+    rendered = {go for _, go in mr_by_go}  # SceneGraph: a GameObject path id is in one file only
     root_go = container_go(env, cat._entry(key)["internal_id"]).path_id
     root = graph.tf_of_go[root_go]
     spot_bg, volumes = [], []
@@ -525,22 +615,34 @@ def background(cat, key: str, situation_name: str, ex: Exporter) -> dict:
         if tf is None or not under(graph, tf, root):
             continue
         cls = script_class(o)
-        if cls == "SpotBackground" and tf == root:            # background.GetComponent<SpotBackground>()
+        if cls == "SpotBackground" and tf == root:  # background.GetComponent<SpotBackground>()
             spot_bg.append(o)
         elif cls == "Volume":
             volumes.append((o, tf))
     if spot_bg:
         tt = spot_bg[0].read_typetree()
-        entries = [(e.get("SituationName"), [_go_ref(spot_bg[0], h) for h in e.get("HideObjects") or []])
-                   for e in tt.get("_situationObjects") or []]
+        entries = [
+            (e.get("SituationName"), [_go_ref(spot_bg[0], h) for h in e.get("HideObjects") or []])
+            for e in tt.get("_situationObjects") or []
+        ]
         prep = prepare(graph, root, situation_name, entries)
     else:
-        prep = {"name": situation_name.replace(CLONE, ""), "matched": False, "activate": [], "hide": [],
-                "overrides": {}}
+        prep = {
+            "name": situation_name.replace(CLONE, ""),
+            "matched": False,
+            "activate": [],
+            "hide": [],
+            "overrides": {},
+        }
     overrides = prep["overrides"]
     floor = find_first_child_with_name(graph, root, FLOOR_NAME, FLOOR_EXCLUDE)
-    renderer = None if floor is None else component_in_children(
-        graph, floor, lambda t: _go(graph, t) in rendered, lambda t: active_in_hierarchy(graph, t, overrides))
+    renderer = (
+        None
+        if floor is None
+        else component_in_children(
+            graph, floor, lambda t: _go(graph, t) in rendered, lambda t: active_in_hierarchy(graph, t, overrides)
+        )
+    )
     shown = {**overrides, root_go: True}
     nodes, mats = glb_order(room.drawn_meshes(mf_by_go, mr_by_go, graph, lambda p: None))
     rows = []
@@ -555,29 +657,55 @@ def background(cat, key: str, situation_name: str, ex: Exporter) -> dict:
     volume = None
     if volumes:
         o, tf = volumes[0]
-        volume = {"path": graph.path(tf), "active": active_in_hierarchy(graph, tf, shown),
-                  **volume_record(ex.component(o), graph.go[_go(graph, tf)]["m_Layer"])}
+        volume = {
+            "path": graph.path(tf),
+            "active": active_in_hierarchy(graph, tf, shown),
+            **volume_record(ex.component(o), graph.go[_go(graph, tf)]["m_Layer"]),
+        }
     t = graph.tf[root]
     return {
-        "roomRoot": {"path": graph.path(root), "localPosition": t["m_LocalPosition"],
-                     "localRotation": t["m_LocalRotation"], "localScale": t["m_LocalScale"]},
-        "roomNodes": [{"path": graph.path(tf), "placed": under(graph, tf, root),
-                       "active": under(graph, tf, root) and active_in_hierarchy(graph, tf, shown),
-                       "renderQueue": FLOOR_QUEUE if tf == renderer else None} for tf, _ in nodes],
+        "roomRoot": {
+            "path": graph.path(root),
+            "localPosition": t["m_LocalPosition"],
+            "localRotation": t["m_LocalRotation"],
+            "localScale": t["m_LocalScale"],
+        },
+        "roomNodes": [
+            {
+                "path": graph.path(tf),
+                "placed": under(graph, tf, root),
+                "active": under(graph, tf, root) and active_in_hierarchy(graph, tf, shown),
+                "renderQueue": FLOOR_QUEUE if tf == renderer else None,
+            }
+            for tf, _ in nodes
+        ],
         "roomMaterials": [room_material(mat, tt, name, tex_index) for mat, tt, name, _ in rows],
-        "situation": {"name": prep["name"], "matched": prep["matched"],
-                      "activate": [graph.path(x) for x in prep["activate"]],
-                      "hide": [graph.path(graph.tf_of_go[g]) if g in graph.tf_of_go else None for g in prep["hide"]]},
-        "floor": {"object": graph.path(floor) if floor is not None else None,
-                  "renderer": graph.path(renderer) if renderer is not None else None, "renderQueue": FLOOR_QUEUE},
+        "situation": {
+            "name": prep["name"],
+            "matched": prep["matched"],
+            "activate": [graph.path(x) for x in prep["activate"]],
+            "hide": [graph.path(graph.tf_of_go[g]) if g in graph.tf_of_go else None for g in prep["hide"]],
+        },
+        "floor": {
+            "object": graph.path(floor) if floor is not None else None,
+            "renderer": graph.path(renderer) if renderer is not None else None,
+            "renderQueue": FLOOR_QUEUE,
+        },
         "volume": volume,
-        "lights": [{"prefab": "background", **r} for r in lighting_components(
-            env, graph, root, lambda tf: active_in_hierarchy(graph, tf, shown))],
-        "shaders": {name: sh for _, _, name, sh in reversed(rows)},       # the first material's object
-        "check": {"nodes": [n for _, n in nodes], "textures": len(tex_index),
-                  "mirrored": sum(1 for tf, _ in nodes if under(graph, tf, root)
-                                  and np.linalg.det(graph.world(tf)[:3, :3]) < 0)},
+        "lights": [
+            {"prefab": "background", **r}
+            for r in lighting_components(env, graph, root, lambda tf: active_in_hierarchy(graph, tf, shown))
+        ],
+        "shaders": {name: sh for _, _, name, sh in reversed(rows)},  # the first material's object
+        "check": {
+            "nodes": [n for _, n in nodes],
+            "textures": len(tex_index),
+            "mirrored": sum(
+                1 for tf, _ in nodes if under(graph, tf, root) and np.linalg.det(graph.world(tf)[:3, :3]) < 0
+            ),
+        },
     }
+
 
 def spine_records(env, ex: Exporter) -> tuple[dict, list, dict]:
     """The Spine data of a situation prefab's bundle closure (loaded as spot.extract loads it): the material of
@@ -616,13 +744,18 @@ def spine_records(env, ex: Exporter) -> tuple[dict, list, dict]:
                     out[page] = rec and rec["material"]
             pages_of[sda.path_id] = out
         return pages_of[sda.path_id]
+
     for o in by_cls.get("SkeletonDataAsset", []):
         pages(o)
     chars = []
     for o in by_cls.get("SpotSpineCharacter", []):
         tt = o.read_typetree()
-        rec = {"path": graph.path(graph.tf_of_go[tt["m_GameObject"]["m_PathID"]]), "sortingOrder": None,
-               "sortingLayer": None, "pageMaterials": {}}
+        rec = {
+            "path": graph.path(graph.tf_of_go[tt["m_GameObject"]["m_PathID"]]),
+            "sortingOrder": None,
+            "sortingLayer": None,
+            "pageMaterials": {},
+        }
         anim = deref(o, tt["_animation"])
         if anim is not None:
             at = anim.read_typetree()
@@ -668,8 +801,12 @@ def lighting_components(env, graph, root_tf: int, active) -> list[dict]:
         tf = graph.tf_of_go.get(tt["m_GameObject"]["m_PathID"])
         if tf is None or not under(graph, tf, root_tf):
             continue
-        rec = {"path": graph.path(tf), "type": o.type.name, "m_Enabled": int(tt.get("m_Enabled", 1)),
-               "active": bool(active(tf))}
+        rec = {
+            "path": graph.path(tf),
+            "type": o.type.name,
+            "m_Enabled": int(tt.get("m_Enabled", 1)),
+            "active": bool(active(tf)),
+        }
         if o.type.name == "Light":
             rec["m_Type"] = tt.get("m_Type")
         out.append(rec)
@@ -697,11 +834,23 @@ def scene_root(ex: Exporter, key: str | None) -> dict:
     c = roots[0][1]
     obj, cam = advui._ref_path(c.get("_objRoot")), advui._ref_path(c.get("_sceneCamera"))
     out["objRoot"] = {"path": obj, **world_trs(nodes, obj)} if obj else None
-    out["lights"] = [{"path": n["path"], "type": x["type"], "active": _active_path(nodes, n["path"]),
-                      **{k: _plain(v) for k, v in x.items() if k != "type"}}
-                     for n in nodes for x in n["components"] if x["type"] in LIGHTING_TYPES]
-    out["volumes"] = [{"path": n["path"], **volume_record(x, n["layer"])}
-                      for n in nodes for x in n["components"] if x.get("class") == "Volume"]
+    out["lights"] = [
+        {
+            "path": n["path"],
+            "type": x["type"],
+            "active": _active_path(nodes, n["path"]),
+            **{k: _plain(v) for k, v in x.items() if k != "type"},
+        }
+        for n in nodes
+        for x in n["components"]
+        if x["type"] in LIGHTING_TYPES
+    ]
+    out["volumes"] = [
+        {"path": n["path"], **volume_record(x, n["layer"])}
+        for n in nodes
+        for x in n["components"]
+        if x.get("class") == "Volume"
+    ]
     out["sceneCamera"] = advui._camera(nodes, cam) if cam else None
     return out
 
@@ -723,9 +872,15 @@ def home_host(cat, master_dir, player, host: dict, hdir: Path, keys: dict) -> di
     sit_go = container_go(sit_env, cat._entry(sit_key)["internal_id"])
     sit_name = sit_go.read_typetree()["m_Name"]
     sit_graph = SceneGraph(sit_env)
-    sit_lights = [{"prefab": "situation", **r} for r in lighting_components(
-        sit_env, sit_graph, sit_graph.tf_of_go[sit_go.path_id],
-        lambda tf: active_in_hierarchy(sit_graph, tf, {sit_go.path_id: True}))]
+    sit_lights = [
+        {"prefab": "situation", **r}
+        for r in lighting_components(
+            sit_env,
+            sit_graph,
+            sit_graph.tf_of_go[sit_go.path_id],
+            lambda tf: active_in_hierarchy(sit_graph, tf, {sit_go.path_id: True}),
+        )
+    ]
     bg = background(cat, bg_key, sit_name + CLONE, ex)
     check_room(bg_key, glb_json(sdir / "room.glb"), room_doc, bg)
     spine_mats, spine_chars, spine_shaders = spine_records(sit_env, ex)
@@ -739,21 +894,38 @@ def home_host(cat, master_dir, player, host: dict, hdir: Path, keys: dict) -> di
     for name, o in [*spine_shaders.items(), (blur["shader"], blur_obj[0])]:
         needed.setdefault(name, o)
     index, summary = dump_gles3(needed, hdir / "shaders")
-    keywords = {"room": [gles3_keywords(index, m["shader"], m["keywords"], f"room material {m['name']}")
-                         for m in bg["roomMaterials"]],
-                "spine": {k: gles3_keywords(index, m["shader"]["shader"], m["keywords"], f"Spine material {k}")
-                          for k, m in spine_mats.items()}}
+    keywords = {
+        "room": [
+            gles3_keywords(index, m["shader"], m["keywords"], f"room material {m['name']}") for m in bg["roomMaterials"]
+        ],
+        "spine": {
+            k: gles3_keywords(index, m["shader"]["shader"], m["keywords"], f"Spine material {k}")
+            for k, m in spine_mats.items()
+        },
+    }
     gles3_keywords(index, blur["shader"], [], "the blur pass")
-    return {"spotId": host["spotId"], "talk": host["talk"], "characterId": host["characterId"],
-            "titleTextId": row.get("_advNameTextId") if host["talk"] == "area" else None,
-            "spot": f"{HOST_DIR}/spot/spot.json", "room": f"{HOST_DIR}/spot/room.glb",
-            "roomRoot": bg["roomRoot"], "roomNodes": bg["roomNodes"], "roomMaterials": bg["roomMaterials"],
-            "situation": bg["situation"], "floor": bg["floor"], "sceneRoot": scene_root(ex, keys.get("spotScene")),
-            "volume": bg["volume"], "lights": bg["lights"] + sit_lights,
-            "spineMaterials": spine_mats, "spineCharacters": spine_chars,
-            "shaders": {"index": f"{HOST_DIR}/shaders/shaders.json", "names": summary["names"]},
-            "materialKeywords": keywords, "blur": blur,
-            "ambient": ambient_record(doc["situationSettings"], master_dir)}
+    return {
+        "spotId": host["spotId"],
+        "talk": host["talk"],
+        "characterId": host["characterId"],
+        "titleTextId": row.get("_advNameTextId") if host["talk"] == "area" else None,
+        "spot": f"{HOST_DIR}/spot/spot.json",
+        "room": f"{HOST_DIR}/spot/room.glb",
+        "roomRoot": bg["roomRoot"],
+        "roomNodes": bg["roomNodes"],
+        "roomMaterials": bg["roomMaterials"],
+        "situation": bg["situation"],
+        "floor": bg["floor"],
+        "sceneRoot": scene_root(ex, keys.get("spotScene")),
+        "volume": bg["volume"],
+        "lights": bg["lights"] + sit_lights,
+        "spineMaterials": spine_mats,
+        "spineCharacters": spine_chars,
+        "shaders": {"index": f"{HOST_DIR}/shaders/shaders.json", "names": summary["names"]},
+        "materialKeywords": keywords,
+        "blur": blur,
+        "ambient": ambient_record(doc["situationSettings"], master_dir),
+    }
 
 
 def home_ui(ui: UiDoc, keys: dict) -> tuple[str, dict, list]:
@@ -801,20 +973,35 @@ def afterlive_ui(ui: UiDoc, keys: dict) -> tuple[str, dict, list, dict]:
     nodes = ui.prefab(keys["resultWidget"])
     rw = advui._component(nodes[0], ("UILiveResultWidget",))
     overlay = advui._ref_path(rw["_advSimpleContents"])
-    view = [(n, c) for n in nodes for c in n["components"] if c.get("class") == "UISoloLiveMusicResultView"
-            and overlay.startswith(n["path"] + "/")]
+    view = [
+        (n, c)
+        for n in nodes
+        for c in n["components"]
+        if c.get("class") == "UISoloLiveMusicResultView" and overlay.startswith(n["path"] + "/")
+    ]
     if len(view) != 1:
         raise RuntimeError(f"{overlay}: {len(view)} UISoloLiveMusicResultView ancestors")
-    seqs = [advui._ref_path(bw["_inAnimation"]), advui._ref_path(rw["_inAnimation"]),
-            advui._ref_path(view[0][1]["_inAnimation"])]
+    seqs = [
+        advui._ref_path(bw["_inAnimation"]),
+        advui._ref_path(rw["_inAnimation"]),
+        advui._ref_path(view[0][1]["_inAnimation"]),
+    ]
     ui.add(keys["resultWidget"], nodes, [overlay, *seqs[1:]], _call_targets(nodes, seqs[1:]))
     parts = overlay.split("/")
-    reward = next(("/".join(parts[:i + 1]) for i in range(len(parts) - 2, 0, -1) if parts[i] == REWARD_PANEL), None)
+    reward = next(("/".join(parts[: i + 1]) for i in range(len(parts) - 2, 0, -1) if parts[i] == REWARD_PANEL), None)
     if reward is None:
         raise RuntimeError(f"{overlay}: no {REWARD_PANEL} ancestor")
-    return overlay, layout_root(nodes, overlay), seqs, {
-        "backgroundNode": bg_path, "backgroundSprite": sprite["name"], "rewardPanel": reward,
-        "substitutes": list(SUBSTITUTES)}
+    return (
+        overlay,
+        layout_root(nodes, overlay),
+        seqs,
+        {
+            "backgroundNode": bg_path,
+            "backgroundSprite": sprite["name"],
+            "rewardPanel": reward,
+            "substitutes": list(SUBSTITUTES),
+        },
+    )
 
 
 # ---------------------------------------------------------------- background (SpotBackground, SpotSceneRoot)
@@ -904,6 +1091,7 @@ def glb_order(drawn, arrays_of=mesh_arrays) -> tuple[list, list]:
             index[key] = len(mats)
             mats.append(p)
         return index[key]
+
     for tf, mesh, pptrs in drawn:
         arrays = arrays_of(mesh)
         if arrays is None:
@@ -948,12 +1136,23 @@ def room_material(owner, tt: dict, shader_name: str, tex_index: dict) -> dict:
     keywords = tt.get("m_ValidKeywords")
     if keywords is None:
         keywords = (tt.get("m_ShaderKeywords") or "").split()
-    return {"name": tt["m_Name"], "shader": shader_name, "keywords": list(keywords),
-            "floats": dict(sp.get("m_Floats", [])), "ints": dict(sp.get("m_Ints", [])),
-            "colors": dict(sp.get("m_Colors", [])), "renderQueue": tt.get("m_CustomRenderQueue"),
-            "texEnvs": {k: {"texture": tex_index.get(_texture_key(owner, v["m_Texture"])),
-                            "scale": [v["m_Scale"]["x"], v["m_Scale"]["y"]],
-                            "offset": [v["m_Offset"]["x"], v["m_Offset"]["y"]]} for k, v in sp["m_TexEnvs"]}}
+    return {
+        "name": tt["m_Name"],
+        "shader": shader_name,
+        "keywords": list(keywords),
+        "floats": dict(sp.get("m_Floats", [])),
+        "ints": dict(sp.get("m_Ints", [])),
+        "colors": dict(sp.get("m_Colors", [])),
+        "renderQueue": tt.get("m_CustomRenderQueue"),
+        "texEnvs": {
+            k: {
+                "texture": tex_index.get(_texture_key(owner, v["m_Texture"])),
+                "scale": [v["m_Scale"]["x"], v["m_Scale"]["y"]],
+                "offset": [v["m_Offset"]["x"], v["m_Offset"]["y"]],
+            }
+            for k, v in sp["m_TexEnvs"]
+        },
+    }
 
 
 def glb_json(path) -> dict:
@@ -962,15 +1161,18 @@ def glb_json(path) -> dict:
     (n,) = struct.unpack_from("<I", data, 12)
     if data[:4] != b"glTF" or data[16:20] != b"JSON":
         raise RuntimeError(f"{path}: not a binary glTF file")
-    return json.loads(data[20:20 + n])
+    return json.loads(data[20 : 20 + n])
 
 
 def check_room(key: str, glb: dict, room_doc: dict, bg: dict) -> None:
     """room.extract_room's room.glb (its JSON chunk `glb`) and room.json (`room_doc`) have the nodes, materials and
     glTF textures of the background record `bg` (background), in its order."""
-    if ([n["name"] for n in glb["nodes"]] != bg["check"]["nodes"] or room_doc["meshCount"] != len(bg["roomNodes"])
-            or [m["name"] for m in glb.get("materials", [])] != [m["name"] for m in bg["roomMaterials"]]
-            or len(glb.get("textures", [])) != bg["check"]["textures"]):
+    if (
+        [n["name"] for n in glb["nodes"]] != bg["check"]["nodes"]
+        or room_doc["meshCount"] != len(bg["roomNodes"])
+        or [m["name"] for m in glb.get("materials", [])] != [m["name"] for m in bg["roomMaterials"]]
+        or len(glb.get("textures", [])) != bg["check"]["textures"]
+    ):
         raise RuntimeError(f"{key}: room.glb nodes / materials / textures differ from the background's order")
 
 
@@ -983,19 +1185,33 @@ def volume_record(comp: dict, layer: int) -> dict:
     for c in prof.get("components") or []:
         if not c:
             continue
-        over = {k: _plain(v["m_Value"]) for k, v in c.items()
-                if isinstance(v, dict) and "m_OverrideState" in v and v["m_OverrideState"]}
+        over = {
+            k: _plain(v["m_Value"])
+            for k, v in c.items()
+            if isinstance(v, dict) and "m_OverrideState" in v and v["m_OverrideState"]
+        }
         comps.append({"class": c.get("asset"), "active": bool(c.get("active", 1)), **over})
-    return {"enabled": bool(comp.get("m_Enabled", 1)), "isGlobal": bool(comp["m_IsGlobal"]), "weight": comp["weight"],
-            "priority": comp["priority"], "blendDistance": comp["blendDistance"], "layer": layer,
-            "profile": prof.get("name"), "components": comps}
+    return {
+        "enabled": bool(comp.get("m_Enabled", 1)),
+        "isGlobal": bool(comp["m_IsGlobal"]),
+        "weight": comp["weight"],
+        "priority": comp["priority"],
+        "blendDistance": comp["blendDistance"],
+        "layer": layer,
+        "profile": prof.get("name"),
+        "components": comps,
+    }
 
 
 def _qmul(a, b):
     ax, ay, az, aw = a
     bx, by, bz, bw = b
-    return (aw * bx + ax * bw + ay * bz - az * by, aw * by - ax * bz + ay * bw + az * bx,
-            aw * bz + ax * by - ay * bx + az * bw, aw * bw - ax * bx - ay * by - az * bz)
+    return (
+        aw * bx + ax * bw + ay * bz - az * by,
+        aw * by - ax * bz + ay * bw + az * bx,
+        aw * bz + ax * by - ay * bx + az * bw,
+        aw * bw - ax * bx - ay * by - az * bz,
+    )
 
 
 def _rotate(q, v):
@@ -1031,9 +1247,15 @@ def blur_record(graphics: dict) -> dict:
     if len(feats) != 1:
         raise RuntimeError(f"renderer {name}: {len(feats)} {BLUR_FEATURE}")
     f = feats[0]
-    return {"renderer": name, "active": bool(f["m_Active"]), "iterations": f["_blurIterations"],
-            "offset": f["_blurOffset"], "downsample": f["_blurDownsample"], "blendRateMax": f["_blurBlendRateMax"],
-            "shader": f["_dualKawaseBlurShader"]}
+    return {
+        "renderer": name,
+        "active": bool(f["m_Active"]),
+        "iterations": f["_blurIterations"],
+        "offset": f["_blurOffset"],
+        "downsample": f["_blurDownsample"],
+        "blendRateMax": f["_blurBlendRateMax"],
+        "shader": f["_dualKawaseBlurShader"],
+    }
 
 
 def _rows(master_dir, name: str) -> dict:
@@ -1051,8 +1273,12 @@ def ambient_record(settings: dict, master_dir) -> dict | None:
         return None
     snd = _rows(master_dir, "MasterSound").get(sid) or {}
     sheet = _rows(master_dir, "MasterSoundCueSheet").get(snd.get("_soundCueSheetID")) or {}
-    return {"soundId": sid, "volume": settings.get("ambientSoundVolume"), "cueSheet": sheet.get("_cueSheetName"),
-            "cue": snd.get("_cueName")}
+    return {
+        "soundId": sid,
+        "volume": settings.get("ambientSoundVolume"),
+        "cueSheet": sheet.get("_cueSheetName"),
+        "cue": snd.get("_cueName"),
+    }
 
 
 # ---------------------------------------------------------------- per language: ui/simple/
@@ -1069,8 +1295,14 @@ def text_bindings(ui: UiDoc, lang: dict, mode: int) -> dict[str, dict]:
             raise RuntimeError(f"{path}: two text nodes")
         c = advui._component(n, advui.TMP_CLASSES)
         t = {k: c[k] for k in advui.TMP_FIELDS if k in c}
-        t.update({"class": c["class"], "enabled": c["m_Enabled"], "fontAsset": c["m_fontAsset"]["name"],
-                  "material": c["m_sharedMaterial"]["material"]})
+        t.update(
+            {
+                "class": c["class"],
+                "enabled": c["m_Enabled"],
+                "fontAsset": c["m_fontAsset"]["name"],
+                "material": c["m_sharedMaterial"]["material"],
+            }
+        )
         t.update(storyfonts.text_extras(path, n["components"]))
         t["localized"] = textstyle.localize_text(path, t["fontAsset"], t["material"], swap, lang, mode)
         out[path] = t
@@ -1089,8 +1321,19 @@ def story_text_materials(story_fonts: dict | None, lang: dict, mode: int) -> dic
     return out
 
 
-def open_fonts(ui: UiDoc, cat, player, episode: dict, story_ui: dict, language: str, font, master_dir,
-               texts: list[str], story_fonts: dict | None = None, font_of=storyfonts.no_font_file) -> dict:
+def open_fonts(
+    ui: UiDoc,
+    cat,
+    player,
+    episode: dict,
+    story_ui: dict,
+    language: str,
+    font,
+    master_dir,
+    texts: list[str],
+    story_fonts: dict | None = None,
+    font_of=storyfonts.no_font_file,
+) -> dict:
     """ui/simple/fonts.json and ui/simple/fonts/*.png from the font file `font` for the text nodes of `ui`, with the
     story UI's font logic (storyfonts.open_font_set: the fallback chains, whose other font files `font_of` gives,
     the missing glyph, the fallback materials): the texts are storyfonts.shown_texts over the story and its own
@@ -1101,27 +1344,65 @@ def open_fonts(ui: UiDoc, cat, player, episode: dict, story_ui: dict, language: 
     mode, field = languages.mode(language), languages.column(language)[1:]
     lang = textstyle.language_fonts(player)
     bindings = text_bindings(ui, lang, mode)
-    shown = (storyfonts.shown_texts(episode, story_ui, master_dir, field)
-             + storyfonts.shown_texts(NO_EPISODE, ui.doc, master_dir, field) + [s for s in texts if isinstance(s, str)])
-    fset = storyfonts.open_font_set(cat, player, ui.ex, language, font, list(bindings.values()), shown, ui.dir,
-                                    font_of, margin_materials=story_text_materials(story_fonts, lang, mode))
+    shown = (
+        storyfonts.shown_texts(episode, story_ui, master_dir, field)
+        + storyfonts.shown_texts(NO_EPISODE, ui.doc, master_dir, field)
+        + [s for s in texts if isinstance(s, str)]
+    )
+    fset = storyfonts.open_font_set(
+        cat,
+        player,
+        ui.ex,
+        language,
+        font,
+        list(bindings.values()),
+        shown,
+        ui.dir,
+        font_of,
+        margin_materials=story_text_materials(story_fonts, lang, mode),
+    )
     materials = fset["materials"]
     keywords = storyfonts.text_shaders(ui.ex, ui.dir, materials)
     chars = {ord(ch) for s in shown for ch in s}
     coverage = {"characters": len(chars), "missing": [chr(u) for u in sorted(fset["missing"])]}
     if fset["substituted"]:
         coverage["missingGlyph"] = [chr(u) for u in sorted(fset["substituted"])]
-    doc = {"format": storyfonts.FONTS_FORMAT, "language": language, "source": "open", "fonts": fset["fonts"],
-           "textures": fset["textures"], "materials": materials, "materialKeywords": keywords, "texts": bindings,
-           "coverage": coverage, "lineBreaking": storyfonts.line_breaking(player)}
+    doc = {
+        "format": storyfonts.FONTS_FORMAT,
+        "language": language,
+        "source": "open",
+        "fonts": fset["fonts"],
+        "textures": fset["textures"],
+        "materials": materials,
+        "materialKeywords": keywords,
+        "texts": bindings,
+        "coverage": coverage,
+        "lineBreaking": storyfonts.line_breaking(player),
+    }
     (ui.dir / storyfonts.FONTS_DOC).write_bytes(
-        dumps(doc, ensure_ascii=False, indent=1, sort_keys=True).encode("utf-8") + b"\n")
-    return {"fonts": sorted(fset["fonts"]), "characters": len(chars), "missing": len(fset["missing"]),
-            "pages": len(fset["textures"])}
+        dumps(doc, ensure_ascii=False, indent=1, sort_keys=True).encode("utf-8") + b"\n"
+    )
+    return {
+        "fonts": sorted(fset["fonts"]),
+        "characters": len(chars),
+        "missing": len(fset["missing"]),
+        "pages": len(fset["textures"]),
+    }
 
 
-def simple_ui(cat, master_dir, player, episode: dict, ldir: Path, language: str, keys: dict, host: dict,
-              title_id: str | None, font, font_of=storyfonts.no_font_file) -> dict:
+def simple_ui(
+    cat,
+    master_dir,
+    player,
+    episode: dict,
+    ldir: Path,
+    language: str,
+    keys: dict,
+    host: dict,
+    title_id: str | None,
+    font,
+    font_of=storyfonts.no_font_file,
+) -> dict:
     """<ldir>/ui/simple/: ui.json (UISimpleAdvTalkWindow, the window SimpleAdvPlayer.LoadInitialTalkWindow
     attaches; for an area talk UISystemMessageWidget, which SystemMessageManager.ShowMessageByTextIdAsync shows the
     spot's title with, and `texts.areaTitle`) and its open fonts."""
@@ -1139,15 +1420,30 @@ def simple_ui(cat, master_dir, player, episode: dict, ldir: Path, language: str,
         if row is None:
             raise KeyError(f"area talk title {title_id} not in MasterText")
         texts["areaTitle"] = row.get(field) or ""
-    ui.write(f"SimpleAdvPlayer talk window UI data, {language}", head={"language": advui.language_doc(language)},
-             tail={"texts": texts} if texts else None)
-    return open_fonts(ui, cat, player, episode, story_ui, language, font, master_dir, list(texts.values()),
-                      story_fonts, font_of)
+    ui.write(
+        f"SimpleAdvPlayer talk window UI data, {language}",
+        head={"language": advui.language_doc(language)},
+        tail={"texts": texts} if texts else None,
+    )
+    return open_fonts(
+        ui, cat, player, episode, story_ui, language, font, master_dir, list(texts.values()), story_fonts, font_of
+    )
 
 
 # ---------------------------------------------------------------- entry
-def build(cat, master_dir, player, episode: dict, story_dir, language_dirs: dict, groups: list, *,
-          fonts: str = "open", font_files: dict | None = None, font_of=None) -> dict | None:
+def build(
+    cat,
+    master_dir,
+    player,
+    episode: dict,
+    story_dir,
+    language_dirs: dict,
+    groups: list,
+    *,
+    fonts: str = "open",
+    font_files: dict | None = None,
+    font_of=None,
+) -> dict | None:
     """The host data of `episode` (episode.json of story.build) when it is an Overlay episode (master
     `_playbackMode` 1; else None and nothing written): <story_dir>/host/ (host.json, ui/, spot/, shaders/) and in
     each language directory of `language_dirs` {language: dir with the story's ui/ui.json} its ui/simple/.
@@ -1166,8 +1462,10 @@ def build(cat, master_dir, player, episode: dict, story_dir, language_dirs: dict
     if lost:
         raise ValueError(f"no font file for {lost}")
     if font_of is None:
+
         def font_of(code):
             return font_files[code] if code in font_files else storyfonts.no_font_file(code)
+
     keys = {k: emb_key(cat, ADDRESSES[k]) for k in ("cameraTarget", "talkWindow")}
     if host.get("talk") == "area":
         keys["systemMessage"] = emb_key(cat, ADDRESSES["systemMessage"])
@@ -1177,7 +1475,7 @@ def build(cat, master_dir, player, episode: dict, story_dir, language_dirs: dict
         except KeyError:
             if k != "spotScene":
                 raise
-            keys[k] = None                            # scene root: null / [] (scene_root)
+            keys[k] = None  # scene root: null / [] (scene_root)
     hdir = Path(story_dir) / HOST_DIR
     shutil.rmtree(hdir, ignore_errors=True)
     ui = UiDoc(cat, player, hdir / "ui")
@@ -1189,15 +1487,36 @@ def build(cat, master_dir, player, episode: dict, story_dir, language_dirs: dict
     else:
         overlay, layout, opened, afterlive = afterlive_ui(ui, keys)
     ui.write(f"host screen UI data of an Overlay story ({host['kind']}), no texts")
-    doc = {"format": FORMAT,
-           "about": "Host screen of an Overlay story (SimpleAdvPlayer): the slot capture camera, the SimpleAdv "
-                    "root and its layout, the host UI and the home spot or live result screen it is shown over",
-           "advId": episode.get("advId"), "kind": host["kind"], "group": host["group"], "keys": keys,
-           "cameraTarget": cam, "overlayRoot": overlay, "layoutRoot": layout, "openedSequences": opened,
-           "ui": HOST_UI_DOC, "home": home, "afterlive": afterlive}
+    doc = {
+        "format": FORMAT,
+        "about": "Host screen of an Overlay story (SimpleAdvPlayer): the slot capture camera, the SimpleAdv "
+        "root and its layout, the host UI and the home spot or live result screen it is shown over",
+        "advId": episode.get("advId"),
+        "kind": host["kind"],
+        "group": host["group"],
+        "keys": keys,
+        "cameraTarget": cam,
+        "overlayRoot": overlay,
+        "layoutRoot": layout,
+        "openedSequences": opened,
+        "ui": HOST_UI_DOC,
+        "home": home,
+        "afterlive": afterlive,
+    }
     write_json(hdir / "host.json", doc)
     for language, ldir in language_dirs.items():
         shutil.rmtree(Path(ldir) / "ui" / SIMPLE_DIR, ignore_errors=True)
-        simple_ui(cat, master_dir, player, episode, Path(ldir), language, keys, host,
-                  (home or {}).get("titleTextId"), font_files[language], font_of)
+        simple_ui(
+            cat,
+            master_dir,
+            player,
+            episode,
+            Path(ldir),
+            language,
+            keys,
+            host,
+            (home or {}).get("titleTextId"),
+            font_files[language],
+            font_of,
+        )
     return {"kind": host["kind"], "doc": HOST_DOC, "ui": SIMPLE_DOC}

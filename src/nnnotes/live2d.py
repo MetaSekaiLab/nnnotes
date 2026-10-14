@@ -30,6 +30,7 @@ texture_NN naming). The texture each drawable is actually drawn with is its
 CubismRenderer._mainTexture in prefab.json, keyed by CubismDrawable._unmanagedIndex
 (the Cubism Core drawable index).
 """
+
 from __future__ import annotations
 
 import json
@@ -58,8 +59,7 @@ def moc3_canvas(moc: bytes) -> dict:
         raise ValueError("not a moc3")
     canvas_off = struct.unpack_from("<I", moc, 0x40 + 4)[0]
     ppu, ox, oy, w, h = struct.unpack_from("<5f", moc, canvas_off)
-    return {"pixelsPerUnit": ppu, "originX": ox, "originY": oy,
-            "width": w, "height": h, "mocVersion": moc[4]}
+    return {"pixelsPerUnit": ppu, "originX": ox, "originY": oy, "width": w, "height": h, "mocVersion": moc[4]}
 
 
 def _vec2(v):
@@ -72,37 +72,61 @@ def physics_json(rig: dict, names: list[str]) -> dict:
     for i, sr in enumerate(rig["SubRigs"]):
         sid = f"PhysicsSetting{i + 1}"
         dictionary.append({"Id": sid, "Name": sr["Name"]})
-        inputs = [{
-            "Source": {"Target": "Parameter", "Id": x["SourceId"]},
-            "Weight": x["Weight"], "Type": PHYS_TYPE[x["SourceComponent"]],
-            "Reflect": bool(x["IsInverted"]),
-        } for x in sr["Input"]]
-        outputs = [{
-            "Destination": {"Target": "Parameter", "Id": x["DestinationId"]},
-            "VertexIndex": x["ParticleIndex"], "Scale": x["AngleScale"],
-            "Weight": x["Weight"], "Type": PHYS_TYPE[x["SourceComponent"]],
-            "Reflect": bool(x["IsInverted"]),
-        } for x in sr["Output"]]
-        verts = [{
-            "Position": _vec2(p["InitialPosition"]), "Mobility": p["Mobility"],
-            "Delay": p["Delay"], "Acceleration": p["Acceleration"], "Radius": p["Radius"],
-        } for p in sr["Particles"]]
+        inputs = [
+            {
+                "Source": {"Target": "Parameter", "Id": x["SourceId"]},
+                "Weight": x["Weight"],
+                "Type": PHYS_TYPE[x["SourceComponent"]],
+                "Reflect": bool(x["IsInverted"]),
+            }
+            for x in sr["Input"]
+        ]
+        outputs = [
+            {
+                "Destination": {"Target": "Parameter", "Id": x["DestinationId"]},
+                "VertexIndex": x["ParticleIndex"],
+                "Scale": x["AngleScale"],
+                "Weight": x["Weight"],
+                "Type": PHYS_TYPE[x["SourceComponent"]],
+                "Reflect": bool(x["IsInverted"]),
+            }
+            for x in sr["Output"]
+        ]
+        verts = [
+            {
+                "Position": _vec2(p["InitialPosition"]),
+                "Mobility": p["Mobility"],
+                "Delay": p["Delay"],
+                "Acceleration": p["Acceleration"],
+                "Radius": p["Radius"],
+            }
+            for p in sr["Particles"]
+        ]
         nz = sr["Normalization"]
-        settings.append({
-            "Id": sid, "Input": inputs, "Output": outputs, "Vertices": verts,
-            "Normalization": {
-                "Position": {k: nz["Position"][k] for k in ("Minimum", "Default", "Maximum")},
-                "Angle": {k: nz["Angle"][k] for k in ("Minimum", "Default", "Maximum")},
-            },
-        })
-        n_in += len(inputs); n_out += len(outputs); n_vtx += len(verts)
+        settings.append(
+            {
+                "Id": sid,
+                "Input": inputs,
+                "Output": outputs,
+                "Vertices": verts,
+                "Normalization": {
+                    "Position": {k: nz["Position"][k] for k in ("Minimum", "Default", "Maximum")},
+                    "Angle": {k: nz["Angle"][k] for k in ("Minimum", "Default", "Maximum")},
+                },
+            }
+        )
+        n_in += len(inputs)
+        n_out += len(outputs)
+        n_vtx += len(verts)
     meta = {
-        "PhysicsSettingCount": len(settings), "TotalInputCount": n_in,
-        "TotalOutputCount": n_out, "VertexCount": n_vtx,
+        "PhysicsSettingCount": len(settings),
+        "TotalInputCount": n_in,
+        "TotalOutputCount": n_out,
+        "VertexCount": n_vtx,
         "EffectiveForces": {"Gravity": _vec2(rig["Gravity"]), "Wind": _vec2(rig["Wind"])},
         "PhysicsDictionary": dictionary,
     }
-    if rig["Fps"] > 0:                       # 0 = unset in physics3 terms
+    if rig["Fps"] > 0:  # 0 = unset in physics3 terms
         meta["Fps"] = rig["Fps"]
     return {"Version": 3, "Meta": meta, "PhysicsSettings": settings}
 
@@ -112,8 +136,7 @@ def expression_json(tt: dict) -> dict:
         "Type": tt["Type"],
         "FadeInTime": tt["FadeInTime"],
         "FadeOutTime": tt["FadeOutTime"],
-        "Parameters": [{"Id": p["Id"], "Value": p["Value"], "Blend": EXP_BLEND[p["Blend"]]}
-                       for p in tt["Parameters"]],
+        "Parameters": [{"Id": p["Id"], "Value": p["Value"], "Blend": EXP_BLEND[p["Blend"]]} for p in tt["Parameters"]],
     }
 
 
@@ -137,6 +160,7 @@ class RuntimeExport:
     """What `export_runtime` wrote and read: `summary` (the result of `extract_runtime`), the Exporter it wrote with
     (its shaders, textures, ...), the loaded bundle environment, its scene graph and the MonoBehaviours by script
     class."""
+
     summary: dict
     exporter: Exporter
     env: object
@@ -162,8 +186,14 @@ def export_runtime(cat: Catalog, key: str, out_dir: Path) -> RuntimeExport:
     write_json(out_dir / f"{name}.prefab.json", prefab, indent=None)
     pages = sorted((o for o in env.objects if o.type.name == "Texture2D"), key=lambda o: o.read().m_Name)
     tex_files = [ex.texture(o)["texture"] for o in pages]
-    res = {"name": name, "moc3": f"{name}.moc3", "prefab": f"{name}.prefab.json",
-           "moc3Bytes": len(moc), "textures": tex_files, "nodes": len(prefab["nodes"])}
+    res = {
+        "name": name,
+        "moc3": f"{name}.moc3",
+        "prefab": f"{name}.prefab.json",
+        "moc3Bytes": len(moc),
+        "textures": tex_files,
+        "nodes": len(prefab["nodes"]),
+    }
     return RuntimeExport(res, ex, env, graph, by_cls)
 
 
@@ -181,8 +211,7 @@ def extract_model(cat: Catalog, key: str, out_dir: Path) -> dict:
     (out_dir / "motions").mkdir(parents=True, exist_ok=True)
 
     def owner_names(cls):
-        return sorted(graph.go[o.read_typetree()["m_GameObject"]["m_PathID"]]["m_Name"]
-                      for o in by_cls.get(cls, []))
+        return sorted(graph.go[o.read_typetree()["m_GameObject"]["m_PathID"]]["m_Name"] for o in by_cls.get(cls, []))
 
     # expressions
     exp_refs = []
@@ -195,8 +224,11 @@ def extract_model(cat: Catalog, key: str, out_dir: Path) -> dict:
     exp_refs.sort(key=lambda e: e["Name"])
 
     # physics (none without a CubismPhysicsController)
-    rig = (_only(by_cls, "CubismPhysicsController", name)["_rig"] if by_cls.get("CubismPhysicsController")
-           else {"SubRigs": []})
+    rig = (
+        _only(by_cls, "CubismPhysicsController", name)["_rig"]
+        if by_cls.get("CubismPhysicsController")
+        else {"SubRigs": []}
+    )
     phys_file = None
     if rig["SubRigs"]:
         phys_file = f"{name}.physics3.json"
@@ -219,6 +251,7 @@ def extract_model(cat: Catalog, key: str, out_dir: Path) -> dict:
             if model_fades[m][k] >= 0:
                 e[k] = model_fades[m][k]
         return [e]
+
     fr["Motions"] = {m: motion_entry(m, f) for m, f in sorted(motions.items())}
     groups = []
     eye_ids = owner_names("CubismEyeBlinkParameter")
@@ -230,6 +263,12 @@ def extract_model(cat: Catalog, key: str, out_dir: Path) -> dict:
     model3 = {"Version": 3, "FileReferences": fr, "Groups": groups}
     write_json(out_dir / f"{name}.model3.json", model3)
 
-    return {**res, "model3": f"{name}.model3.json", "expressions": len(exp_refs),
-            "motions": len(motions), "physicsSettings": len(rig["SubRigs"]),
-            "eyeBlink": eye_ids, "lipSync": mouth_ids}
+    return {
+        **res,
+        "model3": f"{name}.model3.json",
+        "expressions": len(exp_refs),
+        "motions": len(motions),
+        "physicsSettings": len(rig["SubRigs"]),
+        "eyeBlink": eye_ids,
+        "lipSync": mouth_ids,
+    }

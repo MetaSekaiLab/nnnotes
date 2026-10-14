@@ -11,6 +11,7 @@ Looping is not a property of the data here: every imported AnimationClip is
 flagged loopTime, and the game's motion controller decides looping per call.
 Meta.Loop is therefore written false and left to the player.
 """
+
 from __future__ import annotations
 
 import math
@@ -19,7 +20,7 @@ from pathlib import Path
 from .jsonio import write_json
 
 SEG_LINEAR, SEG_BEZIER, SEG_STEPPED = 0, 1, 2
-WEIGHT_IN, WEIGHT_OUT = 1, 2          # UnityEngine.WeightedMode flags
+WEIGHT_IN, WEIGHT_OUT = 1, 2  # UnityEngine.WeightedMode flags
 
 
 def _segments(kf: list[dict]):
@@ -42,17 +43,25 @@ def _segments(kf: list[dict]):
         w_in = float(k1["inWeight"]) if int(k1["weightedMode"]) & WEIGHT_IN else 1.0 / 3.0
         if w_out != 1.0 / 3.0 or w_in != 1.0 / 3.0:
             restricted = False
-        segs += [SEG_BEZIER,
-                 a_t + w_out * dt, a_v + out0 * w_out * dt,
-                 b_t - w_in * dt, b_v - in1 * w_in * dt,
-                 b_t, b_v]
+        segs += [
+            SEG_BEZIER,
+            a_t + w_out * dt,
+            a_v + out0 * w_out * dt,
+            b_t - w_in * dt,
+            b_v - in1 * w_in * dt,
+            b_t,
+            b_v,
+        ]
         npts += 3
     return segs, nseg, npts, restricted
 
 
 def _clip_rates(env) -> dict[str, float]:
-    return {o.read_typetree()["m_Name"]: float(o.read_typetree()["m_SampleRate"])
-            for o in env.objects if o.type.name == "AnimationClip"}
+    return {
+        o.read_typetree()["m_Name"]: float(o.read_typetree()["m_SampleRate"])
+        for o in env.objects
+        if o.type.name == "AnimationClip"
+    }
 
 
 def convert_fade(fade: dict, fps: float | None) -> dict:
@@ -125,7 +134,6 @@ def extract_motions(env, out_dir: Path) -> dict[str, str]:
         fn = f"{name}.motion3.json"
         write_json(out_dir / fn, convert_fade(tt, rates.get(name)), indent=None)
         manifest[name] = fn
-        model_fades[name] = {"FadeInTime": tt["ModelFadeInTime"],
-                             "FadeOutTime": tt["ModelFadeOutTime"]}
+        model_fades[name] = {"FadeInTime": tt["ModelFadeInTime"], "FadeOutTime": tt["ModelFadeOutTime"]}
     write_json(out_dir / "_fades.json", model_fades, indent=None, ensure_ascii=True)
     return manifest

@@ -9,6 +9,7 @@ rows, MasterSound columns) and `-SoundCueSheet` (cue sheet rows, MasterSoundCueS
 them what the voices index uses: the commands with voice ids and the rows those name, so an index of every episode
 holds these parts only. Nothing here imports UnityPy before an episode is loaded from the catalog.
 """
+
 from __future__ import annotations
 
 import json
@@ -83,6 +84,7 @@ def load_episode(cat, keys: dict) -> dict:
     """The parts of one episode read from the catalog (`keys`: {part: catalog key}, PARTS; a key the catalog lacks
     gives no part), as `episode` takes them."""
     from . import unity
+
     got: dict = {}
     for part, key in keys.items():
         if not cat.has(key):

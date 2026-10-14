@@ -64,19 +64,44 @@ def test_resolve():
 
 
 def test_init_with_values(tmp_path, capsys):
-    code, out, err = run(["config", "init", "--set", f"bundle.key={KEY}", "--set", "servers.en.cdn=https://cdn.test/",
-                          "--set", "servers.en.languages=en, ja", "--set", "catalog.region=en",
-                          "--set", "paths.cache=cache"], capsys)
+    code, out, err = run(
+        [
+            "config",
+            "init",
+            "--set",
+            f"bundle.key={KEY}",
+            "--set",
+            "servers.en.cdn=https://cdn.test/",
+            "--set",
+            "servers.en.languages=en, ja",
+            "--set",
+            "catalog.region=en",
+            "--set",
+            "paths.cache=cache",
+        ],
+        capsys,
+    )
     assert code == 0 and KEY not in out + err
     f = tmp_path / "nnnotes.toml"
     assert out.strip() == str(f)
     data = tomllib.loads(f.read_text(encoding="utf-8"))
     assert data["bundle"]["key"] == KEY and data["catalog"]["region"] == "en"
-    assert data["servers"] == {"en": {"name": "", "cdn": "https://cdn.test/", "api": "", "languages": ["en", "ja"],
-                                      "master": "", "provider": "", "client_version": "", "apk": "",
-                                      "catalog": "", "catalog_version": ""}}  # the example region table renamed
+    assert data["servers"] == {
+        "en": {
+            "name": "",
+            "cdn": "https://cdn.test/",
+            "api": "",
+            "languages": ["en", "ja"],
+            "master": "",
+            "provider": "",
+            "client_version": "",
+            "apk": "",
+            "catalog": "",
+            "catalog_version": "",
+        }
+    }  # the example region table renamed
     assert data["paths"]["cache"] == str((tmp_path / "cache").absolute())
-    assert "# CDN base URL of the region" in f.read_text(encoding="utf-8")         # the comments stay
+    assert "# CDN base URL of the region" in f.read_text(encoding="utf-8")  # the comments stay
     if os.name != "nt":
         assert f.stat().st_mode & 0o777 == 0o600
     code, _, err = run(["config", "init"], capsys)
@@ -86,7 +111,7 @@ def test_init_with_values(tmp_path, capsys):
 
 
 def test_init_asks_nothing_outside_a_terminal(tmp_path, capsys):
-    code, _, _ = run(["config", "init"], capsys)                        # pytest's stdin is not a terminal
+    code, _, _ = run(["config", "init"], capsys)  # pytest's stdin is not a terminal
     assert code == 0 and (tmp_path / "nnnotes.toml").read_bytes() == template()
 
 
@@ -98,7 +123,7 @@ def test_init_user_file(tmp_path, capsys):
     doc = json.loads(out)
     assert doc["schema"] == configfile.PATHS and doc["read"] == str(target.absolute())
     assert [f["state"] for f in doc["files"]] == ["not given", "not given", "not found", "read"]
-    run(["config", "init", "--no-input"], capsys)                          # ./nnnotes.toml comes first
+    run(["config", "init", "--no-input"], capsys)  # ./nnnotes.toml comes first
     code, _, err = run(["config", "init", "--user", "--no-input", "--force"], capsys)
     assert "the commands read" in err
     doc = json.loads(run(["config", "path", "--json"], capsys)[1])
@@ -117,12 +142,18 @@ def test_init_value_errors_name_the_setting_only(capsys):
 
 
 def test_prompt_asks_every_setting():
-    answers = iter([
-        "zz",                                               # bundle.key: invalid, asked again
-        KEY, "", MKEY, "",                                  # bundle.key, nonce_seed, master.key, master.iv
-        "tw,kr",                                            # regions
-        "", "zh-Hant",                                      # catalog.region (default tw), language
-    ])
+    answers = iter(
+        [
+            "zz",  # bundle.key: invalid, asked again
+            KEY,
+            "",
+            MKEY,
+            "",  # bundle.key, nonce_seed, master.key, master.iv
+            "tw,kr",  # regions
+            "",
+            "zh-Hant",  # catalog.region (default tw), language
+        ]
+    )
     secret_prompts, prompts = [], []
 
     def ask(p):
@@ -155,7 +186,7 @@ def test_set_and_unset_edit_in_place(tmp_path, capsys, monkeypatch):
     run(["config", "set", "servers.kr.languages", "ko"], capsys)
     after = f.read_text(encoding="utf-8").splitlines()
     changed = [line for line in before if line not in after]
-    assert changed == ['key = ""', 'key = ""']                          # only the two values' lines
+    assert changed == ['key = ""', 'key = ""']  # only the two values' lines
     data = tomllib.loads("\n".join(after))
     assert data["bundle"]["key"] == KEY and data["master"]["key"] == MKEY
     assert data["servers"]["kr"]["languages"] == ["ko"] and "tw" in data["servers"]
@@ -180,7 +211,7 @@ def test_edit_refuses_what_it_cannot_edit():
         configfile.edit('[paths]\nfonts.ja = "a"\n', [("paths.fonts", "ja", "b")], "f")
 
 
-@pytest.mark.parametrize("provider", ['"jpp"', '42'])
+@pytest.mark.parametrize("provider", ['"jpp"', "42"])
 def test_check_reports_invalid_provider_as_json(tmp_path, capsys, provider):
     conf = tmp_path / "nnnotes.toml"
     conf.write_text(f'[catalog]\nregion="jp"\n[servers.jp]\nprovider={provider}\n', encoding="utf-8")
@@ -207,7 +238,9 @@ def test_check_does_not_turn_jp_language_defaults_into_flags(tmp_path, capsys):
 def test_check_reports_states_not_values(tmp_path, capsys, monkeypatch):
     (tmp_path / "nnnotes.toml").write_text(
         f'[bundle]\nkey = "{KEY}"\n[master]\niv = "00"\n[catalog]\nregion = "xx"\n[servers.tw]\ncdn = "ftp://h"\n'
-        f'[paths]\napk = "missing.apk"\ncache = "c"\n[typo]\nkey = "1"\n', encoding="utf-8")
+        f'[paths]\napk = "missing.apk"\ncache = "c"\n[typo]\nkey = "1"\n',
+        encoding="utf-8",
+    )
     monkeypatch.setenv("NNNOTES_BUNDLE_NONCE_SEED", "ab")
     monkeypatch.setenv("NNNOTES_BUNDLE_KY", "ab")
     code, out, _ = run(["config", "check", "--json"], capsys)

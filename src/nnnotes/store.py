@@ -18,6 +18,7 @@ The files of cas/ are read-only (a layout may hard-link them: an edit of such a 
 store).
 Only costs/, runs/ and inputs/ hold non-deterministic data; cas/ and ac/ are a function of the tasks run.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -120,7 +121,7 @@ def write_doc(dst, doc) -> str:
                 for b in contract.encode_chunks(doc):
                     h.update(b)
                     f.write(b)
-            except ValueError:                   # a non-finite number: encode() writes those
+            except ValueError:  # a non-finite number: encode() writes those
                 f.seek(0)
                 f.truncate()
                 data = contract.encode(doc)
@@ -165,13 +166,13 @@ class Store:
         self.cache = Path(cache) if cache else None
         self.fetch = fetch
         self.written = self.reused = 0
-        self._have: set[str] = set()                # content ids this store object wrote or found
-        self._memo: dict | None = None              # (path, size, mtime_ns) -> (sha256, size)
-        self._names: dict[str, dict] = {}           # kind -> {name: (sha256, size)}
-        self._docs: dict[str, object] = {}          # the documents document() decoded last
+        self._have: set[str] = set()  # content ids this store object wrote or found
+        self._memo: dict | None = None  # (path, size, mtime_ns) -> (sha256, size)
+        self._names: dict[str, dict] = {}  # kind -> {name: (sha256, size)}
+        self._docs: dict[str, object] = {}  # the documents document() decoded last
         self._lock = threading.Lock()
 
-    def __getstate__(self):                         # a store crosses to worker processes as its settings
+    def __getstate__(self):  # a store crosses to worker processes as its settings
         return {"root": self.root, "cache": self.cache, "fetch": self.fetch}
 
     def __setstate__(self, state):
@@ -255,7 +256,7 @@ class Store:
     def add_chunks(self, chunks, ext: str, media: str | None = None) -> dict:
         """Store the bytes of a sequence of byte strings, written and hashed as they come (never held whole); the
         content part of their artifact record, as add() gives it for the joined bytes."""
-        tmp = temp_path(self.root / "cas" / "sha256" / "chunks")         # the content id is known at the end
+        tmp = temp_path(self.root / "cas" / "sha256" / "chunks")  # the content id is known at the end
         tmp.parent.mkdir(parents=True, exist_ok=True)
         h, size = hashlib.sha256(), 0
         try:
@@ -371,8 +372,14 @@ class Store:
         if hit is None:
             with open(p, "rb") as f:
                 hit = (hashlib.file_digest(f, "sha256").hexdigest(), st.st_size)
-        line = {"name": name, "sha256": hit[0], "size": hit[1], "path": str(p), "fileSize": st.st_size,
-                "mtimeNs": st.st_mtime_ns}
+        line = {
+            "name": name,
+            "sha256": hit[0],
+            "size": hit[1],
+            "path": str(p),
+            "fileSize": st.st_size,
+            "mtimeNs": st.st_mtime_ns,
+        }
         _append(self.root / "inputs" / f"{kind}.jsonl", json.dumps(line, ensure_ascii=False, sort_keys=True) + "\n")
         with self._lock:
             self._memo[memo_key] = hit
@@ -431,9 +438,10 @@ class Store:
         name is its key, whose key is the key of its parts and whose artifacts' bytes are stored with their size.
         -> {"contents", "results", "problems": [{path, problem}] (the first `limit`, sorted), "problemCount"}."""
         from concurrent.futures import ThreadPoolExecutor
+
         problems = []
         top = self.root / "cas" / "sha256"
-        cas = sorted([*top.glob("*/*"), *top.glob("*.part")])       # add_chunks writes its temporary file in top
+        cas = sorted([*top.glob("*/*"), *top.glob("*.part")])  # add_chunks writes its temporary file in top
 
         def content(p: Path):
             name = p.name
@@ -455,7 +463,7 @@ class Store:
             except (OSError, ValueError) as e:
                 problems.append((p, f"unreadable: {type(e).__name__}"))
                 continue
-            key = p.name[:-len(".json")]
+            key = p.name[: -len(".json")]
             if doc.get("schema") != contract.RESULT or doc.get("key") != key:
                 problems.append((p, "not the result of its key"))
                 continue
@@ -469,11 +477,20 @@ class Store:
                     except (OSError, ValueError):
                         sizes[c["sha256"]] = None
                 if sizes[c["sha256"]] != c["size"]:
-                    problems.append((p, f"artifact {a['id']}: bytes "
-                                        f"{'missing' if sizes[c['sha256']] is None else 'of another size'}"))
+                    problems.append(
+                        (
+                            p,
+                            f"artifact {a['id']}: bytes "
+                            f"{'missing' if sizes[c['sha256']] is None else 'of another size'}",
+                        )
+                    )
         rows = sorted({(p.relative_to(self.root).as_posix(), m) for p, m in problems})
-        return {"contents": len(cas), "results": len(results), "problemCount": len(rows),
-                "problems": [{"path": a, "problem": b} for a, b in rows[:limit]]}
+        return {
+            "contents": len(cas),
+            "results": len(results),
+            "problemCount": len(rows),
+            "problems": [{"path": a, "problem": b} for a, b in rows[:limit]],
+        }
 
     # ---------------------------------------------------------------- runs and costs
     def run_path(self, run_id: str) -> Path:

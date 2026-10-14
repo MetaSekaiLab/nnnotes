@@ -1,4 +1,5 @@
 """sniff: the magic-number table, JSON / text detection, the hint's limited role and the validation of short magics."""
+
 import gzip
 import io
 import json
@@ -79,8 +80,10 @@ def test_zip():
     assert sniff(buf.getvalue()) == Sniffed("zip", "zip", "application/zip")
 
 
-@pytest.mark.parametrize("text, ext", [('{"a": [1, 2]}', "json"), ("[1, 2, 3]\n", "json"),
-                                       ("﻿{\"k\": \"字\"}", "json"), ("  \n{\"a\": 1e999}", "json")])
+@pytest.mark.parametrize(
+    "text, ext",
+    [('{"a": [1, 2]}', "json"), ("[1, 2, 3]\n", "json"), ('﻿{"k": "字"}', "json"), ('  \n{"a": 1e999}', "json")],
+)
 def test_json(text, ext):
     s = sniff(text.encode("utf-8"))
     assert (s.format, s.ext, s.media_type) == ("json", ext, "application/json")
@@ -106,8 +109,17 @@ def test_magic_wins_over_the_hint_and_the_hint_picks_acf():
     assert sniff(b"@UTF" + b"\0" * 12, "Cri/x.acb.bytes").ext == "acb"
 
 
-@pytest.mark.parametrize("data", [b"\x00\x01\x00\x00garbage-garbage-garbage", b"true or false\n", b"OTTO\n",
-                                  b"\x1f\x8b\x00junk", b"MThd-not-midi", b"glTF but text"])
+@pytest.mark.parametrize(
+    "data",
+    [
+        b"\x00\x01\x00\x00garbage-garbage-garbage",
+        b"true or false\n",
+        b"OTTO\n",
+        b"\x1f\x8b\x00junk",
+        b"MThd-not-midi",
+        b"glTF but text",
+    ],
+)
 def test_short_magics_are_validated(data):
     assert sniff(data).format in ("binary", "text")
 
@@ -116,14 +128,14 @@ def test_binary_empty_and_control_characters():
     assert sniff(b"") == Sniffed("empty", "bin", "application/octet-stream")
     assert sniff(bytes(range(256))) == Sniffed("binary", "bin", "application/octet-stream")
     assert sniff(b"abc\x00def").format == "binary"
-    assert sniff(b"\xff\xfe\x00\x01").format == "binary"                 # not UTF-8
+    assert sniff(b"\xff\xfe\x00\x01").format == "binary"  # not UTF-8
     assert sniff(b"tab\tnewline\r\nform\x0c").format == "text"
 
 
 def test_spine_versions():
     assert spine_binary_version(spine4("4.2.11")) == "4.2.11"
     assert spine_binary_version(spine3("3.8.99")) == "3.8.99"
-    assert spine_binary_version(b"\0" * 8 + b"\x063.8.9") is None          # a 3.x version after an 8-byte hash
+    assert spine_binary_version(b"\0" * 8 + b"\x063.8.9") is None  # a 3.x version after an 8-byte hash
     assert spine_binary_version(b"\x05abcd\x05efgh") is None
 
 

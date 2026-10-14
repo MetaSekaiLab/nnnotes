@@ -95,8 +95,9 @@ def make_cdn(root):
 def make_apk(path):
     with zipfile.ZipFile(path, "w") as z:
         z.writestr("assets/aa/catalog.bin", synth.CatalogWriter().build(APK_ENTRIES))
-        z.writestr("assets/aa/Android/s_03.bundle", synth.encrypt_bundle(synth.fake_bundle("s_03.bundle"),
-                                                                           "s_03.bundle"))
+        z.writestr(
+            "assets/aa/Android/s_03.bundle", synth.encrypt_bundle(synth.fake_bundle("s_03.bundle"), "s_03.bundle")
+        )
     return path
 
 
@@ -160,6 +161,7 @@ def test_downloads_keep_one_connection_per_thread(monkeypatch):
     import http.server
     import threading
     from nnnotes import catalog
+
     for v in ("http_proxy", "HTTP_PROXY", "all_proxy", "ALL_PROXY"):
         monkeypatch.delenv(v, raising=False)
     monkeypatch.setattr(catalog.urllib.request, "getproxies", lambda: {})
@@ -194,12 +196,12 @@ def test_downloads_keep_one_connection_per_thread(monkeypatch):
     try:
         assert [catalog.download(f"{base}/{n}") for n in ("a", "b", "c")] == [f"/{n}".encode() * 1000 for n in "abc"]
         assert len(connections) == 1
-        assert catalog.download(f"{base}/moved") == b"/a" * 1000              # followed by urllib
+        assert catalog.download(f"{base}/moved") == b"/a" * 1000  # followed by urllib
         with pytest.raises(catalog.urllib.error.HTTPError):
             catalog.download(f"{base}/missing")
         n = len(connections)
-        assert catalog.download(f"{base}/d") == b"/d" * 1000 and len(connections) == n + 1   # (a 404 is not kept)
-        catalog._KEPT.conns[("http", f"127.0.0.1:{srv.server_port}")].sock.close()          # gone stale
+        assert catalog.download(f"{base}/d") == b"/d" * 1000 and len(connections) == n + 1  # (a 404 is not kept)
+        catalog._KEPT.conns[("http", f"127.0.0.1:{srv.server_port}")].sock.close()  # gone stale
         assert catalog.download(f"{base}/e") == b"/e" * 1000 and len(connections) == n + 2
     finally:
         srv.shutdown()

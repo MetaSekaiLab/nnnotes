@@ -33,6 +33,7 @@ those inputs: "master:<Table>" (the decoded table files), "rules" (the view's ru
 the artifact "<task id>#view". `derived` adds the layout paths of the objects for the `original` layout
 (views/<name>.json).
 """
+
 from __future__ import annotations
 
 import bisect
@@ -58,11 +59,16 @@ STATUSES = ("ok", "missing-key", "missing-sub", "not-applicable", "no-value")
 GAP_STATUSES = ("missing-key", "missing-sub")
 ANY = "any"
 OPS = {
-    "eq": lambda a, b: a == b, "ne": lambda a, b: a != b,
-    "lt": lambda a, b: a is not None and a < b, "le": lambda a, b: a is not None and a <= b,
-    "gt": lambda a, b: a is not None and a > b, "ge": lambda a, b: a is not None and a >= b,
-    "in": lambda a, b: a in b, "notin": lambda a, b: a not in b,
-    "empty": lambda a, b: _empty(a), "nonempty": lambda a, b: not _empty(a),
+    "eq": lambda a, b: a == b,
+    "ne": lambda a, b: a != b,
+    "lt": lambda a, b: a is not None and a < b,
+    "le": lambda a, b: a is not None and a <= b,
+    "gt": lambda a, b: a is not None and a > b,
+    "ge": lambda a, b: a is not None and a >= b,
+    "in": lambda a, b: a in b,
+    "notin": lambda a, b: a not in b,
+    "empty": lambda a, b: _empty(a),
+    "nonempty": lambda a, b: not _empty(a),
 }
 _SUB = re.compile(r"(?P<key>.*[^\]])\[(?P<sub>[^\[\]]+)\]")
 _NAME = re.compile(r"[a-z][a-z0-9_]*")
@@ -85,6 +91,7 @@ class Obj:
     """A census object under a catalog key: its object id (contract.object_id), Unity class, m_Name and, when known,
     its stable address (contract.stable_address: the same in another catalog version while the object id changes
     with its bundle's content)."""
+
     id: str
     cls: str
     name: str
@@ -198,8 +205,10 @@ class Recorder:
 
     def subset(self) -> dict:
         """{"keys": {key: objects or null}, "prefixes": {prefix: keys}}, sorted."""
-        return {"keys": {k: None if v is None else [o.to_json() for o in v] for k, v in sorted(self._keys.items())},
-                "prefixes": {p: v for p, v in sorted(self._prefixes.items())}}
+        return {
+            "keys": {k: None if v is None else [o.to_json() for o in v] for k, v in sorted(self._keys.items())},
+            "prefixes": {p: v for p, v in sorted(self._prefixes.items())},
+        }
 
 
 # ---------------------------------------------------------------- master tables
@@ -285,7 +294,7 @@ def _check_expect(where: str, expect) -> None:
     if isinstance(expect, str):
         return
     if not isinstance(expect, list) or not expect or not all(isinstance(e, str) and e != ANY for e in expect):
-        raise ViewError(f"{where}: expect is a class name, a list of class names or \"any\"")
+        raise ViewError(f'{where}: expect is a class name, a list of class names or "any"')
 
 
 def check_rules(rules: dict) -> None:
@@ -356,8 +365,7 @@ def check_rules(rules: dict) -> None:
                 rnames.add(each["var"])
             if "resolver" in role:
                 if "address" in role or "each" in role or "expect" in role or role["resolver"] not in resolvers:
-                    raise ViewError(f"{rw}: a resolver role names a known resolver and has no address, each or "
-                                    f"expect")
+                    raise ViewError(f"{rw}: a resolver role names a known resolver and has no address, each or expect")
                 for k in ("type", "id"):
                     if role.get(k, k) not in rnames:
                         raise ViewError(f"{rw}: {k} var {role.get(k, k)!r} is not a var")
@@ -414,8 +422,9 @@ def view_tables(rules: dict, name: str) -> list[str]:
 
 def rules_digest(rules: dict, name: str) -> str:
     """The key hash of what the view `name` is made by: the rules format, its rule and the resolvers it uses."""
-    return contract.digest({"format": rules["format"], "view": rules["views"][name],
-                            "resolvers": used_resolvers(rules, name)})
+    return contract.digest(
+        {"format": rules["format"], "view": rules["views"][name], "resolvers": used_resolvers(rules, name)}
+    )
 
 
 # ---------------------------------------------------------------- one address
@@ -560,7 +569,7 @@ def _enumerate(each: dict, values: dict, row: dict, index: Addresses) -> list:
         return []
     out = set()
     for k in index.keys(prefix):
-        rest = k[len(prefix):]
+        rest = k[len(prefix) :]
         part = re.split(r"[/\[]", rest, maxsplit=1)[0]
         if part:
             out.add(part)
@@ -588,8 +597,9 @@ def _resolved(rules: dict, role: dict, values: dict, index: Addresses, look: _Lo
     return {**head, **_entry(index, spec["address"], rvalues, missing, spec.get("expect", ANY))}, names
 
 
-def _row_doc(rules: dict, view: dict, rid, values: dict, missing: dict, raw: dict, names: dict,
-             index: Addresses, look: _Lookup) -> dict:
+def _row_doc(
+    rules: dict, view: dict, rid, values: dict, missing: dict, raw: dict, names: dict, index: Addresses, look: _Lookup
+) -> dict:
     roles = {}
     for role in view.get("roles", []):
         applies = "when" not in role or role.get("each") is not None or _holds(role["when"], values, raw)
@@ -604,8 +614,9 @@ def _row_doc(rules: dict, view: dict, rid, values: dict, missing: dict, raw: dic
         expect = role.get("expect", ANY)
         each = role.get("each")
         if each is None:
-            roles[role["role"]] = (_entry(index, role["address"], values, missing, expect) if applies
-                                   else {"status": "not-applicable"})
+            roles[role["role"]] = (
+                _entry(index, role["address"], values, missing, expect) if applies else {"status": "not-applicable"}
+            )
             continue
         entries = []
         for item in _enumerate(each, values, raw, index):
@@ -653,8 +664,11 @@ def _rows(rules: dict, view: dict, index: Addresses, look: _Lookup) -> list[dict
             values[var], why = row.value(spec)
             if why:
                 missing[var] = why
-        out.append(_row_doc(rules, view, r.get(idcol), values, missing, r, _names(row, view.get("names", {}), look),
-                            index, look))
+        out.append(
+            _row_doc(
+                rules, view, r.get(idcol), values, missing, r, _names(row, view.get("names", {}), look), index, look
+            )
+        )
     return out
 
 
@@ -677,7 +691,7 @@ def prefix_keys(index: Addresses, prefixes: list[str], exclude: list[str] = ()) 
 
 def _entries(row: dict):
     for role, e in row["roles"].items():
-        for x in (e if isinstance(e, list) else [e]):
+        for x in e if isinstance(e, list) else [e]:
             yield role, x
 
 
@@ -701,9 +715,16 @@ def coverage(doc: dict, view: dict, index: Addresses) -> dict:
         c["counts"] = dict(sorted(c["counts"].items()))
     keys = prefix_keys(index, view.get("prefixes", []), view.get("exclude", []))
     refs = referenced(doc)
-    return {"rows": len(doc["rows"]), "roles": roles,
-            "reverse": {"prefixes": list(view.get("prefixes", [])), "exclude": list(view.get("exclude", [])),
-                        "keys": len(keys), "unreferenced": [k for k in keys if k not in refs]}}
+    return {
+        "rows": len(doc["rows"]),
+        "roles": roles,
+        "reverse": {
+            "prefixes": list(view.get("prefixes", [])),
+            "exclude": list(view.get("exclude", [])),
+            "keys": len(keys),
+            "unreferenced": [k for k in keys if k not in refs],
+        },
+    }
 
 
 def build(rules: dict, name: str, tables: Tables, index: Addresses) -> dict:
@@ -713,8 +734,14 @@ def build(rules: dict, name: str, tables: Tables, index: Addresses) -> dict:
         raise ViewError(f"no view {name!r} (views: {', '.join(view_names(rules))})")
     view = rules["views"][name]
     look = _Lookup(tables)
-    doc = {"schema": contract.VIEW, "view": name, "version": view["version"], "rules": rules_digest(rules, name),
-           "tables": view_tables(rules, name), "rows": _rows(rules, view, index, look)}
+    doc = {
+        "schema": contract.VIEW,
+        "view": name,
+        "version": view["version"],
+        "rules": rules_digest(rules, name),
+        "tables": view_tables(rules, name),
+        "rows": _rows(rules, view, index, look),
+    }
     doc["coverage"] = coverage(doc, view, index)
     return doc
 
@@ -766,7 +793,7 @@ def diff(old: dict, new: dict) -> dict:
     changes = []
     for k in sorted(set(a) | set(b)):
         if k[0] not in oids or k[0] not in nids:
-            continue                                   # an added or removed row: listed once below
+            continue  # an added or removed row: listed once below
         x, y = a.get(k), b.get(k)
         sx, sy = _state(x[3]) if x else None, _state(y[3]) if y else None
         if sx == sy:
@@ -786,11 +813,15 @@ def diff(old: dict, new: dict) -> dict:
         if each:
             c["each"] = each
         changes.append(c)
-    key = lambda i: _sort_key(i)                       # noqa: E731
-    return {"view": new["view"],
-            "rows": {"added": sorted((nids[i] for i in set(nids) - set(oids)), key=key),
-                     "removed": sorted((oids[i] for i in set(oids) - set(nids)), key=key)},
-            "changes": changes}
+    key = lambda i: _sort_key(i)  # noqa: E731
+    return {
+        "view": new["view"],
+        "rows": {
+            "added": sorted((nids[i] for i in set(nids) - set(oids)), key=key),
+            "removed": sorted((oids[i] for i in set(oids) - set(nids)), key=key),
+        },
+        "changes": changes,
+    }
 
 
 # ---------------------------------------------------------------- stages
@@ -800,8 +831,8 @@ MASTER_ROLE = "master:"
 VIEW_ROLE = "view"
 MAIN_SUBJECT = "main"
 _TABLE_CACHE = 128
-_rows_cache: OrderedDict = OrderedDict()        # content id of a table file -> its rows (the latest _TABLE_CACHE)
-_index_cache: OrderedDict = OrderedDict()       # content id of an address table -> its AddressIndex (the latest 2)
+_rows_cache: OrderedDict = OrderedDict()  # content id of a table file -> its rows (the latest _TABLE_CACHE)
+_index_cache: OrderedDict = OrderedDict()  # content id of an address table -> its AddressIndex (the latest 2)
 
 
 def _cached_rows(sha: str, read) -> list[dict]:
@@ -878,6 +909,7 @@ class ViewStage(Stage):
     "rules" (the rules document of this view alone: its rule, the resolvers it uses, the format) and "addresses"
     (the part of the address table the view reads, Recorder.subset); both stored at description. Version: the
     view's version in the rules. Artifact "<task id>#view" (nnnotes.view/1); no items (a view covers no object)."""
+
     after = (ADDRESSES_STAGE,)
 
     def __init__(self, view: str, rules: dict):
@@ -886,8 +918,11 @@ class ViewStage(Stage):
         self.view = view
         self.name = STAGE_PREFIX + view
         self.version = rules["views"][view]["version"]
-        self.rules = {"format": rules["format"], "resolvers": used_resolvers(rules, view),
-                      "views": {view: rules["views"][view]}}
+        self.rules = {
+            "format": rules["format"],
+            "resolvers": used_resolvers(rules, view),
+            "views": {view: rules["views"][view]},
+        }
         check_rules(self.rules)
         self.rules_bytes = contract.encode(self.rules)
         self.tables = view_tables(self.rules, view)
@@ -918,12 +953,15 @@ class ViewStage(Stage):
     def inputs(self, subject: str, env) -> list[Input]:
         index = _address_index(env, contract.task_id(ADDRESSES_STAGE, subject))
         masters = self.master_inputs(env)
-        tables = {i.role[len(MASTER_ROLE):]: _cached_rows(i.sha256, Path(i.locators[0]["path"]).read_bytes)
-                  for i in masters}
+        tables = {
+            i.role[len(MASTER_ROLE) :]: _cached_rows(i.sha256, Path(i.locators[0]["path"]).read_bytes) for i in masters
+        }
         rec = Recorder(index)
         build(self.rules, self.view, tables, rec)
-        return masters + [_stored(env.store, "addresses", contract.encode(rec.subset())),
-                          _stored(env.store, "rules", self.rules_bytes)]
+        return masters + [
+            _stored(env.store, "addresses", contract.encode(rec.subset())),
+            _stored(env.store, "rules", self.rules_bytes),
+        ]
 
     def estimate(self, subject: str, env, inputs: list[Input]) -> Cost:
         size = sum(i.size for i in inputs)
@@ -934,8 +972,11 @@ class ViewStage(Stage):
         check_rules(rules)
         if list(rules["views"]) != [self.view] or rules["views"][self.view]["version"] != task.version:
             raise ViewError(f"task {task.id}: its rules are not those of view {self.view} version {task.version}")
-        tables = {i.role[len(MASTER_ROLE):]: _cached_rows(i.sha256, functools.partial(store.input_bytes, i))
-                  for i in task.inputs if i.role.startswith(MASTER_ROLE)}
+        tables = {
+            i.role[len(MASTER_ROLE) :]: _cached_rows(i.sha256, functools.partial(store.input_bytes, i))
+            for i in task.inputs
+            if i.role.startswith(MASTER_ROLE)
+        }
         index = AddressIndex.from_subset(contract.loads(store.input_bytes(task.input("addresses"))))
         doc = build(rules, self.view, tables, index)
         content = store.add(contract.encode(doc), "json")
@@ -943,10 +984,18 @@ class ViewStage(Stage):
         for c in doc["coverage"]["roles"].values():
             for s, n in c["counts"].items():
                 entries[s] = entries.get(s, 0) + n
-        facts = {"rows": doc["coverage"]["rows"], "entries": dict(sorted(entries.items())), "gaps": gaps(doc),
-                 "unreferenced": len(doc["coverage"]["reverse"]["unreferenced"])}
-        rec = contract.artifact(contract.artifact_id(task.id, VIEW_ROLE), content, contract.provenance(task),
-                                {"kind": "view", "format": "json", "facts": facts})
+        facts = {
+            "rows": doc["coverage"]["rows"],
+            "entries": dict(sorted(entries.items())),
+            "gaps": gaps(doc),
+            "unreferenced": len(doc["coverage"]["reverse"]["unreferenced"]),
+        }
+        rec = contract.artifact(
+            contract.artifact_id(task.id, VIEW_ROLE),
+            content,
+            contract.provenance(task),
+            {"kind": "view", "format": "json", "facts": facts},
+        )
         return Output([rec], [])
 
     def derived(self, task_id: str, result: dict, store, paths) -> list[tuple[str, bytes]]:

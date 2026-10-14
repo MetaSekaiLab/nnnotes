@@ -1,4 +1,5 @@
 """Repository metadata: the package page's readme and the commit message check."""
+
 import re
 import tomllib
 from pathlib import Path
@@ -16,11 +17,11 @@ def test_package_readme_is_english_with_absolute_links():
     links = re.findall(r"\]\(([^)\s]+)\)", text)
     assert links
     relative = [u for u in links if not re.match(r"https?://", u)]
-    assert relative == []                                    # a package index has no repository to resolve them in
+    assert relative == []  # a package index has no repository to resolve them in
     for u in links:
         if u.startswith(REPO_BLOB):
-            assert (ROOT / u[len(REPO_BLOB):]).is_file(), u
-    assert (ROOT / "README.md").is_file()                    # the repository's own page stays the Chinese one
+            assert (ROOT / u[len(REPO_BLOB) :]).is_file(), u
+    assert (ROOT / "README.md").is_file()  # the repository's own page stays the Chinese one
 
 
 def workflow_triggers(text: str) -> list[str]:
@@ -28,7 +29,7 @@ def workflow_triggers(text: str) -> list[str]:
     lines = text.splitlines()
     start = lines.index("on:")
     events = []
-    for line in lines[start + 1:]:
+    for line in lines[start + 1 :]:
         if line and not line.startswith(" "):
             break
         m = re.fullmatch(r"  ([a-z_]+):.*", line)
@@ -49,7 +50,7 @@ def test_the_deck_pin_pull_request_gets_its_checks():
     deck = (workflows / "deck.yml").read_text(encoding="utf-8")
     for name in ("ci.yml", "commitlint.yml"):
         assert "workflow_dispatch" in workflow_triggers((workflows / name).read_text(encoding="utf-8"))
-        assert f"gh workflow run {name} --repo \"$GITHUB_REPOSITORY\" --ref deck/update" in deck
+        assert f'gh workflow run {name} --repo "$GITHUB_REPOSITORY" --ref deck/update' in deck
 
 
 @pytest.mark.parametrize("name", ["README.md", "README.en.md"])

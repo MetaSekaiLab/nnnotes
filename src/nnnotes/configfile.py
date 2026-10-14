@@ -5,6 +5,7 @@ region and the `[paths.fonts]` table. `write_new` renders the template with valu
 an existing file in place (comments and the other lines stay), `check` reports each setting's origin and status.
 Values are never printed: the prompts for the keys do not echo, and the reports hold states, not values.
 """
+
 from __future__ import annotations
 
 import getpass
@@ -21,8 +22,8 @@ from .config import Config, ConfigError, check_catalog_version, env_name, templa
 
 SECRETS = {("bundle", "key"), ("bundle", "nonce_seed"), ("master", "key"), ("master", "iv")}
 HEX_BYTES = {("bundle", "key"): 16, ("bundle", "nonce_seed"): None, ("master", "key"): 32, ("master", "iv"): 32}
-REGION = "servers.<region>"             # the section of the per-region settings
-TEMPLATE_REGION = "tw"                  # the example region table of the template
+REGION = "servers.<region>"  # the section of the per-region settings
+TEMPLATE_REGION = "tw"  # the example region table of the template
 FONTS = "paths.fonts"
 FONT_KEYS = (*languages.LANGUAGES, "emoji")
 LINKS = ("auto", "clone", "hard", "copy")
@@ -40,9 +41,9 @@ _REGION_NAME = re.compile(r"[A-Za-z0-9_-]+")
 
 @dataclass(frozen=True)
 class Setting:
-    section: str                        # "bundle", REGION, FONTS, ...
+    section: str  # "bundle", REGION, FONTS, ...
     key: str
-    kind: str                           # "string", "list" or "path"
+    kind: str  # "string", "list" or "path"
     secret: bool
     description: str
 
@@ -60,13 +61,21 @@ def _template_settings() -> list[Setting]:
         elif (m := _KEYVAL.match(line)) and section:
             sec = REGION if section == f"servers.{TEMPLATE_REGION}" else section
             key, value = m.group(2), m.group(3).strip()
-            kind = "list" if value.startswith("[") else "path" if (sec == "paths" or (sec, key) in DIRS
-                    or sec == REGION and key in REGION_PATHS) else "string"
+            kind = (
+                "list"
+                if value.startswith("[")
+                else "path"
+                if (sec == "paths" or (sec, key) in DIRS or sec == REGION and key in REGION_PATHS)
+                else "string"
+            )
             out.append(Setting(sec, key, kind, (sec, key) in SECRETS, " ".join(comment)))
             comment = []
     for k in FONT_KEYS:
-        what = "colour emoji font (CBDT or sbix) of the stories' emoji sprites" if k == "emoji" else \
-            f"font file (OpenType or TrueType) the story text of {k} is drawn with (--fonts open)"
+        what = (
+            "colour emoji font (CBDT or sbix) of the stories' emoji sprites"
+            if k == "emoji"
+            else f"font file (OpenType or TrueType) the story text of {k} is drawn with (--fonts open)"
+        )
         out.append(Setting(FONTS, k, "path", False, what))
     return out
 
@@ -128,6 +137,7 @@ def validate(setting: Setting, value) -> None:
         check_catalog_version(value)
     elif k in ((REGION, "api"), ("bootstrap", "api")):
         from .gameapi import channel_target
+
         channel_target(value)
     elif k == ("export", "link") and value not in LINKS:
         raise ValueError(f"must be one of {', '.join(LINKS)}")
@@ -138,7 +148,7 @@ def _toml(value) -> str:
     if isinstance(value, list):
         return "[" + ", ".join(_toml(v) for v in value) + "]"
     if "'" not in value and not re.search(r"[\x00-\x1f\x7f]", value):
-        return f"'{value}'"                             # a literal string: paths keep their backslashes
+        return f"'{value}'"  # a literal string: paths keep their backslashes
     return json.dumps(value, ensure_ascii=False).replace("\x7f", "\\u007f")
 
 
@@ -178,8 +188,9 @@ def _set_line(text: str, section: str, key: str, value) -> str:
             if m.group(2) == key:
                 v = m.group(3).strip()
                 if v.startswith(('"""', "'''")) or (v.startswith("[") and v.count("[") > v.count("]")):
-                    raise ConfigError(f"setting {section}.{key}: its value spans several lines of the file; edit "
-                                      f"the file itself")
+                    raise ConfigError(
+                        f"setting {section}.{key}: its value spans several lines of the file; edit the file itself"
+                    )
                 lines[j] = f"{m.group(1)}{key} = {_toml(value)}\n"
                 return "".join(lines)
         lines.insert(last + 1, f"{key} = {_toml(value)}\n")
@@ -203,12 +214,16 @@ def edit(text: str, values: list[tuple[str, str, object]], where: str) -> str:
     try:
         data = tomllib.loads(text)
     except tomllib.TOMLDecodeError:
-        raise ConfigError(f"{where}: the edited file is not valid TOML (a table in a form this command does not "
-                          f"edit); edit the file itself") from None
+        raise ConfigError(
+            f"{where}: the edited file is not valid TOML (a table in a form this command does not "
+            f"edit); edit the file itself"
+        ) from None
     for section, key, value in values:
         if _lookup(data, section, key) != value:
-            raise ConfigError(f"setting {section}.{key}: {where} defines it in a form this command does not edit; "
-                              f"edit the file itself")
+            raise ConfigError(
+                f"setting {section}.{key}: {where} defines it in a form this command does not edit; "
+                f"edit the file itself"
+            )
     return text
 
 
@@ -238,8 +253,9 @@ def write(path: Path, text: str) -> None:
 
 
 # ---------------------------------------------------------------- prompts
-def prompt(regions_hint: str = TEMPLATE_REGION, ask=input, ask_secret=getpass.getpass, say=print) \
-        -> tuple[list[tuple[str, str, object]], list[str]]:
+def prompt(
+    regions_hint: str = TEMPLATE_REGION, ask=input, ask_secret=getpass.getpass, say=print
+) -> tuple[list[tuple[str, str, object]], list[str]]:
     """Ask for every setting in the terminal (Enter leaves one empty; the keys are read without echo) -> (values,
     regions)."""
     values: list[tuple[str, str, object]] = []
@@ -322,14 +338,24 @@ def check(cfg: Config) -> dict:
     def record(s: Setting, section: str, status: str, reason: str | None, origin: str | None):
         env = env_name(section, s.key)
         known_env.add(env)
-        out.append({"name": f"{section}.{s.key}", "env": env, "flag": cfg.flag(section, s.key), "kind": s.kind,
-                    "secret": s.secret, "description": s.description, "origin": origin, "status": status,
-                    **({"reason": reason} if reason else {})})
+        out.append(
+            {
+                "name": f"{section}.{s.key}",
+                "env": env,
+                "flag": cfg.flag(section, s.key),
+                "kind": s.kind,
+                "secret": s.secret,
+                "description": s.description,
+                "origin": origin,
+                "status": status,
+                **({"reason": reason} if reason else {}),
+            }
+        )
 
     region_settings = [s for s in SETTINGS if s.section == REGION]
     for s in SETTINGS:
         if s.section == REGION:
-            if s is region_settings[0]:                 # every region's table where the template has its example
+            if s is region_settings[0]:  # every region's table where the template has its example
                 for r in cfg.regions():
                     for rs in region_settings:
                         status, reason = _status(cfg, rs, f"servers.{r}")
@@ -344,10 +370,20 @@ def check(cfg: Config) -> dict:
         try:
             resolve(f"{section}.{key}")
         except ConfigError:
-            out.append({"name": f"{section}.{key}", "origin": "file", "status": "unknown",
-                        "reason": "not a setting of nnnotes"})
+            out.append(
+                {
+                    "name": f"{section}.{key}",
+                    "origin": "file",
+                    "status": "unknown",
+                    "reason": "not a setting of nnnotes",
+                }
+            )
     for env in cfg.env_names():
         if env not in known_env:
             out.append({"name": env, "origin": "env", "status": "unknown", "reason": "names no setting of nnnotes"})
-    return {"schema": CHECK, "file": cfg.source and str(Path(cfg.source).absolute()), "settings": out,
-            "problems": sum(r["status"] in PROBLEMS for r in out)}
+    return {
+        "schema": CHECK,
+        "file": cfg.source and str(Path(cfg.source).absolute()),
+        "settings": out,
+        "problems": sum(r["status"] in PROBLEMS for r in out),
+    }

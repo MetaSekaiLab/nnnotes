@@ -19,6 +19,7 @@ because they are empty, and for skinned meshes the bind poses (row-major 4x4, Un
 space), the bone name hashes and the root bone name hash. glTF's skin needs the skeleton's nodes, which a mesh does
 not have. The JSON is compact, NaN in extras as {"$float": "nan"}, non-finite floats as 1e999 / -1e999.
 """
+
 from __future__ import annotations
 
 import math
@@ -32,8 +33,14 @@ from .. import jsonio
 
 GLB_MAGIC, JSON_CHUNK, BIN_CHUNK = 0x46546C67, 0x4E4F534A, 0x004E4942
 ARRAY_BUFFER, ELEMENT_ARRAY_BUFFER = 34962, 34963
-COMPONENT = {np.dtype("int8"): 5120, np.dtype("uint8"): 5121, np.dtype("int16"): 5122, np.dtype("uint16"): 5123,
-             np.dtype("uint32"): 5125, np.dtype("float32"): 5126}
+COMPONENT = {
+    np.dtype("int8"): 5120,
+    np.dtype("uint8"): 5121,
+    np.dtype("int16"): 5122,
+    np.dtype("uint16"): 5123,
+    np.dtype("uint32"): 5125,
+    np.dtype("float32"): 5126,
+}
 TYPES = {1: "SCALAR", 2: "VEC2", 3: "VEC3", 4: "VEC4"}
 MODES = {"points": 0, "lines": 1, "line_strip": 3, "triangles": 4}
 
@@ -82,8 +89,12 @@ class _Builder:
             padded = np.zeros((count, stride), np.uint8)
             padded[:, :elem] = a.view(np.uint8).reshape(count, elem)
             view = self._view(padded.tobytes(), ARRAY_BUFFER, stride)
-        acc = {"bufferView": view, "componentType": COMPONENT[a.dtype.newbyteorder("=")], "count": count,
-               "type": TYPES[n]}
+        acc = {
+            "bufferView": view,
+            "componentType": COMPONENT[a.dtype.newbyteorder("=")],
+            "count": count,
+            "type": TYPES[n],
+        }
         if normalized:
             acc["normalized"] = True
         if minmax if minmax is not None else a.dtype.kind == "f":
@@ -99,8 +110,14 @@ class _Builder:
         flat = np.ascontiguousarray(idx, np.int64).reshape(-1)
         dt = "<u2" if flat.max(initial=0) < 0xFFFF else "<u4"
         view = self._view(flat.astype(dt).tobytes(), ELEMENT_ARRAY_BUFFER)
-        self.accessors.append({"bufferView": view, "componentType": 5123 if dt == "<u2" else 5125,
-                               "count": int(flat.size), "type": "SCALAR"})
+        self.accessors.append(
+            {
+                "bufferView": view,
+                "componentType": 5123 if dt == "<u2" else 5125,
+                "count": int(flat.size),
+                "type": "SCALAR",
+            }
+        )
         return len(self.accessors) - 1
 
 
@@ -198,10 +215,19 @@ def _attributes(b: _Builder, m: MeshArrays) -> dict:
 
 
 def _extras(m: MeshArrays, empty: list) -> dict:
-    unity: dict = {"submeshes": [{"topology": int(s.topology or 0), "firstByte": int(s.first_byte),
-                                  "indexCount": int(s.index_count), "baseVertex": int(s.base_vertex or 0),
-                                  "firstVertex": int(s.first_vertex), "vertexCount": int(s.vertex_count)}
-                                 for s in m.submeshes]}
+    unity: dict = {
+        "submeshes": [
+            {
+                "topology": int(s.topology or 0),
+                "firstByte": int(s.first_byte),
+                "indexCount": int(s.index_count),
+                "baseVertex": int(s.base_vertex or 0),
+                "firstVertex": int(s.first_vertex),
+                "vertexCount": int(s.vertex_count),
+            }
+            for s in m.submeshes
+        ]
+    }
     if m.layout:
         unity["channels"] = m.layout
     if empty:
@@ -237,34 +263,47 @@ def write(meshes, *, extras: dict | None = None, generator: str = "nnnotes") -> 
     asset: dict = {"version": "2.0", "generator": generator}
     if extras:
         asset["extras"] = extras
-    doc = {"asset": asset, "scene": 0, "scenes": [{"nodes": list(range(len(nodes)))}], "nodes": nodes,
-           "meshes": gl_meshes, "accessors": b.accessors, "bufferViews": b.views,
-           "buffers": [{"byteLength": len(b.bin)}]}
+    doc = {
+        "asset": asset,
+        "scene": 0,
+        "scenes": [{"nodes": list(range(len(nodes)))}],
+        "nodes": nodes,
+        "meshes": gl_meshes,
+        "accessors": b.accessors,
+        "bufferViews": b.views,
+        "buffers": [{"byteLength": len(b.bin)}],
+    }
     js = jsonio.dumps(_tag_nan(doc), separators=(",", ":"), ensure_ascii=False).encode("utf-8")
     js += b" " * (-len(js) % 4)
     body = bytes(b.bin) + b"\0" * (-len(b.bin) % 4)
     total = 12 + 8 + len(js) + 8 + len(body)
-    return (struct.pack("<III", GLB_MAGIC, 2, total) + struct.pack("<II", len(js), JSON_CHUNK) + js
-            + struct.pack("<II", len(body), BIN_CHUNK) + body)
+    return (
+        struct.pack("<III", GLB_MAGIC, 2, total)
+        + struct.pack("<II", len(js), JSON_CHUNK)
+        + js
+        + struct.pack("<II", len(body), BIN_CHUNK)
+        + body
+    )
 
 
 def read(glb: bytes) -> tuple[dict, bytes]:
     """(JSON document, binary chunk) of GLB bytes."""
     import json
+
     magic, version, total = struct.unpack_from("<III", glb)
     if magic != GLB_MAGIC or version != 2 or total != len(glb):
         raise ValueError("not a glTF 2.0 binary")
     n, kind = struct.unpack_from("<II", glb, 12)
     if kind != JSON_CHUNK:
         raise ValueError("GLB: first chunk is not JSON")
-    doc = json.loads(glb[20:20 + n])
+    doc = json.loads(glb[20 : 20 + n])
     pos = 20 + n
     body = b""
     if pos < len(glb):
         m, kind = struct.unpack_from("<II", glb, pos)
         if kind != BIN_CHUNK:
             raise ValueError("GLB: second chunk is not BIN")
-        body = glb[pos + 8:pos + 8 + m]
+        body = glb[pos + 8 : pos + 8 + m]
     return doc, body
 
 

@@ -22,19 +22,44 @@ def obj(pid, cls, name=None, size=10, script=None):
 
 def cdoc(files: dict, container=(), name=None, scripts=()):
     """A census document: files {file: [objects]}, container [(path, file, pathId)] on the first file's AssetBundle."""
-    fs = [{"name": f, "unityVersion": "6000.0.0f1", "platform": 13, "typetree": True, "externals": [],
-           "objects": sorted(objs, key=lambda o: o["pathId"])} for f, objs in sorted(files.items())]
+    fs = [
+        {
+            "name": f,
+            "unityVersion": "6000.0.0f1",
+            "platform": 13,
+            "typetree": True,
+            "externals": [],
+            "objects": sorted(objs, key=lambda o: o["pathId"]),
+        }
+        for f, objs in sorted(files.items())
+    ]
     first = sorted(files)[0]
-    ab = {"file": first, "pathId": 1, "name": "x", "assetBundleName": name, "dependencies": [],
-          "isStreamedSceneAssetBundle": False, "sceneHashes": [],
-          "container": [{"path": p, "file": f, "pathId": i, "preloadIndex": 0, "preloadSize": 0}
-                        for p, f, i in container]}
+    ab = {
+        "file": first,
+        "pathId": 1,
+        "name": "x",
+        "assetBundleName": name,
+        "dependencies": [],
+        "isStreamedSceneAssetBundle": False,
+        "sceneHashes": [],
+        "container": [
+            {"path": p, "file": f, "pathId": i, "preloadIndex": 0, "preloadSize": 0} for p, f, i in container
+        ],
+    }
     classes = {}
     for objs in files.values():
         for o in objs:
             classes[o["class"]] = classes.get(o["class"], 0) + 1
-    return {"schema": contract.CENSUS, "files": fs, "resources": [], "assetBundles": [ab],
-            "scripts": list(scripts), "classes": classes, "objects": sum(classes.values()), "errors": []}
+    return {
+        "schema": contract.CENSUS,
+        "files": fs,
+        "resources": [],
+        "assetBundles": [ab],
+        "scripts": list(scripts),
+        "classes": classes,
+        "objects": sum(classes.values()),
+        "errors": [],
+    }
 
 
 def catalog_entries():
@@ -54,29 +79,67 @@ def catalog_entries():
 
 
 def censuses():
-    card = cdoc({CAB_A: [obj(1, "AssetBundle", "x"), obj(5, "Texture2D", "A", 500), obj(6, "Sprite", "A"),
-                         obj(7, "Sprite", "A_square"), obj(8, "Sprite", "dup"), obj(9, "Sprite", "DUP"),
-                         obj(10, "MonoBehaviour", "", script={"file": CAB_M, "pathId": 42})]},
-                [("assets/game/card/a.png", CAB_A, 6), ("assets/game/card/a.png", CAB_A, 5),
-                 ("assets/game/card/a.png", CAB_A, 7), ("assets/game/card/a.png", CAB_A, 8),
-                 ("assets/game/card/a.png", CAB_A, 9)], name="na_1.bundle")
+    card = cdoc(
+        {
+            CAB_A: [
+                obj(1, "AssetBundle", "x"),
+                obj(5, "Texture2D", "A", 500),
+                obj(6, "Sprite", "A"),
+                obj(7, "Sprite", "A_square"),
+                obj(8, "Sprite", "dup"),
+                obj(9, "Sprite", "DUP"),
+                obj(10, "MonoBehaviour", "", script={"file": CAB_M, "pathId": 42}),
+            ]
+        },
+        [
+            ("assets/game/card/a.png", CAB_A, 6),
+            ("assets/game/card/a.png", CAB_A, 5),
+            ("assets/game/card/a.png", CAB_A, 7),
+            ("assets/game/card/a.png", CAB_A, 8),
+            ("assets/game/card/a.png", CAB_A, 9),
+        ],
+        name="na_1.bundle",
+    )
     shared = cdoc({CAB_B: [obj(1, "AssetBundle", "y")]}, name="wrong.bundle")
-    scene = cdoc({CAB_S: [obj(1, "AssetBundle"), obj(3, "GameObject", "root")],
-                  CAB_S + ".sharedAssets": [obj(3, "Material", "m")]},
-                 [("Assets/Scenes/X.unity", None, None)], name="nc_3.bundle")
-    scripts = cdoc({CAB_M: [obj(42, "MonoScript", "Widget")]}, scripts=[
-        {"file": CAB_M, "pathId": 42, "assembly": "Game.dll", "namespace": "Game.UI", "class": "Widget",
-         "name": "Widget"},
-        {"file": CAB_M, "pathId": 43, "assembly": "Assembly-CSharp.dll", "namespace": "", "class": "Top",
-         "name": "Top"}])
+    scene = cdoc(
+        {
+            CAB_S: [obj(1, "AssetBundle"), obj(3, "GameObject", "root")],
+            CAB_S + ".sharedAssets": [obj(3, "Material", "m")],
+        },
+        [("Assets/Scenes/X.unity", None, None)],
+        name="nc_3.bundle",
+    )
+    scripts = cdoc(
+        {CAB_M: [obj(42, "MonoScript", "Widget")]},
+        scripts=[
+            {
+                "file": CAB_M,
+                "pathId": 42,
+                "assembly": "Game.dll",
+                "namespace": "Game.UI",
+                "class": "Widget",
+                "name": "Widget",
+            },
+            {
+                "file": CAB_M,
+                "pathId": 43,
+                "assembly": "Assembly-CSharp.dll",
+                "namespace": "",
+                "class": "Top",
+                "name": "Top",
+            },
+        ],
+    )
     return {"card_a": card, "shared": shared, "scene_x": scene, "scripts": scripts}
 
 
 def test_scripts_table_and_context():
     docs = censuses()
     table = link.scripts(docs.values())
-    assert table == {"schema": link.SCRIPTS, "scripts": {CAB_M + ":42": "Game|Game.UI|Widget",
-                                                        CAB_M + ":43": "Assembly-CSharp||Top"}}
+    assert table == {
+        "schema": link.SCRIPTS,
+        "scripts": {CAB_M + ":42": "Game|Game.UI|Widget", CAB_M + ":43": "Assembly-CSharp||Top"},
+    }
     refs = census.script_refs(docs["card_a"])
     assert link.script_context(table["scripts"], refs + ["CAB-x:1"]) == {CAB_M + ":42": "Game|Game.UI|Widget"}
 
@@ -85,7 +148,7 @@ def test_addresses():
     idx = index(synth.CatalogWriter().build(catalog_entries()))
     doc = link.addresses(idx, censuses())
     assert doc["schema"] == link.ADDRESSES and doc["catalog"]["apk"] is None
-    assert set(doc["bundles"]) == {"card_a", "shared", "scene_x"}           # "scripts" is no bundle of the index
+    assert set(doc["bundles"]) == {"card_a", "shared", "scene_x"}  # "scripts" is no bundle of the index
     assert doc["files"] == {CAB_A: "card_a", CAB_B: "shared", CAB_S: "scene_x", CAB_S + ".sharedAssets": "scene_x"}
     card = doc["bundles"]["card_a"]
     assert card["name"] == f"card_a_{HA}.bundle" and card["files"] == [CAB_A]
@@ -98,25 +161,40 @@ def test_addresses():
     # the texture owns the container path, sprites with a name of their own get [name], the others their path id
     objs = doc["objects"]
     assert objs["card_a/assets/game/card/a.png"]["object"] == CAB_A + ":5"
-    assert objs["card_a/assets/game/card/a.png"] == {"object": CAB_A + ":5", "class": "Texture2D", "name": "A",
-                                                     "byteSize": 500, "typeHash": "00" * 16}
+    assert objs["card_a/assets/game/card/a.png"] == {
+        "object": CAB_A + ":5",
+        "class": "Texture2D",
+        "name": "A",
+        "byteSize": 500,
+        "typeHash": "00" * 16,
+    }
     assert objs["card_a/assets/game/card/a.png[A]"]["object"] == CAB_A + ":6"
     assert objs["card_a/assets/game/card/a.png[A_square]"]["object"] == CAB_A + ":7"
     assert objs["card_a:8"]["object"] == CAB_A + ":8" and objs["card_a:9"]["object"] == CAB_A + ":9"
     assert len(objs) == 5
     gone = doc["keys"]["Card/Gone"]
-    assert gone == [{"location": gone[0]["location"], "type": "UnityEngine.Object",
-                     "internalId": "Assets/Game/Card/Gone.png", "bundle": "card_a", "objects": []}]
+    assert gone == [
+        {
+            "location": gone[0]["location"],
+            "type": "UnityEngine.Object",
+            "internalId": "Assets/Game/Card/Gone.png",
+            "bundle": "card_a",
+            "objects": [],
+        }
+    ]
     assert doc["keys"]["Scene/X"][0]["objects"] == [] and doc["keys"]["Scene/X"][0]["bundle"] == "scene_x"
     assert doc["keys"]["Sound/S"][0]["raw"] == ["cri/s"] and doc["keys"]["Sound/S"][0]["bundle"] is None
-    assert doc["keys"]["Other/O"][0]["objects"] is None                      # its bundle has no census
+    assert doc["keys"]["Other/O"][0]["objects"] is None  # its bundle has no census
     assert doc["keys"][f"shared_{HB}.bundle"][0]["bundle"] == "shared"
     assert doc["keys"]["cri/s_" + HA][0]["raw"] == "cri/s"
-    assert doc["problems"] == {"files": [], "bundleNames": [
-        {"bundle": "shared", "catalog": "nb_2.bundle", "census": ["wrong.bundle"]}], "keys": ["Card/Gone"]}
-    assert contract.encode(link.addresses(idx, censuses())) == contract.encode(doc)      # deterministic
+    assert doc["problems"] == {
+        "files": [],
+        "bundleNames": [{"bundle": "shared", "catalog": "nb_2.bundle", "census": ["wrong.bundle"]}],
+        "keys": ["Card/Gone"],
+    }
+    assert contract.encode(link.addresses(idx, censuses())) == contract.encode(doc)  # deterministic
     streamed = link.addresses(idx, ((s, d) for s, d in reversed(sorted(censuses().items()))))
-    assert contract.encode(streamed) == contract.encode(doc)                              # pairs, any order
+    assert contract.encode(streamed) == contract.encode(doc)  # pairs, any order
     rev = link.reverse(doc)
     assert link.address_of(doc, CAB_A + ":6", rev) == "card_a/assets/game/card/a.png[A]"
     assert link.address_of(doc, CAB_A + ":10") == "card_a:10"
@@ -146,16 +224,18 @@ def test_diff_addresses():
     new_cab = card["files"][0]["name"]
     for e in card["assetBundles"][0]["container"]:
         e["file"] = new_cab
-    card["assetBundles"][0]["container"] = card["assetBundles"][0]["container"][:4]      # pathId 9 gone
-    card["files"][0]["objects"][1]["byteSize"] = 999                                   # the texture changed
+    card["assetBundles"][0]["container"] = card["assetBundles"][0]["container"][:4]  # pathId 9 gone
+    card["files"][0]["objects"][1]["byteSize"] = 999  # the texture changed
     new = link.addresses(idx, docs)
     d = link.diff_addresses(old, new)
     # pathId 9 is gone, so the name of 8 is no longer shared: 8 is addressed by its name now
     assert d["removed"] == ["card_a:8", "card_a:9"] and d["added"] == ["card_a/assets/game/card/a.png[dup]"]
     (ch,) = d["changed"]
     assert ch["address"] == "card_a/assets/game/card/a.png" and ch["fields"] == ["object", "byteSize"]
-    assert [r["address"] for r in d["rebuilt"]] == ["card_a/assets/game/card/a.png[A]",
-                                                    "card_a/assets/game/card/a.png[A_square]"]
+    assert [r["address"] for r in d["rebuilt"]] == [
+        "card_a/assets/game/card/a.png[A]",
+        "card_a/assets/game/card/a.png[A_square]",
+    ]
     assert d["summary"] == {"added": 1, "removed": 2, "changed": 1, "rebuilt": 2, "unchanged": 0}
     assert link.diff_addresses(old, old)["summary"]["unchanged"] == 5
 
@@ -167,8 +247,12 @@ def census_task(store, subject, doc):
     inp = Input("bundle", contract.sha256(subject.encode()), 1, subject + ".bundle")
     task = describe(census.CensusStage(), subject, None, Env(store, {"bundles": {subject: inp}}))
     content = store.add(data, "json")
-    rec = contract.artifact(contract.artifact_id(task.id, "census"), content, contract.provenance(task),
-                            {"kind": "unity.census", "format": "json", "facts": census.facts(doc)})
+    rec = contract.artifact(
+        contract.artifact_id(task.id, "census"),
+        content,
+        contract.provenance(task),
+        {"kind": "unity.census", "format": "json", "facts": census.facts(doc)},
+    )
     store.commit(contract.result(task, [rec], []))
     return task
 
@@ -183,7 +267,7 @@ def test_link_stages(tmp_path):
     env.done(itask.id, itask.key)
     docs = censuses()
     tasks = {s: census_task(store, s, d) for s, d in docs.items()}
-    env.waiting(tasks["card_a"].id)                                    # not run yet
+    env.waiting(tasks["card_a"].id)  # not run yet
     for s, t in tasks.items():
         if s != "card_a":
             env.done(t.id, t.key)
@@ -192,7 +276,7 @@ def test_link_stages(tmp_path):
         describe(stages["link.scripts"], "all", None, env)
     with pytest.raises(Pending):
         describe(stages["link.addresses"], "main", None, env)
-    env.waiting(tasks["card_a"].id, failed=True)                       # a failed census is skipped
+    env.waiting(tasks["card_a"].id, failed=True)  # a failed census is skipped
     st = describe(stages["link.scripts"], "all", None, env)
     assert [i.role for i in st.inputs] == ["census:scripts"]
     env.done(tasks["card_a"].id, tasks["card_a"].key)
@@ -233,13 +317,18 @@ def test_artifacts_table_and_stage(tmp_path):
     stage = link.ArtifactsStage()
     env = Env(store, {})
     export = contract.Task("unity.export", 1, "card_a")
-    store.commit(contract.result(export, [contract.artifact(a["id"], a["content"], contract.provenance(export),
-                                                             {"kind": "x"}) for a in arts], items))
+    store.commit(
+        contract.result(
+            export,
+            [contract.artifact(a["id"], a["content"], contract.provenance(export), {"kind": "x"}) for a in arts],
+            items,
+        )
+    )
     env.waiting(export.id)
     with pytest.raises(Pending):
         describe(stage, "all", None, env)
     env.done(export.id, export.key)
-    env.waiting("sprite.crop:atlas", failed=True)                     # failed tasks are skipped
+    env.waiting("sprite.crop:atlas", failed=True)  # failed tasks are skipped
     t = describe(stage, "all", None, env)
     assert t.context == {"results": {export.id: export.key}} and t.inputs == ()
     execute(t, store, registry(stage))
@@ -251,16 +340,29 @@ def test_artifacts_table_and_stage(tmp_path):
 def test_the_artifact_table_is_written_entry_by_entry_with_the_same_bytes():
     def res(n, oid, aid, *, within=None):
         c = {"sha256": f"{n:064x}", "size": n, "ext": "png", "mediaType": "image/png"}
-        items = [contract.item(oid, "contained", within=within)] if within else \
-            [contract.item(oid, "exported", artifacts=[aid, aid + "~"])]
-        return (f"unity.export:{n}", {"artifacts": [] if within else [{"id": aid, "content": c},
-                                                                       {"id": aid + "~", "content": c}],
-                                      "items": items})
-    results = [res(3, f"{CAB_A}:3", f"{CAB_A}:3#立ち絵"), res(1, f"{CAB_A}:1", f"{CAB_A}:1#png"),
-               res(2, f"{CAB_A}:2", None, within=f"{CAB_A}:1#png"), res(4, f"{CAB_A}:é", None, within=f"{CAB_A}:1#png")]
+        items = (
+            [contract.item(oid, "contained", within=within)]
+            if within
+            else [contract.item(oid, "exported", artifacts=[aid, aid + "~"])]
+        )
+        return (
+            f"unity.export:{n}",
+            {
+                "artifacts": [] if within else [{"id": aid, "content": c}, {"id": aid + "~", "content": c}],
+                "items": items,
+            },
+        )
+
+    results = [
+        res(3, f"{CAB_A}:3", f"{CAB_A}:3#立ち絵"),
+        res(1, f"{CAB_A}:1", f"{CAB_A}:1#png"),
+        res(2, f"{CAB_A}:2", None, within=f"{CAB_A}:1#png"),
+        res(4, f"{CAB_A}:é", None, within=f"{CAB_A}:1#png"),
+    ]
     only_exported = [results[0], results[1]]
-    only_contained = [("unity.export:x", {"artifacts": [], "items": [contract.item(f"{CAB_A}:9", "contained",
-                                                                                  within="a#b")]})]
+    only_contained = [
+        ("unity.export:x", {"artifacts": [], "items": [contract.item(f"{CAB_A}:9", "contained", within="a#b")]})
+    ]
     for rs in (results, only_exported, only_contained, []):
         want = contract.encode(link.artifacts(rs))
         for chunk in (1, 64, 1 << 20):

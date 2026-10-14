@@ -25,6 +25,7 @@ The result of a task (its action-cache entry) is therefore a function of its key
 locator, timestamp or traceback (input names are in the task description; region, language and catalog and master
 versions in the run manifest), so identical bundles of two regions or catalog versions share one result.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -59,11 +60,27 @@ LOCATOR_KINDS = ("store", "cache", "file", "catalog")
 # an object's primary artifact is the one whose role comes first here; its other artifacts are secondary
 PRIMARY_ROLES = ("image", "mesh", "audio", "video", "font", "data", "prefab", "json")
 MEDIA_TYPES = {
-    "png": "image/png", "astc": "image/astc", "jpg": "image/jpeg", "json": "application/json",
-    "glb": "model/gltf-binary", "flac": "audio/flac", "wav": "audio/wav", "ogg": "audio/ogg", "mkv": "video/x-matroska",
-    "ivf": "video/x-ivf", "adx": "audio/x-adx", "ttf": "font/ttf", "otf": "font/otf", "ttc": "font/collection",
-    "woff": "font/woff", "woff2": "font/woff2", "txt": "text/plain", "xml": "application/xml", "csv": "text/csv",
-    "bin": "application/octet-stream", "bytes": "application/octet-stream",
+    "png": "image/png",
+    "astc": "image/astc",
+    "jpg": "image/jpeg",
+    "json": "application/json",
+    "glb": "model/gltf-binary",
+    "flac": "audio/flac",
+    "wav": "audio/wav",
+    "ogg": "audio/ogg",
+    "mkv": "video/x-matroska",
+    "ivf": "video/x-ivf",
+    "adx": "audio/x-adx",
+    "ttf": "font/ttf",
+    "otf": "font/otf",
+    "ttc": "font/collection",
+    "woff": "font/woff",
+    "woff2": "font/woff2",
+    "txt": "text/plain",
+    "xml": "application/xml",
+    "csv": "text/csv",
+    "bin": "application/octet-stream",
+    "bytes": "application/octet-stream",
 }
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 _EXT = re.compile(r"[0-9a-z]+")
@@ -102,7 +119,7 @@ def _text(obj, **kw) -> str:
     except ValueError:
         tagged = _tag_nan(obj)
         if tagged is obj:
-            raise                                  # not a NaN: the writer's own error
+            raise  # not a NaN: the writer's own error
     return jsonio.dumps(tagged, **kw)
 
 
@@ -202,7 +219,7 @@ def parse_task_id(tid: str, stage: str | None = None) -> tuple[str, str]:
     if stage is not None:
         if not tid.startswith(stage + ":"):
             raise ValueError(f"task id {tid!r} is not of stage {stage!r}")
-        return stage, tid[len(stage) + 1:]
+        return stage, tid[len(stage) + 1 :]
     name, sep, subject = tid.partition(":")
     if not sep or not name:
         raise ValueError(f"not a task id: {tid!r}")
@@ -231,8 +248,9 @@ def stable_bundle_names(names) -> tuple[dict[str, str], list[list[str]]]:
     return out, sorted(collisions)
 
 
-def stable_address(bundle: str, container: str | None = None, path_id: int | None = None,
-                   name: str | None = None) -> str:
+def stable_address(
+    bundle: str, container: str | None = None, path_id: int | None = None, name: str | None = None
+) -> str:
     """Where an object is found again in another catalog version. A bundle's serialized file names (and so its
     object and artifact ids) change with its content while path ids stay; the address uses what stays: the stable
     bundle name and the container path ("<bundle>/<container>", "[<name>]" appended for a sub-object of the
@@ -252,6 +270,7 @@ def media_type(ext: str) -> str:
 @dataclass(frozen=True)
 class Cost:
     """An estimate (or measurement) of a task: CPU seconds and peak memory in bytes."""
+
     cpu_seconds: float = 0.0
     peak_bytes: int = 0
 
@@ -267,6 +286,7 @@ class Cost:
 class Input:
     """One input of a task: its role, content id and size; `name` and `locators` (where to read it) are
     information for running it, not part of the key."""
+
     role: str
     sha256: str
     size: int
@@ -289,8 +309,9 @@ class Input:
 
     @classmethod
     def from_json(cls, d: dict) -> "Input":
-        return cls(d["role"], d["sha256"], int(d["size"]), d.get("name"),
-                   tuple(dict(loc) for loc in d.get("locators", ())))
+        return cls(
+            d["role"], d["sha256"], int(d["size"]), d.get("name"), tuple(dict(loc) for loc in d.get("locators", ()))
+        )
 
 
 class IncompatibleTask(ValueError):
@@ -300,6 +321,7 @@ class IncompatibleTask(ValueError):
 @dataclass(frozen=True)
 class Task:
     """One stage applied to one subject (nnnotes.task/1)."""
+
     stage: str
     version: int
     subject: str
@@ -326,9 +348,14 @@ class Task:
 
     def key_parts(self) -> dict:
         """What the key is the hash of."""
-        return {"stage": {"name": self.stage, "version": self.version}, "subject": self.subject,
-                "params": self.params, "atoms": self.atoms, "inputs": [[i.role, i.sha256] for i in self.inputs],
-                "context": self.context}
+        return {
+            "stage": {"name": self.stage, "version": self.version},
+            "subject": self.subject,
+            "params": self.params,
+            "atoms": self.atoms,
+            "inputs": [[i.role, i.sha256] for i in self.inputs],
+            "context": self.context,
+        }
 
     @cached_property
     def key(self) -> str:
@@ -344,9 +371,16 @@ class Task:
         return digest(self.params)
 
     def to_json(self) -> dict:
-        d = {"schema": TASK, "id": self.id, "stage": {"name": self.stage, "version": self.version},
-             "params": self.params, "atoms": self.atoms, "inputs": [i.to_json() for i in self.inputs],
-             "context": self.context, "key": self.key}
+        d = {
+            "schema": TASK,
+            "id": self.id,
+            "stage": {"name": self.stage, "version": self.version},
+            "params": self.params,
+            "atoms": self.atoms,
+            "inputs": [i.to_json() for i in self.inputs],
+            "context": self.context,
+            "key": self.key,
+        }
         if self.cost is not None:
             d["cost"] = self.cost.to_json()
         return d
@@ -360,9 +394,16 @@ class Task:
         try:
             name, version = doc["stage"]["name"], int(doc["stage"]["version"])
             _, subject = parse_task_id(doc["id"], name)
-            t = cls(name, version, subject, doc.get("params", {}), doc.get("atoms", {}),
-                    tuple(Input.from_json(i) for i in doc.get("inputs", ())), doc.get("context", {}),
-                    Cost.from_json(doc.get("cost")))
+            t = cls(
+                name,
+                version,
+                subject,
+                doc.get("params", {}),
+                doc.get("atoms", {}),
+                tuple(Input.from_json(i) for i in doc.get("inputs", ())),
+                doc.get("context", {}),
+                Cost.from_json(doc.get("cost")),
+            )
         except (KeyError, TypeError, ValueError) as e:
             raise IncompatibleTask(f"malformed task: {e}") from None
         if doc.get("key") != t.key:
@@ -380,9 +421,11 @@ def content(data: bytes, ext: str, media: str | None = None) -> dict:
 def provenance(task: Task, *, atoms: dict | None = None, obj: dict | None = None) -> dict:
     """The provenance of an artifact a task produced: its stage (with the digest of the parameters), the atoms that
     made it (default: all the task's atoms), the roles and content ids of the task's inputs, and the object facts."""
-    p = {"stage": {"name": task.stage, "version": task.version, "params": task.params_digest()},
-         "atoms": dict(task.atoms if atoms is None else atoms),
-         "inputs": [{"role": i.role, "sha256": i.sha256} for i in task.inputs]}
+    p = {
+        "stage": {"name": task.stage, "version": task.version, "params": task.params_digest()},
+        "atoms": dict(task.atoms if atoms is None else atoms),
+        "inputs": [{"role": i.role, "sha256": i.sha256} for i in task.inputs],
+    }
     if obj is not None:
         p["object"] = obj
     return p
@@ -408,8 +451,9 @@ def reason(code: str, message: str = "") -> dict:
     return {"code": code, "message": message}
 
 
-def item(obj: str, status: str, *, artifacts=(), within: str | None = None, why: dict | None = None,
-         cls: str | None = None) -> dict:
+def item(
+    obj: str, status: str, *, artifacts=(), within: str | None = None, why: dict | None = None, cls: str | None = None
+) -> dict:
     """The outcome for one object of a task. exported: its artifacts; contained: `within` (the artifact it is part
     of); generic: its artifacts and why the specialized form was not made; unsupported: why (and artifacts, if
     any); failed: why."""
@@ -454,15 +498,23 @@ def result(task: Task, artifacts, items) -> dict:
             if a not in known:
                 raise ValueError(f"task {task.id}: item {i['object']} names unknown artifact {a}")
     status = "partial" if any(i["status"] == "failed" for i in its) else "ok"
-    return {"schema": RESULT, "key": task.key, "keyParts": task.key_parts(), "status": status,
-            "artifacts": arts, "items": its}
+    return {
+        "schema": RESULT,
+        "key": task.key,
+        "keyParts": task.key_parts(),
+        "status": status,
+        "artifacts": arts,
+        "items": its,
+    }
 
 
 def primary_artifact(records: list[dict]) -> dict:
     """The primary artifact of one object's records (PRIMARY_ROLES order, then role name)."""
+
     def rank(r):
         role = parse_artifact_id(r["id"])[1]
         return (PRIMARY_ROLES.index(role) if role in PRIMARY_ROLES else len(PRIMARY_ROLES), role)
+
     return min(records, key=rank)
 
 
@@ -470,18 +522,41 @@ def primary_artifact(records: list[dict]) -> dict:
 def run_id(doc: dict) -> str:
     """A run's id: the hash of its deterministic parts (context, selection, parameters, stage versions, the tasks'
     ids and keys, layout manifests); statuses and the summary are not part of it."""
-    return digest({"context": doc.get("context", {}), "selection": doc.get("selection", []),
-                   "params": doc.get("params", {}), "stages": doc.get("stages", {}),
-                   "tasks": [[t["id"], t["key"]] for t in doc.get("tasks", [])],
-                   "layouts": doc.get("layouts", {})})
+    return digest(
+        {
+            "context": doc.get("context", {}),
+            "selection": doc.get("selection", []),
+            "params": doc.get("params", {}),
+            "stages": doc.get("stages", {}),
+            "tasks": [[t["id"], t["key"]] for t in doc.get("tasks", [])],
+            "layouts": doc.get("layouts", {}),
+        }
+    )
 
 
-def run_doc(*, context: dict, selection: list, params: dict, stages: dict, tasks: list[dict], layouts: dict,
-            summary: dict, placement: dict | None = None) -> dict:
+def run_doc(
+    *,
+    context: dict,
+    selection: list,
+    params: dict,
+    stages: dict,
+    tasks: list[dict],
+    layouts: dict,
+    summary: dict,
+    placement: dict | None = None,
+) -> dict:
     """A run manifest (nnnotes.run/1): tasks sorted by id; `placement` ({method, reason}: how the layouts' files
     were made) when layouts were written. The id covers neither the summary nor the placement."""
-    doc = {"schema": RUN, "context": context, "selection": list(selection), "params": params, "stages": stages,
-           "tasks": sorted(tasks, key=lambda t: t["id"]), "layouts": layouts, "summary": summary}
+    doc = {
+        "schema": RUN,
+        "context": context,
+        "selection": list(selection),
+        "params": params,
+        "stages": stages,
+        "tasks": sorted(tasks, key=lambda t: t["id"]),
+        "layouts": layouts,
+        "summary": summary,
+    }
     if placement is not None:
         doc["placement"] = placement
     for t in doc["tasks"]:
@@ -493,5 +568,9 @@ def run_doc(*, context: dict, selection: list, params: dict, stages: dict, tasks
 
 def layout_doc(name: str, params: dict, entries: list[dict]) -> dict:
     """A layout manifest (nnnotes.layout/1): entries sorted by path, then id."""
-    return {"schema": LAYOUT, "name": name, "params": params,
-            "entries": sorted(entries, key=lambda e: (e["path"], e["id"]))}
+    return {
+        "schema": LAYOUT,
+        "name": name,
+        "params": params,
+        "entries": sorted(entries, key=lambda e: (e["path"], e["id"])),
+    }

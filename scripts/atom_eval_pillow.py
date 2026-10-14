@@ -8,6 +8,7 @@ default). These fix the setting instead, so several can be measured side by side
 
 For a stage run, `atom_eval.py m3 --param png.level=N` changes the level through the task parameter instead.
 """
+
 from __future__ import annotations
 
 import io
@@ -30,6 +31,7 @@ def _fixed(**options):
         buf = io.BytesIO()
         image.save(buf, format="PNG", **options)
         return buf.getvalue()
+
     return encode
 
 

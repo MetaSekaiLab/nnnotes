@@ -3,6 +3,7 @@
 The Rust tests exercise program/run reuse, persistence and concurrency. These tests establish that Python passes
 complete inputs and options to that implementation, preserves its reported counters and publishes identical data.
 """
+
 from copy import deepcopy
 import gzip
 import json
@@ -23,6 +24,7 @@ def deck_input():
 
 class CacheBridge(FakeDeck):
     """An instrumented native interface, not a simulation of native cache hits or performance."""
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.cache_calls = []
@@ -64,11 +66,18 @@ def test_uncached_calls_do_not_invent_native_cache_counters(deck_input):
     assert deck.counts is None
 
 
-@pytest.mark.parametrize("options, flag", [
-    ({"seeds": -1}, "--seeds"), ({"seeds": 0}, "--seeds"), ({"seeds": True}, "--seeds"),
-    ({"seeds": 1 << 100}, "--seeds"), ({"workers": -1}, "--workers"),
-    ({"workers": False}, "--workers"), ({"workers": 1 << 100}, "--workers"),
-])
+@pytest.mark.parametrize(
+    "options, flag",
+    [
+        ({"seeds": -1}, "--seeds"),
+        ({"seeds": 0}, "--seeds"),
+        ({"seeds": True}, "--seeds"),
+        ({"seeds": 1 << 100}, "--seeds"),
+        ({"workers": -1}, "--workers"),
+        ({"workers": False}, "--workers"),
+        ({"workers": 1 << 100}, "--workers"),
+    ],
+)
 def test_invalid_options_are_user_errors_before_native_or_export_work(tmp_path, capsys, options, flag):
     with pytest.raises(musicdata.MusicDataError, match=flag):
         musicdata.Deck(**options)
@@ -95,12 +104,15 @@ def test_sampling_format_is_rejected_before_calling_the_model(deck_input):
     assert module.inputs == []
 
 
-@pytest.mark.parametrize("change", [
-    lambda doc: doc.update(format="ournotes-deck.chart-stats/2"),
-    lambda doc: doc["charts"].reverse(),
-    lambda doc: doc["charts"].append(doc["charts"][0]),
-    lambda doc: doc["charts"][0].update(scoreId=True),
-])
+@pytest.mark.parametrize(
+    "change",
+    [
+        lambda doc: doc.update(format="ournotes-deck.chart-stats/2"),
+        lambda doc: doc["charts"].reverse(),
+        lambda doc: doc["charts"].append(doc["charts"][0]),
+        lambda doc: doc["charts"][0].update(scoreId=True),
+    ],
+)
 def test_model_output_format_and_chart_identity_are_checked(deck_input, change):
     with pytest.raises(musicdata.MusicDataError):
         musicdata.Deck(module=FakeDeck(header=change)).stats(deck_input)
@@ -111,6 +123,7 @@ def test_malformed_native_documents_raise_a_domain_error(deck_input, response):
     class BadDocument(FakeDeck):
         def chart_stats(self, *args, **kwargs):
             return response
+
     with pytest.raises(musicdata.MusicDataError, match="deck model:"):
         musicdata.Deck(module=BadDocument()).stats(deck_input)
 
@@ -120,8 +133,15 @@ def test_cache_interface_failure_does_not_replace_an_existing_export(tmp_path):
     out = tmp_path / "music.json"
     out.write_bytes(b"previous published artifact\n")
     with pytest.raises(musicdata.MusicDataError, match="interrupted native run"):
-        musicdata.export(out, deckdata.master_files(source), KEY, CHARTS.__getitem__, bgm, **PROV,
-                         deck=musicdata.Deck(module=CacheBridge(fail="interrupted native run"), cache=tmp_path / "stats"))
+        musicdata.export(
+            out,
+            deckdata.master_files(source),
+            KEY,
+            CHARTS.__getitem__,
+            bgm,
+            **PROV,
+            deck=musicdata.Deck(module=CacheBridge(fail="interrupted native run"), cache=tmp_path / "stats"),
+        )
     assert out.read_bytes() == b"previous published artifact\n"
 
 
@@ -132,8 +152,18 @@ def test_native_cache_transport_does_not_change_exported_bytes(tmp_path, compres
     outputs, summaries = [], []
     for name, cache in (("uncached", None), ("cached", tmp_path / "stats")):
         out = tmp_path / (name + (".json.gz" if compressed else ".json"))
-        summaries.append(musicdata.export(out, deckdata.master_files(source), KEY, CHARTS.__getitem__, bgm, **PROV,
-                         full=True, deck=musicdata.Deck(module=CacheBridge(), cache=cache, workers=2)))
+        summaries.append(
+            musicdata.export(
+                out,
+                deckdata.master_files(source),
+                KEY,
+                CHARTS.__getitem__,
+                bgm,
+                **PROV,
+                full=True,
+                deck=musicdata.Deck(module=CacheBridge(), cache=cache, workers=2),
+            )
+        )
         outputs.append(out.read_bytes())
     assert outputs[0] == outputs[1] and summaries[0]["sha256"] == summaries[1]["sha256"]
     assert summaries[0]["deckStats"] is None

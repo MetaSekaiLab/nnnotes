@@ -18,6 +18,7 @@ poses, bone name hashes and the root bone hash as serialized. What this atom doe
 `MeshArrays.issues` as (reason code, message): skins with more than four weights per vertex or inconsistent
 channels (`partial.mesh.skin`), blend shapes (`unsupported.mesh.blendshapes`).
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -27,15 +28,52 @@ import numpy as np
 from . import Unsupported, estimate
 
 # channel index (Unity 2018 and later) -> name
-CHANNELS = ("position", "normal", "tangent", "color", "uv0", "uv1", "uv2", "uv3", "uv4", "uv5", "uv6", "uv7",
-            "blendWeight", "blendIndices")
+CHANNELS = (
+    "position",
+    "normal",
+    "tangent",
+    "color",
+    "uv0",
+    "uv1",
+    "uv2",
+    "uv3",
+    "uv4",
+    "uv5",
+    "uv6",
+    "uv7",
+    "blendWeight",
+    "blendIndices",
+)
 # vertex format -> (numpy dtype, normalized)
-FORMATS_2019 = {0: ("<f4", False), 1: ("<f2", False), 2: ("u1", True), 3: ("i1", True), 4: ("<u2", True),
-                5: ("<i2", True), 6: ("u1", False), 7: ("i1", False), 8: ("<u2", False), 9: ("<i2", False),
-                10: ("<u4", False), 11: ("<i4", False)}
-FORMATS_2017 = {0: ("<f4", False), 1: ("<f2", False), 2: ("u1", True), 3: ("u1", True), 4: ("i1", True),
-                5: ("<u2", True), 6: ("<i2", True), 7: ("u1", False), 8: ("i1", False), 9: ("<u2", False),
-                10: ("<i2", False), 11: ("<u4", False), 12: ("<i4", False)}
+FORMATS_2019 = {
+    0: ("<f4", False),
+    1: ("<f2", False),
+    2: ("u1", True),
+    3: ("i1", True),
+    4: ("<u2", True),
+    5: ("<i2", True),
+    6: ("u1", False),
+    7: ("i1", False),
+    8: ("<u2", False),
+    9: ("<i2", False),
+    10: ("<u4", False),
+    11: ("<i4", False),
+}
+FORMATS_2017 = {
+    0: ("<f4", False),
+    1: ("<f2", False),
+    2: ("u1", True),
+    3: ("u1", True),
+    4: ("i1", True),
+    5: ("<u2", True),
+    6: ("<i2", True),
+    7: ("u1", False),
+    8: ("i1", False),
+    9: ("<u2", False),
+    10: ("<i2", False),
+    11: ("<u4", False),
+    12: ("<i4", False),
+}
 TOPOLOGIES = {0: "triangles", 1: "triangle_strip", 2: "quads", 3: "lines", 4: "line_strip", 5: "points"}
 RAW_LAYOUT_SINCE = (2018, 2)
 
@@ -57,6 +95,7 @@ class MeshInput:
     of `index_bits`-bit indices, or a sequence of ints when the reader decoded it; `decoded`: {channel name:
     (array (vertices, components), normalized)} for meshes whose buffers the reader decoded; `bind_poses`:
     Matrix4x4f typetrees (e00 .. e33)."""
+
     name: str
     version: tuple
     vertex_count: int
@@ -75,8 +114,8 @@ class MeshInput:
 
 @dataclass
 class Channel:
-    data: np.ndarray                  # (vertices, components), the stored component type
-    normalized: bool = False          # integers standing for [0, 1] (unsigned) or [-1, 1] (signed)
+    data: np.ndarray  # (vertices, components), the stored component type
+    normalized: bool = False  # integers standing for [0, 1] (unsigned) or [-1, 1] (signed)
 
     def as_float(self) -> np.ndarray:
         """The values as float32 (normalized integers dequantized as Unity does: v / max, signed clamped to -1)."""
@@ -92,30 +131,30 @@ class Channel:
 
 @dataclass
 class Primitive:
-    topology: str                     # triangles | lines | line_strip | points
-    indices: np.ndarray | None        # triangles (n, 3), others flat; absolute vertex indices; None: every vertex
-    submesh: int | None = None        # submesh index (None: the mesh has no index buffer)
+    topology: str  # triangles | lines | line_strip | points
+    indices: np.ndarray | None  # triangles (n, 3), others flat; absolute vertex indices; None: every vertex
+    submesh: int | None = None  # submesh index (None: the mesh has no index buffer)
 
 
 @dataclass
 class Skin:
-    joints: np.ndarray                # (vertices, 4) uint16
-    weights: Channel                  # (vertices, 4)
+    joints: np.ndarray  # (vertices, 4) uint16
+    weights: Channel  # (vertices, 4)
 
 
 @dataclass
 class MeshArrays:
     name: str
     vertex_count: int
-    channels: dict = field(default_factory=dict)       # name -> Channel, in channel order
+    channels: dict = field(default_factory=dict)  # name -> Channel, in channel order
     primitives: list = field(default_factory=list)
-    submeshes: list = field(default_factory=list)      # Submesh per submesh, as stored
+    submeshes: list = field(default_factory=list)  # Submesh per submesh, as stored
     skin: Skin | None = None
     bind_poses: np.ndarray = field(default_factory=lambda: np.zeros((0, 4, 4), np.float32))  # row-major, Unity space
     bone_name_hashes: list = field(default_factory=list)
     root_bone_name_hash: int | None = None
-    layout: list = field(default_factory=list)         # the stored channel table (vertex buffers decoded here)
-    issues: list = field(default_factory=list)         # (reason code, message)
+    layout: list = field(default_factory=list)  # the stored channel table (vertex buffers decoded here)
+    issues: list = field(default_factory=list)  # (reason code, message)
 
 
 def _formats(version: tuple) -> dict:
@@ -152,9 +191,11 @@ def decode_vertex_data(inp: MeshInput) -> dict:
         start, stride = streams[s]
         end = start + count * stride
         if end > raw.size or offset + dt.itemsize * dim > stride:
-            raise ValueError(f"mesh {inp.name!r}: channel {CHANNELS[i]} outside the vertex data "
-                             f"({raw.size} bytes, stream {s} ends at {end})")
-        cols = raw[start:end].reshape(count, stride)[:, offset:offset + dt.itemsize * dim]
+            raise ValueError(
+                f"mesh {inp.name!r}: channel {CHANNELS[i]} outside the vertex data "
+                f"({raw.size} bytes, stream {s} ends at {end})"
+            )
+        cols = raw[start:end].reshape(count, stride)[:, offset : offset + dt.itemsize * dim]
         values = np.ascontiguousarray(cols).view(dt).reshape(count, dim)
         out[CHANNELS[i]] = Channel(values.astype(dt.newbyteorder("=")), norm)
     return out
@@ -172,7 +213,7 @@ def _indices(inp: MeshInput) -> np.ndarray:
 def _strip(idx: np.ndarray) -> np.ndarray:
     tris = []
     for i in range(len(idx) - 2):
-        a, b, c = (int(x) for x in idx[i:i + 3])
+        a, b, c = (int(x) for x in idx[i : i + 3])
         if a == b or a == c or b == c:
             continue
         tris.append((b, a, c) if i & 1 else (a, b, c))
@@ -187,10 +228,9 @@ def _primitives(inp: MeshInput, count: int) -> list[Primitive]:
     prims = []
     for n, sm in enumerate(inp.submeshes):
         first = int(sm.first_byte) // per
-        part = idx[first:first + int(sm.index_count)]
+        part = idx[first : first + int(sm.index_count)]
         if len(part) != int(sm.index_count):
-            raise ValueError(f"mesh {inp.name!r}: submesh {n} indices {first}..{first + sm.index_count} of "
-                             f"{len(idx)}")
+            raise ValueError(f"mesh {inp.name!r}: submesh {n} indices {first}..{first + sm.index_count} of {len(idx)}")
         topology = TOPOLOGIES.get(int(sm.topology or 0))
         if topology is None:
             raise ValueError(f"mesh {inp.name!r}: submesh {n} topology {sm.topology}")
@@ -215,8 +255,13 @@ def _primitives(inp: MeshInput, count: int) -> list[Primitive]:
 def _skin(channels: dict, inp: MeshInput, issues: list) -> Skin | None:
     ix, w = channels.get("blendIndices"), channels.get("blendWeight")
     if inp.variable_bone_weights:
-        issues.append(("partial.mesh.skin", f"{inp.variable_bone_weights} variable bone count weights (more than "
-                                            f"four bones per vertex) not converted; four per vertex kept"))
+        issues.append(
+            (
+                "partial.mesh.skin",
+                f"{inp.variable_bone_weights} variable bone count weights (more than "
+                f"four bones per vertex) not converted; four per vertex kept",
+            )
+        )
     if ix is None:
         if w is not None:
             issues.append(("partial.mesh.skin", "BlendWeight without BlendIndices"))
@@ -262,13 +307,29 @@ def arrays(inp: MeshInput) -> MeshArrays:
     else:
         channels = decode_vertex_data(inp)
     issues: list = []
-    out = MeshArrays(inp.name, count, channels, _primitives(inp, count) if count else [], list(inp.submeshes),
-                     _skin(channels, inp, issues), bone_name_hashes=[int(h) for h in inp.bone_name_hashes],
-                     root_bone_name_hash=inp.root_bone_name_hash, issues=issues)
+    out = MeshArrays(
+        inp.name,
+        count,
+        channels,
+        _primitives(inp, count) if count else [],
+        list(inp.submeshes),
+        _skin(channels, inp, issues),
+        bone_name_hashes=[int(h) for h in inp.bone_name_hashes],
+        root_bone_name_hash=inp.root_bone_name_hash,
+        issues=issues,
+    )
     if inp.decoded is None:
-        out.layout = [{"channel": CHANNELS[i] if i < len(CHANNELS) else str(i), "stream": int(st),
-                       "offset": int(off), "format": int(fmt), "dimension": int(dim)}
-                      for i, (st, off, fmt, dim) in enumerate(inp.channels) if int(dim) & 0xF]
+        out.layout = [
+            {
+                "channel": CHANNELS[i] if i < len(CHANNELS) else str(i),
+                "stream": int(st),
+                "offset": int(off),
+                "format": int(fmt),
+                "dimension": int(dim),
+            }
+            for i, (st, off, fmt, dim) in enumerate(inp.channels)
+            if int(dim) & 0xF
+        ]
     if inp.bind_poses:
         out.bind_poses = np.asarray([_matrix(m) for m in inp.bind_poses], np.float32).reshape(-1, 4, 4)
     if inp.blend_shapes:

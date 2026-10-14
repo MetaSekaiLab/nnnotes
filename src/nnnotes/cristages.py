@@ -30,6 +30,7 @@ catalog keys and cue sheet names of each subject, for placing it under them).
 
 Neither stage imports UnityPy, numpy or the decoders before a task runs.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -48,19 +49,23 @@ from .stages import Output, Pending, Stage
 
 AUDIO, MOVIE, EXPORT = "cri.audio", "cri.movie", "unity.export"
 ACB_MAGIC, AWB_MAGIC, USM_MAGIC = b"@UTF", b"AFS2", b"CRID"
-ACB_KIND = "cri.acb"                      # semantics kind of the ACB artifacts of unity.export
-USM_KIND = "cri.usm"                      # semantics kind of the USM artifacts of unity.export
+ACB_KIND = "cri.acb"  # semantics kind of the ACB artifacts of unity.export
+USM_KIND = "cri.usm"  # semantics kind of the USM artifacts of unity.export
 BOOT_IN_APK = "assets/bin/Data/data.unity3d"
-ACB_NAME = "sheet"                        # the stem of the ACB file vgmstream reads (names come from its cues)
+ACB_NAME = "sheet"  # the stem of the ACB file vgmstream reads (names come from its cues)
 TOOL_REVISION = 1
 FORMATS = ("mkv", "webm")
-FLAC_LEVEL = 8                            # ffmpeg's FLAC compression level by default (here and in cri.decode)
-REASONS = ("unsupported.cri.awb_external", "unsupported.usm.codec", "unsupported.usm.stream",
-           "unsupported.usm.subtitle")
+FLAC_LEVEL = 8  # ffmpeg's FLAC compression level by default (here and in cri.decode)
+REASONS = (
+    "unsupported.cri.awb_external",
+    "unsupported.usm.codec",
+    "unsupported.usm.stream",
+    "unsupported.usm.subtitle",
+)
 _lock = threading.Lock()
-_magic: dict[str, bytes] = {}             # content id -> first 4 bytes
-_tools: dict[tuple, str] = {}             # (executable, size, mtime) -> tool id
-_keys: dict[str, int] = {}                # boot data content id -> HCA keycode
+_magic: dict[str, bytes] = {}  # content id -> first 4 bytes
+_tools: dict[tuple, str] = {}  # (executable, size, mtime) -> tool id
+_keys: dict[str, int] = {}  # boot data content id -> HCA keycode
 
 
 # ---------------------------------------------------------------- inputs shared by the stages
@@ -103,6 +108,7 @@ def hca_key(store, inp: Input) -> int:
         if inp.sha256 in _keys:
             return _keys[inp.sha256]
     from . import crikey
+
     key = crikey.find_key(store.open_input(inp))
     with _lock:
         _keys[inp.sha256] = key
@@ -142,6 +148,7 @@ def tool_id(which: str, exe: str) -> str:
 
 def _tool(which: str) -> str:
     from .config import tool
+
     return tool(which, "vgmstream-cli" if which == "vgmstream" else "ffmpeg")
 
 
@@ -152,8 +159,10 @@ def _magic_of(store, inp: Input, name: str) -> bytes:
         m = _magic.get(inp.sha256)
     if m is None:
         from .store import InputMissing
-        local = Input(inp.role, inp.sha256, inp.size, inp.name,
-                      tuple(loc for loc in inp.locators if loc.get("kind") != "catalog"))
+
+        local = Input(
+            inp.role, inp.sha256, inp.size, inp.name, tuple(loc for loc in inp.locators if loc.get("kind") != "catalog")
+        )
         try:
             path = store.open_input(local)
         except InputMissing:
@@ -214,6 +223,7 @@ class _Catalog:
 
 class _CriStage(Stage):
     """What the two stages share: subjects by content from an index built once per planning state."""
+
     CLASS = ""
 
     def __init__(self):
@@ -254,19 +264,28 @@ class _CriStage(Stage):
 
     def _item(self, task, artifacts=(), why=None) -> Output:
         status = "exported" if why is None else "unsupported"
-        return Output(list(artifacts), [contract.item(task.id, status, artifacts=[a["id"] for a in artifacts],
-                                                      why=why, cls=self.CLASS)])
+        return Output(
+            list(artifacts),
+            [contract.item(task.id, status, artifacts=[a["id"] for a in artifacts], why=why, cls=self.CLASS)],
+        )
 
     def _check_atoms(self, task, want: dict) -> None:
         if task.atoms != want:
             diff = sorted(k for k in set(task.atoms) | set(want) if task.atoms.get(k) != want.get(k))
-            raise IncompatibleTask(f"task {task.id}: {', '.join(diff)} differ here: "
-                                   + "; ".join(f"{k} {want.get(k)} (task: {task.atoms.get(k)})" for k in diff))
+            raise IncompatibleTask(
+                f"task {task.id}: {', '.join(diff)} differ here: "
+                + "; ".join(f"{k} {want.get(k)} (task: {task.atoms.get(k)})" for k in diff)
+            )
 
-    def _artifact(self, task, store, role: str, data: bytes, ext: str, kind: str, fmt: str, facts: dict,
-                  media: str | None = None) -> dict:
-        return contract.artifact(contract.artifact_id(task.id, role), store.add(data, ext, media),
-                                 contract.provenance(task), {"kind": kind, "format": fmt, "facts": facts})
+    def _artifact(
+        self, task, store, role: str, data: bytes, ext: str, kind: str, fmt: str, facts: dict, media: str | None = None
+    ) -> dict:
+        return contract.artifact(
+            contract.artifact_id(task.id, role),
+            store.add(data, ext, media),
+            contract.provenance(task),
+            {"kind": kind, "format": fmt, "facts": facts},
+        )
 
 
 def _flac_params(p) -> dict:
@@ -283,6 +302,7 @@ def _flac_params(p) -> dict:
 # ---------------------------------------------------------------- cri.audio
 class AudioStage(_CriStage):
     """cri.audio (module documentation)."""
+
     name = AUDIO
     version = 1
     after = (EXPORT,)
@@ -291,7 +311,10 @@ class AudioStage(_CriStage):
 
     @property
     def ATOMS(self) -> dict:
-        return {"hca.decode": tool_id("vgmstream", _tool("vgmstream")), "flac.encode": tool_id("ffmpeg", _tool("ffmpeg"))}
+        return {
+            "hca.decode": tool_id("vgmstream", _tool("vgmstream")),
+            "flac.encode": tool_id("ffmpeg", _tool("ffmpeg")),
+        }
 
     def normalize(self, params: dict | None) -> dict:
         p = dict(params or {})
@@ -356,24 +379,70 @@ class AudioStage(_CriStage):
 
     def run(self, task, store) -> Output:
         from . import cri
+
         vgm, ff = _tool("vgmstream"), _tool("ffmpeg")
         self._check_atoms(task, {"hca.decode": tool_id("vgmstream", vgm), "flac.encode": tool_id("ffmpeg", ff)})
         if any(i.role == "awb" for i in task.inputs):
-            return self._item(task, why=contract.reason(
-                "unsupported.cri.awb_external", "the cue sheet's waveforms are streamed from an external AWB"))
+            return self._item(
+                task,
+                why=contract.reason(
+                    "unsupported.cri.awb_external", "the cue sheet's waveforms are streamed from an external AWB"
+                ),
+            )
         acb = store.input_bytes(task.input("acb"))
         key = hca_key(store, task.input("boot"))
         level = int(task.params["flac"]["level"])
         with tempfile.TemporaryDirectory(prefix="nnnotes-cri-") as tmp:
             out = Path(tmp)
-            d = cri.decode_acb_bytes(acb, None, key, "flac", out, name=ACB_NAME, flac_level=level,
-                                     workers=cri.default_workers(), vgmstream=vgm, ffmpeg=ff)
-            arts = [self._artifact(task, store, s["file"], (out / s["file"]).read_bytes(), "flac", "audio.stream",
-                                   "flac", {k: v for k, v in s.items() if k != "file"}) for s in d.streams]
-            arts.append(self._artifact(task, store, "cues.json", (out / "cues.json").read_bytes(), "json",
-                                       "cri.cues", "json", {"cues": len(d.cues)}))
-            arts.append(self._artifact(task, store, "streams.json", (out / "streams.json").read_bytes(), "json",
-                                       "cri.streams", "json", {"streams": len(d.streams)}))
+            d = cri.decode_acb_bytes(
+                acb,
+                None,
+                key,
+                "flac",
+                out,
+                name=ACB_NAME,
+                flac_level=level,
+                workers=cri.default_workers(),
+                vgmstream=vgm,
+                ffmpeg=ff,
+            )
+            arts = [
+                self._artifact(
+                    task,
+                    store,
+                    s["file"],
+                    (out / s["file"]).read_bytes(),
+                    "flac",
+                    "audio.stream",
+                    "flac",
+                    {k: v for k, v in s.items() if k != "file"},
+                )
+                for s in d.streams
+            ]
+            arts.append(
+                self._artifact(
+                    task,
+                    store,
+                    "cues.json",
+                    (out / "cues.json").read_bytes(),
+                    "json",
+                    "cri.cues",
+                    "json",
+                    {"cues": len(d.cues)},
+                )
+            )
+            arts.append(
+                self._artifact(
+                    task,
+                    store,
+                    "streams.json",
+                    (out / "streams.json").read_bytes(),
+                    "json",
+                    "cri.streams",
+                    "json",
+                    {"streams": len(d.streams)},
+                )
+            )
         return self._item(task, arts)
 
 
@@ -392,13 +461,19 @@ def _export_artifacts(store, key: str, kind: str) -> list[dict]:
 # ---------------------------------------------------------------- cri.movie
 USM_DEMUX_REVISION = 2
 # stream codec -> (semantics format, media type) of its artifact
-STREAM_FORMATS = {"vp9": ("ivf", "video/x-ivf"), "mpeg1": ("mpeg1video", "video/mpeg"), "h264": ("h264", "video/h264"),
-                  "adx": ("adx", "audio/x-adx"), "hca": ("hca", "application/octet-stream")}
+STREAM_FORMATS = {
+    "vp9": ("ivf", "video/x-ivf"),
+    "mpeg1": ("mpeg1video", "video/mpeg"),
+    "h264": ("h264", "video/h264"),
+    "adx": ("adx", "audio/x-adx"),
+    "hca": ("hca", "application/octet-stream"),
+}
 MOVIE_FORMATS = {"mkv": ("matroska", "video/x-matroska"), "webm": ("webm", "video/webm")}
 
 
 class MovieStage(_CriStage):
     """cri.movie (module documentation)."""
+
     name = MOVIE
     version = 2
     after = (EXPORT,)
@@ -417,7 +492,7 @@ class MovieStage(_CriStage):
         fmt = p.get("format", "mkv")
         if fmt not in FORMATS:
             raise ValueError(f"stage {self.name}: format {fmt!r}: expected {' or '.join(FORMATS)}")
-        if fmt == "webm":                       # Opus audio: the FLAC level does not apply
+        if fmt == "webm":  # Opus audio: the FLAC level does not apply
             if "flac" in p:
                 _flac_params(p["flac"])
             return {"format": "webm"}
@@ -468,6 +543,7 @@ class MovieStage(_CriStage):
 
     def run(self, task, store) -> Output:
         from . import advvideo
+
         ff, vgm = _tool("ffmpeg"), _tool("vgmstream")
         self._check_atoms(task, movie_atoms(ff, vgm))
         usm = store.input_bytes(task.input("usm"))
@@ -505,8 +581,7 @@ class MovieStage(_CriStage):
             try:
                 if out_fmt == "mkv":
                     inputs = {s.name: advvideo.stream_input(s, work / "in", key, vgm) for s in tracks}
-                    advvideo.run_ffmpeg(ff, advvideo.mkv_args(tracks, inputs, dst, task.params["flac"]["level"]),
-                                        "mkv")
+                    advvideo.run_ffmpeg(ff, advvideo.mkv_args(tracks, inputs, dst, task.params["flac"]["level"]), "mkv")
                 else:
                     tracks = advvideo.write_webm(streams, dst, work / "in", ff, key, vgm)
             except advvideo.Unsupported as e:
@@ -514,8 +589,9 @@ class MovieStage(_CriStage):
             reencoded = out_fmt == "webm" and advvideo.webm_reencoded(tracks)
             facts = {"tracks": [_track(s, out_fmt, reencoded) for s in tracks]}
             fmt, media = MOVIE_FORMATS[out_fmt]
-            arts.append(self._artifact(task, store, dst.name, dst.read_bytes(), out_fmt, "video.movie", fmt, facts,
-                                       media))
+            arts.append(
+                self._artifact(task, store, dst.name, dst.read_bytes(), out_fmt, "video.movie", fmt, facts, media)
+            )
         return self._item(task, arts, why)
 
     def _subtitle(self, task, store, s) -> tuple[list[dict], str | None]:
@@ -523,11 +599,15 @@ class MovieStage(_CriStage):
         as SubRip and WebVTT when every text is UTF-8; the bytes as stored (`.sbt`) when they are not records."""
         from . import advvideo
         from .jsonio import dumps
+
         try:
             records = advvideo.subtitle_records(s.data)
         except ValueError as e:
-            return [self._artifact(task, store, f"{s.name}.sbt", s.data, "sbt", "subtitle.stream", "sbt",
-                                   {"channel": s.channel})], f"{s.name}: {e}"
+            return [
+                self._artifact(
+                    task, store, f"{s.name}.sbt", s.data, "sbt", "subtitle.stream", "sbt", {"channel": s.channel}
+                )
+            ], f"{s.name}: {e}"
         facts = {"channel": s.channel, "records": len(records)}
         doc = dumps(advvideo.subtitle_json(s.channel, records), indent=1, ensure_ascii=False).encode()
         arts = [self._artifact(task, store, f"{s.name}.json", doc, "json", "subtitle.records", "json", facts)]
@@ -535,18 +615,35 @@ class MovieStage(_CriStage):
             srt, vtt = advvideo.subtitle_srt(records), advvideo.subtitle_webvtt(records)
         except UnicodeDecodeError:
             return arts, f"{s.name}: a text that is not UTF-8"
-        arts.append(self._artifact(task, store, f"{s.name}.srt", srt.encode(), "srt", "subtitle.track", "srt", facts,
-                                   "application/x-subrip"))
-        arts.append(self._artifact(task, store, f"{s.name}.vtt", vtt.encode(), "vtt", "subtitle.track", "webvtt",
-                                   facts, "text/vtt"))
+        arts.append(
+            self._artifact(
+                task,
+                store,
+                f"{s.name}.srt",
+                srt.encode(),
+                "srt",
+                "subtitle.track",
+                "srt",
+                facts,
+                "application/x-subrip",
+            )
+        )
+        arts.append(
+            self._artifact(
+                task, store, f"{s.name}.vtt", vtt.encode(), "vtt", "subtitle.track", "webvtt", facts, "text/vtt"
+            )
+        )
         return arts, None
 
 
 def movie_atoms(ffmpeg: str, vgmstream: str) -> dict:
     """The atoms of a cri.movie task: the demuxer, ffmpeg (the mux, ADX decoding, FLAC / Opus / VP9 encoding) and
     vgmstream (HCA decoding)."""
-    return {"usm.demux": impl_id(("numpy",), USM_DEMUX_REVISION), "movie.mux": tool_id("ffmpeg", ffmpeg),
-            "hca.decode": tool_id("vgmstream", vgmstream)}
+    return {
+        "usm.demux": impl_id(("numpy",), USM_DEMUX_REVISION),
+        "movie.mux": tool_id("ffmpeg", ffmpeg),
+        "hca.decode": tool_id("vgmstream", vgmstream),
+    }
 
 
 def _track(s, fmt: str, reencoded: bool) -> dict:

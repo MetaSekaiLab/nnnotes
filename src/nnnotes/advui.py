@@ -74,6 +74,7 @@ filtering, read with the source wrap mode, and copied into a packed texture.
 UVs are remapped by an integer translation, so sampling returns the same texel
 values as the full atlas.
 """
+
 from __future__ import annotations
 
 import re
@@ -141,76 +142,213 @@ VIEWS = {
     "AdvFrameView": ("frameView", ()),
     "AdvFlashView": ("flashView", ("_flash",)),
     "AdvSubtitlesView": ("subtitlesView", ("_subtitles", "_subtitlesText")),
-    "AdvFrontScreenView": ("frontScreenView", ("_nextButton", "_nextIndicator", "_cancelFullScreenButton",
-                                               "_uiContainer")),
+    "AdvFrontScreenView": (
+        "frontScreenView",
+        ("_nextButton", "_nextIndicator", "_cancelFullScreenButton", "_uiContainer"),
+    ),
 }
 # views recorded with every serialized field (references as node paths)
 FULL_VIEWS = {"AdvTalkLogView": "talkLogView", "AdvChoiceView": "choiceView"}
 # the other game and uGUI components recorded in `behaviours` (per class, every component of the node in order):
 # buttons and their state and animation parts, raycast targets, colour synchronizers, texts' UIText, safe areas,
 # scrolling, DOTween animations, localized sprites, the backlog entry and choice item views, the dialog parts
-BEHAVIOURS = ("UIButton", "ButtonActiveState", "ButtonAnimationScale", "ButtonSound", "SimpleRaycastTarget",
-              "GraphicColorSynchronizer", "UIText", "AspectRatioFitter", "UIToggle", "UIToggleGroup",
-              "UIToggleButtonFrame", "UIDecoratedNormalButton", "UIDecoratedNormalButtonFrame", "UIAddressableImage",
-              "UISafeArea", "AdvViewportSafeArea", "EnhancedScrollRect", "EnhancedScroller", "ScrollRect", "RectMask2D",
-              "Scrollbar", "DOTweenAnimation", "LocalizeSpriteEvent", "AdvTalkLogEntryView", "AdvChoiceItem",
-              "DialogButtons", "DialogAnimation", "DialogSizeFitter", "UIAdvSkipConfirmDialogWidget",
-              "UICommonDialogWidget")
-SERIALIZED_SKIP = ("type", "class", "m_GameObject", "m_Script", "m_Name", "m_EditorHideFlags",
-                   "m_EditorClassIdentifier")
+BEHAVIOURS = (
+    "UIButton",
+    "ButtonActiveState",
+    "ButtonAnimationScale",
+    "ButtonSound",
+    "SimpleRaycastTarget",
+    "GraphicColorSynchronizer",
+    "UIText",
+    "AspectRatioFitter",
+    "UIToggle",
+    "UIToggleGroup",
+    "UIToggleButtonFrame",
+    "UIDecoratedNormalButton",
+    "UIDecoratedNormalButtonFrame",
+    "UIAddressableImage",
+    "UISafeArea",
+    "AdvViewportSafeArea",
+    "EnhancedScrollRect",
+    "EnhancedScroller",
+    "ScrollRect",
+    "RectMask2D",
+    "Scrollbar",
+    "DOTweenAnimation",
+    "LocalizeSpriteEvent",
+    "AdvTalkLogEntryView",
+    "AdvChoiceItem",
+    "DialogButtons",
+    "DialogAnimation",
+    "DialogSizeFitter",
+    "UIAdvSkipConfirmDialogWidget",
+    "UICommonDialogWidget",
+)
+SERIALIZED_SKIP = (
+    "type",
+    "class",
+    "m_GameObject",
+    "m_Script",
+    "m_Name",
+    "m_EditorHideFlags",
+    "m_EditorClassIdentifier",
+)
 # the dialogs of the ADV screen: the skip confirm dialog and CommonDialogManager's dialog widget
-DIALOG_KEYS = {"UIAdvSkipConfirmDialogWidget": "EmbUI/Prefab/UIAdvSkipConfirmDialogWidget",
-               "UICommonDialogWidget": "EmbUI/Prefab/UICommonDialogWidget"}
-CAMERA_FIELDS = ("m_Enabled", "m_ClearFlags", "m_BackGroundColor", "m_NormalizedViewPortRect", "near clip plane",
-                 "far clip plane", "field of view", "orthographic", "orthographic size", "m_Depth", "m_CullingMask",
-                 "m_HDR", "m_AllowMSAA")
-CAMERA_DATA_FIELDS = ("m_RenderPostProcessing", "m_VolumeLayerMask", "m_RendererIndex", "m_Antialiasing",
-                      "m_AntialiasingQuality", "m_RenderShadows", "m_RequiresDepthTextureOption",
-                      "m_RequiresOpaqueTextureOption", "m_CameraType", "m_VolumeFrameworkUpdateModeOption",
-                      "m_Dithering", "m_StopNaN")
+DIALOG_KEYS = {
+    "UIAdvSkipConfirmDialogWidget": "EmbUI/Prefab/UIAdvSkipConfirmDialogWidget",
+    "UICommonDialogWidget": "EmbUI/Prefab/UICommonDialogWidget",
+}
+CAMERA_FIELDS = (
+    "m_Enabled",
+    "m_ClearFlags",
+    "m_BackGroundColor",
+    "m_NormalizedViewPortRect",
+    "near clip plane",
+    "far clip plane",
+    "field of view",
+    "orthographic",
+    "orthographic size",
+    "m_Depth",
+    "m_CullingMask",
+    "m_HDR",
+    "m_AllowMSAA",
+)
+CAMERA_DATA_FIELDS = (
+    "m_RenderPostProcessing",
+    "m_VolumeLayerMask",
+    "m_RendererIndex",
+    "m_Antialiasing",
+    "m_AntialiasingQuality",
+    "m_RenderShadows",
+    "m_RequiresDepthTextureOption",
+    "m_RequiresOpaqueTextureOption",
+    "m_CameraType",
+    "m_VolumeFrameworkUpdateModeOption",
+    "m_Dithering",
+    "m_StopNaN",
+)
 # AdvMasterIdSettings text ids the drawn parts show: the video skip dialog (AdvMenuView's skip video button), the
 # skip confirm dialog and the interruption dialog
-MASTER_ID_TEXTS = ("_skipVideoMessageTextId", "_skipButtonTextId", "_cancelButtonTextId", "_skipMessageTextId",
-                   "_continuousSkipMessageTextId", "_backEpisodeListButtonTextId", "_continueEpisodeButtonTextId",
-                   "_interruptionTitleTextId", "_interruptionMessageTextId", "_interruptionButtonTextId")
-RUBY = re.compile(r"<r=([^<>]*)>")                  # ruby reading markup of the text tables: <r=reading>base</r>
+MASTER_ID_TEXTS = (
+    "_skipVideoMessageTextId",
+    "_skipButtonTextId",
+    "_cancelButtonTextId",
+    "_skipMessageTextId",
+    "_continuousSkipMessageTextId",
+    "_backEpisodeListButtonTextId",
+    "_continueEpisodeButtonTextId",
+    "_interruptionTitleTextId",
+    "_interruptionMessageTextId",
+    "_interruptionButtonTextId",
+)
+RUBY = re.compile(r"<r=([^<>]*)>")  # ruby reading markup of the text tables: <r=reading>base</r>
 # the phone of the chat rows: UIAdvChatWidget's canvas, AdvChatView and the parent of the attached window
 CHAT_WIDGET_KEY = "EmbUI/Prefab/UIAdvChatWidget"
-CHAT_WIDGET_NODES = ("UIAdvChatWidget/ChatCanvas", "UIAdvChatWidget/ChatCanvas/AdvChatView",
-                     "UIAdvChatWidget/ChatCanvas/AdvChatView/Target")
-CHAT_VIEW_FIELDS = ("_showEaseDuration", "_hideEaseDuration", "_showEase", "_hideEase", "_scrollDuration",
-                    "_typingDelay", "_typingTextBoxMinHeight", "_screenModeTransitionDuration",
-                    "_screenModeTransitionEase", "_incomingCallPositionOffset")
-CHAT_STATUS_KEYS = ("_incomingCallStatusTextKey", "_lockScreenStatusTextKey")    # AdvChatWindow.RefreshStatusTexts
+CHAT_WIDGET_NODES = (
+    "UIAdvChatWidget/ChatCanvas",
+    "UIAdvChatWidget/ChatCanvas/AdvChatView",
+    "UIAdvChatWidget/ChatCanvas/AdvChatView/Target",
+)
+CHAT_VIEW_FIELDS = (
+    "_showEaseDuration",
+    "_hideEaseDuration",
+    "_showEase",
+    "_hideEase",
+    "_scrollDuration",
+    "_typingDelay",
+    "_typingTextBoxMinHeight",
+    "_screenModeTransitionDuration",
+    "_screenModeTransitionEase",
+    "_incomingCallPositionOffset",
+)
+CHAT_STATUS_KEYS = ("_incomingCallStatusTextKey", "_lockScreenStatusTextKey")  # AdvChatWindow.RefreshStatusTexts
 CHAT_COMMANDS = ("ChatWindow", "ChatTalk", "ChatStamp", "ChatRead", "ChatTyping")
 # AdvMenuView: its serialized references (node paths), the fast-forward button sprites (AdvMenuView.SetFastForwardSpeed)
-MENU_VIEW_REFS = ("_menuButtonsParent", "_menuEntryButton", "_skipButton", "_autoButton", "_fastForwardButton",
-                  "_logButton", "_continuousButton", "_fullScreenButton", "_interruptionButton",
-                  "_menuButtonsBackground", "_canvasGroup", "_skipVideoButton", "_pauseVideoButton", "_subtitlesButton",
-                  "_videoButtonParent", "_videoFilterButton", "_fastForwardButtonImage")
-MENU_VIEW_SPRITES = ("_fastForwardNormalSprite", "_fastForwardOnePointFiveSprite", "_fastForwardOnePointSevenSprite",
-                     "_fastForwardDoubleSprite")
-EMOJI_SPRITE_ASSET_KEY = "Font/SiriusEmoji/SiriusEmojiData"   # LocalizeManager.EmojiSpriteAssetAddress
+MENU_VIEW_REFS = (
+    "_menuButtonsParent",
+    "_menuEntryButton",
+    "_skipButton",
+    "_autoButton",
+    "_fastForwardButton",
+    "_logButton",
+    "_continuousButton",
+    "_fullScreenButton",
+    "_interruptionButton",
+    "_menuButtonsBackground",
+    "_canvasGroup",
+    "_skipVideoButton",
+    "_pauseVideoButton",
+    "_subtitlesButton",
+    "_videoButtonParent",
+    "_videoFilterButton",
+    "_fastForwardButtonImage",
+)
+MENU_VIEW_SPRITES = (
+    "_fastForwardNormalSprite",
+    "_fastForwardOnePointFiveSprite",
+    "_fastForwardOnePointSevenSprite",
+    "_fastForwardDoubleSprite",
+)
+EMOJI_SPRITE_ASSET_KEY = "Font/SiriusEmoji/SiriusEmojiData"  # LocalizeManager.EmojiSpriteAssetAddress
 EMOJI_CLASSES = ("RubyEmojiTextMeshProUGUI",)
-FONT_ADDRESS = "Font/"            # LocalizeManager.FontAddressablePath; the embedded fonts are at "Emb" + address
+FONT_ADDRESS = "Font/"  # LocalizeManager.FontAddressablePath; the embedded fonts are at "Emb" + address
 # TMP_Text.GetUnderlineSpecialCharacter: the underline and the text highlight (DrawTextHighlight) draw with the '_'
 # of the text's font asset (no fallback), sampled on the asset's first atlas page
 UNDERLINE_CHARACTER = 0x5F
 
 TMP_CLASSES = ("TextMeshProUGUI", "RubyTextMeshProUGUI", "RubyEmojiTextMeshProUGUI")
 TMP_FIELDS = (
-    "m_fontSize", "m_fontSizeBase", "m_fontStyle", "m_fontWeight", "m_HorizontalAlignment", "m_VerticalAlignment",
-    "m_characterSpacing", "m_wordSpacing", "m_lineSpacing", "m_paragraphSpacing", "m_characterHorizontalScale",
-    "m_TextWrappingMode", "m_overflowMode", "m_enableAutoSizing", "m_fontSizeMin", "m_fontSizeMax",
-    "m_enableKerning", "m_ActiveFontFeatures", "m_enableExtraPadding", "m_isRichText", "m_parseCtrlCharacters",
-    "m_isOrthographic", "m_overrideHtmlColors", "m_margin", "m_fontColor", "m_Color", "m_colorMode",
-    "m_enableVertexGradient", "m_TextStyleHashCode", "m_useMaxVisibleDescender", "m_horizontalMapping",
-    "m_verticalMapping", "m_charWidthMaxAdj", "m_lineSpacingMax", "m_isRightToLeft", "m_text",
-    "m_monospaceDistEm",                  # TMP_EmojiTextUGUI (the emoji text classes)
+    "m_fontSize",
+    "m_fontSizeBase",
+    "m_fontStyle",
+    "m_fontWeight",
+    "m_HorizontalAlignment",
+    "m_VerticalAlignment",
+    "m_characterSpacing",
+    "m_wordSpacing",
+    "m_lineSpacing",
+    "m_paragraphSpacing",
+    "m_characterHorizontalScale",
+    "m_TextWrappingMode",
+    "m_overflowMode",
+    "m_enableAutoSizing",
+    "m_fontSizeMin",
+    "m_fontSizeMax",
+    "m_enableKerning",
+    "m_ActiveFontFeatures",
+    "m_enableExtraPadding",
+    "m_isRichText",
+    "m_parseCtrlCharacters",
+    "m_isOrthographic",
+    "m_overrideHtmlColors",
+    "m_margin",
+    "m_fontColor",
+    "m_Color",
+    "m_colorMode",
+    "m_enableVertexGradient",
+    "m_TextStyleHashCode",
+    "m_useMaxVisibleDescender",
+    "m_horizontalMapping",
+    "m_verticalMapping",
+    "m_charWidthMaxAdj",
+    "m_lineSpacingMax",
+    "m_isRightToLeft",
+    "m_text",
+    "m_monospaceDistEm",  # TMP_EmojiTextUGUI (the emoji text classes)
 )
 FONT_MODES = ("open", "game")
-IMAGE_FIELDS = ("m_Enabled", "m_Color", "m_Type", "m_PreserveAspect", "m_FillCenter", "m_FillMethod",
-                "m_FillAmount", "m_UseSpriteMesh", "m_PixelsPerUnitMultiplier", "m_Maskable")
+IMAGE_FIELDS = (
+    "m_Enabled",
+    "m_Color",
+    "m_Type",
+    "m_PreserveAspect",
+    "m_FillCenter",
+    "m_FillMethod",
+    "m_FillAmount",
+    "m_UseSpriteMesh",
+    "m_PixelsPerUnitMultiplier",
+    "m_Maskable",
+)
 
 
 def _strip_tags(s: str) -> str:
@@ -251,8 +389,13 @@ def _serialized(c: dict, sprites: list) -> dict:
 def _pictogram(c: dict) -> dict:
     """App.UI.UIPictogram: its key, image and native-size flag and the catalog it draws from (the sprite is
     resolved against the catalog in extract)."""
-    return {"m_Enabled": c["m_Enabled"], "_key": c["_key"], "_image": _ref_path(c["_image"]),
-            "_setNativeSize": c["_setNativeSize"], "catalog": (c["_spriteCatalog"] or {}).get("name")}
+    return {
+        "m_Enabled": c["m_Enabled"],
+        "_key": c["_key"],
+        "_image": _ref_path(c["_image"]),
+        "_setNativeSize": c["_setNativeSize"],
+        "catalog": (c["_spriteCatalog"] or {}).get("name"),
+    }
 
 
 def _layout_components(node: dict) -> dict:
@@ -266,22 +409,43 @@ def _layout_components(node: dict) -> dict:
         if t == "CanvasGroup":
             out["canvasGroup"] = {k: c[k] for k in ("m_Enabled", "m_Alpha", "m_IgnoreParentGroups")}
         elif t == "Canvas":
-            out["canvas"] = {k: c[k] for k in ("m_Enabled", "m_RenderMode", "m_SortingOrder",
-                                               "m_VertexColorAlwaysGammaSpace", "m_AdditionalShaderChannelsFlag",
-                                               "m_OverrideSorting", "m_PixelPerfect")}
-            if c["m_RenderMode"] == 1:         # screen space - camera: the plane it is drawn at, its camera if set
+            out["canvas"] = {
+                k: c[k]
+                for k in (
+                    "m_Enabled",
+                    "m_RenderMode",
+                    "m_SortingOrder",
+                    "m_VertexColorAlwaysGammaSpace",
+                    "m_AdditionalShaderChannelsFlag",
+                    "m_OverrideSorting",
+                    "m_PixelPerfect",
+                )
+            }
+            if c["m_RenderMode"] == 1:  # screen space - camera: the plane it is drawn at, its camera if set
                 out["canvas"]["m_PlaneDistance"] = c["m_PlaneDistance"]
                 if c.get("m_Camera"):
                     out["canvas"]["camera"] = _ref_path(c["m_Camera"])
         elif t == "Animator":
-            out["animator"] = {"controller": (c["m_Controller"] or {}).get("name"),
-                               "enabled": c["m_Enabled"], "updateMode": c["m_UpdateMode"],
-                               "keepStateOnDisable": c["m_KeepAnimatorStateOnDisable"]}
+            out["animator"] = {
+                "controller": (c["m_Controller"] or {}).get("name"),
+                "enabled": c["m_Enabled"],
+                "updateMode": c["m_UpdateMode"],
+                "keepStateOnDisable": c["m_KeepAnimatorStateOnDisable"],
+            }
         elif cls in ("CanvasScaler", "ClampedCanvasScaler"):
-            out["canvasScaler"] = {k: c[k] for k in ("m_Enabled", "m_UiScaleMode", "m_ReferencePixelsPerUnit",
-                                                     "m_ScaleFactor", "m_ReferenceResolution", "m_ScreenMatchMode",
-                                                     "m_MatchWidthOrHeight")}
-            if cls == "ClampedCanvasScaler":   # Fwk.UI.ClampedCanvasScaler: the scale clamped past an aspect ratio
+            out["canvasScaler"] = {
+                k: c[k]
+                for k in (
+                    "m_Enabled",
+                    "m_UiScaleMode",
+                    "m_ReferencePixelsPerUnit",
+                    "m_ScaleFactor",
+                    "m_ReferenceResolution",
+                    "m_ScreenMatchMode",
+                    "m_MatchWidthOrHeight",
+                )
+            }
+            if cls == "ClampedCanvasScaler":  # Fwk.UI.ClampedCanvasScaler: the scale clamped past an aspect ratio
                 out["canvasScaler"].update({"class": cls, "_maxAspectThreshold": c["_maxAspectThreshold"]})
         elif cls == "Image":
             img = {k: c[k] for k in IMAGE_FIELDS}
@@ -294,9 +458,13 @@ def _layout_components(node: dict) -> dict:
             out["rawImage"]["texture"] = (c["m_Texture"] or {}).get("name")
             out["rawImage"]["material"] = c["m_Material"]["material"] if c["m_Material"] else None
         elif cls == "UIGradientImage":
-            out["gradient"] = {"enabled": c["m_Enabled"], "gradient": c["_gradient"], "angleDeg": c["_angleDeg"],
-                               "splitAtKeysWhenAxisAligned": c["_splitAtKeysWhenAxisAligned"],
-                               "blendMode": c["_blendMode"]}
+            out["gradient"] = {
+                "enabled": c["m_Enabled"],
+                "gradient": c["_gradient"],
+                "angleDeg": c["_angleDeg"],
+                "splitAtKeysWhenAxisAligned": c["_splitAtKeysWhenAxisAligned"],
+                "blendMode": c["_blendMode"],
+            }
         elif cls in TMP_CLASSES:
             txt = {k: c[k] for k in TMP_FIELDS if k in c}
             txt["class"] = cls
@@ -313,33 +481,51 @@ def _layout_components(node: dict) -> dict:
         elif cls == "LayoutElement":
             out["layoutElement"] = {k: c[k] for k in c if k.startswith("m_")}
         elif cls == "DOTweenSequence":
-            out["tweenSequence"] = {"list": [{k: e[k] for k in ("_commandType", "_duration") if k in e}
-                                             for e in c["_list"]],
-                                    "raw": {k: c[k] for k in c if k in ("updateType", "isSpeedBased")}}
+            out["tweenSequence"] = {
+                "list": [{k: e[k] for k in ("_commandType", "_duration") if k in e} for e in c["_list"]],
+                "raw": {k: c[k] for k in c if k in ("updateType", "isSpeedBased")},
+            }
         elif cls == "SimpleAnimationTrigger":
             out["animationTrigger"] = {"blendTime": c["_blendTime"]}
         elif cls == "UIAdvTalkWindow":
-            out["talkWindow"] = {k: c[k] for k in ("_typingDelay", "_safeAreaTalkBackgroundExpansionFactor",
-                                                   "_useBackdropFilter", "_backdropFilterColor", "_talkTextColor",
-                                                   "_talkTextOutlineColor")}
+            out["talkWindow"] = {
+                k: c[k]
+                for k in (
+                    "_typingDelay",
+                    "_safeAreaTalkBackgroundExpansionFactor",
+                    "_useBackdropFilter",
+                    "_backdropFilterColor",
+                    "_talkTextColor",
+                    "_talkTextOutlineColor",
+                )
+            }
         elif cls == "ButtonImageState" and len(image_states) > 1:
             behaviours.setdefault(cls, []).append(_serialized(c, sprites))
         elif cls == "ButtonImageState":
             out["buttonImageState"] = {"normal": c["_normaledSprite"]["name"] if c["_normaledSprite"] else None}
-            if c["_selectedSprite"]:           # ButtonImageState.SetSelected: the sprite of the selected state
-                out["buttonImageState"].update({"selected": c["_selectedSprite"]["name"],
-                                                "selectedRef": c["_selectedSprite"]["spriteRef"],
-                                                "target": _ref_path(c["_target"])})
+            if c["_selectedSprite"]:  # ButtonImageState.SetSelected: the sprite of the selected state
+                out["buttonImageState"].update(
+                    {
+                        "selected": c["_selectedSprite"]["name"],
+                        "selectedRef": c["_selectedSprite"]["spriteRef"],
+                        "target": _ref_path(c["_target"]),
+                    }
+                )
         elif cls == "UISafeAreaEdgeAnchor":
-            out["safeAreaEdgeAnchor"] = {"enabled": c["m_Enabled"],
-                                         **{k: c[k] for k in ("_left", "_right", "_top", "_bottom")}}
+            out["safeAreaEdgeAnchor"] = {
+                "enabled": c["m_Enabled"],
+                **{k: c[k] for k in ("_left", "_right", "_top", "_bottom")},
+            }
         elif cls in VIEWS:
             key, refs = VIEWS[cls]
             out[key] = {"enabled": c["m_Enabled"], **{k: _ref_path(c[k]) for k in refs}}
         elif cls == "AdvMenuView":
-            out["menuView"] = {"enabled": c["m_Enabled"], **{k: _ref_path(c[k]) for k in MENU_VIEW_REFS},
-                               **{k: c[k]["name"] if c[k] else None for k in MENU_VIEW_SPRITES},
-                               "_fadeDuration": c["_fadeDuration"]}
+            out["menuView"] = {
+                "enabled": c["m_Enabled"],
+                **{k: _ref_path(c[k]) for k in MENU_VIEW_REFS},
+                **{k: c[k]["name"] if c[k] else None for k in MENU_VIEW_SPRITES},
+                "_fadeDuration": c["_fadeDuration"],
+            }
             sprites += [c[k]["spriteRef"] for k in MENU_VIEW_SPRITES if c[k]]
         elif cls in FULL_VIEWS:
             out[FULL_VIEWS[cls]] = {"enabled": c["m_Enabled"], **_serialized(c, sprites)}
@@ -348,14 +534,17 @@ def _layout_components(node: dict) -> dict:
         elif cls in BEHAVIOURS:
             behaviours.setdefault(cls, []).append(_serialized(c, sprites))
         elif cls == "AdvChatView":
-            out["chatView"] = {"enabled": c["m_Enabled"], **{k: c[k] for k in CHAT_VIEW_FIELDS},
-                               "_windowParentRect": _ref_path(c["_windowParentRect"])}
+            out["chatView"] = {
+                "enabled": c["m_Enabled"],
+                **{k: c[k] for k in CHAT_VIEW_FIELDS},
+                "_windowParentRect": _ref_path(c["_windowParentRect"]),
+            }
         elif cls == "Outline":
             out["outline"] = {"enabled": c["m_Enabled"]}
     if behaviours:
         out["behaviours"] = behaviours
     if sprites:
-        out["_spriteRefs"] = sprites                    # packed into the UI textures, removed in extract
+        out["_spriteRefs"] = sprites  # packed into the UI textures, removed in extract
     return out
 
 
@@ -364,8 +553,15 @@ def _layout_components(node: dict) -> dict:
 # --------------------------------------------------------------------------
 def _node_record(n: dict) -> dict:
     """A node of ui.json: transform, rect and the uGUI component records (_layout_components)."""
-    rec = {"path": n["path"], "name": n["name"], "active": n["active"], "localPosition": n["localPosition"],
-           "localRotation": n["localRotation"], "localScale": n["localScale"], "rect": n.get("rect")}
+    rec = {
+        "path": n["path"],
+        "name": n["name"],
+        "active": n["active"],
+        "localPosition": n["localPosition"],
+        "localRotation": n["localRotation"],
+        "localScale": n["localScale"],
+        "rect": n.get("rect"),
+    }
     rec.update(_layout_components(n))
     return rec
 
@@ -377,8 +573,16 @@ def _component(node: dict, classes: tuple) -> dict | None:
     return hit[0] if hit else None
 
 
-def extract(cat: Catalog, player: PlayerData, episode: dict, out_dir: Path, fonts: str = "open", *,
-            language: str | None = None, master: Path | None = None) -> dict:
+def extract(
+    cat: Catalog,
+    player: PlayerData,
+    episode: dict,
+    out_dir: Path,
+    fonts: str = "open",
+    *,
+    language: str | None = None,
+    master: Path | None = None,
+) -> dict:
     """Write <out_dir>/ui/. `fonts`: "open" (text records only) or "game" (also the game's TMP font data);
     `language`: the client language (a languages.LANGUAGES code; None: `[catalog] language` of the settings);
     `master`: the decoded master data (MasterText of `masterIdTexts`; None: no `masterIdTexts`)."""
@@ -389,12 +593,18 @@ def extract(cat: Catalog, player: PlayerData, episode: dict, out_dir: Path, font
     game = fonts == "game"
     if game:
         from . import tmpfont
+
         tmpfont.require_extra()
     ui_dir = Path(out_dir) / "ui"
     ui_dir.mkdir(parents=True, exist_ok=True)
-    ex = Exporter(cat, ui_dir, player=player, textures="deferred",
-                  stub_assets=("TMP_FontAsset", "TMP_SpriteAsset", "TMP_StyleSheet"),
-                  font_stubs=None if game else fontsettings.builtin())
+    ex = Exporter(
+        cat,
+        ui_dir,
+        player=player,
+        textures="deferred",
+        stub_assets=("TMP_FontAsset", "TMP_SpriteAsset", "TMP_StyleSheet"),
+        font_stubs=None if game else fontsettings.builtin(),
+    )
     packer = TexelPacker(ui_dir)
 
     # -- prefabs -------------------------------------------------------------
@@ -431,13 +641,15 @@ def extract(cat: Catalog, player: PlayerData, episode: dict, out_dir: Path, font
             if "text" in rec:
                 if not (rec.get("localizeText") or {}).get("localizeEnabled"):
                     raise NotImplementedError(f"{n['path']}: text without LocalizeText")
-                rec["textStyle"] = styles.record(n["path"], _component(n, TMP_CLASSES),
-                                                 _component(n, ("LocalizeText",)))
+                rec["textStyle"] = styles.record(
+                    n["path"], _component(n, TMP_CLASSES), _component(n, ("LocalizeText",))
+                )
                 if not keep_text:
                     del rec["text"]
             resolve_pictograms(rec, catalogs)
             out.append(rec)
         return out
+
     out_nodes = records(nodes, game)
     dialogs = {name: {"key": DIALOG_KEYS[name], "nodes": records(dn, False)} for name, dn in dialog_nodes.items()}
     front = [n for n in widget if n["path"].startswith("UIAdvWidget/FrontCanvas/") and n["path"].count("/") == 2]
@@ -447,7 +659,7 @@ def extract(cat: Catalog, player: PlayerData, episode: dict, out_dir: Path, font
     screen_image = _ref_path(widget_comp["_videoAndStillScreenImage"])
     if screen_image not in {n["path"] for n in out_nodes}:
         raise RuntimeError(f"{screen_image} (_videoAndStillScreenImage) is not a drawn node")
-    master_ids = ex.asset(MASTER_ID_SETTINGS_KEY)          # exported once: a second export is a reference
+    master_ids = ex.asset(MASTER_ID_SETTINGS_KEY)  # exported once: a second export is a reference
     id_texts = master_id_texts(master_ids, master, field) if master is not None else None
     chat_nodes = {n["path"]: n for n in ex.prefab(CHAT_WIDGET_KEY)["nodes"]}
     missing = [p for p in CHAT_WIDGET_NODES if p not in chat_nodes]
@@ -459,21 +671,37 @@ def extract(cat: Catalog, player: PlayerData, episode: dict, out_dir: Path, font
 
     materials: dict = {}
     if game:
-        materials, font_doc = _game_fonts(ex, styles, episode, out_nodes, field, master_ids,
-                                          [t["text"] for t in (id_texts or {}).values()]
-                                          + list((status_texts or {}).values()))
+        materials, font_doc = _game_fonts(
+            ex,
+            styles,
+            episode,
+            out_nodes,
+            field,
+            master_ids,
+            [t["text"] for t in (id_texts or {}).values()] + list((status_texts or {}).values()),
+        )
     rule = next(n for n in out_nodes if n["path"].endswith("FrontCanvas/RuleTransition"))
-    rt_comp = [c for c in next(w for w in widget if w["path"] == rule["path"])["components"]
-               if c.get("class") == "UIAdvRuleTransitionView"][0]
+    rt_comp = [
+        c
+        for c in next(w for w in widget if w["path"] == rule["path"])["components"]
+        if c.get("class") == "UIAdvRuleTransitionView"
+    ][0]
     materials[rt_comp["_material"]["material"]] = rt_comp["_material"]
     rule["ruleTransition"] = {"material": rt_comp["_material"]["material"]}
     # Graphic.defaultGraphicMaterial (Canvas.GetDefaultCanvasMaterial): the player
     # ships the built-in UI/Default shader (unity_builtin_extra) but no serialized
     # "Default UI Material", so its values are the shader's property defaults.
     ui_default = player.shader("UI/Default", file="unity_builtin_extra")
-    materials["Default UI Material"] = {"material": "Default UI Material", "shader": {"shader": "UI/Default"},
-                                        "keywords": [], "textures": {}, "ints": {}, "floats": {}, "colors": {},
-                                        "shaderDefaults": True}
+    materials["Default UI Material"] = {
+        "material": "Default UI Material",
+        "shader": {"shader": "UI/Default"},
+        "keywords": [],
+        "textures": {},
+        "ints": {},
+        "floats": {},
+        "colors": {},
+        "shaderDefaults": True,
+    }
     # the materials of the drawn images (the video mask and the curtain it masks)
     for n in nodes + [n for dn in dialog_nodes.values() for n in dn]:
         for c in n["components"]:
@@ -482,10 +710,17 @@ def extract(cat: Catalog, player: PlayerData, episode: dict, out_dir: Path, font
 
     # -- glyph blocks -------------------------------------------------------------
     if game:
-        font_out = tmpfont.export_fonts(ex, font_doc["fonts"], font_doc["primaries"], font_doc["needed"],
-                                        font_doc["runtime"], font_doc["textMaterials"], packer,
-                                        "characters shown by this episode (plus baked control characters); runtime "
-                                        "characters generated from the source font (runtimeGlyphs)")
+        font_out = tmpfont.export_fonts(
+            ex,
+            font_doc["fonts"],
+            font_doc["primaries"],
+            font_doc["needed"],
+            font_doc["runtime"],
+            font_doc["textMaterials"],
+            packer,
+            "characters shown by this episode (plus baked control characters); runtime "
+            "characters generated from the source font (runtimeGlyphs)",
+        )
         for name, mg in font_doc["missingGlyph"].items():
             font_out[name]["missingGlyph"] = mg
 
@@ -549,8 +784,12 @@ def extract(cat: Catalog, player: PlayerData, episode: dict, out_dir: Path, font
     for m in materials.values():
         for k, v in m["textures"].items():
             if v["texture"] is not None:
-                v["texture"] = {"name": v["texture"]["name"], "width": v["texture"]["width"],
-                                "height": v["texture"]["height"], "format": v["texture"]["format"]}
+                v["texture"] = {
+                    "name": v["texture"]["name"],
+                    "width": v["texture"]["width"],
+                    "height": v["texture"]["height"],
+                    "format": v["texture"]["format"],
+                }
 
     # -- clips ----------------------------------------------------------------------
     clips = {}
@@ -579,8 +818,13 @@ def extract(cat: Catalog, player: PlayerData, episode: dict, out_dir: Path, font
         needed[blur["shader"]] = blur_shader
     index, shader_summary = ex.dump_shaders(ui_dir / "shaders", needed)
     if blur is not None:
-        gles = [v for r in index if r["name"] == blur["shader"] for v in r["variants"]
-                if v["platform"] == "gles3" and v["type"] == "GLES3"]
+        gles = [
+            v
+            for r in index
+            if r["name"] == blur["shader"]
+            for v in r["variants"]
+            if v["platform"] == "gles3" and v["type"] == "GLES3"
+        ]
         if not any(v["keywords"] == [] and v["stage"] == "vertex" for v in gles):
             raise RuntimeError(f"{blur['shader']}: no GLES3 variant without keywords (the blur pass)")
     variants_needed = {}
@@ -589,8 +833,13 @@ def extract(cat: Catalog, player: PlayerData, episode: dict, out_dir: Path, font
         rec = next(r for r in index if r["name"] == sh)
         known = {k for v in rec["variants"] if v["platform"] == "gles3" and v["type"] == "GLES3" for k in v["keywords"]}
         want = sorted(k for k in m["keywords"] if k in known)
-        ok = any(v["platform"] == "gles3" and v["type"] == "GLES3" and sorted(v["keywords"]) == want
-                 and v["stage"] == "vertex" for v in rec["variants"])
+        ok = any(
+            v["platform"] == "gles3"
+            and v["type"] == "GLES3"
+            and sorted(v["keywords"]) == want
+            and v["stage"] == "vertex"
+            for v in rec["variants"]
+        )
         if not ok:
             raise RuntimeError(f"{sh}: no GLES3 variant for material {m['material']} keywords {want}")
         variants_needed[m["material"]] = want
@@ -618,20 +867,46 @@ def extract(cat: Catalog, player: PlayerData, episode: dict, out_dir: Path, font
     if game:
         tmp_settings = player.names_in(player.resource("TMP Settings"), player.mono(player.resource("TMP Settings")))
         doc["fonts"] = font_out
-        doc["tmpSettings"] = {k: tmp_settings[k] for k in ("m_fallbackFontAssets", "m_defaultFontAsset",
-                                                          "m_missingGlyphCharacter", "m_matchMaterialPreset",
-                                                          "m_enableExtraPadding", "m_warningsDisabled")}
-    doc.update({
-        "clips": clips,
-        "controllers": controllers,
-        "transitions": transitions,
-        "playerSettings": {k: ps[k] for k in (
-            "_defaultTransitionAssetAddress", "_waitAfterVoiceTime", "_waitTalkTextUnitTime",
-            "_minTalkDisplayTime", "_isAdvViewportFollowOnResolutionChanged")},
-        "dotween": {k: dts[k] for k in ("defaultEaseType", "defaultUpdateType", "defaultTimeScaleIndependent",
-                                        "timeScale", "defaultEaseOvershootOrAmplitude", "defaultEasePeriod")},
-        "shaders": {"index": "shaders/shaders.json", "names": shader_summary["names"]},
-    })
+        doc["tmpSettings"] = {
+            k: tmp_settings[k]
+            for k in (
+                "m_fallbackFontAssets",
+                "m_defaultFontAsset",
+                "m_missingGlyphCharacter",
+                "m_matchMaterialPreset",
+                "m_enableExtraPadding",
+                "m_warningsDisabled",
+            )
+        }
+    doc.update(
+        {
+            "clips": clips,
+            "controllers": controllers,
+            "transitions": transitions,
+            "playerSettings": {
+                k: ps[k]
+                for k in (
+                    "_defaultTransitionAssetAddress",
+                    "_waitAfterVoiceTime",
+                    "_waitTalkTextUnitTime",
+                    "_minTalkDisplayTime",
+                    "_isAdvViewportFollowOnResolutionChanged",
+                )
+            },
+            "dotween": {
+                k: dts[k]
+                for k in (
+                    "defaultEaseType",
+                    "defaultUpdateType",
+                    "defaultTimeScaleIndependent",
+                    "timeScale",
+                    "defaultEaseOvershootOrAmplitude",
+                    "defaultEasePeriod",
+                )
+            },
+            "shaders": {"index": "shaders/shaders.json", "names": shader_summary["names"]},
+        }
+    )
     if game:
         doc["glyphCoverage"] = font_doc["coverage"]
     if id_texts is not None:
@@ -643,23 +918,32 @@ def extract(cat: Catalog, player: PlayerData, episode: dict, out_dir: Path, font
         doc["chatStatusTexts"] = status_texts
     doc["textStyle"] = styles.summary()
     write_json(ui_dir / "ui.json", doc)
-    out = {"textures": {k: (v["width"], v["height"]) for k, v in textures.items()},
-           "shaders": shader_summary["names"]}
+    out = {"textures": {k: (v["width"], v["height"]) for k, v in textures.items()}, "shaders": shader_summary["names"]}
     if not game:
         return {**out, "fonts": "open", "texts": sum(1 for n in out_nodes if "textStyle" in n)}
-    return {**out, "coverage": font_doc["coverage"]["counts"],
-            "fonts": sorted(font_out),
-            "runtimeGlyphs": {k: {"generated": len(v["runtimeGlyphs"]["generated"]),
-                                  "validation": {kk: v["runtimeGlyphs"]["validation"][kk] for kk in
-                                                 ("glyphs", "maxAbsError", "meanAbsError", "exactGlyphs")}}
-                              for k, v in font_out.items() if v["runtimeGlyphs"]}}
+    return {
+        **out,
+        "coverage": font_doc["coverage"]["counts"],
+        "fonts": sorted(font_out),
+        "runtimeGlyphs": {
+            k: {
+                "generated": len(v["runtimeGlyphs"]["generated"]),
+                "validation": {
+                    kk: v["runtimeGlyphs"]["validation"][kk]
+                    for kk in ("glyphs", "maxAbsError", "meanAbsError", "exactGlyphs")
+                },
+            }
+            for k, v in font_out.items()
+            if v["runtimeGlyphs"]
+        },
+    }
 
 
 def talk_windows(episode: dict) -> list[str]:
     """The talk windows the story attaches, in the order of their nodes under TalkView: UIDefaultTalkWindow (AdvPlayer
     PlayInitialCommands attaches it), then by name the other talk windows of the episode's resources (the TalkWindow
     rows, adv.closure kind "talkwindow")."""
-    names = {r["address"][r["address"].rindex("/") + 1:] for r in episode["resources"] if r["kind"] == "talkwindow"}
+    names = {r["address"][r["address"].rindex("/") + 1 :] for r in episode["resources"] if r["kind"] == "talkwindow"}
     return [adv.DEFAULT_TALK_WINDOW] + sorted(names - {adv.DEFAULT_TALK_WINDOW})
 
 
@@ -709,6 +993,7 @@ def blur_settings(player: PlayerData) -> tuple[dict, object]:
     UIManager.UseBlur): the UIRendererFeature of renderer 0 (storyhost.blur_record; CameraManager and
     UICameraController set renderer 0 on the main, sub and UI cameras, and the UI overlay camera runs the pass)."""
     from . import storyhost  # storyhost imports this module: resolved at call time
+
     blur = storyhost.blur_record(player.graphics())
     if not blur["active"]:
         raise NotImplementedError(f"renderer {blur['renderer']}: the UIRendererFeature is not active")
@@ -767,7 +1052,7 @@ def emoji_sequence_key(name: str, unicode: int) -> str | None:
     (the game appends its 4-digit halves as UTF-16 code units) is not implemented."""
     n = name.rsplit("/", 1)[-1]
     if "." in n:
-        n = n[:n.rindex(".")]
+        n = n[: n.rindex(".")]
     n = n.lower()
     if "-" in n:
         n = "".join(p.rjust(8, "0") for p in n.split("-"))
@@ -775,7 +1060,7 @@ def emoji_sequence_key(name: str, unicode: int) -> str | None:
         return None
     out = []
     for i in range(0, len(n), 8):
-        chunk = n[i:i + 8]
+        chunk = n[i : i + 8]
         v = int(chunk, 16)
         if v == 0 or v >= 0x10FFFF or 0xD800 <= v < 0xE000:
             raise NotImplementedError(f"emoji sprite {name}: {chunk} is not a code point")
@@ -796,29 +1081,53 @@ def sprite_asset_record(ex: Exporter, key: str = EMOJI_SPRITE_ASSET_KEY) -> dict
     if tt.get("fallbackSpriteAssets"):
         raise NotImplementedError(f"{key}: fallback sprite assets")
     sheet = ex.deref(o, tt["spriteSheet"]).read_typetree()
-    chars = [{"index": i, "unicode": c["m_Unicode"], "name": c["m_Name"], "glyph": c["m_GlyphIndex"],
-              "scale": c["m_Scale"]} for i, c in enumerate(tt["m_SpriteCharacterTable"])]
-    glyphs = {str(g["m_Index"]): {"metrics": g["m_Metrics"], "rect": g["m_GlyphRect"], "scale": g["m_Scale"],
-                                  "atlasIndex": g["m_AtlasIndex"]} for g in tt["m_GlyphTable"]}
-    sequences = [{"name": e["name"], "unicode": e["unicode"]} for e in tt.get("spriteInfoList") or []
-                 if e.get("name") and "-" in e["name"]]
+    chars = [
+        {"index": i, "unicode": c["m_Unicode"], "name": c["m_Name"], "glyph": c["m_GlyphIndex"], "scale": c["m_Scale"]}
+        for i, c in enumerate(tt["m_SpriteCharacterTable"])
+    ]
+    glyphs = {
+        str(g["m_Index"]): {
+            "metrics": g["m_Metrics"],
+            "rect": g["m_GlyphRect"],
+            "scale": g["m_Scale"],
+            "atlasIndex": g["m_AtlasIndex"],
+        }
+        for g in tt["m_GlyphTable"]
+    }
+    sequences = [
+        {"name": e["name"], "unicode": e["unicode"]}
+        for e in tt.get("spriteInfoList") or []
+        if e.get("name") and "-" in e["name"]
+    ]
     for e in sequences:
-        emoji_sequence_key(e["name"], e["unicode"])          # raises on a name the port does not read
-    return {"name": tt["m_Name"], "faceInfo": tt["m_FaceInfo"], "characters": chars, "glyphs": glyphs,
-            "sequences": sequences,
-            "sheet": {"name": sheet["m_Name"], "width": sheet["m_Width"], "height": sheet["m_Height"],
-                      "mipCount": sheet.get("m_MipCount", 1), "settings": sheet.get("m_TextureSettings")},
-            "material": ex.material(ex.deref(o, tt["m_Material"]))}
+        emoji_sequence_key(e["name"], e["unicode"])  # raises on a name the port does not read
+    return {
+        "name": tt["m_Name"],
+        "faceInfo": tt["m_FaceInfo"],
+        "characters": chars,
+        "glyphs": glyphs,
+        "sequences": sequences,
+        "sheet": {
+            "name": sheet["m_Name"],
+            "width": sheet["m_Width"],
+            "height": sheet["m_Height"],
+            "mipCount": sheet.get("m_MipCount", 1),
+            "settings": sheet.get("m_TextureSettings"),
+        },
+        "material": ex.material(ex.deref(o, tt["m_Material"])),
+    }
 
 
 def _utf16(s: str) -> tuple[int, ...]:
     b = s.encode("utf-16-le")
-    return tuple(int.from_bytes(b[i:i + 2], "little") for i in range(0, len(b), 2))
+    return tuple(int.from_bytes(b[i : i + 2], "little") for i in range(0, len(b), 2))
 
 
 # TMP_TextUtilities.ToUpperFast's table (k_lookupStringU) for the units below U+0080
-TMP_UPPER = ("-------------------------------- !-#$%&-()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[-]^_`"
-             "ABCDEFGHIJKLMNOPQRSTUVWXYZ{|}~-")
+TMP_UPPER = (
+    "-------------------------------- !-#$%&-()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[-]^_`"
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZ{|}~-"
+)
 
 
 def tmp_hash(s: str) -> int:
@@ -877,8 +1186,12 @@ def _camera(widget: list, path: str | None, field: str = "_videoAndStillCamera")
     data = [c for c in node["components"] if c.get("class") == "UniversalAdditionalCameraData"]
     if len(cam) != 1 or len(data) != 1:
         raise RuntimeError(f"{path}: {len(cam)} Camera, {len(data)} UniversalAdditionalCameraData")
-    return {"path": path, "active": node["active"], "camera": {k: cam[0][k] for k in CAMERA_FIELDS},
-            "additionalCameraData": {k: data[0][k] for k in CAMERA_DATA_FIELDS}}
+    return {
+        "path": path,
+        "active": node["active"],
+        "camera": {k: cam[0][k] for k in CAMERA_FIELDS},
+        "additionalCameraData": {k: data[0][k] for k in CAMERA_DATA_FIELDS},
+    }
 
 
 def ui_camera(ex: Exporter) -> dict:
@@ -897,11 +1210,17 @@ def ui_camera(ex: Exporter) -> dict:
         return o
 
     comps = [ex.deref(go, c["component"]) for c in go.read_typetree()["m_Component"]]
-    managers = [c for c in comps if c is not None and c.type.name == "MonoBehaviour" and ex.script_class(c) == "UIManager"]
+    managers = [
+        c for c in comps if c is not None and c.type.name == "MonoBehaviour" and ex.script_class(c) == "UIManager"
+    ]
     if len(managers) != 1:
         raise RuntimeError(f"{UI_MANAGER_KEY}: {len(managers)} UIManager on the prefab root")
-    ctrl = mono(managers[0], managers[0].read_typetree()["_cameraController"], "UICameraController",
-                "UIManager._cameraController")
+    ctrl = mono(
+        managers[0],
+        managers[0].read_typetree()["_cameraController"],
+        "UICameraController",
+        "UIManager._cameraController",
+    )
     ctrl_tt = ctrl.read_typetree()
     cam = ex.deref(ctrl, ctrl_tt["_uiCamera"]) if ctrl_tt["_uiCamera"] else None
     if cam is None or cam.type.name != "Camera":
@@ -912,14 +1231,21 @@ def ui_camera(ex: Exporter) -> dict:
     if data_tt["m_GameObject"]["m_PathID"] != go_pid:
         raise RuntimeError(f"{UI_MANAGER_KEY}: _uiCamera and _uiCameraData are on different GameObjects")
     path = graph.path(graph.tf_of_go[go_pid])
-    node = {"path": path, "active": bool(graph.go[go_pid]["m_IsActive"]), "components": [
-        {"type": "Camera", **cam_tt}, {"type": "MonoBehaviour", "class": "UniversalAdditionalCameraData", **data_tt}]}
+    node = {
+        "path": path,
+        "active": bool(graph.go[go_pid]["m_IsActive"]),
+        "components": [
+            {"type": "Camera", **cam_tt},
+            {"type": "MonoBehaviour", "class": "UniversalAdditionalCameraData", **data_tt},
+        ],
+    }
     return _camera([node], path, "_uiCamera")
 
 
 def master_texts(master: Path, ids, field: str) -> dict[str, str]:
     """{MasterText id: its text in the text field `field`} of `ids`; a missing id raises."""
     from . import master as master_mod
+
     ids = set(ids)
     rows = {r["_id"]: r for r in master_mod.table(Path(master), "MasterText") if r["_id"] in ids}
     missing = sorted(ids - set(rows))
@@ -975,8 +1301,11 @@ def chat_localize(font_asset: str, material: str, lang: dict, mode: int) -> dict
 
 def chat_windows(episode: dict) -> dict[str, str]:
     """{window name: address} of the chat windows of the episode's resources ("Adv/Chat/Prefabs/" + name)."""
-    return {r["address"][len(adv.CHAT_WINDOW_PREFIX):]: r["address"]
-            for r in episode["resources"] if r["kind"] == "chatwindow"}
+    return {
+        r["address"][len(adv.CHAT_WINDOW_PREFIX) :]: r["address"]
+        for r in episode["resources"]
+        if r["kind"] == "chatwindow"
+    }
 
 
 def chat_text_nodes(ex: Exporter, episode: dict):
@@ -1008,11 +1337,11 @@ def chat_texts(ex: Exporter, fonts, lang: dict, mode: int, episode: dict) -> tup
             fa, mat = loc_font["fontAsset"], loc_font["material"]
         if (fa, mat) not in styles:
             face = fonts.font(fa)["faceInfo"]
-            styles[(fa, mat)] = textstyle.material_style(fonts.material(fa, mat), face["m_PointSize"],
-                                                         face["m_Scale"])
+            styles[(fa, mat)] = textstyle.material_style(fonts.material(fa, mat), face["m_PointSize"], face["m_Scale"])
         out.setdefault(name, {})[n["path"]] = {
             "textStyle": textstyle.text_style(comp, loc, table_lang, styles[(fa, mat)], mode),
-            "localizeText": {"enabled": loc["m_Enabled"], "localizeEnabled": loc["_localizeEnabled"]} if loc else None}
+            "localizeText": {"enabled": loc["m_Enabled"], "localizeEnabled": loc["_localizeEnabled"]} if loc else None,
+        }
     return out, status
 
 
@@ -1035,7 +1364,7 @@ def chat_runtime_texts(episode: dict) -> list[str]:
         p1 = _number(c.get("Parameter1"))
         if c["cmd"] == "ChatWindow":
             members = _number(c.get("Parameter4"))
-            if p1 is not None and abs(p1) < 2 ** 31:
+            if p1 is not None and abs(p1) < 2**31:
                 out.append(f"{int(p1)}%")
             if members is not None and members == int(members) and 2 <= members <= 99:
                 out.append(f"({int(members)})")
@@ -1083,13 +1412,13 @@ def shown_texts(episode: dict, master_ids: dict, field: str) -> list[str]:
                 if row is None:
                     raise KeyError(f"speaker text id {i} not in the episode text shard")
                 names.add(row[field])
-    for c in episode["commands"]:                  # chat rows: lines, window / sender names, stamp logs
+    for c in episode["commands"]:  # chat rows: lines, window / sender names, stamp logs
         if c["cmd"] not in CHAT_COMMANDS or c.get("IgnoreData"):
             continue
         if c.get("lines"):
             lines.append(c["lines"][field])
         ids = list(c.get("TargetTextIDs") or [])
-        if c["cmd"] == "ChatStamp" and c.get("TargetAssetName"):   # AdvChatStampCommand.GetStampLogText
+        if c["cmd"] == "ChatStamp" and c.get("TargetAssetName"):  # AdvChatStampCommand.GetStampLogText
             ids.append(c["TargetAssetName"].rsplit("/", 1)[-1] + "_log")
         for i in ids:
             row = episode["text"].get(i)
@@ -1106,20 +1435,29 @@ def shown_texts(episode: dict, master_ids: dict, field: str) -> list[str]:
     return [_strip_tags(s) for s in lines + sorted(names) + [title[field]]] + chat_runtime_texts(episode)
 
 
-def _game_fonts(ex: Exporter, styles: textstyle.TextStyles, episode: dict, out_nodes: list,
-                field: str, master_ids: dict, ui_texts: list[str] = ()) -> tuple[dict, dict]:
+def _game_fonts(
+    ex: Exporter,
+    styles: textstyle.TextStyles,
+    episode: dict,
+    out_nodes: list,
+    field: str,
+    master_ids: dict,
+    ui_texts: list[str] = (),
+) -> tuple[dict, dict]:
     """`--fonts game`: the localized font / material of every text node (`text.localized`), the TMP font assets,
     the glyph coverage of the characters the episode shows (in the text field `field`; `master_ids`:
     AdvMasterIdSettings; `ui_texts`: texts of the UI itself) and the text materials.
     -> (materials, the inputs of tmpfont.export_fonts + coverage)."""
     from . import tmpfont
+
     fonts = tmpfont.FontSet(ex)
     used_text_nodes = [n for n in out_nodes if "text" in n]
     primaries = {}
     for n in used_text_nodes:
         t = n["text"]
-        t["localized"] = textstyle.localize_text(n["path"], t["fontAsset"], t["material"], styles.swap, styles.lang,
-                                                 styles.mode)
+        t["localized"] = textstyle.localize_text(
+            n["path"], t["fontAsset"], t["material"], styles.swap, styles.lang, styles.mode
+        )
         primaries[t["localized"]["fontAsset"]] = None
     for fname in primaries:
         primaries[fname] = fonts.by_key(textstyle.font_dir(fname) + fname)
@@ -1149,8 +1487,15 @@ def _game_fonts(ex: Exporter, styles: textstyle.TextStyles, episode: dict, out_n
         coverage["missingGlyph"] = [chr(u) for u in mg["characters"]]
 
     # -- materials ---------------------------------------------------------------
-    materials, text_materials = tmpfont.text_materials(ex, fonts, [n["text"]["localized"] for n in used_text_nodes],
-                                                       {primary.name}, needed, runtime_units)
-    return materials, {"fonts": fonts, "primaries": {primary.name}, "needed": needed, "runtime": runtime_units,
-                       "textMaterials": text_materials, "coverage": coverage,
-                       "missingGlyph": {primary.name: mg} if mg else {}}
+    materials, text_materials = tmpfont.text_materials(
+        ex, fonts, [n["text"]["localized"] for n in used_text_nodes], {primary.name}, needed, runtime_units
+    )
+    return materials, {
+        "fonts": fonts,
+        "primaries": {primary.name},
+        "needed": needed,
+        "runtime": runtime_units,
+        "textMaterials": text_materials,
+        "coverage": coverage,
+        "missingGlyph": {primary.name: mg} if mg else {},
+    }

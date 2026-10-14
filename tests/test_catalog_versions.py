@@ -1,4 +1,5 @@
 """International resource versions select the catalog bytes, not just an import label."""
+
 import hashlib
 import os
 import subprocess
@@ -21,10 +22,16 @@ def binary(*keys):
 
 
 def config(tmp_path, *, api=True, version=None, region="tw"):
-    return Config({"catalog": {"region": region, "language": "en", "version": version},
-                   "servers": {region: {"cdn": "https://cdn.example/prod/" + region,
-                                        **({"api": "https://api.example"} if api else {})}},
-                   "paths": {"cache": str(tmp_path / "cache")}}, environ={})
+    return Config(
+        {
+            "catalog": {"region": region, "language": "en", "version": version},
+            "servers": {
+                region: {"cdn": "https://cdn.example/prod/" + region, **({"api": "https://api.example"} if api else {})}
+            },
+            "paths": {"cache": str(tmp_path / "cache")},
+        },
+        environ={},
+    )
 
 
 def test_auto_discovery_ignores_stale_main_and_advances_resource_version(tmp_path, monkeypatch):
@@ -78,9 +85,14 @@ def test_explicit_version_cache_is_offline_and_cdn_scoped(tmp_path, monkeypatch)
 def test_explicit_catalog_file_stays_offline(tmp_path, monkeypatch):
     path = tmp_path / "saved.bin"
     path.write_bytes(binary("Offline"))
-    cfg = Config({"catalog": {"region": "tw", "version": "1.0.0.201"},
-                  "servers": {"tw": {"api": "https://api.example", "catalog": str(path)}},
-                  "paths": {"cache": str(tmp_path / "cache")}}, environ={})
+    cfg = Config(
+        {
+            "catalog": {"region": "tw", "version": "1.0.0.201"},
+            "servers": {"tw": {"api": "https://api.example", "catalog": str(path)}},
+            "paths": {"cache": str(tmp_path / "cache")},
+        },
+        environ={},
+    )
     monkeypatch.setattr(gameapi, "master_version", lambda *args: pytest.fail("explicit file called Version"))
     assert cli.open_catalog(cfg, bundles=False).has("Offline")
 
@@ -125,8 +137,7 @@ def test_configured_main_never_queries_api_or_invents_resource_version(tmp_path,
 
 def test_version_precedence(tmp_path, monkeypatch):
     monkeypatch.setattr(gameapi, "master_version", lambda *args: pytest.fail("pin queried API"))
-    data = {"catalog": {"region": "tw", "version": "1.0.0.1"},
-            "servers": {"tw": {"catalog_version": "1.0.0.2"}}}
+    data = {"catalog": {"region": "tw", "version": "1.0.0.1"}, "servers": {"tw": {"catalog_version": "1.0.0.2"}}}
     assert Config(data, environ={}).catalog_version() == "1.0.0.2"
     cfg = Config(data, environ={}, overrides={("catalog", "version"): "1.0.0.3"})
     assert cfg.catalog_version() == "1.0.0.3"
@@ -143,9 +154,13 @@ def test_build_workers_inherit_the_version_pin(tmp_path, monkeypatch):
     monkeypatch.setenv("NNNOTES_PATHS_CACHE", str(tmp_path / "cache"))
     monkeypatch.setattr(catalog, "download", lambda url: binary(MODEL, EPISODE))
     assert cli.open_catalog(Config.load(), bundles=False).has(MODEL)
-    command = [sys.executable, "-c", "from nnnotes.config import Config; from nnnotes.cli import open_catalog; "
-               "from nnnotes.webmodel import catalog_models; c=open_catalog(Config.load(), bundles=False); "
-               "assert 'new' in catalog_models(c); print(c.resource_version)"]
+    command = [
+        sys.executable,
+        "-c",
+        "from nnnotes.config import Config; from nnnotes.cli import open_catalog; "
+        "from nnnotes.webmodel import catalog_models; c=open_catalog(Config.load(), bundles=False); "
+        "assert 'new' in catalog_models(c); print(c.resource_version)",
+    ]
     child = subprocess.run(command, env=os.environ.copy(), text=True, capture_output=True, check=True)
     assert child.stdout.strip() == "1.0.0.201"
 
@@ -221,7 +236,18 @@ def test_browser_uses_the_same_selector(tmp_path, monkeypatch):
 
 
 def test_catalog_release_flag_is_distinct_from_stored_catalog_version(tmp_path):
-    args = cli.build_parser().parse_args(["--catalog-release", "1.0.0.201", "export", "--catalog-version", "stored-label",
-                                          "--select", "key:Example", "-o", str(tmp_path / "out")])
+    args = cli.build_parser().parse_args(
+        [
+            "--catalog-release",
+            "1.0.0.201",
+            "export",
+            "--catalog-version",
+            "stored-label",
+            "--select",
+            "key:Example",
+            "-o",
+            str(tmp_path / "out"),
+        ]
+    )
     assert args.catalog_release == "1.0.0.201" and args.catalog_version == "stored-label"
     assert cli.load_config(args).catalog_version() == "1.0.0.201"

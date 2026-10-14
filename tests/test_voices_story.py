@@ -1,6 +1,7 @@
 """The Story source of the voices index on synthetic episodes (no game data): episode commands, speaker and line
 texts, the sounds and cue sheets of the shards, the statuses of episodes and rows, the inferred characters, the
 stage reading the unity.export artifacts, and the command."""
+
 import argparse
 import copy
 import json
@@ -14,12 +15,18 @@ from nnnotes.stages import Pending, describe, execute, registry
 from nnnotes.store import Store
 from nnnotes.views import AddressIndex, Obj, ViewError
 from test_views import addresses_doc, write_master
-from test_voices import (KEYS, SHEETS, TABLES, Cfg, Paths, audio, audio_task, command, planning, row, text)
+from test_voices import KEYS, SHEETS, TABLES, Cfg, Paths, audio, audio_task, command, planning, row, text
 
 RULES = voices.load_rules()
 STORY_SHEET = "adv_voice_x_01"
-SHEETS2 = {**SHEETS, STORY_SHEET: ({f"{STORY_SHEET}_00{n}": [n - 1] for n in range(1, 5)}, [0, 1, 2, 3],
-                                   {n - 1: (f"{STORY_SHEET}_00{n}", 100 * n) for n in range(1, 5)})}
+SHEETS2 = {
+    **SHEETS,
+    STORY_SHEET: (
+        {f"{STORY_SHEET}_00{n}": [n - 1] for n in range(1, 5)},
+        [0, 1, 2, 3],
+        {n - 1: (f"{STORY_SHEET}_00{n}", 100 * n) for n in range(1, 5)},
+    ),
+}
 
 
 def lines(tid, base):
@@ -28,14 +35,24 @@ def lines(tid, base):
 
 
 def cmd(index, command=2, target="", texts=(), line="", voices_=(), ignore=0):
-    return {"Index": index, "Command": command, "TargetName": target, "TargetTextIDs": list(texts),
-            "TargetTextColors": [], "AdvTextID": line, "VoiceIDs": list(voices_), "IgnoreData": ignore,
-            "Parameter1": "", "MotionName": "m"}
+    return {
+        "Index": index,
+        "Command": command,
+        "TargetName": target,
+        "TargetTextIDs": list(texts),
+        "TargetTextColors": [],
+        "AdvTextID": line,
+        "VoiceIDs": list(voices_),
+        "IgnoreData": ignore,
+        "Parameter1": "",
+        "MotionName": "m",
+    }
 
 
 def shard(rows):
-    return json.dumps({"_header": [{"_name": "ID", "_type": "Int64"}], "_allData": rows},
-                      ensure_ascii=False).encode("utf-8")
+    return json.dumps({"_header": [{"_name": "ID", "_type": "Int64"}], "_allData": rows}, ensure_ascii=False).encode(
+        "utf-8"
+    )
 
 
 def sound_row(i, sheet, cue, cat=2):
@@ -47,37 +64,69 @@ EPISODES = {
     # several commands; two voice ids in one command; a cue the ACB lacks; a sound whose sheet has no row; a voice
     # id without a sound; a sheet without a catalog key; a row the player ignores; speakers with and without a match
     "adv_script_x_01": {
-        "script": {"m_Name": "adv_script_x_01", "Collection": [
-            cmd(0, command=25),
-            cmd(3, target="alpha", texts=["adv_alpha"], line="x01_1", voices_=[5001]),
-            cmd(4, target="alpha", texts=["adv_alpha"], line="x01_9"),
-            cmd(5, target="gamma・Alpha", texts=["adv_gamma", "adv_alpha"], line="x01_2", voices_=[5002, 5003]),
-            cmd(7, command=37, target="passerby", texts=["adv_passerby"], line="x01_3", voices_=[5004]),
-            cmd(9, command=52, voices_=[5005]),
-            cmd(11, target="gamma", texts=["adv_gamma"], line="x01_4", voices_=[5006]),
-            cmd(12, target="alpha・passerby", texts=["adv_both"], line="x01_5", voices_=[5007], ignore=1)]},
-        "text": [lines(t, t) for t in ("x01_1", "x01_2", "x01_3", "x01_4", "x01_5", "x01_9", "adv_alpha",
-                                       "adv_gamma", "adv_passerby", "adv_both", "x01_unused")],
-        "sound": [sound_row(5001, 700, f"{STORY_SHEET}_001"), sound_row(5002, 700, f"{STORY_SHEET}_002"),
-                  sound_row(5003, 700, f"{STORY_SHEET}_009"), sound_row(5004, 99, "lost_01"),
-                  sound_row(5006, 701, "adv_voice_x_gone_001"), sound_row(5007, 700, f"{STORY_SHEET}_003"),
-                  sound_row(5008, 1100, "bgm_01", cat=0)],
-        "sheets": [{"_id": 700, "_cueSheetName": STORY_SHEET, "_note": ""},
-                   {"_id": 701, "_cueSheetName": "adv_voice_x_gone", "_note": ""},
-                   {"_id": 1100, "_cueSheetName": "sound_bgm_x", "_note": ""}]},
+        "script": {
+            "m_Name": "adv_script_x_01",
+            "Collection": [
+                cmd(0, command=25),
+                cmd(3, target="alpha", texts=["adv_alpha"], line="x01_1", voices_=[5001]),
+                cmd(4, target="alpha", texts=["adv_alpha"], line="x01_9"),
+                cmd(5, target="gamma・Alpha", texts=["adv_gamma", "adv_alpha"], line="x01_2", voices_=[5002, 5003]),
+                cmd(7, command=37, target="passerby", texts=["adv_passerby"], line="x01_3", voices_=[5004]),
+                cmd(9, command=52, voices_=[5005]),
+                cmd(11, target="gamma", texts=["adv_gamma"], line="x01_4", voices_=[5006]),
+                cmd(12, target="alpha・passerby", texts=["adv_both"], line="x01_5", voices_=[5007], ignore=1),
+            ],
+        },
+        "text": [
+            lines(t, t)
+            for t in (
+                "x01_1",
+                "x01_2",
+                "x01_3",
+                "x01_4",
+                "x01_5",
+                "x01_9",
+                "adv_alpha",
+                "adv_gamma",
+                "adv_passerby",
+                "adv_both",
+                "x01_unused",
+            )
+        ],
+        "sound": [
+            sound_row(5001, 700, f"{STORY_SHEET}_001"),
+            sound_row(5002, 700, f"{STORY_SHEET}_002"),
+            sound_row(5003, 700, f"{STORY_SHEET}_009"),
+            sound_row(5004, 99, "lost_01"),
+            sound_row(5006, 701, "adv_voice_x_gone_001"),
+            sound_row(5007, 700, f"{STORY_SHEET}_003"),
+            sound_row(5008, 1100, "bgm_01", cat=0),
+        ],
+        "sheets": [
+            {"_id": 700, "_cueSheetName": STORY_SHEET, "_note": ""},
+            {"_id": 701, "_cueSheetName": "adv_voice_x_gone", "_note": ""},
+            {"_id": 1100, "_cueSheetName": "sound_bgm_x", "_note": ""},
+        ],
+    },
     # no -Text key; the -SoundCueSheet key is there but not exported
     "adv_script_x_02": {
         "script": {"Collection": [cmd(1, target="gamma", texts=["adv_gamma"], line="x02_1", voices_=[5101])]},
-        "sound": [sound_row(5101, 700, f"{STORY_SHEET}_004")]},
+        "sound": [sound_row(5101, 700, f"{STORY_SHEET}_004")],
+    },
     # a home episode naming a cue a master row names too
     "adv_script_home_03": {
         "script": {"Collection": [cmd(2, target="alpha", texts=["adv_alpha"], line="h03_1", voices_=[5201])]},
         "text": [lines(t, t) for t in ("h03_1", "adv_alpha")],
         "sound": [sound_row(5201, 10, "Growth_Alpha_RankUp_01", cat=0)],
-        "sheets": [{"_id": 10, "_cueSheetName": "VoiceSystem_01"}]},
+        "sheets": [{"_id": 10, "_cueSheetName": "VoiceSystem_01"}],
+    },
     # an episode without voices
-    "adv_script_x_08": {"script": {"Collection": [cmd(0, command=25), cmd(1, line="x08_1")]}, "text": [],
-                        "sound": [], "sheets": []},
+    "adv_script_x_08": {
+        "script": {"Collection": [cmd(0, command=25), cmd(1, line="x08_1")]},
+        "text": [],
+        "sound": [],
+        "sheets": [],
+    },
     # exported, but the MonoBehaviour has no command list
     "adv_script_x_07": {"script": {"m_Name": "adv_script_x_07"}, "text": [], "sound": [], "sheets": []},
 }
@@ -93,12 +142,21 @@ STORY_TABLES = {
         {"_id": 900005, "_advEpisodeAsset": "adv_script_gone", "_titleTextId": ""},
         {"_id": 900006, "_advEpisodeAsset": "adv_script_x_06", "_titleTextId": ""},
         {"_id": 900007, "_advEpisodeAsset": "adv_script_x_07", "_titleTextId": ""},
-        {"_id": 900008, "_advEpisodeAsset": "adv_script_x_08", "_titleTextId": ""}],
-    "MasterStoryEpisode": [{"_id": 101, "_chapterId": 1, "_episodeNumber": 1, "_characterId": 0,
-                            "_isAnotherEpisode": False, "_isExtraEpisode": False, "_advId": 900001}],
+        {"_id": 900008, "_advEpisodeAsset": "adv_script_x_08", "_titleTextId": ""},
+    ],
+    "MasterStoryEpisode": [
+        {
+            "_id": 101,
+            "_chapterId": 1,
+            "_episodeNumber": 1,
+            "_characterId": 0,
+            "_isAnotherEpisode": False,
+            "_isExtraEpisode": False,
+            "_advId": 900001,
+        }
+    ],
     "MasterStoryChapter": [{"_id": 1, "_nameTextId": "Chapter_Name_1"}],
-    "MasterStoryFriendshipEpisode": [{"_id": 1, "_characterFriendshipId": 12, "_episodeNumber": 2,
-                                      "_advId": 900002}],
+    "MasterStoryFriendshipEpisode": [{"_id": 1, "_characterFriendshipId": 12, "_episodeNumber": 2, "_advId": 900002}],
     "MasterCharacterFriendship": [{"_id": 12, "_masterCharacterIdA": 1, "_masterCharacterIdB": 2}],
     "MasterStoryHomeSpotTapTalkEpisode": [{"_id": 1000101, "_spotId": 10001, "_characterId": 1, "_advId": 900003}],
     "MasterStoryLiveResultEpisode": [{"_id": 1, "_characterIds": [1], "_advId": 900008}],
@@ -108,8 +166,7 @@ STORY_TABLES = {
 def tables():
     t = copy.deepcopy(TABLES)
     t.update(copy.deepcopy(STORY_TABLES))
-    t["MasterText"] = t["MasterText"] + [text(x, x.lower()) for x in ("Title_900001", "Title_900002",
-                                                                     "Chapter_Name_1")]
+    t["MasterText"] = t["MasterText"] + [text(x, x.lower()) for x in ("Title_900001", "Title_900002", "Chapter_Name_1")]
     return t
 
 
@@ -141,8 +198,13 @@ def story(parts=None) -> dict:
 
 
 def build(audio_=True, story_=True, tables_=None, keys=None):
-    return voices.build(RULES, tables_ or tables(), AddressIndex({k: [] for k in keys or catalog_keys()}),
-                        audio(sheets=SHEETS2) if audio_ else None, story=story() if story_ else None)
+    return voices.build(
+        RULES,
+        tables_ or tables(),
+        AddressIndex({k: [] for k in keys or catalog_keys()}),
+        audio(sheets=SHEETS2) if audio_ else None,
+        story=story() if story_ else None,
+    )
 
 
 def story_rows(doc):
@@ -153,14 +215,24 @@ def story_rows(doc):
 def test_episode_keeps_the_voice_commands_and_the_rows_they_name():
     e = story()["adv_script_x_01"]
     assert [c["Index"] for c in e["commands"]] == [3, 5, 7, 9, 11, 12]
-    assert set(e["commands"][0]) == set(storyvoices.COMMAND_FIELDS)                 # other fields dropped
-    assert sorted(e["text"]) == ["adv_alpha", "adv_both", "adv_gamma", "adv_passerby", "x01_1", "x01_2", "x01_3",
-                                 "x01_4", "x01_5"]                                   # x01_9: a line without voice
-    assert sorted(e["sound"]) == [5001, 5002, 5003, 5004, 5006, 5007]               # 5005 has no row, 5008 unused
+    assert set(e["commands"][0]) == set(storyvoices.COMMAND_FIELDS)  # other fields dropped
+    assert sorted(e["text"]) == [
+        "adv_alpha",
+        "adv_both",
+        "adv_gamma",
+        "adv_passerby",
+        "x01_1",
+        "x01_2",
+        "x01_3",
+        "x01_4",
+        "x01_5",
+    ]  # x01_9: a line without voice
+    assert sorted(e["sound"]) == [5001, 5002, 5003, 5004, 5006, 5007]  # 5005 has no row, 5008 unused
     assert sorted(e["sheets"]) == [700, 701]
-    from_dict = storyvoices.episode(EPISODES["adv_script_x_01"]["script"], *(part_bytes("adv_script_x_01", p)
-                                                                           for p in ("text", "sound", "sheets")))
-    assert from_dict == e                                   # the script as JSON bytes or as the loaded fields
+    from_dict = storyvoices.episode(
+        EPISODES["adv_script_x_01"]["script"], *(part_bytes("adv_script_x_01", p) for p in ("text", "sound", "sheets"))
+    )
+    assert from_dict == e  # the script as JSON bytes or as the loaded fields
     assert storyvoices.episode(None, shard([])) == {"commands": None, "text": {}, "sound": None, "sheets": None}
     assert storyvoices.episode({"m_Name": "x"}) == {"why": "the script has no Collection"}
     assert storyvoices.episode(b"{not json")["why"].startswith("the script is not JSON")
@@ -174,34 +246,50 @@ def test_story_rows_facts_texts_and_statuses():
     doc = build()
     rows = story_rows(doc)
     assert [r["id"] for r in rows] == [
-        "MasterAdv:900001:3", "MasterAdv:900001:5:1", "MasterAdv:900001:5:2", "MasterAdv:900001:7",
-        "MasterAdv:900001:9", "MasterAdv:900001:11", "MasterAdv:900001:12", "MasterAdv:900002:1",
-        "MasterAdv:900003:2"]
+        "MasterAdv:900001:3",
+        "MasterAdv:900001:5:1",
+        "MasterAdv:900001:5:2",
+        "MasterAdv:900001:7",
+        "MasterAdv:900001:9",
+        "MasterAdv:900001:11",
+        "MasterAdv:900001:12",
+        "MasterAdv:900002:1",
+        "MasterAdv:900003:2",
+    ]
     r = row(doc, "MasterAdv:900001:3")
-    assert r["source"] == {"name": "Story", "table": "MasterAdv", "row": 900001, "command": 3,
-                           "type": {"enum": "AdvCommand", "value": 2, "name": "Talk"}}
+    assert r["source"] == {
+        "name": "Story",
+        "table": "MasterAdv",
+        "row": 900001,
+        "command": 3,
+        "type": {"enum": "AdvCommand", "value": 2, "name": "Talk"},
+    }
     assert r["characters"] == [] and r["category"] == {"name": "Main"}
     assert r["sound"] == {"id": 5001, "category": 2, "sheet": STORY_SHEET, "cue": f"{STORY_SHEET}_001"}
     assert r["text"] == {"id": "x01_1", "texts": {c: f"x01_1-{c}" for c in languages.LANGUAGES}}
-    assert r["speaker"] == {"name": "alpha", "texts": [
-        {"id": "adv_alpha", "texts": {c: f"adv_alpha-{c}" for c in languages.LANGUAGES}}]}
-    assert r["inferred"] == {"characters": [1], "rule": "speaker-name",
-                             "matches": [{"segment": "alpha", "character": 1}]}
+    assert r["speaker"] == {
+        "name": "alpha",
+        "texts": [{"id": "adv_alpha", "texts": {c: f"adv_alpha-{c}" for c in languages.LANGUAGES}}],
+    }
+    assert r["inferred"] == {
+        "characters": [1],
+        "rule": "speaker-name",
+        "matches": [{"segment": "alpha", "character": 1}],
+    }
     assert r["status"] == "ok" and r["availability"] == {"master": True, "catalog": True, "exported": True}
     assert [s["file"] for s in r["audio"]["streams"]] == [f"{STORY_SHEET}_001.flac"]
     assert r["audio"]["streams"][0]["artifact"].startswith(audio_task(STORY_SHEET, SHEETS2).id)
     a, b = row(doc, "MasterAdv:900001:5:1"), row(doc, "MasterAdv:900001:5:2")
     assert (a["source"]["slot"], b["source"]["slot"]) == ("1", "2")
     assert a["text"] == b["text"] and a["speaker"]["name"] == "gamma・Alpha"
-    assert a["inferred"]["characters"] == [2, 1]                       # in speaker order, case ignored
+    assert a["inferred"]["characters"] == [2, 1]  # in speaker order, case ignored
     assert a["inferred"]["matches"] == [{"segment": "gamma", "character": 2}, {"segment": "Alpha", "character": 1}]
     assert a["status"] == "ok"
     assert b["status"] == "missing-cue" and b["detail"] == f"sheet {STORY_SHEET} has no cue {STORY_SHEET}_009"
     chat = row(doc, "MasterAdv:900001:7")
-    assert chat["source"]["type"]["name"] == "ChatTalk" and "inferred" not in chat          # no character match
+    assert chat["source"]["type"]["name"] == "ChatTalk" and "inferred" not in chat  # no character match
     assert chat["speaker"]["texts"][0]["texts"]["ko"] == "adv_passerby-ko"
-    assert chat["status"] == "no-value" and chat["detail"] == \
-        f"{story_keys('adv_script_x_01')['sheets']} has no row 99"
+    assert chat["status"] == "no-value" and chat["detail"] == f"{story_keys('adv_script_x_01')['sheets']} has no row 99"
     assert chat["sound"] == {"id": 5004, "category": 2, "sheet": None, "cue": "lost_01"}
     bare = row(doc, "MasterAdv:900001:9")
     assert bare["source"]["type"]["name"] == "Voice" and "speaker" not in bare and "text" not in bare
@@ -214,16 +302,23 @@ def test_story_rows_facts_texts_and_statuses():
     assert ignored["inferred"]["matches"] == [{"segment": "alpha", "character": 1}]
     two = row(doc, "MasterAdv:900002:1")
     assert two["category"] == {"name": "Friendship"} and two["text"] == {"id": "x02_1", "texts": None}
-    assert two["speaker"]["texts"] == [{"id": "adv_gamma", "texts": None}]      # the episode has no -Text key
-    assert two["status"] == "not-exported" and two["detail"] == \
-        f"{story_keys('adv_script_x_02')['sheets']} is not exported"
+    assert two["speaker"]["texts"] == [{"id": "adv_gamma", "texts": None}]  # the episode has no -Text key
+    assert (
+        two["status"] == "not-exported"
+        and two["detail"] == f"{story_keys('adv_script_x_02')['sheets']} is not exported"
+    )
     assert two["sound"] == {"id": 5101, "category": 2, "sheet": None, "cue": f"{STORY_SHEET}_004"}
     home = row(doc, "MasterAdv:900003:2")
     assert home["category"] == {"name": "HomeSpotTapTalk"} and home["status"] == "ok"
     assert home["audio"]["streams"] == row(doc, "MasterTalk:561")["audio"]["streams"]
     cov = doc["coverage"]["sources"]["Story"]
-    assert cov["rows"] == 9 and cov["counts"] == {"missing-cue": 1, "missing-key": 1, "no-value": 2,
-                                                   "not-exported": 1, "ok": 4}
+    assert cov["rows"] == 9 and cov["counts"] == {
+        "missing-cue": 1,
+        "missing-key": 1,
+        "no-value": 2,
+        "not-exported": 1,
+        "ok": 4,
+    }
     assert cov["gaps"] == ["MasterAdv:900001:5:2", "MasterAdv:900001:11"]
 
 
@@ -232,12 +327,18 @@ def test_episodes_kinds_and_statuses():
     eps = {e["id"]: e for e in doc["episodes"]}
     assert list(eps) == sorted(eps)
     main = eps[900001]
-    assert main == {"id": 900001, "asset": "adv_script_x_01", "kind": "Main", "table": "MasterStoryEpisode",
-                    "row": 101, "title": {"id": "Title_900001",
-                                          "texts": {c: f"title_900001-{c}" for c in languages.LANGUAGES}},
-                    "fields": {"chapter": 1, "episode": 1, "character": 0, "another": False, "extra": False},
-                    "names": {"chapter": {c: f"chapter_name_1-{c}" for c in languages.LANGUAGES}},
-                    "status": "ok", "voices": 7}
+    assert main == {
+        "id": 900001,
+        "asset": "adv_script_x_01",
+        "kind": "Main",
+        "table": "MasterStoryEpisode",
+        "row": 101,
+        "title": {"id": "Title_900001", "texts": {c: f"title_900001-{c}" for c in languages.LANGUAGES}},
+        "fields": {"chapter": 1, "episode": 1, "character": 0, "another": False, "extra": False},
+        "names": {"chapter": {c: f"chapter_name_1-{c}" for c in languages.LANGUAGES}},
+        "status": "ok",
+        "voices": 7,
+    }
     assert eps[900002]["fields"] == {"friendship": 12, "episode": 2, "characterA": 1, "characterB": 2}
     assert (eps[900003]["kind"], eps[900003]["fields"]) == ("HomeSpotTapTalk", {"spot": 10001, "character": 1})
     assert "title" not in eps[900003]
@@ -249,12 +350,15 @@ def test_episodes_kinds_and_statuses():
     assert status[900008] == ("ok", None) and eps[900008]["voices"] == 0 and eps[900008]["kind"] == "LiveResult"
     assert eps[900004]["kind"] is None and "table" not in eps[900004]
     cov = doc["coverage"]["sources"]["Story"]
-    assert cov["episodes"] == {"count": 8, "counts": {"missing-key": 1, "no-value": 1, "not-exported": 1, "ok": 4,
-                                                     "unsupported": 1},
-                               "gaps": ["MasterAdv:900005"]}
+    assert cov["episodes"] == {
+        "count": 8,
+        "counts": {"missing-key": 1, "no-value": 1, "not-exported": 1, "ok": 4, "unsupported": 1},
+        "gaps": ["MasterAdv:900005"],
+    }
     assert cov["empty"] == 1
-    phase1 = voices.gaps(build(story_=False)) - len(build(story_=False)["coverage"]["sources"]["Story"]["episodes"]
-                                                        ["gaps"])
+    phase1 = voices.gaps(build(story_=False)) - len(
+        build(story_=False)["coverage"]["sources"]["Story"]["episodes"]["gaps"]
+    )
     assert voices.gaps(doc) == phase1 + 2 + 1
 
 
@@ -262,7 +366,11 @@ def test_characters_are_inferred_from_the_speaker_only():
     doc = build()
     assert [c["id"] for c in doc["characters"]] == [1, 2]
     assert [r["id"] for r in voices.select(doc, characters={2}, source="Story")] == [
-        "MasterAdv:900001:5:1", "MasterAdv:900001:5:2", "MasterAdv:900001:11", "MasterAdv:900002:1"]
+        "MasterAdv:900001:5:1",
+        "MasterAdv:900001:5:2",
+        "MasterAdv:900001:11",
+        "MasterAdv:900002:1",
+    ]
     assert all(r["characters"] == [] for r in story_rows(doc))
     s = voices.summary(doc)["story"]
     assert s["speakers"]["passerby"] == {"rows": 1, "characters": []}
@@ -277,32 +385,46 @@ def test_characters_are_inferred_from_the_speaker_only():
 
 
 def test_speaker_segments_match_the_parts_of_a_name_id():
-    assert voices._name_parts({1: "Character_Name_Alpha", 2: "Character_Name_Beta_Gamma",
-                               3: "Character_Name_Delta_Alpha"}) == {"beta": 2, "gamma": 2, "delta": 3}
+    assert voices._name_parts(
+        {1: "Character_Name_Alpha", 2: "Character_Name_Beta_Gamma", 3: "Character_Name_Delta_Alpha"}
+    ) == {"beta": 2, "gamma": 2, "delta": 3}
     assert voices._name_parts({1: "Character_Name_Alpha"}) == {"alpha": 1}
     assert voices._name_parts({1: "Alpha", 2: ""}) == {"alpha": 1}
-    ep = storyvoices.episode({"Collection": [cmd(1, target="beta", voices_=[5001]),
-                                             cmd(2, target="alpha_child", voices_=[5001]),
-                                             cmd(3, target="Name・character", voices_=[5001])]}, None,
-                             shard([sound_row(5001, 700, f"{STORY_SHEET}_001")]),
-                             shard([{"_id": 700, "_cueSheetName": STORY_SHEET}]))
-    doc = voices.build(RULES, tables(), AddressIndex({k: [] for k in catalog_keys()}), None,
-                       story={"adv_script_x_01": ep})
-    assert row(doc, "MasterAdv:900001:1")["inferred"] == {"characters": [2], "rule": "speaker-name",
-                                                          "matches": [{"segment": "beta", "character": 2}]}
-    assert "inferred" not in row(doc, "MasterAdv:900001:2")          # a part of the segment is not enough
-    assert "inferred" not in row(doc, "MasterAdv:900001:3")          # the parts every name id has
+    ep = storyvoices.episode(
+        {
+            "Collection": [
+                cmd(1, target="beta", voices_=[5001]),
+                cmd(2, target="alpha_child", voices_=[5001]),
+                cmd(3, target="Name・character", voices_=[5001]),
+            ]
+        },
+        None,
+        shard([sound_row(5001, 700, f"{STORY_SHEET}_001")]),
+        shard([{"_id": 700, "_cueSheetName": STORY_SHEET}]),
+    )
+    doc = voices.build(
+        RULES, tables(), AddressIndex({k: [] for k in catalog_keys()}), None, story={"adv_script_x_01": ep}
+    )
+    assert row(doc, "MasterAdv:900001:1")["inferred"] == {
+        "characters": [2],
+        "rule": "speaker-name",
+        "matches": [{"segment": "beta", "character": 2}],
+    }
+    assert "inferred" not in row(doc, "MasterAdv:900001:2")  # a part of the segment is not enough
+    assert "inferred" not in row(doc, "MasterAdv:900001:3")  # the parts every name id has
 
 
 def test_reverse_coverage_counts_a_cue_once_and_shared_cues_are_reported():
     doc = build()
     rev = doc["coverage"]["reverse"]
     assert "Cri/Sound/adv_voice_x_01" not in rev["unreferencedKeys"]
-    assert rev["unreferencedStreams"][STORY_SHEET] == [[4, f"{STORY_SHEET}_004"]]    # its only row: not exported
+    assert rev["unreferencedStreams"][STORY_SHEET] == [[4, f"{STORY_SHEET}_004"]]  # its only row: not exported
     alone = build(story_=False)
     assert alone["coverage"]["reverse"]["unreferencedKeys"] == ["Cri/Sound/adv_voice_x_01"]
-    assert alone["coverage"]["reverse"]["unreferencedStreams"]["VoiceSystem_01"] == \
-        rev["unreferencedStreams"]["VoiceSystem_01"]
+    assert (
+        alone["coverage"]["reverse"]["unreferencedStreams"]["VoiceSystem_01"]
+        == rev["unreferencedStreams"]["VoiceSystem_01"]
+    )
     s = voices.summary(doc)
     assert s["story"]["sharedCues"] == {"rows": 1, "cues": 1, "sources": {"Talk": 1}}
     assert s["story"]["kinds"]["Main"] == {"episodes": 1, "voices": 7}
@@ -319,7 +441,7 @@ def test_phase_one_rows_do_not_change():
 
 def test_content_is_apart_from_availability_and_deterministic():
     content = ("id", "source", "characters", "category", "sound", "text", "speaker", "inferred")
-    strip = lambda d: [{k: r[k] for k in content if k in r} for r in story_rows(d)]     # noqa: E731
+    strip = lambda d: [{k: r[k] for k in content if k in r} for r in story_rows(d)]  # noqa: E731
     exported, bare = build(), build(audio_=False)
     assert strip(exported) == strip(bare)
     assert row(bare, "MasterAdv:900001:3")["status"] == "not-exported"
@@ -369,9 +491,14 @@ def export_results(store, env) -> dict:
             oid = contract.object_id(f"CAB-{n:04x}", 10 * n + m)
             role = voices.STORY_OBJECTS[part][1]
             data = part_bytes(asset, part)
-            arts.append(contract.artifact(contract.artifact_id(oid, role), store.add(data, "json" if part == "script"
-                                                                                        else "txt"),
-                                          contract.provenance(t), {"kind": "unity.object", "format": "json"}))
+            arts.append(
+                contract.artifact(
+                    contract.artifact_id(oid, role),
+                    store.add(data, "json" if part == "script" else "txt"),
+                    contract.provenance(t),
+                    {"kind": "unity.object", "format": "json"},
+                )
+            )
             items.append(contract.item(oid, "exported", artifacts=[arts[-1]["id"]]))
             oids.setdefault(asset, {})[part] = oid
         res = contract.result(t, arts, items)
@@ -391,7 +518,8 @@ def address_doc() -> dict:
             cls = voices.STORY_OBJECTS[part][0]
             key = story_keys(asset)[part]
             entries[key] = ([Obj(f"CAB-{n:04x}:{10 * n + 9}", "GameObject", "x")] if part == "script" else []) + [
-                Obj(oid, cls, asset)]
+                Obj(oid, cls, asset)
+            ]
             files[f"CAB-{n:04x}"] = f"adv_{asset}"
     doc = addresses_doc(entries)
     doc["files"] = files
@@ -399,8 +527,15 @@ def address_doc() -> dict:
 
 
 def story_env(store, tmp_path):
-    return planning(store, tmp_path, keys=catalog_keys(), sheets=SHEETS2, tables=tables(), doc=address_doc(),
-                    results=lambda env: export_results(store, env))
+    return planning(
+        store,
+        tmp_path,
+        keys=catalog_keys(),
+        sheets=SHEETS2,
+        tables=tables(),
+        doc=address_doc(),
+        results=lambda env: export_results(store, env),
+    )
 
 
 def test_stage_reads_the_exported_episodes(tmp_path):
@@ -412,19 +547,22 @@ def test_stage_reads_the_exported_episodes(tmp_path):
     assert sorted(eps) == sorted(EPISODES)
     assert sorted(eps["adv_script_x_02"]) == ["script", "sound"]
     x01 = eps["adv_script_x_01"]["script"]
-    assert x01 == {"object": "CAB-0001:11", "artifact": "CAB-0001:11#json",                # the MonoBehaviour
-                   "sha256": contract.sha256(part_bytes("adv_script_x_01", "script"))}
+    assert x01 == {
+        "object": "CAB-0001:11",
+        "artifact": "CAB-0001:11#json",  # the MonoBehaviour
+        "sha256": contract.sha256(part_bytes("adv_script_x_01", "script")),
+    }
     shas = {p["sha256"] for parts in eps.values() for p in parts.values()}
     assert sorted(i.role for i in task.inputs if i.role.startswith("adv:")) == sorted(f"adv:{s}" for s in shas)
     deps = stage.depends("main", env)
-    assert sorted(d for d in deps if d.startswith("unity.export:")) == sorted(f"unity.export:adv_{a}"
-                                                                             for a in EPISODES)
+    assert sorted(d for d in deps if d.startswith("unity.export:")) == sorted(f"unity.export:adv_{a}" for a in EPISODES)
     ex = execute(task, store, registry(stage))
     assert (ex.status, ex.result_status) == ("ran", "ok")
     res = store.result(task.key)
     doc = contract.loads(store.read(res["artifacts"][0]["content"]["sha256"]))
-    want = voices.build(RULES, tables(), AddressIndex({k: [] for k in catalog_keys()}), audio(store, SHEETS2),
-                        story=story())
+    want = voices.build(
+        RULES, tables(), AddressIndex({k: [] for k in catalog_keys()}), audio(store, SHEETS2), story=story()
+    )
     assert doc["rows"] == want["rows"] and doc["episodes"] == want["episodes"]
     assert doc["coverage"] == want["coverage"]
     assert doc["snapshot"]["episodes"] == task.input("episodes").sha256
@@ -473,19 +611,24 @@ def export_dir(tmp_path, store):
 def test_command_filters_story_rows(tmp_path, capsysbinary):
     out = export_dir(tmp_path, Store(tmp_path / "s"))
     common = argparse.Namespace()
-    command(["voices", "list", "--from", str(out), "--source", "story", "--episode", "900001", "--status", "ok"],
-            common, Cfg("en"))
+    command(
+        ["voices", "list", "--from", str(out), "--source", "story", "--episode", "900001", "--status", "ok"],
+        common,
+        Cfg("en"),
+    )
     got = capsysbinary.readouterr().out.decode("utf-8").splitlines()
-    assert got == [f"MasterAdv:900001:3\tadv_alpha-en\tStory.Main\t{STORY_SHEET}/{STORY_SHEET}_001\tok\tx01_1-en",
-                   f"MasterAdv:900001:5:1\tadv_gamma-en,adv_alpha-en\tStory.Main\t{STORY_SHEET}/{STORY_SHEET}_002\t"
-                   f"ok\tx01_2-en",
-                   f"MasterAdv:900001:12\tadv_both-en\tStory.Main\t{STORY_SHEET}/{STORY_SHEET}_003\tok\tx01_5-en"]
+    assert got == [
+        f"MasterAdv:900001:3\tadv_alpha-en\tStory.Main\t{STORY_SHEET}/{STORY_SHEET}_001\tok\tx01_1-en",
+        f"MasterAdv:900001:5:1\tadv_gamma-en,adv_alpha-en\tStory.Main\t{STORY_SHEET}/{STORY_SHEET}_002\tok\tx01_2-en",
+        f"MasterAdv:900001:12\tadv_both-en\tStory.Main\t{STORY_SHEET}/{STORY_SHEET}_003\tok\tx01_5-en",
+    ]
     command(["voices", "search", "x01_3-ZH-HANS", "--from", str(out), "--language", "zh-Hans", "--json"], common)
     assert [r["id"] for r in json.loads(capsysbinary.readouterr().out)] == ["MasterAdv:900001:7"]
     command(["voices", "list", "--from", str(out), "--episode", "adv_script_x_02", "--json"], common)
     assert [r["id"] for r in json.loads(capsysbinary.readouterr().out)] == ["MasterAdv:900002:1"]
-    command(["voices", "list", "--from", str(out), "--category", "Story.HomeSpotTapTalk", "--character", "alpha"],
-            common)
+    command(
+        ["voices", "list", "--from", str(out), "--category", "Story.HomeSpotTapTalk", "--character", "alpha"], common
+    )
     assert capsysbinary.readouterr().out.decode().split("\t")[0] == "MasterAdv:900003:2"
     with pytest.raises(SystemExit):
         command(["voices", "list", "--from", str(out), "--episode", "123"], common)
@@ -495,7 +638,8 @@ def test_command_filters_story_rows(tmp_path, capsysbinary):
     command(["voices", "get", "MasterAdv:900001:5:1", "-o", str(dst), "--from", str(out)], common)
     assert (dst / f"{STORY_SHEET}_002.flac").read_bytes() == f"{STORY_SHEET}/{STORY_SHEET}_002.flac".encode()
     assert [r["id"] for r in json.loads((dst / "voice.json").read_text(encoding="utf-8"))["rows"]] == [
-        "MasterAdv:900001:5:1"]
+        "MasterAdv:900001:5:1"
+    ]
     command(["voices", "get", "5201", "-o", str(tmp_path / "g2"), "--from", str(out)], common)
     assert (tmp_path / "g2" / "Growth_Alpha_RankUp_01.flac").is_file()
 
@@ -508,6 +652,7 @@ class Catalog:
 def test_command_without_an_export_reads_one_episode(tmp_path, capsysbinary, monkeypatch):
     from nnnotes import cri
     from test_voices import sheet_acb, stream_files
+
     mdir = write_master(tmp_path / "m", tables())
     loaded = []
 
@@ -531,10 +676,12 @@ def test_command_without_an_export_reads_one_episode(tmp_path, capsysbinary, mon
     command(["voices", "list", "--episode", "900001", "--json"], common)
     rows = json.loads(capsysbinary.readouterr().out)
     assert loaded == ["adv_script_x_01"]
-    assert [(r["id"], r["status"]) for r in rows][:2] == [("MasterAdv:900001:3", "not-exported"),
-                                                          ("MasterAdv:900001:5:1", "not-exported")]
+    assert [(r["id"], r["status"]) for r in rows][:2] == [
+        ("MasterAdv:900001:3", "not-exported"),
+        ("MasterAdv:900001:5:1", "not-exported"),
+    ]
     command(["voices", "list", "--source", "Story", "--json"], common)
-    assert json.loads(capsysbinary.readouterr().out) == []            # no episode read without --episode
+    assert json.loads(capsysbinary.readouterr().out) == []  # no episode read without --episode
     dst = tmp_path / "got"
     command(["voices", "get", "MasterAdv:900001:3", "-o", str(dst)], common)
     assert loaded[-1] == "adv_script_x_01"

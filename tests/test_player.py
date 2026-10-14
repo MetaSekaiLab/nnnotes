@@ -1,4 +1,5 @@
 """PlayerData memos: the same objects and errors as the lookups they replace, each read done once (synthetic)."""
+
 import struct
 from types import SimpleNamespace
 
@@ -28,8 +29,11 @@ SHADERS = [("A", "f1"), ("Dup", "f1"), ("B", "f2"), ("Dup", "f2"), ("A", "f2"), 
 
 def old_shader(by_type, name, file=None):
     """PlayerData.shader before the memo: a linear scan reading every Shader."""
-    hits = [o for o in by_type.get("Shader", [])
-            if o.read().m_ParsedForm.m_Name == name and (file is None or o.assets_file.name == file)]
+    hits = [
+        o
+        for o in by_type.get("Shader", [])
+        if o.read().m_ParsedForm.m_Name == name and (file is None or o.assets_file.name == file)
+    ]
     if len(hits) != 1:
         raise KeyError(f"shader {name!r}{f' in {file}' if file else ''}: {len(hits)} objects")
     return hits[0]
@@ -82,7 +86,7 @@ def test_script_is_read_once_per_object():
     a, b = FakeMono(), FakeMono()
     assert p.script(a) == p.script(a) == p.script(b) == ("Asm", "Ns", "Cls")
     assert ms.reads == 2 and derefs == [{"m_FileID": 0, "m_PathID": 7}] * 2
-    p.deref = lambda owner, pptr: None                 # a missing MonoScript raises on every call
+    p.deref = lambda owner, pptr: None  # a missing MonoScript raises on every call
     c = FakeMono()
     for _ in range(2):
         with pytest.raises(AttributeError):
@@ -127,13 +131,22 @@ class FakeResourceManager:
 def test_resource_lookup_is_case_insensitive_and_parses_the_container_once():
     p = bare_player()
     objects = {1: "one", 2: "two", 3: "three"}
-    rm = FakeResourceManager([("Foo/Bar", {"m_PathID": 1}), ("foo/BAR", {"m_PathID": 2}),
-                              ("Single", {"m_PathID": 3}), ("Null", {"m_PathID": 0})])
+    rm = FakeResourceManager(
+        [
+            ("Foo/Bar", {"m_PathID": 1}),
+            ("foo/BAR", {"m_PathID": 2}),
+            ("Single", {"m_PathID": 3}),
+            ("Null", {"m_PathID": 0}),
+        ]
+    )
     p.one = lambda type_name: rm
     p.deref = lambda owner, pptr: objects.get(pptr["m_PathID"])
     assert p.resource("single") == p.resource("SINGLE") == "three"
-    for path, message in (("FOO/bar", "Resources path FOO/bar: 2 entries"), ("none", "Resources path none: 0 entries"),
-                          ("null", "Resources path null: null reference")):
+    for path, message in (
+        ("FOO/bar", "Resources path FOO/bar: 2 entries"),
+        ("none", "Resources path none: 0 entries"),
+        ("null", "Resources path null: null reference"),
+    ):
         with pytest.raises(KeyError) as e:
             p.resource(path)
         assert e.value.args[0] == message

@@ -1,5 +1,6 @@
 """The story part of a site (storysite.py and its hooks in web.py / cli.py) on synthetic story directories and master
 data; nothing here comes from game data."""
+
 import hashlib
 import json
 import struct
@@ -23,18 +24,51 @@ def mp4(delay: int) -> bytes:
 
 def write(path, data):
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(data if isinstance(data, bytes) else
-                     (data if isinstance(data, str) else json.dumps(data, ensure_ascii=False)).encode("utf-8"))
+    path.write_bytes(
+        data
+        if isinstance(data, bytes)
+        else (data if isinstance(data, str) else json.dumps(data, ensure_ascii=False)).encode("utf-8")
+    )
 
 
-SHADERS = [{"name": "S", "parsed": "S.json", "variants": [
-    {"file": "S/gles3/a.glsl", "platform": "gles3", "type": "GLES3", "subShader": 0, "pass": 0, "stage": "vertex",
-     "keywords": []},
-    {"file": "S/gles3/b.glsl", "platform": "gles3", "type": "GLES31", "subShader": 0, "pass": 0, "stage": "vertex",
-     "keywords": []},
-    {"file": "S/vulkan/c.vkprog", "platform": "vulkan", "type": "SPIRV", "subShader": 0, "pass": 0,
-     "stage": "vertex", "keywords": []}]}]
-GLSL = "#ifdef VERTEX\n#version 300 es\nvoid main() {}\n#endif\n#ifdef FRAGMENT\n#version 300 es\nvoid main() {}\n#endif\n"
+SHADERS = [
+    {
+        "name": "S",
+        "parsed": "S.json",
+        "variants": [
+            {
+                "file": "S/gles3/a.glsl",
+                "platform": "gles3",
+                "type": "GLES3",
+                "subShader": 0,
+                "pass": 0,
+                "stage": "vertex",
+                "keywords": [],
+            },
+            {
+                "file": "S/gles3/b.glsl",
+                "platform": "gles3",
+                "type": "GLES31",
+                "subShader": 0,
+                "pass": 0,
+                "stage": "vertex",
+                "keywords": [],
+            },
+            {
+                "file": "S/vulkan/c.vkprog",
+                "platform": "vulkan",
+                "type": "SPIRV",
+                "subShader": 0,
+                "pass": 0,
+                "stage": "vertex",
+                "keywords": [],
+            },
+        ],
+    }
+]
+GLSL = (
+    "#ifdef VERTEX\n#version 300 es\nvoid main() {}\n#endif\n#ifdef FRAGMENT\n#version 300 es\nvoid main() {}\n#endif\n"
+)
 
 
 def shader_dir(d):
@@ -46,21 +80,50 @@ def shader_dir(d):
 
 
 def episode(adv_id=5, mode=1):
-    return {"advId": adv_id, "asset": f"adv_{adv_id}", "commandCount": 3,
-            "commands": [{"i": 0, "cmd": "Talk", "raw": 2, "TargetName": "x", "VoiceIDs": [1]},
-                         {"i": 1, "cmd": "Still", "raw": 30, "IgnoreData": 1},
-                         {"i": 2, "cmd": "Bgm", "raw": 15}],
-            "text": {}, "sounds": {}, "cuesheets": {}, "videos": {}, "resources": [],
-            "master": {"_id": adv_id, "_sheetName": f"sheet_{adv_id}", "_advEpisodeAsset": f"adv_{adv_id}",
-                       "_titleTextId": "t", "_rubyTitleTextId": "", "_playbackMode": mode},
-            "title": {"japanese": "タイトル", "english": "Title", "traditionalChinese": "", "simplifiedChinese": None,
-                      "korean": "제목"}}
+    return {
+        "advId": adv_id,
+        "asset": f"adv_{adv_id}",
+        "commandCount": 3,
+        "commands": [
+            {"i": 0, "cmd": "Talk", "raw": 2, "TargetName": "x", "VoiceIDs": [1]},
+            {"i": 1, "cmd": "Still", "raw": 30, "IgnoreData": 1},
+            {"i": 2, "cmd": "Bgm", "raw": 15},
+        ],
+        "text": {},
+        "sounds": {},
+        "cuesheets": {},
+        "videos": {},
+        "resources": [],
+        "master": {
+            "_id": adv_id,
+            "_sheetName": f"sheet_{adv_id}",
+            "_advEpisodeAsset": f"adv_{adv_id}",
+            "_titleTextId": "t",
+            "_rubyTitleTextId": "",
+            "_playbackMode": mode,
+        },
+        "title": {
+            "japanese": "タイトル",
+            "english": "Title",
+            "traditionalChinese": "",
+            "simplifiedChinese": None,
+            "korean": "제목",
+        },
+    }
 
 
 def scene():
-    return {"player": {"q": 1}, "settings": {"playerSettings": {
-        "_initializeEpisodes": [{"Index": 0, "Command": 15}], "_finalizeEpisodes": [{"Index": 0, "Command": 5}]},
-        "masterIdSettings": {}}, "stages": {}}
+    return {
+        "player": {"q": 1},
+        "settings": {
+            "playerSettings": {
+                "_initializeEpisodes": [{"Index": 0, "Command": 15}],
+                "_finalizeEpisodes": [{"Index": 0, "Command": 5}],
+            },
+            "masterIdSettings": {},
+        },
+        "stages": {},
+    }
 
 
 MODEL_M = "Character/Live2D/g/m/model/m"
@@ -71,16 +134,31 @@ def story_dirs(root, adv_id=5, mode=1, ui_variant="", models=None):
     models, default the model m)."""
     s = root / "story"
     ep, sc = episode(adv_id, mode), scene()
-    write(s / "story.json", {"advId": adv_id, "episode": "episode.json", "scene": "scene.json", "ui": "ui/ui.json",
-                             "models": {MODEL_M: "m"} if models is None else models, "audio": {"sheet": "audio/sheet"},
-                             "frames": None, "effects": None, "postEffects": None, "stills": None,
-                             "talkWindows": None, "chat": None, "videos": "videos/videos.json"})
+    write(
+        s / "story.json",
+        {
+            "advId": adv_id,
+            "episode": "episode.json",
+            "scene": "scene.json",
+            "ui": "ui/ui.json",
+            "models": {MODEL_M: "m"} if models is None else models,
+            "audio": {"sheet": "audio/sheet"},
+            "frames": None,
+            "effects": None,
+            "postEffects": None,
+            "stills": None,
+            "talkWindows": None,
+            "chat": None,
+            "videos": "videos/videos.json",
+        },
+    )
     write(s / "episode.json", ep)
     write(s / "scene.json", sc)
     write(s / "textures/t.png", b"\x89PNG-t")
     shader_dir(s / "shaders")
-    write(s / "audio/sheet/cues.json", {"cue": {"file": "cue.flac", "sampleRate": 48000, "channels": 1,
-                                                "samples": 100}})
+    write(
+        s / "audio/sheet/cues.json", {"cue": {"file": "cue.flac", "sampleRate": 48000, "channels": 1, "samples": 100}}
+    )
     write(s / "audio/sheet/cue.flac", b"fLaC-cue")
     write(s / "audio/sheet/cue.m4a", mp4(1024))
     write(s / "audio/sheet/streams.json", [])
@@ -89,8 +167,14 @@ def story_dirs(root, adv_id=5, mode=1, ui_variant="", models=None):
     langs = {}
     for lang, font in (("ja", "A"), ("en", "B")):
         u = root / "lang" / lang / "ui"
-        write(u / "ui.json", {"nodes": [{"path": "p", "textStyle": {"lang": lang + ui_variant}}],
-                              "sprites": {"s": 1}, "language": {"mode": lang}})
+        write(
+            u / "ui.json",
+            {
+                "nodes": [{"path": "p", "textStyle": {"lang": lang + ui_variant}}],
+                "sprites": {"s": 1},
+                "language": {"mode": lang},
+            },
+        )
         write(u / "textures/sprites.png", b"\x89PNG-sprites")
         shader_dir(u / "shaders")
         write(u / "fonts.json", {"format": "ournotes.story-fonts/1", "language": lang})
@@ -100,8 +184,16 @@ def story_dirs(root, adv_id=5, mode=1, ui_variant="", models=None):
     return {"story": s, "languages": langs, "episode": ep, "scene": sc}
 
 
-JOB = {"audio": True, "audioFormat": "aac", "languages": ["ja", "en"], "language": "en", "fonts": "open",
-       "prefix": "", "regions": ["r1"], "encoding": "gzip"}
+JOB = {
+    "audio": True,
+    "audioFormat": "aac",
+    "languages": ["ja", "en"],
+    "language": "en",
+    "fonts": "open",
+    "prefix": "",
+    "regions": ["r1"],
+    "encoding": "gzip",
+}
 
 
 def test_collect_story(tmp_path):
@@ -109,13 +201,14 @@ def test_collect_story(tmp_path):
     assert "audio/sheet/cue.m4a" in common and "audio/sheet/cue.flac" not in common
     assert "audio/sheet/streams.json" not in common
     cues = json.loads(common["audio/sheet/cues.json"])
-    assert cues == {"cue": {"file": "cue.m4a", "sampleRate": 48000, "channels": 1, "samples": 100,
-                            "encoderDelay": 1024}}
+    assert cues == {
+        "cue": {"file": "cue.m4a", "sampleRate": 48000, "channels": 1, "samples": 100, "encoderDelay": 1024}
+    }
     assert "shaders/S/gles3/a.glsl" in common
     assert not any(p.endswith((".vkprog", "b.glsl")) for p in [*common, *per["ja"]])
     assert json.loads(common["shaders/shaders.json"])[0]["variants"] == [SHADERS[0]["variants"][0]]
     assert {"videos/videos.json", "videos/v.webm", "textures/t.png"} <= set(common)
-    assert not any(p.startswith("live2d/") for p in common)          # the models are the site's
+    assert not any(p.startswith("live2d/") for p in common)  # the models are the site's
     assert {"ui/textures/sprites.png", "ui/shaders/shaders.json", "ui/shaders/S/gles3/a.glsl"} <= set(common)
     assert set(per["ja"]) == {"ui/ui.json", "ui/fonts.json", "ui/languages.json", "ui/fonts/font_A_0.png"}
     assert set(per["en"]) == {"ui/ui.json", "ui/fonts.json", "ui/languages.json", "ui/fonts/font_B_0.png"}
@@ -139,11 +232,25 @@ def test_collect_story_refuses_a_ui_file_of_some_languages(tmp_path):
 def sprite_shader(d):
     """A second UI shader in the directory `d` as text_shaders adds the sprite shader (index in name order, written as
     shader.write_index writes it)."""
-    rec = {"name": "TextMeshPro/Sprite", "parsed": "TextMeshPro_Sprite.json", "variants": [
-        {"file": "TextMeshPro_Sprite/gles3/v.glsl", "platform": "gles3", "type": "GLES3", "subShader": 0, "pass": 0,
-         "stage": "vertex", "keywords": []}]}
-    jsonio.write_json(d / "shaders.json", sorted([*json.loads((d / "shaders.json").read_text(encoding="utf-8")), rec],
-                                                 key=lambda r: r["name"]))
+    rec = {
+        "name": "TextMeshPro/Sprite",
+        "parsed": "TextMeshPro_Sprite.json",
+        "variants": [
+            {
+                "file": "TextMeshPro_Sprite/gles3/v.glsl",
+                "platform": "gles3",
+                "type": "GLES3",
+                "subShader": 0,
+                "pass": 0,
+                "stage": "vertex",
+                "keywords": [],
+            }
+        ],
+    }
+    jsonio.write_json(
+        d / "shaders.json",
+        sorted([*json.loads((d / "shaders.json").read_text(encoding="utf-8")), rec], key=lambda r: r["name"]),
+    )
     write(d / "TextMeshPro_Sprite.json", {"properties": []})
     write(d / "TextMeshPro_Sprite/gles3/v.glsl", GLSL)
 
@@ -151,7 +258,7 @@ def sprite_shader(d):
 def test_share_ui_shaders_gives_every_language_a_shader_one_language_needs(tmp_path):
     dirs = story_dirs(tmp_path)
     ja, en = (dirs["languages"][k] / "ui/shaders" for k in ("ja", "en"))
-    sprite_shader(en)                                   # only the English texts draw sprites
+    sprite_shader(en)  # only the English texts draw sprites
     with pytest.raises(RuntimeError, match="some languages only"):
         storysite.collect_story(dirs, True, "aac")
     storysite.share_ui_shaders(dirs["languages"])
@@ -160,8 +267,11 @@ def test_share_ui_shaders_gives_every_language_a_shader_one_language_needs(tmp_p
     names = [r["name"] for r in json.loads((ja / "shaders.json").read_text(encoding="utf-8"))]
     assert names == ["S", "TextMeshPro/Sprite"]
     common, per = storysite.collect_story(dirs, True, "aac")
-    assert {"ui/shaders/shaders.json", "ui/shaders/TextMeshPro_Sprite.json",
-            "ui/shaders/TextMeshPro_Sprite/gles3/v.glsl"} <= set(common)
+    assert {
+        "ui/shaders/shaders.json",
+        "ui/shaders/TextMeshPro_Sprite.json",
+        "ui/shaders/TextMeshPro_Sprite/gles3/v.glsl",
+    } <= set(common)
     assert not any(p.startswith("ui/shaders/") for g in per.values() for p in g)
 
 
@@ -193,8 +303,8 @@ def test_collect_story_host_files(tmp_path):
     dirs = story_dirs(tmp_path)
     host_files(dirs)
     common, per = storysite.collect_story(dirs, True, "aac")
-    assert {"host/host.json", "host/ui/ui.json", "ui/simple/ui.json"} <= set(common)     # equal in every language
-    for lang in ("ja", "en"):                    # the simple window's fonts are language files even when equal
+    assert {"host/host.json", "host/ui/ui.json", "ui/simple/ui.json"} <= set(common)  # equal in every language
+    for lang in ("ja", "en"):  # the simple window's fonts are language files even when equal
         assert {"ui/simple/fonts.json", f"ui/simple/fonts/font_{lang}_0.png"} <= set(per[lang])
         assert "ui/simple/ui.json" not in per[lang]
 
@@ -210,6 +320,7 @@ def test_story_task_builds_the_host_with_open_fonts_only(tmp_path, monkeypatch):
         if episode["master"]["_playbackMode"] != 1:
             return None
         return host_files({"story": story_dir, "languages": language_dirs})
+
     monkeypatch.setattr(storysite, "build_dirs", fake_dirs)
     monkeypatch.setattr(storysite.storyhost, "build", fake_host)
     monkeypatch.setattr(storysite, "font_file", lambda job, lang: f"font-{lang}")
@@ -220,17 +331,18 @@ def test_story_task_builds_the_host_with_open_fonts_only(tmp_path, monkeypatch):
         r = storysite.story_task(adv_id, job, data=(None, None, None), groups={})
         assert r["ok"], r
         return json.loads((tmp_path / site / "stories" / f"{adv_id}.json").read_text(encoding="utf-8"))
+
     man = run(5, "open")
-    assert calls == [(5, "open", {"ja": "font-ja", "en": "font-en"}, "font-ko")]    # font_of: the chains' files
+    assert calls == [(5, "open", {"ja": "font-ja", "en": "font-en"}, "font-ko")]  # font_of: the chains' files
     assert man["host"] == {"kind": "home", "doc": "host/host.json", "ui": "ui/simple/ui.json"}
     assert {"host/host.json", "ui/simple/ui.json"} <= set(man["files"])
     assert all("ui/simple/fonts.json" in g["files"] for g in man["languages"].values())
     game = run(5, "game", fonts="game")
-    assert len(calls) == 1 and "host" not in game                  # no host data with game fonts
+    assert len(calls) == 1 and "host" not in game  # no host data with game fonts
     assert not any(p.startswith(("host/", "ui/simple/")) for p in game["files"])
     normal = run(6, "normal")
     assert calls[-1][0] == 6 and "host" not in normal
-    site, _ = ingest(tmp_path, "direct", adv_id=6, mode=0)           # a Normal story: as without the host step
+    site, _ = ingest(tmp_path, "direct", adv_id=6, mode=0)  # a Normal story: as without the host step
     assert (site / "stories" / "6.json").read_bytes() == (tmp_path / "normal" / "stories" / "6.json").read_bytes()
 
 
@@ -241,10 +353,18 @@ def test_facts_and_requires():
     ep["commands"][0]["IgnoreLipSync"] = 1
     assert not storysite.needs_motion_sync(ep)
     f = storysite.story_facts(episode(), sc, [], ["ja", "en", "ko"], "en")
-    assert f == {"advId": 5, "asset": "adv_5", "sheetName": "sheet_5", "playbackMode": 1,
-                 "titles": {"ja": "タイトル", "en": "Title", "ko": "제목"}, "groups": [],
-                 "commands": ["Bgm", "FadeOut", "Talk"], "commandCount": 3, "language": "en",
-                 "languages": ["ja", "en", "ko"]}
+    assert f == {
+        "advId": 5,
+        "asset": "adv_5",
+        "sheetName": "sheet_5",
+        "playbackMode": 1,
+        "titles": {"ja": "タイトル", "en": "Title", "ko": "제목"},
+        "groups": [],
+        "commands": ["Bgm", "FadeOut", "Talk"],
+        "commandCount": 3,
+        "language": "en",
+        "languages": ["ja", "en", "ko"],
+    }
 
 
 def ingest(tmp_path, site_name="site", adv_id=5, mode=1, job=None, ui_variant=""):
@@ -273,13 +393,13 @@ def test_ingest_manifest(tmp_path):
     assert web.entry_text(site, scene_entry) == web.text_asset("scene.json", json.dumps(scene()))
     ui_ja, ui_en = man["languages"]["ja"]["files"]["ui/ui.json"], man["languages"]["en"]["files"]["ui/ui.json"]
     shared = {k: a for k, a, _ in ui_ja["parts"]}.items() & {k: a for k, a, _ in ui_en["parts"]}.items()
-    assert {k for k, _ in shared} == {"sprites"}                    # the equal part stored once
+    assert {k for k, _ in shared} == {"sprites"}  # the equal part stored once
     for e in [*man["files"].values(), *(e for g in man["languages"].values() for e in g["files"].values())]:
         for a in web.entry_assets(e):
             assert a.split("/")[1].split(".")[0] == hashlib.sha256(web.read_asset(site, a)).hexdigest()
     assert r["size"]["common"] == sum(e["size"] for e in man["files"].values())
     raw = (site / "stories" / "5.json").read_bytes()
-    assert raw.endswith(b"}\n") and raw == web._dump(man)            # canonical: sorted keys, indent 1
+    assert raw.endswith(b"}\n") and raw == web._dump(man)  # canonical: sorted keys, indent 1
 
 
 def test_ingest_normal_story_and_no_audio(tmp_path):
@@ -300,14 +420,27 @@ def chart_and_model(site):
     store = web.Store(site)
     (site / "charts").mkdir(parents=True, exist_ok=True)
     (site / "models").mkdir(parents=True, exist_ok=True)
-    chart = {"musicId": 1, "difficulty": "easy", "audio": True, "audioFormat": "aac", "flows": ["direct"],
-             "files": {"live.json": store.put("live.json", b'{"c":1}')}, "chart": {"title": "t"}}
+    chart = {
+        "musicId": 1,
+        "difficulty": "easy",
+        "audio": True,
+        "audioFormat": "aac",
+        "flows": ["direct"],
+        "files": {"live.json": store.put("live.json", b'{"c":1}')},
+        "chart": {"title": "t"},
+    }
     (site / "charts" / "1_easy.json").write_text(json.dumps(chart), encoding="utf-8")
-    model = {"format": 3, "id": "m", "key": MODEL_M, "model": {},
-             "files": {"model.json": store.put("model.json", b'{"m":1}'), "m.moc3": store.put("m.moc3", b"MOC3-m")}}
+    model = {
+        "format": 3,
+        "id": "m",
+        "key": MODEL_M,
+        "model": {},
+        "files": {"model.json": store.put("model.json", b'{"m":1}'), "m.moc3": store.put("m.moc3", b"MOC3-m")},
+    }
     (site / "models" / "m.json").write_text(json.dumps(model), encoding="utf-8")
-    return web.entry_assets(chart["files"]["live.json"]) + [a for e in model["files"].values()
-                                                             for a in web.entry_assets(e)]
+    return web.entry_assets(chart["files"]["live.json"]) + [
+        a for e in model["files"].values() for a in web.entry_assets(e)
+    ]
 
 
 def referenced(site) -> set:
@@ -332,7 +465,7 @@ def test_write_index_keeps_every_kind(tmp_path):
     r = web.write_index(site)
     assert (r["charts"], r["models"], r["stories"], r["removedAssets"]) == (1, 1, 1, 1)
     assert not (site / stale["asset"]).exists()
-    for _ in range(2):                                             # rerun: a later build of any kind
+    for _ in range(2):  # rerun: a later build of any kind
         web.write_index(site)
         assert {f"assets/{p.name}" for p in (site / "assets").iterdir()} == used
     index = json.loads((site / "stories.json").read_text(encoding="utf-8"))
@@ -340,7 +473,7 @@ def test_write_index_keeps_every_kind(tmp_path):
     assert index["format"] == storysite.STORIES_FORMAT and index["languages"] == ["ja", "en", "ko"]
     assert (entry["id"], entry["manifest"], entry["advId"], entry["regions"]) == ("5", "stories/5.json", 5, ["r1"])
     assert entry["size"]["languages"].keys() == {"ja", "en"} and entry["fonts"] == "open"
-    assert entry["size"]["models"] == len(b'{"m":1}') + len(b"MOC3-m")       # the referenced model's files
+    assert entry["size"]["models"] == len(b'{"m":1}') + len(b"MOC3-m")  # the referenced model's files
 
 
 def test_stories_reference_their_model_manifests(tmp_path):
@@ -350,8 +483,9 @@ def test_stories_reference_their_model_manifests(tmp_path):
     model_assets = set(chart_and_model(site)[1:])
     n, used = storysite.write_stories_index(site)
     assert n == 1 and model_assets <= used
-    assert model_assets.isdisjoint(storysite.manifest_assets(json.loads((site / "stories/5.json").read_text(
-        encoding="utf-8"))))
+    assert model_assets.isdisjoint(
+        storysite.manifest_assets(json.loads((site / "stories/5.json").read_text(encoding="utf-8")))
+    )
     (site / "models/m.json").unlink()
     storysite.write_stories_index(site)
     (entry,) = json.loads((site / "stories.json").read_text(encoding="utf-8"))["stories"]
@@ -372,7 +506,7 @@ def test_story_only_site_and_sites_without_stories(tmp_path):
 def test_write_stories_index_meta(tmp_path):
     site, _ = ingest(tmp_path)
     storysite.write_stories_index(site, "ja", [{"id": "r1", "name": "One"}])
-    storysite.write_stories_index(site)                             # keeps the meta of the existing index
+    storysite.write_stories_index(site)  # keeps the meta of the existing index
     index = json.loads((site / "stories.json").read_text(encoding="utf-8"))
     assert index["language"] == "ja" and index["regions"] == [{"id": "r1", "name": "One"}]
 
@@ -398,28 +532,46 @@ def test_story_groups(tmp_path):
         write(md / f"{name}.json", {"_allData": rows})
 
     def text(i, ja, en):
-        return {"_id": i, "_japanese": ja, "_english": en, "_traditionalChinese": "", "_simplifiedChinese": None,
-                "_korean": None}
-    table("MasterText", [text("C1", "章", "Chapter"), text("N1", "あ", "A"), text("N2", "い", "B"),
-                         text("S1", "店", "Shop")])
+        return {
+            "_id": i,
+            "_japanese": ja,
+            "_english": en,
+            "_traditionalChinese": "",
+            "_simplifiedChinese": None,
+            "_korean": None,
+        }
+
+    table(
+        "MasterText",
+        [text("C1", "章", "Chapter"), text("N1", "あ", "A"), text("N2", "い", "B"), text("S1", "店", "Shop")],
+    )
     table("MasterCharacter", [{"_id": 1, "_nameTextID": "N1"}, {"_id": 2, "_nameTextID": "N2"}])
     table("MasterStoryChapter", [{"_id": 10, "_nameTextId": "C1", "_bandId": 3, "_isSpecialStory": False}])
-    table("MasterStoryEpisode", [{"_id": 101, "_advId": 7, "_chapterId": 10, "_episodeNumber": 2,
-                                  "_characterId": 0}])
+    table("MasterStoryEpisode", [{"_id": 101, "_advId": 7, "_chapterId": 10, "_episodeNumber": 2, "_characterId": 0}])
     table("MasterCharacterFriendship", [{"_id": 12, "_masterCharacterIdA": 1, "_masterCharacterIdB": 2}])
-    table("MasterStoryFriendshipEpisode", [{"_id": 1, "_advId": 8, "_characterFriendshipId": 12,
-                                            "_episodeNumber": 1}])
+    table("MasterStoryFriendshipEpisode", [{"_id": 1, "_advId": 8, "_characterFriendshipId": 12, "_episodeNumber": 1}])
     table("MasterHomeSpot", [{"_id": 50, "_nameTextId": "S1", "_advId": 9}])
     table("MasterStoryHomeSpotTapTalkEpisode", [{"_id": 5001, "_advId": 7, "_spotId": 50, "_characterId": 2}])
     g = storysite.story_groups(md)
-    assert g[7] == [{"kind": "chapter", "id": 101, "episodeNumber": 2,
-                     "chapter": {"id": 10, "names": {"ja": "章", "en": "Chapter"}, "bandId": 3, "special": False},
-                     "characters": []},
-                    {"kind": "spotTalk", "id": 5001, "spot": {"id": 50, "names": {"ja": "店", "en": "Shop"}},
-                     "characters": [{"id": 2, "names": {"ja": "い", "en": "B"}}]}]
+    assert g[7] == [
+        {
+            "kind": "chapter",
+            "id": 101,
+            "episodeNumber": 2,
+            "chapter": {"id": 10, "names": {"ja": "章", "en": "Chapter"}, "bandId": 3, "special": False},
+            "characters": [],
+        },
+        {
+            "kind": "spotTalk",
+            "id": 5001,
+            "spot": {"id": 50, "names": {"ja": "店", "en": "Shop"}},
+            "characters": [{"id": 2, "names": {"ja": "い", "en": "B"}}],
+        },
+    ]
     assert [c["id"] for c in g[8][0]["characters"]] == [1, 2] and g[8][0]["kind"] == "friendship"
-    assert g[9] == [{"kind": "spot", "id": 50, "spot": {"id": 50, "names": {"ja": "店", "en": "Shop"}},
-                     "characters": []}]
+    assert g[9] == [
+        {"kind": "spot", "id": 50, "spot": {"id": 50, "names": {"ja": "店", "en": "Shop"}}, "characters": []}
+    ]
 
 
 def test_region_groups_and_inputs(tmp_path):
@@ -427,7 +579,7 @@ def test_region_groups_and_inputs(tmp_path):
     for d, text in ((a, "x"), (b, "x"), (c, "y")):
         write(d / "MasterAdv.json", {"_allData": [{"_id": 1}]})
         write(d / "MasterText.json", {"_allData": [{"_id": text}]})
-        write(d / "MasterLiveMusic.json", {"_allData": [{"_id": text}]})    # not a story input
+        write(d / "MasterLiveMusic.json", {"_allData": [{"_id": text}]})  # not a story input
     write(b / "MasterLiveMusic.json", {"_allData": []})
     assert storysite.region_groups({"a": a, "b": b, "c": c}) == [["a", "b"], ["c"]]
     assert storysite.all_stories(a) == [1]
@@ -449,7 +601,7 @@ def test_font_files(tmp_path, monkeypatch):
         storysite.font_file({"fontFiles": {"en": str(f)}}, "ko")
     with pytest.raises(ConfigError, match="not found"):
         storysite.font_files(cfg, ["ko"], {"ko": "missing.otf"})
-    assert storysite.emoji_file(cfg) is None                       # optional: the sprites then have no images
+    assert storysite.emoji_file(cfg) is None  # optional: the sprites then have no images
     assert storysite.emoji_file(cfg, {"emoji": "f.otf", "en": "x.otf"}) == str(f.resolve())
     assert storysite.emoji_file(Config({"paths": {"fonts": {"emoji": str(f)}}}, environ={})) == str(f.resolve())
     with pytest.raises(ConfigError, match="emoji font file not found"):
@@ -462,9 +614,12 @@ def test_font_files(tmp_path, monkeypatch):
 
 
 def fake_player(root, story_page=True, story_bundle=True):
-    files = {web.READ_SET_SCRIPT: "// read set\n", web.PLAYER_BUNDLES[0]: "/* bundle */\n",
-             f"{web.PLAYER_PAGE_DIR}/index.html": "<!-- @PLAYER_VERSION@ -->\n",
-             f"{web.PLAYER_PAGE_DIR}/chart-list.js": 'import "../../src/element.js";\n'}
+    files = {
+        web.READ_SET_SCRIPT: "// read set\n",
+        web.PLAYER_BUNDLES[0]: "/* bundle */\n",
+        f"{web.PLAYER_PAGE_DIR}/index.html": "<!-- @PLAYER_VERSION@ -->\n",
+        f"{web.PLAYER_PAGE_DIR}/chart-list.js": 'import "../../src/element.js";\n',
+    }
     if story_page:
         files[f"{web.STORY_PAGE_DIR}/index.html"] = '<script type="module" src="./story-list.js"></script>\n'
         files[f"{web.STORY_PAGE_DIR}/story-list.js"] = 'import { x } from "../../src/story/define.js";\n'
@@ -479,8 +634,9 @@ def test_write_player_story_page(tmp_path):
     site = tmp_path / "site"
     r = web.write_player(site, fake_player(tmp_path / "p"))
     assert r["storyPageFiles"] == 2
-    assert (site / "story/story-list.js").read_text(encoding="utf-8") == \
-        'import { x } from "./ournotes-player.story.element.min.js";\n'
+    assert (site / "story/story-list.js").read_text(
+        encoding="utf-8"
+    ) == 'import { x } from "./ournotes-player.story.element.min.js";\n'
     assert (site / "story/ournotes-player.story.element.min.js").is_file()
     site2 = tmp_path / "site2"
     r = web.write_player(site2, fake_player(tmp_path / "q", story_bundle=False))
@@ -498,9 +654,16 @@ def put_model(site, key, motion_sync=False):
     mid = webmodel.model_id(key)
     store = web.Store(site)
     doc = {"format": webmodel.MODEL_FORMAT, "key": key, "motionSync": motion_sync}
-    man = {"format": web.MANIFEST_FORMAT, "id": mid, "key": key, "model": {},
-           "files": {"model.json": store.put("model.json", json.dumps(doc).encode()),
-                     f"{mid}.moc3": store.put(f"{mid}.moc3", b"MOC3-" + mid.encode())}}
+    man = {
+        "format": web.MANIFEST_FORMAT,
+        "id": mid,
+        "key": key,
+        "model": {},
+        "files": {
+            "model.json": store.put("model.json", json.dumps(doc).encode()),
+            f"{mid}.moc3": store.put(f"{mid}.moc3", b"MOC3-" + mid.encode()),
+        },
+    }
     write(site / "models" / f"{mid}.json", web._dump(man))
     return {"id": mid, "ok": True, "files": 2, "bytes": sum(e["size"] for e in man["files"].values())}
 
@@ -516,8 +679,14 @@ def story_build(tmp_path, monkeypatch):
     write(md / "MasterAdv.json", {"_allData": [{"_id": i} for i in uses]})
     font = tmp_path / "f.otf"
     font.write_bytes(b"font")
-    cfg = Config({"catalog": {"region": "zz", "language": "en"}, "servers": {"zz": {"cdn": "https://cdn.invalid"}},
-                  "paths": {"master": str(md), "fonts": {"ja": str(font), "en": str(font)}}}, environ={})
+    cfg = Config(
+        {
+            "catalog": {"region": "zz", "language": "en"},
+            "servers": {"zz": {"cdn": "https://cdn.invalid"}},
+            "paths": {"master": str(md), "fonts": {"ja": str(font), "en": str(font)}},
+        },
+        environ={},
+    )
     site = tmp_path / "site"
     episodes, models = [], []
 
@@ -532,6 +701,7 @@ def story_build(tmp_path, monkeypatch):
     def model_task(mid, key, job, data=None):
         models.append(mid)
         return put_model(Path(job["site"]), key)
+
     monkeypatch.setattr(tmpfont, "require_extra", lambda what=None: None)
     monkeypatch.setattr(storysite, "open_data", lambda cfg, region=None: (None, md, None))
     monkeypatch.setattr(storysite, "episode_models", episode_models)
@@ -544,6 +714,7 @@ def story_build(tmp_path, monkeypatch):
 
     def run(ids, **kw):
         return storysite.build(site, ids, cfg, player, audio=False, workers=1, story_languages=["ja", "en"], **kw)
+
     run.site, run.episodes, run.models = site, episodes, models
     return run
 
@@ -557,7 +728,7 @@ def test_story_build_builds_the_models_of_its_stories_first(story_build):
     r = story_build([5, 6, 7])
     assert r["storiesFailed"] == [] and [s["id"] for s in r["storiesBuilt"]] == ["5", "6", "7"]
     assert sorted(story_build.episodes) == [5, 6, 7]
-    assert story_build.models == ["a", "b"]                       # each model once, whatever the stories using it
+    assert story_build.models == ["a", "b"]  # each model once, whatever the stories using it
     assert [m["id"] for m in r["storyModels"]["modelsBuilt"]] == ["a", "b"] and r["models"] == 2
     index = json.loads((site / "models.json").read_text(encoding="utf-8"))
     assert [m["id"] for m in index["models"]] == ["a", "b"]
@@ -565,13 +736,20 @@ def test_story_build_builds_the_models_of_its_stories_first(story_build):
     assert manifest(site, 6)["models"] == {"a": "models/a.json", "b": "models/b.json"}
     assert manifest(site, 7)["models"] == {} and manifest(site, 7)["root"] == "../"
     assert json.loads(web.entry_text(site, manifest(site, 6)["files"]["story.json"]))["models"] == {
-        MODEL_B: "b", MODEL_A: "a"}
+        MODEL_B: "b",
+        MODEL_A: "a",
+    }
     stories = {e["id"]: e for e in json.loads((site / "stories.json").read_text(encoding="utf-8"))["stories"]}
-    size = {m: sum(e["size"] for e in json.loads((site / f"models/{m}.json").read_text(encoding="utf-8"))
-                   ["files"].values()) for m in ("a", "b")}
+    size = {
+        m: sum(e["size"] for e in json.loads((site / f"models/{m}.json").read_text(encoding="utf-8"))["files"].values())
+        for m in ("a", "b")
+    }
     assert (stories["5"]["size"]["models"], stories["6"]["size"]["models"], stories["7"]["size"]["models"]) == (
-        size["a"], size["a"] + size["b"], 0)
-    for mf in (site / "models").glob("*.json"):                   # write_index kept the models' assets
+        size["a"],
+        size["a"] + size["b"],
+        0,
+    )
+    for mf in (site / "models").glob("*.json"):  # write_index kept the models' assets
         for e in json.loads(mf.read_text(encoding="utf-8"))["files"].values():
             assert all((site / a).is_file() for a in web.entry_assets(e))
 
@@ -596,7 +774,7 @@ def test_story_build_rebuilds_outdated_models(story_build):
     """A model manifest whose model.json is older than MODEL_FORMAT (no motionSync) is built again by the stories'
     model build without force; a current one is skipped."""
     site = story_build.site
-    put_model(site, MODEL_B)                                            # current
+    put_model(site, MODEL_B)  # current
     put_model(site, MODEL_A)
     man = json.loads((site / "models/a.json").read_text(encoding="utf-8"))
     man["files"]["model.json"] = web.Store(site).put("model.json", json.dumps({"format": 1, "key": MODEL_A}).encode())
@@ -608,9 +786,13 @@ def test_story_build_rebuilds_outdated_models(story_build):
     assert r["storiesFailed"] == [] and webmodel.outdated(site, "a") is None
     assert manifest(site, 6)["models"] == {"a": "models/a.json", "b": "models/b.json"}
 
+
 def test_a_story_without_its_model_fails(story_build, monkeypatch):
-    monkeypatch.setattr(webmodel, "model_task", lambda mid, key, job, data=None: {
-        "id": mid, "ok": False, "stage": "export", "error": "x"})
+    monkeypatch.setattr(
+        webmodel,
+        "model_task",
+        lambda mid, key, job, data=None: {"id": mid, "ok": False, "stage": "export", "error": "x"},
+    )
     r = story_build([5, 7])
     assert r["storyModels"]["modelsFailed"] == [{"id": "a", "stage": "export", "error": "x"}]
     assert [(f["id"], f["stage"]) for f in r["storiesFailed"]] == [("5", "export")]
@@ -620,17 +802,41 @@ def test_a_story_without_its_model_fails(story_build, monkeypatch):
 
 def test_cli_web_stories(tmp_path, capsys, monkeypatch):
     from nnnotes import cli
+
     calls = []
 
     def fake_build(out, ids, cfg, player, fmt, **kw):
         calls.append((ids, fmt, kw))
         return {"site": str(out), "storiesBuilt": [], "storiesFailed": [], "storiesSkipped": []}
+
     monkeypatch.setattr(storysite, "build", fake_build)
     monkeypatch.setattr(storysite, "unknown_stories", lambda cfg, ids, regions=None: [])
-    monkeypatch.setattr(tmpfont, "require_extra", lambda what=None: None)      # the fonts extra is optional
-    cli.main(["--apk", str(tmp_path / "base.apk"), "web", str(tmp_path / "s"), "--player",
-              str(fake_player(tmp_path / "p")), "--story", "10462", "--story", "7", "--story-languages", "en,ja",
-              "--font", "en=a.otf", "--font", "ja=b.otf", "--font", "emoji=e.ttf", "--no-audio", "--workers", "2"])
+    monkeypatch.setattr(tmpfont, "require_extra", lambda what=None: None)  # the fonts extra is optional
+    cli.main(
+        [
+            "--apk",
+            str(tmp_path / "base.apk"),
+            "web",
+            str(tmp_path / "s"),
+            "--player",
+            str(fake_player(tmp_path / "p")),
+            "--story",
+            "10462",
+            "--story",
+            "7",
+            "--story-languages",
+            "en,ja",
+            "--font",
+            "en=a.otf",
+            "--font",
+            "ja=b.otf",
+            "--font",
+            "emoji=e.ttf",
+            "--no-audio",
+            "--workers",
+            "2",
+        ]
+    )
     ((ids, fmt, kw),) = calls
     assert ids == [10462, 7] and fmt == "aac" and kw["audio"] is False and kw["workers"] == 2
     assert kw["story_languages"] == ["en", "ja"]
@@ -642,22 +848,38 @@ def test_cli_web_stories(tmp_path, capsys, monkeypatch):
 
 def test_cli_web_stories_need_the_fonts_extra(tmp_path, capsys, monkeypatch):
     from nnnotes import cli
+
     monkeypatch.setattr(tmpfont.importlib.util, "find_spec", lambda name: None)
     with pytest.raises(SystemExit) as e:
-        cli.main(["--apk", str(tmp_path / "base.apk"), "web", str(tmp_path / "s"), "--player",
-                  str(fake_player(tmp_path / "p")), "--story", "1", "--no-audio"])
+        cli.main(
+            [
+                "--apk",
+                str(tmp_path / "base.apk"),
+                "web",
+                str(tmp_path / "s"),
+                "--player",
+                str(fake_player(tmp_path / "p")),
+                "--story",
+                "1",
+                "--no-audio",
+            ]
+        )
     err = capsys.readouterr().err
     assert e.value.code == 2 and "--story / --all-stories" in err and "nnnotes[fonts]" in err
 
 
-@pytest.mark.parametrize("argv, message", [
-    (["--story", "1", "--player-only"], "leave out --story"),
-    (["--font", "fr=x.otf", "--all-stories"], "expected <language>=<font file>"),
-    (["--story-languages", "en,xx", "--all-stories"], "expected languages"),
-    (["--story", "1", "--all-stories"], "not allowed with argument"),
-])
+@pytest.mark.parametrize(
+    "argv, message",
+    [
+        (["--story", "1", "--player-only"], "leave out --story"),
+        (["--font", "fr=x.otf", "--all-stories"], "expected <language>=<font file>"),
+        (["--story-languages", "en,xx", "--all-stories"], "expected languages"),
+        (["--story", "1", "--all-stories"], "not allowed with argument"),
+    ],
+)
 def test_cli_web_story_usage(tmp_path, capsys, argv, message):
     from nnnotes import cli
+
     with pytest.raises(SystemExit) as e:
         cli.main(["web", str(tmp_path / "s"), "--player", str(fake_player(tmp_path / "p")), *argv])
     assert e.value.code == 2 and message in capsys.readouterr().err

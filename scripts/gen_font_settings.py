@@ -19,6 +19,7 @@ those font assets with the assets of its fallback chain, their default materials
 ("<font> - <type>") the catalog has, and writes the table (`--game-version` default: the APK's versionName). The
 `fonts` extra must be installed.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -44,8 +45,11 @@ def main(argv=None) -> None:
         ex = Exporter(cat, Path(work), player=player, textures="deferred")
         doc = fontsettings.build(ex, player, args.game_version or player.game_version)
     fontsettings.write(doc, args.out)
-    print(f"{args.out}: {len(doc['fonts'])} font assets, {len(doc['materials'])} materials, "
-          f"{len(doc['objects'])} objects", file=sys.stderr)
+    print(
+        f"{args.out}: {len(doc['fonts'])} font assets, {len(doc['materials'])} materials, "
+        f"{len(doc['objects'])} objects",
+        file=sys.stderr,
+    )
 
 
 if __name__ == "__main__":

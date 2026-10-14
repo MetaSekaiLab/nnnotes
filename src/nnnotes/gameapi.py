@@ -17,6 +17,7 @@ are read with a small protobuf wire-format decoder, without generated code. A ca
 the server is unreachable, misses the deadline or answers with an empty message. Error messages name the method and
 the setting, never the address.
 """
+
 from __future__ import annotations
 
 import time
@@ -34,10 +35,10 @@ from .config import Config, ConfigError, describe
 VERSION_METHOD = "/app.masterdata.MasterdataService/Version"
 SERVER_LIST_METHOD = "/app.playerlogin.PlayerLoginService/GetServerList"
 PLATFORM = "android"
-TIMEOUT = 10.0                  # seconds, per attempt
+TIMEOUT = 10.0  # seconds, per attempt
 ATTEMPTS = 3
 RETRY_STATUS = (grpc.StatusCode.UNAVAILABLE, grpc.StatusCode.DEADLINE_EXCEEDED)
-ERROR_CODE_TRAILER = "x-sirius-error-code"     # the game's error code (with status UNKNOWN / PERMISSION_DENIED)
+ERROR_CODE_TRAILER = "x-sirius-error-code"  # the game's error code (with status UNKNOWN / PERMISSION_DENIED)
 STATUS_HINT = {
     grpc.StatusCode.UNAVAILABLE: "server unreachable",
     grpc.StatusCode.DEADLINE_EXCEEDED: "no answer before the deadline",
@@ -88,7 +89,7 @@ def fields(buf: bytes) -> list[tuple[int, int | bytes]]:
                 size = 8 if wire == 1 else 4
             if i + size > n:
                 raise ValueError(f"field {num} runs past the end of the message")
-            v, i = bytes(buf[i:i + size]), i + size
+            v, i = bytes(buf[i : i + size]), i + size
         else:
             raise ValueError(f"field {num}: unsupported wire type {wire}")
         out.append((num, v))
@@ -110,7 +111,7 @@ def strings(buf: bytes, names: dict[int, str]) -> dict[str, str]:
 # ---------------------------------------------------------------- messages
 @dataclass(frozen=True)
 class MasterVersion:
-    version: str                # master data version
+    version: str  # master data version
     resource_version: str
     resource_hash: str | None = None
 
@@ -118,6 +119,7 @@ class MasterVersion:
 @dataclass(frozen=True)
 class Server:
     """An entry of the server list. `cdn` / `api`: the alternative roots in the server's order (not in the repr)."""
+
     name: str
     display_name: str
     area_id: str
@@ -153,8 +155,11 @@ def parse_server_list(buf: bytes) -> list[Server]:
 # ---------------------------------------------------------------- calls
 def metadata(client_version: str, request_id: str | None = None) -> list[tuple[str, str]]:
     """The metadata of a call: a fresh `x-request-id` unless one is given."""
-    return [("x-request-id", request_id or str(uuid.uuid4())), ("x-platform", PLATFORM),
-            ("x-client-version", client_version)]
+    return [
+        ("x-request-id", request_id or str(uuid.uuid4())),
+        ("x-platform", PLATFORM),
+        ("x-client-version", client_version),
+    ]
 
 
 def channel_target(root: str) -> tuple[str, bool]:
@@ -175,21 +180,30 @@ def channel_target(root: str) -> tuple[str, bool]:
         raise ValueError("has an invalid port") from None
     if not host:
         raise ValueError("has no host")
-    if ":" in host:                                   # IPv6 literal
+    if ":" in host:  # IPv6 literal
         host = f"[{host}]"
     tls = u.scheme == "https"
     return f"{host}:{port or (443 if tls else 80)}", tls
 
 
-def call(root: str, method: str, request: bytes, client_version: str, *, timeout: float = TIMEOUT,
-         attempts: int = ATTEMPTS, setting: str = "the API root", response_metadata: dict | None = None) -> bytes:
+def call(
+    root: str,
+    method: str,
+    request: bytes,
+    client_version: str,
+    *,
+    timeout: float = TIMEOUT,
+    attempts: int = ATTEMPTS,
+    setting: str = "the API root",
+    response_metadata: dict | None = None,
+) -> bytes:
     """One unary call with raw bytes; returns the response message's bytes. `setting` names the root in errors.
     Raises GameApiError."""
     target, tls = channel_target(root)
-    name = method.rsplit("/", 1)[-1]                  # e.g. Version
+    name = method.rsplit("/", 1)[-1]  # e.g. Version
     channel = grpc.secure_channel(target, grpc.ssl_channel_credentials()) if tls else grpc.insecure_channel(target)
     try:
-        stub = channel.unary_unary(method)            # no (de)serializers: bytes in, bytes out
+        stub = channel.unary_unary(method)  # no (de)serializers: bytes in, bytes out
         attempts = max(1, attempts)
         for i in range(attempts):
             last = i + 1 == attempts
@@ -207,7 +221,7 @@ def call(root: str, method: str, request: bytes, client_version: str, *, timeout
                 raise GameApiError(failure(name, setting, code, e.trailing_metadata())) from None
             if body or last:
                 return body
-            time.sleep(0.3 * (i + 1))                 # OK with an empty message: transient, ask again
+            time.sleep(0.3 * (i + 1))  # OK with an empty message: transient, ask again
     finally:
         channel.close()
     raise AssertionError("unreachable")
@@ -218,13 +232,13 @@ def failure(name: str, setting: str, code, trailers) -> str:
     status = code.name if code is not None else "no status"
     hint = STATUS_HINT.get(code)
     game = next((v for k, v in (trailers or ()) if k == ERROR_CODE_TRAILER), None)
-    extra = ", ".join(x for x in (hint, f"game error code {game}" if game else None, GAME_ERROR_HINT.get(game))
-                      if x)
+    extra = ", ".join(x for x in (hint, f"game error code {game}" if game else None, GAME_ERROR_HINT.get(game)) if x)
     return f"game API call {name} to {setting} failed: {status}" + (f" ({extra})" if extra else "")
 
 
-def fetch_master_version(root: str, client_version: str, *, timeout: float = TIMEOUT,
-                         setting: str = "the API root") -> MasterVersion:
+def fetch_master_version(
+    root: str, client_version: str, *, timeout: float = TIMEOUT, setting: str = "the API root"
+) -> MasterVersion:
     body = call(root, VERSION_METHOD, b"", client_version, timeout=timeout, setting=setting)
     try:
         v = parse_version(body)
@@ -235,8 +249,9 @@ def fetch_master_version(root: str, client_version: str, *, timeout: float = TIM
     return v
 
 
-def fetch_server_list(root: str, client_version: str, *, timeout: float = TIMEOUT,
-                      setting: str = "the bootstrap API root") -> list[Server]:
+def fetch_server_list(
+    root: str, client_version: str, *, timeout: float = TIMEOUT, setting: str = "the bootstrap API root"
+) -> list[Server]:
     body = call(root, SERVER_LIST_METHOD, b"", client_version, timeout=timeout, setting=setting)
     try:
         servers = parse_server_list(body)
@@ -261,6 +276,7 @@ def api_root(cfg: Config, section: str) -> str:
 def apk_version_name(apk: Path) -> str | None:
     """`versionName` of the APK's AndroidManifest.xml (None when the APK has none)."""
     from .player import MANIFEST_IN_APK, manifest_version_name
+
     try:
         with ApkSet(apk) as z:
             data = z.read(MANIFEST_IN_APK) if MANIFEST_IN_APK in z.namelist() else None
@@ -279,14 +295,18 @@ def client_version(cfg: Config, region: str | None = None) -> str:
     if v is None:
         apk = cfg.path("paths", "apk")
         if apk is None:
-            raise ConfigError(f"the game API needs the client version: give it as {describe('client', 'version')}, "
-                              f"or give base.apk as {describe('paths', 'apk', '--apk')} to use its versionName")
+            raise ConfigError(
+                f"the game API needs the client version: give it as {describe('client', 'version')}, "
+                f"or give base.apk as {describe('paths', 'apk', '--apk')} to use its versionName"
+            )
         if not apk.exists():
             raise ConfigError(f"setting paths.apk: file {apk} not found")
         v = apk_version_name(apk)
         if not v:
-            raise ConfigError("the APK's AndroidManifest.xml has no versionName: give the client version as "
-                              + describe("client", "version"))
+            raise ConfigError(
+                "the APK's AndroidManifest.xml has no versionName: give the client version as "
+                + describe("client", "version")
+            )
         what = "the APK's versionName"
     v = v.strip()
     if not v or not v.isascii() or not v.isprintable():
@@ -299,6 +319,7 @@ def master_version(cfg: Config, region: str, *, timeout: float = TIMEOUT) -> Mas
     section = f"servers.{region}"
     if cfg.provider(region) == "jp":
         from .jp import Session
+
         return Session(cfg, region).observe(timeout=timeout).version
     root = api_root(cfg, section)
     return fetch_master_version(root, client_version(cfg, region), timeout=timeout, setting=f"[{section}] api")
@@ -323,8 +344,14 @@ def server_summary(s: Server, configured: dict[str, set[str]], hosts: bool = Fal
     """A server list entry for printing: the configured region with one of its roots, root counts, and the roots
     themselves only when `hosts`."""
     region = next((r for r, roots in configured.items() if roots & {*s.cdn, *s.api}), None)
-    d = {"name": s.name, "displayName": s.display_name, "areaId": s.area_id, "region": region,
-         "cdnRoots": len(s.cdn), "apiRoots": len(s.api)}
+    d = {
+        "name": s.name,
+        "displayName": s.display_name,
+        "areaId": s.area_id,
+        "region": region,
+        "cdnRoots": len(s.cdn),
+        "apiRoots": len(s.api),
+    }
     if hosts:
         d.update(cdn=list(s.cdn), api=list(s.api))
     return d

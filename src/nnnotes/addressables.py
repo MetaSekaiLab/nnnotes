@@ -12,6 +12,7 @@ is the first 8 bytes of SHA-256(nonce seed + UTF-8 bundle file name), the counte
 counter starting at 0. A file that already starts with the `UnityFS` signature is not encrypted. The key and the
 nonce seed come from the configuration (`[bundle] key`, `[bundle] nonce_seed`).
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -30,7 +31,7 @@ from Crypto.Cipher import AES
 from . import __version__
 
 UNITYFS = b"UnityFS\0"
-ENCRYPTED_BYTES = 16384            # only the first 16 KiB of a bundle are encrypted
+ENCRYPTED_BYTES = 16384  # only the first 16 KiB of a bundle are encrypted
 CATALOG_MAGIC = 0x0DE38942
 CATALOG_VERSION = 2
 NONE = 0xFFFFFFFF
@@ -56,6 +57,7 @@ def catalog_bytes(data: bytes) -> bytes:
 @dataclass(frozen=True)
 class BundleKey:
     """AES-128 key and nonce seed of the bundle encryption (never shown in a repr)."""
+
     key: bytes = field(repr=False)
     seed: bytes = field(repr=False)
 
@@ -77,7 +79,8 @@ def remote_path(internal_id: str) -> str | None:
     """The path below the CDN base of a remote location (an absolute URL: everything after its host), else None."""
     if internal_id.startswith(REMOTE_PREFIX):
         from .jp import relative_path
-        return "/" + relative_path(internal_id[len(REMOTE_PREFIX):])
+
+        return "/" + relative_path(internal_id[len(REMOTE_PREFIX) :])
     scheme, sep, rest = internal_id.partition("://")
     if not sep or not scheme.isalpha():
         return None
@@ -88,6 +91,7 @@ def remote_path(internal_id: str) -> str | None:
 def parse(data: bytes) -> list[dict]:
     """Every location of a binary catalog: {offset, primary_key, internal_id, dependencies (location offsets)}."""
     data = catalog_bytes(data)
+
     def u32(offset):
         return struct.unpack_from("<I", data, offset)[0]
 
@@ -99,14 +103,14 @@ def parse(data: bytes) -> list[dict]:
     def text(offset):
         if offset == NONE:
             return ""
-        if offset & 0x40000000:                     # a path of parts, stored last part first
+        if offset & 0x40000000:  # a path of parts, stored last part first
             parts = []
             while offset != NONE:
                 part, offset = struct.unpack_from("<II", data, offset & 0x3FFFFFFF)
                 parts.append(text(part))
             return "/".join(reversed(parts))
         pos = offset & 0x3FFFFFFF
-        return data[pos:pos + u32(pos - 4)].decode("utf-16-le" if offset & 0x80000000 else "ascii")
+        return data[pos : pos + u32(pos - 4)].decode("utf-16-le" if offset & 0x80000000 else "ascii")
 
     magic, version, keys = struct.unpack_from("<III", data)
     if magic != CATALOG_MAGIC or version != CATALOG_VERSION:
@@ -117,8 +121,9 @@ def parse(data: bytes) -> list[dict]:
     result = []
     for pos in sorted(locations):
         primary, internal, _, deps = struct.unpack_from("<4I", data, pos)
-        result.append({"offset": pos, "primary_key": text(primary),
-                       "internal_id": text(internal), "dependencies": array(deps)})
+        result.append(
+            {"offset": pos, "primary_key": text(primary), "internal_id": text(internal), "dependencies": array(deps)}
+        )
     return result
 
 
@@ -132,12 +137,17 @@ def parse(data: bytes) -> list[dict]:
 UNICODE = 0x80000000
 DYNAMIC = 0x40000000
 OFFSET_MASK = 0x3FFFFFFF
-HEADER = struct.Struct("<iiIIIIII")          # ContentCatalogData.ResourceLocator.Header, 32 bytes
-LOCATION = struct.Struct("<IIIIiII")         # ResourceLocation.Serializer.Data, 28 bytes
+HEADER = struct.Struct("<iiIIIIII")  # ContentCatalogData.ResourceLocator.Header, 32 bytes
+LOCATION = struct.Struct("<IIIIiII")  # ResourceLocation.Serializer.Data, 28 bytes
 REQUEST_OPTIONS = "UnityEngine.ResourceManagement.ResourceProviders.AssetBundleRequestOptions"
 # AssetBundleRequestOptions flag bits (SerializedData.Common.flags)
-FLAG_BITS = (("assetLoadMode", 1), ("chunkedTransfer", 2), ("useCrcForCachedBundle", 4),
-             ("useUnityWebRequestForLocalBundles", 8), ("clearOtherCachedVersionsWhenLoaded", 16))
+FLAG_BITS = (
+    ("assetLoadMode", 1),
+    ("chunkedTransfer", 2),
+    ("useCrcForCachedBundle", 4),
+    ("useUnityWebRequestForLocalBundles", 8),
+    ("clearOtherCachedVersionsWhenLoaded", 16),
+)
 
 
 class _Buffer:
@@ -165,7 +175,7 @@ class _Buffer:
         s = self._plain.get(offset)
         if s is None:
             pos = offset & OFFSET_MASK
-            raw = self.data[pos:pos + self.u32(pos - 4)]
+            raw = self.data[pos : pos + self.u32(pos - 4)]
             s = self._plain[offset] = raw.decode("utf-16-le" if offset & UNICODE else "ascii")
         return s
 
@@ -237,8 +247,12 @@ class _Buffer:
         u32 bundleSize, u32 common}: hash a Hash128 (16 raw bytes, hex in stored order), bundleName read with '_',
         common a SerializedData.Common {i16 timeout, u8 redirectLimit, u8 retryCount, i32 flags}."""
         hash_id, name_id, crc, size, common = struct.unpack_from("<5I", self.data, offset)
-        out = {"hash": None if hash_id == NONE else self.data[hash_id:hash_id + 16].hex(),
-               "bundleName": self.string(name_id, "_"), "crc": crc, "bundleSize": size}
+        out = {
+            "hash": None if hash_id == NONE else self.data[hash_id : hash_id + 16].hex(),
+            "bundleName": self.string(name_id, "_"),
+            "crc": crc,
+            "bundleSize": size,
+        }
         if common == NONE:
             out.update(timeout=None, redirectLimit=None, retryCount=None, flags=None)
             return out
@@ -259,10 +273,16 @@ def parse_header(data: bytes) -> dict:
     if magic != CATALOG_MAGIC or version != CATALOG_VERSION:
         raise ValueError("unsupported catalog format")
     buf = _Buffer(data)
-    return {"magic": magic, "version": version, "keysOffset": keys, "locatorId": buf.string(locator, ""),
-            "instanceProvider": buf.object_init(instance), "sceneProvider": buf.object_init(scene),
-            "initObjects": [buf.object_init(o) for o in buf.array(init)],
-            "buildResultHash": buf.string(build, "")}
+    return {
+        "magic": magic,
+        "version": version,
+        "keysOffset": keys,
+        "locatorId": buf.string(locator, ""),
+        "instanceProvider": buf.object_init(instance),
+        "sceneProvider": buf.object_init(scene),
+        "initObjects": [buf.object_init(o) for o in buf.array(init)],
+        "buildResultHash": buf.string(build, ""),
+    }
 
 
 def parse_keys(data: bytes) -> list[dict]:
@@ -305,18 +325,29 @@ def parse_locations(data: bytes) -> list[dict]:
             raise ValueError(f"catalog location at {pos}: past the end of the catalog")
         primary, internal, provider, deps, dep_hash, extra, typ = LOCATION.unpack_from(data, pos)
         rtype = buf.type_name(typ)
-        out.append({"offset": pos, "primary_key": buf.string(primary, "/") or "",
-                    "internal_id": buf.string(internal, "/") or "", "dependencies": buf.array(deps),
-                    "provider": buf.string(provider, "."), "dependency_hash": dep_hash,
-                    "resource_type": rtype[1] if rtype else None, "extra_data": buf.extra(extra)})
+        out.append(
+            {
+                "offset": pos,
+                "primary_key": buf.string(primary, "/") or "",
+                "internal_id": buf.string(internal, "/") or "",
+                "dependencies": buf.array(deps),
+                "provider": buf.string(provider, "."),
+                "dependency_hash": dep_hash,
+                "resource_type": rtype[1] if rtype else None,
+                "extra_data": buf.extra(extra),
+            }
+        )
     return out
 
 
 # ---------------------------------------------------------------- local browser
 def browse(entries: list[dict]) -> tuple[dict, dict]:
     """(remote bundles by offset, {asset path or `bundles/<key>`: bundle offsets}) of a parsed catalog."""
-    bundles = {e["offset"]: e for e in entries
-               if remote_path(e["internal_id"]) is not None and e["internal_id"].endswith(".bundle")}
+    bundles = {
+        e["offset"]: e
+        for e in entries
+        if remote_path(e["internal_id"]) is not None and e["internal_id"].endswith(".bundle")
+    }
     files: dict[str, set] = {}
     for entry in entries:
         if entry["internal_id"].startswith("Assets/"):
@@ -331,6 +362,7 @@ def browse(entries: list[dict]) -> tuple[dict, dict]:
 @dataclass
 class Region:
     """One region of the browser: label, CDN base and catalog languages."""
+
     name: str
     label: str
     cdn: str = field(repr=False)
@@ -344,9 +376,15 @@ class Handler(BaseHTTPRequestHandler):
 
     def listing(self, label: str, rows) -> None:
         title = f"nnnotes {__version__} /" + label
-        data = ("<!doctype html><meta charset=\"utf-8\"><title>" + escape(title)
-                + "</title><h1>" + escape(title) + "</h1><hr><ul>"
-                + "\n".join(sorted(rows)) + "</ul><hr>").encode()
+        data = (
+            '<!doctype html><meta charset="utf-8"><title>'
+            + escape(title)
+            + "</title><h1>"
+            + escape(title)
+            + "</h1><hr><ul>"
+            + "\n".join(sorted(rows))
+            + "</ul><hr>"
+        ).encode()
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(data)))
@@ -358,11 +396,13 @@ class Handler(BaseHTTPRequestHandler):
         if key not in self.server.catalogs:
             if region.config is not None and region.config.provider(region.name) == "jp":
                 from .jp import open_catalog
+
                 cat = open_catalog(region.config, region.name, bundle_key=self.server.bundle_key)
                 self.server.catalogs[key] = browse(cat.entries)
                 self.server.jp_catalogs[key] = cat
                 return self.server.catalogs[key]
             from .catalog import Catalog
+
             version = region.config.catalog_version(region.name) if region.config is not None else "main"
             cat = Catalog.load(language, self.server.cache / "catalogs" / region.name, cdn=region.cdn, version=version)
             self.server.catalogs[key] = browse(cat.entries)
@@ -373,16 +413,21 @@ class Handler(BaseHTTPRequestHandler):
         path = unquote(urlsplit(self.path).path)
         parts = path.strip("/").split("/") if path.strip("/") else []
         if not parts:
-            self.listing("", [f"<li><a href=\"/{quote(r.name)}/\">{escape(r.label)}/</a></li>" for r in regions.values()])
+            self.listing("", [f'<li><a href="/{quote(r.name)}/">{escape(r.label)}/</a></li>' for r in regions.values()])
             return
         region = regions.get(parts[0])
         if region is None:
             self.send_error(404)
             return
         if len(parts) == 1:
-            self.listing(region.label + "/", ["<li><a href=\"/\">../</a></li>"] +
-                         [f"<li><a href=\"/{quote(region.name)}/{quote(lang)}/\">{escape(lang)}/</a></li>"
-                          for lang in region.languages])
+            self.listing(
+                region.label + "/",
+                ['<li><a href="/">../</a></li>']
+                + [
+                    f'<li><a href="/{quote(region.name)}/{quote(lang)}/">{escape(lang)}/</a></li>'
+                    for lang in region.languages
+                ],
+            )
             return
         language = parts[1]
         if language not in region.languages:
@@ -390,6 +435,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         from .gameapi import GameApiError
         from .config import ConfigError
+
         try:
             bundles, files = self.catalog(region, language)
         except (GameApiError, ConfigError, ValueError):
@@ -407,6 +453,7 @@ class Handler(BaseHTTPRequestHandler):
                 cat = getattr(self.server, "jp_catalogs", {}).get((region.name, language))
                 if cat is not None:
                     from .catalog import Bundle
+
                     data = cat.fetch(Bundle(int(ident), entry["internal_id"], name, True)).read_bytes()
                 else:
                     with urlopen(region.cdn + remote_path(entry["internal_id"]), timeout=60) as response:
@@ -426,18 +473,18 @@ class Handler(BaseHTTPRequestHandler):
         parent = base + prefix.rstrip("/").rsplit("/", 1)[0] + "/" if "/" in prefix.rstrip("/") else base
         if not prefix:
             parent = f"/{quote(region.name)}/"
-        rows = {f"<li><a href=\"{quote(parent)}\">../</a></li>"}
+        rows = {f'<li><a href="{quote(parent)}">../</a></li>'}
         for name, ids in files.items():
             if not name.startswith(prefix):
                 continue
-            tail = name[len(prefix):]
+            tail = name[len(prefix) :]
             if "/" in tail:
                 directory = prefix + tail.split("/")[0] + "/"
-                rows.add(f"<li><a href=\"{base}{quote(directory)}\">{escape(tail.split('/')[0])}/</a></li>")
+                rows.add(f'<li><a href="{base}{quote(directory)}">{escape(tail.split("/")[0])}/</a></li>')
             else:
                 for ident in sorted(ids):
                     label = tail if len(ids) == 1 else tail + " — " + bundles[ident]["primary_key"]
-                    rows.add(f"<li><a href=\"{base}download/{ident}\">{escape(label)}</a></li>")
+                    rows.add(f'<li><a href="{base}download/{ident}">{escape(label)}</a></li>')
         self.listing(region.label + "/" + language + "/" + prefix, rows)
 
 

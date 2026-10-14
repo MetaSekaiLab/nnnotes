@@ -20,6 +20,7 @@ running tasks have ended (their results stay valid).
 Stage results do not depend on the number of workers, their order or their timing: a run with one worker and a run
 with many leave identical cas/ and ac/ trees and the same run manifest.
 """
+
 from __future__ import annotations
 
 import multiprocessing as mp
@@ -36,10 +37,21 @@ from .config import ConfigError
 from .contract import Task
 from .stages import Env, Pending, Stage, describe, execute
 
-WORKER_BYTES = 70 << 20        # resident memory of an idle worker process (interpreter and imports), per worker
+WORKER_BYTES = 70 << 20  # resident memory of an idle worker process (interpreter and imports), per worker
 # failure codes of tasks (failed items carry the codes of their stages)
-FAILURE_CODES = ("task.error", "task.input", "task.io", "task.memory", "task.conflict", "task.incompatible",
-                 "task.worker_died", "task.describe", "upstream.failed", "upstream.missing", "config")
+FAILURE_CODES = (
+    "task.error",
+    "task.input",
+    "task.io",
+    "task.memory",
+    "task.conflict",
+    "task.incompatible",
+    "task.worker_died",
+    "task.describe",
+    "upstream.failed",
+    "upstream.missing",
+    "config",
+)
 
 
 def _log(m: str) -> None:
@@ -86,6 +98,7 @@ def failure(task: str, stage: str, code: str, message: str, inp: str | None = No
 def _error_code(e: BaseException) -> str:
     from .contract import IncompatibleTask
     from .store import InputMissing, StoreConflict
+
     if isinstance(e, IncompatibleTask):
         return "task.incompatible"
     if isinstance(e, InputMissing):
@@ -110,8 +123,13 @@ def run_one(task: Task, store, stages: dict, force: bool) -> dict:
     except ConfigError as e:
         return {"ok": False, "code": "config", "message": str(e), "trace": "", "rss": rss()}
     except Exception as e:
-        return {"ok": False, "code": _error_code(e), "message": f"{type(e).__name__}: {e}"[:2000],
-                "trace": "".join(traceback.format_exception(type(e), e, e.__traceback__))[-4000:], "rss": rss()}
+        return {
+            "ok": False,
+            "code": _error_code(e),
+            "message": f"{type(e).__name__}: {e}"[:2000],
+            "trace": "".join(traceback.format_exception(type(e), e, e.__traceback__))[-4000:],
+            "rss": rss(),
+        }
     reply = {"ok": True, "status": ex.status, "resultStatus": ex.result_status, "rss": rss()}
     if ex.cost is not None:
         cost = dict(ex.cost, peakRssBytes=peak_rss(), startRssBytes=start)
@@ -143,8 +161,12 @@ class _Worker:
     def __init__(self, ctx, n: int, store, stages, initializer, initargs):
         self.n = n
         self.conn, child = ctx.Pipe()
-        self.proc = ctx.Process(target=_worker_main, args=(child, store, stages, initializer, initargs),
-                                name=f"nnnotes-worker-{n}", daemon=True)
+        self.proc = ctx.Process(
+            target=_worker_main,
+            args=(child, store, stages, initializer, initargs),
+            name=f"nnnotes-worker-{n}",
+            daemon=True,
+        )
         self.proc.start()
         child.close()
         self.task: Task | None = None
@@ -224,12 +246,13 @@ class Run:
     """What an orchestrated run did: per task id its key and status (hit, ran, failed), the failures, the log.
     The reports (summary, failures, coverage) come from one reading of every result (scan), kept while the tasks
     stay the same."""
+
     store: object
     context: dict
     selection: list
     params: dict
     stages: dict
-    tasks: dict = field(default_factory=dict)          # task id -> {"id", "key", "status"}
+    tasks: dict = field(default_factory=dict)  # task id -> {"id", "key", "status"}
     failures_: list = field(default_factory=list)
     log: list = field(default_factory=list)
     oversize: list = field(default_factory=list)
@@ -272,8 +295,12 @@ class Run:
     def summary(self) -> dict:
         statuses = Counter(t["status"] for t in self.tasks.values())
         d = self._digest()
-        return {"tasks": len(self.tasks), **{s: statuses.get(s, 0) for s in contract.RUN_TASK_STATUSES},
-                "items": {s: d.items.get(s, 0) for s in contract.ITEM_STATUSES}, "artifacts": d.artifacts}
+        return {
+            "tasks": len(self.tasks),
+            **{s: statuses.get(s, 0) for s in contract.RUN_TASK_STATUSES},
+            "items": {s: d.items.get(s, 0) for s in contract.ITEM_STATUSES},
+            "artifacts": d.artifacts,
+        }
 
     @property
     def exit_code(self) -> int:
@@ -281,9 +308,16 @@ class Run:
         return 1 if self.failures() else 0
 
     def manifest(self, layouts: dict | None = None, placement: dict | None = None) -> dict:
-        return contract.run_doc(context=self.context, selection=self.selection, params=self.params,
-                                stages=self.stages, tasks=list(self.tasks.values()), layouts=layouts or {},
-                                summary=self.summary(), placement=placement)
+        return contract.run_doc(
+            context=self.context,
+            selection=self.selection,
+            params=self.params,
+            stages=self.stages,
+            tasks=list(self.tasks.values()),
+            layouts=layouts or {},
+            summary=self.summary(),
+            placement=placement,
+        )
 
     def write(self, layouts: dict | None = None, placement: dict | None = None) -> dict:
         """Write the run manifest (layouts: {name: sha256 of its layout manifest}; placement: how their files were
@@ -303,7 +337,7 @@ class Run:
         return {"schema": contract.FAILURES, "failures": self.failures()}
 
 
-SEVERITY = ("failed", "unsupported", "generic", "exported", "contained")   # most severe first
+SEVERITY = ("failed", "unsupported", "generic", "exported", "contained")  # most severe first
 _SEVERITY = {s: i for i, s in enumerate(SEVERITY)}
 _PATH_IDS = 1 << 64
 
@@ -317,10 +351,10 @@ class Digest:
         self.items: Counter = Counter()
         self.artifacts = 0
         self.failed: list[dict] = []
-        self.best: dict = {}               # object key -> severity + 8 * kind
-        self.kinds: dict = {}              # (class, reason code or None) -> kind
-        self.reasoned: dict = {}           # object key -> object id, where the most severe item has a reason
-        self._files: dict = {}             # serialized file -> number (object keys)
+        self.best: dict = {}  # object key -> severity + 8 * kind
+        self.kinds: dict = {}  # (class, reason code or None) -> kind
+        self.reasoned: dict = {}  # object key -> object id, where the most severe item has a reason
+        self._files: dict = {}  # serialized file -> number (object keys)
         self.settled: tuple | None = None  # (census, coverage document) once settle() dropped the object state
 
     def _key(self, oid: str):
@@ -343,8 +377,9 @@ class Digest:
             self.items[status] += 1
             reason = it.get("reason")
             if status == "failed":
-                self.failed.append(failure(tid, contract.parse_task_id(tid)[0], reason["code"], reason["message"],
-                                           obj=it["object"]))
+                self.failed.append(
+                    failure(tid, contract.parse_task_id(tid)[0], reason["code"], reason["message"], obj=it["object"])
+                )
             sev, k = _SEVERITY[status], self._key(it["object"])
             old = best.get(k)
             if old is None or sev < old % 8:
@@ -382,11 +417,18 @@ class Digest:
             c = classes.get(cls, Counter())
             n = sum(c.values())
             total = (census or {}).get(cls, n)
-            out_classes[cls] = {"total": total, "missing": total - n,
-                                **{s: c.get(s, 0) for s in contract.ITEM_STATUSES}}
-        return {"schema": contract.COVERAGE, "classes": out_classes,
-                "reasons": {code: {"count": len(ids), "examples": sorted(ids)[:5]}
-                            for code, ids in sorted(reasons.items())}}
+            out_classes[cls] = {
+                "total": total,
+                "missing": total - n,
+                **{s: c.get(s, 0) for s in contract.ITEM_STATUSES},
+            }
+        return {
+            "schema": contract.COVERAGE,
+            "classes": out_classes,
+            "reasons": {
+                code: {"count": len(ids), "examples": sorted(ids)[:5]} for code, ids in sorted(reasons.items())
+            },
+        }
 
 
 def coverage(results, census: dict | None = None) -> dict:
@@ -401,9 +443,20 @@ class Orchestrator:
     """Runs pipelines of stages into a store (see the module documentation). `initializer(store, *initargs)` runs
     first in every worker (settings, caches, the store's fetcher); it must be importable (spawned processes)."""
 
-    def __init__(self, store, stages: dict[str, Stage], *, workers: int = 0, memory: int | None = None,
-                 worker_bytes: int = WORKER_BYTES, recycle_tasks: int | None = None, recycle_rss: int | None = None,
-                 initializer=None, initargs: tuple = (), log=_log):
+    def __init__(
+        self,
+        store,
+        stages: dict[str, Stage],
+        *,
+        workers: int = 0,
+        memory: int | None = None,
+        worker_bytes: int = WORKER_BYTES,
+        recycle_tasks: int | None = None,
+        recycle_rss: int | None = None,
+        initializer=None,
+        initargs: tuple = (),
+        log=_log,
+    ):
         self.store, self.stages = store, stages
         self.workers, self.memory, self.worker_bytes = max(0, int(workers)), memory, int(worker_bytes)
         self.recycle_tasks, self.recycle_rss = recycle_tasks, recycle_rss
@@ -414,14 +467,16 @@ class Orchestrator:
 
     def explain(self) -> list[str]:
         """Every knob of the run, with its value."""
-        gib = lambda b: "none" if b is None else f"{b / (1 << 30):.1f} GiB"   # noqa: E731
-        return [f"workers: {self.workers or 'none (tasks run in this process)'}",
-                f"memory budget: {gib(self.memory)}, of which {gib(self.task_budget())} for the running tasks' "
-                f"estimated peaks ({gib(self.worker_bytes)} per worker process)",
-                "order: longest estimated CPU first",
-                f"worker recycling: after {self.recycle_tasks or 'unlimited'} tasks, "
-                f"above {gib(self.recycle_rss)} resident"
-                + ("" if rss() is not None else " (resident memory not measurable here: size limit inactive)")]
+        gib = lambda b: "none" if b is None else f"{b / (1 << 30):.1f} GiB"  # noqa: E731
+        return [
+            f"workers: {self.workers or 'none (tasks run in this process)'}",
+            f"memory budget: {gib(self.memory)}, of which {gib(self.task_budget())} for the running tasks' "
+            f"estimated peaks ({gib(self.worker_bytes)} per worker process)",
+            "order: longest estimated CPU first",
+            f"worker recycling: after {self.recycle_tasks or 'unlimited'} tasks, "
+            f"above {gib(self.recycle_rss)} resident"
+            + ("" if rss() is not None else " (resident memory not measurable here: size limit inactive)"),
+        ]
 
     def task_budget(self) -> int | None:
         """The memory the running tasks' estimates may sum to: the budget less what the worker processes hold."""
@@ -430,8 +485,16 @@ class Orchestrator:
         return max(0, self.memory - max(1, self.workers) * self.worker_bytes)
 
     # ---------------------------------------------------------------- pipeline
-    def run(self, pipeline: list[str], *, params: dict | None = None, facts: dict | None = None,
-            context: dict | None = None, selection=(), force=()) -> Run:
+    def run(
+        self,
+        pipeline: list[str],
+        *,
+        params: dict | None = None,
+        facts: dict | None = None,
+        context: dict | None = None,
+        selection=(),
+        force=(),
+    ) -> Run:
         """Run the stages named in `pipeline`, in order. `params`: {stage: parameters}; `facts`: the planning
         facts; `context` / `selection`: recorded in the run manifest; `force`: task ids or stage names ("*": all)
         run again even when their result is in the store (the new result must be identical)."""
@@ -444,8 +507,7 @@ class Orchestrator:
             if late:
                 raise ValueError(f"stage {n} runs before {', '.join(late)}, which it reads")
         norm = {n: self.stages[n].normalize(params.get(n)) for n in pipeline}
-        run = Run(self.store, dict(context or {}), list(selection), norm,
-                  {n: self.stages[n].version for n in pipeline})
+        run = Run(self.store, dict(context or {}), list(selection), norm, {n: self.stages[n].version for n in pipeline})
         env = Env(self.store, facts)
         force = set(force)
         for line in self.explain():
@@ -454,7 +516,7 @@ class Orchestrator:
             for name in pipeline:
                 self._stage(self.stages[name], norm[name], env, force, run)
         except ConfigError as e:
-            e.run = run                      # what ran before the stop: its results stay valid
+            e.run = run  # what ran before the stop: its results stay valid
             raise
         finally:
             self.close()
@@ -466,16 +528,30 @@ class Orchestrator:
         try:
             subjects = stage.subjects(env)
         except Pending as p:
-            self._fail(run, env, contract.task_id(stage.name, "*"), None, stage.name,
-                       "upstream.failed" if p.failed else "upstream.missing", f"needs {p.task}: {p}")
+            self._fail(
+                run,
+                env,
+                contract.task_id(stage.name, "*"),
+                None,
+                stage.name,
+                "upstream.failed" if p.failed else "upstream.missing",
+                f"needs {p.task}: {p}",
+            )
             return
         for subject in subjects:
             tid = contract.task_id(stage.name, subject)
             try:
                 tasks.append(describe(stage, subject, params, env))
             except Pending as p:
-                self._fail(run, env, tid, None, stage.name,
-                           "upstream.failed" if p.failed else "upstream.missing", f"needs {p.task}: {p}")
+                self._fail(
+                    run,
+                    env,
+                    tid,
+                    None,
+                    stage.name,
+                    "upstream.failed" if p.failed else "upstream.missing",
+                    f"needs {p.task}: {p}",
+                )
             except Exception as e:
                 self._fail(run, env, tid, None, stage.name, "task.describe", f"{type(e).__name__}: {e}"[:2000])
         forced = "*" in force or stage.name in force
@@ -496,8 +572,10 @@ class Orchestrator:
             else:
                 self._fail(run, env, t.id, t.key, stage.name, reply["code"], reply["message"], _input_name(t))
         n = Counter(run.tasks[t.id]["status"] for t in tasks)
-        self.log(f"{stage.name}: {len(tasks)} tasks, {n['hit']} hits, {n['ran']} ran, {n['failed']} failed "
-                 f"({time.perf_counter() - t0:.1f} s)")
+        self.log(
+            f"{stage.name}: {len(tasks)} tasks, {n['hit']} hits, {n['ran']} ran, {n['failed']} failed "
+            f"({time.perf_counter() - t0:.1f} s)"
+        )
         if stop is not None:
             raise ConfigError(stop["message"])
 
@@ -532,11 +610,10 @@ class Orchestrator:
 
     def _spawn(self) -> _Worker:
         self._started += 1
-        return _Worker(mp.get_context("spawn"), self._started, self.store, self.stages, self.initializer,
-                       self.initargs)
+        return _Worker(mp.get_context("spawn"), self._started, self.store, self.stages, self.initializer, self.initargs)
 
     def _pool_run(self, sched: Scheduler, force, replies: dict, run: Run) -> None:
-        while len(self._pool) < min(self.workers, len(sched.queue)):     # no more processes than tasks
+        while len(self._pool) < min(self.workers, len(sched.queue)):  # no more processes than tasks
             self._pool.append(self._spawn())
         try:
             while sched.queue or sched.running:
@@ -545,7 +622,7 @@ class Orchestrator:
                         t = sched.next()
                         if t is None:
                             break
-                        if not self._pool[i].proc.is_alive():      # died while idle
+                        if not self._pool[i].proc.is_alive():  # died while idle
                             self._replace(self._pool[i])
                         w = self._pool[i]
                         self._record(run, t, sched, w)
@@ -564,9 +641,13 @@ class Orchestrator:
                         reply = None
                     if reply is None:
                         w.proc.join(5)
-                        reply = {"ok": False, "code": "task.worker_died",
-                                 "message": f"worker exited with code {w.proc.exitcode} while running the task",
-                                 "trace": "", "rss": None}
+                        reply = {
+                            "ok": False,
+                            "code": "task.worker_died",
+                            "message": f"worker exited with code {w.proc.exitcode} while running the task",
+                            "trace": "",
+                            "rss": None,
+                        }
                     replies[t.id] = reply
                     self._done(run, t, reply, w)
                     sched.finished(t.id)
@@ -595,13 +676,26 @@ class Orchestrator:
         self._pool[self._pool.index(w)] = self._spawn()
 
     def _record(self, run: Run, t: Task, sched: Scheduler, w) -> None:
-        run.log.append({"event": "start", "task": t.id, "key": t.key, "worker": None if w is None else w.n,
-                        "estimate": t.cost.to_json() if t.cost is not None else None,
-                        "runningBytes": sched.used() - _peak(t), "budget": sched.budget})
+        run.log.append(
+            {
+                "event": "start",
+                "task": t.id,
+                "key": t.key,
+                "worker": None if w is None else w.n,
+                "estimate": t.cost.to_json() if t.cost is not None else None,
+                "runningBytes": sched.used() - _peak(t),
+                "budget": sched.budget,
+            }
+        )
 
     def _done(self, run: Run, t: Task, reply: dict, w) -> None:
-        e = {"event": "end", "task": t.id, "worker": None if w is None else w.n, "ok": reply["ok"],
-             "rss": reply.get("rss")}
+        e = {
+            "event": "end",
+            "task": t.id,
+            "worker": None if w is None else w.n,
+            "ok": reply["ok"],
+            "rss": reply.get("rss"),
+        }
         if reply["ok"]:
             e.update(status=reply["status"], cost=reply.get("cost"))
         else:

@@ -1,4 +1,5 @@
 """JP transport, snapshot identity and split APK regressions; all servers and data are synthetic."""
+
 import base64
 import gzip
 import io
@@ -24,17 +25,27 @@ server = grpc_server
 
 
 def cat_bytes():
-    return synth.CatalogWriter().build([
-        ("Live/MusicScore/0001/0001_00", "Assets/chart.asset", [1]),
-        ("chart.bundle", jp.PLACEHOLDER + "chart.bundle", []),
-        ("Cri/Sound/test", jp.PLACEHOLDER + "audio/test.acb", []),
-    ])
+    return synth.CatalogWriter().build(
+        [
+            ("Live/MusicScore/0001/0001_00", "Assets/chart.asset", [1]),
+            ("chart.bundle", jp.PLACEHOLDER + "chart.bundle", []),
+            ("Cri/Sound/test", jp.PLACEHOLDER + "audio/test.acb", []),
+        ]
+    )
 
 
 @pytest.fixture
 def upstream(server):
-    state = SimpleNamespace(hash=HASH, credential="synthetic-secret", asset=True, seen=[], status=200,
-                            body=gzip.compress(cat_bytes()), cdn_override=None, content_length=None)
+    state = SimpleNamespace(
+        hash=HASH,
+        credential="synthetic-secret",
+        asset=True,
+        seen=[],
+        status=200,
+        body=gzip.compress(cat_bytes()),
+        cdn_override=None,
+        content_length=None,
+    )
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
@@ -61,17 +72,27 @@ def upstream(server):
     def version(req, ctx):
         headers = [("x-sirius-env", state.cdn_override or state.cdn), ("x-sirius-cred", state.credential)]
         if state.asset:
-            headers.append(("x-asset-version", json.dumps({"live": [
-                {"minClientVersion": "1.0.4", "version": "1.0.0.300", "Android": state.hash}]})))
+            headers.append(
+                (
+                    "x-asset-version",
+                    json.dumps(
+                        {"live": [{"minClientVersion": "1.0.4", "version": "1.0.0.300", "Android": state.hash}]}
+                    ),
+                )
+            )
         ctx.send_initial_metadata(headers)
         return version_response(MASTER)
 
     server.handlers[gameapi.VERSION_METHOD] = version
     state.grpc = server
-    state.cfg = Config({"catalog": {"region": "jp", "language": "ja"},
-                        "client": {"version": "1.0.1"},
-                        "servers": {"jp": {"cdn": state.cdn, "api": server.root, "client_version": "1.0.4"}}},
-                       environ={})
+    state.cfg = Config(
+        {
+            "catalog": {"region": "jp", "language": "ja"},
+            "client": {"version": "1.0.1"},
+            "servers": {"jp": {"cdn": state.cdn, "api": server.root, "client_version": "1.0.4"}},
+        },
+        environ={},
+    )
     try:
         yield state
     finally:
@@ -92,13 +113,20 @@ def test_version_headers_and_master_without_asset(upstream):
 
 @pytest.mark.parametrize("api", ["api.invalid:443", " api.invalid:8443/ ", "[::1]:443"])
 def test_api_root_defaults_to_https(api, monkeypatch):
-    cfg = Config({"catalog": {"region": "jp"}, "servers": {"jp": {
-        "api": api, "cdn": "https://cdn.invalid", "client_version": "1.0.4"}}}, environ={})
+    cfg = Config(
+        {
+            "catalog": {"region": "jp"},
+            "servers": {"jp": {"api": api, "cdn": "https://cdn.invalid", "client_version": "1.0.4"}},
+        },
+        environ={},
+    )
     calls = []
+
     def call(root, *args, response_metadata, **kwargs):
         calls.append(root)
         response_metadata.update({"x-sirius-env": "https://cdn.invalid", "x-sirius-cred": "synthetic"})
         return version_response(MASTER)
+
     monkeypatch.setattr(gameapi, "call", call)
     configfile.validate(configfile.resolve("servers.jp.api")[0], api)
     assert jp.Session(cfg, "jp").observe().version.version == MASTER
@@ -116,8 +144,12 @@ def test_api_origin_restrictions_still_apply(api, monkeypatch):
 def test_live_selection_numeric_and_no_fallback():
     def entry(client, version):
         return {"minClientVersion": client, "version": version, "Android": HASH}
-    raw = {"version": "9.9", "Android": HASH,
-           "live": [entry("1.0.10", "1.0.10"), entry("1.0.2", "1.0.2"), entry("8.0", "8.0")]}
+
+    raw = {
+        "version": "9.9",
+        "Android": HASH,
+        "live": [entry("1.0.10", "1.0.10"), entry("1.0.2", "1.0.2"), entry("8.0", "8.0")],
+    }
     assert jp.select_asset(json.dumps(raw), "1.0.12") == ("1.0.10", HASH)
     assert jp.select_asset(json.dumps(raw), "1.0.1") is None
     assert jp.select_asset(json.dumps({"version": "1.0", "Android": HASH, "live": []}), "1.0") == ("1.0", HASH)
@@ -246,16 +278,19 @@ def test_catalogdb_source_identity_and_fetcher(upstream, tmp_path):
 
 def test_apk_update_with_same_asset_snapshot_does_not_reuse_embedded_cache(tmp_path):
     from nnnotes.catalog import APK_CATALOG, APK_AA_DIR
+
     source = jp.Source("jp", "1.0", HASH, "https://cdn.invalid")
     apk = tmp_path / "base.apk"
     cache = tmp_path / "cache"
     db = catalogdb.CatalogDB(tmp_path / "store")
     cfg = Config({"catalog": {"region": "jp"}, "paths": {"apk": str(apk)}}, environ={})
     from nnnotes.cli_assets import Workspace
+
     for revision in (1, 2):
-        local = synth.CatalogWriter().build([("Local", "Assets/local", [1]),
-                                             ("local.bundle", synth.local("local.bundle"), [])],
-                                            build_hash=str(revision) * 32)
+        local = synth.CatalogWriter().build(
+            [("Local", "Assets/local", [1]), ("local.bundle", synth.local("local.bundle"), [])],
+            build_hash=str(revision) * 32,
+        )
         content = b"UnityFS\0" + bytes([revision])
         apk.write_bytes(zip_bytes({APK_CATALOG: local, APK_AA_DIR + "Android/local.bundle": content}))
         cat = Catalog(cat_bytes(), source.cache_dir(cache), source=source, apk=apk)
@@ -272,17 +307,21 @@ def test_apk_update_with_same_asset_snapshot_does_not_reuse_embedded_cache(tmp_p
 
 
 def local_catalog(revision=1):
-    return synth.CatalogWriter().build([
-        ("Local", "Assets/local", [1]),
-        ("local.bundle", synth.local("local.bundle"), []),
-        ("local.acb", synth.local("local.acb"), []),
-    ], build_hash=str(revision) * 32)
+    return synth.CatalogWriter().build(
+        [
+            ("Local", "Assets/local", [1]),
+            ("local.bundle", synth.local("local.bundle"), []),
+            ("local.acb", synth.local("local.acb"), []),
+        ],
+        build_hash=str(revision) * 32,
+    )
 
 
 @pytest.mark.parametrize("apk_state", ["unset", "missing", "different", "broken"])
 @pytest.mark.parametrize("kind", ["bundles", "rawFiles"])
 def test_remote_replay_does_not_open_the_apk(upstream, tmp_path, apk_state, kind):
     from nnnotes.catalog import APK_CATALOG
+
     cfg = upstream.cfg
     cfg._data["bundle"] = {"key": "00" * 16, "nonce_seed": "11"}
     cfg._data["paths"] = {"cache": str(tmp_path / "cache")}
@@ -307,6 +346,7 @@ def test_remote_replay_does_not_open_the_apk(upstream, tmp_path, apk_state, kind
 @pytest.mark.parametrize("state", ["matching", "different", "no-catalog", "cached"])
 def test_local_replay_validates_only_on_cache_miss(tmp_path, kind, state):
     from nnnotes.catalog import APK_CATALOG, APK_AA_DIR
+
     source = jp.Source("jp", "1.0", HASH, "https://cdn.invalid")
     apk = tmp_path / "base.apk"
     members = {APK_AA_DIR + "Android/local.bundle": b"UnityFS\0local", APK_AA_DIR + "Android/local.acb": b"@UTFraw"}
@@ -341,10 +381,19 @@ def zip_bytes(files):
 
 @pytest.mark.parametrize("kind", ["base", "directory", "apks"])
 def test_split_apk_member_routing_and_manifest_precedence(tmp_path, kind):
-    base = zip_bytes({"AndroidManifest.xml": synth.axml(["versionName", "manifest", "1.0.4"], 2),
-                      "assets/bin/Data/data.unity3d": b"boot"})
-    assets = zip_bytes({"AndroidManifest.xml": b"split manifest", "assets/aa/catalog.bin": cat_bytes(),
-                        "assets/Master/MasterManifest.json": b'{"version":"embedded", "files":[]}'})
+    base = zip_bytes(
+        {
+            "AndroidManifest.xml": synth.axml(["versionName", "manifest", "1.0.4"], 2),
+            "assets/bin/Data/data.unity3d": b"boot",
+        }
+    )
+    assets = zip_bytes(
+        {
+            "AndroidManifest.xml": b"split manifest",
+            "assets/aa/catalog.bin": cat_bytes(),
+            "assets/Master/MasterManifest.json": b'{"version":"embedded", "files":[]}',
+        }
+    )
     (tmp_path / "base.apk").write_bytes(base)
     (tmp_path / "split_UnityDataAssetPack.apk").write_bytes(assets)
     source = tmp_path / "base.apk" if kind == "base" else tmp_path
@@ -360,9 +409,16 @@ def test_split_apk_member_routing_and_manifest_precedence(tmp_path, kind):
 
 
 def test_per_region_apk_and_client_settings(tmp_path):
-    cfg = Config({"catalog": {"region": "tw"}, "paths": {"apk": "global.apk"},
-                  "servers": {"jp": {"apk": "jp.apks", "client_version": "1.0.4"}},
-                  "client": {"version": "1.0.1"}}, base=tmp_path, environ={})
+    cfg = Config(
+        {
+            "catalog": {"region": "tw"},
+            "paths": {"apk": "global.apk"},
+            "servers": {"jp": {"apk": "jp.apks", "client_version": "1.0.4"}},
+            "client": {"version": "1.0.1"},
+        },
+        base=tmp_path,
+        environ={},
+    )
     assert cfg.path("paths", "apk") == tmp_path / "global.apk"
     assert cfg.for_region("jp").path("paths", "apk") == tmp_path / "jp.apks"
     assert gameapi.client_version(cfg, "jp") == "1.0.4" and gameapi.client_version(cfg, "tw") == "1.0.1"
@@ -374,21 +430,27 @@ def test_per_region_apk_and_client_settings(tmp_path):
 @pytest.mark.parametrize("region", ["jp", "tw"])
 def test_web_preflight_uses_the_selected_regions_apk(tmp_path, monkeypatch, kind, region):
     from nnnotes import storysite, tmpfont, web, webmodel
+
     conf = tmp_path / "nnnotes.toml"
     default = "jp" if region == "tw" else "tw"
-    conf.write_text(f'[catalog]\nregion="{default}"\nlanguage="ja"\n'
-                    f'[servers.{default}]\ncdn="https://default.invalid"\n'
-                    f'[servers.{region}]\ncdn="https://target.invalid"\napk="target.apk"\n'
-                    '[paths]\nplayer="player"\n', encoding="utf-8")
+    conf.write_text(
+        f'[catalog]\nregion="{default}"\nlanguage="ja"\n'
+        f'[servers.{default}]\ncdn="https://default.invalid"\n'
+        f'[servers.{region}]\ncdn="https://target.invalid"\napk="target.apk"\n'
+        '[paths]\nplayer="player"\n',
+        encoding="utf-8",
+    )
     (tmp_path / "target.apk").write_bytes(b"synthetic")
     monkeypatch.setattr(tmpfont, "require_extra", lambda *a, **kw: None)
     monkeypatch.setattr(web, "check_player", lambda *a, **kw: tmp_path / "player")
     monkeypatch.setattr(cli, "open_catalog", lambda *a, **kw: object())
     monkeypatch.setattr(webmodel, "catalog_models", lambda *a, **kw: {})
     seen = []
+
     def build(out, selection, cfg, *args, **kwargs):
         seen.append((cfg.region(), cfg.path("paths", "apk")))
         return {}
+
     monkeypatch.setattr(webmodel, "build", build)
     monkeypatch.setattr(storysite, "build", build)
     cli.main(["--config", str(conf), "web", str(tmp_path / "site"), kind, "--region", region])
@@ -397,25 +459,41 @@ def test_web_preflight_uses_the_selected_regions_apk(tmp_path, monkeypatch, kind
 
 def test_datapack_is_loaded_in_the_boot_environment(tmp_path, monkeypatch):
     from nnnotes import player
-    boot = SimpleNamespace(objects=[SimpleNamespace(type=SimpleNamespace(name="GraphicsSettings"),
-                                                    assets_file=SimpleNamespace(unity_version="6000.3.12f1"))])
+
+    boot = SimpleNamespace(
+        objects=[
+            SimpleNamespace(
+                type=SimpleNamespace(name="GraphicsSettings"), assets_file=SimpleNamespace(unity_version="6000.3.12f1")
+            )
+        ]
+    )
     loaded = []
     boot.load_file = lambda stream, **kw: loaded.append((stream.read(), kw["name"]))
     monkeypatch.setattr(player.UnityPy, "load", lambda stream: boot if stream.read() == b"boot" else object())
     path = tmp_path / "base.apk"
-    path.write_bytes(zip_bytes({player.DATA_IN_APK: b"boot", player.DEFAULT_RESOURCES_IN_APK: b"defaults",
-                               "assets/bin/Data/datapack.unity3d": b"resources"}))
+    path.write_bytes(
+        zip_bytes(
+            {
+                player.DATA_IN_APK: b"boot",
+                player.DEFAULT_RESOURCES_IN_APK: b"defaults",
+                "assets/bin/Data/datapack.unity3d": b"resources",
+            }
+        )
+    )
     player.PlayerData(path)
     assert loaded == [(b"resources", "datapack.unity3d")]
 
 
 def test_jp_master_manifest_checks_before_writing(tmp_path):
     from nnnotes import master
+
     manifest = {"version": MASTER, "files": [{"name": "../secret.bin", "hash": "a" * 64, "size": 128}]}
     seen = []
+
     def get(url):
         seen.append(url)
         return json.dumps(manifest).encode()
+
     with pytest.raises(master.DownloadError, match="manifest entry"):
         master.download("https://cdn.invalid", MASTER, tmp_path, get=get, strict=True)
     assert len(seen) == 1 and not (tmp_path / "MasterManifest.json").exists()
@@ -424,14 +502,21 @@ def test_jp_master_manifest_checks_before_writing(tmp_path):
 @pytest.mark.parametrize("files", [None, [], {}, [None]])
 def test_jp_master_rejects_missing_or_malformed_file_lists(tmp_path, files):
     from nnnotes import master
+
     with pytest.raises(master.DownloadError, match="manifest"):
-        master.download("https://cdn.invalid", MASTER, tmp_path, strict=True,
-                        get=lambda _: json.dumps({"version": MASTER, "files": files}).encode())
+        master.download(
+            "https://cdn.invalid",
+            MASTER,
+            tmp_path,
+            strict=True,
+            get=lambda _: json.dumps({"version": MASTER, "files": files}).encode(),
+        )
     assert not (tmp_path / "MasterManifest.json").exists()
 
 
 def test_export_cache_locator_uses_source_namespace(tmp_path):
     from nnnotes.cli_assets import Workspace
+
     source = jp.Source("jp", "1.0.0.300", HASH, "https://cdn.invalid")
     workspace = Workspace.__new__(Workspace)
     workspace.version = {"source": source.to_dict()}
@@ -444,15 +529,23 @@ def test_export_cache_locator_uses_source_namespace(tmp_path):
 def test_music_data_preserves_asset_hash(tmp_path):
     from test_musicdata import CHARTS, bgm, master_dir, KEY, PROV
     from nnnotes import musicdata
+
     output = tmp_path / "music.json"
-    musicdata.export(output, deckdata.master_files(master_dir(tmp_path)), KEY, CHARTS.__getitem__, bgm,
-                     **{**PROV, "catalog": {**PROV["catalog"], "resourceHash": HASH}})
+    musicdata.export(
+        output,
+        deckdata.master_files(master_dir(tmp_path)),
+        KEY,
+        CHARTS.__getitem__,
+        bgm,
+        **{**PROV, "catalog": {**PROV["catalog"], "resourceHash": HASH}},
+    )
     doc = json.loads(output.read_bytes())
     assert doc["provenance"]["catalog"]["resourceHash"] == HASH
 
 
 def test_directory_hca_key_tracks_replaced_base_apk(tmp_path, monkeypatch):
     from nnnotes import cri
+
     apk = tmp_path / "base.apk"
     apk.write_bytes(b"first")
     monkeypatch.setattr(cri.crikey, "find_key", lambda directory: len((directory / "base.apk").read_bytes()))

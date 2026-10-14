@@ -22,6 +22,7 @@ Cue sheets come through `cri` (any of its layouts; the note SE / live SE / voice
 each cue layer maps to its vgmstream stream by `streams.json` (memory AWB order). A sheet already decoded into
 `<out>/audio/<sheet>/` (the BGM by score.py) is reused.
 """
+
 from __future__ import annotations
 
 import struct
@@ -39,21 +40,73 @@ from . import cri
 ACF_IN_APK = "assets/Cri/Sound/Sirius.acf"
 
 # App.Master.LiveNoteSeType / LiveSeType
-NOTE_SE_TYPES = {1: "InVain", 2: "Good", 3: "Great", 4: "Perfect", 5: "Flick", 6: "FlickDirection", 7: "Slide",
-                 8: "Just", 9: "Trace", 10: "SlideConnect", 11: "GekisouTap", 12: "GekisouFlick",
-                 13: "GekisouFlickDirection", 14: "GekisouSlide"}
-LIVE_SE_TYPES = {1: "GekisouCountDown", 2: "LuckHit", 3: "LuckSuperHit", 4: "LuckCritical", 5: "LuckMiss",
-                 6: "LuckRushDouble", 7: "LuckRushTriple", 8: "LuckRushMax", 9: "StartCheers", 10: "FinishCheers",
-                 11: "GekisouFirstCheers", 12: "GekisouOthersCheers", 13: "LiveClearDirection",
-                 14: "FullComboDirection", 15: "AssistFullComboDirection", 16: "AllPerfectDirection"}
+NOTE_SE_TYPES = {
+    1: "InVain",
+    2: "Good",
+    3: "Great",
+    4: "Perfect",
+    5: "Flick",
+    6: "FlickDirection",
+    7: "Slide",
+    8: "Just",
+    9: "Trace",
+    10: "SlideConnect",
+    11: "GekisouTap",
+    12: "GekisouFlick",
+    13: "GekisouFlickDirection",
+    14: "GekisouSlide",
+}
+LIVE_SE_TYPES = {
+    1: "GekisouCountDown",
+    2: "LuckHit",
+    3: "LuckSuperHit",
+    4: "LuckCritical",
+    5: "LuckMiss",
+    6: "LuckRushDouble",
+    7: "LuckRushTriple",
+    8: "LuckRushMax",
+    9: "StartCheers",
+    10: "FinishCheers",
+    11: "GekisouFirstCheers",
+    12: "GekisouOthersCheers",
+    13: "LiveClearDirection",
+    14: "FullComboDirection",
+    15: "AssistFullComboDirection",
+    16: "AllPerfectDirection",
+}
 # SoundSettingsExtensions.ToOptionItemType (its constant table: note SE type 1..14 -> volume OptionItemType)
 NOTE_SE_VOLUME_ITEM = [431, 433, 433, 433, 435, 437, 439, 433, 441, 439, 451, 453, 455, 457]
 # OptionSoundUtility.GetMuteTypeForVolume: volume item -> mute item (OptionItemType 431..459 -> 460..470)
-NOTE_SE_MUTE_ITEM = {431: 460, 433: 461, 435: 462, 437: 463, 439: 464, 441: 465, 451: 466, 453: 467, 455: 468,
-                     457: 469, 459: 470}
+NOTE_SE_MUTE_ITEM = {
+    431: 460,
+    433: 461,
+    435: 462,
+    437: 463,
+    439: 464,
+    441: 465,
+    451: 466,
+    453: 467,
+    455: 468,
+    457: 469,
+    459: 470,
+}
 # LiveSettingCreator.BuildIndividualNoteSeDictionary: the sound set item (OptionItemType) of each note SE type
-NOTE_SE_ID_ITEM = {1: 430, 2: 432, 3: 432, 4: 432, 8: 432, 5: 434, 6: 436, 7: 438, 10: 438, 9: 440, 11: 450,
-                   12: 452, 13: 454, 14: 456}
+NOTE_SE_ID_ITEM = {
+    1: 430,
+    2: 432,
+    3: 432,
+    4: 432,
+    8: 432,
+    5: 434,
+    6: 436,
+    7: 438,
+    10: 438,
+    9: 440,
+    11: 450,
+    12: 452,
+    13: 454,
+    14: 456,
+}
 # live SE whose sounds a live directory carries: the start / finish cheers (9, 10) and the finish direction of every
 # result (LivePlayingStateNodeBase.PlayFinishVoiceAndCheer: after the result's voice and the finish cheer, 16
 # AllPerfectDirection, else 14 FullComboDirection, else 15 AssistFullComboDirection, else 13 LiveClearDirection; none
@@ -112,18 +165,35 @@ def acb_cues(acb: bytes) -> dict[str, dict]:
                 raise ValueError(f"{name}: track {ti} note-on kind {kind}")
             syn = T["SynthTable"][si]
             yp = _params(cmd("SynthCommandTable", syn["CommandIndex"]), categories, buses)
-            items = [struct.unpack_from(">HH", syn["ReferenceItems"], i) for i in range(0, len(syn["ReferenceItems"]), 4)]
+            items = [
+                struct.unpack_from(">HH", syn["ReferenceItems"], i) for i in range(0, len(syn["ReferenceItems"]), 4)
+            ]
             if syn["Type"] != 0 or len(items) != 1 or items[0][0] != 1:
                 raise ValueError(f"{name}: synth {si} type {syn['Type']} items {items}")
             w = T["WaveformTable"][items[0][1]]
             if w["Streaming"] != 0:
                 raise ValueError(f"{name}: streamed waveform (memory AWB expected)")
-            layers.append({"awbId": w["MemoryAwbId"], "samples": w["NumSamples"], "loopFlag": w["LoopFlag"],
-                           "volume": tp["volume"] * yp["volume"], "busSends": {**tp["busSends"], **yp["busSends"]},
-                           "trackOther": tp["other"], "synthOther": yp["other"]})
-        out[name] = {"cueId": c["CueId"], "lengthMs": c["Length"], "categories": sp["categories"],
-                     "volume": sp["volume"], "busSends": sp["busSends"], "sequenceOther": sp["other"],
-                     "acbVolume": top.get("AcbVolume", 1.0), "layers": layers}
+            layers.append(
+                {
+                    "awbId": w["MemoryAwbId"],
+                    "samples": w["NumSamples"],
+                    "loopFlag": w["LoopFlag"],
+                    "volume": tp["volume"] * yp["volume"],
+                    "busSends": {**tp["busSends"], **yp["busSends"]},
+                    "trackOther": tp["other"],
+                    "synthOther": yp["other"],
+                }
+            )
+        out[name] = {
+            "cueId": c["CueId"],
+            "lengthMs": c["Length"],
+            "categories": sp["categories"],
+            "volume": sp["volume"],
+            "busSends": sp["busSends"],
+            "sequenceOther": sp["other"],
+            "acbVolume": top.get("AcbVolume", 1.0),
+            "layers": layers,
+        }
     return out
 
 
@@ -139,11 +209,23 @@ def acf_info(apk: Path) -> dict:
         cats[cat_names[r["Id"]]] = {"id": r["Id"], "group": r["GroupIndex"]}
     bus_names = [r["StringValue"] for r in T["BusNameTable"]]
     buses = [{"name": bus_names[b["BusNameIndex"]], "volume": b["Volume"], "fx": b["NumFxs"]} for b in T["BusTable"]]
-    react = [{"name": r["REACTName"], "src": cat_names[r["Src"]], "dest": cat_names[r["Dest"]], "level": r["Level"],
-              "decrementMs": r["DecrementTime"], "incrementMs": r["IncrementTime"], "holdType": r["HoldType"],
-              "holdMs": r["HoldTime"], "startCurve": [r["StartCurveType"], r["StartCurveStrength"]],
-              "endCurve": [r["EndCurveType"], r["EndCurveStrength"]], "parameterId": r["ParameterId"],
-              "targetType": r["TargetType"]} for r in T.get("ReactTable", [])]
+    react = [
+        {
+            "name": r["REACTName"],
+            "src": cat_names[r["Src"]],
+            "dest": cat_names[r["Dest"]],
+            "level": r["Level"],
+            "decrementMs": r["DecrementTime"],
+            "incrementMs": r["IncrementTime"],
+            "holdType": r["HoldType"],
+            "holdMs": r["HoldTime"],
+            "startCurve": [r["StartCurveType"], r["StartCurveStrength"]],
+            "endCurve": [r["EndCurveType"], r["EndCurveStrength"]],
+            "parameterId": r["ParameterId"],
+            "targetType": r["TargetType"],
+        }
+        for r in T.get("ReactTable", [])
+    ]
     return {"name": top["Name"], "categories": cats, "buses": buses, "react": react}
 
 
@@ -156,7 +238,7 @@ def _player_mono(player: PlayerData, cls: str) -> dict:
         try:
             if player.script(o)[2] != cls:
                 continue
-        except Exception:        # MonoBehaviours without a resolvable script are not ours
+        except Exception:  # MonoBehaviours without a resolvable script are not ours
             continue
         hits.append(player.mono(o))
     if len(hits) != 1:
@@ -170,8 +252,12 @@ def category_volumes(player: PlayerData) -> dict:
     (AppConfig.UpdateLiveSoundVolumeConfig); Bgm/Se/VoiceConfig = system option 400-402 / 100 (preset 1: 1.0)."""
     svs = {e["CategoryName"]: e["DefaultVolume"] for e in _player_mono(player, "SoundVolumeSettings")["_collection"]}
     acd = _player_mono(player, "AppConfigDefaultData")["_defaultData"]
-    live = {"LiveBgm": "LiveBgmSoundVolume", "LiveSe": "LiveSeSoundVolume", "LiveVoice": "LiveVoiceSoundVolume",
-            "LiveNotesSe": "LiveNotesSeSoundVolume"}
+    live = {
+        "LiveBgm": "LiveBgmSoundVolume",
+        "LiveSe": "LiveSeSoundVolume",
+        "LiveVoice": "LiveVoiceSoundVolume",
+        "LiveNotesSe": "LiveNotesSeSoundVolume",
+    }
     out = dict(svs)
     for cat, field in live.items():
         out[cat + "Config"] = acd[f"<{field}>k__BackingField"]
@@ -224,10 +310,16 @@ def note_se_settings(master: Path, preset: int = 1, groups: tuple = ()) -> dict:
         mute = _option(opt, preset, NOTE_SE_MUTE_ITEM[item]).upper() == "TRUE"
         # GetIndividualNoteSeVolume (mute -> 0) / GetNoteSeMute (GetMuteTypeForVolume)
         volumes[t], mutes[t] = _volume(opt, preset, item), mute
-    out = {"preset": preset, "patternId": group, "useIndividualNoteSe": individual,
-           "types": {str(k): types[k] for k in sorted(types)}, "typeNames": NOTE_SE_TYPES,
-           "volumes": {str(k): v for k, v in volumes.items()}, "mutes": {str(k): v for k, v in mutes.items()},
-           "gekisouTraceVolume": _volume(opt, preset, 459)}
+    out = {
+        "preset": preset,
+        "patternId": group,
+        "useIndividualNoteSe": individual,
+        "types": {str(k): types[k] for k in sorted(types)},
+        "typeNames": NOTE_SE_TYPES,
+        "volumes": {str(k): v for k, v in volumes.items()},
+        "mutes": {str(k): v for k, v in mutes.items()},
+        "gekisouTraceVolume": _volume(opt, preset, 459),
+    }
     if groups:
         missing = [g for g in groups if g not in table]
         if missing:
@@ -243,28 +335,58 @@ def _decode(cat: Catalog, sheet: str, out_dir: Path, fmt: str, flac_level: int) 
     if not (d / "streams.json").exists():
         cri.decode(cat, sheet, d, fmt=fmt, flac_level=flac_level)
     import json
+
     return json.loads((d / "streams.json").read_text(encoding="utf-8"))
 
 
 def _sound_entry(row: dict, sheet: str, cue: dict, streams: list[dict], cue_name: str) -> dict:
     layers = []
     for L in cue["layers"]:
-        s = streams[L["awbId"]]                     # vgmstream streams follow the memory AWB order
+        s = streams[L["awbId"]]  # vgmstream streams follow the memory AWB order
         if s["name"] != cue_name or abs(s["samples"] - L["samples"]) > 8:
             raise RuntimeError(f"{sheet}/{cue_name}: AWB {L['awbId']} -> stream {s} does not match")
-        layers.append({"file": f"audio/{sheet}/{s['file']}", "stream": s["stream"], "awbId": L["awbId"],
-                       "sampleRate": s["sampleRate"], "channels": s["channels"], "samples": s["samples"],
-                       "loopStart": s.get("loopStart"), "loopEnd": s.get("loopEnd"), "loopFlag": L["loopFlag"],
-                       "volume": L["volume"], "busSends": L["busSends"],
-                       "other": {"track": L["trackOther"], "synth": L["synthOther"]}})
-    return {"row": row, "sheet": sheet, "cue": cue_name, "category": row["_category"],
-            "categories": cue["categories"], "volume": cue["volume"] * cue["acbVolume"], "busSends": cue["busSends"],
-            "lengthMs": cue["lengthMs"], "other": cue["sequenceOther"], "layers": layers}
+        layers.append(
+            {
+                "file": f"audio/{sheet}/{s['file']}",
+                "stream": s["stream"],
+                "awbId": L["awbId"],
+                "sampleRate": s["sampleRate"],
+                "channels": s["channels"],
+                "samples": s["samples"],
+                "loopStart": s.get("loopStart"),
+                "loopEnd": s.get("loopEnd"),
+                "loopFlag": L["loopFlag"],
+                "volume": L["volume"],
+                "busSends": L["busSends"],
+                "other": {"track": L["trackOther"], "synth": L["synthOther"]},
+            }
+        )
+    return {
+        "row": row,
+        "sheet": sheet,
+        "cue": cue_name,
+        "category": row["_category"],
+        "categories": cue["categories"],
+        "volume": cue["volume"] * cue["acbVolume"],
+        "busSends": cue["busSends"],
+        "lengthMs": cue["lengthMs"],
+        "other": cue["sequenceOther"],
+        "layers": layers,
+    }
 
 
-def extract(cat: Catalog, master: Path, player: PlayerData, music_id: int, out_dir: Path,
-            fmt: str = "flac", voice_character: int | None = None, options: LiveOptions = LiveOptions(), *,
-            flac_level: int = cri.FLAC_LEVEL) -> dict:
+def extract(
+    cat: Catalog,
+    master: Path,
+    player: PlayerData,
+    music_id: int,
+    out_dir: Path,
+    fmt: str = "flac",
+    voice_character: int | None = None,
+    options: LiveOptions = LiveOptions(),
+    *,
+    flac_level: int = cri.FLAC_LEVEL,
+) -> dict:
     """Decode the live's sound cue sheets and write <out>/audio/live-audio.json. Returns a summary.
     voice_character: None = no character voice (the game picks the voice from the player's deck; there is no rule
     without a deck). `options`: the note sound sets it offers are written as noteSe.groups, their sounds decoded
@@ -281,13 +403,17 @@ def extract(cat: Catalog, master: Path, player: PlayerData, music_id: int, out_d
     nse = note_se_settings(master, groups=options.se_patterns)
     live_se = {r["_liveSeType"]: r["_seId"] for r in master_table(master, "MasterLiveSe")}
     want = [music_sound] + sorted(set(nse["types"].values())) + [live_se[t] for t in LIVE_SE_SOUNDS]
-    voice = {"decision": "caller", "character": voice_character,
-             "rule": "LotteryStartVoice: random deck member, random MasterLiveStartCharacterVoice row of that "
-                     "character; finish voice from LotteryFinishVoice; no deck -> undefined",
-             "startVoiceSoundIds": []}
+    voice = {
+        "decision": "caller",
+        "character": voice_character,
+        "rule": "LotteryStartVoice: random deck member, random MasterLiveStartCharacterVoice row of that "
+        "character; finish voice from LotteryFinishVoice; no deck -> undefined",
+        "startVoiceSoundIds": [],
+    }
     if voice_character is not None:
-        rows = [r for r in master_table(master, "MasterLiveStartCharacterVoice")
-                if r["_characterId"] == voice_character]
+        rows = [
+            r for r in master_table(master, "MasterLiveStartCharacterVoice") if r["_characterId"] == voice_character
+        ]
         voice["startVoiceSoundIds"] = [r["_voiceSoundId"] for r in rows]
         want += voice["startVoiceSoundIds"]
     for se in sorted({v for g in nse.get("groups", {}).values() for v in g.values()}):
@@ -320,12 +446,21 @@ def extract(cat: Catalog, master: Path, player: PlayerData, music_id: int, out_d
         "react": acf["react"],
         "music": {"soundId": music_sound, "volume": 1.0, "startTimeSec": 0.0},
         "noteSe": nse,
-        "liveSe": {str(k): v for k, v in sorted(live_se.items())}, "liveSeNames": LIVE_SE_TYPES,
-        "timeline": {"startCheerDelaySec": 1.0, "playVoiceSignalSec": 1.483333, "startCheerStopFadeSec": 1.0,
-                     "finishCheerStopFadeSec": 1.0},
+        "liveSe": {str(k): v for k, v in sorted(live_se.items())},
+        "liveSeNames": LIVE_SE_TYPES,
+        "timeline": {
+            "startCheerDelaySec": 1.0,
+            "playVoiceSignalSec": 1.483333,
+            "startCheerStopFadeSec": 1.0,
+            "finishCheerStopFadeSec": 1.0,
+        },
         "voice": voice,
         "decoded": decoded,
     }
     write_json(out_dir / "audio" / "live-audio.json", doc)
-    return {"index": "audio/live-audio.json", "sheets": sorted(by_sheet), "sounds": len(entries),
-            "musicSoundId": music_sound}
+    return {
+        "index": "audio/live-audio.json",
+        "sheets": sorted(by_sheet),
+        "sounds": len(entries),
+        "musicSoundId": music_sound,
+    }

@@ -18,6 +18,7 @@ Clip, binding and controller JSON comes in several shapes (`clip_format`:
 `clip_curves` and `controller_states` for the ADV UI). All of them are views of one record
 (`clip_record` / `controller_record`), so resolution lives here only.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -35,8 +36,18 @@ from UnityPy.helpers import MeshHelper
 
 from . import cache
 from .catalog import Catalog
-from .unity import (DEFAULT_RESOURCES, SceneGraph, check_texture, deref, external_path, is_pptr, load_closure,
-                    mesh_arrays, script_class, texture_image)
+from .unity import (
+    DEFAULT_RESOURCES,
+    SceneGraph,
+    check_texture,
+    deref,
+    external_path,
+    is_pptr,
+    load_closure,
+    mesh_arrays,
+    script_class,
+    texture_image,
+)
 
 HEADER = ("m_GameObject", "m_Script")
 _SCALARS = (int, float, str, bool, type(None))
@@ -51,9 +62,15 @@ def _decode_inputs(tex) -> tuple:
     format, version, platform, platform blob."""
     r = tex.object_reader
     blob = getattr(tex, "m_PlatformBlob", None)
-    return (bytes(tex.get_image_data()), tex.m_Width, tex.m_Height, int(tex.m_TextureFormat),
-            tuple(getattr(r, "version", (0, 0, 0, 0))), int(getattr(r, "platform", 0) or 0),
-            None if blob is None else bytes(blob))
+    return (
+        bytes(tex.get_image_data()),
+        tex.m_Width,
+        tex.m_Height,
+        int(tex.m_TextureFormat),
+        tuple(getattr(r, "version", (0, 0, 0, 0))),
+        int(getattr(r, "platform", 0) or 0),
+        None if blob is None else bytes(blob),
+    )
 
 
 def texture_png(tex) -> bytes:
@@ -100,7 +117,7 @@ def _crc(s: str) -> int:
     return zlib.crc32(s.encode("utf-8"))
 
 
-FLT_MAX = 3.4028234663852886e+38
+FLT_MAX = 3.4028234663852886e38
 
 
 def streamed_frames(words: list[int]) -> list[list]:
@@ -144,27 +161,97 @@ def flat_names(tt, prefix: str = "") -> list[str]:
 
 # --- clip bindings ------------------------------------------------------------
 # Unity class IDs (GenericBinding.typeID) -> class name
-CLASS_ID = {1: "GameObject", 4: "Transform", 23: "MeshRenderer", 95: "Animator", 198: "ParticleSystem",
-            199: "ParticleSystemRenderer", 212: "SpriteRenderer", 224: "RectTransform", 225: "CanvasGroup",
-            114: "MonoBehaviour", 137: "SkinnedMeshRenderer", 120: "LineRenderer", 96: "TrailRenderer",
-            331: "SpriteMask", 222: "CanvasRenderer"}
+CLASS_ID = {
+    1: "GameObject",
+    4: "Transform",
+    23: "MeshRenderer",
+    95: "Animator",
+    198: "ParticleSystem",
+    199: "ParticleSystemRenderer",
+    212: "SpriteRenderer",
+    224: "RectTransform",
+    225: "CanvasGroup",
+    114: "MonoBehaviour",
+    137: "SkinnedMeshRenderer",
+    120: "LineRenderer",
+    96: "TrailRenderer",
+    331: "SpriteMask",
+    222: "CanvasRenderer",
+}
 # Transform binding attribute -> (property, curve count) (GenericBinding, typeID 4)
-TRANSFORM_ATTR = {1: ("m_LocalPosition", 3), 2: ("m_LocalRotation", 4), 3: ("m_LocalScale", 3),
-                  4: ("localEulerAnglesRaw", 3)}
+TRANSFORM_ATTR = {
+    1: ("m_LocalPosition", 3),
+    2: ("m_LocalRotation", 4),
+    3: ("m_LocalScale", 3),
+    4: ("localEulerAnglesRaw", 3),
+}
 # Animatable property names a binding can name (attribute = crc32 of the name) that are not field paths of a
 # component the exporter has seen: common component properties, RectTransform driven fields, and material
 # properties ("material.<name>[.<channel>]", renderer material property blocks).
-ENGINE_PROPS = ("m_IsActive", "m_Enabled", "m_Color.r", "m_Color.g", "m_Color.b", "m_Color.a",
-                "m_Size.x", "m_Size.y", "m_FlipX", "m_FlipY", "m_SortingOrder", "m_Sprite", "m_Alpha",
-                "m_SizeDelta.x", "m_SizeDelta.y", "m_AnchoredPosition.x", "m_AnchoredPosition.y",
-                "m_LocalPosition.x", "m_LocalPosition.y", "m_LocalPosition.z",
-                "m_LocalScale.x", "m_LocalScale.y", "m_LocalScale.z")
-RECT_PROPS = ("m_AnchoredPosition.x", "m_AnchoredPosition.y", "m_SizeDelta.x", "m_SizeDelta.y",
-              "m_AnchorMin.x", "m_AnchorMin.y", "m_AnchorMax.x", "m_AnchorMax.y", "m_Pivot.x", "m_Pivot.y")
-MATERIAL_PROPS = ("_Color", "_TintColor", "_MainTex_ST", "_BaseColor", "_EmissionColor", "_Alpha", "_Cutoff",
-                  "_Intensity", "_Offset", "_Scroll", "_ScrollX", "_ScrollY", "_Power", "_Value", "_Glow",
-                  "_GlowColor", "_AddColor", "_MultiplyColor", "_Progress", "_Fade", "_Brightness",
-                  "_Dissolve", "_MainTex", "_Speed", "_Rotation")
+ENGINE_PROPS = (
+    "m_IsActive",
+    "m_Enabled",
+    "m_Color.r",
+    "m_Color.g",
+    "m_Color.b",
+    "m_Color.a",
+    "m_Size.x",
+    "m_Size.y",
+    "m_FlipX",
+    "m_FlipY",
+    "m_SortingOrder",
+    "m_Sprite",
+    "m_Alpha",
+    "m_SizeDelta.x",
+    "m_SizeDelta.y",
+    "m_AnchoredPosition.x",
+    "m_AnchoredPosition.y",
+    "m_LocalPosition.x",
+    "m_LocalPosition.y",
+    "m_LocalPosition.z",
+    "m_LocalScale.x",
+    "m_LocalScale.y",
+    "m_LocalScale.z",
+)
+RECT_PROPS = (
+    "m_AnchoredPosition.x",
+    "m_AnchoredPosition.y",
+    "m_SizeDelta.x",
+    "m_SizeDelta.y",
+    "m_AnchorMin.x",
+    "m_AnchorMin.y",
+    "m_AnchorMax.x",
+    "m_AnchorMax.y",
+    "m_Pivot.x",
+    "m_Pivot.y",
+)
+MATERIAL_PROPS = (
+    "_Color",
+    "_TintColor",
+    "_MainTex_ST",
+    "_BaseColor",
+    "_EmissionColor",
+    "_Alpha",
+    "_Cutoff",
+    "_Intensity",
+    "_Offset",
+    "_Scroll",
+    "_ScrollX",
+    "_ScrollY",
+    "_Power",
+    "_Value",
+    "_Glow",
+    "_GlowColor",
+    "_AddColor",
+    "_MultiplyColor",
+    "_Progress",
+    "_Fade",
+    "_Brightness",
+    "_Dissolve",
+    "_MainTex",
+    "_Speed",
+    "_Rotation",
+)
 
 
 def material_prop_names(extra) -> list[str]:
@@ -177,8 +264,10 @@ def material_prop_names(extra) -> list[str]:
 
 
 def _events(tt: dict) -> list[dict]:
-    return [{x: e[x] for x in ("time", "functionName", "data", "floatParameter", "intParameter",
-                               "messageOptions")} for e in tt["m_Events"]]
+    return [
+        {x: e[x] for x in ("time", "functionName", "data", "floatParameter", "intParameter", "messageOptions")}
+        for e in tt["m_Events"]
+    ]
 
 
 # --- texel blocks -> packed textures ---------------------------------------------
@@ -214,7 +303,7 @@ class TexelPacker:
             arr = PIXELS.get(ck)
             if arr is None:
                 img = texture_image(tex)
-                if tt["m_TextureFormat"] == 1:               # Alpha8: value in the alpha channel
+                if tt["m_TextureFormat"] == 1:  # Alpha8: value in the alpha channel
                     if img.mode == "L":
                         a = np.asarray(img, np.uint8)
                     elif img.mode == "RGBA":
@@ -222,12 +311,12 @@ class TexelPacker:
                     else:
                         raise NotImplementedError(f"Alpha8 decoded as {img.mode}")
                     arr = np.zeros(a.shape + (4,), np.uint8)
-                    arr[:, :, 3] = a                          # rgb 0 (GL alpha texture); TMP reads .a only
+                    arr[:, :, 3] = a  # rgb 0 (GL alpha texture); TMP reads .a only
                 else:
                     arr = np.asarray(img.convert("RGBA"), np.uint8)
                 if arr.shape[:2] != (tt["m_Height"], tt["m_Width"]):
                     raise RuntimeError(f"{tt['m_Name']}: decoded size {arr.shape}")
-                arr = arr[::-1].copy()                        # bottom row first (Unity v = 0)
+                arr = arr[::-1].copy()  # bottom row first (Unity v = 0)
                 arr.setflags(write=False)
                 PIXELS.put(ck, arr, arr.nbytes)
             self._pixels[k] = arr
@@ -244,8 +333,14 @@ class TexelPacker:
     def add(self, group: str, tex_obj, x0: int, y0: int, x1: int, y1: int) -> dict:
         """Register a block; returns a handle filled in by build()."""
         tt = tex_obj.read_typetree()
-        h = {"tex": tex_obj, "key": _key(tex_obj), "settings": tt["m_TextureSettings"], "box": (x0, y0, x1, y1),
-             "srcName": tt["m_Name"], "srcSize": (tt["m_Width"], tt["m_Height"])}
+        h = {
+            "tex": tex_obj,
+            "key": _key(tex_obj),
+            "settings": tt["m_TextureSettings"],
+            "box": (x0, y0, x1, y1),
+            "srcName": tt["m_Name"],
+            "srcSize": (tt["m_Width"], tt["m_Height"]),
+        }
         self.groups.setdefault(group, []).append(h)
         return h
 
@@ -253,9 +348,14 @@ class TexelPacker:
         """Register generated texels (RGBA, bottom row first) covering [origin, origin + shape) of a
         virtual texture as one block; the whole array is copied (no wrap)."""
         ox, oy = origin
-        h = {"array": rgba, "key": ("generated", name), "settings": settings,
-             "box": (ox, oy, ox + rgba.shape[1], oy + rgba.shape[0]), "srcName": name,
-             "srcSize": (rgba.shape[1], rgba.shape[0])}
+        h = {
+            "array": rgba,
+            "key": ("generated", name),
+            "settings": settings,
+            "box": (ox, oy, ox + rgba.shape[1], oy + rgba.shape[0]),
+            "srcName": name,
+            "srcSize": (rgba.shape[1], rgba.shape[0]),
+        }
         self.groups.setdefault(group, []).append(h)
         return h
 
@@ -280,20 +380,20 @@ class TexelPacker:
                 x += w
                 shelf = max(shelf, hgt)
             height = y + shelf
-            if len(blocks) == 1:              # a single block keeps its own size
+            if len(blocks) == 1:  # a single block keeps its own size
                 width = blocks[0]["box"][2] - blocks[0]["box"][0]
             out = np.zeros((height, width, 4), np.uint8)
             for b in blocks:
                 x0, y0, x1, y1 = b["box"]
                 dx, dy = b["dst"]
                 if "array" in b:
-                    out[dy:dy + (y1 - y0), dx:dx + (x1 - x0)] = b["array"]
+                    out[dy : dy + (y1 - y0), dx : dx + (x1 - x0)] = b["array"]
                     continue
                 src = self.pixels(b["tex"])
                 st = b["settings"]
                 rows = np.take(np.arange(src.shape[0]), np.arange(y0, y1), mode=self._wrap(st["m_WrapV"]))
                 cols = np.take(np.arange(src.shape[1]), np.arange(x0, x1), mode=self._wrap(st["m_WrapU"]))
-                out[dy:dy + (y1 - y0), dx:dx + (x1 - x0)] = src[np.ix_(rows, cols)]
+                out[dy : dy + (y1 - y0), dx : dx + (x1 - x0)] = src[np.ix_(rows, cols)]
             for h in handles:
                 d = uniq[(h["key"], h["box"])]["dst"]
                 h["offset"] = (d[0] - h["box"][0], d[1] - h["box"][1])
@@ -302,10 +402,16 @@ class TexelPacker:
             (self.out / "textures").mkdir(parents=True, exist_ok=True)
             (self.out / fn).write_bytes(packed_png(out))
             s = next(iter(handles))["settings"]
-            textures[group] = {"texture": fn, "name": group, "width": width, "height": height,
-                               "mipCount": 1, "settings": s,
-                               "sources": sorted({h["srcName"] for h in handles}),
-                               "blocks": len(blocks)}
+            textures[group] = {
+                "texture": fn,
+                "name": group,
+                "width": width,
+                "height": height,
+                "mipCount": 1,
+                "settings": s,
+                "sources": sorted({h["srcName"] for h in handles}),
+                "blocks": len(blocks),
+            }
         return textures
 
 
@@ -343,9 +449,20 @@ class Exporter:
     `font_stubs` (fontsettings.FontSettings): the bundles of its font assets are left out of every closure; a
     reference into them resolves through its `objects` (a font asset to {asset, name}, a material to its record)."""
 
-    def __init__(self, cat: Catalog, out_dir: Path, player=None, inline_meshes: bool = True,
-                 stub_assets: tuple[str, ...] = (), textures: str = "write", clip_format: str = "generic",
-                 follow: tuple[str, ...] = (), defer_writes: bool = False, class_of=None, font_stubs=None):
+    def __init__(
+        self,
+        cat: Catalog,
+        out_dir: Path,
+        player=None,
+        inline_meshes: bool = True,
+        stub_assets: tuple[str, ...] = (),
+        textures: str = "write",
+        clip_format: str = "generic",
+        follow: tuple[str, ...] = (),
+        defer_writes: bool = False,
+        class_of=None,
+        font_stubs=None,
+    ):
         if textures not in ("write", "deferred"):
             raise ValueError(f"textures={textures!r}")
         if clip_format not in CLIP_FORMATS:
@@ -362,24 +479,24 @@ class Exporter:
         self.script_class = class_of or script_class
         self.font_stubs = font_stubs
         self._font_bundles: frozenset | None = None
-        self._unwritten: dict[str, object] = {}    # defer_writes: file -> Texture2D
+        self._unwritten: dict[str, object] = {}  # defer_writes: file -> Texture2D
         self.textures: dict[tuple, dict] = {}
         self.shaders: dict[str, object] = {}
-        self.tex_objs: dict[str, object] = {}      # deferred: "file:pathID" -> Texture2D
-        self.sprite_recs: dict[str, dict] = {}     # deferred: "file:pathID" -> sprite render record
-        self.clips: dict[str, dict] = {}           # livenotes format: id -> clip
-        self.controllers: dict[str, dict] = {}     # livenotes format: id -> controller
-        self.material_props: set[str] = set()      # float/colour property names of exported materials
+        self.tex_objs: dict[str, object] = {}  # deferred: "file:pathID" -> Texture2D
+        self.sprite_recs: dict[str, dict] = {}  # deferred: "file:pathID" -> sprite render record
+        self.clips: dict[str, dict] = {}  # livenotes format: id -> clip
+        self.controllers: dict[str, dict] = {}  # livenotes format: id -> controller
+        self.material_props: set[str] = set()  # float/colour property names of exported materials
         self._graph_of_file: dict[int, SceneGraph] = {}
-        self._done: dict[tuple, dict] = {}         # MonoBehaviour/clip/controller/atlas -> reference once exported
+        self._done: dict[tuple, dict] = {}  # MonoBehaviour/clip/controller/atlas -> reference once exported
         self._component_ref: dict[tuple, str] = {}
         self._objects: dict[tuple, object] = {}
         self._go_file: dict[int, str] = {}
         self._loaded: dict[str, tuple] = {}
         self._clip_recs: dict[tuple, dict] = {}
         self._atlas_maps: dict[tuple, tuple] = {}
-        self._names_of: dict[tuple, list] = {}     # object -> flat field names
-        self._names_by_class: dict = {}            # typeID | ("MonoBehaviour", class) -> names of exported components
+        self._names_of: dict[tuple, list] = {}  # object -> flat field names
+        self._names_by_class: dict = {}  # typeID | ("MonoBehaviour", class) -> names of exported components
         self._class_of: dict[tuple, str | None] = {}
         self._rel_tables: dict[int, dict] = {}
         self._gos_at_cache: dict[tuple, list] = {}
@@ -417,9 +534,10 @@ class Exporter:
         """With `font_stubs`: the names of the bundles that hold its font assets."""
         if self._font_bundles is None:
             from .advui import font_key
+
             names = set()
             for n, f in sorted(self.font_stubs.fonts.items()):
-                k = font_key(self.cat, n, n)            # an addressable asset: its bundle now; else the one recorded
+                k = font_key(self.cat, n, n)  # an addressable asset: its bundle now; else the one recorded
                 names.add(self.cat.bundle_of(k).name if self.cat.has(k) else f["bundle"])
             self._font_bundles = frozenset(names)
         return self._font_bundles
@@ -456,7 +574,7 @@ class Exporter:
         if isinstance(v, dict):
             return {k: self.value(owner, x) for k, x in v.items()}
         if isinstance(v, list):
-            if all(type(x) in _SCALARS for x in v):          # numbers / strings: nothing to resolve
+            if all(type(x) in _SCALARS for x in v):  # numbers / strings: nothing to resolve
                 return list(v)
             return [self.value(owner, x) for x in v]
         if isinstance(v, (bytes, bytearray)):
@@ -517,9 +635,15 @@ class Exporter:
         if self.deferred:
             ref = f"{o.assets_file.name}:{o.path_id}"
             self.tex_objs[ref] = o
-            return {"textureRef": ref, "name": tt["m_Name"], "width": tt["m_Width"], "height": tt["m_Height"],
-                    "format": tt["m_TextureFormat"], "mipCount": tt.get("m_MipCount", 1),
-                    "settings": tt.get("m_TextureSettings")}
+            return {
+                "textureRef": ref,
+                "name": tt["m_Name"],
+                "width": tt["m_Width"],
+                "height": tt["m_Height"],
+                "format": tt["m_TextureFormat"],
+                "mipCount": tt.get("m_MipCount", 1),
+                "settings": tt.get("m_TextureSettings"),
+            }
         k = _key(o)
         if k not in self.textures:
             tex = o.read()
@@ -531,9 +655,12 @@ class Exporter:
             else:
                 (self.out / fn).write_bytes(texture_png(tex))
             self.textures[k] = {
-                "texture": fn, "name": tt["m_Name"],
-                "width": tt["m_Width"], "height": tt["m_Height"],
-                "format": tt["m_TextureFormat"], "mipCount": tt.get("m_MipCount", 1),
+                "texture": fn,
+                "name": tt["m_Name"],
+                "width": tt["m_Width"],
+                "height": tt["m_Height"],
+                "format": tt["m_TextureFormat"],
+                "mipCount": tt.get("m_MipCount", 1),
                 "colorSpace": tt.get("m_ColorSpace"),
                 "settings": tt.get("m_TextureSettings"),
             }
@@ -597,20 +724,33 @@ class Exporter:
         # Sprite UVs are derived from positions with uvTransform
         # (x: texels per unit, y: pivot texel x, z: texels per unit, w: pivot texel y).
         ut = src["uvTransform"]
-        uv = [((p[0] * ut["x"] + ut["y"]) / tex["width"], (p[1] * ut["z"] + ut["w"]) / tex["height"])
-              for p in pos]
+        uv = [((p[0] * ut["x"] + ut["y"]) / tex["width"], (p[1] * ut["z"] + ut["w"]) / tex["height"]) for p in pos]
         out = {"sprite": tt["m_Name"], "texture": tex}
         if at is not None:
             out["atlas"] = at["m_Name"]
-        out.update({"rect": tt["m_Rect"], "pivot": tt["m_Pivot"], "border": tt["m_Border"],
-                    "pixelsToUnits": tt["m_PixelsToUnits"], "offset": tt["m_Offset"],
-                    "textureRect": src["textureRect"], "textureRectOffset": src["textureRectOffset"]})
+        out.update(
+            {
+                "rect": tt["m_Rect"],
+                "pivot": tt["m_Pivot"],
+                "border": tt["m_Border"],
+                "pixelsToUnits": tt["m_PixelsToUnits"],
+                "offset": tt["m_Offset"],
+                "textureRect": src["textureRect"],
+                "textureRectOffset": src["textureRectOffset"],
+            }
+        )
         if at is not None:
             out["atlasRectOffset"] = src["atlasRectOffset"]
             out["downscaleMultiplier"] = src["downscaleMultiplier"]
-        out.update({"settingsRaw": src["settingsRaw"], "uvTransform": ut,
-                    "vertices": pos.astype(float).tolist(), "uv": [list(map(float, x)) for x in uv],
-                    "indices": [int(i) for i in idx]})
+        out.update(
+            {
+                "settingsRaw": src["settingsRaw"],
+                "uvTransform": ut,
+                "vertices": pos.astype(float).tolist(),
+                "uv": [list(map(float, x)) for x in uv],
+                "indices": [int(i) for i in idx],
+            }
+        )
         return out
 
     def _deferred_sprite(self, o, tt: dict, src, owner) -> dict:
@@ -627,9 +767,14 @@ class Exporter:
         ref = f"{o.assets_file.name}:{o.path_id}"
         self.tex_objs[f"{tex.assets_file.name}:{tex.path_id}"] = tex
         self.sprite_recs[ref] = {
-            "name": tt["m_Name"], "tex": tex, "rect": tt["m_Rect"], "border": tt["m_Border"],
-            "pivot": tt["m_Pivot"], "pixelsPerUnit": tt["m_PixelsToUnits"],
-            "textureRect": src["textureRect"], "textureRectOffset": src["textureRectOffset"],
+            "name": tt["m_Name"],
+            "tex": tex,
+            "rect": tt["m_Rect"],
+            "border": tt["m_Border"],
+            "pivot": tt["m_Pivot"],
+            "pixelsPerUnit": tt["m_PixelsToUnits"],
+            "textureRect": src["textureRect"],
+            "textureRectOffset": src["textureRectOffset"],
             "settingsRaw": raw,
         }
         return {"spriteRef": ref, "name": tt["m_Name"]}
@@ -639,19 +784,31 @@ class Exporter:
         texels for bilinear filtering) as a block of `group`."""
         s = self.sprite_recs[ref]
         tr = s["textureRect"]
-        s["_block"] = packer.add(group, s["tex"], *grow_box(tr["x"], tr["y"], tr["x"] + tr["width"],
-                                                            tr["y"] + tr["height"], margin))
+        s["_block"] = packer.add(
+            group, s["tex"], *grow_box(tr["x"], tr["y"], tr["x"] + tr["width"], tr["y"] + tr["height"], margin)
+        )
 
     def packed_sprite(self, ref: str) -> dict:
         """Deferred mode, after packer.build(): the sprite with its texture rect moved into the packed texture."""
         s = self.sprite_recs[ref]
         b = s.pop("_block")
         tr = s["textureRect"]
-        return {"texture": b["texture"], "rect": s["rect"], "border": s["border"], "pivot": s["pivot"],
-                "pixelsPerUnit": s["pixelsPerUnit"], "settingsRaw": s["settingsRaw"],
-                "textureRect": {"x": tr["x"] + b["offset"][0], "y": tr["y"] + b["offset"][1],
-                                "width": tr["width"], "height": tr["height"]},
-                "textureRectOffset": s["textureRectOffset"], "source": b["srcName"]}
+        return {
+            "texture": b["texture"],
+            "rect": s["rect"],
+            "border": s["border"],
+            "pivot": s["pivot"],
+            "pixelsPerUnit": s["pixelsPerUnit"],
+            "settingsRaw": s["settingsRaw"],
+            "textureRect": {
+                "x": tr["x"] + b["offset"][0],
+                "y": tr["y"] + b["offset"][1],
+                "width": tr["width"],
+                "height": tr["height"],
+            },
+            "textureRectOffset": s["textureRectOffset"],
+            "source": b["srcName"],
+        }
 
     def material(self, o) -> dict:
         tt = o.read_typetree()
@@ -664,9 +821,10 @@ class Exporter:
             "renderQueue": tt.get("m_CustomRenderQueue"),
             "tags": dict(tt.get("stringTagMap", [])),
             "disabledPasses": tt.get("disabledShaderPasses", []),
-            "textures": {k: {"texture": self.ref(o, v["m_Texture"]),
-                             "scale": v["m_Scale"], "offset": v["m_Offset"]}
-                         for k, v in sp["m_TexEnvs"]},
+            "textures": {
+                k: {"texture": self.ref(o, v["m_Texture"]), "scale": v["m_Scale"], "offset": v["m_Offset"]}
+                for k, v in sp["m_TexEnvs"]
+            },
             "ints": dict(sp.get("m_Ints", [])),
             "floats": dict(sp.get("m_Floats", [])),
             "colors": dict(sp.get("m_Colors", [])),
@@ -683,8 +841,13 @@ class Exporter:
         if arrays is None:
             return {"mesh": m.m_Name, "empty": True}
         v, n, uv, tris = arrays
-        out = {"mesh": m.m_Name, "vertices": v.tolist(), "normals": n.tolist(),
-               "uv0": uv.tolist(), "submeshes": [t.reshape(-1).tolist() for t in tris]}
+        out = {
+            "mesh": m.m_Name,
+            "vertices": v.tolist(),
+            "normals": n.tolist(),
+            "uv0": uv.tolist(),
+            "submeshes": [t.reshape(-1).tolist() for t in tris],
+        }
         tt = o.read_typetree()
         if tt.get("m_BindPose"):
             out.update(self._skin(m, tt, len(v)))
@@ -707,8 +870,12 @@ class Exporter:
                 raise NotImplementedError(f"mesh {tt['m_Name']}: {len(ws)} weights / {len(bs)} bone indices per vertex")
             pad = 4 - len(ws)
             skin.append({"weight": [float(x) for x in ws] + [0.0] * pad, "boneIndex": [int(x) for x in bs] + [0] * pad})
-        return {"m_Skin": skin, "m_BindPose": tt["m_BindPose"], "m_BoneNameHashes": tt.get("m_BoneNameHashes", []),
-                "m_RootBoneNameHash": tt.get("m_RootBoneNameHash")}
+        return {
+            "m_Skin": skin,
+            "m_BindPose": tt["m_BindPose"],
+            "m_BoneNameHashes": tt.get("m_BoneNameHashes", []),
+            "m_RootBoneNameHash": tt.get("m_RootBoneNameHash"),
+        }
 
     # --- field names (crc32 resolution) ------------------------------------
     def _crc_of(self, name: str) -> int:
@@ -729,7 +896,7 @@ class Exporter:
         if k not in self._class_of:
             try:
                 self._class_of[k] = self.script_class(o)
-            except Exception:                  # script not loadable from this closure
+            except Exception:  # script not loadable from this closure
                 self._class_of[k] = None
         return self._class_of[k]
 
@@ -774,7 +941,7 @@ class Exporter:
                 if full == base or full.startswith(base + "/"):
                     parts = full.split("/")
                     for i in range(d, len(parts)):
-                        s = "/".join(parts[i + 1:])
+                        s = "/".join(parts[i + 1 :])
                         table.setdefault(self._crc_of(s), set()).add(s)
         self._path_sources.append((key, table))
         return len(bases)
@@ -783,8 +950,11 @@ class Exporter:
         """GameObjects a relative binding path can name ("" = any)."""
         k = (id(graph), rel)
         if k not in self._gos_at_cache:
-            self._gos_at_cache[k] = [go_pid for go_pid, tf in graph.tf_of_go.items()
-                                     if rel == "" or graph.path(tf) == rel or graph.path(tf).endswith("/" + rel)]
+            self._gos_at_cache[k] = [
+                go_pid
+                for go_pid, tf in graph.tf_of_go.items()
+                if rel == "" or graph.path(tf) == rel or graph.path(tf).endswith("/" + rel)
+            ]
         return self._gos_at_cache[k]
 
     def _binding_gos(self, r: dict):
@@ -809,8 +979,11 @@ class Exporter:
                 if co is None:
                     continue
                 if tid == 114:
-                    if (r["script"] is not None and co.type.name == "MonoBehaviour"
-                            and self._mono_class(co) == r["script"][1]):
+                    if (
+                        r["script"] is not None
+                        and co.type.name == "MonoBehaviour"
+                        and self._mono_class(co) == r["script"][1]
+                    ):
                         names.update(self._names(co))
                 elif co.type.value == tid:
                     r["component"] = co.type.name
@@ -852,8 +1025,12 @@ class Exporter:
         """Names any binding of the class can target: engine properties, material properties of the
         exported materials, and field paths of every exported component of the class."""
         k = ("MonoBehaviour", r["script"][1]) if r["typeID"] == 114 and r["script"] else r["typeID"]
-        return (set(ENGINE_PROPS) | set(RECT_PROPS) | set(material_prop_names(self.material_props))
-                | self._names_by_class.get(k, set()))
+        return (
+            set(ENGINE_PROPS)
+            | set(RECT_PROPS)
+            | set(material_prop_names(self.material_props))
+            | self._names_by_class.get(k, set())
+        )
 
     def _path_tiers(self, owner):
         """(graphs, source, crc32 -> paths | None for the union of `graphs`) in resolution order: the clip's
@@ -888,9 +1065,9 @@ class Exporter:
                     break
             else:
                 r["pathCandidates"] = sorted(first) if first and len(first) > 1 else None
-        if r["attribute"] is None and r["customType"] == 22:          # RendererMaterial: not a field path crc
+        if r["attribute"] is None and r["customType"] == 22:  # RendererMaterial: not a field path crc
             if r["path"] is not None:
-                self._bound_names(r)                                     # names the bound component
+                self._bound_names(r)  # names the bound component
                 r["attribute"] = self._material_attribute(r)
         elif r["attribute"] is None:
             a = r["attributeCrc"]
@@ -902,12 +1079,28 @@ class Exporter:
 
     def _binding_record(self, owner, b: dict) -> dict:
         tid = b["typeID"]
-        r = {"owner": owner, "raw": b, "pathCrc": b["path"], "typeID": tid, "attributeCrc": b["attribute"],
-             "pptr": bool(b["isPPtrCurve"]), "int": bool(b["isIntCurve"]), "customType": b.get("customType"),
-             "serializeReference": bool(b.get("isSerializeReferenceCurve")),
-             "path": None, "pathCandidates": None, "pathSource": None, "graphs": [],
-             "attribute": None, "curveCount": 1, "transformAttr": False, "component": None, "script": None,
-             "bound": False, "root": None}
+        r = {
+            "owner": owner,
+            "raw": b,
+            "pathCrc": b["path"],
+            "typeID": tid,
+            "attributeCrc": b["attribute"],
+            "pptr": bool(b["isPPtrCurve"]),
+            "int": bool(b["isIntCurve"]),
+            "customType": b.get("customType"),
+            "serializeReference": bool(b.get("isSerializeReferenceCurve")),
+            "path": None,
+            "pathCandidates": None,
+            "pathSource": None,
+            "graphs": [],
+            "attribute": None,
+            "curveCount": 1,
+            "transformAttr": False,
+            "component": None,
+            "script": None,
+            "bound": False,
+            "root": None,
+        }
         if tid == 4 and b["attribute"] in TRANSFORM_ATTR and not r["pptr"]:
             r["attribute"], r["curveCount"] = TRANSFORM_ATTR[b["attribute"]]
             r["transformAttr"] = True
@@ -954,7 +1147,7 @@ class Exporter:
             for tf_pid in graph.tf:
                 full = graph.path(tf_pid)
                 if full == root or full.startswith(root + "/"):
-                    rel = full[len(root) + 1:]
+                    rel = full[len(root) + 1 :]
                     t.setdefault(self._crc_of(rel), set()).add(rel)
             if not t:
                 raise KeyError(f"animated root {root} not in the hierarchy")
@@ -975,7 +1168,7 @@ class Exporter:
             cands = table.get(r["pathCrc"], set())
             if len(cands) == 1:
                 path = next(iter(cands))
-                if r["path"] != path:           # the generic guess named another object: re-resolve below root
+                if r["path"] != path:  # the generic guess named another object: re-resolve below root
                     r.update(component=None, attribute=r["attribute"] if r["transformAttr"] else None)
                 r.update(path=path, pathSource=None, graphs=[graph], pathCandidates=None, root=root)
                 counts["subtree"] += 1
@@ -1022,11 +1215,18 @@ class Exporter:
             mc = tt["m_MuscleClip"]
             data = mc["m_Clip"]["data"]
             cbc = tt["m_ClipBindingConstant"]
-            rec = {"object": o, "tt": tt, "name": tt["m_Name"], "muscle": mc,
-                   "streamed": data["m_StreamedClip"], "dense": data["m_DenseClip"],
-                   "constant": list(data["m_ConstantClip"]["data"]),
-                   "pptrCurveMapping": list(cbc.get("pptrCurveMapping", [])),
-                   "bindings": [self._binding_record(o, b) for b in cbc["genericBindings"]], "views": []}
+            rec = {
+                "object": o,
+                "tt": tt,
+                "name": tt["m_Name"],
+                "muscle": mc,
+                "streamed": data["m_StreamedClip"],
+                "dense": data["m_DenseClip"],
+                "constant": list(data["m_ConstantClip"]["data"]),
+                "pptrCurveMapping": list(cbc.get("pptrCurveMapping", [])),
+                "bindings": [self._binding_record(o, b) for b in cbc["genericBindings"]],
+                "views": [],
+            }
             self._clip_recs[k] = rec
         return rec
 
@@ -1037,16 +1237,26 @@ class Exporter:
     @staticmethod
     def _clip_header(rec: dict) -> dict:
         tt, mc = rec["tt"], rec["muscle"]
-        return {"sampleRate": tt["m_SampleRate"], "wrapMode": tt["m_WrapMode"],
-                "startTime": mc["m_StartTime"], "stopTime": mc["m_StopTime"],
-                "loopTime": bool(mc["m_LoopTime"]), "cycleOffset": mc["m_CycleOffset"], "events": _events(tt)}
+        return {
+            "sampleRate": tt["m_SampleRate"],
+            "wrapMode": tt["m_WrapMode"],
+            "startTime": mc["m_StartTime"],
+            "stopTime": mc["m_StopTime"],
+            "loopTime": bool(mc["m_LoopTime"]),
+            "cycleOffset": mc["m_CycleOffset"],
+            "events": _events(tt),
+        }
 
     @staticmethod
     def _dense(rec: dict) -> dict:
         de = rec["dense"]
-        return {"curveCount": de["m_CurveCount"], "frameCount": de["m_FrameCount"],
-                "sampleRate": de["m_SampleRate"], "beginTime": de["m_BeginTime"],
-                "samples": list(de["m_SampleArray"])}
+        return {
+            "curveCount": de["m_CurveCount"],
+            "frameCount": de["m_FrameCount"],
+            "sampleRate": de["m_SampleRate"],
+            "beginTime": de["m_BeginTime"],
+            "samples": list(de["m_SampleArray"]),
+        }
 
     def clip(self, o) -> dict:
         """An AnimationClip with the data the Animator samples, in `clip_format`.
@@ -1057,8 +1267,9 @@ class Exporter:
         if k in self._done:
             return self._done[k]
         rec = self.clip_record(o)
-        return {"generic": self._clip_generic, "livescene": self._clip_livescene,
-                "livenotes": self._clip_livenotes}[self.clip_format](rec)
+        return {"generic": self._clip_generic, "livescene": self._clip_livescene, "livenotes": self._clip_livenotes}[
+            self.clip_format
+        ](rec)
 
     def _views(self, rec: dict, view) -> list[dict]:
         dicts = [view(r) for r in rec["bindings"]]
@@ -1076,8 +1287,14 @@ class Exporter:
         streamed = {"curveCount": st["curveCount"], "frames": streamed_frames(st["data"])}
         if st.get("discreteCurveCount"):
             streamed["discreteCurveCount"] = st["discreteCurveCount"]
-        out = {**ref, **self._clip_header(rec), "bindings": bindings, "streamed": streamed,
-               "dense": self._dense(rec), "constant": rec["constant"]}
+        out = {
+            **ref,
+            **self._clip_header(rec),
+            "bindings": bindings,
+            "streamed": streamed,
+            "dense": self._dense(rec),
+            "constant": rec["constant"],
+        }
         if rec["pptrCurveMapping"]:
             out["pptrCurveMapping"] = [self.ref(o, p) for p in rec["pptrCurveMapping"]]
         return out
@@ -1109,12 +1326,18 @@ class Exporter:
         float_curves = sum(b["curveCount"] for b in bindings if not b["isPPtrCurve"])
         pptr = [self.value(o, p) for p in rec["pptrCurveMapping"]]
         out = {
-            **ref, **self._clip_header(rec),
+            **ref,
+            **self._clip_header(rec),
             "curveOrder": "streamed, dense, constant (each binding takes curveCount curves in order)",
             "bindings": bindings,
-            "streamed": {"curveCount": st["curveCount"], "discreteCurveCount": st.get("discreteCurveCount", 0),
-                         "frames": streamed_frames(st["data"])},
-            "dense": self._dense(rec), "constant": rec["constant"], "pptrCurveMapping": pptr,
+            "streamed": {
+                "curveCount": st["curveCount"],
+                "discreteCurveCount": st.get("discreteCurveCount", 0),
+                "frames": streamed_frames(st["data"]),
+            },
+            "dense": self._dense(rec),
+            "constant": rec["constant"],
+            "pptrCurveMapping": pptr,
         }
         total = self._curve_total(rec)
         npptr = sum(1 for b in bindings if b["isPPtrCurve"])
@@ -1125,8 +1348,15 @@ class Exporter:
     @staticmethod
     def _binding_livescene(r: dict) -> dict:
         tid = r["typeID"]
-        d = {"pathCrc": r["pathCrc"], "path": r["path"], "typeID": tid, "attributeCrc": r["attributeCrc"],
-             "isPPtrCurve": r["pptr"], "isIntCurve": r["int"], "customType": r["customType"]}
+        d = {
+            "pathCrc": r["pathCrc"],
+            "path": r["path"],
+            "typeID": tid,
+            "attributeCrc": r["attributeCrc"],
+            "isPPtrCurve": r["pptr"],
+            "isIntCurve": r["int"],
+            "customType": r["customType"],
+        }
         if r["pathCandidates"]:
             d["pathCandidates"] = r["pathCandidates"]
         if r["transformAttr"]:
@@ -1139,7 +1369,7 @@ class Exporter:
             if r["attribute"] is not None:
                 d["attribute"] = r["attribute"]
         d["curveCount"] = r["curveCount"]
-        if r["bound"]:                  # timeline clips also carry the livenotes binding fields (class, curves)
+        if r["bound"]:  # timeline clips also carry the livenotes binding fields (class, curves)
             if "class" not in d:
                 d["class"] = CLASS_ID.get(tid, f"classID {tid}")
             d["curves"] = r["curveCount"]
@@ -1151,8 +1381,10 @@ class Exporter:
         float_curves = sum(r["curveCount"] for r in rec["bindings"] if not r["pptr"])
         de = rec["dense"]
         if self._curve_total(rec) != float_curves:
-            raise RuntimeError(f"clip {rec['name']}: curve count != binding curve count "
-                               f"({st['curveCount']}+{de['m_CurveCount']}+{len(rec['constant'])} vs {float_curves})")
+            raise RuntimeError(
+                f"clip {rec['name']}: curve count != binding curve count "
+                f"({st['curveCount']}+{de['m_CurveCount']}+{len(rec['constant'])} vs {float_curves})"
+            )
         pptr = [self.ref(o, p) for p in rec["pptrCurveMapping"]]
         rid = _rid(o, rec["name"])
         ref = {"clip": rid}
@@ -1162,9 +1394,13 @@ class Exporter:
         except ValueError as e:
             raise ValueError(f"clip {rec['name']}: {e}") from None
         self.clips[rid] = {
-            "name": rec["name"], **self._clip_header(rec), "bindings": bindings,
+            "name": rec["name"],
+            **self._clip_header(rec),
+            "bindings": bindings,
             "streamed": {"curveCount": st["curveCount"], "frames": frames},
-            "dense": self._dense(rec), "constant": rec["constant"], "pptrCurveMapping": pptr,
+            "dense": self._dense(rec),
+            "constant": rec["constant"],
+            "pptrCurveMapping": pptr,
             "discreteCurveCount": st.get("discreteCurveCount", 0),
         }
         return ref
@@ -1175,8 +1411,11 @@ class Exporter:
         if tid == 114 and not r["pptr"] and r["script"] and r["path"] is not None and r["attribute"] is not None:
             d = {"path": r["path"], "typeID": tid, "class": r["script"][1], "attribute": r["attribute"], "curves": 1}
         else:
-            d = {"path": r["path"] if r["path"] is not None else f"crc32:{r['pathCrc']}", "typeID": tid,
-                 "class": CLASS_ID.get(tid, f"classID {tid}")}
+            d = {
+                "path": r["path"] if r["path"] is not None else f"crc32:{r['pathCrc']}",
+                "typeID": tid,
+                "class": CLASS_ID.get(tid, f"classID {tid}"),
+            }
             if r["pptr"]:
                 d["pptr"] = True
             if r["transformAttr"]:
@@ -1210,24 +1449,33 @@ class Exporter:
                 props.append("RectTransform." + r["attribute"])
             elif r["typeID"] == 225 and r["attribute"] == "m_Alpha":
                 props.append("CanvasGroup.m_Alpha")
-            elif r["typeID"] == 4 and r["attributeCrc"] == 4:          # localEulerAnglesRaw (x, y, z)
-                props += ["Transform.localEulerAngles.x", "Transform.localEulerAngles.y",
-                          "Transform.localEulerAngles.z"]
+            elif r["typeID"] == 4 and r["attributeCrc"] == 4:  # localEulerAnglesRaw (x, y, z)
+                props += [
+                    "Transform.localEulerAngles.x",
+                    "Transform.localEulerAngles.y",
+                    "Transform.localEulerAngles.z",
+                ]
             else:
                 raise NotImplementedError(f"clip {name}: binding {r['raw']}")
         if st["curveCount"] + len(const) != len(props):
             raise RuntimeError(f"clip {name}: curve count != bound properties")
-        curves = {p: {"keys": []} for p in props[:st["curveCount"]]}
+        curves = {p: {"keys": []} for p in props[: st["curveCount"]]}
         for t, keys in streamed_frames(st["data"]):
             for ci, c0, c1, c2, c3 in keys:
                 curves[props[ci]]["keys"].append([t, c0, c1, c2, c3])
         for i, v in enumerate(const):
             curves[props[st["curveCount"] + i]] = {"constant": v}
-        return {"name": name, "sampleRate": tt["m_SampleRate"],
-                "startTime": mc["m_StartTime"], "stopTime": mc["m_StopTime"], "loopTime": bool(mc["m_LoopTime"]),
-                "events": tt["m_Events"], "curves": curves,
-                "keyFormat": "[time, c0, c1, c2, c3]; value(t) = ((c0*x + c1)*x + c2)*x + c3, x = t - time, "
-                             "from the last key with time <= t (first key at -FLT_MAX)"}
+        return {
+            "name": name,
+            "sampleRate": tt["m_SampleRate"],
+            "startTime": mc["m_StartTime"],
+            "stopTime": mc["m_StopTime"],
+            "loopTime": bool(mc["m_LoopTime"]),
+            "events": tt["m_Events"],
+            "curves": curves,
+            "keyFormat": "[time, c0, c1, c2, c3]; value(t) = ((c0*x + c1)*x + c2)*x + c3, x = t - time, "
+            "from the last key with time <= t (first key at -FLT_MAX)",
+        }
 
     # --- animator controllers, sprite atlases --------------------------------
     def controller_record(self, o) -> dict:
@@ -1260,28 +1508,60 @@ class Exporter:
                 trees = []
                 for bt in st["m_BlendTreeConstantArray"]:
                     nodes = bt["data"]["m_NodeArray"]
-                    trees.append([{"clip": n["data"]["m_ClipID"], "duration": n["data"]["m_Duration"],
-                                   "blendType": n["data"]["m_BlendType"],
-                                   "children": n["data"]["m_ChildIndices"]} for n in nodes])
-                states.append({
-                    "name": tos.get(st["m_NameID"], st["m_NameID"]), "path": tos.get(st["m_FullPathID"]),
-                    "speed": st["m_Speed"], "cycleOffset": st["m_CycleOffset"], "loop": st["m_Loop"],
-                    "writeDefaultValues": st["m_WriteDefaultValues"], "mirror": st["m_Mirror"],
-                    "speedParam": tos.get(st["m_SpeedParamID"], st["m_SpeedParamID"]),
-                    "timeParam": tos.get(st["m_TimeParamID"], st["m_TimeParamID"]),
-                    "blendTrees": trees,
-                    "transitions": [self._transition(t["data"], tos) for t in st["m_TransitionConstantArray"]],
-                })
-            machines.append({"defaultState": sm["m_DefaultState"], "states": states,
-                             "anyStateTransitions": [self._transition(t["data"], tos)
-                                                     for t in sm["m_AnyStateTransitionConstantArray"]]})
-        layers = [{"name": tos.get(l["data"]["m_Binding"]), "stateMachine": l["data"]["m_StateMachineIndex"],
-                   "defaultWeight": l["data"]["m_DefaultWeight"],
-                   "blending": l["data"]["(int&)m_LayerBlendingMode"]} for l in c["m_LayerArray"]]
+                    trees.append(
+                        [
+                            {
+                                "clip": n["data"]["m_ClipID"],
+                                "duration": n["data"]["m_Duration"],
+                                "blendType": n["data"]["m_BlendType"],
+                                "children": n["data"]["m_ChildIndices"],
+                            }
+                            for n in nodes
+                        ]
+                    )
+                states.append(
+                    {
+                        "name": tos.get(st["m_NameID"], st["m_NameID"]),
+                        "path": tos.get(st["m_FullPathID"]),
+                        "speed": st["m_Speed"],
+                        "cycleOffset": st["m_CycleOffset"],
+                        "loop": st["m_Loop"],
+                        "writeDefaultValues": st["m_WriteDefaultValues"],
+                        "mirror": st["m_Mirror"],
+                        "speedParam": tos.get(st["m_SpeedParamID"], st["m_SpeedParamID"]),
+                        "timeParam": tos.get(st["m_TimeParamID"], st["m_TimeParamID"]),
+                        "blendTrees": trees,
+                        "transitions": [self._transition(t["data"], tos) for t in st["m_TransitionConstantArray"]],
+                    }
+                )
+            machines.append(
+                {
+                    "defaultState": sm["m_DefaultState"],
+                    "states": states,
+                    "anyStateTransitions": [
+                        self._transition(t["data"], tos) for t in sm["m_AnyStateTransitionConstantArray"]
+                    ],
+                }
+            )
+        layers = [
+            {
+                "name": tos.get(l["data"]["m_Binding"]),
+                "stateMachine": l["data"]["m_StateMachineIndex"],
+                "defaultWeight": l["data"]["m_DefaultWeight"],
+                "blending": l["data"]["(int&)m_LayerBlendingMode"],
+            }
+            for l in c["m_LayerArray"]
+        ]
         vals = c["m_Values"]["data"]["m_ValueArray"] if "data" in c["m_Values"] else []
         params = [{"name": tos.get(v["m_ID"], v["m_ID"]), "type": v["m_Type"], "index": v["m_Index"]} for v in vals]
-        body = {"name": tt["m_Name"], "clips": clips, "layers": layers, "stateMachines": machines,
-                "parameters": params, "defaultValues": self.value(o, c["m_DefaultValues"])}
+        body = {
+            "name": tt["m_Name"],
+            "clips": clips,
+            "layers": layers,
+            "stateMachines": machines,
+            "parameters": params,
+            "defaultValues": self.value(o, c["m_DefaultValues"]),
+        }
         if registry:
             self.controllers[cid] = body
             return ref
@@ -1289,14 +1569,25 @@ class Exporter:
 
     @staticmethod
     def _transition(t: dict, tos: dict) -> dict:
-        return {"destination": t["m_DestinationState"], "name": tos.get(t["m_ID"], t["m_ID"]),
-                "duration": t["m_TransitionDuration"], "offset": t["m_TransitionOffset"],
-                "exitTime": t["m_ExitTime"], "hasExitTime": t["m_HasExitTime"],
-                "fixedDuration": t["m_HasFixedDuration"], "canTransitionToSelf": t["m_CanTransitionToSelf"],
-                "conditions": [{"mode": x["data"]["m_ConditionMode"],
-                                "event": tos.get(x["data"]["m_EventID"], x["data"]["m_EventID"]),
-                                "threshold": x["data"]["m_EventThreshold"], "exitTime": x["data"]["m_ExitTime"]}
-                               for x in t["m_ConditionConstantArray"]]}
+        return {
+            "destination": t["m_DestinationState"],
+            "name": tos.get(t["m_ID"], t["m_ID"]),
+            "duration": t["m_TransitionDuration"],
+            "offset": t["m_TransitionOffset"],
+            "exitTime": t["m_ExitTime"],
+            "hasExitTime": t["m_HasExitTime"],
+            "fixedDuration": t["m_HasFixedDuration"],
+            "canTransitionToSelf": t["m_CanTransitionToSelf"],
+            "conditions": [
+                {
+                    "mode": x["data"]["m_ConditionMode"],
+                    "event": tos.get(x["data"]["m_EventID"], x["data"]["m_EventID"]),
+                    "threshold": x["data"]["m_EventThreshold"],
+                    "exitTime": x["data"]["m_ExitTime"],
+                }
+                for x in t["m_ConditionConstantArray"]
+            ],
+        }
 
     def controller_states(self, o) -> dict:
         """A single-layer AnimatorController without transitions, blend trees or parameter-driven states
@@ -1322,8 +1613,15 @@ class Exporter:
                 raise NotImplementedError(f"controller {tt['m_Name']}: parameter-driven state")
             if d["m_TransitionConstantArray"]:
                 raise NotImplementedError(f"controller {tt['m_Name']}: state transitions")
-            states.append({"name": tos[d["m_NameID"]], "speed": d["m_Speed"], "loop": d["m_Loop"],
-                           "cycleOffset": d["m_CycleOffset"], "clip": motion[0] if motion else None})
+            states.append(
+                {
+                    "name": tos[d["m_NameID"]],
+                    "speed": d["m_Speed"],
+                    "loop": d["m_Loop"],
+                    "cycleOffset": d["m_CycleOffset"],
+                    "clip": motion[0] if motion else None,
+                }
+            )
         if sm["m_AnyStateTransitionConstantArray"]:
             raise NotImplementedError(f"controller {tt['m_Name']}: any-state transitions")
         return {"name": tt["m_Name"], "defaultState": states[sm["m_DefaultState"]]["name"], "states": states}
@@ -1379,8 +1677,7 @@ class Exporter:
             go = graph.go[t["m_GameObject"]["m_PathID"]]
             comps = []
             for c in go["m_Component"]:
-                objs = [x for x in by_pid.get(c["component"]["m_PathID"], [])
-                        if x.type.name not in ("GameObject",)]
+                objs = [x for x in by_pid.get(c["component"]["m_PathID"], []) if x.type.name not in ("GameObject",)]
                 if len(objs) != 1:
                     raise RuntimeError(f"{graph.path(tf_pid)}: component {c} resolves to {len(objs)}")
                 co = objs[0]
@@ -1388,15 +1685,20 @@ class Exporter:
                     continue
                 comps.append(self.component(co))
             node = {
-                "path": graph.path(tf_pid), "name": go["m_Name"],
-                "active": bool(go["m_IsActive"]), "layer": go["m_Layer"], "tag": go.get("m_Tag"),
-                "localPosition": t["m_LocalPosition"], "localRotation": t["m_LocalRotation"],
+                "path": graph.path(tf_pid),
+                "name": go["m_Name"],
+                "active": bool(go["m_IsActive"]),
+                "layer": go["m_Layer"],
+                "tag": go.get("m_Tag"),
+                "localPosition": t["m_LocalPosition"],
+                "localRotation": t["m_LocalRotation"],
                 "localScale": t["m_LocalScale"],
                 "components": comps,
             }
             if "m_AnchorMin" in t:
-                node["rect"] = {k: t[k] for k in ("m_AnchorMin", "m_AnchorMax", "m_AnchoredPosition",
-                                                  "m_SizeDelta", "m_Pivot")}
+                node["rect"] = {
+                    k: t[k] for k in ("m_AnchorMin", "m_AnchorMax", "m_AnchoredPosition", "m_SizeDelta", "m_Pivot")
+                }
             nodes.append(node)
             for ch in t["m_Children"]:
                 walk(ch["m_PathID"])
@@ -1431,15 +1733,20 @@ class Exporter:
                     for path, cab in o.read_typetree().get("m_SceneHashes", []):
                         if path.lower() == iid.lower():
                             scene_files.add(cab.lower())
-            roots = [o.path_id for o in env.objects
-                     if o.type.name in ("Transform", "RectTransform")
-                     and o.assets_file.name.lower().startswith(tuple(scene_files))
-                     and not graph.tf[o.path_id]["m_Father"]["m_PathID"]]
+            roots = [
+                o.path_id
+                for o in env.objects
+                if o.type.name in ("Transform", "RectTransform")
+                and o.assets_file.name.lower().startswith(tuple(scene_files))
+                and not graph.tf[o.path_id]["m_Father"]["m_PathID"]
+            ]
             if not roots:
                 raise RuntimeError(f"{key}: no scene roots")
-            return {"key": key, "scene": True,
-                    "nodes": [n for r in sorted(roots, key=graph.path)
-                              for n in self.hierarchy(env, graph, r)]}
+            return {
+                "key": key,
+                "scene": True,
+                "nodes": [n for r in sorted(roots, key=graph.path) for n in self.hierarchy(env, graph, r)],
+            }
         go = self._container_asset(env, iid)
         if go is None or go.type.name != "GameObject":
             raise RuntimeError(f"{key}: container asset is {go and go.type.name}")
@@ -1463,10 +1770,17 @@ class Exporter:
         t = o.type.name
         if t == "GameObject":
             return self.prefab(key, (env, graph))
-        kinds = {"MonoBehaviour": self.scriptable, "AnimatorController": self.controller,
-                 "AnimatorOverrideController": self.controller, "AnimationClip": self.clip,
-                 "SpriteAtlas": self.atlas, "Material": self.material, "Texture2D": self.texture,
-                 "Sprite": self.sprite, "Mesh": self.mesh}
+        kinds = {
+            "MonoBehaviour": self.scriptable,
+            "AnimatorController": self.controller,
+            "AnimatorOverrideController": self.controller,
+            "AnimationClip": self.clip,
+            "SpriteAtlas": self.atlas,
+            "Material": self.material,
+            "Texture2D": self.texture,
+            "Sprite": self.sprite,
+            "Mesh": self.mesh,
+        }
         if t in kinds:
             return {"key": key, **kinds[t](o)}
         return {"key": key, "object": t, "value": self.value(o, o.read_typetree())}
@@ -1490,9 +1804,9 @@ class Exporter:
         """Dump shaders (name -> Shader object; default every registered one) in name order with
         shader.py's layout into `out_dir`; returns (index records, write_index summary)."""
         from . import shader as shader_mod
+
         objects = self.shaders if objects is None else objects
         index: list = []
         for name in sorted(objects):
             shader_mod.dump_objects([objects[name]], out_dir, objects[name].assets_file.name, index)
         return index, shader_mod.write_index(index, out_dir)
-

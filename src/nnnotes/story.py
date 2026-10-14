@@ -24,6 +24,7 @@ The Live2D models the episode uses come from a model source (webmodel: ModelDir,
 (KIND_OUTPUT); the build stops before writing anything when a resource is missing from the catalog or of a kind
 without one.
 """
+
 from __future__ import annotations
 
 import json
@@ -46,7 +47,7 @@ KIND_OUTPUT = {
 
 
 CRILIPS_DIR = "crilips"
-AIR_LIP_SYNC = ("airlipsync", "airlipsync_holdopen")        # Talk Parameter1 modes without a voice analysis
+AIR_LIP_SYNC = ("airlipsync", "airlipsync_holdopen")  # Talk Parameter1 modes without a voice analysis
 
 
 def needs_cri_lips(episode: dict, split_key: str, motion_sync: list[bool]) -> bool:
@@ -81,9 +82,20 @@ def check_kinds(resources: list[dict]) -> None:
             raise NotImplementedError(f"resource kind {r['kind']}: {r['address']}")
 
 
-def build(cat: Catalog, master: Path, player: PlayerData, adv_id: int, out_dir: Path,
-          audio_format: str = "flac", audio: bool = True, fonts: str = "open", *, models, ui: bool = True,
-          audio_options: dict | None = None) -> dict:
+def build(
+    cat: Catalog,
+    master: Path,
+    player: PlayerData,
+    adv_id: int,
+    out_dir: Path,
+    audio_format: str = "flac",
+    audio: bool = True,
+    fonts: str = "open",
+    *,
+    models,
+    ui: bool = True,
+    audio_options: dict | None = None,
+) -> dict:
     """Build the story directory with the models of the model source `models` (module docstring). `audio=False`
     leaves the cue sheets undecoded (story.json `audio` is empty); `fonts`: "open" exports no font data of the game,
     "game" exports it (advmedia, advui). `ui=False` writes no ui/ (story.json still names ui/ui.json: the caller
@@ -111,17 +123,32 @@ def build(cat: Catalog, master: Path, player: PlayerData, adv_id: int, out_dir: 
     lips = None
     if audio:
         split = json.loads((out_dir / "scene.json").read_text(encoding="utf-8"))["settings"]["playerSettings"][
-            "_targetNameSplitKey"]
+            "_targetNameSplitKey"
+        ]
         if needs_cri_lips(episode, split, [m["motionSync"] for m in used.values()]):
             if cat.apk is None:
                 raise crilips.CriLipsError("the CRI Lips data is read from the APK: set [paths] apk")
             crilips.write_data(cat.apk, out_dir / CRILIPS_DIR)
             lips = {"descriptor": f"{CRILIPS_DIR}/crilips.json", "data": f"{CRILIPS_DIR}/crilips.bin"}
-    index = {"advId": adv_id, "episode": "episode.json", "scene": "scene.json", "ui": "ui/ui.json",
-             "models": {a: m["id"] for a, m in used.items()}, **models.story_fields(out_dir),
-             "audio": sheets, **media["files"], "videos": advvideo.INDEX if videos else None, "crilips": lips}
+    index = {
+        "advId": adv_id,
+        "episode": "episode.json",
+        "scene": "scene.json",
+        "ui": "ui/ui.json",
+        "models": {a: m["id"] for a, m in used.items()},
+        **models.story_fields(out_dir),
+        "audio": sheets,
+        **media["files"],
+        "videos": advvideo.INDEX if videos else None,
+        "crilips": lips,
+    }
     write_json(out_dir / "story.json", index)
-    return {**index, "stages": scene["stages"], "shaders": scene["count"],
-            "textures": scene["textures"], "uiSummary": ui,
-            "media": {"entries": media["counts"], "textures": media["textures"]},
-            "videoCount": len(videos["videos"]) if videos else 0}
+    return {
+        **index,
+        "stages": scene["stages"],
+        "shaders": scene["count"],
+        "textures": scene["textures"],
+        "uiSummary": ui,
+        "media": {"entries": media["counts"], "textures": media["textures"]},
+        "videoCount": len(videos["videos"]) if videos else 0,
+    }

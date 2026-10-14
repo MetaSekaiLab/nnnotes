@@ -2,6 +2,7 @@
 caches, deferred texture writes, shader dump replay, cue sheet decode (parallel, cached, second encode) and the
 bundle closure cache. Synthetic objects only; the reference functions below are the code paths as they were
 before the caches."""
+
 import copy
 import io
 import json
@@ -57,6 +58,7 @@ def ref_dumps(obj, **kw):
         if isinstance(v, str) and v in (_POS, _NEG):
             raise ValueError("collides")
         return v
+
     s = json.dumps(fin(obj), allow_nan=False, **kw)
     if found:
         s = s.replace(json.dumps(_POS), "1e999").replace(json.dumps(_NEG), "-1e999")
@@ -66,15 +68,37 @@ def ref_dumps(obj, **kw):
 def random_doc(rng, depth=0):
     r = rng.random()
     if depth > 3 or r < 0.3:
-        return rng.choice([1, -2, 0.5, 1e-7, 3.4028234663852886e+38, math.inf, -math.inf, "t", "ü\n\x01", None,
-                           True, False, 12345678901234567890])
+        return rng.choice(
+            [
+                1,
+                -2,
+                0.5,
+                1e-7,
+                3.4028234663852886e38,
+                math.inf,
+                -math.inf,
+                "t",
+                "ü\n\x01",
+                None,
+                True,
+                False,
+                12345678901234567890,
+            ]
+        )
     if r < 0.65:
         return {f"k{i}{'é' if i % 3 == 0 else ''}": random_doc(rng, depth + 1) for i in range(rng.randrange(4))}
     return [random_doc(rng, depth + 1) for _ in range(rng.randrange(4))] + ([(1, math.inf)] if r > 0.95 else [])
 
 
-@pytest.mark.parametrize("kw", [{}, {"indent": 1, "ensure_ascii": False}, {"sort_keys": True, "separators": (",", ":")},
-                                {"indent": 1, "ensure_ascii": True}])
+@pytest.mark.parametrize(
+    "kw",
+    [
+        {},
+        {"indent": 1, "ensure_ascii": False},
+        {"sort_keys": True, "separators": (",", ":")},
+        {"indent": 1, "ensure_ascii": True},
+    ],
+)
 def test_dumps_matches_reference(kw):
     rng = random.Random(7)
     for _ in range(400):
@@ -92,8 +116,12 @@ def test_dumps_errors_unchanged():
 
 # ---------------------------------------------------------------- scene graph
 def fake_obj(kind, pid, tt, file="f"):
-    return SimpleNamespace(type=SimpleNamespace(name=kind), path_id=pid, read_typetree=lambda tt=tt: copy.deepcopy(tt),
-                           assets_file=SimpleNamespace(name=file))
+    return SimpleNamespace(
+        type=SimpleNamespace(name=kind),
+        path_id=pid,
+        read_typetree=lambda tt=tt: copy.deepcopy(tt),
+        assets_file=SimpleNamespace(name=file),
+    )
 
 
 def fake_scene(rng, n=300):
@@ -101,11 +129,22 @@ def fake_scene(rng, n=300):
     for i in range(n):
         go, tf = 1000 + i, 5000 + i
         parent[tf] = 5000 + rng.randrange(i) if i and rng.random() < 0.9 else 0
-        objs.append(fake_obj("GameObject", go, {"m_Name": rng.choice(["a", "b", "c", "node"]), "m_IsActive": 1,
-                                               "m_Component": []}))
-        objs.append(fake_obj("Transform", tf, {"m_GameObject": {"m_FileID": 0, "m_PathID": go},
-                                              "m_Father": {"m_FileID": 0, "m_PathID": parent[tf]},
-                                              "m_Children": []}))
+        objs.append(
+            fake_obj(
+                "GameObject", go, {"m_Name": rng.choice(["a", "b", "c", "node"]), "m_IsActive": 1, "m_Component": []}
+            )
+        )
+        objs.append(
+            fake_obj(
+                "Transform",
+                tf,
+                {
+                    "m_GameObject": {"m_FileID": 0, "m_PathID": go},
+                    "m_Father": {"m_FileID": 0, "m_PathID": parent[tf]},
+                    "m_Children": [],
+                },
+            )
+        )
     return SimpleNamespace(objects=objs)
 
 
@@ -121,15 +160,22 @@ def test_scene_graph_paths_and_index():
     g = SceneGraph(fake_scene(random.Random(3)))
     for tf in list(g.tf) + [0, 42]:
         assert g.path(tf) == ref_path(g, tf)
-        assert g.path(tf) == ref_path(g, tf)                  # memoised
+        assert g.path(tf) == ref_path(g, tf)  # memoised
     for full in {ref_path(g, t) for t in g.tf} | {"nope"}:
         assert g.gos_at_path(full) == [go for go, tf in g.tf_of_go.items() if ref_path(g, tf) == full]
 
 
 def test_head_node_cut_after_script():
-    kids = [TypeTreeNode(1, t, n, 0, 0) for t, n in (("PPtr<GameObject>", "m_GameObject"), ("UInt8", "m_Enabled"),
-                                                       ("PPtr<MonoScript>", "m_Script"), ("string", "m_Name"),
-                                                       ("int", "_x"))]
+    kids = [
+        TypeTreeNode(1, t, n, 0, 0)
+        for t, n in (
+            ("PPtr<GameObject>", "m_GameObject"),
+            ("UInt8", "m_Enabled"),
+            ("PPtr<MonoScript>", "m_Script"),
+            ("string", "m_Name"),
+            ("int", "_x"),
+        )
+    ]
     node = TypeTreeNode(0, "MonoBehaviour", "Base", -1, 1, m_Children=kids)
     head = unity._head_node(node)
     assert [c.m_Name for c in head.m_Children] == ["m_GameObject", "m_Enabled", "m_Script"]
@@ -138,15 +184,20 @@ def test_head_node_cut_after_script():
 
 
 def test_script_class_missing_script_is_none():
-    kids = [TypeTreeNode(1, t, n, 0, 0) for t, n in (("PPtr<GameObject>", "m_GameObject"), ("UInt8", "m_Enabled"),
-                                                       ("PPtr<MonoScript>", "m_Script"))]
+    kids = [
+        TypeTreeNode(1, t, n, 0, 0)
+        for t, n in (("PPtr<GameObject>", "m_GameObject"), ("UInt8", "m_Enabled"), ("PPtr<MonoScript>", "m_Script"))
+    ]
     node = TypeTreeNode(0, "MonoBehaviour", "Base", -1, 1, m_Children=kids)
     null = {"m_FileID": 0, "m_PathID": 0}
-    obj = SimpleNamespace(_get_typetree_node=lambda: node,
-                          read_typetree=lambda *a, **k: {"m_GameObject": null, "m_Enabled": 1, "m_Script": null})
+    obj = SimpleNamespace(
+        _get_typetree_node=lambda: node,
+        read_typetree=lambda *a, **k: {"m_GameObject": null, "m_Enabled": 1, "m_Script": null},
+    )
     assert unity.script_class(obj) is None
-    whole = SimpleNamespace(_get_typetree_node=lambda: None,
-                            read=lambda: SimpleNamespace(m_Script=SimpleNamespace(m_PathID=0)))
+    whole = SimpleNamespace(
+        _get_typetree_node=lambda: None, read=lambda: SimpleNamespace(m_Script=SimpleNamespace(m_PathID=0))
+    )
     assert unity.script_class(whole) is None
 
 
@@ -169,11 +220,18 @@ def test_value_fast_path(tmp_path):
     rng = random.Random(5)
     for _ in range(200):
         v = [rng.random() for _ in range(rng.randrange(5))]
-        doc = {"a": v, "b": [1, "x", None, True], "c": [{"m_FileID": 0, "m_PathID": 3}, 2.0], "d": [b"\x01", 1],
-               "e": [[1, 2], [3]], "f": [], "g": {"h": [{"m_FileID": 1, "m_PathID": 0}]}}
+        doc = {
+            "a": v,
+            "b": [1, "x", None, True],
+            "c": [{"m_FileID": 0, "m_PathID": 3}, 2.0],
+            "d": [b"\x01", 1],
+            "e": [[1, 2], [3]],
+            "f": [],
+            "g": {"h": [{"m_FileID": 1, "m_PathID": 0}]},
+        }
         out = ex.value(None, doc)
         assert out == ref_value(ex, None, doc)
-        assert out["a"] is not v and out["f"] == []           # new lists, as before
+        assert out["a"] is not v and out["f"] == []  # new lists, as before
 
 
 # ---------------------------------------------------------------- textures
@@ -198,10 +256,22 @@ class FakeTex:
 
 
 def tex_obj(tex, name="t", pid=1, file="CAB-a"):
-    tt = {"m_Name": name, "m_Width": tex.m_Width, "m_Height": tex.m_Height, "m_TextureFormat": tex.m_TextureFormat,
-          "m_MipCount": 1, "m_ColorSpace": 1, "m_TextureSettings": {"m_FilterMode": 1, "m_WrapU": 1, "m_WrapV": 1}}
-    return SimpleNamespace(read_typetree=lambda: copy.deepcopy(tt), read=lambda: tex, path_id=pid,
-                           assets_file=SimpleNamespace(name=file), type=SimpleNamespace(name="Texture2D"))
+    tt = {
+        "m_Name": name,
+        "m_Width": tex.m_Width,
+        "m_Height": tex.m_Height,
+        "m_TextureFormat": tex.m_TextureFormat,
+        "m_MipCount": 1,
+        "m_ColorSpace": 1,
+        "m_TextureSettings": {"m_FilterMode": 1, "m_WrapU": 1, "m_WrapV": 1},
+    }
+    return SimpleNamespace(
+        read_typetree=lambda: copy.deepcopy(tt),
+        read=lambda: tex,
+        path_id=pid,
+        assets_file=SimpleNamespace(name=file),
+        type=SimpleNamespace(name="Texture2D"),
+    )
 
 
 def png_of(img, **kw):
@@ -215,9 +285,9 @@ def test_texture_png_cached_and_equal():
     FakeTex.decodes = 0
     want = png_of(t.image)
     assert export.texture_png(t) == want
-    assert export.texture_png(FakeTex(b"abcdefgh" * 10, 16, 8)) == want      # same inputs: no decode
+    assert export.texture_png(FakeTex(b"abcdefgh" * 10, 16, 8)) == want  # same inputs: no decode
     assert FakeTex.decodes == 2
-    assert export.texture_png(FakeTex(b"abcdefgh" * 10, 8, 16)) != want      # other size: decoded
+    assert export.texture_png(FakeTex(b"abcdefgh" * 10, 8, 16)) != want  # other size: decoded
     cache.configure(enabled=False)
     assert export.texture_png(t) == want
 
@@ -258,7 +328,7 @@ def test_packer_pixels_and_png(tmp_path, fmt, mode):
     a = p1.pixels(o)
     assert np.array_equal(a, want) and not a.flags.writeable
     assert np.array_equal(p2.pixels(o), want)
-    assert FakeTex.decodes == 2                              # the reference, then one decode for both packers
+    assert FakeTex.decodes == 2  # the reference, then one decode for both packers
     for p in (p1, p2):
         p.add("g", o, 0, 0, 12, 6)
         p.add("g", o, -1, -1, 3, 3)
@@ -288,6 +358,7 @@ def code_entry(program: bytes, keywords=()) -> bytes:
 
 def fake_shader(name: str, programs: list[bytes], pid=9):
     import lz4.block
+
     entries = [code_entry(p, ["KW_A"]) for p in programs]
     head = 4 + 12 * len(entries)
     table, offs = bytearray(len(entries).to_bytes(4, "little")), head
@@ -299,19 +370,46 @@ def fake_shader(name: str, programs: list[bytes], pid=9):
     raw = bytes(table + body)
     comp = lz4.block.compress(raw, store_size=False)
     subs = [[{"m_GpuProgramType": 4, "m_BlobIndex": i, "m_KeywordIndices": [0, 5]} for i in range(len(programs))]]
-    tt = {"m_ParsedForm": {"m_Name": name, "m_PropInfo": {"m_Props": [{"m_Name": "_Color"}]},
-                           "m_KeywordNames": ["KW_A"], "m_FallbackName": "",
-                           "m_SubShaders": [{"m_Tags": {"t": 1}, "m_LOD": 100,
-                                             "m_Passes": [{"m_State": {"m_Name": "P0", "x": b"\x01"},
-                                                           "m_Tags": {}, "progVertex": {"m_PlayerSubPrograms": subs},
-                                                           "progFragment": {"m_PlayerSubPrograms": subs}}]}]}}
-    sh = SimpleNamespace(compressedBlob=comp, platforms=[9], offsets=[[0]], compressedLengths=[[len(comp)]],
-                         decompressedLengths=[[len(raw)]])
-    return SimpleNamespace(read_typetree=lambda: copy.deepcopy(tt), read=lambda: sh, path_id=pid,
-                           get_raw_data=lambda: name.encode() + raw, class_id=48, platform=13,
-                           serialized_type=SimpleNamespace(old_type_hash=b"\x02" * 16),
-                           assets_file=SimpleNamespace(name="CAB-s", unity_version="2022.3.62f1"),
-                           type=SimpleNamespace(name="Shader"))
+    tt = {
+        "m_ParsedForm": {
+            "m_Name": name,
+            "m_PropInfo": {"m_Props": [{"m_Name": "_Color"}]},
+            "m_KeywordNames": ["KW_A"],
+            "m_FallbackName": "",
+            "m_SubShaders": [
+                {
+                    "m_Tags": {"t": 1},
+                    "m_LOD": 100,
+                    "m_Passes": [
+                        {
+                            "m_State": {"m_Name": "P0", "x": b"\x01"},
+                            "m_Tags": {},
+                            "progVertex": {"m_PlayerSubPrograms": subs},
+                            "progFragment": {"m_PlayerSubPrograms": subs},
+                        }
+                    ],
+                }
+            ],
+        }
+    }
+    sh = SimpleNamespace(
+        compressedBlob=comp,
+        platforms=[9],
+        offsets=[[0]],
+        compressedLengths=[[len(comp)]],
+        decompressedLengths=[[len(raw)]],
+    )
+    return SimpleNamespace(
+        read_typetree=lambda: copy.deepcopy(tt),
+        read=lambda: sh,
+        path_id=pid,
+        get_raw_data=lambda: name.encode() + raw,
+        class_id=48,
+        platform=13,
+        serialized_type=SimpleNamespace(old_type_hash=b"\x02" * 16),
+        assets_file=SimpleNamespace(name="CAB-s", unity_version="2022.3.62f1"),
+        type=SimpleNamespace(name="Shader"),
+    )
 
 
 def ref_dump_objects(shaders, out_dir: Path, source: str, index: list) -> list:
@@ -332,15 +430,27 @@ def ref_dump_objects(shaders, out_dir: Path, source: str, index: list) -> list:
             pdir.mkdir(parents=True, exist_ok=True)
             fn = f"s{si}p{pi}_{stage}_{n}.glsl"
             (pdir / fn).write_bytes(code)
-            rec["variants"].append({"file": f"{safe}/{tag}/{fn}", "platform": tag, "subShader": si, "pass": pi,
-                                    "stage": stage, "type": t, "keywords": kws})
+            rec["variants"].append(
+                {
+                    "file": f"{safe}/{tag}/{fn}",
+                    "platform": tag,
+                    "subShader": si,
+                    "pass": pi,
+                    "stage": stage,
+                    "type": t,
+                    "keywords": kws,
+                }
+            )
         index.append(rec)
     return index
 
 
 def test_shader_dump_replay_equals_reference(tmp_path):
-    objs = [fake_shader("Test/One", [b"#version 300 es\nvoid main(){}", b"x"]), fake_shader("Test/Two:x", [b"y"]),
-            fake_shader("Test/One", [b"other"], pid=3)]
+    objs = [
+        fake_shader("Test/One", [b"#version 300 es\nvoid main(){}", b"x"]),
+        fake_shader("Test/Two:x", [b"y"]),
+        fake_shader("Test/One", [b"other"], pid=3),
+    ]
     ref = ref_dump_objects(objs, tmp_path / "ref", "src", [])
     shader.write_index(ref, tmp_path / "ref")
     for run in ("miss", "hit"):
@@ -365,14 +475,16 @@ class FakeTools:
         if exe == "vgmstream" and args[1] == "-m":
             i = int(args[3])
             loop = f"loop start: {i} samples\nloop end: {i * 90} samples\n" if i % 2 else ""
-            out = (f"stream count: {len(self.names)}\nstream name: {self.names[i - 1]}\nsample rate: 48000 Hz\n"
-                   f"channels: 2\nstream total samples: {i * 1000} (0:01.000 seconds)\n{loop}")
+            out = (
+                f"stream count: {len(self.names)}\nstream name: {self.names[i - 1]}\nsample rate: 48000 Hz\n"
+                f"channels: 2\nstream total samples: {i * 1000} (0:01.000 seconds)\n{loop}"
+            )
             return subprocess.CompletedProcess(args, 0, out, "")
         if exe == "vgmstream":
             Path(args[args.index("-o") + 1]).write_bytes(b"RIFF" + args[3].encode() * 100)
             return subprocess.CompletedProcess(args, 0, b"", b"")
         src = Path(args[args.index("-i") + 1]).read_bytes()
-        Path(args[-1]).write_bytes(("|".join(args[args.index("-i") + 2:-1])).encode() + src)
+        Path(args[-1]).write_bytes(("|".join(args[args.index("-i") + 2 : -1])).encode() + src)
         return subprocess.CompletedProcess(args, 0, "", "")
 
 
@@ -400,6 +512,7 @@ def ref_decode(sheet, out_dir: Path, fmt, level=cri.FLAC_LEVEL):
     def meta(i):
         r = cri.subprocess.run([vgm, "-m", "-s", str(i), str(acb)], capture_output=True, text=True)
         return {k.strip(): v.strip() for k, v in (ln.split(":", 1) for ln in r.stdout.splitlines() if ":" in ln)}
+
     first = meta(1)
     result, manifest, streams, stems = {}, {}, [], set()
     for i in range(1, int(first["stream count"]) + 1):
@@ -413,9 +526,12 @@ def ref_decode(sheet, out_dir: Path, fmt, level=cri.FLAC_LEVEL):
         codec = {"flac": ["-c:a", "flac", "-compression_level", str(level)], "ogg": ["-c:a", "libvorbis", "-q:a", "5"]}
         cri.subprocess.run([ffmpeg, "-y", "-loglevel", "error", "-i", str(wav), *codec[fmt], str(dst)], check=True)
         wav.unlink()
-        entry = {"file": dst.name, "sampleRate": cri._samples(info.get("sample rate")),
-                 "channels": cri._samples(info.get("channels")),
-                 "samples": cri._samples(info.get("stream total samples"))}
+        entry = {
+            "file": dst.name,
+            "sampleRate": cri._samples(info.get("sample rate")),
+            "channels": cri._samples(info.get("channels")),
+            "samples": cri._samples(info.get("stream total samples")),
+        }
         if "loop start" in info:
             entry["loopStart"], entry["loopEnd"] = cri._samples(info["loop start"]), cri._samples(info["loop end"])
         streams.append({"stream": i, "name": name, **entry})
@@ -424,6 +540,7 @@ def ref_decode(sheet, out_dir: Path, fmt, level=cri.FLAC_LEVEL):
     jsonio.write_json(out_dir / "cues.json", manifest, ensure_ascii=True)
     jsonio.write_json(out_dir / "streams.json", streams, ensure_ascii=True)
     import shutil
+
     shutil.rmtree(work)
     return {k: v.name for k, v in result.items()}
 
@@ -433,30 +550,31 @@ def test_decode_parallel_and_cached_equal_sequential(tmp_path, tools, fmt):
     want = ref_decode("Sheet", tmp_path / "ref", fmt)
     for run, workers in (("w1", 1), ("w4", 4), ("hit", 4)):
         if run != "hit":
-            cache.clear()                                     # decoded, not replayed
+            cache.clear()  # decoded, not replayed
         n = len(tools.calls)
         got = cri.decode(None, "Sheet", tmp_path / run, key=0, fmt=fmt, workers=workers)
         assert {k: v.name for k, v in got.items()} == want and all(v.parent == tmp_path / run for v in got.values())
         assert tree(tmp_path / run) == tree(tmp_path / "ref")
-        assert (len(tools.calls) == n) == (run == "hit")      # replayed: no tool ran
+        assert (len(tools.calls) == n) == (run == "hit")  # replayed: no tool ran
 
 
 def test_decode_disk_cache_and_levels(tmp_path, tools):
     cache.configure(directory=tmp_path / "c")
     cri.decode(None, "S", tmp_path / "a", key=0, flac_level=0)
-    cache.clear()                                               # another process: the disk layer
+    cache.clear()  # another process: the disk layer
     n = len(tools.calls)
     cri.decode(None, "S", tmp_path / "b", key=0, flac_level=0)
     assert len(tools.calls) == n and tree(tmp_path / "a") == tree(tmp_path / "b")
-    cri.decode(None, "S", tmp_path / "c12", key=0)              # another level: decoded again
+    cri.decode(None, "S", tmp_path / "c12", key=0)  # another level: decoded again
     assert len(tools.calls) > n
     assert tree(tmp_path / "a")["a.flac"] != tree(tmp_path / "c12")["a.flac"]
 
 
 def test_decode_refuses_a_sheet_with_an_external_awb(tmp_path, tools, monkeypatch):
     monkeypatch.setattr(cri, "acb_data", lambda cat, sheet: ({"acb": b"@UTF x", "awb": b"AFS2 y"}, cri.RAW_ACB))
-    with pytest.raises(NotImplementedError, match="^cue sheet Voices: external AWB \\(streamed waveforms\\) not "
-                                                  "supported$"):
+    with pytest.raises(
+        NotImplementedError, match="^cue sheet Voices: external AWB \\(streamed waveforms\\) not supported$"
+    ):
         cri.decode(None, "Voices", tmp_path / "o", key=0)
     assert tools.calls == [] and not (tmp_path / "o").exists()
 
@@ -466,7 +584,7 @@ def test_decode_also_encodes_from_the_same_samples(tmp_path, tools):
     got = cri.decode(None, "S", tmp_path / "x", key=0, also=(".m4a", args))
     files = tree(tmp_path / "x")
     assert sorted(f for f in files if f.endswith(".m4a")) == ["a.m4a", "a_3.m4a", "b.m4a", "c.m4a", "c_5.m4a"]
-    assert json.loads(files["cues.json"])["a"]["file"] == "a.flac"          # manifests name the first file
+    assert json.loads(files["cues.json"])["a"]["file"] == "a.flac"  # manifests name the first file
     wav = b"RIFF" + b"1" * 100
     assert files["a.m4a"] == "|".join(cri.encode_args("w", "d", args)[6:-1]).encode() + wav
     assert {k: v.name for k, v in got.items()} == {"a": "a.flac", "b": "b.flac", "c": "c.flac"}
@@ -497,12 +615,13 @@ def test_acb_data_and_layout_memo(tmp_path, monkeypatch):
     def bundle_asset(cat, sheet):
         scans.append(sheet)
         return (cri.EMBEDDED_ACB, None, {"awb": None}, impl)
+
     monkeypatch.setattr(cri, "_bundle_asset", bundle_asset)
     assert cri.layout(cat, "S") == cri.EMBEDDED_ACB and len(scans) == 1
     assert cri.acb_data(cat, "S") == ({"acb": b"@UTFdata"}, cri.EMBEDDED_ACB) and len(scans) == 2
     assert cri.acb_data(cat, "S") == ({"acb": b"@UTFdata"}, cri.EMBEDDED_ACB) and len(scans) == 2
     assert cri.layout(cat, "S") == cri.EMBEDDED_ACB and len(scans) == 2
-    b.write_bytes(b"UnityFS2")                                 # another bundle file: read again
+    b.write_bytes(b"UnityFS2")  # another bundle file: read again
     cri.acb_data(cat, "S")
     assert len(scans) == 3
 
@@ -518,17 +637,17 @@ def test_load_closure_shares_per_thread(tmp_path, monkeypatch):
     monkeypatch.setattr(unity.UnityPy, "load", lambda *p: loads.append(p) or object())
     a = unity.load_closure(files[:2])
     assert unity.load_closure(files[:2]) is a and len(loads) == 1
-    assert unity.load_closure(files[1::-1]) is not a              # another order is another environment
+    assert unity.load_closure(files[1::-1]) is not a  # another order is another environment
     other = []
     t = threading.Thread(target=lambda: other.append(unity.load_closure(files[:2])))
     t.start()
     t.join()
-    assert other[0] is not a                                      # per thread
+    assert other[0] is not a  # per thread
     files[0].write_bytes(b"changed")
     assert unity.load_closure(files[:2]) is not a
     cache.configure(closures=1)
     x = unity.load_closure(files[:1])
     unity.load_closure(files[1:2])
-    assert unity.load_closure(files[:1]) is not x                 # evicted (one closure kept)
+    assert unity.load_closure(files[:1]) is not x  # evicted (one closure kept)
     cache.configure(enabled=False)
     assert unity.load_closure(files[:1]) is not unity.load_closure(files[:1])

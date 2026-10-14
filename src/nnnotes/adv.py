@@ -8,6 +8,7 @@ Output is a self-contained JSON a viewer can play without any game code.
 `resources` is the episode's asset closure as AdvEpisodeResourceLoader.AddEpisodeLoadingTask
 builds it row by row (see `closure`); cue sheets are not listed (the -SoundCueSheet shard holds them).
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -26,19 +27,19 @@ RESOURCE_PREFIX = {
     "Stage": ("stage", "Adv/Stage/"),
     "Still": ("still", "Adv/Still/"),
     "Frame": ("frame", "Adv/Frame/"),
-    "Effect": ("effect", "Adv/Effect/"),              # instance keyed by TargetName (LoadParticleEffect)
+    "Effect": ("effect", "Adv/Effect/"),  # instance keyed by TargetName (LoadParticleEffect)
     "PostEffect": ("posteffect", "Adv/PostEffect/"),
-    "Timeline": ("timeline", "Adv/Timeline/"),        # TargetAssetName, else TargetName
+    "Timeline": ("timeline", "Adv/Timeline/"),  # TargetAssetName, else TargetName
     "ChatStamp": ("chatstamp", "Adv/Chat/Stamp/"),
 }
 # Resources derived from other fields
-TRANSITION_PREFIX = "Adv/Transition/"      # FadeOut / FadeIn: TargetAssetName, else the player settings' default
-TALK_WINDOW_PREFIX = "UI/Prefab/Parts/Adv/Talk/"   # TalkWindow: TargetAssetName, else DEFAULT_TALK_WINDOW
+TRANSITION_PREFIX = "Adv/Transition/"  # FadeOut / FadeIn: TargetAssetName, else the player settings' default
+TALK_WINDOW_PREFIX = "UI/Prefab/Parts/Adv/Talk/"  # TalkWindow: TargetAssetName, else DEFAULT_TALK_WINDOW
 DEFAULT_TALK_WINDOW = "UIDefaultTalkWindow"
-CHAT_WINDOW_PREFIX = "Adv/Chat/Prefabs/"   # ChatWindow: MasterAdvChat[TargetChatID]._chatWindowAssetName
-CHAT_ICON_PREFIX = "Adv/Chat/Icon/"        # ChatTalk / ChatStamp: MasterAdvChat[TargetChatID]._chatIconAssetName
-VIDEO_ADDRESS = "Cri/Video/{0}"            # Movie / Clip: the -Video row of VideoID, _assetName (VideoAssetHelper)
-EMBEDDED_PREFIX = "Emb"                    # AddressableConsts.TryResolveAddressInternal: address, else "Emb" + address
+CHAT_WINDOW_PREFIX = "Adv/Chat/Prefabs/"  # ChatWindow: MasterAdvChat[TargetChatID]._chatWindowAssetName
+CHAT_ICON_PREFIX = "Adv/Chat/Icon/"  # ChatTalk / ChatStamp: MasterAdvChat[TargetChatID]._chatIconAssetName
+VIDEO_ADDRESS = "Cri/Video/{0}"  # Movie / Clip: the -Video row of VideoID, _assetName (VideoAssetHelper)
+EMBEDDED_PREFIX = "Emb"  # AddressableConsts.TryResolveAddressInternal: address, else "Emb" + address
 PLAYER_SETTINGS_KEY = "EmbCommon/Adv/Settings/AdvPlayerSettings"
 TRANSITION_COMMANDS = ("FadeOut", "FadeIn")
 VIDEO_COMMANDS = ("Movie", "Clip")
@@ -57,8 +58,8 @@ class AdvExtract:
     cuesheets: dict
     videos: dict
     resources: list[dict]
-    master: dict          # MasterAdv row: playback mode, title text id
-    title: dict | None    # MasterText lines of the title (embedded master)
+    master: dict  # MasterAdv row: playback mode, title text id
+    title: dict | None  # MasterText lines of the title (embedded master)
 
 
 def _master_row(adv_id: int, master_dir: Path) -> dict:
@@ -126,9 +127,7 @@ def extract(cat: Catalog, master_dir: Path, adv_id: int) -> AdvExtract:
                 continue
             item[k] = v
         if c.get("VoiceIDs"):
-            item["voiceCues"] = [
-                sound_idx[v].get("_cueName") for v in c["VoiceIDs"] if v in sound_idx
-            ]
+            item["voiceCues"] = [sound_idx[v].get("_cueName") for v in c["VoiceIDs"] if v in sound_idx]
         tid = c.get("AdvTextID")
         if tid and tid in text_idx:
             r = text_idx[tid]
@@ -154,7 +153,9 @@ def extract(cat: Catalog, master_dir: Path, adv_id: int) -> AdvExtract:
     resources = closure(coll, cat.has, unity.shard_index(video_rows), chat, transition)
 
     return AdvExtract(
-        adv_id=adv_id, asset=a, commands=out_cmds,
+        adv_id=adv_id,
+        asset=a,
+        commands=out_cmds,
         text={r["_id"]: {lang[1:]: r.get(lang, "") for lang in LANGS} for r in text_rows if "_id" in r},
         sounds={r["_id"]: r for r in sound_rows if "_id" in r},
         cuesheets={r["_id"]: r for r in cue_rows if "_id" in r},
@@ -233,11 +234,15 @@ def _default_transition(cat: Catalog) -> str:
 
 def to_json(x: AdvExtract) -> dict:
     return {
-        "advId": x.adv_id, "asset": x.asset,
+        "advId": x.adv_id,
+        "asset": x.asset,
         "commandCount": len(x.commands),
         "commands": x.commands,
-        "text": x.text, "sounds": x.sounds,
-        "cuesheets": x.cuesheets, "videos": x.videos,
+        "text": x.text,
+        "sounds": x.sounds,
+        "cuesheets": x.cuesheets,
+        "videos": x.videos,
         "resources": x.resources,
-        "master": x.master, "title": x.title,
+        "master": x.master,
+        "title": x.title,
     }

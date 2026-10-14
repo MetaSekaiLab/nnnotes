@@ -50,8 +50,8 @@ def test_store_encodes_compressible_files_when_smaller(tmp_path):
     assert web.read_asset(tmp_path, e["asset"]) == DOC
     shader = b"void main() { gl_FragColor = vec4(1.0); }\n" * 20
     assert store.put("s/a.glsl", shader)["asset"] == f"assets/{sha(shader)}.glsl.gz"
-    assert store.put("x/tiny.json", b"{}") == {"asset": f"assets/{sha(b'{}')}.json", "size": 2}   # gzip not smaller
-    assert store.put("t/a.png", DOC) == {"asset": f"assets/{sha(DOC)}.png", "size": len(DOC)}   # not compressible
+    assert store.put("x/tiny.json", b"{}") == {"asset": f"assets/{sha(b'{}')}.json", "size": 2}  # gzip not smaller
+    assert store.put("t/a.png", DOC) == {"asset": f"assets/{sha(DOC)}.png", "size": len(DOC)}  # not compressible
     with pytest.raises(ValueError, match="asset encoding"):
         web.Store(tmp_path, "zstd")
 
@@ -81,7 +81,7 @@ def test_store_reuses_encoded_names(tmp_path):
     (tmp_path / e["asset"]).write_bytes(other)
     kept = web.Store(tmp_path).put("d.json", DOC)
     assert kept == {**e, "stored": len(other)} and (tmp_path / e["asset"]).read_bytes() == other
-    (tmp_path / e["asset"]).write_bytes(other[:-5])                  # damaged: written again
+    (tmp_path / e["asset"]).write_bytes(other[:-5])  # damaged: written again
     fresh = web.Store(tmp_path)
     assert fresh.put("e.json", DOC) == e and fresh.written == 1
     assert (tmp_path / e["asset"]).read_bytes() == compress.gzip_bytes(DOC)
@@ -94,7 +94,7 @@ def test_split_parts_carry_stored(tmp_path):
     a, b, c = e["parts"]
     small = b'{"d":1}'
     assert len(a) == len(b) == 4 and a[1].endswith(".json.gz") and a[3] < a[2]
-    assert c == ["c", f"assets/{sha(small)}.json", len(small)]        # a part gzip does not make smaller
+    assert c == ["c", f"assets/{sha(small)}.json", len(small)]  # a part gzip does not make smaller
     assert web.entry_text(tmp_path, e) == big
     raw = web.Store(tmp_path / "raw", "none").put_file("scene.json", big)
     assert all(len(p) == 3 for p in raw["parts"]) and web.entry_text(tmp_path / "raw", raw) == big
@@ -118,8 +118,15 @@ def test_ingest_task_stores_in_the_jobs_encoding(tmp_path, monkeypatch):
 
 def manifest(site_dir, music_id, difficulty, store, files):
     entries = {p: store.put(p, data) for p, data in files.items()}
-    doc = {"musicId": music_id, "difficulty": difficulty, "audio": True, "audioFormat": "aac", "flows": ["direct"],
-           "files": entries, "chart": {"title": f"t{music_id}", "level": 1}}
+    doc = {
+        "musicId": music_id,
+        "difficulty": difficulty,
+        "audio": True,
+        "audioFormat": "aac",
+        "flows": ["direct"],
+        "files": entries,
+        "chart": {"title": f"t{music_id}", "level": 1},
+    }
     (site_dir / "charts" / f"{music_id}_{difficulty}.json").write_text(json.dumps(doc), encoding="utf-8")
 
 
@@ -158,14 +165,16 @@ def test_write_index_prunes_encoded_names(tmp_path):
     assert names == sorted([f"{sha(DOC)}.json.gz", f"{sha(b'{}')}.json", f"{sha(b'[1]')}.json"])
     assert (r["assetBytes"], r["bytes"]) == (len(compress.gzip_bytes(DOC)) + 2 + 3, len(DOC) + 2 + 3)
     index = json.loads((tmp_path / "charts.json").read_text(encoding="utf-8"))
-    assert [c["bytes"] for c in index["charts"]] == [len(DOC) + 2, len(DOC) + 3]     # decoded sizes
+    assert [c["bytes"] for c in index["charts"]] == [len(DOC) + 2, len(DOC) + 3]  # decoded sizes
 
 
 def fake_player(root):
-    for rel, text in {web.READ_SET_SCRIPT: "// read set\n", web.PLAYER_BUNDLES[0]: "/* bundle */\n",
-                      f"{web.PLAYER_PAGE_DIR}/index.html":
-                          '<script type="module" src="./chart-list.js"></script><!-- @PLAYER_VERSION@ -->\n',
-                      f"{web.PLAYER_PAGE_DIR}/chart-list.js": 'import "../../src/element.js";\n'}.items():
+    for rel, text in {
+        web.READ_SET_SCRIPT: "// read set\n",
+        web.PLAYER_BUNDLES[0]: "/* bundle */\n",
+        f"{web.PLAYER_PAGE_DIR}/index.html": '<script type="module" src="./chart-list.js"></script><!-- @PLAYER_VERSION@ -->\n',
+        f"{web.PLAYER_PAGE_DIR}/chart-list.js": 'import "../../src/element.js";\n',
+    }.items():
         p = root / rel
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_bytes(text.encode("utf-8"))
@@ -196,12 +205,16 @@ def test_write_player(tmp_path):
 
 def test_write_player_copies_the_complete_songs_module_tree(tmp_path):
     player = fake_player(tmp_path / "p")
-    files = {"index.html": b'<script type="module" src="./songs.js"></script>',
-             "songs.js": b'import "./catalog.js"; import "./replay-panel.js";',
-             "catalog.js": b"export const catalog = {};", "text.js": b"export const text = {};",
-             "replay-panel.js": b'import "./replay-preset.js";',
-             "replay-worker.js": b"// worker", "replay-preset.js": b"// preset",
-             "nested/future-dependency.json": b"{}"}
+    files = {
+        "index.html": b'<script type="module" src="./songs.js"></script>',
+        "songs.js": b'import "./catalog.js"; import "./replay-panel.js";',
+        "catalog.js": b"export const catalog = {};",
+        "text.js": b"export const text = {};",
+        "replay-panel.js": b'import "./replay-preset.js";',
+        "replay-worker.js": b"// worker",
+        "replay-preset.js": b"// preset",
+        "nested/future-dependency.json": b"{}",
+    }
     for name, data in files.items():
         path = player / web.SONGS_PAGE_DIR / name
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -209,12 +222,16 @@ def test_write_player_copies_the_complete_songs_module_tree(tmp_path):
     site = tmp_path / "site"
     result = web.write_player(site, player)
     assert result["songsPageFiles"] == len(files)
-    assert {path.relative_to(site / "songs").as_posix(): path.read_bytes()
-            for path in (site / "songs").rglob("*") if path.is_file()} == files
+    assert {
+        path.relative_to(site / "songs").as_posix(): path.read_bytes()
+        for path in (site / "songs").rglob("*")
+        if path.is_file()
+    } == files
 
 
 def test_player_only_command(tmp_path, capsys):
     from nnnotes import cli
+
     out = tmp_path / "site"
     (out / "assets").mkdir(parents=True)
     (out / "assets" / "unreferenced.json").write_bytes(b"{}")
@@ -226,6 +243,7 @@ def test_player_only_command(tmp_path, capsys):
 
 def test_player_only_and_reingest_over_an_encoded_site(tmp_path, capsys):
     from nnnotes import cli
+
     site, player = tmp_path / "site", str(fake_player(tmp_path / "p"))
     encoded_site(site)
     before = (site / "charts" / "1_easy.json").read_bytes()
@@ -246,6 +264,7 @@ def test_player_only_and_reingest_over_an_encoded_site(tmp_path, capsys):
 
 def test_player_only_on_a_new_directory(tmp_path, capsys):
     from nnnotes import cli
+
     out = tmp_path / "new-site"
     cli.main(["web", str(out), "--player", str(fake_player(tmp_path / "p")), "--player-only"])
     r = json.loads(capsys.readouterr().out)
@@ -256,6 +275,7 @@ def test_player_only_on_a_new_directory(tmp_path, capsys):
 @pytest.mark.parametrize("failed, code", [([], 0), ([{"id": "1_easy", "stage": "live", "error": "x"}], 1)])
 def test_web_exit_status_follows_failed_charts(tmp_path, capsys, monkeypatch, failed, code):
     from nnnotes import cli
+
     calls = []
 
     def fake_build(out, pairs, cfg, player, fmt, **kw):
@@ -263,11 +283,26 @@ def test_web_exit_status_follows_failed_charts(tmp_path, capsys, monkeypatch, fa
         return {"site": str(out), "built": [], "failed": failed, "skipped": []}
 
     monkeypatch.setattr(web, "build", fake_build)
-    monkeypatch.setattr(web, "unknown_pairs", lambda cfg, pairs, regions=None: [])   # no master data here
+    monkeypatch.setattr(web, "unknown_pairs", lambda cfg, pairs, regions=None: [])  # no master data here
     exit_code = 0
     try:
-        cli.main(["web", str(tmp_path / "s"), "--player", str(fake_player(tmp_path / "p")),
-                  "--pair", "7:hard", "--pair", "7_easy", "--format", "opus", "--no-audio", "--workers", "1"])
+        cli.main(
+            [
+                "web",
+                str(tmp_path / "s"),
+                "--player",
+                str(fake_player(tmp_path / "p")),
+                "--pair",
+                "7:hard",
+                "--pair",
+                "7_easy",
+                "--format",
+                "opus",
+                "--no-audio",
+                "--workers",
+                "1",
+            ]
+        )
     except SystemExit as e:
         exit_code = e.code
     assert exit_code == code
@@ -279,6 +314,7 @@ def test_web_exit_status_follows_failed_charts(tmp_path, capsys, monkeypatch, fa
 
 def test_web_compress_flag_reaches_the_build(tmp_path, capsys, monkeypatch):
     from nnnotes import cli
+
     calls = []
 
     def fake_build(out, pairs, cfg, player, fmt, **kw):
