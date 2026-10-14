@@ -63,4 +63,4 @@ jobs:
       - name: Golden records
         env:
           GOLDENS_STRICT: "1"
-        run: python -m pytest tests/test_goldens.py tests/test_objexport.py
+        run: python -m pytest tests/pipeline/test_goldens.py tests/pipeline/test_objexport.py
