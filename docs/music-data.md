@@ -54,7 +54,7 @@ Each master data file is checked against the SHA-256 the manifest lists and deco
 With `--decoded-master` the tables are read as decoded, and the master data version and each file's SHA-256 are the
 manifest's: the decoded tables cannot be checked against the files as served, so the file records what the manifest
 lists (the same values as `--master-files` on those files).
-Charts are read from the catalog of `[catalog] language` (bundles fetched into the cache as for every command); the
+Charts are read from the catalog of `[catalog] language` (bundles fetched into the depot as for every command); the
 BGM length from the cue sheet's ACB (its `CueTable` and `WaveformTable`, no audio is decoded). `FILE` ending in `.gz`
 is written gzip-compressed. The command prints a summary (`songs`, `charts`, `deck`: the deck model's commit,
 `unplayable`, `bytes`, `sha256` of the file, ...).
@@ -102,7 +102,7 @@ A **text** is an object with one string per language of `languages` (`{"ja": ...
 |---|---|
 | `region` | the region whose master data this is (a configured region name), or `embedded` for the APK's master data |
 | `client.versionName`, `client.versionCode` | the APK's version name and code (null without `[paths] apk`) |
-| `catalog.resourceVersion` | the resource version used to select the downloaded catalog, or recorded for an explicit file in the catalog store (`nnnotes catalog fetch` / `import`); null when unknown |
+| `catalog.resourceVersion` | the resource version used to select the downloaded catalog, or recorded for an explicit file in the catalog depot (`nnnotes catalog fetch` / `import`); null when unknown |
 | `catalog.sha256` | SHA-256 of the remote catalog file the charts were read with |
 | `master.source` | `api` (`--master-files`, `--decoded-master`: the region's files) or `embedded` (`--apk-master`) |
 | `master.version` | the `version` of the master data manifest |

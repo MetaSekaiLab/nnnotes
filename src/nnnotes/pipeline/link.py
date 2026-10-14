@@ -246,8 +246,8 @@ def _census_input(env, tid: str) -> Input:
     return env.input_of(tid, "census", as_role="census:" + contract.parse_task_id(tid, census.CensusStage.name)[1])
 
 
-def _read(store, task, role: str) -> dict:
-    return contract.loads(store.input_bytes(task.input(role)))
+def _read(depot, task, role: str) -> dict:
+    return contract.loads(depot.input_bytes(task.input(role)))
 
 
 class ScriptsStage(Stage):
@@ -275,9 +275,9 @@ class ScriptsStage(Stage):
         size = sum(i.size for i in inputs)
         return Cost(0.05 + size / 50e6, (40 << 20) + 8 * size)
 
-    def run(self, task, store) -> Output:
-        doc = scripts(_read(store, task, i.role) for i in task.inputs)
-        content = store.add(contract.encode(doc), "json")
+    def run(self, task, depot) -> Output:
+        doc = scripts(_read(depot, task, i.role) for i in task.inputs)
+        content = depot.add(contract.encode(doc), "json")
         rec = contract.artifact(
             contract.artifact_id(task.id, "scripts"),
             content,
@@ -303,7 +303,7 @@ class AddressesStage(Stage):
     def inputs(self, subject: str, env) -> list[Input]:
         tid = contract.task_id(catalogdb.IndexStage.name, subject)
         idx = env.input_of(tid, "index")
-        stables = {b["stable"] for b in env.store.document(idx.sha256)["bundles"]}
+        stables = {b["stable"] for b in env.depot.document(idx.sha256)["bundles"]}
         wanted = {contract.task_id(census.CensusStage.name, s) for s in stables}
         pending = [t for t in env.pending(census.CensusStage.name) if t in wanted]
         if pending:
@@ -314,13 +314,13 @@ class AddressesStage(Stage):
         size = sum(i.size for i in inputs)
         return Cost(0.5 + size / 50e6, (200 << 20) + size // 2)
 
-    def run(self, task, store) -> Output:
-        idx = _read(store, task, "index")
+    def run(self, task, depot) -> Output:
+        idx = _read(depot, task, "index")
         docs = (
-            (i.role.split(":", 1)[1], _read(store, task, i.role)) for i in task.inputs if i.role.startswith("census:")
+            (i.role.split(":", 1)[1], _read(depot, task, i.role)) for i in task.inputs if i.role.startswith("census:")
         )
         doc = addresses(idx, docs)
-        content = store.add(contract.encode(doc), "json")
+        content = depot.add(contract.encode(doc), "json")
         facts = {
             "bundles": len(doc["bundles"]),
             "keys": len(doc["keys"]),
@@ -426,16 +426,16 @@ class ArtifactsStage(Stage):
         n = len(self._tasks(env))
         return Cost(0.05 + 0.002 * n, (60 << 20) + 200_000 * n)
 
-    def run(self, task, store) -> Output:
+    def run(self, task, depot) -> Output:
         def results():
             for tid, key in sorted(task.context.get("results", {}).items()):
-                doc = store.result(key)
+                doc = depot.result(key)
                 if doc is None:
-                    raise FileNotFoundError(f"result of {tid} ({key}) is not in the store")
+                    raise FileNotFoundError(f"result of {tid} ({key}) is not in the depot")
                 yield tid, doc
 
         objects, contained, arts = artifact_table(results())
-        content = store.add_chunks(encode_artifacts(objects, contained, arts), "json")
+        content = depot.add_chunks(encode_artifacts(objects, contained, arts), "json")
         facts = {"objects": len(objects), "contained": len(contained), "artifacts": len(arts)}
         rec = contract.artifact(
             contract.artifact_id(task.id, "artifacts"),

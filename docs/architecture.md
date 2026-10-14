@@ -10,7 +10,7 @@ subpackage of `nnnotes` and imports only the layers below it.
 |---|---|---|
 | Command line | `nnnotes.cli` | one module per command group; parses options, reads the configuration, prints summaries and `--json` reports |
 | Products | `nnnotes.site`, `nnnotes.musicdata` | the ournotes-player site (charts, models, stories, indexes); the music data file and its deck statistics |
-| Pipeline | `nnnotes.pipeline` | stages, task descriptions and results, the content-addressed store, plans, layouts, the catalog versions, the views of the master data |
+| Pipeline | `nnnotes.pipeline` | stages, task descriptions and results, the content-addressed depot, plans, layouts, the catalog versions, the views of the master data |
 | Content | `nnnotes.content` | the game's subjects as exports: ADV episodes and stories, lives and scores, spots, rooms, the UI library |
 | Unity objects | `nnnotes.unity` | bundle reading, the typetree exporter, the player data, Live2D prefabs, text styles and TextMesh Pro fonts |
 | File formats | `nnnotes.formats` | formats read from bytes: CRI ACB/AWB and HCA, USM movies, CRI Lips data, shaders, motions |
@@ -27,12 +27,12 @@ and print, and the work they run is in the library modules below them.
 Every setting comes from the configuration ([sources and precedence](configuration.md#sources-and-precedence)).
 `nnnotes.source.session.Session` turns one configuration into the data sources a command needs: the catalog of a
 region, its decoded master data and the master data version it serves, the APK, the bundle and master data keys and
-the store root. It reads a setting when it is first needed and raises a `ConfigError` naming the setting when it is missing or wrong;
+the depot root. It reads a setting when it is first needed and raises a `ConfigError` naming the setting when it is missing or wrong;
 the command line turns that error into exit status 2.
 
 The catalog (`nnnotes.source.catalog.Catalog`) resolves an addressable key to its bundle and the bundle's
 dependency closure, takes a bundle from the APK when the APK has it and from the CDN otherwise, and keeps fetched and
-decrypted bundles in the cache directory.
+decrypted bundles in the depot's `downloads/` directory.
 
 ## Two ways to export
 
@@ -42,8 +42,8 @@ decrypted bundles in the cache directory.
 - **Every asset.** `export assets` splits the work into stages ([stages](stages.md)). A task is one stage applied to
   one subject (a bundle, a content id, a view); its key covers exactly what its output depends on: the stage and
   converter versions, the input contents and the options ([contracts](contracts.md)). Results and their files are
-  stored once by content hash in the store, and the output directory is laid out from the store. A second run finds
-  every unchanged result in the store and only lays out what changed; `store plan` says what would run and why
+  stored once by content hash in the depot, and the output directory is laid out from the depot. A second run finds
+  every unchanged result in the depot and only lays out what changed; `depot plan` says what would run and why
   ([asset export](assets.md)).
 
 Both ways use the same readers below the pipeline layer, so a texture, shader, mesh or audio stream is converted by

@@ -608,10 +608,10 @@ def test_decoded_master_checks(tmp_path):
 def test_resource_version_from_the_catalog_store(tmp_path):
     remote = synth.CatalogWriter().build([("a_01.bundle", synth.remote("a_01.bundle"), [])])
     sha = hashlib.sha256(remote).hexdigest()
-    assert deckdata.resource_version(tmp_path / "store", sha) is None
-    CatalogDB(tmp_path / "store").add(remote, None, region="xx", language="en", resource_version="1.2.3")
-    assert deckdata.resource_version(tmp_path / "store", sha) == "1.2.3"
-    assert deckdata.resource_version(tmp_path / "store", "0" * 64) is None
+    assert deckdata.resource_version(tmp_path / "depot", sha) is None
+    CatalogDB(tmp_path / "depot").add(remote, None, region="xx", language="en", resource_version="1.2.3")
+    assert deckdata.resource_version(tmp_path / "depot", sha) == "1.2.3"
+    assert deckdata.resource_version(tmp_path / "depot", "0" * 64) is None
     assert deckdata.resource_version(None, sha) is None
 
 

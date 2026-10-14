@@ -39,9 +39,9 @@ touched: an unowned file in the way is an error unless it already has the right 
 place is reported and left out of the manifest (the next run tries it again); no file falls back to another method.
 
 Placement (PLACEMENTS; probe() picks one per run for `auto` and checks an explicit one): a clone (reflink: Linux
-FICLONE, macOS clonefile) shares the store object's blocks until either file is written, so it is independent and
-takes no space; a hard link is the store object itself, read-only like every object of the store (an edit fails
-instead of changing the store); a copy is independent and writable, and takes the space again. Every method gives
+FICLONE, macOS clonefile) shares the depot object's blocks until either file is written, so it is independent and
+takes no space; a hard link is the depot object itself, read-only like every object of the depot (an edit fails
+instead of changing the depot); a copy is independent and writable, and takes the space again. Every method gives
 the same files and the same manifest.
 """
 
@@ -57,7 +57,7 @@ from pathlib import Path
 
 from ..core.cache import temp_path
 from . import contract
-from .store import write_doc, write_file
+from .depot import write_doc, write_file
 
 MANIFEST = "manifest.json"
 JOURNAL = ".nnnotes-layout-journal.json"
@@ -366,9 +366,9 @@ def paths(entries_: list[dict]) -> dict[str, str]:
 
 
 # ---------------------------------------------------------------- writing
-def from_store(store):
-    """A byte source reading the store's cas/."""
-    return store.path
+def from_depot(depot):
+    """A byte source reading the depot's cas/."""
+    return depot.path
 
 
 def from_layout(directory):
@@ -429,7 +429,7 @@ def diff(out_dir, entries_: list[dict]) -> dict:
 
 def materialize(out_dir, name: str, params: dict, entries_: list[dict], source, *, link: str = "copy") -> dict:
     """Write layout `name` into `out_dir` (see the module documentation). `source(sha256) -> Path` gives the bytes
-    (from_store, from_layout); `link`: the placement (PLACEMENTS). -> {"manifest": the layout document (without
+    (from_depot, from_layout); `link`: the placement (PLACEMENTS). -> {"manifest": the layout document (without
     the files not placed), "sha256": of its file, "write", "remove", "keep", "cloned", "linked", "copied",
     "failed": [{path, message}] of the files not placed}."""
     if link not in PLACEMENTS:
@@ -449,7 +449,7 @@ def materialize(out_dir, name: str, params: dict, entries_: list[dict], source, 
     stats = {"cloned": 0, "linked": 0, "copied": 0}
     failed = []
 
-    def restore(p):  # a replaced or removed hard link's store object: read-only again
+    def restore(p):  # a replaced or removed hard link's depot object: read-only again
         if p in owned:
             try:
                 _read_only(Path(source(owned[p][0])))
@@ -498,7 +498,7 @@ def _place(src: Path, dst: Path, link: str, stats: dict, restore) -> None:
         if link == "clone":
             clone(src, tmp)
         elif link == "hard":
-            _read_only(src)  # an object stored before the store made them read-only
+            _read_only(src)  # an object stored before the depot made them read-only
             os.link(src, tmp)
         else:
             shutil.copyfile(src, tmp)
@@ -513,7 +513,7 @@ def _place(src: Path, dst: Path, link: str, stats: dict, restore) -> None:
 
 
 def _read_only(p: Path) -> None:
-    """Make a store object read-only (its hard links in layouts are the object itself)."""
+    """Make a depot object read-only (its hard links in layouts are the object itself)."""
     try:
         mode = os.stat(p).st_mode
         if mode & 0o222:
@@ -524,7 +524,7 @@ def _read_only(p: Path) -> None:
 
 def _writable(p: Path) -> bool:
     """Clear the read-only attribute of a layout file about to be replaced or removed, where the system refuses
-    to do either to a read-only file (Windows; the attribute belongs to the file, so a hard link's store object
+    to do either to a read-only file (Windows; the attribute belongs to the file, so a hard link's depot object
     loses it too: True, the caller sets it again). Elsewhere nothing: False."""
     if os.name != "nt":
         return False
@@ -570,7 +570,7 @@ _ELSEWHERE = (errno.EXDEV,)
 
 def _why(e: OSError, what: str) -> str:
     if e.errno in _ELSEWHERE:
-        return "store on another file system"
+        return "depot on another file system"
     if "platform" in str(e):
         return f"{what} unsupported on this platform"
     code = e.errno if e.errno is None else errno.errorcode.get(e.errno, e.errno)
@@ -578,7 +578,7 @@ def _why(e: OSError, what: str) -> str:
 
 
 def probe(out_dir, store_dir, want: str = "auto") -> tuple[str, str]:
-    """The placement of a layout in `out_dir` whose files come from the store objects in `store_dir`, for `want`
+    """The placement of a layout in `out_dir` whose files come from the depot objects in `store_dir`, for `want`
     (LINKS), tried once on a temporary file in each: (placement, reason). auto: a clone where the file system makes
     them, else a hard link on the same file system, else a copy. An explicit clone or hard link that does not work
     raises LayoutError."""
@@ -586,10 +586,10 @@ def probe(out_dir, store_dir, want: str = "auto") -> tuple[str, str]:
         raise ValueError(f"unknown link mode {want!r} (one of {', '.join(LINKS)})")
     if want == "copy":
         return "copy", "copy: as asked"
-    out, store = Path(out_dir), Path(store_dir)
+    out, depot = Path(out_dir), Path(store_dir)
     out.mkdir(parents=True, exist_ok=True)
-    store.mkdir(parents=True, exist_ok=True)
-    src, made = temp_path(store / "probe"), []
+    depot.mkdir(parents=True, exist_ok=True)
+    src, made = temp_path(depot / "probe"), []
     try:
         with open(src, "xb") as f:
             f.write(b"nnnotes placement probe\n")
@@ -598,7 +598,7 @@ def probe(out_dir, store_dir, want: str = "auto") -> tuple[str, str]:
             made.append(temp_path(out / "probe"))
             try:
                 clone(src, made[-1])
-                return "clone", "clone: the file system shares the store objects' blocks"
+                return "clone", "clone: the file system shares the depot objects' blocks"
             except OSError as e:
                 why = _why(e, "clone")
                 if want == "clone":

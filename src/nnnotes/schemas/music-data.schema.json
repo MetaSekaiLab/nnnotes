@@ -69,7 +69,7 @@
                 "string",
                 "null"
               ],
-              "description": "the resource version recorded for the catalog in the catalog store, null when none is recorded"
+              "description": "the resource version recorded for the catalog in the catalog depot, null when none is recorded"
             },
             "resourceHash": {
               "type": "string",

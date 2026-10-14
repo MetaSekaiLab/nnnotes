@@ -456,7 +456,7 @@ def test_web_pair_that_no_region_has_is_a_usage_error(tmp_path, capsys, monkeypa
     monkeypatch.setenv("NNNOTES_SERVERS_ZZ_CDN", (tmp_path / "cdn").as_uri())
     monkeypatch.setattr(web, "build", lambda *a, **k: pytest.fail("nothing may be built"))
     base = [
-        "--cache",
+        "--depot",
         str(tmp_path / "c"),
         "--region",
         "zz",

@@ -18,7 +18,7 @@ index entry and makes the command exit with status 1. Existing unrelated entries
 
 The command uses the same `ApkSet` reader as the existing extractors: one APK, base.apk with adjacent splits, a
 directory of splits, or an APKS/XAPK archive. Explicit `--apk` wins over the selected region's APK configuration.
-The configured cache and bundle decryption settings are used when needed. Readable unencrypted local bundles do
+The configured depot and bundle decryption settings are used when needed. Readable unencrypted local bundles do
 not require a key. Default Unity resources are read from the selected APK set through the existing player reader.
 
 ```sh

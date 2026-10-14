@@ -171,7 +171,7 @@
       }
     },
     "placement": {
-      "description": "How the layouts' files were made from the store (not part of the id, and not of the layout manifests, which every method writes alike): `clone` (sharing the store objects' blocks), `hard` (hard links to the read-only store objects) or `copy`, with the reason `auto` chose it or `as asked`.",
+      "description": "How the layouts' files were made from the depot (not part of the id, and not of the layout manifests, which every method writes alike): `clone` (sharing the depot objects' blocks), `hard` (hard links to the read-only depot objects) or `copy`, with the reason `auto` chose it or `as asked`.",
       "type": "object",
       "required": [
         "method",

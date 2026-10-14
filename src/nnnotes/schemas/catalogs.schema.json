@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:nnnotes:schema:catalogs",
   "title": "nnnotes.catalogs/1",
-  "description": "The catalog versions of a store (<store>/catalogs/index.json), in import order: id (key hash of the two catalogs' content ids), labels, region, language, the remote and APK catalogs (content id, size, build result hash), the CDN's .hash text when it was served, resource version and APK version name.",
+  "description": "The catalog versions of a depot (<depot>/catalogs/index.json), in import order: id (key hash of the two catalogs' content ids), labels, region, language, the remote and APK catalogs (content id, size, build result hash), the CDN's .hash text when it was served, resource version and APK version name.",
   "type": "object",
   "required": [
     "schema",

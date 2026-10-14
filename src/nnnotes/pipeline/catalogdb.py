@@ -1,4 +1,4 @@
-"""Catalog versions: the catalog index, a store of catalog versions, and the difference between two versions.
+"""Catalog versions: the catalog index, a depot of catalog versions, and the difference between two versions.
 
 The catalog index (nnnotes.catalog-index/1) is everything a catalog pair says, decoded (addressables.parse_locations):
 the remote catalog and, when given, the APK's local catalog. It holds every location (primary key, internal id,
@@ -9,10 +9,10 @@ catalog "remote" or "apk". A file named by both catalogs takes the APK catalog's
 references to APK files may come from another build). The index is a function of the catalog bytes alone.
 
 A catalog version is identified by the sha256 of its remote catalog and of its APK catalog (none without an APK).
-The versions live in the store:
+The versions live in the depot:
 
-    <store>/catalogs/<sha256>.bin        each catalog file (remote and APK catalogs alike), by content
-    <store>/catalogs/index.json          the versions (nnnotes.catalogs/1): id, labels, region, language, the two
+    <depot>/catalogs/<sha256>.bin        each catalog file (remote and APK catalogs alike), by content
+    <depot>/catalogs/index.json          the versions (nnnotes.catalogs/1): id, labels, region, language, the two
                                          catalogs (sha256, size, buildResultHash), the CDN's `.hash` text when it was
                                          served (an opaque change signal), resource version, APK version name
 
@@ -35,8 +35,8 @@ from ..source.apkset import ApkSet
 from ..source.catalog import APK_CATALOG, Catalog, file_name, location_kind
 from . import contract
 from .contract import Cost, Input
+from .depot import write_file
 from .stages import Output, Stage
-from .store import write_file
 
 CATALOGS = "nnnotes.catalogs/1"
 DIFF = "nnnotes.catalog-diff/1"
@@ -365,7 +365,7 @@ def format_diff(d: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
-# ---------------------------------------------------------------- the store of versions
+# ---------------------------------------------------------------- the depot of versions
 def version_id(remote_sha: str, apk_sha: str | None, source: dict | None = None) -> str:
     """The id of a catalog version: the key hash of its two catalogs' content ids."""
     identity = {"remote": remote_sha, "apk": apk_sha}
@@ -399,7 +399,7 @@ def apk_version(apk: Path | None) -> str | None:
 
 def fetch(cdn: str, language: str, timeout: float = 120, *, version: str = "main") -> tuple[bytes, str | None]:
     """The remote catalog of `language` from a CDN base, and the text of its `.hash` file (None when not served)."""
-    base = cdn.rstrip("/") + "/asset/Android/" + Catalog.cache_file(language, Path("."), version=version).name
+    base = cdn.rstrip("/") + "/asset/Android/" + Catalog.file_name(language, version=version)
     with urllib.request.urlopen(base, timeout=timeout) as r:
         data = r.read()
     try:
@@ -411,10 +411,10 @@ def fetch(cdn: str, language: str, timeout: float = 120, *, version: str = "main
 
 
 class CatalogDB:
-    """The catalog versions of a store (<store>/catalogs/)."""
+    """The catalog versions of a depot (<depot>/catalogs/)."""
 
-    def __init__(self, store_root):
-        self.root = Path(store_root) / "catalogs"
+    def __init__(self, depot_root):
+        self.root = Path(depot_root) / "catalogs"
 
     def path(self, sha: str) -> Path:
         if not contract.is_sha256(sha):
@@ -540,7 +540,7 @@ class CatalogDB:
         return index(*self.catalog_bytes(version))
 
     def inputs(self, version: dict) -> list[Input]:
-        """The inputs of the catalog.index task of a version (roles "remote" and "apk"), read from this store."""
+        """The inputs of the catalog.index task of a version (roles "remote" and "apk"), read from this depot."""
         out = []
         for role in CATALOG_NAMES:
             rec = version[role]
@@ -579,12 +579,12 @@ class IndexStage(Stage):
         size = sum(i.size for i in inputs)
         return Cost(0.2 + size / 10e6, (60 << 20) + 40 * size)
 
-    def run(self, task, store) -> Output:
+    def run(self, task, depot) -> Output:
         roles = {i.role for i in task.inputs}
         doc = index(
-            store.input_bytes(task.input("remote")), store.input_bytes(task.input("apk")) if "apk" in roles else None
+            depot.input_bytes(task.input("remote")), depot.input_bytes(task.input("apk")) if "apk" in roles else None
         )
-        content = store.add(contract.encode(doc), "json")
+        content = depot.add(contract.encode(doc), "json")
         rec = contract.artifact(
             contract.artifact_id(task.id, "index"),
             content,

@@ -153,9 +153,10 @@ class Source:
             raise ValueError("invalid JP source metadata")
         return cls(**fields)
 
-    def cache_dir(self, cache: str | os.PathLike[str]) -> Path:
+    def download_dir(self, downloads: str | os.PathLike[str]) -> Path:
+        """The directory of this snapshot's files in `downloads`: jp/<site>/<version>/<hash>."""
         site = hashlib.sha256(self.cdn.encode()).hexdigest()[:16]
-        return Path(cache) / "jp" / site / self.version / self.hash
+        return Path(downloads) / "jp" / site / self.version / self.hash
 
 
 @dataclass(frozen=True)
@@ -303,13 +304,15 @@ def write_source(path: str | os.PathLike[str], data: bytes, source: Source) -> N
 def open_catalog(
     cfg: Config,
     region: str,
+    downloads: Path,
     *,
     catalog_file: str | os.PathLike[str] | None = None,
     bundle_key: BundleKey | Callable[[], BundleKey] | None = None,
     apk: Path | None = None,
 ) -> Catalog:
     """The catalog of the JP region `region`: `catalog_file` with its .source.json sidecar, else the catalog of the
-    asset version the API serves now (from the cache, downloaded on first use)."""
+    asset version the API serves now (from `downloads`, the depot's directory of downloaded files, downloaded on first
+    use)."""
     client = Client(cfg, region)
     if catalog_file is not None:
         data = Path(catalog_file).read_bytes()
@@ -318,7 +321,7 @@ def open_catalog(
         source = client.observe().source
         if source is None:
             raise gameapi.GameApiError("JP Version: no Android asset version applies to this client")
-        path = source.cache_dir(cfg.require_path("paths", "cache")) / "catalog_main.bin"
+        path = source.download_dir(downloads) / "catalog_main.bin"
         if path.exists():
             data = path.read_bytes()
             if not sidecar(path).exists():
@@ -328,7 +331,7 @@ def open_catalog(
                 write_atomic(path, data)
                 write_source(path, data, source)
             elif read_source(path, data) != source:
-                raise ConfigError("JP cached catalog source differs from the selected version")
+                raise ConfigError("JP downloaded catalog source differs from the selected version")
         else:
             data = client.get(source.catalog_url, source=source, limit=CATALOG_LIMIT)
             parse_header(data)
@@ -337,7 +340,7 @@ def open_catalog(
             write_source(path, data, source)
     return Catalog(
         data,
-        source.cache_dir(cfg.require_path("paths", "cache")),
+        source.download_dir(downloads),
         bundle_key=bundle_key,
         apk=apk,
         source=source,

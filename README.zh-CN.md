@@ -45,13 +45,13 @@ nnnotes site build -o out/site --all --player path/to/ournotes-player
 | `config init\|set\|unset\|check\|path` | 写入、修改和检查配置文件 |
 | `servers` | 游戏 API 的服务器列表：各区服及其 CDN 与 API 根地址 |
 | `catalog keys\|browse` | 区服 catalog 的资源键；在本地网页中浏览 catalog 与资源包 |
-| `catalog versions\|import\|fetch\|diff` | store 中保存的 catalog 版本，以及两个版本之间的变化 |
-| `bundle pull` | 下载并解密资源键的依赖闭包到缓存 |
+| `catalog versions\|import\|fetch\|diff` | depot 中保存的 catalog 版本，以及两个版本之间的变化 |
+| `bundle pull` | 下载并解密资源键的依赖闭包到 depot |
 | `master version\|download\|decode` | 区服当前的 masterdata 版本、下载，以及解码为 JSON |
-| `export assets` | 经内容寻址的 store，把所选资源包中的每个对象导出为通用格式 |
+| `export assets` | 经内容寻址的 depot，把所选资源包中的每个对象导出为通用格式 |
 | `export episode\|story\|live\|live2d\|spot\|room\|shader\|audio\|ui` | 单个对象：ADV 剧情集、完整剧情、谱面、Live2D 模型、据点、房间、着色器、cue sheet、UI 库 |
 | `apk settings\|hca-key` | `base.apk` 中的画面设置与 CRI HCA 密钥 |
-| `store plan\|run\|verify` | `export assets` 将运行什么及原因、单独运行任务、检查 store |
+| `depot plan\|run\|verify\|gc` | `export assets` 将运行什么及原因、单独运行任务、检查和回收 depot |
 | `voices list\|search\|summary\|get` | masterdata 中的角色语音与剧情语音 |
 | `site build` | ournotes-player 静态站点：谱面、Live2D 模型与剧情，支持多个区服与语言 |
 | `music-data` | 全部歌曲与谱面的单个 JSON 文件，附组卡模型的谱面统计 |

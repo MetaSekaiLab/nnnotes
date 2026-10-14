@@ -3,8 +3,8 @@ import pytest
 from nnnotes.pipeline import catalogdb, census, contract, link
 from nnnotes.pipeline.catalogdb import CatalogDB, IndexStage, index
 from nnnotes.pipeline.contract import Input
+from nnnotes.pipeline.depot import Depot
 from nnnotes.pipeline.stages import Env, Pending, describe, execute, registry
-from nnnotes.pipeline.store import Store
 from tests.helpers import synth
 
 HA, HB, HC = "a" * 32, "b" * 32, "c" * 32
@@ -241,32 +241,32 @@ def test_diff_addresses():
 
 
 # ---------------------------------------------------------------- stages
-def census_task(store, subject, doc):
+def census_task(depot, subject, doc):
     """A census task with a stored result made of `doc` (no bundle read)."""
     data = contract.encode(doc)
     inp = Input("bundle", contract.sha256(subject.encode()), 1, subject + ".bundle")
-    task = describe(census.CensusStage(), subject, None, Env(store, {"bundles": {subject: inp}}))
-    content = store.add(data, "json")
+    task = describe(census.CensusStage(), subject, None, Env(depot, {"bundles": {subject: inp}}))
+    content = depot.add(data, "json")
     rec = contract.artifact(
         contract.artifact_id(task.id, "census"),
         content,
         contract.provenance(task),
         {"kind": "unity.census", "format": "json", "facts": census.facts(doc)},
     )
-    store.commit(contract.result(task, [rec], []))
+    depot.commit(contract.result(task, [rec], []))
     return task
 
 
 def test_link_stages(tmp_path):
-    store = Store(tmp_path / "store")
-    db = CatalogDB(tmp_path / "store")
+    depot = Depot(tmp_path / "depot")
+    db = CatalogDB(tmp_path / "depot")
     v = db.add(synth.CatalogWriter().build(catalog_entries()))
-    env = Env(store, {"catalogs": {"main": db.inputs(v)}})
+    env = Env(depot, {"catalogs": {"main": db.inputs(v)}})
     itask = describe(IndexStage(), "main", None, env)
-    execute(itask, store, registry(IndexStage()))
+    execute(itask, depot, registry(IndexStage()))
     env.done(itask.id, itask.key)
     docs = censuses()
-    tasks = {s: census_task(store, s, d) for s, d in docs.items()}
+    tasks = {s: census_task(depot, s, d) for s, d in docs.items()}
     env.waiting(tasks["card_a"].id)  # not run yet
     for s, t in tasks.items():
         if s != "card_a":
@@ -282,27 +282,27 @@ def test_link_stages(tmp_path):
     env.done(tasks["card_a"].id, tasks["card_a"].key)
     st = describe(stages["link.scripts"], "all", None, env)
     assert st.id == "link.scripts:all" and [i.role for i in st.inputs] == ["census:scripts"]
-    execute(st, store, stages)
-    (rec,) = store.result(st.key)["artifacts"]
+    execute(st, depot, stages)
+    (rec,) = depot.result(st.key)["artifacts"]
     assert rec["id"] == "link.scripts:all#scripts" and rec["semantics"]["facts"] == {"scripts": 2}
-    assert contract.loads(store.read(rec["content"]["sha256"])) == link.scripts([docs["scripts"]])
+    assert contract.loads(depot.read(rec["content"]["sha256"])) == link.scripts([docs["scripts"]])
     at = describe(stages["link.addresses"], "main", None, env)
     assert [i.role for i in at.inputs] == ["census:card_a", "census:scene_x", "census:shared", "index"]
-    execute(at, store, stages)
-    (rec,) = store.result(at.key)["artifacts"]
+    execute(at, depot, stages)
+    (rec,) = depot.result(at.key)["artifacts"]
     assert rec["id"] == "link.addresses:main#addresses" and rec["semantics"]["facts"]["objects"] == 5
     expected = link.addresses(index(*db.catalog_bytes(v)), {s: docs[s] for s in ("card_a", "scene_x", "shared")})
-    assert contract.loads(store.read(rec["content"]["sha256"])) == expected
-    assert execute(at, store, stages).status == "hit"
+    assert contract.loads(depot.read(rec["content"]["sha256"])) == expected
+    assert execute(at, depot, stages).status == "hit"
 
 
 def test_artifacts_table_and_stage(tmp_path):
-    store = Store(tmp_path / "store")
+    depot = Depot(tmp_path / "depot")
     arts, items = [], []
     for pid, status in ((1, "exported"), (2, "contained"), (3, "failed")):
         oid = contract.object_id(CAB_A, pid)
         if status == "exported":
-            c = store.add(b"{}\n", "json")
+            c = depot.add(b"{}\n", "json")
             aid = contract.artifact_id(oid, "json")
             arts.append({"id": aid, "content": c})
             items.append(contract.item(oid, "exported", artifacts=[aid]))
@@ -315,9 +315,9 @@ def test_artifacts_table_and_stage(tmp_path):
     assert table["contained"] == {f"{CAB_A}:2": f"{CAB_A}:1#json"}
     assert table["artifacts"][f"{CAB_A}:1#json"]["ext"] == "json"
     stage = link.ArtifactsStage()
-    env = Env(store, {})
+    env = Env(depot, {})
     export = contract.Task("unity.export", 1, "card_a")
-    store.commit(
+    depot.commit(
         contract.result(
             export,
             [contract.artifact(a["id"], a["content"], contract.provenance(export), {"kind": "x"}) for a in arts],
@@ -331,10 +331,10 @@ def test_artifacts_table_and_stage(tmp_path):
     env.waiting("sprite.crop:atlas", failed=True)  # failed tasks are skipped
     t = describe(stage, "all", None, env)
     assert t.context == {"results": {export.id: export.key}} and t.inputs == ()
-    execute(t, store, registry(stage))
-    (rec,) = store.result(t.key)["artifacts"]
+    execute(t, depot, registry(stage))
+    (rec,) = depot.result(t.key)["artifacts"]
     assert rec["id"] == "link.artifacts:all#artifacts"
-    assert contract.loads(store.read(rec["content"]["sha256"]))["objects"] == table["objects"]
+    assert contract.loads(depot.read(rec["content"]["sha256"]))["objects"] == table["objects"]
 
 
 def test_the_artifact_table_is_written_entry_by_entry_with_the_same_bytes():
@@ -372,7 +372,7 @@ def test_the_artifact_table_is_written_entry_by_entry_with_the_same_bytes():
 
 
 def test_store_add_chunks_is_add_of_the_joined_bytes(tmp_path):
-    s = Store(tmp_path / "s")
+    s = Depot(tmp_path / "s")
     c = s.add_chunks(iter([b"ab", b"", "é".encode()]), ".JSON")
     assert c == contract.content("abé".encode(), "json") and s.read(c["sha256"]) == "abé".encode()
     assert s.add_chunks([b"a", "bé".encode()], "json") == c and (s.written, s.reused) == (1, 1)

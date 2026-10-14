@@ -61,11 +61,9 @@ version = ""
 [paths]
 # catalog .bin file to read instead of downloading; JP source metadata is stored in <file>.source.json
 catalog = ""
-# cache directory: downloaded catalogs, decrypted bundles, raw CDN files (flag --cache)
-cache = ""
-# store of the asset export: contents, task results, catalog versions, run manifests; empty: <cache>/store
-# (flag --store)
-store = ""
+# depot: downloaded game files, the results of the stages by content, catalog versions, run manifests
+# (flag --depot)
+depot = ""
 # decoded master data directory, one <Table>.json per table (`nnnotes master decode`) (flag --master)
 master = ""
 # the game's base.apk: APK-local bundles, player settings, CRI HCA keycode (flag --apk)
@@ -80,6 +78,6 @@ node = ""
 player = ""
 
 [export]
-# how `nnnotes export assets` makes the layout files from the store: auto (a clone where the file system makes them, else
-# a hard link to the read-only store object, else a copy), clone, hard or copy; empty: auto (flag --link)
+# how `nnnotes export assets` makes the layout files from the depot: auto (a clone where the file system makes them, else
+# a hard link to the read-only depot object, else a copy), clone, hard or copy; empty: auto (flag --link)
 link = ""

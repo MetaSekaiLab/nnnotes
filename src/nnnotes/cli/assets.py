@@ -1,22 +1,22 @@
-"""The asset commands: the default orchestration of the stages (`export assets`), its plan and single tasks (`store
-plan`, `store run`).
+"""The asset commands: the default orchestration of the stages (`export assets`), its plan and single tasks (`depot
+plan`, `depot run`).
 
     nnnotes export assets -o OUT [--layout original[,cas]] [--select group:G|key:PREFIX|bundle:GLOB ...]
                           [--views all|none|a,b] [--workers N] [--memory GiB] [--fetch-workers N]
                           [--stored-catalog L|SHA] [--png-level N] [--flac-level N] [--only-class C,...]
                           [--link auto|clone|hard|copy] [--strict] [--dry-run] [--explain]
-    nnnotes store plan [the selection and parameters of export assets] [-o OUT] [--since RUN] [--check] [--census]
+    nnnotes depot plan [the selection and parameters of export assets] [-o OUT] [--since RUN] [--check] [--census]
                        [--emit-tasks DIR] [--why TASK]
-    nnnotes store run TASK.json|DIR [...] [--fetch] [--force]
+    nnnotes depot run TASK.json|DIR [...] [--fetch] [--force]
 
 The pipeline is the registry STAGE_SOURCES in order: each entry names the module and attribute of a stage (a Stage
 class) or of a family of stages (a function returning them, `view.`). An entry whose module or attribute is not
 installed is left out of the pipeline and named by --explain. Stage modules import heavy libraries (UnityPy) only
-when a task runs, so `store plan`, and `store run` of stages that do not read bundles, never load them.
+when a task runs, so `depot plan`, and `depot run` of stages that do not read bundles, never load them.
 
 Facts the stages read while their tasks are described (stages.Env):
 
-    catalogs   {"main": [Input remote, Input apk]}: the catalog version's files in <store>/catalogs/
+    catalogs   {"main": [Input remote, Input apk]}: the catalog version's files in <depot>/catalogs/
     index      the catalog index document (nnnotes.catalog-index/1)
     bundles    {stable bundle name: Input "bundle"} of the selected bundles and their dependencies (a bundle whose
                bytes are not known yet: a Pending "fetch:<file name>")
@@ -34,11 +34,11 @@ census also covers the bundles the selected ones depend on (the dependencies of 
 dependency is its own bundle), so script and atlas references resolve.
 
 Task cost estimates (scheduling only: never part of a key) are each stage's estimate scaled per stage by the
-costs measured in earlier runs (<store>/costs/calibration.json, updated after every export).
+costs measured in earlier runs (<depot>/costs/calibration.json, updated after every export).
 
 Exit codes: export assets 0 complete (unsupported objects allowed), 1 item or task failures (reports written), 2
-usage or settings, 3 aborted (results written so far stay valid); store run 0, 1 (a task failed or a result is
-partial), 2, 4 an incompatible task (nothing of the batch runs); store plan --check 1 when anything would run or
+usage or settings, 3 aborted (results written so far stay valid); depot run 0, 1 (a task failed or a result is
+partial), 2, 4 an incompatible task (nothing of the batch runs); depot plan --check 1 when anything would run or
 change.
 """
 
@@ -147,7 +147,7 @@ class Installed:
 
 
 def installed(names=None) -> Installed:
-    """The stages of STAGE_SOURCES (`names`: only the sources of these stage names, for `store run`)."""
+    """The stages of STAGE_SOURCES (`names`: only the sources of these stage names, for `depot run`)."""
     stages, of, missing = {}, {}, []
     for src in STAGE_SOURCES:
         if names is not None and not any(src.matches(n) for n in names):
@@ -257,19 +257,20 @@ def _bundle_key(cfg):
 
 class CatalogFetcher:
     """The fetcher of "catalog" locators ({catalog: version id, location: location id}): the file is fetched through
-    that catalog version of the store (the settings' CDN, bundle key and APK) into the cache. Crosses to worker
-    processes as its settings."""
+    that catalog version of the depot (the settings' CDN, bundle key and APK) into the depot's downloads/. Crosses to
+    worker processes as its settings."""
 
-    def __init__(self, store_root_, cache, cfg):
-        self.root, self.cache, self.cfg = Path(store_root_), Path(cache) if cache else None, cfg
+    def __init__(self, root, cfg):
+        self.root, self.cfg = Path(root), cfg
+        self.downloads = self.root / "downloads"
         self._catalogs: dict = {}
         self._lock = threading.Lock()
 
     def __getstate__(self):
-        return {"root": self.root, "cache": self.cache, "cfg": self.cfg}
+        return {"root": self.root, "cfg": self.cfg}
 
     def __setstate__(self, state):
-        self.__init__(state["root"], state["cache"], state["cfg"])
+        self.__init__(state["root"], state["cfg"])
 
     def catalog(self, vid: str):
         """(Catalog, {location id: location}) of a stored catalog version."""
@@ -279,34 +280,32 @@ class CatalogFetcher:
         with self._lock:
             hit = self._catalogs.get(vid)
             if hit is None:
-                if self.cache is None:
-                    raise self.cfg.missing("paths", "cache")
                 db = catalogdb.CatalogDB(self.root)
                 v = next((x for x in db.versions() if x["id"] == vid), None)
                 if v is None:
-                    raise FileNotFoundError(f"catalog version {vid[:12]} is not in the store")
+                    raise FileNotFoundError(f"catalog version {vid[:12]} is not in the depot")
                 remote, apk = db.catalog_bytes(v)
                 cfg, region = self.cfg, v.get("region")
                 region = region or cfg.get("catalog", "region")
                 if region:
                     cfg = cfg.for_region(region)
-                source, client, cache = None, None, self.cache
+                source, client, downloads = None, None, self.downloads
                 if v.get("source") is not None:
                     from ..source.jp import Client, Source
 
                     source = Source.from_dict(v["source"])
                     client = Client(cfg, cfg.region())
-                    cache = source.cache_dir(cache)
+                    downloads = source.download_dir(downloads)
                 cat = Catalog(
                     remote,
-                    cache,
+                    downloads,
                     cdn=lambda: cfg.cdn(cfg.region()),
                     bundle_key=lambda: _bundle_key(cfg),
                     apk_catalog=apk,
                     source=source,
                     client=client,
                 )
-                # Replay imported offsets; the current APK is needed only for uncached local files.
+                # Replay imported offsets; the current APK is needed only for local files not downloaded yet.
                 cat.apk = cfg.path("paths", "apk")
                 hit = self._catalogs[vid] = (cat, catalogdb.by_id(catalogdb.index(remote, apk)))
             return hit
@@ -327,12 +326,12 @@ class CatalogFetcher:
         return cat.fetch_raw({"internal_id": iid})
 
     def _apk_file(self, internal_id: str, cat) -> Path:
-        """A raw APK file through its snapshot's cache; only a cache miss needs the matching APK."""
+        """A raw APK file through its snapshot's downloads; only a file not read yet needs the matching APK."""
         from ..core.cache import write_atomic
         from ..source.catalog import APK_AA_DIR
 
         rel = apk_rel(internal_id)
-        dst = cat.local_cache_dir() / "raw" / rel
+        dst = cat.local_download_dir() / "raw" / rel
         if not (dst.is_file() and dst.stat().st_size > 0):
             if cat.apk is None:
                 raise self.cfg.missing("paths", "apk")
@@ -354,7 +353,7 @@ def apk_rel(internal_id: str) -> str:
     return internal_id[len(LOCAL_PREFIX) :].lstrip("/") if internal_id.startswith(LOCAL_PREFIX) else internal_id
 
 
-def _worker_init(store, cfg) -> None:
+def _worker_init(depot, cfg) -> None:
     """Every worker process: the settings of the command."""
     use(cfg)
 
@@ -366,7 +365,7 @@ def _log(message: str) -> None:
 
 
 # ---------------------------------------------------------------- cost calibration
-CALIBRATION = "calibration.json"  # <store>/costs/calibration.json
+CALIBRATION = "calibration.json"  # <depot>/costs/calibration.json
 MIN_SAMPLES = 10
 
 
@@ -388,7 +387,7 @@ class Calibrated:
 
 
 def load_calibration(root: Path) -> dict:
-    """{stage: {"cpu": factor, "peak": factor, "samples": n}} of a store ({} when none was measured)."""
+    """{stage: {"cpu": factor, "peak": factor, "samples": n}} of a depot ({} when none was measured)."""
     try:
         doc = contract.loads((Path(root) / "costs" / CALIBRATION).read_bytes())
     except (OSError, ValueError):
@@ -442,26 +441,25 @@ def calibrate(log: list[dict], factors: dict, worker_bytes: int) -> dict:
 
 
 def write_calibration(root: Path, factors: dict) -> None:
-    from ..pipeline.store import write_file
+    from ..pipeline.depot import write_file
 
     write_file(Path(root) / "costs" / CALIBRATION, contract.encode({"stages": factors}))
 
 
 # ---------------------------------------------------------------- the workspace of a command
 class Workspace:
-    """What export and plan share: the store, the catalog version, its index, the selection, the pipeline and its
+    """What export and plan share: the depot, the catalog version, its index, the selection, the pipeline and its
     parameters, the facts."""
 
     def __init__(self, args, cfg, log=_log):
         from ..pipeline.catalogdb import CatalogDB
-        from ..pipeline.store import Store
+        from ..pipeline.depot import Depot
 
         self.args, self.cfg, self.log = args, cfg, log
-        self.root = Session(cfg).store_root()
-        self.cache = cfg.path("paths", "cache")
+        self.root = Session(cfg).depot_root()
         self.apk = cfg.path("paths", "apk")
-        self.fetcher = CatalogFetcher(self.root, self.cache, cfg)
-        self.store = Store(self.root, cache=self.cache, fetch=self.fetcher)
+        self.fetcher = CatalogFetcher(self.root, cfg)
+        self.depot = Depot(self.root, fetch=self.fetcher)
         self.db = CatalogDB(self.root)
         try:
             self.selection = parse_selection(getattr(args, "select", None))
@@ -521,24 +519,24 @@ class Workspace:
 
     def index_task(self) -> Task:
         stage = self.installed.stages["catalog.index"]
-        return describe(stage, CATALOG_SUBJECT, None, Env(self.store, {"catalogs": self.catalogs_fact()}))
+        return describe(stage, CATALOG_SUBJECT, None, Env(self.depot, {"catalogs": self.catalogs_fact()}))
 
     def index(self) -> dict:
-        """The catalog index: from the store when catalog.index has run, else computed here."""
+        """The catalog index: from the depot when catalog.index has run, else computed here."""
         if self._index is None:
             from ..pipeline import catalogdb
 
             t = self.index_task()
-            doc = self.store.result(t.key)
+            doc = self.depot.result(t.key)
             if doc is not None:
                 (rec,) = [a for a in doc["artifacts"] if a["id"] == contract.artifact_id(t.id, "index")]
-                self._index = self.store.document(rec["content"]["sha256"])
+                self._index = self.depot.document(rec["content"]["sha256"])
             else:
                 self._index = catalogdb.index(self.remote, self.apk_catalog)
         return self._index
 
     def run_index(self) -> None:
-        execute(self.index_task(), self.store, self.installed.stages)
+        execute(self.index_task(), self.depot, self.installed.stages)
         self._index = None
 
     def context(self) -> dict:
@@ -695,7 +693,7 @@ class Workspace:
                 facts["raw"] = Later(self._later)
             else:
                 facts["raw"] = job[0](*job[1:])
-            facts["boot"] = boot_input(self.store, self.apk)
+            facts["boot"] = boot_input(self.depot, self.apk)
         self.selected = sel
         self._facts, self._names = facts, {}
         return facts
@@ -713,14 +711,15 @@ class Workspace:
         """Files of the selection that could not be read: {kind, stable, name, code, message}, sorted."""
         return sorted(self._problems, key=lambda p: (p["kind"], p["stable"]))
 
-    def _cache_rel(self, kind: str, entry: dict, loc: dict) -> str:
+    def _download_rel(self, kind: str, entry: dict, loc: dict) -> str:
+        """Where the file of a catalog entry is in the depot's downloads/ (the path of its "download" locator)."""
         from ..source.addressables import remote_path
 
         prefix = ""
         if self.version.get("source"):
             from ..source.jp import Source
 
-            prefix = Source.from_dict(self.version["source"]).cache_dir(Path(".")).as_posix() + "/"
+            prefix = Source.from_dict(self.version["source"]).download_dir(Path(".")).as_posix() + "/"
             if not entry.get("remote", True) and self.version.get("apk"):
                 prefix += "apk/" + self.version["apk"]["sha256"] + "/"
         if kind == "bundle":
@@ -739,15 +738,15 @@ class Workspace:
         out, todo = {}, []
         for e in entries:
             loc = locs[e["location"]]
-            rel = self._cache_rel(kind, e, loc)
-            locators = ([{"kind": "cache", "path": rel}] if rel else []) + [
+            rel = self._download_rel(kind, e, loc)
+            locators = ([{"kind": "download", "path": rel}] if rel else []) + [
                 {"kind": "catalog", "catalog": self.version["id"], "location": e["location"]}
             ]
-            path = self.cache / rel if self.cache is not None and rel else None
+            path = self.depot.downloads / rel if rel else None
             if path is not None and path.is_file() and path.stat().st_size > 0:
                 todo.append((e, locators, path))
                 continue
-            known = self.store.named(memo_kind, memo_prefix + e["name"]) if e["name"] != e["stable"] else None
+            known = self.depot.named(memo_kind, memo_prefix + e["name"]) if e["name"] != e["stable"] else None
             if known is not None:  # a hashed file name: its recorded identity holds
                 out[e["stable"]] = Input(kind, known[0], known[1], e["name"], tuple(locators))
             elif not e["remote"] and self.apk is None:
@@ -766,7 +765,7 @@ class Workspace:
             try:
                 if path is None:
                     path = self.fetcher.fetch_location(self.version["id"], e["location"])
-                sha, size = self.store.identify(path, memo_kind, memo_prefix + e["name"])
+                sha, size = self.depot.identify(path, memo_kind, memo_prefix + e["name"])
             except ConfigError:
                 raise
             except KeyError as x:  # not in the APK
@@ -809,8 +808,7 @@ class Workspace:
         ctx = self.context()
         c = ctx["catalog"]
         lines = [
-            f"store: {self.root}",
-            f"cache: {self.cache if self.cache is not None else 'not set'}",
+            f"depot: {self.root}",
             f"context: region {ctx['region'] or '-'}, language {ctx['language'] or '-'}, catalog "
             f"{c['label'] or '-'} ({c['id'][:12]}), APK catalog {(c['apkCatalogSha'] or '-')[:12]}",
             f"selection: {', '.join(self.selection)}",
@@ -837,13 +835,13 @@ class Workspace:
     # ---------------------------------------------------------------- plan
     def previous(self, since: str | None) -> dict | None:
         if not since:
-            return self.store.latest_run(self.selection)
-        doc = self.store.run(since) if contract.is_sha256(since) else None
+            return self.depot.latest_run(self.selection)
+        doc = self.depot.run(since) if contract.is_sha256(since) else None
         if doc is None:
             runs = sorted(p.name[:-5] for p in (self.root / "runs").glob("*.json") if p.name.startswith(since))
             if len(runs) != 1:
                 usage(self.args, f"--since {since}: {'no run' if not runs else f'{len(runs)} runs'} with this id")
-            doc = self.store.run(runs[0])
+            doc = self.depot.run(runs[0])
         return doc
 
     def plan(self, pipeline: list[str], params: dict, *, since=None, out=None, layouts=()):
@@ -853,7 +851,7 @@ class Workspace:
         p = plan_mod.plan(
             self.scheduled,
             pipeline,
-            self.store,
+            self.depot,
             params=params,
             facts=facts,
             previous=self.previous(since),
@@ -867,7 +865,7 @@ class Workspace:
             hits = [(n["id"], n["key"]) for n in p.doc["nodes"] if n["status"] == "hit" and self._output(n["stage"])]
             placed = self.layout_input(dict(hits))
             for tid, key in hits:
-                placed.add(tid, self.store.committed(key, tid))
+                placed.add(tid, self.depot.committed(key, tid))
             for name, d in layout_dirs(Path(out), layouts).items():
                 entries, _ = self.layout_entries(name, placed, store_derived=False)
                 p.doc["summary"]["layouts"][name] = layout.diff(d, entries)
@@ -885,7 +883,7 @@ class Workspace:
         stages, asked = self.installed.stages, _Asked()
         makers = sorted(t for t in tasks if hasattr(stages[contract.parse_task_id(t)[0]], "derived"))
         for tid in makers:
-            stages[contract.parse_task_id(tid)[0]].derived(tid, self.store.result(tasks[tid]), self.store, asked)
+            stages[contract.parse_task_id(tid)[0]].derived(tid, self.depot.result(tasks[tid]), self.depot, asked)
         return LayoutInput(asked.objects_asked, makers)
 
     def layout_entries(self, name: str, placed: LayoutInput, *, store_derived: bool = True) -> tuple[list[dict], dict]:
@@ -938,7 +936,7 @@ class Workspace:
             stage = self.installed.stages[stage_name]
             got = {}
             if hasattr(stage, "names"):
-                env = Env(self.store, self._facts)
+                env = Env(self.depot, self._facts)
                 for tid, key in sorted(self._done.items()):
                     env.done(tid, key)
                 got = stage.names(env)
@@ -958,8 +956,8 @@ class Workspace:
         out = []
         for s in makers:
             stage = stages[contract.parse_task_id(s.task)[0]]
-            for rel, data in stage.derived(s.task, s.result, self.store, paths):
-                sha = self.store.put(data) if store_derived else contract.sha256(data)
+            for rel, data in stage.derived(s.task, s.result, self.depot, paths):
+                sha = self.depot.put(data) if store_derived else contract.sha256(data)
                 out.append(
                     {
                         "path": layout.escape_path(rel.split("/")),
@@ -1129,7 +1127,7 @@ def view_gaps(results) -> int:
 
 
 def _write_report(d: Path, name: str, doc) -> Path:
-    from ..pipeline.store import write_file
+    from ..pipeline.depot import write_file
 
     p = d / name
     write_file(p, contract.encode(doc))
@@ -1149,7 +1147,7 @@ def cmd_export(args, cfg):
     pipeline = ws.pipeline()
     params = ws.params(pipeline)
     orch = Orchestrator(
-        ws.store,
+        ws.depot,
         ws.scheduled,
         workers=ws.workers(),
         memory=ws.memory(),
@@ -1229,7 +1227,7 @@ def cmd_export(args, cfg):
     written, shas, unplaced = {}, {}, 0
     for name, d in layout_dirs(out, names).items():
         entries, report = ws.layout_entries(name, placed)
-        w = layout.materialize(d, name, {}, entries, layout.from_store(ws.store), link=placement[0])
+        w = layout.materialize(d, name, {}, entries, layout.from_depot(ws.depot), link=placement[0])
         shas[name] = w["sha256"]
         written[name] = {
             "dir": str(d),
@@ -1316,7 +1314,7 @@ def cmd_plan(args, cfg):
         ws.run_index()
         facts = ws.facts(["catalog.index", "unity.census"], fetch=True)
         Orchestrator(
-            ws.store,
+            ws.depot,
             ws.scheduled,
             workers=ws.workers(),
             memory=ws.memory(),
@@ -1348,7 +1346,7 @@ def why(ws: Workspace, p, tid: str, since=None) -> dict:
     new = None
     if node["key"] is not None:
         t = next((t for t in p.tasks if t.key == node["key"]), None)
-        doc = None if t is not None else ws.store.result(node["key"])
+        doc = None if t is not None else ws.depot.result(node["key"])
         new = t.key_parts() if t is not None else (doc["keyParts"] if doc else None)
     prev = ws.previous(since)
     old_task = next((t for t in prev.get("tasks", []) if t["id"] == tid), None) if prev is not None else None
@@ -1356,7 +1354,7 @@ def why(ws: Workspace, p, tid: str, since=None) -> dict:
     if prev is not None and old_task is not None:
         previous = {"run": prev["id"], "key": old_task.get("key"), "status": old_task["status"]}
         if old_task.get("key"):
-            doc = ws.store.result(old_task["key"])
+            doc = ws.depot.result(old_task["key"])
             old = doc["keyParts"] if doc else None
     return {
         "task": tid,
@@ -1379,7 +1377,7 @@ def why_lines(r: dict) -> list[str]:
     ]
 
 
-# ---------------------------------------------------------------- store run
+# ---------------------------------------------------------------- depot run
 def run_lines(r: dict) -> list[str]:
     lines = []
     for t in r["tasks"]:
@@ -1398,8 +1396,8 @@ def _task_files(items) -> list[Path]:
 
 
 def cmd_run_stage(args, cfg):
+    from ..pipeline.depot import Depot
     from ..pipeline.orchestrate import run_one
-    from ..pipeline.store import Store
 
     problems, tasks = [], []
     for f in _task_files(args.tasks):
@@ -1423,13 +1421,12 @@ def cmd_run_stage(args, cfg):
         for m in problems:
             print(f"nnnotes: incompatible task: {m}", file=sys.stderr)
         sys.exit(EXIT_INCOMPATIBLE)
-    root = Session(cfg).store_root()
-    cache = cfg.path("paths", "cache")
-    store = Store(root, cache=cache, fetch=CatalogFetcher(root, cache, cfg) if args.fetch else None)
+    root = Session(cfg).depot_root()
+    depot = Depot(root, fetch=CatalogFetcher(root, cfg) if args.fetch else None)
     use(cfg)
     out, bad = [], 0
     for t in tasks:
-        r = run_one(t, store, inst.stages, args.force)
+        r = run_one(t, depot, inst.stages, args.force)
         if r["ok"]:
             out.append({"id": t.id, "key": t.key, "status": r["status"], "result": r["resultStatus"]})
             bad += r["resultStatus"] != "ok"
@@ -1449,9 +1446,9 @@ def cmd_run_stage(args, cfg):
 
 
 # ---------------------------------------------------------------- catalog versions
-def addresses_of(store, vid: str) -> dict | None:
+def addresses_of(depot, vid: str) -> dict | None:
     """The address table (link.addresses) of the latest run over a catalog version, None when no run has one."""
-    runs = sorted((store.root / "runs").glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+    runs = sorted((depot.root / "runs").glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
     for p in runs:
         try:
             doc = contract.loads(p.read_bytes())
@@ -1467,10 +1464,10 @@ def addresses_of(store, vid: str) -> dict | None:
             ),
             None,
         )
-        res = store.result(t["key"]) if t else None
+        res = depot.result(t["key"]) if t else None
         if res:
             (a,) = res["artifacts"]
-            return contract.loads(store.read(a["content"]["sha256"]))
+            return contract.loads(depot.read(a["content"]["sha256"]))
     return None
 
 
@@ -1486,7 +1483,7 @@ def _gib(s: str) -> float:
 
 
 def run_args(c) -> None:
-    """The selection and parameters shared by `export assets` and `store plan`."""
+    """The selection and parameters shared by `export assets` and `depot plan`."""
     c.add_argument(
         "--select",
         action="append",
@@ -1501,7 +1498,7 @@ def run_args(c) -> None:
     c.add_argument(
         "--stored-catalog",
         metavar="LABEL|SHA",
-        help="a catalog version of the store (`catalog versions`; default: the current catalog)",
+        help="a catalog version of the depot (`catalog versions`; default: the current catalog)",
     )
     c.add_argument("--png-level", type=int, metavar="N", help="PNG compression level 0-9 (changes the output)")
     c.add_argument(
