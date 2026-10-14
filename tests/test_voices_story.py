@@ -8,14 +8,14 @@ import json
 import random
 
 import pytest
+from test_views import addresses_doc, write_master
+from test_voices import KEYS, SHEETS, TABLES, Cfg, Paths, audio, audio_task, command, planning, row, text
 
 from nnnotes import advcommand, contract, languages, storyvoices, voices
 from nnnotes.contract import Task
 from nnnotes.stages import Pending, describe, execute, registry
 from nnnotes.store import Store
 from nnnotes.views import AddressIndex, Obj, ViewError
-from test_views import addresses_doc, write_master
-from test_voices import KEYS, SHEETS, TABLES, Cfg, Paths, audio, audio_task, command, planning, row, text
 
 RULES = voices.load_rules()
 STORY_SHEET = "adv_voice_x_01"
@@ -650,8 +650,9 @@ class Catalog:
 
 
 def test_command_without_an_export_reads_one_episode(tmp_path, capsysbinary, monkeypatch):
-    from nnnotes import cri
     from test_voices import sheet_acb, stream_files
+
+    from nnnotes import cri
 
     mdir = write_master(tmp_path / "m", tables())
     loaded = []
@@ -664,7 +665,7 @@ def test_command_without_an_export_reads_one_episode(tmp_path, capsysbinary, mon
     def decode(cat, sheet, out_dir, key=None, fmt="flac", **kw):
         out_dir.mkdir(parents=True, exist_ok=True)
         streams = []
-        for n, name, file, samples in stream_files(sheet, SHEETS2):
+        for n, name, file, _samples in stream_files(sheet, SHEETS2):
             (out_dir / f"{file}.{fmt}").write_bytes(f"decoded {sheet}/{file}".encode())
             streams.append({"stream": n, "name": name, "file": f"{file}.{fmt}"})
         (out_dir / "streams.json").write_text(json.dumps(streams), encoding="utf-8")

@@ -172,7 +172,7 @@ class TaskCatalog:
         self.apk = APK_FROM_INPUTS
 
     @classmethod
-    def from_task(cls, task, store) -> "TaskCatalog":
+    def from_task(cls, task, store) -> TaskCatalog:
         """The catalog of a live2d.model task: its subject, context internalId and inputs "bundle:<n>"."""
         return cls(task.subject, task.context["internalId"], _ordered(task), store)
 

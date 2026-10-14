@@ -476,7 +476,7 @@ def cmd_live2d(args, cfg):
 
 
 def cmd_spot(args, cfg):
-    from . import spot, room, shader
+    from . import room, shader, spot
 
     cfg.require_path("paths", "apk")  # the Spot / Spine component classes are read from the APK
     md = master_dir(cfg)
@@ -934,7 +934,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--catalog", help="catalog .bin file ([paths] catalog; else downloaded into the cache)")
     p.add_argument(
         "--catalog-release",
-        help="pin an international resource version ([catalog] version; else API discovery when configured, otherwise main)",
+        help="pin an international resource version ([catalog] version; else API discovery when configured, "
+        "otherwise main)",
     )
     p.add_argument("--cache", help="cache directory ([paths] cache)")
     p.add_argument("--master", help="decoded master data directory ([paths] master)")

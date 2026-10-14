@@ -15,9 +15,10 @@ a view, or the single subject of a global stage). It declares, for a subject:
 
 A stage that needs the output of a task that has not run raises Pending from inputs/uses/context (the environment
 does it for it: Env.key / Env.result). While a task is described, `env.params` holds its normalized parameters, for
-answers that depend on them (the atoms of the converters a parameter selects). `describe` turns the answers into a Task; `execute` runs a Task once and
-commits its result (the store's action cache) after the artifacts' bytes are stored. The output of `run` must be a
-function of the task's key parts: a change of what a stage writes is a change of its version (golden tests check).
+answers that depend on them (the atoms of the converters a parameter selects). `describe` turns the answers into a
+Task; `execute` runs a Task once and commits its result (the store's action cache) after the artifacts' bytes are
+stored. The output of `run` must be a function of the task's key parts: a change of what a stage writes is a change of
+its version (golden tests check).
 Deterministic per-object failures are items (status `failed`, cached with the result); an exception out of `run`
 fails the task, and nothing of it is cached.
 """
@@ -73,7 +74,7 @@ class Stage:
     ATOMS: dict = {}
     PARAMS: dict = {}  # parameter defaults; normalize fills them and refuses unknown names
 
-    def subjects(self, env: "Env") -> list[str]:
+    def subjects(self, env: Env) -> list[str]:
         raise NotImplementedError
 
     def normalize(self, params: dict | None) -> dict:
@@ -83,19 +84,19 @@ class Stage:
             raise ValueError(f"stage {self.name}: unknown parameters {', '.join(unknown)}")
         return {**self.PARAMS, **params}
 
-    def inputs(self, subject: str, env: "Env") -> list[Input]:
+    def inputs(self, subject: str, env: Env) -> list[Input]:
         return []
 
-    def uses(self, subject: str, env: "Env") -> dict:
+    def uses(self, subject: str, env: Env) -> dict:
         return dict(self.ATOMS)
 
-    def context(self, subject: str, env: "Env") -> dict:
+    def context(self, subject: str, env: Env) -> dict:
         return {}
 
-    def depends(self, subject: str, env: "Env") -> list[str]:
+    def depends(self, subject: str, env: Env) -> list[str]:
         return []
 
-    def estimate(self, subject: str, env: "Env", inputs: list[Input]) -> Cost:
+    def estimate(self, subject: str, env: Env, inputs: list[Input]) -> Cost:
         return Cost(0.0, sum(i.size for i in inputs))
 
     def run(self, task: Task, store) -> Output:

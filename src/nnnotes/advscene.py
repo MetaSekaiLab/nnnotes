@@ -27,11 +27,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from . import shader as shader_mod
 from .catalog import Catalog
 from .export import Exporter
 from .jsonio import write_json
 from .player import PlayerData
-from . import shader as shader_mod
 
 ADV_KEYS = {
     "cameraManager": "EmbCommon/Prefab/CameraManager",

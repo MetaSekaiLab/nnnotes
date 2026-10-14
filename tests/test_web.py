@@ -172,7 +172,9 @@ def fake_player(root):
     for rel, text in {
         web.READ_SET_SCRIPT: "// read set\n",
         web.PLAYER_BUNDLES[0]: "/* bundle */\n",
-        f"{web.PLAYER_PAGE_DIR}/index.html": '<script type="module" src="./chart-list.js"></script><!-- @PLAYER_VERSION@ -->\n',
+        f"{web.PLAYER_PAGE_DIR}/index.html": (
+            '<script type="module" src="./chart-list.js"></script><!-- @PLAYER_VERSION@ -->\n'
+        ),
         f"{web.PLAYER_PAGE_DIR}/chart-list.js": 'import "../../src/element.js";\n',
     }.items():
         p = root / rel

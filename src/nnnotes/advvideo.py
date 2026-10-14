@@ -634,9 +634,10 @@ def write_webm(
 
 
 # --- catalog ----------------------------------------------------------------------------
-def usm_asset(cat: "Catalog", key: str) -> tuple[dict, Path]:
+def usm_asset(cat: Catalog, key: str) -> tuple[dict, Path]:
     """(the movie's CriWare.Assets MonoBehaviour typetree, the USM file) of a `Cri/Video/...` key."""
     import UnityPy
+
     from .addressables import remote_path
 
     info, raw = None, None
@@ -661,7 +662,7 @@ def usm_asset(cat: "Catalog", key: str) -> tuple[dict, Path]:
     return info, raw
 
 
-def export(cat: "Catalog", key: str, dst: Path, cri_key: int, work: Path) -> dict:
+def export(cat: Catalog, key: str, dst: Path, cri_key: int, work: Path) -> dict:
     """One USM -> dst (.webm, write_webm: VP9 copied, or re-encoded when the movie's video is not VP9 or has an alpha
     stream; the first audio stream as Opus). Returns its record (movie info, the audio's source; `encode` when the
     video was re-encoded)."""
@@ -704,7 +705,7 @@ def export(cat: "Catalog", key: str, dst: Path, cri_key: int, work: Path) -> dic
     return rec
 
 
-def extract(cat: "Catalog", episode: dict, out_dir: Path, cri_key: int | None = None) -> dict | None:
+def extract(cat: Catalog, episode: dict, out_dir: Path, cri_key: int | None = None) -> dict | None:
     """Every video of the episode's closure -> videos/<name>.webm; videos/videos.json maps each VideoID of the
     Movie / Clip rows to its file, its -Video row (`master`: size, autoStop, hasAudio) and the stream facts.
     Returns the index, or None when the episode has no video."""

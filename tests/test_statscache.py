@@ -4,15 +4,15 @@ The Rust tests exercise program/run reuse, persistence and concurrency. These te
 complete inputs and options to that implementation, preserves its reported counters and publishes identical data.
 """
 
-from copy import deepcopy
 import gzip
 import json
+from copy import deepcopy
 from pathlib import Path
 
 import pytest
+from test_musicdata import CHARTS, KEY, PROV, FakeDeck, all_rows, bgm, master_dir, run
 
 from nnnotes import deckdata, musicdata
-from test_musicdata import CHARTS, KEY, PROV, FakeDeck, all_rows, bgm, master_dir, run
 
 
 @pytest.fixture

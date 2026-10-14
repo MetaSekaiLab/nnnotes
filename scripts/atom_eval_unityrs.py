@@ -54,6 +54,7 @@ def _build() -> str:
     if not _BUILD:
         import hashlib
         from pathlib import Path
+
         import unity_rs
 
         mods = sorted(Path(unity_rs.__file__).parent.glob("_native*"))
@@ -302,8 +303,8 @@ def _mode(fmt: int) -> str:
     """The reference's image mode for a format: "A" (alpha only, RGB 0), "RGB", "RGBA", or "" (other)."""
     hit = _MODES.get(fmt)
     if hit is None:
-        from UnityPy.export.Texture2DConverter import CONV_TABLE, pillow
         from UnityPy.enums import TextureFormat
+        from UnityPy.export.Texture2DConverter import CONV_TABLE, pillow
 
         try:
             fn, args = CONV_TABLE[TextureFormat(fmt)]
@@ -388,6 +389,7 @@ def png_encode_fast() -> Impl:
 # ---------------------------------------------------------------- mesh.arrays
 def _mesh(inp: MeshInput):
     import numpy as np
+
     from nnnotes.atoms.mesh import Channel, MeshArrays, Primitive
 
     src = getattr(inp, "source", None)

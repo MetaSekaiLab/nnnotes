@@ -27,12 +27,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from . import fontsettings, languages, textstyle, tmpfont
 from .catalog import Catalog
 from .export import Exporter, TexelPacker, _safe
 from .jsonio import write_json
 from .player import PlayerData
 from .score import master_table
-from . import fontsettings, languages, textstyle, tmpfont
 from .textstyle import LANGUAGE_LINE_SPACING
 
 SCENE_KEY = "EmbScene/Live"

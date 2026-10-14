@@ -6,8 +6,6 @@ import struct
 
 import numpy as np
 import pytest
-from UnityPy.helpers.MeshHelper import MeshHandler
-
 from fakeunity import (
     BLENDINDICES,
     BLENDWEIGHT,
@@ -30,6 +28,8 @@ from fakeunity import (
     submesh,
     unitypy_mesh,
 )
+from UnityPy.helpers.MeshHelper import MeshHandler
+
 from nnnotes import unity
 from nnnotes.atoms import ATOMS, Unsupported, gltf
 from nnnotes.atoms.mesh import MeshInput, arrays

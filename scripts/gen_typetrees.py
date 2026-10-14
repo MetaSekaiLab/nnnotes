@@ -221,7 +221,7 @@ def generate(player: PlayerData, gen: TypeTreeGenerator, game_version: str) -> d
                 ]
             )
         except ValueError as e:
-            raise SystemExit(f"{name} ({asm}): {e}")
+            raise SystemExit(f"{name} ({asm}): {e}") from e
         node = typetree_node(rows)
         hashes = {o.serialized_type.old_type_hash.hex() for o in objs}
         if len(hashes) != 1:
@@ -230,7 +230,7 @@ def generate(player: PlayerData, gen: TypeTreeGenerator, game_version: str) -> d
             try:
                 o.read_typetree(node, check_read=True)
             except Exception as e:
-                raise SystemExit(f"{name} ({asm}): generated typetree does not read object {o.path_id}: {e}")
+                raise SystemExit(f"{name} ({asm}): generated typetree does not read object {o.path_id}: {e}") from e
         classes[typetree_key(asm, ns, cls)] = {"typeHash": hashes.pop(), "nodes": rows}
     return {
         "format": TYPETREE_FORMAT,

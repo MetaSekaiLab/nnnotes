@@ -9,10 +9,10 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from fakeunity import F32, POSITION, UV0, mesh_tt, submesh, unitypy_mesh
 from PIL import Image
 from UnityPy.classes import PPtr as UnityPPtr
 
-from fakeunity import F32, POSITION, UV0, mesh_tt, submesh, unitypy_mesh
 from nnnotes import room
 from nnnotes.unity import DEFAULT_RESOURCES
 

@@ -25,8 +25,9 @@ cri.movie   subject: the sha256 of a USM: a raw file of the catalog (fact "raw",
             Atoms `usm.demux` (nnnotes), `movie.mux` (ffmpeg), `hca.decode` (vgmstream).
 
 Each task has one item: object its task id, class "ACB" / "USM", status `exported` (its artifacts) or `unsupported`
-(a reason code of docs/stages.md; a movie whose subtitles cannot be read keeps its other artifacts). An artifact names no object: layouts place it by its task (names(env) gives the
-catalog keys and cue sheet names of each subject, for placing it under them).
+(a reason code of docs/stages.md; a movie whose subtitles cannot be read keeps its other artifacts). An artifact
+names no object: layouts place it by its task (names(env) gives the catalog keys and cue sheet names of each subject,
+for placing it under them).
 
 Neither stage imports UnityPy, numpy or the decoders before a task runs.
 """
@@ -41,8 +42,8 @@ import threading
 from collections import defaultdict
 from pathlib import Path
 
-from .apkset import ApkSet
 from . import contract
+from .apkset import ApkSet
 from .atoms import impl_id
 from .contract import Cost, IncompatibleTask, Input
 from .stages import Output, Pending, Stage

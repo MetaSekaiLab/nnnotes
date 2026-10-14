@@ -140,7 +140,7 @@ def test_spine_versions():
 
 
 def test_media_types_agree_with_the_contract():
-    for _, _, fmt, ext, media in MAGIC:
+    for _, _, _fmt, ext, media in MAGIC:
         if ext in contract.MEDIA_TYPES:
             assert contract.media_type(ext) == media, ext
 

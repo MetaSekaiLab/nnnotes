@@ -699,6 +699,7 @@ def hdr_reference(inp):
         return None
     import numpy as np
     from PIL import Image
+
     from nnnotes.atoms.texture import ASTC_BLOCKS
 
     bx, by = ASTC_BLOCKS[int(inp.format)]

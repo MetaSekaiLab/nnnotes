@@ -11,8 +11,8 @@ import zipfile
 
 import numpy as np
 import pytest
-
 import synth
+
 from nnnotes import cli, deckdata, jsonio, master, player, score
 from nnnotes.catalogdb import CatalogDB
 from nnnotes.master import MasterKey

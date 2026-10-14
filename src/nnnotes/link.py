@@ -118,7 +118,7 @@ def _container_addresses(stable: str, entries: list[dict], info: dict, tags: dic
     for e in order[1:]:
         name = (info.get((e["file"], e["pathId"])) or {}).get("name") or ""
         names.setdefault(name.casefold(), []).append(e)
-    for folded, same in sorted(names.items()):
+    for _folded, same in sorted(names.items()):
         for e in same:
             name = (info.get((e["file"], e["pathId"])) or {}).get("name") or ""
             if name and len(same) == 1:

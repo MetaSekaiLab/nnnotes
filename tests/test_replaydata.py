@@ -5,9 +5,9 @@ import json
 import tarfile
 
 import pytest
+from test_musicdata import CHARTS, KEY, PROV, FakeDeck, bgm, export
 
 from nnnotes import deckdata, musicdata, replaydata
-from test_musicdata import CHARTS, KEY, PROV, FakeDeck, bgm, export
 
 
 def test_export_replay_keeps_main_file_small_and_preserves_runtime_input(tmp_path):
@@ -53,7 +53,9 @@ def test_replay_requires_actual_audio_length_and_contains_no_guess(tmp_path):
 @pytest.mark.parametrize("change", ["region", "version", "table_hash", "missing_table"])
 def test_replay_label_binding_rejects_other_snapshots(tmp_path, change):
     import copy
+
     from test_musicdata import TABLE_ROWS
+
     from nnnotes import deckdata
 
     hashes = {name: hashlib.sha256(name.encode()).hexdigest() for name in replaydata.LABEL_TABLES}
@@ -81,8 +83,9 @@ def test_replay_label_binding_rejects_other_snapshots(tmp_path, change):
 
 
 def test_raw_label_rows_preserve_names_levels_and_bind_artwork(tmp_path):
-    from test_musicdata import TABLE_ROWS
     import copy
+
+    from test_musicdata import TABLE_ROWS
 
     rows = {name: copy.deepcopy(TABLE_ROWS.get(name, [])) for name in replaydata.LABEL_TABLES}
     rows["MasterSupportSkill"] = [{"_id": 1, "_nameTextID": "first", "_descriptionTextFormatID": "duration"}]

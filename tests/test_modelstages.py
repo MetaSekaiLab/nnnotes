@@ -7,8 +7,8 @@ import zipfile
 from pathlib import Path
 
 import pytest
-
 import synth
+
 from nnnotes import census, contract, link, modelstages
 from nnnotes.catalog import Catalog
 from nnnotes.catalogdb import index

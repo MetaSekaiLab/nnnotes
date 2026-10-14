@@ -30,9 +30,9 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from .apkset import ApkSet
 from . import contract
 from .addressables import parse_header, parse_keys, parse_locations, remote_path
+from .apkset import ApkSet
 from .catalog import APK_CATALOG, Catalog, file_name, location_kind
 from .contract import Cost, Input
 from .stages import Output, Stage

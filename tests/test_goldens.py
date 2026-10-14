@@ -18,11 +18,11 @@ import os
 from pathlib import Path
 
 import pytest
+from test_stages import Src
 
 from nnnotes import contract
 from nnnotes.stages import Output, golden, golden_problems, library_versions
 from nnnotes.store import Store
-from test_stages import Src
 
 GOLDEN_DIR = Path(__file__).resolve().parent / "golden"
 

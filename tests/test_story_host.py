@@ -8,10 +8,10 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from test_room import ROOM_KEY, File, RoomCatalog, load_room, two_file_room
 
 from nnnotes import room, storyhost
 from nnnotes.unity import SceneGraph
-from test_room import ROOM_KEY, File, RoomCatalog, load_room, two_file_room
 
 V0 = {"x": 0.0, "y": 0.0, "z": 0.0}
 V1 = {"x": 1.0, "y": 1.0, "z": 1.0}

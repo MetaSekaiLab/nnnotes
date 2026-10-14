@@ -63,12 +63,14 @@ import io
 import json
 import re
 from collections import defaultdict
-from functools import lru_cache
+from functools import cache
 from pathlib import Path
 from types import SimpleNamespace
 
-from . import census as census_mod, contract, link
-from .atoms import ATOMS as ATOM_REGISTRY, Impl, Unsupported, atom_id, resolve
+from . import census as census_mod
+from . import contract, link
+from .atoms import ATOMS as ATOM_REGISTRY
+from .atoms import Impl, Unsupported, atom_id, resolve
 from .contract import Cost, IncompatibleTask, Input
 from .stages import Output, Pending, Stage
 
@@ -1380,7 +1382,7 @@ class RefExporter:
                 self._fallback(i, "generic.error", _message(e))
 
 
-@lru_cache(maxsize=None)
+@cache
 def exporter_type():
     """RefExporter combined with export.Exporter (imported here: it loads UnityPy)."""
     from .export import Exporter
@@ -1687,6 +1689,7 @@ class SpriteCropStage(Stage):
 
     def run(self, task, store) -> Output:
         from PIL import Image
+
         from .atoms import sprite as sprite_atom
 
         _check_atoms(task)

@@ -17,10 +17,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol
 
+from .. import contract
 from . import estimate
 from .mesh import CHANNELS, RAW_LAYOUT_SINCE, MeshInput, Submesh
 from .texture import TextureInput
-from .. import contract
 
 
 @dataclass(frozen=True)

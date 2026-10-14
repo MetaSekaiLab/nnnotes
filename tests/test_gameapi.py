@@ -8,8 +8,8 @@ from types import SimpleNamespace
 
 import grpc
 import pytest
-
 import synth
+
 from nnnotes import cli, gameapi
 from nnnotes.config import Config, ConfigError
 

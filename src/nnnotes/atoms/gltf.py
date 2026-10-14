@@ -27,9 +27,9 @@ import struct
 
 import numpy as np
 
+from .. import jsonio
 from . import Unsupported, estimate
 from .mesh import Channel, MeshArrays, require_vertices
-from .. import jsonio
 
 GLB_MAGIC, JSON_CHUNK, BIN_CHUNK = 0x46546C67, 0x4E4F534A, 0x004E4942
 ARRAY_BUFFER, ELEMENT_ARRAY_BUFFER = 34962, 34963

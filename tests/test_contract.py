@@ -7,12 +7,13 @@ import re
 from pathlib import Path
 
 import pytest
+from test_stages import PIPELINE, toy_files, toy_stages
 
-from nnnotes import contract, layout, plan as plan_mod
+from nnnotes import contract, layout
+from nnnotes import plan as plan_mod
 from nnnotes.contract import Cost, IncompatibleTask, Input, Task
 from nnnotes.orchestrate import FAILURE_CODES, Orchestrator
 from nnnotes.store import Store
-from test_stages import PIPELINE, toy_files, toy_stages
 
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMAS = ROOT / "src" / "nnnotes" / "schemas"

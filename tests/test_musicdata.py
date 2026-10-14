@@ -13,12 +13,12 @@ from copy import deepcopy
 from pathlib import Path
 
 import pytest
-
 import synth
-from nnnotes import cli, deckdata, musicdata, schemas, score
-from nnnotes.master import MasterKey
 from test_deckdata import CHART, SMALL, FakeCatalog, rows_of, run
 from test_voices import simple_acb
+
+from nnnotes import cli, deckdata, musicdata, schemas, score
+from nnnotes.master import MasterKey
 
 KEY = MasterKey(synth.MASTER_KEY, synth.MASTER_IV)
 ROOT = Path(__file__).resolve().parents[1]

@@ -1,11 +1,11 @@
 """UI export/resume contracts with synthetic objects, images and split packages only."""
 
 import json
-from types import SimpleNamespace as NS
 import zipfile
+from types import SimpleNamespace as NS
 
-from PIL import Image
 import pytest
+from PIL import Image
 
 from nnnotes import cli, ui
 from nnnotes.config import Config

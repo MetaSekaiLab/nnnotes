@@ -1,6 +1,6 @@
 import pytest
-
 import synth
+
 from nnnotes import census, contract, link
 from nnnotes.catalogdb import CatalogDB, IndexStage, index
 from nnnotes.contract import Input

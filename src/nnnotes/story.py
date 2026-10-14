@@ -30,10 +30,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from . import adv, advmedia, advscene, advui, advvideo, cri, crilips
 from .catalog import Catalog
 from .jsonio import write_json
 from .player import PlayerData
-from . import adv, advmedia, advscene, advui, advvideo, cri, crilips
 
 # resource kind -> where the story directory holds it
 KIND_OUTPUT = {

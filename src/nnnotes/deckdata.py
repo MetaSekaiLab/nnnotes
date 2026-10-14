@@ -25,11 +25,11 @@ import json
 import re
 import zipfile
 from collections import Counter
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
 from .apkset import ApkSet
-from typing import Callable
 
 DECK_FORMAT = "nnnotes.deck-data/1"  # the deck model's input format (ournotes-sim data::FORMAT)
 CHART_FORMAT = "nnnotes.live-score/1"  # score.convert's format: the converter the notes come from

@@ -39,7 +39,7 @@ _settings = {
     "closures": 4,
     "closure_bytes": 512 << 20,
 }
-_buckets: dict[str, "Bucket"] = {}
+_buckets: dict[str, Bucket] = {}
 _lock = threading.Lock()
 
 
@@ -79,7 +79,7 @@ def enabled() -> bool:
     return _settings["enabled"]
 
 
-def bucket(name: str, *, salt: str = "", disk: bool = False, max_item: int | None = None) -> "Bucket":
+def bucket(name: str, *, salt: str = "", disk: bool = False, max_item: int | None = None) -> Bucket:
     """The process's bucket `name` (created on first use). `disk`: its values are bytes and may be kept on disk;
     `max_item`: values larger than this many bytes are not kept (default: a quarter of the budget)."""
     with _lock:

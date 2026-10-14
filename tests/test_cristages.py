@@ -12,14 +12,14 @@ from pathlib import Path
 from unittest import mock
 
 import pytest
+from test_advvideo import ADX, HCA, KEY, MPEG1, VP9, audio_header, build, chunk, rand, sbt, video_header
+from test_speed_exact import FakeTools
 
 from nnnotes import cache, contract, cri, crikey, cristages
 from nnnotes.contract import IncompatibleTask, Input, Task
 from nnnotes.cristages import AUDIO, AudioStage, MovieStage
 from nnnotes.stages import Env, Pending, describe, execute, registry
 from nnnotes.store import Store
-from test_speed_exact import FakeTools
-from test_advvideo import ADX, HCA, KEY, MPEG1, VP9, audio_header, build, chunk, rand, sbt, video_header
 
 ROOT = Path(__file__).resolve().parents[1]
 ACB = b"@UTF" + b"cue sheet bytes"

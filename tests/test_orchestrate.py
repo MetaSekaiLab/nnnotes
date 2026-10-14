@@ -4,6 +4,7 @@ import hashlib
 from pathlib import Path
 
 import pytest
+from test_stages import PIPELINE, toy_files, toy_stages
 
 from nnnotes import contract
 from nnnotes.contract import Cost, Task
@@ -11,7 +12,6 @@ from nnnotes.orchestrate import Orchestrator, Scheduler, coverage
 from nnnotes.plan import plan
 from nnnotes.stages import execute
 from nnnotes.store import Store
-from test_stages import PIPELINE, toy_files, toy_stages
 
 TEXTS = {
     "a": "alpha\nbeta\n\nFAIL here\n?what",
@@ -214,8 +214,9 @@ def test_unknown_or_misordered_stages_are_refused(tmp_path):
 
 
 def test_a_config_error_stops_the_run(tmp_path):
-    from nnnotes.config import ConfigError
     from test_stages import Src
+
+    from nnnotes.config import ConfigError
 
     class NeedsTool(Src):
         def run(self, task, store):

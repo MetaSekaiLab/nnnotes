@@ -17,7 +17,6 @@ from pathlib import Path
 
 from .cache import file_id
 
-
 _EXPAND_LOCK = threading.Lock()
 
 

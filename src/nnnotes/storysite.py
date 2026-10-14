@@ -412,7 +412,7 @@ def collect_story(dirs: dict, audio: bool, audio_format: str) -> tuple[dict, dic
         for sheet in sorted(p.name for p in (sdir / "audio").iterdir()) if (sdir / "audio").is_dir() else []:
             d = sdir / "audio" / sheet
             cues = json.loads((d / "cues.json").read_text(encoding="utf-8"))
-            for name, e in cues.items():
+            for _name, e in cues.items():
                 f = d / (Path(e["file"]).stem + ext)
                 data = f.read_bytes()
                 if ext != ".flac":
@@ -810,8 +810,8 @@ def build(
     `encoding`: the stored encoding of the assets (web.site_store). The models the stories to build load are built
     first (module docstring; bundles from the CDN of the first region, names as webmodel.build gives them); the
     summary's `storyModels` holds that build's model lists."""
-    from .web import write_index, write_player
     from .tmpfont import require_extra
+    from .web import write_index, write_player
 
     player_dir = check_player(player_dir)
     if audio_format not in WEB_AUDIO:

@@ -46,11 +46,11 @@ from typing import NamedTuple
 
 import numpy as np
 
+from . import cache, crikey
 from .addressables import remote_path
 from .catalog import Catalog
 from .config import tool, usable_cpus
 from .cristages import FLAC_LEVEL  # ffmpeg -compression_level of the flac output
-from . import cache, crikey
 from .jsonio import dumps, write_json
 
 DECODED = cache.bucket("cuesheets", salt=cache.source_salt(__file__), disk=True)
@@ -106,9 +106,10 @@ def raw_files(cat: Catalog, cue_sheet: str) -> dict[str, Path]:
 
 
 def _bundle_asset(cat: Catalog, cue_sheet: str):
-    """(layout, objects by path id, typetree, bytes holder) of the cue sheet asset inside the key's bundles, or None (raw CDN
-    layout). SplitAcbData: a `Fwk.Sound.SplitAcbData` MonoBehaviour with `_cueSheetName` = the sheet; embedded: a
-    MonoBehaviour named like the sheet whose `implementation` managed reference is a CriSerializedBytesAssetImpl.
+    """(layout, objects by path id, typetree, bytes holder) of the cue sheet asset inside the key's bundles, or None
+    (raw CDN layout). SplitAcbData: a `Fwk.Sound.SplitAcbData` MonoBehaviour with `_cueSheetName` = the sheet;
+    embedded: a MonoBehaviour named like the sheet whose `implementation` managed reference is a
+    CriSerializedBytesAssetImpl.
     SplitAcbData wins when a closure held both."""
     import UnityPy
 

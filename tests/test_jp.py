@@ -10,9 +10,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from types import SimpleNamespace
 
 import pytest
-
 import synth
-from test_gameapi import server as grpc_server, version_response
+from test_gameapi import server as grpc_server
+from test_gameapi import version_response
+
 from nnnotes import addressables, catalogdb, cli, configfile, deckdata, gameapi, jp
 from nnnotes.apkset import ApkSet
 from nnnotes.catalog import Catalog, file_name, location_kind
@@ -277,7 +278,7 @@ def test_catalogdb_source_identity_and_fetcher(upstream, tmp_path):
 
 
 def test_apk_update_with_same_asset_snapshot_does_not_reuse_embedded_cache(tmp_path):
-    from nnnotes.catalog import APK_CATALOG, APK_AA_DIR
+    from nnnotes.catalog import APK_AA_DIR, APK_CATALOG
 
     source = jp.Source("jp", "1.0", HASH, "https://cdn.invalid")
     apk = tmp_path / "base.apk"
@@ -345,7 +346,7 @@ def test_remote_replay_does_not_open_the_apk(upstream, tmp_path, apk_state, kind
 @pytest.mark.parametrize("kind", ["bundles", "rawFiles"])
 @pytest.mark.parametrize("state", ["matching", "different", "no-catalog", "cached"])
 def test_local_replay_validates_only_on_cache_miss(tmp_path, kind, state):
-    from nnnotes.catalog import APK_CATALOG, APK_AA_DIR
+    from nnnotes.catalog import APK_AA_DIR, APK_CATALOG
 
     source = jp.Source("jp", "1.0", HASH, "https://cdn.invalid")
     apk = tmp_path / "base.apk"
@@ -527,7 +528,8 @@ def test_export_cache_locator_uses_source_namespace(tmp_path):
 
 
 def test_music_data_preserves_asset_hash(tmp_path):
-    from test_musicdata import CHARTS, bgm, master_dir, KEY, PROV
+    from test_musicdata import CHARTS, KEY, PROV, bgm, master_dir
+
     from nnnotes import musicdata
 
     output = tmp_path / "music.json"

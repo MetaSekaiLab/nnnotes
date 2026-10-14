@@ -6,14 +6,14 @@ an inspectable prefab preview format, not a claim of Unity runtime parity.
 
 from __future__ import annotations
 
-from collections import Counter
 import hashlib
 import json
+from collections import Counter
 from pathlib import Path
 
+from .cache import write_atomic
 from .export import Exporter
 from .jsonio import dumps, write_json
-from .cache import write_atomic
 
 
 def identity(value: str) -> str:
@@ -375,11 +375,11 @@ def export_library(
 
 
 def command(args, cfg):
-    from .cli import bundle_key, player_data
     from .apkset import ApkSet
-    from .catalog import Catalog, APK_CATALOG
+    from .catalog import APK_CATALOG, Catalog
+    from .cli import bundle_key, player_data
     from .config import ConfigError
-    from .player import MANIFEST_IN_APK, manifest_version_name, manifest_version_code
+    from .player import MANIFEST_IN_APK, manifest_version_code, manifest_version_name
 
     if args.limit is not None and args.limit < 1:
         args.usage("--limit must be positive")

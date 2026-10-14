@@ -12,13 +12,13 @@ import sys
 from pathlib import Path
 
 import pytest
+from test_views import FakeAddresses, addresses_doc, write_master
 
 from nnnotes import acb, contract, languages, voices
 from nnnotes.contract import Input, Task
 from nnnotes.stages import Env, Pending, describe, execute, registry
 from nnnotes.store import Store
 from nnnotes.views import AddressIndex, ViewError
-from test_views import FakeAddresses, addresses_doc, write_master
 
 ROOT = Path(__file__).resolve().parents[1]
 RATE = 48000
@@ -964,7 +964,7 @@ def test_get_without_an_export_decodes_the_one_sheet(tmp_path, capsysbinary, mon
         calls.append((sheet, fmt, kw.get("flac_level")))
         out_dir.mkdir(parents=True, exist_ok=True)
         streams = []
-        for n, name, file, samples in stream_files(sheet):
+        for n, name, file, _samples in stream_files(sheet):
             (out_dir / f"{file}.{fmt}").write_bytes(f"decoded {sheet}/{file}".encode())
             streams.append({"stream": n, "name": name, "file": f"{file}.{fmt}"})
         (out_dir / "streams.json").write_text(json.dumps(streams), encoding="utf-8")

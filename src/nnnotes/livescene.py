@@ -41,7 +41,6 @@ from .jsonio import write_json
 from .liveoptions import OPTION_ITEM_TYPES
 from .score import master_table
 
-
 # --- keys -------------------------------------------------------------------
 SCENE_KEY = "EmbScene/Live"
 LANE_SKIN_PARTS = ("lane_base", "lane_tap_area", "out_side_line")
@@ -222,7 +221,8 @@ def derive_lane(nodes: list, options: dict) -> dict:
             "spawnRoots": "LiveNoteSpawnRoot.UpdateProperties",
             "judgementPositions": "LiveNoteJudgementRoot3D.UpdateProperties",
             "options": "LiveBootDataCreator.CreateViewData",
-            "screenPlane": "LiveSettingCreator.CreateLaneViewSettings, JudgementPositionLogic.GetJudgementPositions, LiveViewUtility.GetNoteSpawnPosition",
+            "screenPlane": "LiveSettingCreator.CreateLaneViewSettings, JudgementPositionLogic.GetJudgementPositions, "
+            "LiveViewUtility.GetNoteSpawnPosition",
         },
     }
 

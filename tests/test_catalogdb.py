@@ -2,8 +2,8 @@ import struct
 import zipfile
 
 import pytest
-
 import synth
+
 from nnnotes import contract
 from nnnotes.addressables import parse, parse_header, parse_keys, parse_locations
 from nnnotes.catalog import APK_OFFSET_BASE, Catalog, file_name, location_kind

@@ -43,10 +43,11 @@ import json
 import re
 import string
 from collections import OrderedDict
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from importlib import resources
 from pathlib import Path
-from typing import Iterable, Mapping, Protocol
+from typing import Protocol
 
 from . import contract, languages
 from .contract import Cost, Input
@@ -101,7 +102,7 @@ class Obj:
         return [self.id, self.cls, self.name] + ([self.stable] if self.stable is not None else [])
 
     @classmethod
-    def from_json(cls, v) -> "Obj":
+    def from_json(cls, v) -> Obj:
         return cls(str(v[0]), str(v[1]), str(v[2]), None if len(v) < 4 or v[3] is None else str(v[3]))
 
 
@@ -137,7 +138,7 @@ class AddressIndex:
         return None if objs is None else list(objs)
 
     @classmethod
-    def build(cls, locations: Mapping[str, str], containers: Mapping[str, Iterable[Obj]]) -> "AddressIndex":
+    def build(cls, locations: Mapping[str, str], containers: Mapping[str, Iterable[Obj]]) -> AddressIndex:
         """The index of a catalog and its censuses: `locations` {key: internal id} (the asset path a key loads),
         `containers` {container path: objects} (census container entries, in stored order). Unity writes container
         paths in lower case, so an internal id matches its container path case-insensitively."""
@@ -147,7 +148,7 @@ class AddressIndex:
         return cls({key: by_path.get(internal.lower(), []) for key, internal in locations.items()})
 
     @classmethod
-    def from_addresses(cls, doc: dict) -> "AddressIndex":
+    def from_addresses(cls, doc: dict) -> AddressIndex:
         """The index of an address table (nnnotes.addresses/1, the link.addresses stage): a key's objects are those
         of all its locations (in the table's order, the order of the bundle's container), with class, name and
         stable address from the table's `objects`; a location whose bundle has no census yet contributes none."""
@@ -169,11 +170,11 @@ class AddressIndex:
         return {"keys": {k: [o.to_json() for o in self._objs[k]] for k in self._keys}}
 
     @classmethod
-    def from_json(cls, doc: dict) -> "AddressIndex":
+    def from_json(cls, doc: dict) -> AddressIndex:
         return cls({k: [Obj.from_json(o) for o in (v or ())] for k, v in doc["keys"].items()})
 
     @classmethod
-    def from_subset(cls, subset: dict) -> "AddressIndex":
+    def from_subset(cls, subset: dict) -> AddressIndex:
         """The index a recorded part of an index stands for (Recorder.subset): its keys with their objects, and the
         keys its prefixes listed. A view built on it reads exactly what it read when the part was recorded."""
         entries = {k: [Obj.from_json(o) for o in v] for k, v in subset["keys"].items() if v is not None}
@@ -254,7 +255,7 @@ def load_rules(path=None) -> dict:
     return rules
 
 
-@functools.lru_cache(maxsize=None)
+@functools.cache
 def _fields(template: str) -> tuple[str, ...]:
     out = []
     for _, name, _, _ in string.Formatter().parse(template):
@@ -481,7 +482,7 @@ def resolve(index: Addresses, address: str, expect=ANY) -> dict:
 class _Row:
     """Values of one master row: its columns, its vars (chains through other tables) and conditions."""
 
-    def __init__(self, row: dict, tables: "_Lookup"):
+    def __init__(self, row: dict, tables: _Lookup):
         self.row, self.tables = row, tables
 
     def value(self, spec) -> tuple[object, str | None]:

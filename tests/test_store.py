@@ -7,7 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from nnnotes import contract, store as store_mod
+from nnnotes import contract
+from nnnotes import store as store_mod
 from nnnotes.contract import Input, Task
 from nnnotes.store import InputMissing, Store, StoreConflict
 

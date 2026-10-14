@@ -14,10 +14,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from .catalog import Catalog
-from .config import apk_missing
 from . import master, unity
 from .advcommand import COMMAND
+from .catalog import Catalog
+from .config import apk_missing
 
 # AdvEpisodeResourceLoader.AddEpisodeLoadingTask, per command: (resource kind, catalog-key prefix) of the asset named
 # by TargetAssetName. The address is prefix + name; a blank name loads nothing (GetXxxAssetAddress). Costume rows load

@@ -8,8 +8,8 @@ import urllib.error
 from types import SimpleNamespace
 
 import pytest
-
 import synth
+
 from nnnotes import addressables, catalog, catalogdb, cli, configfile, deckdata, gameapi
 from nnnotes.config import Config, ConfigError
 

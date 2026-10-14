@@ -279,9 +279,9 @@ def extract(so: bytes, tables: tuple[Version, ...] = SUPPORTED) -> tuple[bytes, 
     for c in ver.consts:
         raw = _scan_const(rodata, c)
         if c.dtype == "f32":
-            vals = list(struct.unpack_from("<%df" % c.count, raw, 0))
+            vals = list(struct.unpack_from(f"<{c.count}f", raw, 0))
         else:
-            vals = list(struct.unpack_from("<%di" % c.count, raw, 0))
+            vals = list(struct.unpack_from(f"<{c.count}i", raw, 0))
         desc["constants"][c.name] = vals[0] if c.count == 1 else vals
     desc["total_floats"] = sum(b["count"] for b in desc["blocks"])
     desc["blob_sha256"] = _sha16(bytes(blob))

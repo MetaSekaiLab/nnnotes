@@ -154,8 +154,9 @@ class FontFile:
     def maps(self, u: int) -> bool:
         """Whether the font maps the code point (FreeType's character map, as open_asset reads it)."""
         if self._face is None:
-            import freetype
             import io
+
+            import freetype
 
             self._face = freetype.Face(io.BytesIO(self.data), self.face_index)
         return self._face.get_char_index(u) != 0
@@ -598,7 +599,7 @@ def language_doc(language: str, source: str, fonts: dict, texts: dict, lang: dic
     the role's texts use with its line metrics (textstyle.face_metrics)."""
     mode = languages.mode(language)
     roles: dict[str, dict] = {}
-    for path, t in sorted(texts.items()):
+    for _path, t in sorted(texts.items()):
         role = textstyle.font_role(t["fontAsset"], lang)
         fa = t["localized"]["fontAsset"]
         if roles.get(role, {}).get("fontAsset", fa) != fa:
@@ -696,7 +697,7 @@ def open_asset(
         characters[str(u)] = {"glyph": gi, "scale": 1.0, "elementType": ELEMENT_CHARACTER}
         glyph_of.setdefault(gi, u)
     cells, recs = [], {}
-    for gi, u in sorted(glyph_of.items(), key=lambda kv: (kv[1] != UNDERLINE_CHARACTER, kv[1])):
+    for gi, _u in sorted(glyph_of.items(), key=lambda kv: (kv[1] != UNDERLINE_CHARACTER, kv[1])):
         if gi == 0:
             recs[gi] = ({f: 0.0 for f in tmpfont.GLYPH_METRIC_FIELDS}, (0, 0, 0, 0), None)
             continue
