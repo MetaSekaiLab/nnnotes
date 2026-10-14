@@ -11,8 +11,8 @@ import pytest
 from nnnotes.pipeline import contract, layout
 from nnnotes.pipeline import plan as plan_mod
 from nnnotes.pipeline.contract import Cost, IncompatibleTask, Input, Task
+from nnnotes.pipeline.depot import Depot
 from nnnotes.pipeline.orchestrate import FAILURE_CODES, Orchestrator
-from nnnotes.pipeline.store import Store
 from tests.pipeline.test_stages import PIPELINE, toy_files, toy_stages
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -94,7 +94,7 @@ def a_task(**kw) -> Task:
         subject="b",
         params={"png": {"level": 6}},
         atoms={"png.encode": "pillow/1"},
-        inputs=(Input("bundle", SHA, 10, "b_x.bundle", ({"kind": "cache", "path": "bundles/b_x.bundle"},)),),
+        inputs=(Input("bundle", SHA, 10, "b_x.bundle", ({"kind": "download", "path": "bundles/b_x.bundle"},)),),
         context={"scripts": {"CAB-1:1": "A|B|C"}},
         cost=Cost(1.5, 100),
     )
@@ -248,13 +248,13 @@ def test_every_document_has_a_valid_schema():
 
 def test_the_documents_of_a_run_validate(tmp_path):
     v = validators()
-    store = Store(tmp_path / "s")
+    depot = Depot(tmp_path / "s")
     facts = {"files": toy_files(tmp_path / "in", {"a": "x\n\nFAIL\n?q", "b": "CRASH", "c": "y"})}
-    p = plan_mod.plan(toy_stages(), PIPELINE, store, facts=facts, layouts={"cas": {"write": 1, "remove": 0, "keep": 0}})
-    run = Orchestrator(store, toy_stages(), log=lambda m: None).run(PIPELINE, facts=facts, selection=["all"])
+    p = plan_mod.plan(toy_stages(), PIPELINE, depot, facts=facts, layouts={"cas": {"write": 1, "remove": 0, "keep": 0}})
+    run = Orchestrator(depot, toy_stages(), log=lambda m: None).run(PIPELINE, facts=facts, selection=["all"])
     sources = [layout.Source(tid, doc) for tid, doc in run.results()]
     entries, _ = layout.entries("original", sources)
-    w = layout.materialize(tmp_path / "out", "original", {}, entries, layout.from_store(store))
+    w = layout.materialize(tmp_path / "out", "original", {}, entries, layout.from_depot(depot))
     manifest = run.write({"original": w["sha256"]})
     docs = [
         (contract.PLAN, p.doc),
@@ -268,7 +268,7 @@ def test_the_documents_of_a_run_validate(tmp_path):
         docs.append((contract.RESULT, doc))
         docs += [(contract.ARTIFACT, a) for a in doc["artifacts"]]
     keys = [t["key"] for t in manifest["tasks"] if t["status"] == "ran"]
-    docs += [(contract.COST, store.cost(k)) for k in keys]
+    docs += [(contract.COST, depot.cost(k)) for k in keys]
     for name, doc in docs:
         errors = [e.message for e in v[name].iter_errors(contract.loads(contract.dumps(doc)))]
         assert errors == [], (name, errors)

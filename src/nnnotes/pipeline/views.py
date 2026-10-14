@@ -862,14 +862,14 @@ def _address_index(env, tid: str) -> AddressIndex:
     sha = env.artifact(tid, "addresses")["content"]["sha256"]
     ix = _index_cache.get(sha)
     if ix is None:
-        ix = _index_cache[sha] = AddressIndex.from_addresses(contract.loads(env.store.read(sha)))
+        ix = _index_cache[sha] = AddressIndex.from_addresses(contract.loads(env.depot.read(sha)))
         while len(_index_cache) > 2:
             _index_cache.popitem(last=False)
     return ix
 
 
-def _stored(store, role: str, data: bytes) -> Input:
-    return Input(role, store.put(data), len(data), None, ({"kind": "store"},))
+def _stored(depot, role: str, data: bytes) -> Input:
+    return Input(role, depot.put(data), len(data), None, ({"kind": "depot"},))
 
 
 def _rank(aid: str) -> tuple:
@@ -953,7 +953,7 @@ class ViewStage(Stage):
             p = mdir / f"{t}.json"
             if not p.is_file():
                 raise ViewError(f"view {self.view}: master table {t} is not in the master data")
-            sha, size = env.store.identify(p)
+            sha, size = env.depot.identify(p)
             out.append(Input(MASTER_ROLE + t, sha, size, p.name, ({"kind": "file", "path": str(p)},)))
         return out
 
@@ -966,27 +966,27 @@ class ViewStage(Stage):
         rec = Recorder(index)
         build(self.rules, self.view, tables, rec)
         return masters + [
-            _stored(env.store, "addresses", contract.encode(rec.subset())),
-            _stored(env.store, "rules", self.rules_bytes),
+            _stored(env.depot, "addresses", contract.encode(rec.subset())),
+            _stored(env.depot, "rules", self.rules_bytes),
         ]
 
     def estimate(self, subject: str, env, inputs: list[Input]) -> Cost:
         size = sum(i.size for i in inputs)
         return Cost(0.05 + size / 20e6, (48 << 20) + 16 * size)
 
-    def run(self, task, store) -> Output:
-        rules = contract.loads(store.input_bytes(task.input("rules")))
+    def run(self, task, depot) -> Output:
+        rules = contract.loads(depot.input_bytes(task.input("rules")))
         check_rules(rules)
         if list(rules["views"]) != [self.view] or rules["views"][self.view]["version"] != task.version:
             raise ViewError(f"task {task.id}: its rules are not those of view {self.view} version {task.version}")
         tables = {
-            i.role[len(MASTER_ROLE) :]: _cached_rows(i.sha256, functools.partial(store.input_bytes, i))
+            i.role[len(MASTER_ROLE) :]: _cached_rows(i.sha256, functools.partial(depot.input_bytes, i))
             for i in task.inputs
             if i.role.startswith(MASTER_ROLE)
         }
-        index = AddressIndex.from_subset(contract.loads(store.input_bytes(task.input("addresses"))))
+        index = AddressIndex.from_subset(contract.loads(depot.input_bytes(task.input("addresses"))))
         doc = build(rules, self.view, tables, index)
-        content = store.add(contract.encode(doc), "json")
+        content = depot.add(contract.encode(doc), "json")
         entries: dict[str, int] = {}
         for c in doc["coverage"]["roles"].values():
             for s, n in c["counts"].items():
@@ -1005,13 +1005,13 @@ class ViewStage(Stage):
         )
         return Output([rec], [])
 
-    def derived(self, task_id: str, result: dict, store, paths) -> list[tuple[str, bytes]]:
+    def derived(self, task_id: str, result: dict, depot, paths) -> list[tuple[str, bytes]]:
         """The view document with the layout paths of its objects (with_paths), at view_path."""
         aid = contract.artifact_id(task_id, VIEW_ROLE)
         rec = next((a for a in result["artifacts"] if a["id"] == aid), None)
         if rec is None:
             raise ValueError(f"result of {task_id} has no artifact {aid}")
-        doc = contract.loads(store.read(rec["content"]["sha256"]))
+        doc = contract.loads(depot.read(rec["content"]["sha256"]))
         subject = contract.parse_task_id(task_id, self.name)[1]
         return [(view_path(self.view, subject), contract.encode(with_paths(doc, paths)))]
 

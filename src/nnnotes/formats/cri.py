@@ -22,7 +22,7 @@ An addressable key `Cri/Sound/<cueSheet>` holds a cue sheet in one of three layo
 `decode` writes one file per vgmstream stream (a name repeated within the sheet, e.g.
 the layered waveforms of one cue, gets `<name>_<stream>`), `cues.json` (first stream
 per name) and `streams.json` (every stream in vgmstream order). `decode_acb_bytes` does the same for ACB bytes
-given directly (no catalog, no cache: the cri.audio stage keeps its results in the store); `split_acb` and
+given directly (no catalog, no cache: the cri.audio stage keeps its results in the depot); `split_acb` and
 `embedded_acb` give the ACB bytes of the two in-bundle layouts from their fields.
 
 HCA streams are decrypted with the keycode from the game's own boot data (see

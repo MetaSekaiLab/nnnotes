@@ -5,11 +5,11 @@ nnnotes <group> <command> [options]
 ```
 
 Global options (before or after the command name): `--config`, `--region`, `--language`, `--catalog`,
-`--catalog-version`, `--cache`, `--store`, `--master`, `--apk`, `--ffmpeg`, `--vgmstream`, `--node` and `--json`,
+`--catalog-version`, `--depot`, `--master`, `--apk`, `--ffmpeg`, `--vgmstream`, `--node` and `--json`,
 plus `--version` and `--help`. They set the settings described in [configuration.md](configuration.md), which also
 lists the settings each command needs. `nnnotes <group> <command> --help` prints the options of a command;
-[cli.md](cli.md) lists every command with its options. The asset export commands (`export assets`, `store plan`,
-`store run`, `store verify` and the catalog versions of the store) are described in [assets.md](assets.md).
+[cli.md](cli.md) lists every command with its options. The asset export commands (`export assets`, `depot plan`,
+`depot run`, `depot verify` and the catalog versions of the depot) are described in [assets.md](assets.md).
 
 Commands that write files take the output path with `-o/--out` (required). A command prints a short summary on
 standard output; with `--json` it prints its report as JSON (UTF-8). Every JSON file is written by one
@@ -38,26 +38,27 @@ Write the config file from the template (asking in a terminal, else from `--set`
 check every setting's origin and format, and list where the config file is looked up. No `config` command prints a
 setting's value. Details in [configuration.md](configuration.md#writing-the-config-file).
 
-## Cache
+## Downloads
 
-`bundle pull` and every extractor read bundles through the cache (`[paths] cache`):
+`bundle pull` and every extractor read the game files from the depot's `downloads/` directory (`[paths] depot`),
+which keeps the files under their own names:
 
 ```
-<cache>/catalog_main_<language>.bin     the legacy main catalog (explicit main or no API/version pin)
-<cache>/bundles/<bundle file name>      bundles of the dependency closures, decrypted (UnityFS)
-<cache>/raw/<path>                      raw CDN files stored as they are (e.g. CRI cue sheet data)
-<cache>/catalogs/<region>/              catalogs downloaded by `catalog browse`
-<cache>/international/<CDN SHA256>/<resource version>/
-                                       versioned catalog, bundles and raw files; isolated from old main caches
+<depot>/downloads/catalog_main_<language>.bin   the main catalog (explicit main or no API/version pin)
+<depot>/downloads/bundles/<bundle file name>    bundles of the dependency closures, decrypted (UnityFS)
+<depot>/downloads/raw/<path>                    raw CDN files stored as they are (e.g. CRI cue sheet data)
+<depot>/downloads/catalogs/<region>/            catalogs downloaded by `catalog browse`
+<depot>/downloads/international/<CDN SHA256>/<resource version>/
+                                                versioned catalog, bundles and raw files of one CDN and version
 ```
 
-Files already in the cache are not downloaded again. When `[paths] apk` is set, the APK's own catalog is merged with
+Files already downloaded are not downloaded again. When `[paths] apk` is set, the APK's own catalog is merged with
 the region's and bundles that ship inside the APK are read from it.
 
 For international regions with a configured API, catalog-based commands discover `resource_version` first and
 download `catalog_<resource_version>_<language>.bin`. `catalog fetch` labels the bytes with the version used to
 select that file, rather than querying a newer label after downloading main. Use `--catalog-version VERSION` or
-the [version settings](configuration.md) to pin builds and use cached data offline. An explicit `--catalog FILE`
+the [version settings](configuration.md) to pin builds and use downloaded data offline. An explicit `--catalog FILE`
 bypasses discovery. JP keeps its existing Version-driven path.
 
 ## catalog keys
@@ -85,8 +86,8 @@ it, decrypted; `bundles/<bundle key>` lists every bundle directly.
 nnnotes bundle pull KEY [KEY ...]
 ```
 
-Fetches the bundle closure (the key's location and all its dependencies) of each key into the cache and prints the
-cached path of every bundle.
+Fetches the bundle closure (the key's location and all its dependencies) of each key into the depot's downloads and
+prints the path of every bundle.
 
 ## servers
 

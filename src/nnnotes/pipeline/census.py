@@ -330,9 +330,9 @@ class CensusStage(Stage):
         size = sum(i.size for i in inputs)
         return Cost(0.002 + size / 40e6, (32 << 20) + 12 * size)
 
-    def run(self, task, store) -> Output:
-        doc = census_file(store.open_input(task.input("bundle")))
-        content = store.add(contract.encode(doc), "json")
+    def run(self, task, depot) -> Output:
+        doc = census_file(depot.open_input(task.input("bundle")))
+        content = depot.add(contract.encode(doc), "json")
         rec = contract.artifact(
             contract.artifact_id(task.id, "census"),
             content,

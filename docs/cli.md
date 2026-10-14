@@ -11,10 +11,9 @@ to standard error. Exit status 2 is a usage or settings error.
 | `--config` `FILE` | TOML config file (else NNNOTES_CONFIG, else ./nnnotes.toml) |
 | `--region` `REGION` | region: a [servers.<region>] table ([catalog] region) |
 | `--language` `LANG` | catalog and client language: ja, en, zh-Hant, zh-Hans or ko ([catalog] language) |
-| `--catalog` `FILE` | catalog .bin file ([paths] catalog; else downloaded into the cache) |
+| `--catalog` `FILE` | catalog .bin file ([paths] catalog; else downloaded into the depot) |
 | `--catalog-version` `VERSION` | the resource version of an international catalog ([catalog] version; else the version the game API serves when an API root is configured, otherwise main) |
-| `--cache` `DIR` | cache directory ([paths] cache) |
-| `--store` `DIR` | store directory ([paths] store; default <cache>/store) |
+| `--depot` `DIR` | depot directory ([paths] depot) |
 | `--master` `DIR` | decoded master data directory ([paths] master) |
 | `--apk` `FILE` | base.apk ([paths] apk) |
 | `--ffmpeg` `EXE` | ffmpeg executable ([paths] ffmpeg; else on PATH) |
@@ -97,7 +96,7 @@ browse the configured regions' catalogs and bundles in a local web page
 
 ## nnnotes catalog versions
 
-the catalog versions imported into the store (--json: nnnotes.catalogs/1)
+the catalog versions imported into the depot (--json: nnnotes.catalogs/1)
 
 ## nnnotes catalog import
 
@@ -112,7 +111,7 @@ import a catalog file (with the APK's catalog when [paths] apk is set)
 
 ## nnnotes catalog fetch
 
-fetch the region's current catalog and import it into the store
+fetch the region's current catalog and import it into the depot
 
 | Argument | Description |
 | --- | --- |
@@ -120,7 +119,7 @@ fetch the region's current catalog and import it into the store
 
 ## nnnotes catalog diff
 
-keys, bundles, raw files (and objects) that differ between two catalog versions of the store (--json: nnnotes.catalog-diff/1)
+keys, bundles, raw files (and objects) that differ between two catalog versions of the depot (--json: nnnotes.catalog-diff/1)
 
 | Argument | Description |
 | --- | --- |
@@ -129,7 +128,7 @@ keys, bundles, raw files (and objects) that differ between two catalog versions 
 
 ## nnnotes bundle pull
 
-fetch the bundle closure of keys into the cache (prints the cached bundle files)
+fetch the bundle closure of keys into the depot (prints the downloaded bundle files)
 
 | Argument | Description |
 | --- | --- |
@@ -164,14 +163,14 @@ Exactly one of `--version`, `--latest`.
 
 ## nnnotes export assets
 
-every object of the selected bundles -> common formats (the store and its layouts)
+every object of the selected bundles -> common formats (the depot and its layouts)
 
 | Argument | Description |
 | --- | --- |
 | `-o`, `--out` `OUT` | output directory (required) |
 | `--select` `SEL` | group:<group>, key:<key prefix> or bundle:<glob> (repeatable; default: everything) |
 | `--views` `all\|none\|a,b` | semantic views to build (default: all when master data is set, else none) |
-| `--stored-catalog` `LABEL\|SHA` | a catalog version of the store (`catalog versions`; default: the current catalog) |
+| `--stored-catalog` `LABEL\|SHA` | a catalog version of the depot (`catalog versions`; default: the current catalog) |
 | `--png-level` `N` | PNG compression level 0-9 (changes the output) |
 | `--flac-level` `N` | FLAC compression level 0-12 of the CRI audio (default 8; every level decodes to the same samples; changes the files) |
 | `--only-class` `C,...` | export only objects of these classes |
@@ -180,7 +179,7 @@ every object of the selected bundles -> common formats (the store and its layout
 | `--fetch-workers` `N` | parallel downloads (default 8) |
 | `--layout` `LAYOUT` | original, cas or original,cas (default original) |
 | `--explain` | print every setting of the run first |
-| `--link` `LINK` | how the layout files are made from the store: auto (default; [export] link): a clone where the file system makes them, else a hard link (read-only), else a copy; or that method only (one of `auto`, `clone`, `hard`, `copy`) |
+| `--link` `LINK` | how the layout files are made from the depot: auto (default; [export] link): a clone where the file system makes them, else a hard link (read-only), else a copy; or that method only (one of `auto`, `clone`, `hard`, `copy`) |
 | `--strict` | exit 1 when a view has gaps |
 | `--dry-run` | print the plan, run nothing |
 
@@ -305,7 +304,7 @@ find the HCA keycode of the CRI audio (never printed)
 | --- | --- |
 | `--write` `DIR` | write it as DIR/.hcakey (the file vgmstream reads) |
 
-## nnnotes store plan
+## nnnotes depot plan
 
 what `export assets` would run and why, without running it (--json: nnnotes.plan/1)
 
@@ -314,7 +313,7 @@ what `export assets` would run and why, without running it (--json: nnnotes.plan
 | `-o`, `--out` `OUT` | output directory of the export (counts the layout files to write) |
 | `--select` `SEL` | group:<group>, key:<key prefix> or bundle:<glob> (repeatable; default: everything) |
 | `--views` `all\|none\|a,b` | semantic views to build (default: all when master data is set, else none) |
-| `--stored-catalog` `LABEL\|SHA` | a catalog version of the store (`catalog versions`; default: the current catalog) |
+| `--stored-catalog` `LABEL\|SHA` | a catalog version of the depot (`catalog versions`; default: the current catalog) |
 | `--png-level` `N` | PNG compression level 0-9 (changes the output) |
 | `--flac-level` `N` | FLAC compression level 0-12 of the CRI audio (default 8; every level decodes to the same samples; changes the files) |
 | `--only-class` `C,...` | export only objects of these classes |
@@ -329,9 +328,9 @@ what `export assets` would run and why, without running it (--json: nnnotes.plan
 | `--emit-tasks` `DIR` | write the runnable tasks as task descriptions |
 | `--why` `TASK` | the reasons and key parts of one task |
 
-## nnnotes store run
+## nnnotes depot run
 
-run task descriptions (nnnotes.task/1) into the store
+run task descriptions (nnnotes.task/1) into the depot
 
 | Argument | Description |
 | --- | --- |
@@ -339,7 +338,7 @@ run task descriptions (nnnotes.task/1) into the store
 | `--fetch` | fetch inputs through their catalog locators |
 | `--force` | run tasks whose result is stored (it must not change) |
 
-## nnnotes store verify
+## nnnotes depot verify
 
 check every stored content and result
 
@@ -347,6 +346,15 @@ check every stored content and result
 | --- | --- |
 | `--quick` | check sizes only, do not hash the contents |
 | `--workers` `N` | parallel hashing (default the CPUs this process may use; 0: one at a time) |
+
+## nnnotes depot gc
+
+remove the runs, results and contents no kept run reaches
+
+| Argument | Description |
+| --- | --- |
+| `--keep` `N` | keep the N latest runs of each selection (default: every run; the latest run of a selection is kept) |
+| `--dry-run` | count what would be removed, remove nothing |
 
 ## nnnotes voices list
 

@@ -1,8 +1,8 @@
-"""Addressables catalog access: dependency closures, a bundle cache, remote and APK-local bundles.
+"""Addressables catalog access: dependency closures, downloaded files, remote and APK-local bundles.
 
 Remote bundles are fetched from the region's CDN and decrypted (addressables.decrypt); local bundles (shipped inside
 the APK) are read from a user-supplied base.apk. Nothing here bundles or redistributes game data: it only reads
-what the user points it at into a local cache the user controls.
+what the user points it at into a directory of downloads the user controls (the depot's downloads/).
 """
 
 from __future__ import annotations
@@ -44,7 +44,7 @@ APK_OFFSET_BASE = 1 << 40  # namespace for APK catalog entry offsets
 
 
 T = TypeVar("T")
-# a setting given as its value, or as a function that reads it when a file not in the cache needs it
+# a setting given as its value, or as a function that reads it when a file not downloaded yet needs it
 Lazy: TypeAlias = "T | Callable[[], T] | None"
 
 
@@ -94,8 +94,9 @@ class Catalog:
     shared prefabs) and the remote catalog (downloadable content). Entry offsets
     are per-catalog, so APK entries are moved into their own offset namespace.
 
-    `cdn`: the region's CDN base (needed only to download what the cache lacks); `bundle_key`: the bundle
-    decryption key (needed only for bundles not yet in the cache). Either may be a function that returns it, called
+    `download_dir`: the directory of this catalog's downloaded files. `cdn`: the region's CDN base (needed only to
+    download what is not downloaded yet); `bundle_key`: the bundle decryption key (needed only for bundles not
+    downloaded yet). Either may be a function that returns it, called
     the first time it is needed (a ConfigError it raises is raised naming the file that needed the setting).
     `apk_catalog`: the stored catalog to replay without opening an APK; JP local reads verify it before extraction.
     """
@@ -103,7 +104,7 @@ class Catalog:
     def __init__(
         self,
         catalog_bytes: bytes,
-        cache_dir: Path,
+        download_dir: Path,
         *,
         cdn: Lazy[str] = None,
         bundle_key: Lazy[BundleKey] = None,
@@ -114,8 +115,8 @@ class Catalog:
         resource_version: str | None = None,
     ):
         self._cdn, self._bundle_key = cdn, bundle_key
-        self.cache_dir = Path(cache_dir)
-        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        self.download_dir = Path(download_dir)
+        self.download_dir.mkdir(parents=True, exist_ok=True)
         self.apk = Path(apk) if apk else None
         self.source, self.client = source, client
         self.resource_version = resource_version
@@ -138,11 +139,11 @@ class Catalog:
             if not matches:
                 raise ConfigError("JP historical catalog needs the APK set it was imported with")
 
-    def local_cache_dir(self) -> Path:
+    def local_download_dir(self) -> Path:
         """JP embedded files also depend on the APK catalog, independently of the CDN snapshot."""
         if self.source is not None and "apk" in self._sources:
-            return self.cache_dir / "apk" / hashlib.sha256(self._sources["apk"]).hexdigest()
-        return self.cache_dir
+            return self.download_dir / "apk" / hashlib.sha256(self._sources["apk"]).hexdigest()
+        return self.download_dir
 
     def _parse(self) -> tuple[list[Location], dict[int, Location], dict[str, list[Location]]]:
         """(entries, by offset, by primary key), parsed the first time a lookup needs them (a command that only
@@ -177,35 +178,38 @@ class Catalog:
     def load(
         cls,
         language: str,
-        cache_dir: Path,
+        download_dir: Path,
         *,
         cdn: Lazy[str] = None,
         bundle_key: Lazy[BundleKey] = None,
         apk: Path | None = None,
         version: str = "main",
     ) -> Catalog:
-        """The remote catalog of `language` from the cache, downloaded from the CDN on first use (`cdn` /
-        `bundle_key`: as for Catalog). A versioned catalog is isolated by CDN root and version; main retains
-        its legacy offline cache path. Missing versioned files never fall back to main."""
-        cache_dir = Path(cache_dir)
-        filename = cls.cache_file(language, Path("."), version=version).name
+        """The remote catalog of `language` from `download_dir`, downloaded from the CDN on first use (`cdn` /
+        `bundle_key`: as for Catalog). A versioned catalog is isolated by CDN root and version
+        (international/<sha256 of the CDN root>/<version>/); main is at the top of `download_dir`. Missing versioned
+        files never fall back to main."""
+        download_dir = Path(download_dir)
+        filename = cls.file_name(language, version=version)
         if version != "main":
             cdn = _setting(cdn, filename)
             if not cdn:
-                raise ConfigError("a versioned catalog needs its CDN root to identify the cache")
-            cache_dir = cache_dir / "international" / hashlib.sha256(cdn.rstrip("/").encode()).hexdigest() / version
-        cat = cache_dir / filename
+                raise ConfigError("a versioned catalog needs its CDN root to identify its downloads")
+            download_dir = (
+                download_dir / "international" / hashlib.sha256(cdn.rstrip("/").encode()).hexdigest() / version
+            )
+        cat = download_dir / filename
         if not cat.exists():
             root = _setting(cdn, cat.name)
             if not root:
-                raise FileNotFoundError(f"{cat} not cached and no CDN base given")
+                raise FileNotFoundError(f"{cat} not downloaded and no CDN base given")
             cat.parent.mkdir(parents=True, exist_ok=True)
             data = download(root.rstrip("/") + f"/asset/Android/{cat.name}")
             parse(data)  # Never install a corrupt/error response as a reusable catalog.
             _write_atomic(cat, data)
         return cls(
             cat.read_bytes(),
-            cache_dir,
+            download_dir,
             cdn=cdn,
             bundle_key=bundle_key,
             apk=apk,
@@ -229,11 +233,11 @@ class Catalog:
         return None if callable(v) or not v else v.rstrip("/")
 
     @staticmethod
-    def cache_file(language: str, cache_dir: Path, *, version: str = "main") -> Path:
-        """Where the remote catalog of `language` is cached."""
+    def file_name(language: str, *, version: str = "main") -> str:
+        """The file name of the remote catalog of `language` (on the CDN and in a download directory)."""
         check_catalog_version(version)
         check_catalog_version(language)
-        return Path(cache_dir) / f"catalog_{version}_{language}.bin"
+        return f"catalog_{version}_{language}.bin"
 
     # --- lookup ------------------------------------------------------------
     def keys(self, prefix: str = "") -> list[str]:
@@ -336,20 +340,20 @@ class Catalog:
         return list(out.values())
 
     # --- fetch -------------------------------------------------------------
-    def cached(self, b: Bundle) -> Path | None:
-        """The file fetch(b) returns when the bundle is in the cache already, else None."""
-        dst = (self.cache_dir if b.remote else self.local_cache_dir()) / "bundles" / b.name
+    def downloaded(self, b: Bundle) -> Path | None:
+        """The file fetch(b) returns when the bundle is downloaded already, else None."""
+        dst = (self.download_dir if b.remote else self.local_download_dir()) / "bundles" / b.name
         return dst if dst.is_file() and dst.stat().st_size > 0 else None
 
-    def cached_raw(self, e: Location) -> Path | None:
-        """The file fetch_raw(e) returns when it is in the cache already, else None."""
+    def downloaded_raw(self, e: Location) -> Path | None:
+        """The file fetch_raw(e) returns when it is downloaded already, else None."""
         rel = remote_path(e["internal_id"])
-        dst = self.cache_dir / "raw" / rel.lstrip("/") if rel is not None else None
+        dst = self.download_dir / "raw" / rel.lstrip("/") if rel is not None else None
         return dst if dst is not None and dst.is_file() and dst.stat().st_size > 0 else None
 
     def fetch(self, b: Bundle) -> Path:
         """Local path to the decrypted bundle (CDN download or APK read)."""
-        dst = (self.cache_dir if b.remote else self.local_cache_dir()) / "bundles" / b.name
+        dst = (self.download_dir if b.remote else self.local_download_dir()) / "bundles" / b.name
         dst.parent.mkdir(parents=True, exist_ok=True)
         if dst.exists() and dst.stat().st_size > 0:
             return dst
@@ -374,7 +378,7 @@ class Catalog:
         name = internal_id.rsplit("/", 1)[-1]
         cdn = self._cdn_for(name)
         if not cdn:
-            raise RuntimeError(f"{name} not cached and no CDN base given")
+            raise RuntimeError(f"{name} not downloaded and no CDN base given")
         path = remote_path(internal_id)
         if path is None:
             raise ValueError(f"{internal_id}: not a remote location")
@@ -411,7 +415,7 @@ class Catalog:
         rel = remote_path(iid)
         if rel is None:
             raise ValueError(f"not a CDN asset: {iid}")
-        dst = self.cache_dir / "raw" / rel.lstrip("/")
+        dst = self.download_dir / "raw" / rel.lstrip("/")
         dst.parent.mkdir(parents=True, exist_ok=True)
         if not (dst.exists() and dst.stat().st_size > 0):
             _write_atomic(dst, self._download(self._url(iid)))
@@ -430,7 +434,7 @@ class Catalog:
             if len(names) != 1:
                 raise KeyError(f"{name_contains!r}: {len(names)} APK bundles match")
             name = names[0].rsplit("/", 1)[1]
-            dst = self.local_cache_dir() / "bundles" / name
+            dst = self.local_download_dir() / "bundles" / name
             if not (dst.exists() and dst.stat().st_size > 0):
                 dst.parent.mkdir(parents=True, exist_ok=True)
                 self.check_apk(z)
@@ -491,10 +495,10 @@ def _urlopen(url: str, timeout: float) -> bytes:
 
 
 def _setting(v: Lazy[T], needed_by: str) -> T | None:
-    """`v`, or what it returns when it is a function; its ConfigError names `needed_by` (what is not cached)."""
+    """`v`, or what it returns when it is a function; its ConfigError names `needed_by` (what is not downloaded)."""
     if not callable(v):
         return cast("T | None", v)
     try:
         return cast("T", v())
     except ConfigError as e:
-        raise ConfigError(f"{needed_by} is not in the cache: {e}") from None
+        raise ConfigError(f"{needed_by} is not downloaded: {e}") from None

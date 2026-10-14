@@ -59,7 +59,7 @@ No `config` command prints a setting's value. The config files these commands wr
 The global flags go before or after the command name:
 
 ```bash
-nnnotes --config ~/nnnotes.toml --cache /data/nnnotes-cache bundle pull <key>
+nnnotes --config ~/nnnotes.toml --depot /data/nnnotes-depot bundle pull <key>
 NNNOTES_PATHS_MASTER=/data/master nnnotes export episode 10462 -o episode.json
 ```
 
@@ -101,8 +101,7 @@ exist when they are given.
 | `[bootstrap] api` | `NNNOTES_BOOTSTRAP_API` | — | API root that serves the server list (`nnnotes servers`), same format |
 | `[client] version` | `NNNOTES_CLIENT_VERSION` | — | client version sent to the game's API, e.g. `1.0.1`; unset: the `versionName` of `[paths] apk` |
 | `[paths] catalog` | `NNNOTES_PATHS_CATALOG` | `--catalog` | a catalog `.bin` file to read instead of discovering/downloading a catalog; explicit files stay usable offline |
-| `[paths] cache` | `NNNOTES_PATHS_CACHE` | `--cache` | cache directory (created when missing) |
-| `[paths] store` | `NNNOTES_PATHS_STORE` | `--store` | store directory of the asset export ([assets.md](assets.md)); unset: `<[paths] cache>/store` |
+| `[paths] depot` | `NNNOTES_PATHS_DEPOT` | `--depot` | depot directory (created when missing): the downloaded game files, the results of the stages, catalog versions and runs ([commands.md](commands.md#downloads), [contracts.md](contracts.md#depot)) |
 | `[paths] master` | `NNNOTES_PATHS_MASTER` | `--master` | decoded master data directory, one `<Table>.json` per table; the flag overrides `[servers.<region>] master` |
 | `[paths] apk` | `NNNOTES_PATHS_APK` | `--apk` | the game's `base.apk` (the story export reads the CRI Lips library from it, or from `split_config.arm64_v8a.apk` next to it) |
 | `[paths] ffmpeg` | `NNNOTES_PATHS_FFMPEG` | `--ffmpeg` | `ffmpeg` executable; unset: `ffmpeg` on `PATH` |
@@ -111,7 +110,7 @@ exist when they are given.
 | `[paths] player` | `NNNOTES_PATHS_PLAYER` | `--player` (of `site build`) | ournotes-player checkout (built) or installed package |
 | `[paths] fonts.<language>` | `NNNOTES_PATHS_FONTS_<LANGUAGE>` (e.g. `NNNOTES_PATHS_FONTS_ZH_HANT`) | `--font <language>=PATH` (of `site build`) | font file (OpenType or TrueType) the story text of a language is drawn with (`--fonts open`); also read for the other story languages whose game fonts fall back to that language's font |
 | `[paths] fonts.emoji` | `NNNOTES_PATHS_FONTS_EMOJI` | `--font emoji=PATH` (of `site build`) | colour emoji font (PNG bitmap glyphs: CBDT or sbix) the stories' emoji sprites are drawn from (`--fonts open`); Noto Color Emoji (SIL Open Font License 1.1) is the tested font. Optional: without it the sprites keep their layout with empty glyphs, listed in `ui/fonts.json` `coverage.sprites.missing` |
-| `[export] link` | `NNNOTES_EXPORT_LINK` | `--link` (of `export assets`) | how `export assets` makes the layout files from the store: `auto` (unset), `clone`, `hard` or `copy` ([assets.md](assets.md)) |
+| `[export] link` | `NNNOTES_EXPORT_LINK` | `--link` (of `export assets`) | how `export assets` makes the layout files from the depot: `auto` (unset), `clone`, `hard` or `copy` ([assets.md](assets.md)) |
 
 Hex values are case-insensitive; a `0x` prefix and surrounding whitespace are ignored. All values are TOML strings
 except `languages` (array of strings).
@@ -136,15 +135,15 @@ nnnotes --region tw --catalog-version 1.0.0.201 export live2d MODEL_ID -o out/mo
 ```
 
 Alternatively set `NNNOTES_SERVERS_TW_CATALOG_VERSION` in the build environment; workers inherit this pin.
-`--catalog-version` selects a remote resource release; `--stored-catalog LABEL|SHA` of `export assets` and `store
-plan` selects a catalog version of the store. To inspect the historical main catalog, explicitly pin `main`.
-Versioned caches are isolated by CDN root and resource version; a cached pin needs the CDN setting to identify
-its directory but performs no API/catalog download. A missing versioned file never falls back to main.
+`--catalog-version` selects a remote resource release; `--stored-catalog LABEL|SHA` of `export assets` and `depot
+plan` selects a catalog version of the depot. To inspect the historical main catalog, explicitly pin `main`.
+Versioned downloads are isolated by CDN root and resource version; a pin whose catalog is downloaded needs the CDN
+setting to identify its directory but performs no API/catalog download. A missing versioned file never falls back to main.
 
 ## What each command needs
 
-"Catalog" below means: `[paths] cache`; either `[paths] catalog` or `[catalog] language` (the catalog is then
-downloaded into the cache on first use); and, for what must be downloaded, `[catalog] region` and that region's
+"Catalog" below means: `[paths] depot`; either `[paths] catalog` or `[catalog] language` (the catalog is then
+downloaded into the depot on first use); and, for what must be downloaded, `[catalog] region` and that region's
 `cdn`, `[bundle] key` and `nonce_seed`. `[paths] apk` is optional for the catalog: when it is set, the APK's own catalog and bundles are merged
 in, and bundles that ship inside the APK can only be read with it.
 
@@ -157,8 +156,8 @@ story text); it is not a setting.
 
 | Command | Settings |
 |---|---|
-| `catalog keys` | `[paths] cache`; `[paths] catalog`, or `[catalog] language` (plus region and `cdn` while the catalog is not in the cache); no bundle key |
-| `catalog browse` | `[paths] cache`, `[bundle] key` + `nonce_seed`, and per region `cdn` + `languages` (`name` optional) |
+| `catalog keys` | `[paths] depot`; `[paths] catalog`, or `[catalog] language` (plus region and `cdn` while the catalog is not downloaded); no bundle key |
+| `catalog browse` | `[paths] depot`, `[bundle] key` + `nonce_seed`, and per region `cdn` + `languages` (`name` optional) |
 | `bundle pull` | catalog |
 | `master decode` | `[master] key` + `iv` |
 | `master download` | `[catalog] region` and that region's `cdn`; `--latest` also that region's `api` and the client version |
@@ -178,13 +177,13 @@ story text); it is not a setting.
 | `site build --live2d` / `--all-live2d` | catalog (bundles from the CDN of the site's first region), `[paths] apk`, `[paths] player`; not `node`; master data only for the model names (optional: without it `models.json` has no names) |
 | `site build --player-only` / `--reingest-json` | `[paths] player` |
 | `music-data` | catalog, `[master] key` + `iv` (not with `--decoded-master`); `--master-files` also `[catalog] region`; `--apk-master` also `[paths] apk`; `--decoded-master` also `[catalog] region` and master data with its `MasterManifest.json`; `[paths] apk` (optional otherwise) for the client version |
-| `export assets`, `store plan` | the store (`[paths] store` or `[paths] cache`); catalog (bundles are fetched into the cache); `[paths] apk` for the bundles inside the APK (without it they are reported as `source.absent`); master data for `--views`; with `--stored-catalog` a catalog version of the store instead of the current catalog |
-| `store run` | the store; `[paths] cache` for inputs located in the cache; `--fetch` also what fetching needs (region, `cdn`, bundle key, `[paths] apk`) |
-| `catalog versions` / `import` / `diff`, `store verify` | the store; `import` reads the APK's catalog from `[paths] apk` when it is set |
-| `catalog fetch` | the store, `[catalog] region` and `language`, that region's `cdn`; its `api` (optional) for the resource version label |
+| `export assets`, `depot plan` | catalog (bundles are fetched into the depot); `[paths] apk` for the bundles inside the APK (without it they are reported as `source.absent`); master data for `--views`; with `--stored-catalog` a catalog version of the depot instead of the current catalog |
+| `depot run` | the depot; `--fetch` also what fetching needs (region, `cdn`, bundle key, `[paths] apk`) |
+| `catalog versions` / `import` / `diff`, `depot verify` | the depot; `import` reads the APK's catalog from `[paths] apk` when it is set |
+| `catalog fetch` | the depot, `[catalog] region` and `language`, that region's `cdn`; its `api` (optional) for the resource version label |
 
 The region, its `cdn`, `[bundle] key` and `nonce_seed` are read only when a file must be downloaded: when the
-catalog and every bundle a command needs are in the cache, none of them is needed. A download that needs a missing
+catalog and every bundle a command needs are downloaded, none of them is needed. A download that needs a missing
 one stops the command with one line naming the file and the setting (see Errors).
 
 ## Errors
@@ -194,7 +193,7 @@ the setting, its environment variable and its flag where there is one; it never 
 
 ```
 nnnotes: setting catalog.region is not set: give it as `region` in the [catalog] table of the config file, the environment variable NNNOTES_CATALOG_REGION or --region
-nnnotes: <name>.bundle is not in the cache: setting bundle.key is not set: give it as `key` in the [bundle] table of the config file, the environment variable NNNOTES_BUNDLE_KEY
+nnnotes: <name>.bundle is not downloaded: setting bundle.key is not set: give it as `key` in the [bundle] table of the config file, the environment variable NNNOTES_BUNDLE_KEY
 nnnotes: setting bundle.key: must be 16 bytes (32 hex digits)
 nnnotes: setting paths.apk: file <path> not found
 nnnotes: ffmpeg not found on PATH: give its path as `ffmpeg` in the [paths] table of the config file, the environment variable NNNOTES_PATHS_FFMPEG or --ffmpeg

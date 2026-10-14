@@ -64,7 +64,7 @@ def test_version_and_help(capsys):
         "master",
         "export",
         "apk",
-        "store",
+        "depot",
         "voices",
         "site",
         "music-data",
@@ -133,8 +133,8 @@ def test_catalog_listing(catalog_file, tmp_path, capsys):
         [
             "--catalog",
             str(catalog_file),
-            "--cache",
-            str(tmp_path / "cache"),
+            "--depot",
+            str(tmp_path / "depot"),
             "catalog",
             "keys",
             "--prefix",
@@ -148,11 +148,11 @@ def test_catalog_listing(catalog_file, tmp_path, capsys):
 
 
 def test_missing_settings_exit_2_and_name_the_setting(catalog_file, tmp_path, cdn, capsys, monkeypatch):
-    base = ["--catalog", str(catalog_file), "--cache", str(tmp_path / "cache")]
+    base = ["--catalog", str(catalog_file), "--depot", str(tmp_path / "depot")]
     code, out, err = run(base + ["bundle", "pull", "Char/A"], capsys)
     assert code == 2 and out == ""
     assert err.strip() == (
-        "nnnotes: a_01.bundle is not in the cache: setting catalog.region is not set: give it "
+        "nnnotes: a_01.bundle is not downloaded: setting catalog.region is not set: give it "
         "as `region` in the [catalog] table of the config file, the environment variable "
         "NNNOTES_CATALOG_REGION or --region (no config file was found: `nnnotes config init` "
         "writes one to fill in)"
@@ -164,7 +164,7 @@ def test_missing_settings_exit_2_and_name_the_setting(catalog_file, tmp_path, cd
     assert code == 2 and "bundle.key" in err and "NNNOTES_BUNDLE_KEY" in err
     assert cdn not in err and len(err.strip().splitlines()) == 1
     code, _, err = run(["bundle", "pull", "Char/A"], capsys)
-    assert code == 2 and "paths.cache" in err and "NNNOTES_PATHS_CACHE" in err and "--cache" in err
+    assert code == 2 and "paths.depot" in err and "NNNOTES_PATHS_DEPOT" in err and "--depot" in err
 
 
 def test_malformed_setting_names_setting_not_value(catalog_file, tmp_path, cdn, capsys, monkeypatch):
@@ -176,8 +176,8 @@ def test_malformed_setting_names_setting_not_value(catalog_file, tmp_path, cdn, 
         [
             "--catalog",
             str(catalog_file),
-            "--cache",
-            str(tmp_path / "cache"),
+            "--depot",
+            str(tmp_path / "depot"),
             "--region",
             "zz",
             "bundle",
@@ -187,14 +187,14 @@ def test_malformed_setting_names_setting_not_value(catalog_file, tmp_path, cdn, 
         capsys,
     )
     assert code == 2 and err.strip() == (
-        "nnnotes: a_01.bundle is not in the cache: setting bundle.key: must be 16 bytes (32 hex digits)"
+        "nnnotes: a_01.bundle is not downloaded: setting bundle.key: must be 16 bytes (32 hex digits)"
     )
     assert bad not in err
 
 
 def test_missing_path_on_disk(tmp_path, capsys):
     code, _, err = run(
-        ["--cache", str(tmp_path / "c"), "--catalog", str(tmp_path / "absent.bin"), "catalog", "keys"], capsys
+        ["--depot", str(tmp_path / "c"), "--catalog", str(tmp_path / "absent.bin"), "catalog", "keys"], capsys
     )
     assert code == 2 and "setting paths.catalog: file" in err
 
@@ -206,14 +206,14 @@ def test_pull_from_config_file(catalog_file, tmp_path, cdn, capsys):
         f'[bundle]\nkey = "{KEY_HEX}"\nnonce_seed = "{SEED_HEX}"\n'
         f'[catalog]\nregion = "zz"\nlanguage = "xx"\n'
         f'[servers.zz]\ncdn = "{cdn}"\n'
-        f'[paths]\ncatalog = "../{catalog_file.name}"\ncache = "cache"\n',
+        f'[paths]\ncatalog = "../{catalog_file.name}"\ndepot = "depot"\n',
         encoding="utf-8",
     )
     code, out, err = run(["--config", str(conf), "bundle", "pull", "Char/A", "Char/B"], capsys)
     assert code == 0, err
-    cached = tmp_path / "conf" / "cache" / "bundles" / "a_01.bundle"
-    assert cached.read_bytes() == synth.fake_bundle("a_01.bundle")
-    assert [Path(line).resolve() for line in out.splitlines()] == [cached.resolve()] * 2
+    pulled = tmp_path / "conf" / "depot" / "downloads" / "bundles" / "a_01.bundle"
+    assert pulled.read_bytes() == synth.fake_bundle("a_01.bundle")
+    assert [Path(line).resolve() for line in out.splitlines()] == [pulled.resolve()] * 2
     assert KEY_HEX not in out + err
 
 
@@ -263,13 +263,14 @@ def test_web_needs_the_player(tmp_path, capsys):
     assert code == 2 and "--player" in err and "NNNOTES_PATHS_PLAYER" in err
 
 
-def test_catalog_from_the_cache_needs_no_region(catalog_file, tmp_path, capsys):
-    cache = tmp_path / "cache"
-    code, _, err = run(["--cache", str(cache), "--language", "xx", "catalog", "keys"], capsys)
+def test_catalog_from_the_downloads_needs_no_region(catalog_file, tmp_path, capsys):
+    depot = tmp_path / "depot"
+    downloads = depot / "downloads"
+    code, _, err = run(["--depot", str(depot), "--language", "xx", "catalog", "keys"], capsys)
     assert code == 2 and "catalog.region" in err and "NNNOTES_CATALOG_REGION" in err
-    cache.mkdir()
-    (cache / "catalog_main_xx.bin").write_bytes(catalog_file.read_bytes())
-    code, out, err = run(["--cache", str(cache), "--language", "xx", "catalog", "keys", "--prefix", "Char/"], capsys)
+    downloads.mkdir(parents=True)
+    (downloads / "catalog_main_xx.bin").write_bytes(catalog_file.read_bytes())
+    code, out, err = run(["--depot", str(depot), "--language", "xx", "catalog", "keys", "--prefix", "Char/"], capsys)
     assert code == 0, err
     assert out.splitlines() == ["Char/A", "Char/B"]
 
@@ -284,8 +285,8 @@ def test_apk_is_a_required_setting(argv, catalog_file, tmp_path, cdn, capsys, mo
         [
             "--catalog",
             str(catalog_file),
-            "--cache",
-            str(tmp_path / "cache"),
+            "--depot",
+            str(tmp_path / "depot"),
             "--region",
             "zz",
             "--master",
@@ -342,8 +343,8 @@ def data(catalog_file, tmp_path, cdn, monkeypatch):
     return [
         "--catalog",
         str(catalog_file),
-        "--cache",
-        str(tmp_path / "cache"),
+        "--depot",
+        str(tmp_path / "depot"),
         "--region",
         "zz",
         "--language",

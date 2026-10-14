@@ -14,8 +14,8 @@ import pytest
 
 from nnnotes.pipeline import contract
 from nnnotes.pipeline.contract import Cost, IncompatibleTask, Input
+from nnnotes.pipeline.depot import Depot, DepotConflict, InputMissing
 from nnnotes.pipeline.stages import Env, Output, Pending, Stage, describe, execute, registry
-from nnnotes.pipeline.store import InputMissing, Store, StoreConflict
 
 
 class Src(Stage):
@@ -28,7 +28,7 @@ class Src(Stage):
 
     def inputs(self, subject, env):
         p = Path(env.fact("files")[subject])
-        sha, size = env.store.identify(p, "raw", p.name)
+        sha, size = env.depot.identify(p, "raw", p.name)
         return [Input("file", sha, size, p.name, ({"kind": "file", "path": str(p)},))]
 
     def context(self, subject, env):
@@ -38,8 +38,8 @@ class Src(Stage):
     def estimate(self, subject, env, inputs):
         return Cost(inputs[0].size / 100, inputs[0].size * 10)
 
-    def run(self, task, store):
-        data = store.input_bytes(task.input("file"))
+    def run(self, task, depot):
+        data = depot.input_bytes(task.input("file"))
         if b"CRASH" in data:
             raise RuntimeError("crash requested")
         if b"DIE" in data:
@@ -48,7 +48,7 @@ class Src(Stage):
         arts = [
             contract.artifact(
                 whole,
-                store.add(data.upper() + task.params["suffix"].encode(), "txt"),
+                depot.add(data.upper() + task.params["suffix"].encode(), "txt"),
                 contract.provenance(task),
                 {"kind": "toy.text"},
             )
@@ -68,7 +68,7 @@ class Src(Stage):
                 arts.append(
                     contract.artifact(
                         aid,
-                        store.add(line.upper().encode(), "txt"),
+                        depot.add(line.upper().encode(), "txt"),
                         contract.provenance(task, obj=obj),
                         {"kind": "toy.line"},
                     )
@@ -90,8 +90,8 @@ class Count(Stage):
     def depends(self, subject, env):
         return [f"toy.src:{subject}"]
 
-    def run(self, task, store):
-        text = store.input_bytes(task.input("text")).decode()
+    def run(self, task, depot):
+        text = depot.input_bytes(task.input("text")).decode()
         doc = {"lines": sum(1 for line in text.split("\n") if line and not line.startswith(("FAIL", "?")))}
         if self.version > 1:
             doc["chars"] = len(text)
@@ -99,7 +99,7 @@ class Count(Stage):
         return Output(
             [
                 contract.artifact(
-                    aid, store.add(contract.encode(doc), "json"), contract.provenance(task), {"kind": "toy.count"}
+                    aid, depot.add(contract.encode(doc), "json"), contract.provenance(task), {"kind": "toy.count"}
                 )
             ],
             [],
@@ -121,14 +121,14 @@ class Total(Stage):
     def depends(self, subject, env):
         return [f"toy.count:{s}" for s in sorted(env.fact("files"))]
 
-    def run(self, task, store):
-        n = sum(json.loads(store.input_bytes(i))["lines"] for i in task.inputs)
+    def run(self, task, depot):
+        n = sum(json.loads(depot.input_bytes(i))["lines"] for i in task.inputs)
         aid = contract.artifact_id(task.id, "total.json")
         return Output(
             [
                 contract.artifact(
                     aid,
-                    store.add(contract.encode({"lines": n}), "json"),
+                    depot.add(contract.encode({"lines": n}), "json"),
                     contract.provenance(task),
                     {"kind": "toy.total"},
                 )
@@ -164,8 +164,8 @@ def toy_files(root: Path, texts: dict) -> dict:
 
 # ---------------------------------------------------------------- tests
 def test_describe_fills_defaults_and_refuses_unknown_parameters(tmp_path):
-    store = Store(tmp_path / "store")
-    env = Env(store, {"files": toy_files(tmp_path / "in", {"a": "x\ny"})})
+    depot = Depot(tmp_path / "depot")
+    env = Env(depot, {"files": toy_files(tmp_path / "in", {"a": "x\ny"})})
     t = describe(Src(), "a", None, env)
     assert t.id == "toy.src:a" and t.params == {"suffix": ""} and t.atoms == {"upper": "toy-upper/1"}
     assert t.input("file").name == "a.txt" and t.cost.peak_bytes == 30
@@ -175,73 +175,73 @@ def test_describe_fills_defaults_and_refuses_unknown_parameters(tmp_path):
 
 
 def test_execute_commits_then_hits(tmp_path):
-    store = Store(tmp_path / "store")
-    env = Env(store, {"files": toy_files(tmp_path / "in", {"a": "one\n\nFAIL\n?q"})})
+    depot = Depot(tmp_path / "depot")
+    env = Env(depot, {"files": toy_files(tmp_path / "in", {"a": "one\n\nFAIL\n?q"})})
     t = describe(Src(), "a", None, env)
-    ex = execute(t, store, toy_stages())
+    ex = execute(t, depot, toy_stages())
     assert (ex.status, ex.result_status) == ("ran", "partial") and ex.cost["cpuSeconds"] >= 0
-    doc = store.result(t.key)
+    doc = depot.result(t.key)
     assert [i["status"] for i in doc["items"]] == ["exported", "contained", "failed", "unsupported"]
     arts = {a["id"]: a for a in doc["artifacts"]}
     assert sorted(arts) == ["F-a:1#data", "toy.src:a#all.txt"]
-    assert store.read(arts["toy.src:a#all.txt"]["content"]["sha256"]) == b"ONE\n\nFAIL\n?Q"
+    assert depot.read(arts["toy.src:a#all.txt"]["content"]["sha256"]) == b"ONE\n\nFAIL\n?Q"
     assert "task" not in doc and doc["keyParts"] == t.key_parts()
-    assert execute(t, store, toy_stages()).status == "hit"
-    assert execute(t, store, toy_stages(), force=True).status == "ran"  # identical output: accepted
+    assert execute(t, depot, toy_stages()).status == "hit"
+    assert execute(t, depot, toy_stages(), force=True).status == "ran"  # identical output: accepted
 
 
 def test_execute_refuses_other_versions_and_unknown_stages(tmp_path):
-    store = Store(tmp_path / "store")
-    env = Env(store, {"files": toy_files(tmp_path / "in", {"a": "x"})})
+    depot = Depot(tmp_path / "depot")
+    env = Env(depot, {"files": toy_files(tmp_path / "in", {"a": "x"})})
     t = describe(Src(), "a", None, env)
     with pytest.raises(IncompatibleTask, match="version 2 here"):
-        execute(t, store, toy_stages(Src=2))
+        execute(t, depot, toy_stages(Src=2))
     with pytest.raises(IncompatibleTask, match="no stage"):
-        execute(t, store, {})
-    assert store.result(t.key) is None
+        execute(t, depot, {})
+    assert depot.result(t.key) is None
 
 
 def test_execute_verifies_inputs_and_caches_no_task_failure(tmp_path):
-    store = Store(tmp_path / "store")
+    depot = Depot(tmp_path / "depot")
     files = toy_files(tmp_path / "in", {"a": "x", "b": "CRASH"})
-    env = Env(store, {"files": files})
+    env = Env(depot, {"files": files})
     ta, tb = describe(Src(), "a", None, env), describe(Src(), "b", None, env)
     with pytest.raises(RuntimeError, match="crash requested"):
-        execute(tb, store, toy_stages())
-    assert store.result(tb.key) is None
+        execute(tb, depot, toy_stages())
+    assert depot.result(tb.key) is None
     Path(files["a"]).write_bytes(b"y")  # same size, other content: the input is refused
     with pytest.raises(InputMissing, match="other content"):
-        execute(ta, store, toy_stages())
-    assert store.result(ta.key) is None
+        execute(ta, depot, toy_stages())
+    assert depot.result(ta.key) is None
 
 
 def test_a_stage_whose_output_is_not_a_function_of_its_key_is_caught(tmp_path):
     class Clock(Src):
         n = 0
 
-        def run(self, task, store):
+        def run(self, task, depot):
             Clock.n += 1
             aid = contract.artifact_id(task.id, "all.txt")
             return Output(
                 [
                     contract.artifact(
-                        aid, store.add(str(Clock.n).encode(), "txt"), contract.provenance(task), {"kind": "toy.text"}
+                        aid, depot.add(str(Clock.n).encode(), "txt"), contract.provenance(task), {"kind": "toy.text"}
                     )
                 ],
                 [],
             )
 
-    store = Store(tmp_path / "store")
-    env = Env(store, {"files": toy_files(tmp_path / "in", {"a": "x"})})
+    depot = Depot(tmp_path / "depot")
+    env = Env(depot, {"files": toy_files(tmp_path / "in", {"a": "x"})})
     t = describe(Clock(), "a", None, env)
-    execute(t, store, {"toy.src": Clock()})
-    with pytest.raises(StoreConflict):
-        execute(t, store, {"toy.src": Clock()}, force=True)
+    execute(t, depot, {"toy.src": Clock()})
+    with pytest.raises(DepotConflict):
+        execute(t, depot, {"toy.src": Clock()}, force=True)
 
 
 def test_env_pending_and_failed_tasks(tmp_path):
-    store = Store(tmp_path / "store")
-    env = Env(store, {"files": {"a": "unused", "b": "unused"}})
+    depot = Depot(tmp_path / "depot")
+    env = Env(depot, {"files": {"a": "unused", "b": "unused"}})
     env.waiting("toy.src:a")
     env.waiting("toy.src:b", failed=True)
     with pytest.raises(Pending) as e:
@@ -275,7 +275,7 @@ def test_describe_gives_the_stage_its_parameters(tmp_path):
             want = env.params["classes"]
             return {k: v for k, v in self.ATOMS.items() if want is None or k in want}
 
-    env = Env(Store(tmp_path / "s"))
+    env = Env(Depot(tmp_path / "s"))
     assert describe(Selective(), "s", None, env).atoms == {"a": "x/1", "b": "y/1"}
     t = describe(Selective(), "s", {"classes": ["b"]}, env)
     assert isinstance(t, Task) and t.atoms == {"b": "y/1"} and env.params == {}
@@ -289,7 +289,7 @@ class _Spawner(Stage):
     def subjects(self, env):
         return ["s"]
 
-    def run(self, task, store):
+    def run(self, task, depot):
         import subprocess
         import sys
 
@@ -301,8 +301,8 @@ def test_the_cost_counts_the_child_processes(tmp_path):
     from nnnotes.pipeline.contract import Task
     from nnnotes.pipeline.stages import children_cpu
 
-    store = Store(tmp_path / "s")
-    ex = execute(Task("toy.spawn", 1, "s"), store, registry(_Spawner()))
+    depot = Depot(tmp_path / "s")
+    ex = execute(Task("toy.spawn", 1, "s"), depot, registry(_Spawner()))
     cost = ex.cost
     if children_cpu() is None:  # the platform does not report child processes
         assert cost["childCpuSeconds"] is None

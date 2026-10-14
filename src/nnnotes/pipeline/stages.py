@@ -10,13 +10,13 @@ a view, or the single subject of a global stage). It declares, for a subject:
     context(subject, env)          the context entries its task consumes (only those)
     depends(subject, env)          the task ids whose results it reads (the plan's edges)
     estimate(subject, env, inputs) the expected cost (CPU seconds, peak bytes)
-    run(task, store)               the work: reads the inputs through the store, writes the bytes of its artifacts
-                                   into the store, returns their records and one item per covered object
+    run(task, depot)               the work: reads the inputs through the depot, writes the bytes of its artifacts
+                                   into the depot, returns their records and one item per covered object
 
 A stage that needs the output of a task that has not run raises Pending from inputs/uses/context (the environment
 does it for it: Env.key / Env.result). While a task is described, `env.params` holds its normalized parameters, for
 answers that depend on them (the atoms of the converters a parameter selects). `describe` turns the answers into a
-Task; `execute` runs a Task once and commits its result (the store's action cache) after the artifacts' bytes are
+Task; `execute` runs a Task once and commits its result (the depot's action cache) after the artifacts' bytes are
 stored. The output of `run` must be a function of the task's key parts: a change of what a stage writes is a change of
 its version (golden tests check).
 Deterministic per-object failures are items (status `failed`, cached with the result); an exception out of `run`
@@ -58,7 +58,7 @@ class Pending(Exception):
 
 @dataclass
 class Output:
-    """What Stage.run returns: artifact records (their bytes already in the store) and one item per object."""
+    """What Stage.run returns: artifact records (their bytes already in the depot) and one item per object."""
 
     artifacts: list = field(default_factory=list)
     items: list = field(default_factory=list)
@@ -99,7 +99,7 @@ class Stage:
     def estimate(self, subject: str, env: Env, inputs: list[Input]) -> Cost:
         return Cost(0.0, sum(i.size for i in inputs))
 
-    def run(self, task: Task, store) -> Output:
+    def run(self, task: Task, depot) -> Output:
         raise NotImplementedError
 
 
@@ -118,11 +118,11 @@ class Env:
     the tasks of the current plan or run with their keys. `key` / `result` raise Pending for a task that has not
     run (or failed); a stage lets that propagate."""
 
-    def __init__(self, store, facts: dict | None = None):
-        self.store = store
+    def __init__(self, depot, facts: dict | None = None):
+        self.depot = depot
         self.facts = dict(facts or {})
         self.params: dict = {}  # the normalized parameters of the task being described
-        self._keys: dict[str, str] = {}  # task id -> key, for tasks whose result is in the store
+        self._keys: dict[str, str] = {}  # task id -> key, for tasks whose result is in the depot
         self._open: dict[str, bool] = {}  # task id -> failed?, for tasks without a result
 
     def fact(self, name: str):
@@ -148,7 +148,7 @@ class Env:
         raise Pending(tid, self._open.get(tid, False))
 
     def result(self, tid: str) -> dict:
-        doc = self.store.result(self.key(tid))
+        doc = self.depot.result(self.key(tid))
         if doc is None:
             raise Pending(tid)
         return doc
@@ -175,9 +175,9 @@ class Env:
         raise KeyError(f"result of {tid} has no artifact {aid}")
 
     def input_of(self, tid: str, role: str, as_role: str | None = None) -> Input:
-        """A task input made of the artifact "<tid>#<role>" (read from the store)."""
+        """A task input made of the artifact "<tid>#<role>" (read from the depot)."""
         c = self.artifact(tid, role)["content"]
-        return Input(as_role or role, c["sha256"], c["size"], None, ({"kind": "store"},))
+        return Input(as_role or role, c["sha256"], c["size"], None, ({"kind": "depot"},))
 
 
 def describe(stage: Stage, subject: str, params: dict | None, env: Env) -> Task:
@@ -202,7 +202,7 @@ def describe(stage: Stage, subject: str, params: dict | None, env: Env) -> Task:
 
 @dataclass
 class Execution:
-    """The outcome of execute: `status` hit (the result was in the store) or ran; the measured cost of a run."""
+    """The outcome of execute: `status` hit (the result was in the depot) or ran; the measured cost of a run."""
 
     task: str
     key: str
@@ -211,10 +211,10 @@ class Execution:
     cost: dict | None = None
 
 
-def execute(task: Task, store, stages: dict[str, Stage], *, force: bool = False) -> Execution:
+def execute(task: Task, depot, stages: dict[str, Stage], *, force: bool = False) -> Execution:
     """Run `task` once: verify that this installation has its stage at its version and can read every input with
     its content id, run the stage, store its artifacts' bytes, then commit the result (write-once; a result already
-    in the store is a hit unless `force`, which runs again and requires identical output). Exceptions fail the task
+    in the depot is a hit unless `force`, which runs again and requires identical output). Exceptions fail the task
     and leave no result. The measured cost (never part of a key) counts the CPU time of this process and of the child
     processes the stage ran and waited for (childCpuSeconds; null where the platform does not report it)."""
     stage = stages.get(task.stage)
@@ -226,16 +226,16 @@ def execute(task: Task, store, stages: dict[str, Stage], *, force: bool = False)
             f"the task was described for version {task.version}"
         )
     if not force:
-        hit = store.result(task.key)
+        hit = depot.result(task.key)
         if hit is not None:
             return Execution(task.id, task.key, "hit", hit["status"])
     for i in task.inputs:
-        store.open_input(i)
+        depot.open_input(i)
     children = children_cpu()
     cpu, wall = time.process_time(), time.perf_counter()
-    out = stage.run(task, store)
+    out = stage.run(task, depot)
     doc = contract.result(task, out.artifacts, out.items)
-    store.commit(doc)
+    depot.commit(doc)
     own = time.process_time() - cpu
     now = children_cpu()
     child = None if children is None or now is None else max(0.0, now - children)
@@ -273,17 +273,17 @@ def library_versions(dists) -> dict[str, str]:
     return out
 
 
-def golden(stage: Stage, fixtures: dict, store, libraries=()) -> dict:
+def golden(stage: Stage, fixtures: dict, depot, libraries=()) -> dict:
     """The golden record of a stage: its version, the atoms its fixtures use, the versions of `libraries`, and per
-    fixture the key and the sha256 of the canonical result. `fixtures`: {name: callable(store) -> Task} (each
-    builds its inputs into the store)."""
+    fixture the key and the sha256 of the canonical result. `fixtures`: {name: callable(depot) -> Task} (each
+    builds its inputs into the depot)."""
     atoms, out = {}, {}
     for name in sorted(fixtures):
-        task = fixtures[name](store)
+        task = fixtures[name](depot)
         if task.stage != stage.name:
             raise ValueError(f"fixture {name} is a task of {task.stage}, not {stage.name}")
-        execute(task, store, {stage.name: stage}, force=True)
-        doc = store.result(task.key)
+        execute(task, depot, {stage.name: stage}, force=True)
+        doc = depot.result(task.key)
         atoms.update(task.atoms)
         out[name] = {"key": task.key, "result": contract.sha256(contract.encode(doc))}
     return {

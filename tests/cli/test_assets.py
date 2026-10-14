@@ -1,4 +1,4 @@
-"""The asset commands on synthetic catalogs: export assets, store plan, store run, catalog versions, store verify.
+"""The asset commands on synthetic catalogs: export assets, depot plan, depot run, catalog versions, depot verify.
 
 Bundles here are UnityFS-signed files whose body is the census document a real census would find; the census and
 export stages of the pipeline are replaced by small stages that read them (the registry is patched), the catalog,
@@ -19,8 +19,8 @@ from nnnotes.cli import catalog as catalog_cli
 from nnnotes.pipeline import contract
 from nnnotes.pipeline.census import CensusStage
 from nnnotes.pipeline.contract import Cost
+from nnnotes.pipeline.depot import Depot
 from nnnotes.pipeline.stages import Output, Stage
-from nnnotes.pipeline.store import Store
 from nnnotes.source.config import ConfigError
 from tests.helpers import synth
 
@@ -134,27 +134,28 @@ def catalog_bytes(extra=()) -> bytes:
     return synth.CatalogWriter().build(entries)
 
 
-def setup_data(tmp_path, docs=None, cached=None, extra=()) -> dict:
-    """A catalog file and a cache with the (decrypted) bundles; -> the global flags."""
+def setup_data(tmp_path, docs=None, downloaded=None, extra=(), depots=("s",)) -> dict:
+    """A catalog file and, in the downloads of each depot, the (decrypted) bundles; -> the global flags."""
     docs = censuses() if docs is None else docs
-    cache = tmp_path / "cache"
-    (cache / "bundles").mkdir(parents=True, exist_ok=True)
-    for n, doc in docs.items():
-        if cached is None or n in cached:
-            (cache / "bundles" / NAMES[n]).write_bytes(bundle_bytes(doc))
+    for depot in depots:
+        downloads = tmp_path / depot / "downloads"
+        (downloads / "bundles").mkdir(parents=True, exist_ok=True)
+        for n, doc in docs.items():
+            if downloaded is None or n in downloaded:
+                (downloads / "bundles" / NAMES[n]).write_bytes(bundle_bytes(doc))
     cat = tmp_path / "catalog.bin"
     cat.write_bytes(catalog_bytes(extra))
-    return {"cache": cache, "catalog": cat}
+    return {"downloads": tmp_path / depots[0] / "downloads", "catalog": cat}
 
 
 # ---------------------------------------------------------------- stand-in stages
 class FakeCensus(CensusStage):
     """unity.census over the synthetic bundles (their body is the census)."""
 
-    def run(self, task, store):
-        data = store.input_bytes(task.input("bundle"))
+    def run(self, task, depot):
+        data = depot.input_bytes(task.input("bundle"))
         doc = contract.loads(data[8:])
-        content = store.add(contract.encode(doc), "json")
+        content = depot.add(contract.encode(doc), "json")
         rec = contract.artifact(
             contract.artifact_id(task.id, "census"),
             content,
@@ -193,9 +194,9 @@ class FakeExport(Stage):
     def estimate(self, subject, env, inputs):
         return Cost(0.01, 1 << 20)
 
-    def run(self, task, store):
-        doc = contract.loads(store.input_bytes(task.input("census")))
-        scripts = contract.loads(store.input_bytes(task.input("scripts")))["scripts"]
+    def run(self, task, depot):
+        doc = contract.loads(depot.input_bytes(task.input("census")))
+        scripts = contract.loads(depot.input_bytes(task.input("scripts")))["scripts"]
         if any(o["class"] == "Crash" for f in doc["files"] for o in f["objects"]):
             raise ConfigError("setting paths.tool is not set")
         container = {(e["file"], e["pathId"]): e["path"] for e in doc["assetBundles"][0]["container"]}
@@ -229,7 +230,7 @@ class FakeExport(Stage):
                 arts.append(
                     contract.artifact(
                         aid,
-                        store.add(contract.encode(body), "json"),
+                        depot.add(contract.encode(body), "json"),
                         contract.provenance(task, obj=facts),
                         {"kind": "fake.json"},
                     )
@@ -275,7 +276,7 @@ def nn(capsys, *argv):
 
 
 def flags(d: dict) -> list:
-    return ["--cache", d["cache"], "--catalog", d["catalog"]]
+    return ["--catalog", d["catalog"]]
 
 
 def tree(root: Path, skip=()) -> dict:
@@ -287,7 +288,7 @@ def tree(root: Path, skip=()) -> dict:
     return out
 
 
-def export(capsys, tmp_path, d, store, out, *more):
+def export(capsys, tmp_path, d, depot, out, *more):
     return nn(
         capsys,
         *flags(d),
@@ -295,8 +296,8 @@ def export(capsys, tmp_path, d, store, out, *more):
         "assets",
         "-o",
         tmp_path / out,
-        "--store",
-        tmp_path / store,
+        "--depot",
+        tmp_path / depot,
         "--workers",
         "0",
         "--json",
@@ -331,8 +332,8 @@ def test_select_adds_the_dependencies_to_the_census():
 
 # ---------------------------------------------------------------- export
 def test_export_writes_layouts_reports_and_hits_the_second_time(tmp_path, capsys, fake):
-    d = setup_data(tmp_path)
-    code, out, err = export(capsys, tmp_path, d, "store", "out")
+    d = setup_data(tmp_path, depots=("depot",))
+    code, out, err = export(capsys, tmp_path, d, "depot", "out")
     assert code == 1, err  # the broken object is a failed item
     summary = json.loads(out)
     assert summary["items"] == {"exported": 8, "contained": 4, "generic": 0, "unsupported": 0, "failed": 1}
@@ -358,23 +359,23 @@ def test_export_writes_layouts_reports_and_hits_the_second_time(tmp_path, capsys
         "failed": 0,
     }
     run = contract.loads((reports / "run.json").read_bytes())
-    assert Store(tmp_path / "store").run(run["id"]) == run
+    assert Depot(tmp_path / "depot").run(run["id"]) == run
     assert run["context"]["catalog"]["sha"] == contract.sha256(d["catalog"].read_bytes())
     first = files
-    code, out, _ = export(capsys, tmp_path, d, "store", "out")
+    code, out, _ = export(capsys, tmp_path, d, "depot", "out")
     again = json.loads(out)
     assert code == 1 and again["tasks"]["ran"] == 0 and again["run"] == summary["run"]
     assert again["layouts"]["original"]["write"] == 0
     same = lambda t: {k: v for k, v in t.items() if k != f"{assets.REPORTS}/run.json"}  # noqa: E731
     assert same(tree(tmp_path / "out")) == same(first)  # the run's statuses are hits now
     code, out, _ = nn(
-        capsys, *flags(d), "store", "plan", "-o", tmp_path / "out", "--store", tmp_path / "store", "--check"
+        capsys, *flags(d), "depot", "plan", "-o", tmp_path / "out", "--depot", tmp_path / "depot", "--check"
     )
     assert code == 0, out
 
 
 def test_export_is_the_same_with_worker_processes(tmp_path, capsys, fake):
-    d = setup_data(tmp_path)
+    d = setup_data(tmp_path, depots=("s0", "s2"))
     export(capsys, tmp_path, d, "s0", "o0")
     code, _, err = nn(
         capsys,
@@ -383,7 +384,7 @@ def test_export_is_the_same_with_worker_processes(tmp_path, capsys, fake):
         "assets",
         "-o",
         tmp_path / "o2",
-        "--store",
+        "--depot",
         tmp_path / "s2",
         "--workers",
         "2",
@@ -391,37 +392,38 @@ def test_export_is_the_same_with_worker_processes(tmp_path, capsys, fake):
         "original,cas",
     )
     assert code == 1, err
-    assert tree(tmp_path / "s0", ["inputs", "runs", "costs"]) == tree(tmp_path / "s2", ["inputs", "runs", "costs"])
+    skip = ["inputs", "runs", "costs", "downloads"]
+    assert tree(tmp_path / "s0", skip) == tree(tmp_path / "s2", skip)
     o0, o2 = tree(tmp_path / "o0"), tree(tmp_path / "o2" / "original")
     assert {k: v for k, v in o0.items() if not k.startswith(assets.REPORTS)} == o2
     cas = tree(tmp_path / "o2" / "cas")
     assert all(p.startswith("assets/") or p == "manifest.json" for p in cas)
 
 
-def test_plan_emit_tasks_and_run_stage_give_the_exported_store(tmp_path, capsys, fake):
-    d = setup_data(tmp_path)
+def test_plan_emit_tasks_and_run_stage_give_the_exported_depot(tmp_path, capsys, fake):
+    d = setup_data(tmp_path, depots=("orch", "q"))
     export(capsys, tmp_path, d, "orch", "o")
     rounds = 0
     while True:
         tasks = tmp_path / f"round{rounds}"
         code, out, err = nn(
-            capsys, *flags(d), "store", "plan", "--store", tmp_path / "q", "--emit-tasks", tasks, "--json"
+            capsys, *flags(d), "depot", "plan", "--depot", tmp_path / "q", "--emit-tasks", tasks, "--json"
         )
         assert code == 0, err
         doc = json.loads(out)
         if not any(n["status"] == "run" for n in doc["nodes"]):
             break
-        code, out, err = nn(capsys, *flags(d), "store", "run", tasks, "--store", tmp_path / "q")
+        code, out, err = nn(capsys, *flags(d), "depot", "run", tasks, "--depot", tmp_path / "q")
         assert code in (0, 1), err
         rounds += 1
     assert rounds == 4  # index + census; scripts + addresses; export; artifacts
-    skip = ["inputs", "runs", "costs", "catalogs"]
+    skip = ["inputs", "runs", "costs", "catalogs", "downloads"]
     assert tree(tmp_path / "orch", skip) == tree(tmp_path / "q", skip)
 
 
 def test_plan_explains_and_waits_for_bundles_not_fetched(tmp_path, capsys, fake):
-    d = setup_data(tmp_path, cached={"card_1", "shared", "bg_x"})
-    code, out, _ = nn(capsys, *flags(d), "store", "plan", "--store", tmp_path / "s", "--json", "--check")
+    d = setup_data(tmp_path, downloaded={"card_1", "shared", "bg_x"})
+    code, out, _ = nn(capsys, *flags(d), "depot", "plan", "--depot", tmp_path / "s", "--json", "--check")
     assert code == 1
     nodes = {n["id"]: n for n in json.loads(out)["nodes"]}
     card2 = contract.stable_bundle_name(NAMES["card_2"])
@@ -429,21 +431,21 @@ def test_plan_explains_and_waits_for_bundles_not_fetched(tmp_path, capsys, fake)
     assert nodes[f"unity.census:{card2}"]["reasons"] == [{"code": "pending", "task": f"fetch:{NAMES['card_2']}"}]
     assert nodes["link.scripts:all"]["status"] == "unknown"
     assert nodes["catalog.index:main"]["reasons"] == [{"code": "new-input"}]
-    code, out, _ = nn(capsys, *flags(d), "store", "plan", "--store", tmp_path / "s")
+    code, out, _ = nn(capsys, *flags(d), "depot", "plan", "--depot", tmp_path / "s")
     assert "unknown" in out and "tasks:" in out
 
 
 def test_parameters_change_keys_and_are_explained(tmp_path, capsys, fake):
     d = setup_data(tmp_path)
     export(capsys, tmp_path, d, "s", "o")
-    base = [*flags(d), "store", "plan", "--store", tmp_path / "s", "--json"]
+    base = [*flags(d), "depot", "plan", "--depot", tmp_path / "s", "--json"]
     code, out, _ = nn(capsys, *base, "--png-level", "3")
     runs = [n for n in json.loads(out)["nodes"] if n["status"] == "run"]
     assert {n["stage"] for n in runs} == {"unity.export"}
     assert runs[0]["reasons"] == [{"code": "params-changed", "path": "/png/level", "old": 6, "new": 3}]
     tid = runs[0]["id"]
     code, out, _ = nn(
-        capsys, *flags(d), "store", "plan", "--store", tmp_path / "s", "--png-level", "3", "--why", tid, "--json"
+        capsys, *flags(d), "depot", "plan", "--depot", tmp_path / "s", "--png-level", "3", "--why", tid, "--json"
     )
     w = json.loads(out)
     assert w["keyParts"]["old"]["params"]["png"]["level"] == 6 and w["keyParts"]["new"]["params"]["png"]["level"] == 3
@@ -465,7 +467,7 @@ def test_usage_errors(tmp_path, capsys, fake, monkeypatch):
     code, _, err = export(capsys, tmp_path, d, "s", "o", "--flac-level", "5")
     assert code == 2 and "no stage of the pipeline encodes FLAC" in err
     code, _, err = nn(capsys, "export", "assets", "-o", tmp_path / "o")
-    assert code == 2 and "paths.store" in err  # no store and no cache
+    assert code == 2 and "paths.depot" in err  # no depot
 
 
 def test_the_flac_level_is_a_parameter_of_the_stages_that_encode_flac(tmp_path, capsys, fake, monkeypatch):
@@ -473,7 +475,7 @@ def test_the_flac_level_is_a_parameter_of_the_stages_that_encode_flac(tmp_path, 
     d = setup_data(tmp_path)
     assert export(capsys, tmp_path, d, "s", "o", "--flac-level", "13")[0] == 2
     export(capsys, tmp_path, d, "s", "o")
-    base = [*flags(d), "store", "plan", "--store", tmp_path / "s", "--flac-level", "5"]
+    base = [*flags(d), "depot", "plan", "--depot", tmp_path / "s", "--flac-level", "5"]
     code, out, _ = nn(capsys, *base, "--json")
     tid = next(n["id"] for n in json.loads(out)["nodes"] if n["stage"] == "unity.export")
     code, out, _ = nn(capsys, *base, "--why", tid, "--json")
@@ -550,7 +552,7 @@ def test_export_dry_run_and_explain(tmp_path, capsys, fake):
 # ---------------------------------------------------------------- run-stage
 def test_run_stage_refuses_incompatible_tasks(tmp_path, capsys, fake):
     d = setup_data(tmp_path)
-    nn(capsys, *flags(d), "store", "plan", "--store", tmp_path / "s", "--emit-tasks", tmp_path / "t")
+    nn(capsys, *flags(d), "depot", "plan", "--depot", tmp_path / "s", "--emit-tasks", tmp_path / "t")
     (f,) = [
         p
         for p in sorted((tmp_path / "t").glob("*.json"))
@@ -559,7 +561,7 @@ def test_run_stage_refuses_incompatible_tasks(tmp_path, capsys, fake):
     doc = contract.loads(f.read_bytes())
     edited = tmp_path / "edited.json"
     edited.write_bytes(contract.encode(dict(doc, params={"x": 1})))
-    code, _, err = nn(capsys, "store", "run", f, edited, "--store", tmp_path / "s")
+    code, _, err = nn(capsys, "depot", "run", f, edited, "--depot", tmp_path / "s")
     assert code == 4 and "incompatible task" in err
     assert not (tmp_path / "s" / "ac").exists()  # nothing of the batch ran
     other = tmp_path / "other.json"
@@ -567,8 +569,8 @@ def test_run_stage_refuses_incompatible_tasks(tmp_path, capsys, fake):
     other.write_bytes(
         contract.encode(contract.Task("catalog.index", 9, t.subject, t.params, t.atoms, t.inputs, t.context).to_json())
     )
-    assert nn(capsys, "store", "run", other, "--store", tmp_path / "s")[0] == 4
-    code, out, _ = nn(capsys, "store", "run", f, "--store", tmp_path / "s", "--json")
+    assert nn(capsys, "depot", "run", other, "--depot", tmp_path / "s")[0] == 4
+    code, out, _ = nn(capsys, "depot", "run", f, "--depot", tmp_path / "s", "--json")
     assert code == 0 and json.loads(out)["summary"] == {"tasks": 1, "hit": 0, "ran": 1, "failed": 0}
 
 
@@ -585,19 +587,19 @@ def main(argv):
         cli.main(argv)
     except SystemExit as e:
         assert not e.code, e.code
-main(args + ["store", "plan", "--store", {str(tmp_path / "s")!r}, "--emit-tasks", {str(tmp_path / "t")!r}])
+main(args + ["depot", "plan", "--depot", {str(tmp_path / "s")!r}, "--emit-tasks", {str(tmp_path / "t")!r}])
 index = [str(p) for p in Path({str(tmp_path / "t")!r}).glob("*.json")
          if contract.loads(p.read_bytes())["stage"]["name"] == "catalog.index"]
 assert len(index) == 1, index
-main(["store", "run", *index, "--store", {str(tmp_path / "s")!r}])
-main(args + ["store", "plan", "--store", {str(tmp_path / "s")!r}, "--json"])
+main(["depot", "run", *index, "--depot", {str(tmp_path / "s")!r}])
+main(args + ["depot", "plan", "--depot", {str(tmp_path / "s")!r}, "--json"])
 assert "UnityPy" not in sys.modules, "UnityPy imported"
 """
     r = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, cwd=tmp_path)
     assert r.returncode == 0, r.stderr[-3000:]
 
 
-# ---------------------------------------------------------------- catalogs and store
+# ---------------------------------------------------------------- catalogs and depot
 def test_catalog_versions_import_list_and_diff(tmp_path, capsys):
     a = tmp_path / "a.bin"
     a.write_bytes(catalog_bytes())
@@ -608,7 +610,7 @@ def test_catalog_versions_import_list_and_diff(tmp_path, capsys):
     ]
     b = tmp_path / "b.bin"
     b.write_bytes(synth.CatalogWriter().build(entries))
-    s = ["--store", tmp_path / "s"]
+    s = ["--depot", tmp_path / "s"]
     assert nn(capsys, "catalog", "import", a, "--label", "v1", *s)[0] == 0
     code, out, _ = nn(capsys, "catalog", "import", b, *s)
     assert code == 0 and contract.sha256(b.read_bytes())[:12] in out
@@ -625,7 +627,7 @@ def test_catalog_versions_import_list_and_diff(tmp_path, capsys):
 
 
 def test_catalog_import_takes_the_resource_version_from_the_file_name(tmp_path, capsys):
-    s = ["--store", tmp_path / "s"]
+    s = ["--depot", tmp_path / "s"]
     named = tmp_path / "catalog_1.0.0.201_en.bin"
     named.write_bytes(catalog_bytes())
     main = tmp_path / "catalog_main_en.bin"
@@ -650,31 +652,31 @@ def test_catalog_import_resource_version_option():
         catalog_cli.import_resource_version("../x", file, None)
 
 
-def test_store_verify(tmp_path, capsys, fake):
+def test_depot_verify(tmp_path, capsys, fake):
     d = setup_data(tmp_path)
     export(capsys, tmp_path, d, "s", "o")
-    code, out, _ = nn(capsys, "store", "verify", "--store", tmp_path / "s", "--json")
+    code, out, _ = nn(capsys, "depot", "verify", "--depot", tmp_path / "s", "--json")
     r = json.loads(out)
     assert code == 0 and r["problemCount"] == 0 and r["contents"] > 0 and r["results"] > 0
     victim = next(p for p in sorted((tmp_path / "s" / "cas").rglob("*")) if p.is_file())
-    assert os.stat(victim).st_mode & 0o222 == 0  # store objects are read-only
+    assert os.stat(victim).st_mode & 0o222 == 0  # depot objects are read-only
     os.chmod(victim, 0o666)
     victim.write_bytes(victim.read_bytes() + b"x")
-    code, out, _ = nn(capsys, "store", "verify", "--store", tmp_path / "s", "--json")
+    code, out, _ = nn(capsys, "depot", "verify", "--depot", tmp_path / "s", "--json")
     problems = {p["problem"] for p in json.loads(out)["problems"]}
     assert code == 1 and "content differs from its id" in problems
     assert any(p.endswith("bytes of another size") for p in problems)
-    code, out, _ = nn(capsys, "store", "verify", "--quick", "--store", tmp_path / "s", "--json")
+    code, out, _ = nn(capsys, "depot", "verify", "--quick", "--depot", tmp_path / "s", "--json")
     assert code == 1 and all("another size" in p["problem"] for p in json.loads(out)["problems"])
 
 
 # ---------------------------------------------------------------- the command line
 def test_the_commands_are_part_of_nnnotes(tmp_path, capsys, fake):
     try:
-        cli.build_parser().parse_args(["store", "verify"])
+        cli.build_parser().parse_args(["depot", "verify"])
     except SystemExit:
         pytest.skip("the command line does not register the asset commands")
-    assert ("paths", "store") in common.FLAG_SETTINGS
+    assert ("paths", "depot") in common.FLAG_SETTINGS
     d = setup_data(tmp_path)
     with pytest.raises(SystemExit) as e:
         cli.main(
@@ -684,7 +686,7 @@ def test_the_commands_are_part_of_nnnotes(tmp_path, capsys, fake):
                 "assets",
                 "-o",
                 str(tmp_path / "o"),
-                "--store",
+                "--depot",
                 str(tmp_path / "s"),
                 "--workers",
                 "0",
@@ -694,7 +696,7 @@ def test_the_commands_are_part_of_nnnotes(tmp_path, capsys, fake):
     capsys.readouterr()
     with pytest.raises(SystemExit) as e:
         cli.main(
-            [*map(str, flags(d)), "store", "plan", "-o", str(tmp_path / "o"), "--store", str(tmp_path / "s"), "--check"]
+            [*map(str, flags(d)), "depot", "plan", "-o", str(tmp_path / "o"), "--depot", str(tmp_path / "s"), "--check"]
         )
     assert e.value.code == 0
 
@@ -721,21 +723,21 @@ class ObjectPaths(Stage):
     def estimate(self, subject, env, inputs):
         return Cost(0.01, 1 << 20)
 
-    def run(self, task, store):
+    def run(self, task, depot):
         oids = ["CAB-none:9"]
         for inp in task.inputs:
-            for f in contract.loads(store.input_bytes(inp))["files"]:
+            for f in contract.loads(depot.input_bytes(inp))["files"]:
                 oids += [contract.object_id(f["name"], o["pathId"]) for o in f["objects"]]
         rec = contract.artifact(
             contract.artifact_id(task.id, "objects"),
-            store.add(contract.encode(sorted(oids)), "json"),
+            depot.add(contract.encode(sorted(oids)), "json"),
             contract.provenance(task),
             {"kind": "fake.objects"},
         )
         return Output([rec], [])
 
-    def derived(self, task_id, result, store, paths):
-        oids = contract.loads(store.read(result["artifacts"][0]["content"]["sha256"]))
+    def derived(self, task_id, result, depot, paths):
+        oids = contract.loads(depot.read(result["artifacts"][0]["content"]["sha256"]))
         doc = {o: {a: paths.artifact(a) for a in paths.objects(o)} for o in oids}
         return [("derived/objects.json", contract.encode(doc))]
 
@@ -755,7 +757,7 @@ def test_derived_documents_read_the_paths_of_the_objects_they_name(tmp_path, cap
     assert doc[card] == {f"{card}#json": "Assets/Game/Card/1/full.png.json"}
     assert doc[f"{CABS['card_1']}:1"] == doc[card]  # contained in it
     assert (tmp_path / "o" / "Assets" / "Game" / "Card" / "1" / "full.png.json").is_file()
-    code, out, _ = nn(capsys, *flags(d), "store", "plan", "-o", tmp_path / "o", "--store", tmp_path / "s", "--check")
+    code, out, _ = nn(capsys, *flags(d), "depot", "plan", "-o", tmp_path / "o", "--depot", tmp_path / "s", "--check")
     assert code == 0, out
 
 
@@ -782,7 +784,7 @@ def test_views_are_placed_with_paths_and_every_document_validates(tmp_path, caps
         "assets",
         "-o",
         tmp_path / "o",
-        "--store",
+        "--depot",
         tmp_path / "s",
         "--workers",
         "0",
@@ -803,16 +805,16 @@ def test_views_are_placed_with_paths_and_every_document_validates(tmp_path, caps
     assert not any(p.startswith("_tasks/view.") for p in placed)  # placed through the derived documents
     doc = contract.loads((tmp_path / "o" / "original" / "views" / "cards.json").read_bytes())
     assert doc["layout"] == "original" and doc["view"] == "cards"
-    store = Store(tmp_path / "s")
+    depot = Depot(tmp_path / "s")
     run = contract.loads((tmp_path / "o" / assets.REPORTS / "run.json").read_bytes())
     v = validators()
     checked = set()
     for t in run["tasks"]:
-        res = store.result(t["key"])
+        res = depot.result(t["key"])
         for a in res["artifacts"]:
             if a["content"]["ext"] != "json":
                 continue
-            body = contract.loads(store.read(a["content"]["sha256"]))
+            body = contract.loads(depot.read(a["content"]["sha256"]))
             name = body.get("schema") if isinstance(body, dict) else None
             if name in v:
                 errors = [e.message for e in v[name].iter_errors(body)]
@@ -831,9 +833,9 @@ def test_views_are_placed_with_paths_and_every_document_validates(tmp_path, caps
         *flags(d),
         "--master",
         master,
-        "store",
+        "depot",
         "plan",
-        "--store",
+        "--depot",
         tmp_path / "s",
         "--json",
         "--views",
@@ -856,7 +858,7 @@ def test_views_are_placed_with_paths_and_every_document_validates(tmp_path, caps
         errors = [e.message for e in v[name].iter_errors(body)]
         assert errors == [], (name, errors[:3])
     vid = run["context"]["catalog"]["id"]
-    code, out, _ = nn(capsys, "catalog", "diff", vid[:12], vid[:12], "--json", "--store", tmp_path / "s")
+    code, out, _ = nn(capsys, "catalog", "diff", vid[:12], vid[:12], "--json", "--depot", tmp_path / "s")
     diff = json.loads(out)
     assert diff["objects"]["summary"]["unchanged"] > 0  # the address tables of the runs
     assert [e.message for e in v["nnnotes.catalog-diff/1"].iter_errors(diff)] == []
@@ -927,12 +929,12 @@ def test_export_records_the_calibration_and_plan_uses_it(tmp_path, capsys, fake)
     assert contract.loads(cal.read_bytes()) == {"stages": {}}  # four bundles: too few
     assets.write_calibration(tmp_path / "s", {"unity.export": {"cpu": 2.0, "peak": 3.0, "samples": 50}})
     code, out, err = nn(
-        capsys, *flags(d), "store", "plan", "--store", tmp_path / "s", "--json", "--png-level", "1", "--explain"
+        capsys, *flags(d), "depot", "plan", "--depot", tmp_path / "s", "--json", "--png-level", "1", "--explain"
     )
     assert "cost calibration unity.export: CPU x2.0, peak memory x3.0 (50 measured tasks)" in err
     runs = [n for n in json.loads(out)["nodes"] if n["stage"] == "unity.export"]
     assert runs and all(n["cost"] == {"cpuSeconds": 0.02, "peakBytes": 3 << 20} for n in runs)
-    code, out, _ = nn(capsys, *flags(d), "store", "plan", "--store", tmp_path / "s", "--check")
+    code, out, _ = nn(capsys, *flags(d), "depot", "plan", "--depot", tmp_path / "s", "--check")
     assert code == 0  # keys do not change
 
 
@@ -958,10 +960,10 @@ class Named(Stage):
     def names(self, env):
         return {"s1": ["Cri/Sound/y", "Cri/Sound/x"]}
 
-    def run(self, task, store):
+    def run(self, task, depot):
         arts = [
             contract.artifact(
-                contract.artifact_id(task.id, role), store.add(data, ext), contract.provenance(task), {"kind": "toy"}
+                contract.artifact_id(task.id, role), depot.add(data, ext), contract.provenance(task), {"kind": "toy"}
             )
             for role, data, ext in (("a.flac", b"fLaC" + task.subject.encode(), "flac"), ("cues.json", b"[]", "json"))
         ]
@@ -982,7 +984,7 @@ class Tooled(Stage):
         cfg = active()
         return {"tool": str(cfg.path("paths", "ffmpeg")) if cfg is not None else "unset"}
 
-    def run(self, task, store):
+    def run(self, task, depot):
         return Output([], [])
 
 
@@ -1023,7 +1025,7 @@ def test_plan_and_export_describe_with_the_same_settings(tmp_path, capsys, monke
     d = setup_data(tmp_path, censuses(broken=False))
     tool = tmp_path / "ffmpeg-bin"
     code, _, err = nn(
-        capsys, *flags(d), "--ffmpeg", tool, "store", "plan", "--store", tmp_path / "s", "--emit-tasks", tmp_path / "t"
+        capsys, *flags(d), "--ffmpeg", tool, "depot", "plan", "--depot", tmp_path / "s", "--emit-tasks", tmp_path / "t"
     )
     assert code == 0, err
     (planned,) = [
@@ -1041,7 +1043,7 @@ def test_plan_and_export_describe_with_the_same_settings(tmp_path, capsys, monke
         "assets",
         "-o",
         tmp_path / "o",
-        "--store",
+        "--depot",
         tmp_path / "s",
         "--workers",
         "0",
@@ -1061,14 +1063,14 @@ def test_plan_knows_the_files_the_apk_does_not_have(tmp_path, capsys, fake, monk
         )
     d = setup_data(tmp_path, censuses(broken=False), extra=[("apkonly.bundle", synth.local("apkonly.bundle"), [])])
     monkeypatch.setattr("nnnotes.pipeline.catalogdb.apk_version", lambda apk: None)
-    code, out, err = nn(capsys, *flags(d), "--apk", apk, "store", "plan", "--store", tmp_path / "s", "--json")
+    code, out, err = nn(capsys, *flags(d), "--apk", apk, "depot", "plan", "--depot", tmp_path / "s", "--json")
     nodes = {n["id"]: n for n in json.loads(out)["nodes"]}
     assert "unity.census:apkonly" not in nodes  # not pending on a fetch that cannot happen
     code, out, err = nn(
-        capsys, *flags(d), "--apk", apk, "store", "plan", "--store", tmp_path / "s", "--emit-tasks", tmp_path / "t"
+        capsys, *flags(d), "--apk", apk, "depot", "plan", "--depot", tmp_path / "s", "--emit-tasks", tmp_path / "t"
     )
-    assert nn(capsys, *flags(d), "store", "run", tmp_path / "t", "--store", tmp_path / "s")[0] == 0
-    code, out, _ = nn(capsys, *flags(d), "--apk", apk, "store", "plan", "--store", tmp_path / "s", "--json")
+    assert nn(capsys, *flags(d), "depot", "run", tmp_path / "t", "--depot", tmp_path / "s")[0] == 0
+    code, out, _ = nn(capsys, *flags(d), "--apk", apk, "depot", "plan", "--depot", tmp_path / "s", "--json")
     nodes = {n["id"]: n for n in json.loads(out)["nodes"]}
     assert nodes["link.scripts:all"]["status"] == "run"
 
@@ -1076,7 +1078,7 @@ def test_plan_knows_the_files_the_apk_does_not_have(tmp_path, capsys, fake, monk
 def test_plan_census_takes_the_censuses_first(tmp_path, capsys, fake):
     d = setup_data(tmp_path, censuses(broken=False))
     code, out, err = nn(
-        capsys, *flags(d), "store", "plan", "--store", tmp_path / "s", "--census", "--workers", "0", "--json"
+        capsys, *flags(d), "depot", "plan", "--depot", tmp_path / "s", "--census", "--workers", "0", "--json"
     )
     assert code == 0, err
     nodes = json.loads(out)["nodes"]
@@ -1105,7 +1107,7 @@ def test_names_see_the_tasks_that_ran(tmp_path, capsys, monkeypatch):
     assert code == 0, err
     placed = tree(tmp_path / "o")
     assert "Named/4/a.flac" in placed and "Named/0/a.flac" not in placed  # four bundles were exported
-    code, out, _ = nn(capsys, *flags(d), "store", "plan", "-o", tmp_path / "o", "--store", tmp_path / "s", "--check")
+    code, out, _ = nn(capsys, *flags(d), "depot", "plan", "-o", tmp_path / "o", "--depot", tmp_path / "s", "--check")
     assert code == 0, out  # plan places them the same way
 
 
@@ -1151,8 +1153,8 @@ class RawCopy(Stage):
     def inputs(self, subject, env):
         return [env.fact("raw")[subject]]
 
-    def run(self, task, store):
-        content = store.add(store.input_bytes(task.input("raw")), "acb")
+    def run(self, task, depot):
+        content = depot.add(depot.input_bytes(task.input("raw")), "acb")
         return Output(
             [
                 contract.artifact(
@@ -1192,7 +1194,7 @@ def raw_export(capsys, tmp_path, d, apk):
         "assets",
         "-o",
         tmp_path / "o",
-        "--store",
+        "--depot",
         tmp_path / "s",
         "--workers",
         "0",
@@ -1202,7 +1204,7 @@ def raw_export(capsys, tmp_path, d, apk):
 def test_raw_files_of_the_apk_are_read_from_it(tmp_path, capsys, monkeypatch):
     apk, name = raw_apk(tmp_path, monkeypatch)
     d = setup_data(tmp_path, censuses(broken=False))
-    code, out, err = nn(capsys, *flags(d), "--apk", apk, "store", "plan", "--store", tmp_path / "s", "--json")
+    code, out, err = nn(capsys, *flags(d), "--apk", apk, "depot", "plan", "--depot", tmp_path / "s", "--json")
     nodes = {n["id"]: n for n in json.loads(out)["nodes"]}
     assert nodes["cri.audio:cri_assets_embcri/sound/initialse"]["reasons"] == [
         {"code": "pending", "task": f"fetch:{name}"}
@@ -1216,7 +1218,7 @@ def test_raw_files_of_the_apk_are_read_from_it(tmp_path, capsys, monkeypatch):
         "assets",
         "-o",
         tmp_path / "o",
-        "--store",
+        "--depot",
         tmp_path / "s",
         "--workers",
         "0",
@@ -1224,13 +1226,13 @@ def test_raw_files_of_the_apk_are_read_from_it(tmp_path, capsys, monkeypatch):
     )
     assert code == 0, err
     assert json.loads(out)["sources"] == {}
-    assert (d["cache"] / "raw" / "Android" / name).read_bytes() == b"@UTF sheet"  # where a CDN file would be
+    assert (d["downloads"] / "raw" / "Android" / name).read_bytes() == b"@UTF sheet"  # where a CDN file would be
     run = contract.loads((tmp_path / "o" / assets.REPORTS / "run.json").read_bytes())
     assert {t["id"]: t["status"] for t in run["tasks"]}["cri.audio:cri_assets_embcri/sound/initialse"] == "ran"
     code, out, _ = nn(
-        capsys, *flags(d), "--apk", apk, "store", "plan", "-o", tmp_path / "o", "--store", tmp_path / "s", "--check"
+        capsys, *flags(d), "--apk", apk, "depot", "plan", "-o", tmp_path / "o", "--depot", tmp_path / "s", "--check"
     )
-    assert code == 0, out  # read from the cache now
+    assert code == 0, out  # read from the downloads now
 
 
 def test_the_raw_files_are_fetched_while_the_bundle_stages_run(tmp_path, capsys, monkeypatch):
@@ -1246,11 +1248,11 @@ def test_the_raw_files_are_fetched_while_the_bundle_stages_run(tmp_path, capsys,
             order.append(("raw fetch", threading.current_thread() is threading.main_thread()))
         return real_inputs(self, kind, entries, fetch)
 
-    def run(self, task, store):
+    def run(self, task, depot):
         if not exported.is_set():
             order.append("unity.export")
             exported.set()
-        return real_run(self, task, store)
+        return real_run(self, task, depot)
 
     monkeypatch.setattr(assets.Workspace, "_inputs", inputs)
     monkeypatch.setattr(FakeExport, "run", run)
@@ -1261,7 +1263,7 @@ def test_the_raw_files_are_fetched_while_the_bundle_stages_run(tmp_path, capsys,
     assert "fetched while the bundle stages run" in err and "0 raw files not readable" in err
     run_doc = contract.loads((tmp_path / "o" / assets.REPORTS / "run.json").read_bytes())
     assert {t["id"]: t["status"] for t in run_doc["tasks"]}["cri.audio:cri_assets_embcri/sound/initialse"] == "ran"
-    assert (d["cache"] / "raw" / "Android" / name).read_bytes() == b"@UTF sheet"
+    assert (d["downloads"] / "raw" / "Android" / name).read_bytes() == b"@UTF sheet"
 
 
 def test_a_setting_the_raw_fetch_lacks_aborts_the_run(tmp_path, capsys, monkeypatch):
@@ -1309,7 +1311,7 @@ def test_an_interrupt_starts_no_more_raw_fetches(tmp_path, capsys, monkeypatch):
     code, _, err = raw_export(capsys, tmp_path, d, apk)
     assert code == 3 and "interrupted" in err
     assert ended.wait(10)
-    assert not (d["cache"] / "raw" / "Android" / name).exists()  # not fetched after the interrupt
+    assert not (d["downloads"] / "raw" / "Android" / name).exists()  # not fetched after the interrupt
 
 
 def test_worker_counts_follow_the_cpus_this_process_may_use(monkeypatch):

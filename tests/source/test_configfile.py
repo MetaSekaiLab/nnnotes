@@ -79,7 +79,7 @@ def test_init_with_values(tmp_path, capsys):
             "--set",
             "catalog.region=en",
             "--set",
-            "paths.cache=cache",
+            "paths.depot=depot",
         ],
         capsys,
     )
@@ -102,7 +102,7 @@ def test_init_with_values(tmp_path, capsys):
             "catalog_version": "",
         }
     }  # the example region table renamed
-    assert data["paths"]["cache"] == str((tmp_path / "cache").absolute())
+    assert data["paths"]["depot"] == str((tmp_path / "depot").absolute())
     assert "# CDN base URL of the region" in f.read_text(encoding="utf-8")  # the comments stay
     if os.name != "nt":
         assert f.stat().st_mode & 0o777 == 0o600
@@ -240,7 +240,7 @@ def test_check_does_not_turn_jp_language_defaults_into_flags(tmp_path, capsys):
 def test_check_reports_states_not_values(tmp_path, capsys, monkeypatch):
     (tmp_path / "nnnotes.toml").write_text(
         f'[bundle]\nkey = "{KEY}"\n[master]\niv = "00"\n[catalog]\nregion = "xx"\n[servers.tw]\ncdn = "ftp://h"\n'
-        f'[paths]\napk = "missing.apk"\ncache = "c"\n[typo]\nkey = "1"\n',
+        f'[paths]\napk = "missing.apk"\ndepot = "c"\n[typo]\nkey = "1"\n',
         encoding="utf-8",
     )
     monkeypatch.setenv("NNNOTES_BUNDLE_NONCE_SEED", "ab")
@@ -256,7 +256,7 @@ def test_check_reports_states_not_values(tmp_path, capsys, monkeypatch):
     assert by["master.key"]["status"] == "unset"
     assert by["catalog.region"]["status"] == "invalid"
     assert by["servers.tw.cdn"]["status"] == "invalid"
-    assert by["paths.apk"]["status"] == "not found" and by["paths.cache"]["status"] == "ok"
+    assert by["paths.apk"]["status"] == "not found" and by["paths.depot"]["status"] == "ok"
     assert by["typo.key"]["status"] == "unknown" and by["NNNOTES_BUNDLE_KY"]["status"] == "unknown"
     assert doc["problems"] == 6
     code, out, _ = run(["--region", "tw", "config", "check"], capsys)

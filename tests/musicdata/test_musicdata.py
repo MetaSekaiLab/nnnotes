@@ -1260,7 +1260,7 @@ def test_command(tmp_path, capsys, monkeypatch):
     monkeypatch.setenv("NNNOTES_MASTER_IV", synth.MASTER_IV.hex())
     monkeypatch.setattr(Session, "catalog", lambda self, **kw: FakeCatalog(CHARTS))
     monkeypatch.setattr(score, "fetch_chart", lambda cat, name: cat.charts[name])
-    base = ["--region", "xx", "--cache", str(tmp_path / "cache"), "music-data", "--master-files", str(d), "--no-bgm"]
+    base = ["--region", "xx", "--depot", str(tmp_path / "depot"), "music-data", "--master-files", str(d), "--no-bgm"]
     code, stdout, err = run(base + ["--no-deck", "-o", str(out)], capsys)
     assert code == 0, err
     r = json.loads(stdout)
@@ -1297,7 +1297,7 @@ def test_command_decoded_master(tmp_path, capsys, monkeypatch):
     fake = FakeDeck()
     real = musicdata.Deck
     monkeypatch.setattr(musicdata, "Deck", lambda **kw: real(module=fake, **kw))
-    common = ["--region", "xx", "--cache", str(tmp_path / "cache")]
+    common = ["--region", "xx", "--depot", str(tmp_path / "depot")]
     options = ["--no-bgm", "--full", "-o"]
     code, stdout, err = run(
         common + ["--master", str(dec), "music-data", "--decoded-master"] + options + [str(out)], capsys

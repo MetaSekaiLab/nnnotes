@@ -5,8 +5,8 @@ from UnityPy.helpers.TypeTreeNode import TypeTreeNode
 
 from nnnotes.pipeline import census, contract
 from nnnotes.pipeline.contract import Input
+from nnnotes.pipeline.depot import Depot
 from nnnotes.pipeline.stages import Env, Pending, describe, execute, registry
-from nnnotes.pipeline.store import Store
 from nnnotes.unity import reader as unity
 
 SCRIPTS = "CAB-5c1e0000000000000000000000000000"
@@ -300,26 +300,26 @@ def test_census_stage(tmp_path, monkeypatch):
         return scene_bundle()[0]
 
     monkeypatch.setattr(unity, "load", load)
-    store = Store(tmp_path / "store")
-    sha, size = store.identify(bundle, "bundles", bundle.name)
+    depot = Depot(tmp_path / "depot")
+    sha, size = depot.identify(bundle, "bundles", bundle.name)
     inp = Input("bundle", sha, size, bundle.name, ({"kind": "file", "path": str(bundle)},))
     stage = census.CensusStage()
-    env = Env(store, {"bundles": {"x": inp}})
+    env = Env(depot, {"bundles": {"x": inp}})
     assert stage.subjects(env) == ["x"]
     task = describe(stage, "x", None, env)
     assert task.id == "unity.census:x" and task.atoms == census.CensusStage.ATOMS
     assert task.atoms["reader"].startswith("unitypy-")
     assert task.cost.peak_bytes > size
-    assert execute(task, store, registry(stage)).status == "ran"
-    doc = store.result(task.key)
+    assert execute(task, depot, registry(stage)).status == "ran"
+    doc = depot.result(task.key)
     (rec,) = doc["artifacts"]
     assert rec["id"] == "unity.census:x#census" and rec["semantics"]["facts"]["objects"] == 7
     assert rec["provenance"]["inputs"] == [{"role": "bundle", "sha256": sha}]
-    assert contract.loads(store.read(rec["content"]["sha256"])) == census.census_env(scene_bundle()[0])
+    assert contract.loads(depot.read(rec["content"]["sha256"])) == census.census_env(scene_bundle()[0])
     assert loaded == [str(bundle)]
-    assert execute(task, store, registry(stage)).status == "hit" and len(loaded) == 1
+    assert execute(task, depot, registry(stage)).status == "hit" and len(loaded) == 1
     with pytest.raises(ValueError, match="expected 'bundle'"):
-        describe(stage, "x", None, Env(store, {"bundles": {"x": Input("other", sha, size)}}))
+        describe(stage, "x", None, Env(depot, {"bundles": {"x": Input("other", sha, size)}}))
     for waiting in (None, Pending("fetch:x_1.bundle")):
         with pytest.raises(Pending, match="fetch:x"):
-            describe(stage, "x", None, Env(store, {"bundles": {"x": waiting}}))
+            describe(stage, "x", None, Env(depot, {"bundles": {"x": waiting}}))

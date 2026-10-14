@@ -102,34 +102,34 @@ def make_apk(path):
     return path
 
 
-def test_closure_fetch_and_cache(tmp_path):
+def test_closure_fetch_and_download(tmp_path):
     cdn = make_cdn(tmp_path / "cdn")
-    cat = Catalog(remote_catalog(), tmp_path / "cache", cdn=cdn + "/", bundle_key=KEY)
+    cat = Catalog(remote_catalog(), tmp_path / "downloads", cdn=cdn + "/", bundle_key=KEY)
     assert cat.keys("Char/") == ["Char/A", "Char/B"]
     assert cat.has("Story/物語") and not cat.has("Char/C")
     assert sorted(b.name for b in cat.resolve("Char/A")) == ["a_01.bundle", "b_02.bundle"]
     paths = cat.fetch_key("Char/A")
     assert sorted(p.name for p in paths) == ["a_01.bundle", "b_02.bundle"]
     for p in paths:
-        assert p.parent == tmp_path / "cache" / "bundles"
+        assert p.parent == tmp_path / "downloads" / "bundles"
         assert p.read_bytes() == synth.fake_bundle(p.name)
-    # cached bundles are not fetched again
+    # downloaded bundles are not fetched again
     for p in (tmp_path / "cdn" / "asset" / "Android").iterdir():
         p.unlink()
-    assert cat.fetch_key("Char/B") == [tmp_path / "cache" / "bundles" / "b_02.bundle"]
+    assert cat.fetch_key("Char/B") == [tmp_path / "downloads" / "bundles" / "b_02.bundle"]
     with pytest.raises(KeyError):
         cat.resolve("Char/C")
 
 
 def test_encrypted_bundle_needs_key(tmp_path):
-    cat = Catalog(remote_catalog(), tmp_path / "cache", cdn=make_cdn(tmp_path / "cdn"))
+    cat = Catalog(remote_catalog(), tmp_path / "downloads", cdn=make_cdn(tmp_path / "cdn"))
     with pytest.raises(RuntimeError, match="no bundle key"):
         cat.fetch_key("Char/B")
 
 
 def test_apk_catalog_is_merged(tmp_path):
     apk = make_apk(tmp_path / "base.apk")
-    cat = Catalog(remote_catalog(), tmp_path / "cache", cdn=make_cdn(tmp_path / "cdn"), bundle_key=KEY, apk=apk)
+    cat = Catalog(remote_catalog(), tmp_path / "downloads", cdn=make_cdn(tmp_path / "cdn"), bundle_key=KEY, apk=apk)
     assert "Shared/S" in cat.keys()
     (b,) = cat.resolve("Shared/S")
     assert not b.remote and b.offset >= APK_OFFSET_BASE
@@ -141,7 +141,7 @@ def test_apk_catalog_is_merged(tmp_path):
 
 
 def test_apk_bundles_skipped_without_apk(tmp_path):
-    cat = Catalog(synth.CatalogWriter().build(APK_ENTRIES), tmp_path / "cache", bundle_key=KEY)
+    cat = Catalog(synth.CatalogWriter().build(APK_ENTRIES), tmp_path / "downloads", bundle_key=KEY)
     assert cat.fetch_key("Shared/S") == []
 
 
@@ -149,13 +149,13 @@ def test_load_downloads_catalog_once(tmp_path):
     cdn_root = tmp_path / "cdn"
     (cdn_root / "asset" / "Android").mkdir(parents=True)
     (cdn_root / "asset" / "Android" / "catalog_main_xx.bin").write_bytes(remote_catalog())
-    cat = Catalog.load("xx", tmp_path / "cache", cdn=cdn_root.as_uri())
-    assert (tmp_path / "cache" / "catalog_main_xx.bin").read_bytes() == remote_catalog()
+    cat = Catalog.load("xx", tmp_path / "downloads", cdn=cdn_root.as_uri())
+    assert (tmp_path / "downloads" / "catalog_main_xx.bin").read_bytes() == remote_catalog()
     assert cat.keys("Char/") == ["Char/A", "Char/B"]
     (cdn_root / "asset" / "Android" / "catalog_main_xx.bin").unlink()
-    assert Catalog.load("xx", tmp_path / "cache").keys("Story/") == ["Story/物語"]
+    assert Catalog.load("xx", tmp_path / "downloads").keys("Story/") == ["Story/物語"]
     with pytest.raises(FileNotFoundError):
-        Catalog.load("yy", tmp_path / "cache")
+        Catalog.load("yy", tmp_path / "downloads")
 
 
 def test_downloads_keep_one_connection_per_thread(monkeypatch):

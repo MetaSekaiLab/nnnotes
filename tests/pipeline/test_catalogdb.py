@@ -15,8 +15,8 @@ from nnnotes.pipeline.catalogdb import (
     stable_raw_name,
     version_id,
 )
+from nnnotes.pipeline.depot import Depot
 from nnnotes.pipeline.stages import Env, describe, execute, registry
-from nnnotes.pipeline.store import Store
 from nnnotes.source.addressables import parse, parse_header, parse_keys, parse_locations
 from nnnotes.source.catalog import APK_OFFSET_BASE, Catalog, file_name, location_kind
 from tests.helpers import synth
@@ -158,18 +158,18 @@ def test_location_kind_and_file_name():
 
 def test_catalog_bundles_raw_files_locations(tmp_path):
     remote = build(remote_entries())
-    cat = Catalog(remote, tmp_path / "cache")
+    cat = Catalog(remote, tmp_path / "downloads")
     assert [b.name for b in cat.bundles()] == [f"chara_a_{H1}.bundle", f"chara_b_{H2}.bundle", "shared.bundle"]
     assert [b.remote for b in cat.bundles()] == [True, True, False]
     assert [file_name(e["internal_id"]) for e in cat.raw_files()] == [RAW]
-    assert cat.cached_raw(cat.raw_files()[0]) is None
+    assert cat.downloaded_raw(cat.raw_files()[0]) is None
     assert cat.sources() == {"remote": remote}
     locs = cat.locations()
     assert [e["offset"] for e in locs] == [e["offset"] for e in cat.entries]
     assert {e["catalog"] for e in locs} == {"remote"}
     assert [e["kind"] for e in locs] == ["asset", "asset", "bundle", "bundle", "asset", "bundle", "raw", "asset"]
 
-    with_apk = Catalog(remote, tmp_path / "cache", apk=make_apk(tmp_path / "base.apk"))
+    with_apk = Catalog(remote, tmp_path / "downloads", apk=make_apk(tmp_path / "base.apk"))
     shared = [b for b in with_apk.bundles() if b.name == "shared.bundle"]
     assert len(shared) == 1 and shared[0].offset >= APK_OFFSET_BASE  # the APK catalog's location wins
     assert [file_name(e["internal_id"]) for e in with_apk.raw_files()] == ["cri_emb/voice_" + H4, RAW]
@@ -292,9 +292,9 @@ def test_diff_with_addresses():
     assert "~ object chara_a/Assets/Game/Char/A.png (object, byteSize)" in format_diff(d)
 
 
-# ---------------------------------------------------------------- versions in the store
+# ---------------------------------------------------------------- versions in the depot
 def test_catalog_db(tmp_path):
-    db = CatalogDB(tmp_path / "store")
+    db = CatalogDB(tmp_path / "depot")
     assert db.versions() == []
     remote, apk = build(remote_entries()), build(APK)
     v = db.add(remote, apk, region="r1", language="xx", hash_text="00ff" * 8)
@@ -320,7 +320,7 @@ def test_catalog_db(tmp_path):
     assert db.index(v) == index(remote, apk)
     ins = db.inputs(v)
     assert [i.role for i in ins] == ["remote", "apk"] and ins[0].locators[0]["path"] == str(db.path(rsha))
-    assert (tmp_path / "store" / "catalogs" / "index.json").read_bytes() == contract.encode(
+    assert (tmp_path / "depot" / "catalogs" / "index.json").read_bytes() == contract.encode(
         {"schema": "nnnotes.catalogs/1", "versions": db.versions()}
     )
     assert default_label("ab" * 32) == "ab" * 6 and default_label("ab" * 32, "9.9") == "9.9"
@@ -338,22 +338,22 @@ def test_fetch_with_and_without_hash(tmp_path):
 
 # ---------------------------------------------------------------- stage
 def test_index_stage(tmp_path):
-    db = CatalogDB(tmp_path / "store")
+    db = CatalogDB(tmp_path / "depot")
     remote, apk = build(remote_entries()), build(APK)
     v = db.add(remote, apk)
-    store = Store(tmp_path / "store")
+    depot = Depot(tmp_path / "depot")
     stage = IndexStage()
-    env = Env(store, {"catalogs": {"main": db.inputs(v)}})
+    env = Env(depot, {"catalogs": {"main": db.inputs(v)}})
     assert stage.subjects(env) == ["main"]
     task = describe(stage, "main", None, env)
     assert task.id == "catalog.index:main"
-    ex = execute(task, store, registry(stage))
+    ex = execute(task, depot, registry(stage))
     assert ex.status == "ran" and ex.result_status == "ok"
-    (rec,) = store.result(task.key)["artifacts"]
+    (rec,) = depot.result(task.key)["artifacts"]
     assert rec["id"] == "catalog.index:main#index" and rec["semantics"]["facts"]["bundles"] == 3
-    assert contract.loads(store.read(rec["content"]["sha256"])) == index(remote, apk)
-    assert execute(task, store, registry(stage)).status == "hit"
-    only_remote = Env(store, {"catalogs": {"main": db.inputs(v)[:1]}})
+    assert contract.loads(depot.read(rec["content"]["sha256"])) == index(remote, apk)
+    assert execute(task, depot, registry(stage)).status == "hit"
+    only_remote = Env(depot, {"catalogs": {"main": db.inputs(v)[:1]}})
     assert describe(stage, "main", None, only_remote).key != task.key
     with pytest.raises(ValueError, match="expected remote"):
-        describe(stage, "main", None, Env(store, {"catalogs": {"main": db.inputs(v)[1:]}}))
+        describe(stage, "main", None, Env(depot, {"catalogs": {"main": db.inputs(v)[1:]}}))

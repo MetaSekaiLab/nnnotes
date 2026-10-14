@@ -7,10 +7,10 @@ import pytest
 
 from nnnotes.pipeline import contract
 from nnnotes.pipeline.contract import Cost, Task
+from nnnotes.pipeline.depot import Depot
 from nnnotes.pipeline.orchestrate import Orchestrator, Scheduler, coverage
 from nnnotes.pipeline.plan import plan
 from nnnotes.pipeline.stages import execute
-from nnnotes.pipeline.store import Store
 from tests.pipeline.test_stages import PIPELINE, toy_files, toy_stages
 
 TEXTS = {
@@ -34,11 +34,11 @@ def tree(root: Path, *subs) -> dict:
 
 
 def orchestrate(tmp_path, name, texts, workers=0, stages=None, force=(), **kw):
-    store = Store(tmp_path / name)
+    depot = Depot(tmp_path / name)
     files = toy_files(tmp_path / "in", texts)
-    orch = Orchestrator(store, stages or toy_stages(), workers=workers, log=lambda m: None, **kw)
+    orch = Orchestrator(depot, stages or toy_stages(), workers=workers, log=lambda m: None, **kw)
     run = orch.run(PIPELINE, facts={"files": files}, context={"region": "test"}, selection=["all"], force=force)
-    return store, run, orch
+    return depot, run, orch
 
 
 def test_one_worker_and_four_workers_give_identical_stores(tmp_path):
@@ -56,7 +56,7 @@ def test_one_worker_and_four_workers_give_identical_stores(tmp_path):
 
 def test_run_stage_task_by_task_equals_the_orchestrated_store(tmp_path):
     s0, _, _ = orchestrate(tmp_path, "orch", TEXTS)
-    s1 = Store(tmp_path / "tasks-store")
+    s1 = Depot(tmp_path / "tasks-depot")
     stages = toy_stages()
     facts = {"files": toy_files(tmp_path / "in", TEXTS)}
     rounds = 0
@@ -73,7 +73,7 @@ def test_run_stage_task_by_task_equals_the_orchestrated_store(tmp_path):
 
 def test_item_failures_are_cached_task_failures_are_not(tmp_path):
     texts = {"a": "x\nFAIL", "b": "CRASH", "c": "y"}
-    store, run, _ = orchestrate(tmp_path, "s", texts)
+    depot, run, _ = orchestrate(tmp_path, "s", texts)
     st = {t: v["status"] for t, v in run.tasks.items()}
     assert st == {
         "toy.src:a": "ran",
@@ -92,7 +92,7 @@ def test_item_failures_are_cached_task_failures_are_not(tmp_path):
         ("toy.src:b", None, "task.error"),
     ]
     assert run.exit_code == 1
-    total = store.result(run.tasks["toy.total:all"]["key"])
+    total = depot.result(run.tasks["toy.total:all"]["key"])
     assert [i[0] for i in total["keyParts"]["inputs"]] == ["count:a", "count:c"]
     _, again, _ = orchestrate(tmp_path, "s", texts)
     st = {t: v["status"] for t, v in again.tasks.items()}
@@ -101,7 +101,7 @@ def test_item_failures_are_cached_task_failures_are_not(tmp_path):
 
 
 def test_a_dying_worker_fails_its_task_only(tmp_path):
-    store, run, orch = orchestrate(tmp_path, "s", {"a": "x", "d": "DIE", "c": "y"}, workers=2)
+    depot, run, orch = orchestrate(tmp_path, "s", {"a": "x", "d": "DIE", "c": "y"}, workers=2)
     assert run.tasks["toy.src:d"]["status"] == "failed"
     assert [f["code"] for f in run.failures() if f["task"] == "toy.src:d"] == ["task.worker_died"]
     assert run.tasks["toy.src:a"]["status"] == run.tasks["toy.src:c"]["status"] == "ran"
@@ -110,13 +110,13 @@ def test_a_dying_worker_fails_its_task_only(tmp_path):
 
 
 def test_equal_content_under_two_subjects_is_stored_once(tmp_path):
-    store, run, _ = orchestrate(tmp_path, "s", {"a": "same", "b": "same"}, workers=2)
+    depot, run, _ = orchestrate(tmp_path, "s", {"a": "same", "b": "same"}, workers=2)
     assert all(v["status"] == "ran" for v in run.tasks.values())
     assert run.tasks["toy.src:a"]["key"] != run.tasks["toy.src:b"]["key"]  # the subject names artifacts
-    ra, rb = (store.result(run.tasks[f"toy.src:{s}"]["key"]) for s in "ab")
+    ra, rb = (depot.result(run.tasks[f"toy.src:{s}"]["key"]) for s in "ab")
     assert [a["id"] for a in rb["artifacts"]] == ["F-b:1#data", "toy.src:b#all.txt"]
     assert {a["content"]["sha256"] for a in ra["artifacts"]} == {a["content"]["sha256"] for a in rb["artifacts"]}
-    assert len(tree(store.root, "cas")) == 3  # SAME, the two equal counts, the total
+    assert len(tree(depot.root, "cas")) == 3  # SAME, the two equal counts, the total
 
 
 def test_no_more_workers_start_than_a_stage_has_tasks(tmp_path):
@@ -206,7 +206,7 @@ def test_coverage_and_failures_documents(tmp_path):
 
 
 def test_unknown_or_misordered_stages_are_refused(tmp_path):
-    orch = Orchestrator(Store(tmp_path / "s"), toy_stages(), log=lambda m: None)
+    orch = Orchestrator(Depot(tmp_path / "s"), toy_stages(), log=lambda m: None)
     with pytest.raises(ValueError, match="unknown stages"):
         orch.run(["toy.nope"], facts={"files": {}})
     with pytest.raises(ValueError, match="runs before toy.src"):
@@ -218,12 +218,12 @@ def test_a_config_error_stops_the_run(tmp_path):
     from tests.pipeline.test_stages import Src
 
     class NeedsTool(Src):
-        def run(self, task, store):
+        def run(self, task, depot):
             raise ConfigError("setting paths.tool is not set")
 
     stages = toy_stages()
     stages["toy.src"] = NeedsTool()
-    orch = Orchestrator(Store(tmp_path / "s"), stages, log=lambda m: None)
+    orch = Orchestrator(Depot(tmp_path / "s"), stages, log=lambda m: None)
     with pytest.raises(ConfigError, match="paths.tool"):
         orch.run(PIPELINE, facts={"files": toy_files(tmp_path / "in", {"a": "x", "b": "y"})})
 
@@ -239,7 +239,7 @@ def test_a_stage_whose_subjects_need_a_failed_task_fails_once(tmp_path):
             return ["x"]
 
     stages = dict(toy_stages(), **{"toy.after": AfterAll()})
-    orch = Orchestrator(Store(tmp_path / "s"), stages, log=lambda m: None)
+    orch = Orchestrator(Depot(tmp_path / "s"), stages, log=lambda m: None)
     run = orch.run(["toy.src", "toy.after"], facts={"files": toy_files(tmp_path / "in", {"a": "x", "b": "CRASH"})})
     assert run.tasks["toy.after:*"]["status"] == "failed"
     assert [f["code"] for f in run.failures() if f["task"] == "toy.after:*"] == ["upstream.failed"]
@@ -333,10 +333,10 @@ def test_compact_coverage_equals_a_reading_of_whole_items():
 
 
 def test_the_reports_read_the_results_once_until_the_tasks_change(tmp_path):
-    store, run, _ = orchestrate(tmp_path, "s", {"a": "x\nFAIL\n?y\n", "b": "z"})
+    depot, run, _ = orchestrate(tmp_path, "s", {"a": "x\nFAIL\n?y\n", "b": "z"})
     reads = []
-    real = store.result
-    store.result = lambda key: reads.append(key) or real(key)
+    real = depot.result
+    depot.result = lambda key: reads.append(key) or real(key)
     first = (run.summary(), run.failures(), run.coverage())
     n = len(reads)
     assert n == sum(t["status"] != "failed" for t in run.tasks.values())

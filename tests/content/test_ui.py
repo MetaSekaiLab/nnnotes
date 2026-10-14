@@ -176,7 +176,7 @@ def test_cli_selects_the_jp_split_apk_and_keeps_public_provenance(tmp_path, expo
         {
             "catalog": {"region": "jp"},
             "servers": {"jp": {"apk": str(apk)}},
-            "paths": {"apk": "wrong-global.apk", "cache": str(tmp_path / "cache")},
+            "paths": {"apk": "wrong-global.apk", "depot": str(tmp_path / "depot")},
         },
         environ={},
     )

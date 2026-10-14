@@ -1,4 +1,4 @@
-"""`nnnotes catalog`: the region's addressable keys, a local catalog browser, and the catalog versions of the store
+"""`nnnotes catalog`: the region's addressable keys, a local catalog browser, and the catalog versions of the depot
 (import, fetch, list, diff)."""
 
 from __future__ import annotations
@@ -40,14 +40,14 @@ def cmd_browse(args, cfg):
         if not langs:
             raise cfg.missing(f"servers.{r}", "languages")
         regions.append(Region(r, cfg.get(f"servers.{r}", "name") or r, cfg.cdn(r), langs, cfg))
-    serve(regions, Session(cfg).bundle_key(), cfg.require_path("paths", "cache"), args.port, args.host)
+    serve(regions, Session(cfg).bundle_key(), Session(cfg).downloads(), args.port, args.host)
 
 
-# ---------------------------------------------------------------- catalog versions of the store
+# ---------------------------------------------------------------- catalog versions of the depot
 def _db(cfg):
     from ..pipeline.catalogdb import CatalogDB
 
-    return CatalogDB(Session(cfg).store_root())
+    return CatalogDB(Session(cfg).depot_root())
 
 
 def version_line(v: dict) -> str:
@@ -145,7 +145,7 @@ def cmd_fetch(args, cfg):
     if cfg.provider(region) == "jp":
         from ..source.jp import open_catalog
 
-        cat = open_catalog(cfg, region, apk=cfg.path("paths", "apk"))
+        cat = open_catalog(cfg, region, Session(cfg).downloads(), apk=cfg.path("paths", "apk"))
         src, source = cat.sources(), cat.source
         assert source is not None  # a JP catalog names its version source
         v = _db(cfg).add(
@@ -163,7 +163,7 @@ def cmd_fetch(args, cfg):
     cdn = cfg.cdn(region)
     language = cfg.require("catalog", "language")
     version = Session(cfg).catalog_version(region)
-    filename = Catalog.cache_file(language, Path("."), version=version).name
+    filename = Catalog.file_name(language, version=version)
     try:
         data, hash_text = catalogdb.fetch(cdn, language, version=version)
     except OSError as e:  # URLError, HTTPError, timeouts (the message has no URL)
@@ -190,7 +190,7 @@ def cmd_fetch(args, cfg):
 
 def cmd_diff(args, cfg):
     from ..pipeline import catalogdb
-    from ..pipeline.store import Store
+    from ..pipeline.depot import Depot
     from .assets import addresses_of
 
     db = _db(cfg)
@@ -200,9 +200,9 @@ def cmd_diff(args, cfg):
             vs.append(db.get(ref))
         except (KeyError, ValueError) as e:
             usage(args, f"{ref}: {e.args[0] if e.args else e}")
-    store = Store(Session(cfg).store_root())
+    depot = Depot(Session(cfg).depot_root())
     a, b = vs
-    d = catalogdb.diff(db.index(a), db.index(b), addresses_of(store, a["id"]), addresses_of(store, b["id"]))
+    d = catalogdb.diff(db.index(a), db.index(b), addresses_of(depot, a["id"]), addresses_of(depot, b["id"]))
     if args.json:
         report(args, d)
     else:
@@ -210,14 +210,14 @@ def cmd_diff(args, cfg):
 
 
 def register(sub) -> None:
-    cs = group(sub, "catalog", "the region's catalog: its keys, a local browser, and the catalog versions of the store")
+    cs = group(sub, "catalog", "the region's catalog: its keys, a local browser, and the catalog versions of the depot")
     c = command(cs, "keys", cmd_keys, "the addressable keys of the catalog (the total on standard error)")
     c.add_argument("--prefix", default="", help="only the keys that start with this prefix")
     c.add_argument("--limit", type=int, default=200, help="at most N keys (default 200; 0: all)")
     c = command(cs, "browse", cmd_browse, "browse the configured regions' catalogs and bundles in a local web page")
     c.add_argument("--port", type=int, default=8000, help="port (default 8000)")
     c.add_argument("--host", default="127.0.0.1", help="address to listen on (default 127.0.0.1)")
-    command(cs, "versions", cmd_versions, "the catalog versions imported into the store (--json: nnnotes.catalogs/1)")
+    command(cs, "versions", cmd_versions, "the catalog versions imported into the depot (--json: nnnotes.catalogs/1)")
     c = command(cs, "import", cmd_import, "import a catalog file (with the APK's catalog when [paths] apk is set)")
     c.add_argument("file", help="catalog_<version>_<language>.bin")
     c.add_argument("--label", help="label of the version (default: its resource version, else the sha256 prefix)")
@@ -227,13 +227,13 @@ def register(sub) -> None:
         help="the game's resource version of this catalog (default: the JP source's version, else the "
         "version in the file name catalog_<version>_<language>.bin)",
     )
-    c = command(cs, "fetch", cmd_fetch, "fetch the region's current catalog and import it into the store")
+    c = command(cs, "fetch", cmd_fetch, "fetch the region's current catalog and import it into the depot")
     c.add_argument("--label", help="label of the version (default: the resource version when an API root is set)")
     c = command(
         cs,
         "diff",
         cmd_diff,
-        "keys, bundles, raw files (and objects) that differ between two catalog versions of the store "
+        "keys, bundles, raw files (and objects) that differ between two catalog versions of the depot "
         "(--json: nnnotes.catalog-diff/1)",
     )
     c.add_argument("old", help="label, version id or sha256 prefix")

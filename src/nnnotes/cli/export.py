@@ -1,4 +1,4 @@
-"""`nnnotes export`: the selected bundles of the catalog into the store and its layouts (`assets`), and single
+"""`nnnotes export`: the selected bundles of the catalog into the depot and its layouts (`assets`), and single
 subjects into a directory or file: an ADV episode, a story, a live, a Live2D model, a spot, a room, shaders, a cue
 sheet, the APK's UI library."""
 
@@ -235,20 +235,20 @@ def cmd_ui(args, cfg):
 
 
 def register(sub) -> None:
-    es = group(sub, "export", "game data -> common formats: the store's asset export and single subjects")
+    es = group(sub, "export", "game data -> common formats: the depot's asset export and single subjects")
 
     c = command(
         es,
         "assets",
         assets.cmd_export,
-        "every object of the selected bundles -> common formats (the store and its layouts)",
+        "every object of the selected bundles -> common formats (the depot and its layouts)",
     )
     out_arg(c, "output directory")
     assets.run_args(c)
     c.add_argument(
         "--link",
         choices=("auto", "clone", "hard", "copy"),
-        help="how the layout files are made from the store: auto (default; [export] link): a clone where "
+        help="how the layout files are made from the depot: auto (default; [export] link): a clone where "
         "the file system makes them, else a hard link (read-only), else a copy; or that method only",
     )
     c.add_argument("--strict", action="store_true", help="exit 1 when a view has gaps")

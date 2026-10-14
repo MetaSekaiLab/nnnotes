@@ -23,13 +23,12 @@ FLAG_SETTINGS = {
     ("catalog", "language"): ("language", "--language"),
     ("catalog", "version"): ("catalog_version", "--catalog-version"),
     ("paths", "catalog"): ("catalog", "--catalog"),
-    ("paths", "cache"): ("cache", "--cache"),
     ("paths", "master"): ("master", "--master"),
     ("paths", "apk"): ("apk", "--apk"),
     ("paths", "ffmpeg"): ("ffmpeg", "--ffmpeg"),
     ("paths", "vgmstream"): ("vgmstream", "--vgmstream"),
     ("paths", "node"): ("node", "--node"),
-    ("paths", "store"): ("store", "--store"),
+    ("paths", "depot"): ("depot", "--depot"),
     ("paths", "player"): ("player", "--player"),
 }
 # the global options: dest -> (flag, metavar, help); --player is an option of `site build` only
@@ -41,15 +40,14 @@ GLOBAL_OPTIONS = {
         "LANG",
         "catalog and client language: ja, en, zh-Hant, zh-Hans or ko ([catalog] language)",
     ),
-    "catalog": ("--catalog", "FILE", "catalog .bin file ([paths] catalog; else downloaded into the cache)"),
+    "catalog": ("--catalog", "FILE", "catalog .bin file ([paths] catalog; else downloaded into the depot)"),
     "catalog_version": (
         "--catalog-version",
         "VERSION",
         "the resource version of an international catalog ([catalog] version; else the version the game API "
         "serves when an API root is configured, otherwise main)",
     ),
-    "cache": ("--cache", "DIR", "cache directory ([paths] cache)"),
-    "store": ("--store", "DIR", "store directory ([paths] store; default <cache>/store)"),
+    "depot": ("--depot", "DIR", "depot directory ([paths] depot)"),
     "master": ("--master", "DIR", "decoded master data directory ([paths] master)"),
     "apk": ("--apk", "FILE", "base.apk ([paths] apk)"),
     "ffmpeg": ("--ffmpeg", "EXE", "ffmpeg executable ([paths] ffmpeg; else on PATH)"),
