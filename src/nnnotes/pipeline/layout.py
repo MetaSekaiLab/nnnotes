@@ -27,6 +27,9 @@
   - paths that coincide ignoring case (or a file named like another path's directory) keep the first by path and
     id; each other gets `~<first 8 hex of sha256(artifact id)>` before its extension and is reported; artifacts with
     the same path and the same content share the file
+`product` (product_entries): the products of pipeline.assemble. Every file of a product and of the objects of its
+object table is at `assets/<sha256>.<ext>`; each product has a manifest (nnnotes.product/1, product_manifest) at
+`<directory>/<file>.json` (ProductStage.manifest), whose asset paths are relative to the directory above its own.
 So every path ends with its artifact's extension, and `cas` follows from the `original` manifest alone; `original`
 follows from `cas` plus the results (the records). Documents a stage derives for `original` from its records and
 the paths (the views with the files of their objects) are the exception: `original` has the derived documents,
@@ -63,6 +66,7 @@ from .depot import write_doc, write_file
 MANIFEST = "manifest.json"
 JOURNAL = ".nnnotes-layout-journal.json"
 LAYOUTS = ("original", "cas")
+PRODUCT_TABLE = "objects"  # the role of a product's object table (nnnotes.objects/1) among its artifacts
 PLACEMENTS = ("clone", "hard", "copy")  # how a file is made from its byte source
 LINKS = ("auto", *PLACEMENTS)  # what a run may ask for: auto probes
 FICLONE = 0x40049409  # Linux ioctl: make a file share another's blocks
@@ -351,6 +355,59 @@ def _resolve(placed: list) -> tuple[list[dict], dict]:
     return sorted(entries, key=lambda e: (e["path"], e["id"])), {
         "collisions": sorted(collisions, key=lambda c: (c["path"], c["id"]))
     }
+
+
+def _asset(c: dict) -> dict:
+    return {"asset": f"assets/{c['sha256']}.{c['ext']}", "size": c["size"]}
+
+
+def product_manifest(task: str, result: dict, table: dict) -> dict:
+    """The manifest (nnnotes.product/1) of a product: its files {path: {asset, size}} and the objects of its object
+    table `table` that have files ({class, name, files: {role: {asset, size}}}) or are contained in one ({class,
+    in})."""
+    stage, subject = contract.parse_task_id(task)
+    files = {}
+    for a in result["artifacts"]:
+        role = contract.parse_artifact_id(a["id"])[1]
+        if role != PRODUCT_TABLE:
+            files[role] = _asset(a["content"])
+    objects = {}
+    for oid, o in table["objects"].items():
+        e = {k: o[k] for k in ("class", "name") if k in o}
+        if o.get("files"):
+            e["files"] = {r: _asset(f) for r, f in sorted(o["files"].items())}
+        elif "in" in o:
+            e["in"] = o["in"]
+        else:
+            continue
+        objects[oid] = e
+    return {"schema": contract.PRODUCT, "product": stage, "subject": subject, "files": files, "objects": objects}
+
+
+def product_entries(products) -> list[dict]:
+    """The entries of the `product` layout: `products` [(manifest path, the manifest's record {id, sha256, size},
+    result, object table)]."""
+    out: dict[tuple, dict] = {}
+    for path, manifest, result, table in products:
+        segs = path.split("/")
+        if len(segs) != 2 or not all(segs) or not segs[1].endswith(".json"):
+            raise ValueError(f"product manifest path {path!r}: expected <directory>/<file>.json")
+        out[(path, manifest["id"])] = {
+            "path": path,
+            "sha256": manifest["sha256"],
+            "size": manifest["size"],
+            "id": manifest["id"],
+        }
+        for a in result["artifacts"]:
+            if contract.parse_artifact_id(a["id"])[1] != PRODUCT_TABLE:
+                e = _entry(_asset(a["content"])["asset"], a)
+                out[(e["path"], e["id"])] = e
+        for oid, o in table["objects"].items():
+            for role, f in (o.get("files") or {}).items():
+                aid = contract.artifact_id(oid, role)
+                p = f"assets/{f['sha256']}.{f['ext']}"
+                out[(p, aid)] = {"path": p, "sha256": f["sha256"], "size": f["size"], "id": aid}
+    return [out[k] for k in sorted(out)]
 
 
 def entries(name: str, sources, **kw) -> tuple[list[dict], dict]:

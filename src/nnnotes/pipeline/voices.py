@@ -820,20 +820,6 @@ def _sheet_name(name: str) -> str | None:
     return name if "/" not in name else None
 
 
-_address_cache: dict = {}  # content id of an address table -> its AddressIndex, the latest one
-
-
-def _address_index(env, tid: str):
-    """The AddressIndex of the result of the link.addresses task `tid`."""
-    sha = env.artifact(tid, "addresses")["content"]["sha256"]
-    hit = _address_cache.get(sha)
-    if hit is None:
-        hit = views.AddressIndex.from_addresses(contract.loads(env.depot.read(sha)))
-        _address_cache.clear()
-        _address_cache[sha] = hit
-    return hit
-
-
 class VoiceStage(Stage):
     """view.voices (module documentation). Artifact "<task id>#view" (nnnotes.voices/1); facts rows, entries (rows
     per status), gaps, unreferenced (streams of the decoded sheets no row reaches). No items."""
@@ -929,7 +915,7 @@ class VoiceStage(Stage):
         )
         if self._memo is not None and self._memo[0] == sig:
             return self._memo[1]
-        index = _address_index(env, link)
+        index = units.address_index(env, subject)
         tables = {
             i.role[len(views.MASTER_ROLE) :]: views._cached_rows(i.sha256, Path(i.locators[0]["path"]).read_bytes)
             for i in masters

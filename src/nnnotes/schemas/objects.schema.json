@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:nnnotes:schema:objects",
+  "title": "nnnotes.objects/1",
+  "description": "The object table of a product (pipeline.assemble): the objects reachable from its roots through the unity.export results, with their item status and files.",
+  "type": "object",
+  "required": [
+    "schema",
+    "roots",
+    "objects",
+    "missing"
+  ],
+  "properties": {
+    "schema": {
+      "const": "nnnotes.objects/1"
+    },
+    "roots": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "objects": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "enum": [
+              "exported",
+              "contained",
+              "generic",
+              "unsupported",
+              "failed"
+            ]
+          },
+          "class": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "files": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "required": [
+                "sha256",
+                "size",
+                "ext"
+              ],
+              "properties": {
+                "sha256": {
+                  "$ref": "urn:nnnotes:schema:common#/$defs/sha256"
+                },
+                "size": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "ext": {
+                  "type": "string",
+                  "pattern": "^[0-9a-z]+$"
+                }
+              }
+            }
+          },
+          "in": {
+            "type": "string",
+            "description": "The object whose file holds a contained object."
+          },
+          "reason": {
+            "type": "string",
+            "description": "The reason code of a generic, unsupported or failed object."
+          }
+        }
+      }
+    },
+    "missing": {
+      "type": "array",
+      "description": "Objects a reached object references that no census holds.",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

@@ -5,11 +5,15 @@ objects whose census record names it as their `unit`) or an object outside any h
 path-id stable address of its root object (link.path_address: "<bundle>:<pathId>", with the file after the bundle in
 a bundle of several serialized files), which stays when the bundle's content changes; its object ids do not.
 
-The request (`table`): every unit holding an object of the selected bundles (fact "selected"), and every unit
-reachable from those through what their objects reference (census `refs`) across the censuses of the bundles of
-the fact "bundles"; with the fact "classes" (a list of class names; absent or None: every class), only the units
-whose root object is of those classes. A bundle whose census failed has no units; a reference into a file no
-census holds is left out.
+The request (`table`): every unit holding an object of the selected bundles (fact "selected") or a root object of the
+fact "roots", and every unit reachable from those through what their objects reference (census `refs`) across the
+censuses of the bundles of the fact "bundles"; with the fact "classes" (a list of class names; absent or None:
+every class), only the units whose root object is of those classes. A bundle whose census failed has no units; a
+reference into a file no census holds is left out.
+
+The fact "roots" (absent: none) is {"keys": catalog keys, "objects": object ids}: the objects of each key (all those
+the address table of link.addresses lists for it; a key without objects adds none) and the objects named. The
+products of a request start from them (pipeline.assemble).
 """
 
 from __future__ import annotations
@@ -17,11 +21,12 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass
 
-from . import contract, link
+from . import contract, link, views
 from .census import CensusStage
 from .stages import Pending
 
 CENSUS = CensusStage.name
+ADDRESSES = views.ADDRESSES_STAGE
 
 
 @dataclass(frozen=True)
@@ -131,9 +136,9 @@ def _census_units(stable: str, doc: dict, need_refs: bool):
     return units, of, {f["name"]: stable for f in doc["files"]}, refs
 
 
-def build(censuses, bundles, selected, classes=None) -> Units:
-    """The Units of a request over `censuses` [(stable bundle name, census document)] of the bundles `bundles`
-    (module documentation)."""
+def build(censuses, bundles, selected, classes=None, roots=()) -> Units:
+    """The Units of a request over `censuses` [(stable bundle name, census document)] of the bundles `bundles`, from
+    the units of the bundles `selected` and of the objects `roots` (module documentation)."""
     selected = set(selected)
     every = selected >= set(bundles)  # no reference can add a unit: none is read
     units: dict[str, Unit] = {}
@@ -152,6 +157,7 @@ def build(censuses, bundles, selected, classes=None) -> Units:
         want = set(units)
     else:
         want = {s for s, u in units.items() if u.bundle in selected}
+        want.update(of[o] for o in roots if o in of)
         todo = list(want)
         while todo:
             for oid in refs.get(todo.pop(), ()):
@@ -166,12 +172,36 @@ def build(censuses, bundles, selected, classes=None) -> Units:
 
 
 _MEMO: list = []  # [(signature, Units)] of the last table
+_ADDRESSES: dict = {}  # {sha256: AddressIndex} of the last address table read
+
+
+def address_index(env, subject: str) -> views.AddressIndex:
+    """The AddressIndex of the result of link.addresses for the catalog `subject` (Pending while it has not run)."""
+    sha = env.artifact(contract.task_id(ADDRESSES, subject), "addresses")["content"]["sha256"]
+    index = _ADDRESSES.get(sha)
+    if index is None:
+        index = views.AddressIndex.from_addresses(contract.loads(env.depot.read(sha)))
+        _ADDRESSES.clear()
+        _ADDRESSES[sha] = index
+    return index
+
+
+def root_objects(env, keys=(), objects=()) -> list[str]:
+    """The object ids of the catalog `keys` (through the address tables of the fact "catalogs") and the `objects`,
+    sorted."""
+    out = set(objects)
+    if keys:
+        for subject in sorted(env.fact("catalogs")):
+            index = address_index(env, subject)
+            for k in keys:
+                out.update(o.id for o in index.objects(k) or ())
+    return sorted(out)
 
 
 def table(env) -> Units:
     """The Units of the request of a planning environment: the censuses of the fact "bundles" (Pending while one
-    has not run; a failed one is skipped), the facts "selected" and "classes". Kept for the planning state it was
-    made in."""
+    has not run; a failed one is skipped), the facts "selected", "roots" (Pending while link.addresses has not run,
+    when it names keys) and "classes". Kept for the planning state it was made in."""
     bundles = sorted(env.fact("bundles"))
     keys = []
     for b in bundles:
@@ -182,7 +212,15 @@ def table(env) -> Units:
             if not p.failed:
                 raise
     classes = env.facts.get("classes")
-    sig = (id(env.depot), tuple(keys), tuple(env.fact("selected")), None if classes is None else tuple(classes))
+    request = env.facts.get("roots") or {}
+    roots = root_objects(env, request.get("keys", ()), request.get("objects", ()))
+    sig = (
+        id(env.depot),
+        tuple(keys),
+        tuple(env.fact("selected")),
+        None if classes is None else tuple(classes),
+        tuple(roots),
+    )
     if _MEMO and _MEMO[0][0] == sig:
         return _MEMO[0][1]
 
@@ -193,6 +231,6 @@ def table(env) -> Units:
             rec = next(a for a in env.depot.committed(key, tid)["artifacts"] if a["id"] == aid)
             yield b, contract.loads(env.depot.read(rec["content"]["sha256"]))
 
-    t = build(censuses(), bundles, env.fact("selected"), classes)
+    t = build(censuses(), bundles, env.fact("selected"), classes, roots)
     _MEMO[:] = [(sig, t)]
     return t

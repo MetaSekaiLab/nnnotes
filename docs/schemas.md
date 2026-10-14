@@ -26,7 +26,9 @@ schemas.load("plan")  # the schema as a dict
 | `failures` | `nnnotes.failures/1` | the failed tasks and items of a run |
 | `layout` | `nnnotes.layout/1` | the files a layout owns in its output directory |
 | `music-data` | `nnnotes.music-data/2` | every song and chart of one master data version ([music data](music-data.md)) |
+| `objects` | `nnnotes.objects/1` | the objects a product reaches: their class, item status and files ([products](products.md)) |
 | `plan` | `nnnotes.plan/1` | what a run would do and why (`depot plan`) |
+| `product` | `nnnotes.product/1` | a product's manifest: its files and the files of the objects it uses, as content-addressed assets ([products](products.md)) |
 | `result` | `nnnotes.result/1` | the result of a task, a function of its key alone |
 | `run` | `nnnotes.run/1` | a run manifest: context, selection, tasks with keys and statuses, layouts |
 | `scripts` | `nnnotes.scripts/1` | every MonoScript of the censuses, by object id |

@@ -109,10 +109,10 @@ hierarchy. Its subject is the stable address of its root object, `<stable bundle
 several serialized files the file's tag follows the bundle name, as in `link.addresses`): path ids stay when a
 bundle's content changes, so a unit keeps its task across catalog versions.
 
-A run exports the units holding an object of the selected bundles and every unit reachable from those through what
-their objects reference (the census `refs`, across the censuses of the run); with `--only-class` only the units whose
-root object is of those classes. The selection is not part of any key: a unit's task is the same whichever request
-reaches it.
+A run exports the units holding an object of the selected bundles, the units of the objects the fact "roots" names
+(a product's roots: [products](products.md)) and every unit reachable from those through what their objects reference
+(the census `refs`, across the censuses of the run); with `--only-class` only the units whose root object is of those
+classes. The selection is not part of any key: a unit's task is the same whichever request reaches it.
 
 A task's key includes the atoms `reader` and `sniff`, the converter `generic.json`, the converters (with their
 atoms) of the classes of the unit's objects, its bundle, its root and the script entries and shipped type trees its
