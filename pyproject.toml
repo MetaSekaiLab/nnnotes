@@ -26,7 +26,7 @@ classifiers = [
 dynamic = ["version"]
 
 [project.optional-dependencies]
-test = ["pytest>=8", "ruff>=0.15", "jsonschema>=4.18", "import-linter>=2.1"]
+test = ["pytest>=8", "ruff>=0.15", "jsonschema>=4.18", "import-linter>=2.1", "pyright>=1.1.414"]
 fonts = ["fonttools>=4.50", "freetype-py>=2.5", "scipy>=1.13"]
 docs = ["mkdocs>=1.6,<2", "mkdocs-material>=9.5", "mkdocstrings[python]>=0.29"]
 # the deck model of music-data: one nnnotes version carries one ournotes-deck release (.github/workflows/deck.yml moves
@@ -68,6 +68,12 @@ ignore = ["B023", "B905"]
 
 [tool.ruff.lint.flake8-bugbear]
 extend-immutable-calls = ["nnnotes.content.liveoptions.LiveOptions"]
+
+[tool.pyright]
+include = ["src"]
+pythonVersion = "3.11"
+pythonPlatform = "Linux"
+typeCheckingMode = "basic"
 
 [tool.importlinter]
 root_package = "nnnotes"

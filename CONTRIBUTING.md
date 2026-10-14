@@ -22,6 +22,7 @@ These are the checks CI runs on every pull request:
 ruff check .                      # lint
 ruff format --check .             # formatting (line length 120)
 lint-imports                      # the layer contract of pyproject.toml
+pyright                           # type check (the settings of pyproject.toml)
 pytest                            # the test suite
 mkdocs build --strict             # the documentation site
 ```
