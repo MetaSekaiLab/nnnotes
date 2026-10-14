@@ -164,7 +164,7 @@ story text); it is not a setting.
 | `master download` | `[catalog] region` and that region's `cdn`; `--latest` also that region's `api` and the client version |
 | `master version` | `[catalog] region` and that region's `api`; the client version: `[client] version` or `[paths] apk` |
 | `servers` | `[bootstrap] api`; the client version: `[client] version` or `[paths] apk` |
-| `export episode` | catalog, master data |
+| `export episode` | the store, catalog, master data |
 | `export story` | catalog, `[catalog] language`, master data, `[paths] apk`, `ffmpeg` (audio and videos), `vgmstream` (not with `--no-audio`) |
 | `export live2d` | the store (`[paths] store` or `[paths] cache`), catalog, `[paths] apk` |
 | `export spot` | the store, catalog, master data, `[paths] apk` |

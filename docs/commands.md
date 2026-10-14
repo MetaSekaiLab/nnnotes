@@ -153,6 +153,8 @@ takes the player settings' default transition, which is read from `[paths] apk`)
 `chatwindow` and `chaticon` from the `MasterAdvChat` row of the chat rows' chat id; `video` from the episode's video
 row of a Movie / Clip row's video id.
 
+The file is the result of the store's `adv.episode` task of the episode ([stages](stages.md)).
+
 ## export story
 
 ```

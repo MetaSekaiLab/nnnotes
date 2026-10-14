@@ -76,7 +76,7 @@ RECYCLE_RSS_MIN = 256 << 20  # but not below this
 REPORTS = "_reports"
 SELECT_KINDS = ("group", "key", "bundle")
 RAW_STAGES = ("cri.audio", "cri.movie")
-MASTER_STAGES = ("spot.scene",)  # stages that read master data (besides the views)
+MASTER_STAGES = ("spot.scene", "adv.episode")  # stages that read master data (besides the views)
 EXPORT_STAGE = "unity.export"
 CATALOG_SUBJECT = "main"
 EXIT_FAILED, EXIT_USAGE, EXIT_ABORTED, EXIT_INCOMPATIBLE = 1, 2, 3, 4
@@ -111,6 +111,7 @@ STAGE_SOURCES = (
     StageSource("spine.skeleton", "nnnotes.pipeline.modelstages:SpineStage", output=True),
     StageSource("room.scene", "nnnotes.pipeline.modelstages:RoomStage", output=True),
     StageSource("spot.scene", "nnnotes.pipeline.modelstages:SpotStage", output=True),
+    StageSource("adv.episode", "nnnotes.pipeline.advstages:EpisodeStage", output=True),
     StageSource("link.artifacts", "nnnotes.pipeline.link:ArtifactsStage"),
     StageSource("view.", "nnnotes.pipeline.views:stages", output=True),
     StageSource("view.voices", "nnnotes.pipeline.voices:VoiceStage", output=True),

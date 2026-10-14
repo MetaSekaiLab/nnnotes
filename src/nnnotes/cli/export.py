@@ -32,16 +32,23 @@ from .common import (
 
 
 def cmd_episode(args, cfg):
-    from ..content import adv
+    from ..pipeline import contract
+    from ..pipeline.advstages import EPISODE, episode_keys
+    from ..source import master
 
     md = Session(cfg).master_dir()
     known_row(args, md, "MasterAdv", args.adv_id, "episode")
-    cat = Session(cfg).catalog()
-    doc = adv.to_json(adv.extract(cat, md, args.adv_id))
+    (row,) = [r for r in master.table(md, "MasterAdv") if r["_id"] == args.adv_id]
+    run = assets.SubjectRun(args, cfg)
+    subject = str(args.adv_id)
+    run.run([EPISODE], keys=episode_keys(row["_advEpisodeAsset"]), requests={EPISODE: [subject]})
+    doc = run.result(contract.task_id(EPISODE, subject))
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
-    write_json(out, doc)
-    r = {"out": str(out), "commands": doc["commandCount"], "resources": len(doc["resources"])}
+    (art,) = doc["artifacts"]
+    write_file(out, run.store.read(art["content"]["sha256"]))
+    facts = art["semantics"]["facts"]
+    r = {"out": str(out), "commands": facts["commands"], "resources": facts["resources"]}
     report(args, r, lambda r: [f"{r['out']}  ({r['commands']} commands, {r['resources']} resources)"])
 
 

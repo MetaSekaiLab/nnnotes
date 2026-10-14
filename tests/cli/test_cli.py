@@ -316,7 +316,9 @@ def test_crikey_write_creates_the_directory(tmp_path, capsys, monkeypatch):
 
 # ---------------------------------------------------------------- unknown keys and ids: usage errors
 MASTER_TABLES = {
-    "MasterAdv": [{"_id": 1}],
+    "MasterAdv": [{"_id": 1, "_advEpisodeAsset": "e1"}],
+    "MasterAdvChat": [],
+    "MasterText": [],
     "MasterHomeSpot": [{"_id": 1}],
     "MasterLiveMusic": [{"_id": 7, "_expertID": 70, "_easyID": 0, "_vocalCharacterIDs": [1]}],
     "MasterLiveMusicScore": [{"_id": 70}],

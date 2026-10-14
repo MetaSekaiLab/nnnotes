@@ -171,12 +171,27 @@ def test_task_catalog_answers_from_the_task(tmp_path):
             f(M2)
     # inputs are ordered by position, not by role text
     many = [Input(f"bundle:{i}", contract.sha256(b"x%d" % i), 2) for i in (10, 2, 1)]
-    assert [
-        i.role
-        for i in TaskCatalog(
-            "k", "Assets/k", modelstages._ordered(Task(Live2DStage.name, 1, "k", inputs=tuple(many))), store
-        ).bundles
-    ] == ["bundle:1", "bundle:2", "bundle:10"]
+    ordered = modelstages._ordered(Task(Live2DStage.name, 1, "k", inputs=tuple(many)))
+    assert [i.role for i in TaskCatalog({"k": ordered}, store).closures["k"]] == ["bundle:1", "bundle:2", "bundle:10"]
+
+
+def test_task_catalog_of_several_keys_answers_from_their_closures(tmp_path):
+    store = Store(tmp_path / "s")
+    data = {s: s.encode() for s in ("a", "b", "c")}
+    ins = {s: Input(f"bundle:{s}", store.put(d), len(d), f"{s}.bundle", ({"kind": "store"},)) for s, d in data.items()}
+    task = Task(
+        "x.y", 1, "1", inputs=tuple(ins.values()), context={"closures": {"K1": ["b", "a"], "K2": ["c", "b", "c"]}}
+    )
+    cat = TaskCatalog.of_closures(task, store, names={"Bg": ["n1", "n2"]}, known=["Other/x"])
+    assert [p.read_bytes() for p in cat.fetch_key("K1")] == [b"b", b"a"]
+    assert [p.read_bytes() for p in cat.fetch_key("K2")] == [b"c", b"b", b"c"]
+    assert [b.name for b in cat.resolve("K2")] == ["c.bundle", "b.bundle", "c.bundle"]
+    assert [b.name for b in cat.resolve("Bg")] == ["n1", "n2"]
+    assert cat.has("K1") and cat.has("Other/x") and not cat.has("Bg") and not cat.has("Nope")
+    assert cat.keys("K") == ["K1", "K2"] and cat.keys("") == ["K1", "K2", "Other/x"]
+    for f in (cat.fetch_key, cat.entry):
+        with pytest.raises(KeyError):
+            f("Other/x")
 
 
 def fake_extract(calls):

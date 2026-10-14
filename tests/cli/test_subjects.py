@@ -410,3 +410,105 @@ def test_export_spot_names_a_key_of_the_spot_the_catalog_lacks(tmp_path, capsys,
     code, out, err = run([*scene_settings(tmp_path), "export", "spot", "2", "-o", str(tmp_path / "o")], capsys)
     assert code == 2 and out == "", err
     assert "nnnotes export spot: error: not a key of the catalog: Spot/none" in err
+
+
+# ---------------------------------------------------------------- adv.episode
+EP = "Adv/Episode/e1/e1"
+EP_BUNDLES = {n: f"adv_{n}_{n * 32}.bundle" for n in ("e", "t", "c")}
+EP_MASTER = {
+    "MasterAdv": [{"_id": 1, "_advEpisodeAsset": "e1", "_titleTextId": ""}],
+    "MasterAdvChat": [],
+    "MasterText": [{"_id": "t", "_japanese": "title"}],
+}
+
+
+def episode_settings(tmp_path, extra=()) -> list[str]:
+    """A catalog with the episode e1 (its script, a -Text shard and a model) and the ADV player settings in the
+    APK; `extra`: more (key, bundle letter) entries."""
+    cache = tmp_path / "cache" / "bundles"
+    cache.mkdir(parents=True, exist_ok=True)
+    for name in EP_BUNDLES.values():
+        (cache / name).write_bytes(b"UnityFS " + name.encode())
+    entries = [
+        (EP, "Assets/Adv/e1.asset", [3]),
+        (EP + "-Text", "Assets/Adv/e1-Text.json", [4]),
+        ("Character/Live2D/g/m/model/m", "Assets/m.prefab", [5]),
+    ]
+    entries += [(EP_BUNDLES[n], synth.remote(EP_BUNDLES[n]), []) for n in ("e", "t", "c")]
+    entries += [(key, f"Assets/{key}.prefab", [5]) for key in extra]
+    catalog = tmp_path / "catalog_main_ja.bin"
+    catalog.write_bytes(synth.CatalogWriter().build(entries))
+    md = tmp_path / "master"
+    md.mkdir(exist_ok=True)
+    for name, rows in EP_MASTER.items():
+        (md / f"{name}.json").write_text(json.dumps({"_allData": rows}), encoding="utf-8")
+    apk = tmp_path / "base.apk"
+    settings = [
+        ("EmbCommon/Adv/Settings/AdvPlayerSettings", "Assets/Emb/s.asset", [1]),
+        ("emb.bundle", synth.local("emb.bundle"), []),
+    ]
+    with zipfile.ZipFile(apk, "w") as z:
+        z.writestr("assets/aa/catalog.bin", synth.CatalogWriter().build(settings))
+        z.writestr("assets/aa/Android/emb.bundle", b"UnityFS player settings")
+    return [
+        "--catalog",
+        str(catalog),
+        "--cache",
+        str(tmp_path / "cache"),
+        "--region",
+        "zz",
+        "--language",
+        "ja",
+        "--master",
+        str(md),
+        "--apk",
+        str(apk),
+    ]
+
+
+def test_export_episode_writes_the_episode_task_and_reruns_on_its_keys(tmp_path, capsys, monkeypatch):
+    from nnnotes.content import adv
+
+    calls = []
+
+    def extract(cat, md, adv_id):
+        (row,) = [r for r in json.loads((md / "MasterAdv.json").read_bytes())["_allData"] if r["_id"] == adv_id]
+        assert row["_advEpisodeAsset"] == "e1" and (md / "MasterText.json").is_file()
+        calls.append(adv_id)
+        return {
+            "script": [p.read_bytes() for p in cat.fetch_key(EP)][0].decode(),
+            "text": cat.has(EP + "-Text") and [p.read_bytes() for p in cat.fetch_key(EP + "-Text")][0].decode(),
+            "sound": cat.has(EP + "-Sound"),
+            "settings": [p.read_bytes() for p in cat.fetch_key(adv.PLAYER_SETTINGS_KEY)][-1].decode(),
+            "model": cat.has("Character/Live2D/g/m/model/m"),
+            "stage": cat.has("Adv/Stage/s1"),
+            "commandCount": 2,
+            "resources": [{"kind": "live2d"}],
+        }
+
+    monkeypatch.setattr(adv, "extract", extract)
+    monkeypatch.setattr(adv, "to_json", lambda x: x)
+    base = episode_settings(tmp_path)
+    out = tmp_path / "e.json"
+    code, stdout, err = run([*base, "--json", "export", "episode", "1", "-o", str(out)], capsys)
+    assert code == 0, err
+    doc = {
+        "script": "UnityFS " + EP_BUNDLES["e"],
+        "text": "UnityFS " + EP_BUNDLES["t"],
+        "sound": False,
+        "settings": "UnityFS player settings",
+        "model": True,
+        "stage": False,
+        "commandCount": 2,
+        "resources": [{"kind": "live2d"}],
+    }
+    assert out.read_text(encoding="utf-8") == jsonio.dumps(doc, indent=1, ensure_ascii=False)
+    assert json.loads(stdout) == {"out": str(out), "commands": 2, "resources": 1} and calls == [1]
+    # a key outside the prefixes of the episode's resources: a hit; a resource key: the episode again
+    base = episode_settings(tmp_path, extra=["Other/k"])
+    code, _, err = run([*base, "export", "episode", "1", "-o", str(out)], capsys)
+    assert code == 0 and calls == [1], err
+    base = episode_settings(tmp_path, extra=["Other/k", "Adv/Stage/s1"])
+    code, _, err = run([*base, "export", "episode", "1", "-o", str(out)], capsys)
+    assert code == 0 and calls == [1, 1], err
+    assert json.loads(out.read_bytes())["stage"] is True
