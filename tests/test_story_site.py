@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from nnnotes import jsonio, storysite, tmpfont, web, webmodel
+from nnnotes import jsonio, sitefiles, siteindex, storysite, tmpfont, webmodel
 from nnnotes.config import Config, ConfigError
 
 
@@ -17,7 +17,7 @@ def box(kind: bytes, payload: bytes) -> bytes:
 
 
 def mp4(delay: int) -> bytes:
-    """An MP4 file whose audio track has an edit list starting at media time `delay` (web.mp4_priming)."""
+    """An MP4 file whose audio track has an edit list starting at media time `delay` (sitefiles.mp4_priming)."""
     elst = box(b"elst", b"\0\0\0\0" + struct.pack(">IIiI", 1, 48000, delay, 0x10000))
     return box(b"ftyp", b"M4A \0\0\0\0") + box(b"moov", box(b"trak", box(b"edts", elst)))
 
@@ -370,7 +370,7 @@ def test_facts_and_requires():
 def ingest(tmp_path, site_name="site", adv_id=5, mode=1, job=None, ui_variant=""):
     site = tmp_path / site_name
     dirs = story_dirs(tmp_path / f"work-{site_name}-{adv_id}", adv_id, mode, ui_variant)
-    r = storysite.ingest(web.Store(site), site, adv_id, dirs, {**JOB, **(job or {})}, [])
+    r = storysite.ingest(sitefiles.Store(site), site, adv_id, dirs, {**JOB, **(job or {})}, [])
     return site, r
 
 
@@ -390,16 +390,16 @@ def test_ingest_manifest(tmp_path):
     # scene.json and ui/ui.json are split per top-level key whatever their size; the parts rebuild the text
     scene_entry = man["files"]["scene.json"]
     assert [p[0] for p in scene_entry["parts"]] == ["player", "settings", "stages"]
-    assert web.entry_text(site, scene_entry) == web.text_asset("scene.json", json.dumps(scene()))
+    assert sitefiles.entry_text(site, scene_entry) == sitefiles.text_asset("scene.json", json.dumps(scene()))
     ui_ja, ui_en = man["languages"]["ja"]["files"]["ui/ui.json"], man["languages"]["en"]["files"]["ui/ui.json"]
     shared = {k: a for k, a, _ in ui_ja["parts"]}.items() & {k: a for k, a, _ in ui_en["parts"]}.items()
     assert {k for k, _ in shared} == {"sprites"}  # the equal part stored once
     for e in [*man["files"].values(), *(e for g in man["languages"].values() for e in g["files"].values())]:
-        for a in web.entry_assets(e):
-            assert a.split("/")[1].split(".")[0] == hashlib.sha256(web.read_asset(site, a)).hexdigest()
+        for a in sitefiles.entry_assets(e):
+            assert a.split("/")[1].split(".")[0] == hashlib.sha256(sitefiles.read_asset(site, a)).hexdigest()
     assert r["size"]["common"] == sum(e["size"] for e in man["files"].values())
     raw = (site / "stories" / "5.json").read_bytes()
-    assert raw.endswith(b"}\n") and raw == web._dump(man)  # canonical: sorted keys, indent 1
+    assert raw.endswith(b"}\n") and raw == sitefiles._dump(man)  # canonical: sorted keys, indent 1
 
 
 def test_ingest_normal_story_and_no_audio(tmp_path):
@@ -417,7 +417,7 @@ def test_ingest_is_deterministic(tmp_path):
 
 
 def chart_and_model(site):
-    store = web.Store(site)
+    store = sitefiles.Store(site)
     (site / "charts").mkdir(parents=True, exist_ok=True)
     (site / "models").mkdir(parents=True, exist_ok=True)
     chart = {
@@ -438,8 +438,8 @@ def chart_and_model(site):
         "files": {"model.json": store.put("model.json", b'{"m":1}'), "m.moc3": store.put("m.moc3", b"MOC3-m")},
     }
     (site / "models" / "m.json").write_text(json.dumps(model), encoding="utf-8")
-    return web.entry_assets(chart["files"]["live.json"]) + [
-        a for e in model["files"].values() for a in web.entry_assets(e)
+    return sitefiles.entry_assets(chart["files"]["live.json"]) + [
+        a for e in model["files"].values() for a in sitefiles.entry_assets(e)
     ]
 
 
@@ -447,9 +447,9 @@ def referenced(site) -> set:
     used = set()
     for p in [*sorted((site / "charts").glob("*.json")), *sorted((site / "models").glob("*.json"))]:
         for e in json.loads(p.read_text(encoding="utf-8"))["files"].values():
-            used.update(web.entry_assets(e))
-    for p in storysite.story_manifests(site):
-        used |= storysite.manifest_assets(json.loads(p.read_text(encoding="utf-8")))
+            used.update(sitefiles.entry_assets(e))
+    for p in siteindex.story_manifests(site):
+        used |= siteindex.manifest_assets(json.loads(p.read_text(encoding="utf-8")))
     return used
 
 
@@ -458,19 +458,19 @@ def test_write_index_keeps_every_kind(tmp_path):
     what any manifest references, common and language files alike, and removes the rest."""
     site, _ = ingest(tmp_path)
     chart_and_model(site)
-    stale = web.Store(site).put("old.json", b"[0]")
+    stale = sitefiles.Store(site).put("old.json", b"[0]")
     used = referenced(site)
-    lang_only = storysite.manifest_assets(json.loads((site / "stories/5.json").read_text(encoding="utf-8")))
+    lang_only = siteindex.manifest_assets(json.loads((site / "stories/5.json").read_text(encoding="utf-8")))
     assert used > lang_only > set()
-    r = web.write_index(site)
+    r = siteindex.write_index(site)
     assert (r["charts"], r["models"], r["stories"], r["removedAssets"]) == (1, 1, 1, 1)
     assert not (site / stale["asset"]).exists()
     for _ in range(2):  # rerun: a later build of any kind
-        web.write_index(site)
+        siteindex.write_index(site)
         assert {f"assets/{p.name}" for p in (site / "assets").iterdir()} == used
     index = json.loads((site / "stories.json").read_text(encoding="utf-8"))
     (entry,) = index["stories"]
-    assert index["format"] == storysite.STORIES_FORMAT and index["languages"] == ["ja", "en", "ko"]
+    assert index["format"] == siteindex.STORIES_FORMAT and index["languages"] == ["ja", "en", "ko"]
     assert (entry["id"], entry["manifest"], entry["advId"], entry["regions"]) == ("5", "stories/5.json", 5, ["r1"])
     assert entry["size"]["languages"].keys() == {"ja", "en"} and entry["fonts"] == "open"
     assert entry["size"]["models"] == len(b'{"m":1}') + len(b"MOC3-m")  # the referenced model's files
@@ -481,13 +481,13 @@ def test_stories_reference_their_model_manifests(tmp_path):
     them whatever models.json lists); a model manifest that is not there counts no bytes."""
     site, _ = ingest(tmp_path)
     model_assets = set(chart_and_model(site)[1:])
-    n, used = storysite.write_stories_index(site)
+    n, used = siteindex.write_stories_index(site)
     assert n == 1 and model_assets <= used
     assert model_assets.isdisjoint(
-        storysite.manifest_assets(json.loads((site / "stories/5.json").read_text(encoding="utf-8")))
+        siteindex.manifest_assets(json.loads((site / "stories/5.json").read_text(encoding="utf-8")))
     )
     (site / "models/m.json").unlink()
-    storysite.write_stories_index(site)
+    siteindex.write_stories_index(site)
     (entry,) = json.loads((site / "stories.json").read_text(encoding="utf-8"))["stories"]
     assert entry["size"]["models"] == 0
 
@@ -495,18 +495,18 @@ def test_stories_reference_their_model_manifests(tmp_path):
 def test_story_only_site_and_sites_without_stories(tmp_path):
     site = tmp_path / "charts-only"
     kept = chart_and_model(site)
-    r = web.write_index(site)
+    r = siteindex.write_index(site)
     assert "stories" not in r and not (site / "stories.json").exists()
     assert {f"assets/{p.name}" for p in (site / "assets").iterdir()} == set(kept)
     site, _ = ingest(tmp_path, "stories-only")
-    r = web.write_index(site)
+    r = siteindex.write_index(site)
     assert (r["charts"], r["models"], r["stories"], r["removedAssets"]) == (0, 0, 1, 0)
 
 
 def test_write_stories_index_meta(tmp_path):
     site, _ = ingest(tmp_path)
-    storysite.write_stories_index(site, "ja", [{"id": "r1", "name": "One"}])
-    storysite.write_stories_index(site)  # keeps the meta of the existing index
+    siteindex.write_stories_index(site, "ja", [{"id": "r1", "name": "One"}])
+    siteindex.write_stories_index(site)  # keeps the meta of the existing index
     index = json.loads((site / "stories.json").read_text(encoding="utf-8"))
     assert index["language"] == "ja" and index["regions"] == [{"id": "r1", "name": "One"}]
 
@@ -514,12 +514,12 @@ def test_write_stories_index_meta(tmp_path):
 def test_fold_variant(tmp_path):
     site, _ = ingest(tmp_path, job={"regions": ["r1"]})
     dirs = story_dirs(tmp_path / "w2")
-    storysite.ingest(web.Store(site), site, 5, dirs, {**JOB, "prefix": "r2/", "regions": ["r2"]}, [])
+    storysite.ingest(sitefiles.Store(site), site, 5, dirs, {**JOB, "prefix": "r2/", "regions": ["r2"]}, [])
     assert storysite.fold_variant(site, 5, "r2/")
     assert not (site / "stories/r2/5.json").exists()
     assert json.loads((site / "stories/5.json").read_text(encoding="utf-8"))["regions"] == ["r1", "r2"]
     dirs = story_dirs(tmp_path / "w3", ui_variant="x")
-    storysite.ingest(web.Store(site), site, 5, dirs, {**JOB, "prefix": "r3/", "regions": ["r3"]}, [])
+    storysite.ingest(sitefiles.Store(site), site, 5, dirs, {**JOB, "prefix": "r3/", "regions": ["r3"]}, [])
     assert not storysite.fold_variant(site, 5, "r3/") and (site / "stories/r3/5.json").exists()
     man = json.loads((site / "stories/r3/5.json").read_text(encoding="utf-8"))
     assert man["root"] == "../../" and man["models"] == {"m": "models/m.json"}
@@ -615,16 +615,16 @@ def test_font_files(tmp_path, monkeypatch):
 
 def fake_player(root, story_page=True, story_bundle=True):
     files = {
-        web.READ_SET_SCRIPT: "// read set\n",
-        web.PLAYER_BUNDLES[0]: "/* bundle */\n",
-        f"{web.PLAYER_PAGE_DIR}/index.html": "<!-- @PLAYER_VERSION@ -->\n",
-        f"{web.PLAYER_PAGE_DIR}/chart-list.js": 'import "../../src/element.js";\n',
+        sitefiles.READ_SET_SCRIPT: "// read set\n",
+        sitefiles.PLAYER_BUNDLES[0]: "/* bundle */\n",
+        f"{sitefiles.PLAYER_PAGE_DIR}/index.html": "<!-- @PLAYER_VERSION@ -->\n",
+        f"{sitefiles.PLAYER_PAGE_DIR}/chart-list.js": 'import "../../src/element.js";\n',
     }
     if story_page:
-        files[f"{web.STORY_PAGE_DIR}/index.html"] = '<script type="module" src="./story-list.js"></script>\n'
-        files[f"{web.STORY_PAGE_DIR}/story-list.js"] = 'import { x } from "../../src/story/define.js";\n'
+        files[f"{sitefiles.STORY_PAGE_DIR}/index.html"] = '<script type="module" src="./story-list.js"></script>\n'
+        files[f"{sitefiles.STORY_PAGE_DIR}/story-list.js"] = 'import { x } from "../../src/story/define.js";\n'
     if story_bundle:
-        files[web.STORY_BUNDLES[0]] = "/* story */\n"
+        files[sitefiles.STORY_BUNDLES[0]] = "/* story */\n"
     for rel, text in files.items():
         write(root / rel, text)
     return root
@@ -632,17 +632,17 @@ def fake_player(root, story_page=True, story_bundle=True):
 
 def test_write_player_story_page(tmp_path):
     site = tmp_path / "site"
-    r = web.write_player(site, fake_player(tmp_path / "p"))
+    r = sitefiles.write_player(site, fake_player(tmp_path / "p"))
     assert r["storyPageFiles"] == 2
     assert (site / "story/story-list.js").read_text(
         encoding="utf-8"
     ) == 'import { x } from "./ournotes-player.story.element.min.js";\n'
     assert (site / "story/ournotes-player.story.element.min.js").is_file()
     site2 = tmp_path / "site2"
-    r = web.write_player(site2, fake_player(tmp_path / "q", story_bundle=False))
+    r = sitefiles.write_player(site2, fake_player(tmp_path / "q", story_bundle=False))
     assert "storyPageFiles" not in r and not (site2 / "story").exists()
     with pytest.raises(ConfigError, match="story page"):
-        web.write_player(site2, fake_player(tmp_path / "q", story_bundle=False), stories=True)
+        sitefiles.write_player(site2, fake_player(tmp_path / "q", story_bundle=False), stories=True)
 
 
 # ---------------------------------------------------------------- the models of the stories
@@ -652,10 +652,10 @@ MODEL_A, MODEL_B = "Character/Live2D/g/a/model/a", "Character/Live2D/g/b/model/b
 def put_model(site, key, motion_sync=False):
     """A model manifest as webmodel.ingest writes it (made-up model.json and moc3)."""
     mid = webmodel.model_id(key)
-    store = web.Store(site)
+    store = sitefiles.Store(site)
     doc = {"format": webmodel.MODEL_FORMAT, "key": key, "motionSync": motion_sync}
     man = {
-        "format": web.MANIFEST_FORMAT,
+        "format": sitefiles.MANIFEST_FORMAT,
         "id": mid,
         "key": key,
         "model": {},
@@ -664,7 +664,7 @@ def put_model(site, key, motion_sync=False):
             f"{mid}.moc3": store.put(f"{mid}.moc3", b"MOC3-" + mid.encode()),
         },
     }
-    write(site / "models" / f"{mid}.json", web._dump(man))
+    write(site / "models" / f"{mid}.json", sitefiles._dump(man))
     return {"id": mid, "ok": True, "files": 2, "bytes": sum(e["size"] for e in man["files"].values())}
 
 
@@ -735,7 +735,7 @@ def test_story_build_builds_the_models_of_its_stories_first(story_build):
     assert manifest(site, 5)["models"] == {"a": "models/a.json"}
     assert manifest(site, 6)["models"] == {"a": "models/a.json", "b": "models/b.json"}
     assert manifest(site, 7)["models"] == {} and manifest(site, 7)["root"] == "../"
-    assert json.loads(web.entry_text(site, manifest(site, 6)["files"]["story.json"]))["models"] == {
+    assert json.loads(sitefiles.entry_text(site, manifest(site, 6)["files"]["story.json"]))["models"] == {
         MODEL_B: "b",
         MODEL_A: "a",
     }
@@ -751,7 +751,7 @@ def test_story_build_builds_the_models_of_its_stories_first(story_build):
     )
     for mf in (site / "models").glob("*.json"):  # write_index kept the models' assets
         for e in json.loads(mf.read_text(encoding="utf-8"))["files"].values():
-            assert all((site / a).is_file() for a in web.entry_assets(e))
+            assert all((site / a).is_file() for a in sitefiles.entry_assets(e))
 
 
 def test_story_build_skips_existing_models_unless_forced(story_build):
@@ -777,8 +777,10 @@ def test_story_build_rebuilds_outdated_models(story_build):
     put_model(site, MODEL_B)  # current
     put_model(site, MODEL_A)
     man = json.loads((site / "models/a.json").read_text(encoding="utf-8"))
-    man["files"]["model.json"] = web.Store(site).put("model.json", json.dumps({"format": 1, "key": MODEL_A}).encode())
-    write(site / "models/a.json", web._dump(man))
+    man["files"]["model.json"] = sitefiles.Store(site).put(
+        "model.json", json.dumps({"format": 1, "key": MODEL_A}).encode()
+    )
+    write(site / "models/a.json", sitefiles._dump(man))
     r = story_build([6])
     assert story_build.models == ["a"]
     assert r["storyModels"]["modelsRebuilt"] == [{"id": "a", "reason": "outdated"}]

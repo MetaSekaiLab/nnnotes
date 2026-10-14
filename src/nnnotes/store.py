@@ -47,7 +47,7 @@ class StoreConflict(RuntimeError):
 def _replace(tmp: Path, dst: Path, same) -> bool:
     """Rename `tmp` onto `dst`; False when another writer put `dst` first (`same(dst)` true) and `tmp` was dropped.
     On some systems a rename onto (or a read of) a file another process is replacing or reading fails for a
-    moment: retried, as web.Store does."""
+    moment: retried, as sitefiles.Store does."""
     try:
         for i in range(20):
             try:

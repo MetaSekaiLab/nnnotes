@@ -4,32 +4,32 @@ import json
 
 import pytest
 
-from nnnotes import compress, web
+from nnnotes import compress, sitefiles, siteindex, web
 from nnnotes.config import ConfigError
 
-DOC = web._minify({"rows": [{"id": i, "name": f"row {i}", "tags": ["a", "b"]} for i in range(200)]}).encode()
+DOC = sitefiles._minify({"rows": [{"id": i, "name": f"row {i}", "tags": ["a", "b"]} for i in range(200)]}).encode()
 
 
 def test_text_asset_minifies_and_drops_doc_fields():
     doc = {"spec": "notes for readers", "music": {"soundId": 1}, "voice": {"rule": "r", "x": 1}, "v": 1e999}
-    out = web.text_asset("audio/live-audio.json", json.dumps(doc, indent=2).replace("Infinity", "1e999"))
+    out = sitefiles.text_asset("audio/live-audio.json", json.dumps(doc, indent=2).replace("Infinity", "1e999"))
     assert out == b'{"music":{"soundId":1},"voice":{"x":1},"v":1e999}'
     glsl = "#ifdef VERTEX\nvoid main() {}\n#endif\n"
-    assert web.text_asset("shaders/a.glsl", glsl) == glsl.encode("utf-8")
+    assert sitefiles.text_asset("shaders/a.glsl", glsl) == glsl.encode("utf-8")
 
 
 def test_split_json_rejoins():
-    assert web.split_json(b'{"a":1,"b":2}') is None
-    big = web._minify({"a": "x" * (web.SPLIT_MIN_BYTES // 2), "b": ["y"] * 200000, "c": {"d": 1}}).encode()
-    parts = web.split_json(big)
+    assert sitefiles.split_json(b'{"a":1,"b":2}') is None
+    big = sitefiles._minify({"a": "x" * (sitefiles.SPLIT_MIN_BYTES // 2), "b": ["y"] * 200000, "c": {"d": 1}}).encode()
+    parts = sitefiles.split_json(big)
     assert [k for k, _ in parts] == ["a", "b", "c"]
-    assert web.join_parts(parts) == big
-    odd = web._minify({"a b": "x" * web.SPLIT_MIN_BYTES, "c": 1}).encode()
-    assert web.split_json(odd) is None
+    assert sitefiles.join_parts(parts) == big
+    odd = sitefiles._minify({"a b": "x" * sitefiles.SPLIT_MIN_BYTES, "c": 1}).encode()
+    assert sitefiles.split_json(odd) is None
 
 
 def test_store_is_content_addressed(tmp_path):
-    store = web.Store(tmp_path)
+    store = sitefiles.Store(tmp_path)
     e = store.put("x/data.json", b"{}")
     assert e == {"asset": f"assets/{hashlib.sha256(b'{}').hexdigest()}.json", "size": 2}
     assert store.put("y/other.json", b"{}") == e
@@ -42,68 +42,68 @@ def sha(data):
 
 
 def test_store_encodes_compressible_files_when_smaller(tmp_path):
-    store = web.Store(tmp_path)
+    store = sitefiles.Store(tmp_path)
     e = store.put("x/doc.json", DOC)
     assert e == {"asset": f"assets/{sha(DOC)}.json.gz", "size": len(DOC), "stored": len(compress.gzip_bytes(DOC))}
     assert e["stored"] < e["size"]
     assert (tmp_path / e["asset"]).read_bytes() == compress.gzip_bytes(DOC)
-    assert web.read_asset(tmp_path, e["asset"]) == DOC
+    assert sitefiles.read_asset(tmp_path, e["asset"]) == DOC
     shader = b"void main() { gl_FragColor = vec4(1.0); }\n" * 20
     assert store.put("s/a.glsl", shader)["asset"] == f"assets/{sha(shader)}.glsl.gz"
     assert store.put("x/tiny.json", b"{}") == {"asset": f"assets/{sha(b'{}')}.json", "size": 2}  # gzip not smaller
     assert store.put("t/a.png", DOC) == {"asset": f"assets/{sha(DOC)}.png", "size": len(DOC)}  # not compressible
     with pytest.raises(ValueError, match="asset encoding"):
-        web.Store(tmp_path, "zstd")
+        sitefiles.Store(tmp_path, "zstd")
 
 
 def test_store_brotli(tmp_path):
     pytest.importorskip("brotli")
-    e = web.site_store(tmp_path, "br").put("m/model.moc3", DOC)
+    e = sitefiles.site_store(tmp_path, "br").put("m/model.moc3", DOC)
     assert e == {"asset": f"assets/{sha(DOC)}.moc3.br", "size": len(DOC), "stored": len(compress.brotli_bytes(DOC))}
-    assert web.read_asset(tmp_path, e["asset"]) == DOC
+    assert sitefiles.read_asset(tmp_path, e["asset"]) == DOC
 
 
 def test_store_none_keeps_todays_names_and_bytes(tmp_path):
-    store = web.site_store(tmp_path, "none")
+    store = sitefiles.site_store(tmp_path, "none")
     assert store.put("x/doc.json", DOC) == {"asset": f"assets/{sha(DOC)}.json", "size": len(DOC)}
     assert [p.name for p in (tmp_path / "assets").iterdir()] == [f"{sha(DOC)}.json"]
     assert (tmp_path / "assets" / f"{sha(DOC)}.json").read_bytes() == DOC
 
 
 def test_store_reuses_encoded_names(tmp_path):
-    store = web.Store(tmp_path)
+    store = sitefiles.Store(tmp_path)
     e = store.put("a.json", DOC)
     assert store.put("b.json", DOC) == e and (store.written, store.reused) == (1, 1)
-    again = web.Store(tmp_path)
+    again = sitefiles.Store(tmp_path)
     assert again.put("c.json", DOC) == e and (again.written, again.reused) == (0, 1)
     # a file of that name that holds the bytes is kept whatever encoder wrote it; its length is the entry's `stored`
     other = gzip.compress(DOC, 1, mtime=0)
     (tmp_path / e["asset"]).write_bytes(other)
-    kept = web.Store(tmp_path).put("d.json", DOC)
+    kept = sitefiles.Store(tmp_path).put("d.json", DOC)
     assert kept == {**e, "stored": len(other)} and (tmp_path / e["asset"]).read_bytes() == other
     (tmp_path / e["asset"]).write_bytes(other[:-5])  # damaged: written again
-    fresh = web.Store(tmp_path)
+    fresh = sitefiles.Store(tmp_path)
     assert fresh.put("e.json", DOC) == e and fresh.written == 1
     assert (tmp_path / e["asset"]).read_bytes() == compress.gzip_bytes(DOC)
 
 
 def test_split_parts_carry_stored(tmp_path):
-    big = web._minify({"a": "x" * (web.SPLIT_MIN_BYTES // 2), "b": ["y"] * 200000, "c": {"d": 1}}).encode()
-    e = web.Store(tmp_path).put_file("scene.json", big)
+    big = sitefiles._minify({"a": "x" * (sitefiles.SPLIT_MIN_BYTES // 2), "b": ["y"] * 200000, "c": {"d": 1}}).encode()
+    e = sitefiles.Store(tmp_path).put_file("scene.json", big)
     assert e["size"] == len(big) and [p[0] for p in e["parts"]] == ["a", "b", "c"]
     a, b, c = e["parts"]
     small = b'{"d":1}'
     assert len(a) == len(b) == 4 and a[1].endswith(".json.gz") and a[3] < a[2]
     assert c == ["c", f"assets/{sha(small)}.json", len(small)]  # a part gzip does not make smaller
-    assert web.entry_text(tmp_path, e) == big
-    raw = web.Store(tmp_path / "raw", "none").put_file("scene.json", big)
-    assert all(len(p) == 3 for p in raw["parts"]) and web.entry_text(tmp_path / "raw", raw) == big
+    assert sitefiles.entry_text(tmp_path, e) == big
+    raw = sitefiles.Store(tmp_path / "raw", "none").put_file("scene.json", big)
+    assert all(len(p) == 3 for p in raw["parts"]) and sitefiles.entry_text(tmp_path / "raw", raw) == big
 
 
 def test_stored_text_memo_follows_the_encoding(tmp_path):
     doc = json.dumps({"k": list(range(300))})
-    a = web.stored_text(web.Store(tmp_path), "x/a.json", doc, memo="m")
-    b = web.stored_text(web.Store(tmp_path, "none"), "x/a.json", doc, memo="m")
+    a = web.stored_text(sitefiles.Store(tmp_path), "x/a.json", doc, memo="m")
+    b = web.stored_text(sitefiles.Store(tmp_path, "none"), "x/a.json", doc, memo="m")
     assert a["asset"].endswith(".json.gz") and b == {"asset": a["asset"][:-3], "size": a["size"]}
 
 
@@ -132,16 +132,16 @@ def manifest(site_dir, music_id, difficulty, store, files):
 
 def test_write_index_orders_charts_and_prunes_assets(tmp_path):
     (tmp_path / "charts").mkdir()
-    store = web.Store(tmp_path)
+    store = sitefiles.Store(tmp_path)
     manifest(tmp_path, 2, "easy", store, {"live.json": b"{}"})
     manifest(tmp_path, 1, "expert", store, {"live.json": b"{}", "score/a.json": b"[1]"})
     manifest(tmp_path, 1, "easy", store, {"live.json": b"{}"})
     stale = store.put("old.json", b"[0]")
-    r = web.write_index(tmp_path)
+    r = siteindex.write_index(tmp_path)
     assert (r["charts"], r["assets"], r["removedAssets"], r["assetBytes"], r["bytes"]) == (3, 2, 1, 5, 5)
     assert not (tmp_path / stale["asset"]).exists()
     index = json.loads((tmp_path / "charts.json").read_text(encoding="utf-8"))
-    assert index["format"] == web.SITE_FORMAT
+    assert index["format"] == sitefiles.SITE_FORMAT
     assert [c["id"] for c in index["charts"]] == ["1_easy", "1_expert", "2_easy"]
     assert index["charts"][1]["bytes"] == 5 and index["charts"][1]["title"] == "t1"
 
@@ -149,7 +149,7 @@ def test_write_index_orders_charts_and_prunes_assets(tmp_path):
 def encoded_site(site):
     """Two charts sharing an encoded file, a raw file each, and a stale encoded asset."""
     (site / "charts").mkdir(parents=True)
-    store = web.Store(site)
+    store = sitefiles.Store(site)
     manifest(site, 1, "easy", store, {"live.json": b"{}", "scene/a.json": DOC})
     manifest(site, 1, "hard", store, {"live.json": b"[1]", "scene/a.json": DOC})
     return store.put("old.json", DOC + b" ")
@@ -158,7 +158,7 @@ def encoded_site(site):
 def test_write_index_prunes_encoded_names(tmp_path):
     stale = encoded_site(tmp_path)
     assert stale["asset"].endswith(".json.gz")
-    r = web.write_index(tmp_path)
+    r = siteindex.write_index(tmp_path)
     assert (r["charts"], r["assets"], r["removedAssets"]) == (2, 3, 1)
     assert not (tmp_path / stale["asset"]).exists()
     names = sorted(p.name for p in (tmp_path / "assets").iterdir())
@@ -170,12 +170,12 @@ def test_write_index_prunes_encoded_names(tmp_path):
 
 def fake_player(root):
     for rel, text in {
-        web.READ_SET_SCRIPT: "// read set\n",
-        web.PLAYER_BUNDLES[0]: "/* bundle */\n",
-        f"{web.PLAYER_PAGE_DIR}/index.html": (
+        sitefiles.READ_SET_SCRIPT: "// read set\n",
+        sitefiles.PLAYER_BUNDLES[0]: "/* bundle */\n",
+        f"{sitefiles.PLAYER_PAGE_DIR}/index.html": (
             '<script type="module" src="./chart-list.js"></script><!-- @PLAYER_VERSION@ -->\n'
         ),
-        f"{web.PLAYER_PAGE_DIR}/chart-list.js": 'import "../../src/element.js";\n',
+        f"{sitefiles.PLAYER_PAGE_DIR}/chart-list.js": 'import "../../src/element.js";\n',
     }.items():
         p = root / rel
         p.parent.mkdir(parents=True, exist_ok=True)
@@ -185,24 +185,24 @@ def fake_player(root):
 
 def test_check_player(tmp_path):
     with pytest.raises(ConfigError, match="NNNOTES_PATHS_PLAYER"):
-        web.check_player(None)
+        sitefiles.check_player(None)
     with pytest.raises(ConfigError, match="not a built ournotes-player"):
-        web.check_player(tmp_path)
-    assert web.check_player(fake_player(tmp_path / "p")) == (tmp_path / "p").resolve()
+        sitefiles.check_player(tmp_path)
+    assert sitefiles.check_player(fake_player(tmp_path / "p")) == (tmp_path / "p").resolve()
 
 
 def test_write_player(tmp_path):
     player = fake_player(tmp_path / "p")
     out = tmp_path / "site"
-    r = web.write_player(out, player)
+    r = sitefiles.write_player(out, player)
     version = hashlib.sha256(b"/* bundle */\n").hexdigest()[:16]
     assert r["playerVersion"] == version and r["pageFiles"] == 2
     assert (out / "chart-list.js").read_text(encoding="utf-8") == 'import "./ournotes-player.element.min.js";\n'
     assert version in (out / "index.html").read_text(encoding="utf-8")
     assert (out / "ournotes-player.element.min.js").is_file()
-    (player / web.PLAYER_PAGE_DIR / "extra.js").write_bytes(b'import "../../src/other.js";\n')
+    (player / sitefiles.PLAYER_PAGE_DIR / "extra.js").write_bytes(b'import "../../src/other.js";\n')
     with pytest.raises(RuntimeError, match="beyond PAGE_IMPORTS"):
-        web.write_player(out, player)
+        sitefiles.write_player(out, player)
 
 
 def test_write_player_copies_the_complete_songs_module_tree(tmp_path):
@@ -218,11 +218,11 @@ def test_write_player_copies_the_complete_songs_module_tree(tmp_path):
         "nested/future-dependency.json": b"{}",
     }
     for name, data in files.items():
-        path = player / web.SONGS_PAGE_DIR / name
+        path = player / sitefiles.SONGS_PAGE_DIR / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)
     site = tmp_path / "site"
-    result = web.write_player(site, player)
+    result = sitefiles.write_player(site, player)
     assert result["songsPageFiles"] == len(files)
     assert {
         path.relative_to(site / "songs").as_posix(): path.read_bytes()
@@ -240,7 +240,10 @@ def test_player_only_command(tmp_path, capsys):
     cli.main(["web", str(out), "--player", str(fake_player(tmp_path / "p")), "--player-only"])
     r = json.loads(capsys.readouterr().out)
     assert (r["charts"], r["removedAssets"], r["pageFiles"]) == (0, 1, 2)
-    assert json.loads((out / "charts.json").read_text(encoding="utf-8")) == {"charts": [], "format": web.SITE_FORMAT}
+    assert json.loads((out / "charts.json").read_text(encoding="utf-8")) == {
+        "charts": [],
+        "format": sitefiles.SITE_FORMAT,
+    }
 
 
 def test_player_only_and_reingest_over_an_encoded_site(tmp_path, capsys):

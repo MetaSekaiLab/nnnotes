@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
-from nnnotes import cache, web
+from nnnotes import cache, sitefiles, web
 
 
 def run(musics, extract, read, ingest, window=2, workers=2, readers=3):
@@ -86,21 +86,21 @@ def test_bgm_options():
 
 def test_stored_text_memo_matches_put_file(tmp_path):
     cache.configure(enabled=True)
-    store = web.Store(tmp_path / "site")
+    store = sitefiles.Store(tmp_path / "site")
     doc = json.dumps({"a": [1, 2.5, "x"], "b": {"c": 1e999}}, indent=1).replace("Infinity", "1e999")
-    direct = web.Store(tmp_path / "ref").put_file("x/a.json", web.text_asset("x/a.json", doc))
+    direct = sitefiles.Store(tmp_path / "ref").put_file("x/a.json", sitefiles.text_asset("x/a.json", doc))
     e1 = web.stored_text(store, "x/a.json", doc, memo="b1")
-    e2 = web.stored_text(web.Store(tmp_path / "site"), "x/a.json", doc, memo="b1")
+    e2 = web.stored_text(sitefiles.Store(tmp_path / "site"), "x/a.json", doc, memo="b1")
     assert e1 == e2 == direct and web.stored_text(store, "x/a.json", doc) == direct
     assert (tmp_path / "site" / e1["asset"]).read_bytes() == (tmp_path / "ref" / direct["asset"]).read_bytes()
 
 
 def test_store_remembers_names(tmp_path):
-    s = web.Store(tmp_path)
+    s = sitefiles.Store(tmp_path)
     a = s.put("a.png", b"123")
     (tmp_path / a["asset"]).unlink()  # a name this store wrote is not looked up again
     assert s.put("b.png", b"123") == a and (s.written, s.reused) == (1, 1)
-    assert web.Store(tmp_path).put("c.png", b"123") == a and (tmp_path / a["asset"]).is_file()
+    assert sitefiles.Store(tmp_path).put("c.png", b"123") == a and (tmp_path / a["asset"]).is_file()
 
 
 def test_read_set_cached(tmp_path, monkeypatch):
