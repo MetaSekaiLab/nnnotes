@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from nnnotes import cli
+from nnnotes.cli import common
 from tests.helpers import synth
 
 KEY_HEX = synth.BUNDLE_KEY.hex()
@@ -56,21 +57,17 @@ def test_version_and_help(capsys):
     code, out, _ = run(["--help"], capsys)
     assert code == 0
     for cmd in (
+        "config",
+        "servers",
         "catalog",
-        "browse",
-        "pull",
+        "bundle",
         "master",
-        "adv",
-        "story",
-        "live2d",
-        "spot",
-        "room",
-        "shader",
-        "audio",
-        "crikey",
-        "player",
-        "live",
-        "web",
+        "export",
+        "apk",
+        "store",
+        "voices",
+        "site",
+        "music-data",
     ):
         assert cmd in out
 
@@ -101,15 +98,15 @@ def test_numpy_blas_threads_set_before_numpy_loads(given, seen):
 @pytest.mark.parametrize(
     "argv",
     [
-        ["adv", "1"],
-        ["story", "1"],
-        ["live2d", "k"],
-        ["spot", "1"],
-        ["room", "k"],
-        ["shader", "--key", "k"],
-        ["audio", "s"],
-        ["player"],
-        ["live", "1"],
+        ["export", "episode", "1"],
+        ["export", "story", "1"],
+        ["export", "live2d", "k"],
+        ["export", "spot", "1"],
+        ["export", "room", "k"],
+        ["export", "shader", "--key", "k"],
+        ["export", "audio", "s"],
+        ["apk", "settings"],
+        ["export", "live", "1"],
         ["master", "decode", "x"],
         ["master", "download", "--version", "1"],
     ],
@@ -120,15 +117,15 @@ def test_output_is_required(argv, capsys):
 
 
 def test_web_needs_a_selection(capsys):
-    code, _, err = run(["web", "out"], capsys)
+    code, _, err = run(["site", "build", "-o", "out"], capsys)
     assert code == 2 and "--pair" in err and "--all" in err
 
 
 def test_parse_pair():
-    assert cli.parse_pair("100001:expert") == (100001, "expert")
-    assert cli.parse_pair("7_easy") == (7, "easy")
+    assert common.parse_pair("100001:expert") == (100001, "expert")
+    assert common.parse_pair("7_easy") == (7, "easy")
     with pytest.raises(argparse.ArgumentTypeError):
-        cli.parse_pair("7:extreme")
+        common.parse_pair("7:extreme")
 
 
 def test_catalog_listing(catalog_file, tmp_path, capsys):
@@ -139,6 +136,7 @@ def test_catalog_listing(catalog_file, tmp_path, capsys):
             "--cache",
             str(tmp_path / "cache"),
             "catalog",
+            "keys",
             "--prefix",
             "Char/",
             "--limit",
@@ -151,7 +149,7 @@ def test_catalog_listing(catalog_file, tmp_path, capsys):
 
 def test_missing_settings_exit_2_and_name_the_setting(catalog_file, tmp_path, cdn, capsys, monkeypatch):
     base = ["--catalog", str(catalog_file), "--cache", str(tmp_path / "cache")]
-    code, out, err = run(base + ["pull", "Char/A"], capsys)
+    code, out, err = run(base + ["bundle", "pull", "Char/A"], capsys)
     assert code == 2 and out == ""
     assert err.strip() == (
         "nnnotes: a_01.bundle is not in the cache: setting catalog.region is not set: give it "
@@ -159,13 +157,13 @@ def test_missing_settings_exit_2_and_name_the_setting(catalog_file, tmp_path, cd
         "NNNOTES_CATALOG_REGION or --region (no config file was found: `nnnotes config init` "
         "writes one to fill in)"
     )
-    code, _, err = run(base + ["--region", "zz", "pull", "Char/A"], capsys)
+    code, _, err = run(base + ["--region", "zz", "bundle", "pull", "Char/A"], capsys)
     assert code == 2 and "servers.zz.cdn" in err and "NNNOTES_SERVERS_ZZ_CDN" in err
     monkeypatch.setenv("NNNOTES_SERVERS_ZZ_CDN", cdn)
-    code, _, err = run(base + ["--region", "zz", "pull", "Char/A"], capsys)
+    code, _, err = run(base + ["--region", "zz", "bundle", "pull", "Char/A"], capsys)
     assert code == 2 and "bundle.key" in err and "NNNOTES_BUNDLE_KEY" in err
     assert cdn not in err and len(err.strip().splitlines()) == 1
-    code, _, err = run(["pull", "Char/A"], capsys)
+    code, _, err = run(["bundle", "pull", "Char/A"], capsys)
     assert code == 2 and "paths.cache" in err and "NNNOTES_PATHS_CACHE" in err and "--cache" in err
 
 
@@ -175,7 +173,18 @@ def test_malformed_setting_names_setting_not_value(catalog_file, tmp_path, cdn, 
     monkeypatch.setenv("NNNOTES_BUNDLE_NONCE_SEED", SEED_HEX)
     monkeypatch.setenv("NNNOTES_SERVERS_ZZ_CDN", cdn)
     code, _, err = run(
-        ["--catalog", str(catalog_file), "--cache", str(tmp_path / "cache"), "--region", "zz", "pull", "Char/A"], capsys
+        [
+            "--catalog",
+            str(catalog_file),
+            "--cache",
+            str(tmp_path / "cache"),
+            "--region",
+            "zz",
+            "bundle",
+            "pull",
+            "Char/A",
+        ],
+        capsys,
     )
     assert code == 2 and err.strip() == (
         "nnnotes: a_01.bundle is not in the cache: setting bundle.key: must be 16 bytes (32 hex digits)"
@@ -184,7 +193,9 @@ def test_malformed_setting_names_setting_not_value(catalog_file, tmp_path, cdn, 
 
 
 def test_missing_path_on_disk(tmp_path, capsys):
-    code, _, err = run(["--cache", str(tmp_path / "c"), "--catalog", str(tmp_path / "absent.bin"), "catalog"], capsys)
+    code, _, err = run(
+        ["--cache", str(tmp_path / "c"), "--catalog", str(tmp_path / "absent.bin"), "catalog", "keys"], capsys
+    )
     assert code == 2 and "setting paths.catalog: file" in err
 
 
@@ -198,7 +209,7 @@ def test_pull_from_config_file(catalog_file, tmp_path, cdn, capsys):
         f'[paths]\ncatalog = "../{catalog_file.name}"\ncache = "cache"\n',
         encoding="utf-8",
     )
-    code, out, err = run(["--config", str(conf), "pull", "Char/A", "Char/B"], capsys)
+    code, out, err = run(["--config", str(conf), "bundle", "pull", "Char/A", "Char/B"], capsys)
     assert code == 0, err
     cached = tmp_path / "conf" / "cache" / "bundles" / "a_01.bundle"
     assert cached.read_bytes() == synth.fake_bundle("a_01.bundle")
@@ -214,11 +225,11 @@ def test_master_decode_command(tmp_path, capsys, monkeypatch):
     assert code == 2 and "master.key" in err and "NNNOTES_MASTER_KEY" in err
     monkeypatch.setenv("NNNOTES_MASTER_KEY", MKEY_HEX)
     monkeypatch.setenv("NNNOTES_MASTER_IV", MIV_HEX)
-    code, out, _ = run(["master", "decode", str(src), "-o", str(tmp_path / "json")], capsys)
+    code, out, _ = run(["master", "decode", str(src), "-o", str(tmp_path / "json"), "--json"], capsys)
     assert code == 0 and json.loads(out)["decoded"] == 1
     assert json.loads((tmp_path / "json" / "MasterX.json").read_text(encoding="utf-8")) == {"_allData": [{"_id": 1}]}
     (src / "MasterY.bin").write_bytes(b"\0" * 96)
-    code, out, _ = run(["master", "decode", str(src), "-o", str(tmp_path / "json")], capsys)
+    code, out, _ = run(["master", "decode", str(src), "-o", str(tmp_path / "json"), "--json"], capsys)
     assert code == 1 and json.loads(out)["failed"][0]["file"] == "MasterY.bin"
 
 
@@ -230,40 +241,40 @@ def test_master_download_command(tmp_path, capsys, monkeypatch):
     code, _, err = run(["master", "download", "--version", "9.9.9", "-o", str(tmp_path / "m")], capsys)
     assert code == 2 and "catalog.region" in err
     code, out, _ = run(
-        ["--region", "zz", "master", "download", "--version", "9.9.9", "-o", str(tmp_path / "m")], capsys
+        ["--region", "zz", "master", "download", "--version", "9.9.9", "-o", str(tmp_path / "m"), "--json"], capsys
     )
     assert code == 0 and json.loads(out)["version"] == "9.9.9"
     assert (tmp_path / "m" / "MasterManifest.json").is_file()
 
 
 def test_browse_needs_a_region(capsys):
-    code, _, err = run(["browse"], capsys)
+    code, _, err = run(["catalog", "browse"], capsys)
     assert code == 2 and "[servers.<region>]" in err
 
 
 def test_browse_region_needs_languages(capsys, monkeypatch):
     monkeypatch.setenv("NNNOTES_SERVERS_ZZ_CDN", "file:///nowhere")
-    code, _, err = run(["browse"], capsys)
+    code, _, err = run(["catalog", "browse"], capsys)
     assert code == 2 and "servers.zz.languages" in err and "NNNOTES_SERVERS_ZZ_LANGUAGES" in err
 
 
 def test_web_needs_the_player(tmp_path, capsys):
-    code, _, err = run(["web", str(tmp_path / "site"), "--player-only"], capsys)
+    code, _, err = run(["site", "build", "-o", str(tmp_path / "site"), "--player-only"], capsys)
     assert code == 2 and "--player" in err and "NNNOTES_PATHS_PLAYER" in err
 
 
 def test_catalog_from_the_cache_needs_no_region(catalog_file, tmp_path, capsys):
     cache = tmp_path / "cache"
-    code, _, err = run(["--cache", str(cache), "--language", "xx", "catalog"], capsys)
+    code, _, err = run(["--cache", str(cache), "--language", "xx", "catalog", "keys"], capsys)
     assert code == 2 and "catalog.region" in err and "NNNOTES_CATALOG_REGION" in err
     cache.mkdir()
     (cache / "catalog_main_xx.bin").write_bytes(catalog_file.read_bytes())
-    code, out, err = run(["--cache", str(cache), "--language", "xx", "catalog", "--prefix", "Char/"], capsys)
+    code, out, err = run(["--cache", str(cache), "--language", "xx", "catalog", "keys", "--prefix", "Char/"], capsys)
     assert code == 0, err
     assert out.splitlines() == ["Char/A", "Char/B"]
 
 
-@pytest.mark.parametrize("argv", [["live2d", "Char/A"], ["spot", "1"]])
+@pytest.mark.parametrize("argv", [["export", "live2d", "Char/A"], ["export", "spot", "1"]])
 def test_apk_is_a_required_setting(argv, catalog_file, tmp_path, cdn, capsys, monkeypatch):
     monkeypatch.setenv("NNNOTES_BUNDLE_KEY", KEY_HEX)
     monkeypatch.setenv("NNNOTES_BUNDLE_NONCE_SEED", SEED_HEX)
@@ -295,11 +306,11 @@ def test_crikey_write_creates_the_directory(tmp_path, capsys, monkeypatch):
     apk.write_bytes(b"not read")
     monkeypatch.setattr(crikey, "find_key", lambda path: 987654321012)
     target = tmp_path / "keys" / "sub"
-    code, out, _ = run(["--apk", str(apk), "crikey", "--write", str(target)], capsys)
+    code, out, _ = run(["--apk", str(apk), "apk", "hca-key", "--write", str(target)], capsys)
     assert code == 0
     assert (target / ".hcakey").read_bytes() == (987654321012).to_bytes(8, "big")
     assert "12 digits" in out and "987654321012" not in out
-    code, _, err = run(["crikey"], capsys)
+    code, _, err = run(["apk", "hca-key"], capsys)
     assert code == 2 and "paths.apk" in err
 
 
@@ -347,30 +358,30 @@ def data(catalog_file, tmp_path, cdn, monkeypatch):
 @pytest.mark.parametrize(
     "argv, message",
     [
-        (["pull", "Char/A", "Nope/1", "Nope/2"], "not a key of the catalog: Nope/1, Nope/2"),
-        (["room", "Nope/1", "-o", "r.glb"], "not a key of the catalog: Nope/1"),
-        (["shader", "--key", "Nope/1", "-o", "s"], "not a key of the catalog: Nope/1"),
-        (["shader", "--apk-bundle", "zz", "-o", "s"], "--apk-bundle 'zz': 0 APK bundles match"),
-        (["audio", "Nope", "-o", "a"], "cue sheet Nope: no key Cri/Sound/Nope in the catalog"),
-        (["live2d", "nope", "-o", "m"], "not a Live2D model of the catalog: nope"),
+        (["bundle", "pull", "Char/A", "Nope/1", "Nope/2"], "not a key of the catalog: Nope/1, Nope/2"),
+        (["export", "room", "Nope/1", "-o", "r.glb"], "not a key of the catalog: Nope/1"),
+        (["export", "shader", "--key", "Nope/1", "-o", "s"], "not a key of the catalog: Nope/1"),
+        (["export", "shader", "--apk-bundle", "zz", "-o", "s"], "--apk-bundle 'zz': 0 APK bundles match"),
+        (["export", "audio", "Nope", "-o", "a"], "cue sheet Nope: no key Cri/Sound/Nope in the catalog"),
+        (["export", "live2d", "nope", "-o", "m"], "not a Live2D model of the catalog: nope"),
         (
-            ["live2d", "Character/Live2D/g/x/model/x", "-o", "m"],
+            ["export", "live2d", "Character/Live2D/g/x/model/x", "-o", "m"],
             "not a Live2D model of the catalog: Character/Live2D/g/x",
         ),
-        (["live2d", "Char/A", "-o", "m"], "not a Live2D model of the catalog: Char/A"),
-        (["adv", "99", "-o", "e.json"], "episode 99: no MasterAdv row with this id"),
-        (["story", "99", "-o", "s"], "episode 99: no MasterAdv row with this id"),
-        (["spot", "99", "-o", "s"], "spot 99: no MasterHomeSpot row with this id"),
-        (["live", "99", "-o", "l"], "music 99: no MasterLiveMusic row with this id"),
-        (["live", "7", "--difficulty", "easy", "-o", "l"], "music 7: no easy chart"),
-        (["live", "7", "--leader-card", "9", "-o", "l"], "MasterMemberCard 9: 0 rows"),
-        (["live", "7", "--band", "4", "-o", "l"], "band 4: Band/4/live_stage/lightweight_background"),
+        (["export", "live2d", "Char/A", "-o", "m"], "not a Live2D model of the catalog: Char/A"),
+        (["export", "episode", "99", "-o", "e.json"], "episode 99: no MasterAdv row with this id"),
+        (["export", "story", "99", "-o", "s"], "episode 99: no MasterAdv row with this id"),
+        (["export", "spot", "99", "-o", "s"], "spot 99: no MasterHomeSpot row with this id"),
+        (["export", "live", "99", "-o", "l"], "music 99: no MasterLiveMusic row with this id"),
+        (["export", "live", "7", "--difficulty", "easy", "-o", "l"], "music 7: no easy chart"),
+        (["export", "live", "7", "--leader-card", "9", "-o", "l"], "MasterMemberCard 9: 0 rows"),
+        (["export", "live", "7", "--band", "4", "-o", "l"], "band 4: Band/4/live_stage/lightweight_background"),
     ],
 )
 def test_unknown_key_or_id_is_a_usage_error(data, argv, message, capsys):
     code, out, err = run(data + argv, capsys)
     assert code == 2 and out == "", err
-    assert f"nnnotes {argv[0]}: error: {message}" in err and "Traceback" not in err
+    assert f"nnnotes {argv[0]} {argv[1]}: error: {message}" in err and "Traceback" not in err
     assert KEY_HEX not in err
 
 
@@ -380,19 +391,19 @@ def test_known_id_reaches_the_extractor(data, tmp_path, capsys, monkeypatch):
     seen = []
     monkeypatch.setattr(adv, "extract", lambda cat, md, adv_id: seen.append(adv_id) or "x")
     monkeypatch.setattr(adv, "to_json", lambda x: {"commandCount": 0, "resources": []})
-    code, out, err = run(data + ["adv", "1", "-o", str(tmp_path / "e.json")], capsys)
+    code, out, err = run(data + ["export", "episode", "1", "-o", str(tmp_path / "e.json")], capsys)
     assert code == 0 and seen == [1], err
 
 
 def test_missing_master_table_names_it(data, tmp_path, capsys):
     (tmp_path / "master" / "MasterHomeSpot.json").unlink()
-    code, _, err = run(data + ["spot", "1", "-o", "s"], capsys)
+    code, _, err = run(data + ["export", "spot", "1", "-o", "s"], capsys)
     assert code == 2 and "no MasterHomeSpot.json" in err and len(err.strip().splitlines()) == 1
 
 
 def test_story_needs_the_language(data, capsys):
     i = data.index("--language")
-    code, _, err = run(data[:i] + data[i + 2 :] + ["story", "1", "-o", "s"], capsys)
+    code, _, err = run(data[:i] + data[i + 2 :] + ["export", "story", "1", "-o", "s"], capsys)
     assert code == 2 and "catalog.language" in err and "NNNOTES_CATALOG_LANGUAGE" in err
 
 
@@ -408,17 +419,17 @@ def test_the_command_line_starts_without_the_exporters():
 @pytest.mark.parametrize(
     "argv, message",
     [
-        (["audio", "s", "--flac-level", "13"], "--flac-level 13: expected 0 to 12"),
-        (["live", "7", "--flac-level", "-1"], "--flac-level -1: expected 0 to 12"),
-        (["audio", "s", "--format", "ogg", "--flac-level", "5"], "--flac-level: --format ogg writes no FLAC"),
-        (["live", "7", "--format", "wav", "--flac-level", "5"], "--flac-level: --format wav writes no FLAC"),
-        (["story", "1", "--no-audio", "--flac-level", "5"], "--flac-level: --no-audio decodes no audio"),
+        (["export", "audio", "s", "--flac-level", "13"], "--flac-level 13: expected 0 to 12"),
+        (["export", "live", "7", "--flac-level", "-1"], "--flac-level -1: expected 0 to 12"),
+        (["export", "audio", "s", "--format", "ogg", "--flac-level", "5"], "--flac-level: --format ogg writes no FLAC"),
+        (["export", "live", "7", "--format", "wav", "--flac-level", "5"], "--flac-level: --format wav writes no FLAC"),
+        (["export", "story", "1", "--no-audio", "--flac-level", "5"], "--flac-level: --no-audio decodes no audio"),
     ],
 )
 def test_flac_level_is_checked(data, argv, message, capsys):
     code, out, err = run(data + argv + ["-o", "o"], capsys)
     assert code == 2 and out == "", err
-    assert f"nnnotes {argv[0]}: error: {message}" in err
+    assert f"nnnotes {argv[0]} {argv[1]}: error: {message}" in err
 
 
 def test_flac_level_reaches_the_decode(data, tmp_path, capsys, monkeypatch):
@@ -437,7 +448,7 @@ def test_flac_level_reaches_the_decode(data, tmp_path, capsys, monkeypatch):
     monkeypatch.setattr(story, "build", lambda *a, **kw: seen.append(kw["audio_options"].get("flac_level")) or {})
     monkeypatch.setattr(live, "resolve_band", lambda *a, **kw: None)
     monkeypatch.setattr(live, "build", lambda *a, **kw: seen.append(kw.get("flac_level")) or {})
-    for argv in (["audio", "s"], ["story", "1"], ["live", "7"]):
+    for argv in (["export", "audio", "s"], ["export", "story", "1"], ["export", "live", "7"]):
         for flag, level in (([], None), (["--flac-level", "5"], 5)):
             seen.clear()
             code, _, err = run(data + argv + flag + ["-o", str(tmp_path / "o")], capsys)

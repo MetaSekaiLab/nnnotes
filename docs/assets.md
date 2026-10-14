@@ -1,6 +1,6 @@
 # Asset export
 
-`nnnotes export` writes every object of the selected bundles in a common format: textures and sprites as PNG,
+`nnnotes export assets` writes every object of the selected bundles in a common format: textures and sprites as PNG,
 meshes as binary glTF, text assets and fonts as their stored bytes, prefabs, materials, animations and every other
 class as JSON. It also writes the semantic views of the master data (cards, characters, stamps, …) with the files of
 the objects they name. The work is split into stages ([stages.md](stages.md)); each stage runs one task per subject
@@ -9,28 +9,28 @@ the objects they name. The work is split into stages ([stages.md](stages.md)); e
 rewrites what changed.
 
 ```
-nnnotes export -o out/assets
-nnnotes export -o out/cards --select group:membercard --views cards
-nnnotes plan --select key:Image/Jacket/
-nnnotes plan --check && echo "up to date"
+nnnotes export assets -o out/assets
+nnnotes export assets -o out/cards --select group:membercard --views cards
+nnnotes store plan --select key:Image/Jacket/
+nnnotes store plan --check && echo "up to date"
 ```
 
 ## Commands
 
 ```
-nnnotes export -o OUT [--layout original[,cas]] [--select group:G|key:PREFIX|bundle:GLOB ...] [--views all|none|a,b]
-               [--store DIR] [--workers N] [--memory GiB] [--fetch-workers N] [--catalog-version L|SHA]
+nnnotes export assets -o OUT [--layout original[,cas]] [--select group:G|key:PREFIX|bundle:GLOB ...] [--views all|none|a,b]
+               [--store DIR] [--workers N] [--memory GiB] [--fetch-workers N] [--stored-catalog L|SHA]
                [--png-level N] [--flac-level N] [--only-class C,...] [--link auto|clone|hard|copy] [--strict]
                [--dry-run] [--explain]
-nnnotes plan  [the selection and parameters of export] [-o OUT] [--json] [--since RUN] [--check] [--census]
+nnnotes store plan  [the selection and parameters of export] [-o OUT] [--json] [--since RUN] [--check] [--census]
               [--emit-tasks DIR] [--why TASK]
-nnnotes run-stage TASK.json|DIR [...] [--store DIR] [--fetch] [--force]
-nnnotes catalogs list [--json] | import FILE [--label L] [--apk-catalog FILE] [--resource-version V] | fetch [--label L]
+nnnotes store run TASK.json|DIR [...] [--store DIR] [--fetch] [--force]
+nnnotes catalog versions [--json] | import FILE [--label L] [--apk-catalog FILE] [--resource-version V] | fetch [--label L]
                  | diff OLD NEW [--json]
-nnnotes store verify [--quick]
+nnnotes store verify [--quick] [--workers N]
 ```
 
-### export
+### export assets
 
 | Flag | Meaning |
 |---|---|
@@ -42,7 +42,7 @@ nnnotes store verify [--quick]
 | `--workers N` | worker processes (default: the CPUs the process may run on, its affinity mask as `taskset` or a container's cpuset sets it; `0`: every task in this process) |
 | `--memory GiB` | memory budget (default: 80 % of the physical memory where it can be read, else none) |
 | `--fetch-workers N` | parallel downloads of bundles not in the cache (default 8) |
-| `--catalog-version` | an imported catalog version (`catalogs list`) instead of the current catalog |
+| `--stored-catalog` | a catalog version of the store (`catalog versions`) instead of the current catalog |
 | `--png-level N` | zlib level 0-9 of the PNG files (default 6); part of the task keys |
 | `--flac-level N` | FLAC compression level 0-12 of the CRI audio and the movies' audio (default 8; every level decodes to the same samples; 12 writes files 0.2-1.3 % smaller in about five times the encoding time); part of the task keys |
 | `--only-class C,...` | export only objects of these Unity classes; part of the task keys |
@@ -73,9 +73,9 @@ A failed object is reported with its task's result and stays failed until someth
 fails as a whole (an exception, an input that cannot be read, a worker that dies) leaves no result and runs again
 next time.
 
-### plan
+### store plan
 
-What `export` with the same flags would do, without running or fetching anything: every task with its status
+What `export assets` with the same flags would do, without running or fetching anything: every task with its status
 (`hit`: its result is stored, `run`, `unknown`: it reads the result of a task that would run first, or of a bundle
 not fetched yet), the reasons it runs (compared with the latest run of the same selection, or `--since RUN`), the
 estimated CPU time and peak memory, and with `-o` the files each layout would write, remove and keep. The text
@@ -94,15 +94,15 @@ Reasons: `new-input`, `input-changed`, `stage-version`, `atom-changed`, `params-
 another run); unknown tasks are `pending` on a task, or on `fetch:<file>` for a bundle whose content is not known
 yet. See [contracts.md](contracts.md#plan-nnnotesplan1).
 
-### run-stage
+### store run
 
 Runs task descriptions (`nnnotes.task/1`, as `plan --emit-tasks` writes them) into a store: each is checked (its key
 is recomputed, its stage must be installed at its version), its inputs are read by content id through their
-locators (the store, the cache, a file, or with `--fetch` the catalog), and its result is stored exactly as `export`
+locators (the store, the cache, a file, or with `--fetch` the catalog), and its result is stored exactly as `export assets`
 would store it. Several tasks run one after another in one process; stages that do not read bundles never load
 UnityPy. `--force` runs tasks whose result is stored again (the new result must be identical).
 
-### catalogs
+### catalog versions, import, fetch, diff
 
 The catalog versions of a store: `import` a catalog file (with the APK's catalog from `[paths] apk` or
 `--apk-catalog`), `fetch` the current catalog of the configured region and language, `list` them, and `diff` two of
@@ -112,12 +112,13 @@ stable address (an object keeps its stable address while its object id changes w
 is labelled by `--label`, else by its resource version, else by the first 12 hex digits of its sha256. `fetch`
 records the resource version it downloads (none for `main`); `import` takes `--resource-version`, else the JP
 catalog's source version, else the version in a file name `catalog_<version>_<language>.bin` as `fetch` and the
-cache name them (none for `main`). `export` imports the current catalog when it is not imported yet.
+cache name them (none for `main`). `export assets` imports the current catalog when it is not imported yet.
 
 ### store verify
 
 Checks that every stored content has the sha256 its name says (`--quick`: sizes only) and that every result names
-its own key, has the key of its parts and names stored contents of the right size. Exit 1 when a problem is found.
+its own key, has the key of its parts and names stored contents of the right size. Exit 1 when a problem is found. `--workers` hashes in
+parallel (default: the CPUs the process may use; `0`: one at a time).
 
 ## Layouts
 
@@ -183,9 +184,9 @@ and the reports directory.
 
 | Command | 0 | 1 | 2 | 3 | 4 |
 |---|---|---|---|---|---|
-| `export` | complete (unsupported objects allowed) | a task, an object or a download failed (reports written); with `--strict` also view gaps | usage or settings | aborted: a setting or tool a task needs is missing, or interrupted; results written so far stay valid | |
-| `plan` | | with `--check`: something would run or change | usage or settings | | |
-| `run-stage` | every task ran or hit | a task failed or its result is partial | usage or settings | | a task is incompatible (edited, unknown stage or version); nothing of the batch runs |
+| `export assets` | complete (unsupported objects allowed) | a task, an object or a download failed (reports written); with `--strict` also view gaps | usage or settings | aborted: a setting or tool a task needs is missing, or interrupted; results written so far stay valid | |
+| `store plan` | | with `--check`: something would run or change | usage or settings | | |
+| `store run` | every task ran or hit | a task failed or its result is partial | usage or settings | | a task is incompatible (edited, unknown stage or version); nothing of the batch runs |
 | `store verify` | no problem | problems found | usage or settings | | |
 
 ## Running tasks elsewhere
@@ -193,22 +194,22 @@ and the reports directory.
 Task descriptions carry everything a task needs; any machine with the same nnnotes version and access to the store
 can run them. A task can only be described once the content of its inputs is known, so the bundles are identified
 first (`plan --census` fetches and hashes them and takes their census). Then plan the tasks that can run now, run
-them in batches on as many workers as you like, and plan again until nothing is left; `export` finally writes the
+them in batches on as many workers as you like, and plan again until nothing is left; `export assets` finally writes the
 layouts and reports (every task is a hit by then).
 
 ```sh
 store=/data/nnnotes-store
-nnnotes plan --store "$store" --census > /dev/null
+nnnotes store plan --store "$store" --census > /dev/null
 for round in 1 2 3 4 5 6 7 8; do
     rm -rf tasks
-    nnnotes plan --store "$store" --emit-tasks tasks > /dev/null
+    nnnotes store plan --store "$store" --emit-tasks tasks > /dev/null
     ls tasks/*.json > /dev/null 2>&1 || break           # nothing left to run
-    ls tasks/*.json | xargs -n 50 -P 16 nnnotes run-stage --store "$store" --fetch
+    ls tasks/*.json | xargs -n 50 -P 16 nnnotes store run --store "$store" --fetch
 done
-nnnotes export --store "$store" -o out/assets
+nnnotes export assets --store "$store" -o out/assets
 ```
 
 Each round runs the tasks whose inputs are known: the catalog index and the censuses, then the script and address
 tables, then the bundle exports, then the stages that read their results. A task whose result is already stored is
 a hit, so a batch can be run twice; a task that keeps failing is planned again in every round (the loop above stops
-after eight) and reported by `export`.
+after eight) and reported by `export assets`.

@@ -10,7 +10,7 @@ from types import SimpleNamespace
 import pytest
 
 from nnnotes import cli
-from nnnotes.cli import browse
+from nnnotes.cli import browse, common
 from nnnotes.musicdata import deckdata
 from nnnotes.pipeline import catalogdb
 from nnnotes.source import catalog, configfile, gameapi
@@ -211,7 +211,7 @@ def test_fetch_queries_version_before_downloading_and_labels_matching_bytes(tmp_
 
     monkeypatch.setattr(Session, "master_version", observe)
     monkeypatch.setattr(catalogdb, "fetch", fetch)
-    cli.main(["--region", "tw", "--language", "en", "--cache", str(tmp_path / "cache"), "catalogs", "fetch"])
+    cli.main(["--region", "tw", "--language", "en", "--cache", str(tmp_path / "cache"), "catalog", "fetch"])
     assert events == ["version", "1.0.0.201"]
     version = catalogdb.CatalogDB(tmp_path / "cache" / "store").versions()[0]
     assert version["resourceVersion"] == "1.0.0.201"
@@ -240,13 +240,14 @@ def test_browser_uses_the_same_selector(tmp_path, monkeypatch):
     assert len(calls) == 1 and calls[0].endswith("catalog_1.0.0.201_en.bin")
 
 
-def test_catalog_release_flag_is_distinct_from_stored_catalog_version(tmp_path):
-    args = cli.build_parser().parse_args(
+def test_catalog_version_flag_is_distinct_from_the_stored_catalog(tmp_path):
+    args = cli.parse_args(
         [
-            "--catalog-release",
+            "--catalog-version",
             "1.0.0.201",
             "export",
-            "--catalog-version",
+            "assets",
+            "--stored-catalog",
             "stored-label",
             "--select",
             "key:Example",
@@ -254,5 +255,5 @@ def test_catalog_release_flag_is_distinct_from_stored_catalog_version(tmp_path):
             str(tmp_path / "out"),
         ]
     )
-    assert args.catalog_release == "1.0.0.201" and args.catalog_version == "stored-label"
-    assert Session(cli.load_config(args)).catalog_version() == "1.0.0.201"
+    assert args.catalog_version == "1.0.0.201" and args.stored_catalog == "stored-label"
+    assert Session(common.load_config(args)).catalog_version() == "1.0.0.201"

@@ -412,7 +412,7 @@ def merge(total: dict, rec: dict) -> None:
 
 # ---------------------------------------------------------------- sample
 def cmd_sample(a) -> dict:
-    from nnnotes.cli.cli_assets import bundle_group
+    from nnnotes.cli.assets import bundle_group
     from nnnotes.pipeline import contract
 
     root = Path(a.dir)

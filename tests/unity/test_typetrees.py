@@ -356,7 +356,7 @@ def run(argv, capsys):
 
 
 def test_dummy_dll_flag_is_gone(capsys, tmp_path):
-    code, _, _ = run(["--dummy-dll", str(tmp_path), "player", "-o", str(tmp_path / "p.json")], capsys)
+    code, _, _ = run(["--dummy-dll", str(tmp_path), "apk", "settings", "-o", str(tmp_path / "p.json")], capsys)
     assert code == 2
     code, out, _ = run(["--help"], capsys)
     assert code == 0 and "dummy" not in out.lower()
@@ -365,7 +365,7 @@ def test_dummy_dll_flag_is_gone(capsys, tmp_path):
 def test_leftover_dummy_dll_key_is_ignored(capsys, tmp_path):
     conf = tmp_path / "c.toml"
     conf.write_text('[paths]\ndummy_dll = "somewhere"\n', encoding="utf-8")
-    code, _, err = run(["--config", str(conf), "player", "-o", str(tmp_path / "p.json")], capsys)
+    code, _, err = run(["--config", str(conf), "apk", "settings", "-o", str(tmp_path / "p.json")], capsys)
     assert code == 2 and "paths.apk" in err and "dummy" not in err
 
 

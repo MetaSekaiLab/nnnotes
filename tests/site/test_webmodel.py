@@ -453,13 +453,13 @@ def run(argv, capsys):
 
 def test_web_argument_shape():
     p = cli.build_parser()
-    a = p.parse_args(["web", "s", "--pair", "1:easy", "--live2d", "m1", "--live2d", KEY_B])
+    a = p.parse_args(["--json", "site", "build", "-o", "s", "--pair", "1:easy", "--live2d", "m1", "--live2d", KEY_B])
     assert a.pair == [(1, "easy")] and a.live2d == ["m1", KEY_B] and not a.all_live2d
-    a = p.parse_args(["web", "s", "--all", "--all-live2d", "--force"])
+    a = p.parse_args(["--json", "site", "build", "-o", "s", "--all", "--all-live2d", "--force"])
     assert a.all and a.all_live2d and a.live2d is None and a.force
     for bad in (["--live2d", "m", "--all-live2d"], ["--pair", "1:easy", "--all"], ["--all", "--player-only"]):
         with pytest.raises(SystemExit):
-            p.parse_args(["web", "s", *bad])
+            p.parse_args(["--json", "site", "build", "-o", "s", *bad])
 
 
 @pytest.mark.parametrize(
@@ -471,7 +471,7 @@ def test_web_argument_shape():
     ],
 )
 def test_web_selection_errors(tmp_path, capsys, argv, message):
-    code, _, err = run(["web", str(tmp_path / "s"), *argv], capsys)
+    code, _, err = run(["--json", "site", "build", "-o", str(tmp_path / "s"), *argv], capsys)
     assert code == 2 and message in err
 
 
@@ -501,7 +501,10 @@ def test_web_builds_models_then_charts(tmp_path, capsys, monkeypatch, failed, co
         [
             "--apk",
             str(tmp_path / "base.apk"),
-            "web",
+            "--json",
+            "site",
+            "build",
+            "-o",
             str(tmp_path / "s"),
             "--player",
             str(fake_player(tmp_path / "p")),
@@ -531,7 +534,10 @@ def test_web_unknown_model_is_a_usage_error(tmp_path, capsys, monkeypatch):
         [
             "--apk",
             str(tmp_path / "base.apk"),
-            "web",
+            "--json",
+            "site",
+            "build",
+            "-o",
             str(tmp_path / "s"),
             "--player",
             str(fake_player(tmp_path / "p")),
@@ -916,7 +922,7 @@ def test_story_command_exports_its_models_next_to_the_story(tmp_path, capsys, mo
     md = tmp_path / "master"
     md.mkdir()
     (md / "MasterAdv.json").write_text(json.dumps({"_allData": [{"_id": 1}]}), encoding="utf-8")
-    base = ["--master", str(md), "--language", "ja", "story", "1"]
+    base = ["--json", "--master", str(md), "--language", "ja", "export", "story", "1"]
     out = tmp_path / "out"
     code, o, err = run([*base, "-o", str(out / "s1")], capsys)
     assert code == 0, err

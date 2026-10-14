@@ -388,6 +388,15 @@ def apk_catalog(apk) -> bytes:
         return z.read(APK_CATALOG)
 
 
+def apk_version(apk: Path | None) -> str | None:
+    """The versionName of an APK (None without an APK file, or when its manifest has none)."""
+    if apk is None or not Path(apk).is_file():
+        return None
+    from ..source.gameapi import apk_version_name
+
+    return apk_version_name(apk)
+
+
 def fetch(cdn: str, language: str, timeout: float = 120, *, version: str = "main") -> tuple[bytes, str | None]:
     """The remote catalog of `language` from a CDN base, and the text of its `.hash` file (None when not served)."""
     base = cdn.rstrip("/") + "/asset/Android/" + Catalog.cache_file(language, Path("."), version=version).name

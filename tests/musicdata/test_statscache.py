@@ -90,11 +90,11 @@ def test_invalid_options_are_user_errors_before_native_or_export_work(tmp_path, 
         assert not output.exists()
 
 
-def test_zero_workers_selects_native_automatic_parallelism(deck_input):
-    module = CacheBridge()
-    deck = musicdata.Deck(module=module, seeds=1, workers=0)
-    deck.stats(deck_input)
-    assert module.inputs[0][1:] == (1, None)
+def test_workers_select_the_native_threads(deck_input):
+    for workers, native in ((None, None), (0, 1), (3, 3)):
+        module = CacheBridge()
+        musicdata.Deck(module=module, seeds=1, workers=workers).stats(deck_input)
+        assert module.inputs[0][1:] == (1, native)
 
 
 def test_sampling_format_is_rejected_before_calling_the_model(deck_input):

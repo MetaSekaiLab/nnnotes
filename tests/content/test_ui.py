@@ -180,8 +180,8 @@ def test_cli_selects_the_jp_split_apk_and_keeps_public_provenance(tmp_path, expo
         },
         environ={},
     )
-    args = cli.build_parser().parse_args(["ui", "--key", KEY, "-o", str(tmp_path / "out")])
-    ui.command(args, cfg)
+    args = cli.parse_args(["export", "ui", "--key", KEY, "-o", str(tmp_path / "out")])
+    args.func(args, cfg)
     index = read(tmp_path / "out/index.json")
     assert index["provenance"]["region"] == "jp"
     assert len(index["provenance"]["apk_members_sha256"]) == 64
@@ -189,9 +189,9 @@ def test_cli_selects_the_jp_split_apk_and_keeps_public_provenance(tmp_path, expo
 
 
 def test_limit_is_validated_before_any_apk_read(tmp_path, capsys):
-    args = cli.build_parser().parse_args(["ui", "--limit", "0", "-o", str(tmp_path)])
+    args = cli.parse_args(["export", "ui", "--limit", "0", "-o", str(tmp_path)])
     with pytest.raises(SystemExit) as exc:
-        ui.command(args, Config(environ={}))
+        args.func(args, Config(environ={}))
     assert exc.value.code == 2
     assert "--limit must be positive" in capsys.readouterr().err
 

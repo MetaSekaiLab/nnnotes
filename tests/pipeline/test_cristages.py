@@ -246,7 +246,7 @@ def test_audio_subjects_by_content(tmp_path, tools):
 
 
 def test_audio_waits_for_raw_files_not_fetched(tmp_path, tools):
-    from nnnotes.cli.cli_assets import Inputs
+    from nnnotes.cli.assets import Inputs
 
     store = Store(tmp_path / "s")
     env = planning(store, tmp_path, {"cri_assets_cri/sound/a": ACB})

@@ -54,7 +54,7 @@ def server_info(name: str, cdn: str, api: str, area: str = "", display: str = ""
 def run(argv, capsys):
     code = 0
     try:
-        cli.main(argv)
+        cli.main(["--json", *argv])
     except SystemExit as e:
         code = e.code if isinstance(e.code, int) else 1
     out, err = capsys.readouterr()

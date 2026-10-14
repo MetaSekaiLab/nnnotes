@@ -14,7 +14,7 @@ import struct
 import zlib
 from pathlib import Path
 
-ENCODINGS = ("gzip", "br", "none")  # web --compress
+ENCODINGS = ("gzip", "br", "none")  # site build --compress
 DEFAULT_ENCODING = "gzip"
 SUFFIXES = {"gzip": ".gz", "br": ".br"}  # stored name suffix of an encoded asset
 # extensions of the stored names worth encoding (text, meshes, raw PCM); images and compressed audio are left as

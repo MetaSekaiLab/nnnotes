@@ -2,11 +2,9 @@
 texts, the sounds and cue sheets of the shards, the statuses of episodes and rows, the inferred characters, the
 stage reading the unity.export artifacts, and the command."""
 
-import argparse
 import copy
 import json
 import random
-from types import SimpleNamespace
 
 import pytest
 
@@ -17,8 +15,8 @@ from nnnotes.pipeline.stages import Pending, describe, execute, registry
 from nnnotes.pipeline.store import Store
 from nnnotes.pipeline.views import AddressIndex, Obj, ViewError
 from nnnotes.source import languages
-from tests.pipeline.test_views import addresses_doc, write_master
-from tests.pipeline.test_voices import KEYS, SHEETS, TABLES, Cfg, Paths, audio, audio_task, command, planning, row, text
+from tests.pipeline.test_views import addresses_doc
+from tests.pipeline.test_voices import KEYS, SHEETS, TABLES, Paths, audio, audio_task, planning, row, text
 
 RULES = voices.load_rules()
 STORY_SHEET = "adv_voice_x_01"
@@ -611,83 +609,6 @@ def export_dir(tmp_path, store):
     return out
 
 
-def test_command_filters_story_rows(tmp_path, capsysbinary):
-    out = export_dir(tmp_path, Store(tmp_path / "s"))
-    common = argparse.Namespace()
-    command(
-        ["voices", "list", "--from", str(out), "--source", "story", "--episode", "900001", "--status", "ok"],
-        common,
-        Cfg("en"),
-    )
-    got = capsysbinary.readouterr().out.decode("utf-8").splitlines()
-    assert got == [
-        f"MasterAdv:900001:3\tadv_alpha-en\tStory.Main\t{STORY_SHEET}/{STORY_SHEET}_001\tok\tx01_1-en",
-        f"MasterAdv:900001:5:1\tadv_gamma-en,adv_alpha-en\tStory.Main\t{STORY_SHEET}/{STORY_SHEET}_002\tok\tx01_2-en",
-        f"MasterAdv:900001:12\tadv_both-en\tStory.Main\t{STORY_SHEET}/{STORY_SHEET}_003\tok\tx01_5-en",
-    ]
-    command(["voices", "search", "x01_3-ZH-HANS", "--from", str(out), "--language", "zh-Hans", "--json"], common)
-    assert [r["id"] for r in json.loads(capsysbinary.readouterr().out)] == ["MasterAdv:900001:7"]
-    command(["voices", "list", "--from", str(out), "--episode", "adv_script_x_02", "--json"], common)
-    assert [r["id"] for r in json.loads(capsysbinary.readouterr().out)] == ["MasterAdv:900002:1"]
-    command(
-        ["voices", "list", "--from", str(out), "--category", "Story.HomeSpotTapTalk", "--character", "alpha"], common
-    )
-    assert capsysbinary.readouterr().out.decode().split("\t")[0] == "MasterAdv:900003:2"
-    with pytest.raises(SystemExit):
-        command(["voices", "list", "--from", str(out), "--episode", "123"], common)
-    command(["voices", "summary", "--from", str(out)], common)
-    assert "story: 8 episodes" in capsysbinary.readouterr().out.decode()
-    dst = tmp_path / "got"
-    command(["voices", "get", "MasterAdv:900001:5:1", "-o", str(dst), "--from", str(out)], common)
-    assert (dst / f"{STORY_SHEET}_002.flac").read_bytes() == f"{STORY_SHEET}/{STORY_SHEET}_002.flac".encode()
-    assert [r["id"] for r in json.loads((dst / "voice.json").read_text(encoding="utf-8"))["rows"]] == [
-        "MasterAdv:900001:5:1"
-    ]
-    command(["voices", "get", "5201", "-o", str(tmp_path / "g2"), "--from", str(out)], common)
-    assert (tmp_path / "g2" / "Growth_Alpha_RankUp_01.flac").is_file()
-
-
 class Catalog:
     def keys(self, prefix=""):
         return [k for k in catalog_keys() if k.startswith(prefix)]
-
-
-def test_command_without_an_export_reads_one_episode(tmp_path, capsysbinary, monkeypatch):
-    from nnnotes.formats import cri
-    from tests.pipeline.test_voices import sheet_acb, stream_files
-
-    mdir = write_master(tmp_path / "m", tables())
-    loaded = []
-
-    def load(cat, keys):
-        asset = keys["script"].rsplit("/", 1)[-1]
-        loaded.append(asset)
-        return {p: EPISODES[asset][p] if p == "script" else shard(EPISODES[asset][p]) for p in EPISODES[asset]}
-
-    def decode(cat, sheet, out_dir, key=None, fmt="flac", **kw):
-        out_dir.mkdir(parents=True, exist_ok=True)
-        streams = []
-        for n, name, file, _samples in stream_files(sheet, SHEETS2):
-            (out_dir / f"{file}.{fmt}").write_bytes(f"decoded {sheet}/{file}".encode())
-            streams.append({"stream": n, "name": name, "file": f"{file}.{fmt}"})
-        (out_dir / "streams.json").write_text(json.dumps(streams), encoding="utf-8")
-
-    monkeypatch.setattr(storyvoices, "load_episode", load)
-    monkeypatch.setattr(cri, "acb_data", lambda cat, sheet: ({"acb": sheet_acb(sheet, SHEETS2)}, cri.RAW_ACB))
-    monkeypatch.setattr(cri, "decode", decode)
-    common = argparse.Namespace(
-        session=lambda cfg: SimpleNamespace(master_dir=lambda: mdir, catalog=lambda bundles=True: Catalog())
-    )
-    command(["voices", "list", "--episode", "900001", "--json"], common)
-    rows = json.loads(capsysbinary.readouterr().out)
-    assert loaded == ["adv_script_x_01"]
-    assert [(r["id"], r["status"]) for r in rows][:2] == [
-        ("MasterAdv:900001:3", "not-exported"),
-        ("MasterAdv:900001:5:1", "not-exported"),
-    ]
-    command(["voices", "list", "--source", "Story", "--json"], common)
-    assert json.loads(capsysbinary.readouterr().out) == []  # no episode read without --episode
-    dst = tmp_path / "got"
-    command(["voices", "get", "MasterAdv:900001:3", "-o", str(dst)], common)
-    assert loaded[-1] == "adv_script_x_01"
-    assert (dst / f"{STORY_SHEET}_001.flac").read_bytes() == f"decoded {STORY_SHEET}/{STORY_SHEET}_001".encode()

@@ -374,15 +374,18 @@ def export_library(
     return save_index()
 
 
-def command(args, cfg):
+def export_apk_library(
+    cfg, out, *, keys=None, prefix: str = "EmbUI/", limit: int | None = None, dependencies=True, force=False
+) -> dict:
+    """The library of the APK catalog's keys `keys` (else the keys under `prefix`, the first `limit`), with the
+    provenance of the APK it was read from -> its index (export_library). A key the APK catalog does not have is a
+    ConfigError."""
     from ..source.apkset import MANIFEST_IN_APK, ApkSet, manifest_version_code, manifest_version_name
     from ..source.catalog import APK_CATALOG, Catalog
     from ..source.config import ConfigError
     from ..source.session import Session
     from ..unity.player import PlayerData
 
-    if args.limit is not None and args.limit < 1:
-        args.usage("--limit must be positive")
     apk = cfg.require_path("paths", "apk")
     with ApkSet(apk) as source:
         catalog_data = source.read(APK_CATALOG)
@@ -397,33 +400,21 @@ def command(args, cfg):
     cat = Catalog(
         catalog_data, cfg.require_path("paths", "cache"), bundle_key=lambda: Session(cfg).bundle_key(), apk=apk
     )
-    keys = args.key or cat.keys(args.prefix)
-    if args.limit is not None:
-        keys = keys[: args.limit]
+    keys = keys or cat.keys(prefix)
+    if limit is not None:
+        keys = keys[:limit]
     unknown = sorted(set(keys) - set(cat.keys("")))
     if unknown:
         raise ConfigError("UI key not in the APK catalog: " + ", ".join(unknown))
     try:
-        index = export_library(
+        return export_library(
             cat,
-            args.out,
+            out,
             player=PlayerData(Session(cfg).apk()),
             keys=keys,
-            dependencies=not args.no_dependencies,
-            force=args.force,
+            dependencies=dependencies,
+            force=force,
             provenance=provenance,
         )
     except ValueError as exc:
         raise ConfigError(str(exc)) from None
-    print(
-        json.dumps(
-            {
-                "index": str(Path(args.out).resolve() / "index.json"),
-                "counts": index["counts"],
-                "embedded": len(index["embedded"]),
-                "controllers": len(index["controllers"]),
-            }
-        )
-    )
-    if index["counts"].get("failed"):
-        raise SystemExit(1)

@@ -14,8 +14,9 @@ its census lists):
     Mesh                  mesh.glb         `mesh`: binary glTF in the mesh's local space
     GameObject (a root)   prefab.json      `prefab`: the hierarchy below it with its components
     Material              material.json    `json`
-    Shader                shader.json      `json`: the parsed form as `nnnotes shader` writes it; `program:<platform>/
-                                           s<S>p<P>_<stage>_<N>`: each compiled sub-program as stored; `index`: the
+    Shader                shader.json      `json`: the parsed form as `nnnotes export shader` writes it;
+                                           `program:<platform>/s<S>p<P>_<stage>_<N>`: each compiled sub-program as
+                                           stored; `index`: the
                                            variants (platform, pass, stage, GPU program type, keywords); `typetree`
     AnimationClip         clip.json        `json`
     AnimatorController    controller.json  `json`
@@ -1114,8 +1115,8 @@ class RefExporter:
         return [self._emit(key, "json", encode_object(doc), "json", "material", "json", {})[0]]
 
     def conv_shader(self, info) -> list:
-        """The parsed form (the bytes `nnnotes shader` writes as <name>.json), every compiled sub-program as stored
-        (`program:<platform>/s<S>p<P>_<stage>_<N>`), the variant index and the typetree JSON."""
+        """The parsed form (the bytes `nnnotes export shader` writes as <name>.json), every compiled sub-program as
+        stored (`program:<platform>/s<S>p<P>_<stage>_<N>`), the variant index and the typetree JSON."""
         from ..formats import shader
 
         key = (info.file, info.path_id)

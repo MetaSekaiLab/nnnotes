@@ -806,6 +806,7 @@ def test_a_story_without_its_model_fails(story_build, monkeypatch):
 
 def test_cli_web_stories(tmp_path, capsys, monkeypatch):
     from nnnotes import cli
+    from nnnotes.cli import common
 
     calls = []
 
@@ -820,7 +821,10 @@ def test_cli_web_stories(tmp_path, capsys, monkeypatch):
         [
             "--apk",
             str(tmp_path / "base.apk"),
-            "web",
+            "--json",
+            "site",
+            "build",
+            "-o",
             str(tmp_path / "s"),
             "--player",
             str(fake_player(tmp_path / "p")),
@@ -845,7 +849,7 @@ def test_cli_web_stories(tmp_path, capsys, monkeypatch):
     assert ids == [10462, 7] and fmt == "aac" and kw["audio"] is False and kw["workers"] == 2
     assert kw["story_languages"] == ["en", "ja"]
     assert kw["fonts_flags"] == {"en": "a.otf", "ja": "b.otf", "emoji": "e.ttf"}
-    assert cli.EMOJI_FONT == storysite.EMOJI_FONT
+    assert common.EMOJI_FONT == storysite.EMOJI_FONT
     assert kw["fonts"] == "open" and kw["encoding"] == "gzip"
     assert json.loads(capsys.readouterr().out)["storiesFailed"] == []
 
@@ -859,7 +863,10 @@ def test_cli_web_stories_need_the_fonts_extra(tmp_path, capsys, monkeypatch):
             [
                 "--apk",
                 str(tmp_path / "base.apk"),
-                "web",
+                "--json",
+                "site",
+                "build",
+                "-o",
                 str(tmp_path / "s"),
                 "--player",
                 str(fake_player(tmp_path / "p")),
@@ -885,5 +892,7 @@ def test_cli_web_story_usage(tmp_path, capsys, argv, message):
     from nnnotes import cli
 
     with pytest.raises(SystemExit) as e:
-        cli.main(["web", str(tmp_path / "s"), "--player", str(fake_player(tmp_path / "p")), *argv])
+        cli.main(
+            ["--json", "site", "build", "-o", str(tmp_path / "s"), "--player", str(fake_player(tmp_path / "p")), *argv]
+        )
     assert e.value.code == 2 and message in capsys.readouterr().err

@@ -1,17 +1,18 @@
 # Commands
 
 ```
-nnnotes [global options] <command> [command options]
+nnnotes <group> <command> [options]
 ```
 
-Global options (before the command): `--config`, `--region`, `--language`, `--catalog`, `--catalog-release`, `--cache`, `--master`,
-`--apk`, `--ffmpeg`, `--vgmstream`, `--node`, plus `--version` and `--help`. They set the settings
-described in [configuration.md](configuration.md), which also lists the settings each command needs.
-`nnnotes <command> --help` prints the options of a command. The asset export commands (`export`, `plan`,
-`run-stage`, `catalogs`, `store`) are described in [assets.md](assets.md).
+Global options (before or after the command name): `--config`, `--region`, `--language`, `--catalog`,
+`--catalog-version`, `--cache`, `--store`, `--master`, `--apk`, `--ffmpeg`, `--vgmstream`, `--node` and `--json`,
+plus `--version` and `--help`. They set the settings described in [configuration.md](configuration.md), which also
+lists the settings each command needs. `nnnotes <group> <command> --help` prints the options of a command;
+[cli.md](cli.md) lists every command with its options. The asset export commands (`export assets`, `store plan`,
+`store run`, `store verify` and the catalog versions of the store) are described in [assets.md](assets.md).
 
-Commands that write files take the output path with `-o/--out` (required), except `web`, which takes the site
-directory as its positional argument. JSON summaries on standard output are UTF-8. Every JSON file is written by one
+Commands that write files take the output path with `-o/--out` (required). A command prints a short summary on
+standard output; with `--json` it prints its report as JSON (UTF-8). Every JSON file is written by one
 writer: UTF-8, LF line endings, non-finite numbers as `1e999` / `-1e999` (a NaN is an error). The output is
 deterministic for a given installation: the same inputs with the same versions of nnnotes, its Python dependencies
 and the external tools give byte-identical files. Other versions can encode the same content into other bytes (a
@@ -39,13 +40,13 @@ setting's value. Details in [configuration.md](configuration.md#writing-the-conf
 
 ## Cache
 
-`pull` and every extractor read bundles through the cache (`[paths] cache`):
+`bundle pull` and every extractor read bundles through the cache (`[paths] cache`):
 
 ```
 <cache>/catalog_main_<language>.bin     the legacy main catalog (explicit main or no API/version pin)
 <cache>/bundles/<bundle file name>      bundles of the dependency closures, decrypted (UnityFS)
 <cache>/raw/<path>                      raw CDN files stored as they are (e.g. CRI cue sheet data)
-<cache>/catalogs/<region>/              catalogs downloaded by `browse`
+<cache>/catalogs/<region>/              catalogs downloaded by `catalog browse`
 <cache>/international/<CDN SHA256>/<resource version>/
                                        versioned catalog, bundles and raw files; isolated from old main caches
 ```
@@ -54,34 +55,34 @@ Files already in the cache are not downloaded again. When `[paths] apk` is set, 
 the region's and bundles that ship inside the APK are read from it.
 
 For international regions with a configured API, catalog-based commands discover `resource_version` first and
-download `catalog_<resource_version>_<language>.bin`. `catalogs fetch` labels the bytes with the version used to
-select that file, rather than querying a newer label after downloading main. Use `--catalog-release VERSION` or
+download `catalog_<resource_version>_<language>.bin`. `catalog fetch` labels the bytes with the version used to
+select that file, rather than querying a newer label after downloading main. Use `--catalog-version VERSION` or
 the [version settings](configuration.md) to pin builds and use cached data offline. An explicit `--catalog FILE`
 bypasses discovery. JP keeps its existing Version-driven path.
 
-## catalog
+## catalog keys
 
 ```
-nnnotes catalog [--prefix PREFIX] [--limit LIMIT]
+nnnotes catalog keys [--prefix PREFIX] [--limit LIMIT]
 ```
 
 Prints the addressable keys that start with `PREFIX` (default: all), sorted, at most `LIMIT` (default 200), one per
 line; the total count goes to standard error.
 
-## browse
+## catalog browse
 
 ```
-nnnotes browse [--port PORT] [--host HOST]
+nnnotes catalog browse [--port PORT] [--host HOST]
 ```
 
 Serves a local web page on `HOST:PORT` (default `127.0.0.1:8000`) that lists every configured region, its catalog
 languages, and per catalog the asset paths as directories. A link under an asset path downloads the bundle holding
 it, decrypted; `bundles/<bundle key>` lists every bundle directly.
 
-## pull
+## bundle pull
 
 ```
-nnnotes pull KEY [KEY ...]
+nnnotes bundle pull KEY [KEY ...]
 ```
 
 Fetches the bundle closure (the key's location and all its dependencies) of each key into the cache and prints the
@@ -94,7 +95,7 @@ nnnotes servers [--show-hosts]
 ```
 
 Reads the server list from the bootstrap API root (`[bootstrap] api`) with an anonymous call to the game's API and
-prints `{servers: [{name, displayName, areaId, region, cdnRoots, apiRoots}]}`: per server its name, its area id, the
+reports `{servers: [{name, displayName, areaId, region, cdnRoots, apiRoots}]}`: per server its name, its area id, the
 configured region (`[servers.<region>]` table) whose `cdn` or `api` is one of the server's roots, or `null`, and how
 many alternative CDN and API roots the server list gives. `--show-hosts` adds the roots themselves (`cdn`, `api`:
 lists), ready for the `cdn` and `api` settings of a region. The exit status is 1 when the call fails.
@@ -106,7 +107,7 @@ nnnotes master version
 ```
 
 Asks the region's API root (`[servers.<region>] api`) for the master data version and the resource version the
-region serves now (the game's API, anonymous) and prints `{region, masterVersion, resourceVersion}`. The client
+region serves now (the game's API, anonymous) and reports `{region, masterVersion, resourceVersion}`. The client
 version sent with the call is `[client] version`, else the `versionName` of `[paths] apk`. The exit status is 1 when
 the call fails.
 
@@ -118,25 +119,27 @@ nnnotes master decode INPUT [INPUT ...] -o OUT [--workers N]
 
 `INPUT`: master data files, or directories whose `*.bin` files are decoded. Each file (64-byte prefix, then
 Rijndael-256 CBC with PKCS7 padding over gzip-compressed JSON) is written as `OUT/<file stem>.json` (UTF-8, one-space
-indent, non-finite numbers as `1e999` / `-1e999`; a table with a NaN fails). `--workers` (default 8) decodes in parallel. Prints `{decoded, failed: [{file, error}], out}`; the exit
+indent, non-finite numbers as `1e999` / `-1e999`; a table with a NaN fails). `--workers` (default: the CPUs the process may use; `0`: one at a time) decodes in parallel. The report is
+`{decoded, failed: [{file, error}], out}`; the exit
 status is 1 when a file failed.
 
 ## master download
 
 ```
-nnnotes master download (--version VERSION | --latest) -o OUT [--workers N]
+nnnotes master download (--version VERSION | --latest) -o OUT [--fetch-workers N]
 ```
 
 Downloads master data version `VERSION`, or with `--latest` the version the region serves now (as
 `master version`), from the region's CDN: `OUT/MasterManifest.json` and every `.bin` file it lists, each checked
 against the manifest's SHA-256. Files already present with the right hash are kept.
-`--workers` (default 16) downloads in parallel. Prints `{version, files, downloaded, kept, failed, out}`; the exit
+`--fetch-workers` (default 16) downloads in parallel. The report is `{version, files, downloaded, kept, failed, out}`;
+the exit
 status is 1 when a file failed or, with `--latest`, the version could not be fetched.
 
-## adv
+## export episode
 
 ```
-nnnotes adv ADV_ID -o OUT.json
+nnnotes export episode ADV_ID -o OUT.json
 ```
 
 One ADV episode as JSON: `advId`, `asset`, `commandCount`, `commands` (the episode's command list with the text,
@@ -150,10 +153,10 @@ takes the player settings' default transition, which is read from `[paths] apk`)
 `chatwindow` and `chaticon` from the `MasterAdvChat` row of the chat rows' chat id; `video` from the episode's video
 row of a Movie / Clip row's video id.
 
-## story
+## export story
 
 ```
-nnnotes story ADV_ID -o OUT [--models MODELS] [--force] [--format flac|ogg|wav] [--flac-level N] [--no-audio]
+nnnotes export story ADV_ID -o OUT [--models MODELS] [--force] [--format flac|ogg|wav] [--flac-level N] [--no-audio]
               [--fonts open|game]
 ```
 
@@ -161,9 +164,9 @@ One ADV episode as a directory, and its Live2D models in a models directory:
 
 ```
 MODELS/<id>/              every Live2D model of the episode (MODELS: `--models`, default OUT/../live2d), the files
-                          of a site's model manifest (see `web`): model.json, moc3, prefab, the atlas pages and the
+                          of a site's model manifest (see `site build`): model.json, moc3, prefab, the atlas pages and the
                           shader programs its drawables use
-OUT/episode.json          as `adv`
+OUT/episode.json          as `export episode`
 OUT/audio/<cueSheet>/     every cue sheet of the episode, one file per cue + cues.json, streams.json
 OUT/scene.json            player graphics, cameras, ADV fields, volumes, settings and stages
 OUT/frames.json           Frame prefabs by asset name: uGUI, Animator controllers and clips, UI particle systems
@@ -184,11 +187,11 @@ OUT/story.json            index of the above (a file the episode does not need i
 story.json `models` maps the key of each model to its id (`<name>` of `Character/Live2D/<group>/<name>/model/<name>`)
 and `modelsDir` is the path from OUT to MODELS. A model directory that exists is used as it is, so the stories of one
 models directory export each model once; `--force` exports the episode's models again. The printed summary lists
-the models exported (`modelsBuilt`) and those used as they were (`modelsSkipped`). Several `story` processes may
+the models exported (`modelsBuilt`) and those used as they were (`modelsSkipped`). Several `export story` processes may
 share a models directory: a model appears in it in one rename, whole, and a model two processes export at once is
 kept from the first to finish (the other's export, the same bytes, is dropped and counted in `modelsSkipped`).
 
-`--format` (default `flac`) is the audio format and `--flac-level` its FLAC compression level (as for `audio`);
+`--format` (default `flac`) is the audio format and `--flac-level` its FLAC compression level (as for `export audio`);
 `--no-audio` leaves the cue sheets undecoded (no `audio/`, `audio`
 in story.json is empty). With audio, `crilips/` holds the weights of the game's CRI Lips mouth analysis, read from the
 CRI Lips library in `[paths] apk` (or in the arm64-v8a split next to it, `split_config.arm64_v8a.apk`), when a voice
@@ -262,14 +265,14 @@ way the TMP shader applies them. The document-level `textStyle.roles` gives, per
 `descentEm` (line pitch = `lineHeightEm` + `lineSpacing` / 100 em) and the font's `spacingOffset` / `boldSpacing`
 (1/100 em) for the export language.
 
-## live2d
+## export live2d
 
 ```
-nnnotes live2d MODEL -o OUT
+nnnotes export live2d MODEL -o OUT
 ```
 
 A Live2D (Cubism) model prefab as a Cubism runtime directory. `MODEL` is the model's key
-`Character/Live2D/<group>/<name>/model/<name>` or its id `<name>` (`nnnotes catalog --prefix Character/Live2D/` lists
+`Character/Live2D/<group>/<name>/model/<name>` or its id `<name>` (`nnnotes catalog keys --prefix Character/Live2D/` lists
 the keys):
 
 ```
@@ -284,29 +287,29 @@ OUT/<name>.model3.json            file references, EyeBlink / LipSync groups
 
 Needs `[paths] apk` (component classes are resolved through the APK). Prints a JSON summary.
 
-## spot
+## export spot
 
 ```
-nnnotes spot SPOT_ID -o OUT
+nnnotes export spot SPOT_ID -o OUT
 ```
 
 ```
 OUT/spot.json         master row, names, tap-talk episodes, situation settings, tap targets, Spine characters
 OUT/spine/            Spine skeletons (.json or .skel), atlases, atlas page PNGs
-OUT/room.glb          the spot's background as binary glTF (as `room`), with room.json
-OUT/shaders/          shaders of the spot's bundles (as `shader`)
+OUT/room.glb          the spot's background as binary glTF (as `export room`), with room.json
+OUT/shaders/          shaders of the spot's bundles (as `export shader`)
 ```
 
 Needs `[paths] apk` and master data (`MasterHomeSpot`, `MasterText`, `MasterStoryHomeSpotTapTalkEpisode`). `room.glb` and
-`room.json` are the `room` export of the spot's background.
+`room.json` are the `export room` export of the spot's background.
 
 A reference the situation prefab leaves empty is written as null: a Spine character with no `_animation` has null
 `skeletonData`, `animation` and `world`, and a tap target with no `_focus` has a null `focusWorld`.
 
-## room
+## export room
 
 ```
-nnnotes room KEY -o OUT.glb
+nnnotes export room KEY -o OUT.glb
 ```
 
 A spot background prefab as binary glTF: every mesh baked into prefab space, converted to glTF's right-handed space,
@@ -330,10 +333,10 @@ left with no submesh is not written. A MeshFilter with no mesh, or a mesh with n
 nothing and is not written; the summary lists the object path in `nullMeshFilters`, or the mesh and object path in
 `meshesWithoutTriangles`.
 
-## shader
+## export shader
 
 ```
-nnnotes shader (--key KEY | --apk-bundle SUBSTRING [SUBSTRING ...]) -o OUT
+nnnotes export shader (--key KEY | --apk-bundle SUBSTRING [SUBSTRING ...]) -o OUT
 ```
 
 Every Shader object in the bundle closure of `KEY`, or in the APK bundles whose file names contain the substrings
@@ -345,10 +348,10 @@ OUT/<name>/<platform>/s<S>p<P>_<stage>_<N>.<ext>   every compiled sub-program (G
 OUT/shaders.json                                   index with the keywords of every variant
 ```
 
-## audio
+## export audio
 
 ```
-nnnotes audio CUE_SHEET -o OUT [--format flac|ogg|wav] [--flac-level N]
+nnnotes export audio CUE_SHEET -o OUT [--format flac|ogg|wav] [--flac-level N]
 ```
 
 Decodes the CRI cue sheet of the key `Cri/Sound/<CUE_SHEET>`: one file per stream (a name repeated within the
@@ -361,17 +364,17 @@ The HCA keycode is read from `[paths] apk`.
 
 ```
 nnnotes voices list [--from OUT] [--character C] [--category C] [--source S] [--episode ADV] [--status S]
-                    [--limit N] [--json] [--language L]
-nnnotes voices search TEXT [--from OUT] [--language L] [--character C] [--category C] [--source S]
-                           [--episode ADV] [--status S] [--limit N] [--json]
-nnnotes voices summary [--from OUT] [--json]
-nnnotes voices get ID -o DIR [--from OUT] [--format flac|ogg|wav]
+                    [--limit N]
+nnnotes voices search TEXT [--from OUT] [--search-language L] [--character C] [--category C] [--source S]
+                           [--episode ADV] [--status S] [--limit N]
+nnnotes voices summary [--from OUT]
+nnnotes voices get ID -o DIR [--from OUT] [--format flac|ogg|wav] [--flac-level N]
 ```
 
 Queries the voices index ([views.md](views.md#voices)): the character voices the master data names and the voices
 of the story episodes, with their source row, characters (for story voices, inferred from the speaker), category,
 five-language text, cue sheet and cue. `--from OUT` reads `OUT/views/voices.json`, written by
-`nnnotes export --views voices` (or `all`) with the exported audio and episodes (`--select key:Adv/Episode/`): then
+`nnnotes export assets --views voices` (or `all`) with the exported audio and episodes (`--select key:Adv/Episode/`): then
 every voice also has its status and the files of its streams. Without `--from` the index is built from the
 configured master data and catalog: content and catalog keys only, every present voice `not-exported`; story
 voices only for the episode of `--episode` (or of a `get` row id), read from the catalog.
@@ -383,44 +386,45 @@ voices only for the episode of `--episode` (or of a `get` row id), read from the
   `LiveDialogueFixedPair`, `LiveStartCharacterVoice`, `HomeSpot`, `Title`, `Sound` or `Story`. `--episode`: the
   story voices of one episode, by MasterAdv id or episode asset. `--status`: a status of the index.
 - `list` and `search` print one line per voice: id, characters (story voices: the speaker's name in `--language`),
-  `Source.Category`, `sheet/cue`, status and the text in `--language` (default `[catalog] language`); `--json`
-  prints the rows. `search TEXT` matches a part of the text in `--language` (every language when not given) or of
-  the cue name, case ignored.
+  `Source.Category`, `sheet/cue`, status and the text in the global `--language` (default `[catalog] language`);
+  `--json` prints the rows. `search TEXT` matches a part of the text in `--search-language` (every language when not
+  given) or of the cue name, case ignored.
 - `summary`: rows per status, per source and category and per character, the gaps (voices whose sheet has no key
   or whose decoded sheet lacks the cue, episodes without a key) and the unreferenced keys and streams; for the
   story episodes, their number per status and kind, the rows and inferred characters per speaker name, and the
   story voices whose cue a row of another source also names.
 - `get ID`: `ID` is a row id (`MasterTalk:561`, `MasterAdv:<adv id>:<command index>`) or a sound id. Writes the
   files of the voice's streams into `DIR`, named as the export names them, and `voice.json` (its rows and files).
-  With `--from` and the files exported, they are copied; otherwise the voice's cue sheet alone is decoded as
-  `nnnotes audio` does (`--format`, FLAC level 8) and the cue's streams are picked by the ACB's cue table. Exit
+  With `--from` and the files exported, they are copied; otherwise (or with `--flac-level`) the voice's cue sheet
+  alone is decoded as `nnnotes export audio` does (`--format`, `--flac-level`, default 8) and the cue's streams are
+  picked by the ACB's cue table. Exit
   status 1 when the voice has no file (its status says why).
 
-## crikey
+## apk hca-key
 
 ```
-nnnotes crikey [--write DIR]
+nnnotes apk hca-key [--write DIR]
 ```
 
 Looks up the CRI HCA keycode in the APK's boot data and prints whether one was found (and its number of digits,
 not its value). `--write` writes it as `DIR/.hcakey` (8 bytes, big-endian), the file vgmstream reads next to its
 input; `DIR` is created when missing.
 
-## player
+## apk settings
 
 ```
-nnnotes player -o OUT.json
+nnnotes apk settings -o OUT.json
 ```
 
 The game's render settings from the APK's boot data as JSON: `colorSpace`, `defaultPipeline`, `qualityLevels`,
 `qualityPerPlatform`, `pipelines`, `renderers`, `postProcessData`. Needs `[paths] apk`. The MonoBehaviours are read
 with the type trees that ship with nnnotes; an APK whose classes do not match them stops the command with exit
-status 2 and a line naming the class, the game version and the Unity version (as `story`, `live` and `web`).
+status 2 and a line naming the class, the game version and the Unity version (as `export story`, `export live` and `site build`).
 
-## live
+## export live
 
 ```
-nnnotes live MUSIC_ID -o OUT [--difficulty easy|normal|hard|expert] [--format flac|ogg|wav]
+nnnotes export live MUSIC_ID -o OUT [--difficulty easy|normal|hard|expert] [--format flac|ogg|wav]
                              [--flac-level N] [--fonts open|game] [--band BAND | --leader-card CARD_ID]
                              [--live-option OPTION[=VALUES] ...]
 ```
@@ -441,7 +445,7 @@ OUT/live.json                index of the above
 ```
 
 `--format` (default `flac`) is the format of every decoded cue sheet and `--flac-level` its FLAC compression level
-(as for `audio`).
+(as for `export audio`).
 
 The start canvas follows the client language `[catalog] language` (`ja`, `en`, `zh-Hant`, `zh-Hans` or `ko`): its
 text table column, fonts and line spacing. `--fonts open` (default) writes each text's layout and style (size,
@@ -473,16 +477,16 @@ An option without values offers every value the master data has; `NAME=v,v,...` 
 value is always included; a value the master data does not have is a usage error). Any option also writes the
 `defaults` tables. Without `--live-option` the directory holds the files of the default options only.
 
-## web
+## site build
 
 ```
-nnnotes web SITE [--pair MUSIC_ID:DIFFICULTY [--pair ...] | --all] [--live2d MODEL [--live2d ...] | --all-live2d]
+nnnotes site build -o SITE [--pair MUSIC_ID:DIFFICULTY [--pair ...] | --all] [--live2d MODEL [--live2d ...] | --all-live2d]
                  [--story ADV_ID [--story ...] | --all-stories] [--story-languages LANG,...] [--font LANG=PATH ...]
-nnnotes web SITE (--player-only | --reingest-json)
+nnnotes site build -o SITE (--player-only | --reingest-json)
                   [--player DIR] [--format aac|opus|vorbis|mp3|flac] [--no-audio] [--compress gzip|br|none]
                   [--force]
                   [--tmp DIR] [--workers N] [--read-workers N] [--band BAND | --leader-card CARD_ID]
-                  [--region REGION [--region ...] | --all-regions] [--fonts open|game]
+                  [--site-region REGION [--site-region ...] | --all-regions] [--fonts open|game]
                   [--live-option OPTION[=VALUES] ...]
 ```
 
@@ -520,7 +524,7 @@ SITE/assets/<sha256>.<ext>[.gz|.br]       content-addressed files shared by all 
   Live2D models; `--all-live2d` adds every model key of the catalog. A model's id is its `<name>`. Its manifest lists
   the files the player's Live2D viewer and story page read: `model.json` (index: moc3, prefab, textures, shader index,
   the Cubism mask materials and `motionSync`, whether the prefab's root has the MotionSync controller with its CRI
-  audio input), the moc3 and prefab as `live2d` writes them, the atlas pages the drawables use, and the GLSL ES 3.00
+  audio input), the moc3 and prefab as `export live2d` writes them, the atlas pages the drawables use, and the GLSL ES 3.00
   programs of the Live2D shaders that the drawables' materials select, each keyword set also with
   `_ADDITIONAL_LIGHTS_VERTEX` (the story player adds it at quality 4), and the mask shader's for a model with masked
   drawables. Charts and models can be added in one run; models are built first.
@@ -568,9 +572,9 @@ SITE/assets/<sha256>.<ext>[.gz|.br]       content-addressed files shared by all 
   and nnnotes' own code), so a later build with the same `--tmp` reuses what is unchanged and writes the same files
   faster. Deleting it is
   safe at any time outside a build; the next build then makes everything again.
-- `--band` / `--leader-card`: as for `live`, for every chart. `--fonts`: for charts as for `live` (the site stores
+- `--band` / `--leader-card`: as for `export live`, for every chart. `--fonts`: for charts as for `export live` (the site stores
   no start canvas files); for stories where the glyphs of the story text come from (see Stories).
-- `--live-option` (repeatable): as for `live`, for the charts of this run (with `--pair` or `--all`). The live
+- `--live-option` (repeatable): as for `export live`, for the charts of this run (with `--pair` or `--all`). The live
   directories carry the variants' files, and a chart's read set is the union of its read set with the default
   options and its read sets with the settings of each offered variant (every combination of the offered mirror,
   note skin, effect set and quality values, the bar lines on, and each other note sound set; the player's read-set
@@ -585,13 +589,12 @@ SITE/assets/<sha256>.<ext>[.gz|.br]       content-addressed files shared by all 
   `MasterText` row of `_nameTextID`, the languages that have a text) and `label` (the name in `[catalog] language`).
   A key the rows map to two characters gets none. The manifests of skipped models get this build's fields; without
   master data the fields are not written and skipped manifests keep theirs.
-- `--region` (repeatable) / `--all-regions`: the regions the site serves (see Regions); default: the one
-  `[catalog] region`. This `--region` follows the command name (`nnnotes web SITE --region tw --region kr`); the
-  global `--region` before it sets `[catalog] region`.
+- `--site-region` (repeatable) / `--all-regions`: the regions the site serves (see Regions); default: the one
+  `[catalog] region`. The global `--region` sets `[catalog] region`.
 
 ### Stories
 
-A story's manifest lists what the player's story page reads, in the layout of `story` (below the site's `assets/`):
+A story's manifest lists what the player's story page reads, in the layout of `export story` (below the site's `assets/`):
 `story.json`, `episode.json`, `scene.json`, the scene shaders (GLSL ES 3.00 programs only), textures, per cue sheet
 `cues.json` and the file of each cue in the `--format` (an AAC file's encoder delay in
 `cues.json` as `encoderDelay`), the media files the episode uses and its videos; per language (`--story-languages`,
@@ -709,7 +712,7 @@ files of the master data directory (`[paths] master`, `--master`) and the `Maste
 decoded from, whose version and SHA-256 the file records (region `[catalog] region`). `--no-bgm` skips the cue sheets
 (every `bgm.length` is null). `--jackets DIR` also writes every song's jacket as `DIR/<jacket>.webp` (at most 320 px
 on the longer side). `FILE` ending in `.gz` is written gzip-compressed; the file is canonical: the same inputs and
-nnnotes version give the same bytes. Prints `{out, format, region, masterSource, masterVersion, songs, charts, deck,
+nnnotes version give the same bytes. Reports `{out, format, region, masterSource, masterVersion, songs, charts, deck,
 unplayable, full, bgm, jackets, bytes, fileBytes, sha256}`. A missing or unreadable input (a master data file, a
 column, a text id, a chart asset, a cue sheet or cue, a jacket), a chart the deck model cannot measure, or deck
 statistics that disagree with the chart facts stop the command with exit status 1 before the file is written. The

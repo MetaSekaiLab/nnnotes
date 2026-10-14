@@ -2,7 +2,6 @@
 source, the ACB cue tables, the statuses, content apart from availability, the stage, the layout document and the
 command."""
 
-import argparse
 import copy
 import json
 import re
@@ -10,7 +9,6 @@ import struct
 import subprocess
 import sys
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
@@ -877,13 +875,6 @@ class Catalog:
         return [k for k in KEYS if k.startswith(prefix)]
 
 
-def command(argv, common, cfg=None):
-    p = argparse.ArgumentParser(prog="nnnotes")
-    voices.register(p.add_subparsers(dest="cmd", required=True), common)
-    args = p.parse_args(argv)
-    args.func(args, cfg or Cfg())
-
-
 def export_dir(tmp: Path, store) -> Path:
     """An export directory: views/voices.json with paths and the stream files at them."""
     out = tmp / "out"
@@ -900,92 +891,6 @@ def export_dir(tmp: Path, store) -> Path:
     (out / "views").mkdir(parents=True)
     (out / "views" / "voices.json").write_bytes(contract.encode(d))
     return out
-
-
-def test_command_list_search_summary(tmp_path, capsysbinary):
-    out = export_dir(tmp_path, Store(tmp_path / "s"))
-    common = argparse.Namespace()
-    command(
-        ["voices", "list", "--from", str(out), "--character", "Alpha", "--category", "Talk.CharacterRankUp"], common
-    )
-    line = capsysbinary.readouterr().out.decode("utf-8")
-    assert (
-        line == "MasterTalk:561\tcharacter_name_alpha-ja\tTalk.CharacterRankUp\tVoiceSystem_01/"
-        "Growth_Alpha_RankUp_01\tok\tテストです\n"
-    )
-    command(["voices", "search", "HELLO", "--from", str(out), "--language", "en", "--json"], common)
-    rows = json.loads(capsysbinary.readouterr().out)
-    assert [r["id"] for r in rows] == ["MasterTalk:561"]
-    command(["voices", "list", "--from", str(out), "--source", "Sound", "--character", "gamma"], common)
-    assert capsysbinary.readouterr().out.decode().split("\t")[0] == "MasterSound:114"
-    command(["voices", "summary", "--from", str(out), "--json"], common)
-    s = json.loads(capsysbinary.readouterr().out)
-    assert s["gaps"] == 8 and s["reverse"]["unreferencedStreams"] == {"VoiceSystem_N": 2}
-    with pytest.raises(SystemExit):
-        command(["voices", "list", "--from", str(out), "--character", "Nobody"], common)
-    with pytest.raises(SystemExit):
-        command(["voices", "list", "--from", str(tmp_path / "none")], common)
-
-
-def test_command_without_an_export_builds_the_content(tmp_path, capsysbinary):
-    mdir = write_master(tmp_path / "m", TABLES)
-    common = argparse.Namespace(
-        session=lambda cfg: SimpleNamespace(master_dir=lambda: mdir, catalog=lambda bundles=True: Catalog())
-    )
-    command(["voices", "list", "--character", "1", "--category", "character-rank-up", "--json"], common)
-    rows = json.loads(capsysbinary.readouterr().out)
-    assert [(r["id"], r["status"]) for r in rows] == [("MasterTalk:561", "not-exported")]
-
-
-def test_get_copies_the_exported_files(tmp_path, capsysbinary):
-    store = Store(tmp_path / "s")
-    out = export_dir(tmp_path, store)
-    dst = tmp_path / "got"
-    command(["voices", "get", "MasterHomeSpot:10001", "-o", str(dst), "--from", str(out)], argparse.Namespace())
-    assert sorted(p.name for p in dst.iterdir()) == ["IntroRandom.flac", "IntroRandom_2.flac", "voice.json"]
-    assert (dst / "IntroRandom_2.flac").read_bytes() == b"spot_01_01_01/IntroRandom_2"
-    meta = json.loads((dst / "voice.json").read_text(encoding="utf-8"))
-    assert [r["id"] for r in meta["rows"]] == ["MasterHomeSpot:10001"]
-    assert meta["files"] == ["IntroRandom.flac", "IntroRandom_2.flac"]
-    command(["voices", "get", "101", "-o", str(tmp_path / "g2"), "--from", str(out)], argparse.Namespace())
-    assert (tmp_path / "g2" / "Growth_Alpha_RankUp_01.flac").is_file()
-    with pytest.raises(SystemExit) as e:
-        command(
-            ["voices", "get", "MasterTalk:563", "-o", str(tmp_path / "g3"), "--from", str(out)], argparse.Namespace()
-        )
-    assert e.value.code == 1
-    with pytest.raises(SystemExit) as e:
-        command(["voices", "get", "MasterTalk:1", "-o", str(tmp_path / "g4"), "--from", str(out)], argparse.Namespace())
-    assert e.value.code == 2
-
-
-def test_get_without_an_export_decodes_the_one_sheet(tmp_path, capsysbinary, monkeypatch):
-    from nnnotes.formats import cri
-
-    mdir = write_master(tmp_path / "m", TABLES)
-    calls = []
-
-    def decode(cat, sheet, out_dir, key=None, fmt="flac", **kw):
-        calls.append((sheet, fmt, kw.get("flac_level")))
-        out_dir.mkdir(parents=True, exist_ok=True)
-        streams = []
-        for n, name, file, _samples in stream_files(sheet):
-            (out_dir / f"{file}.{fmt}").write_bytes(f"decoded {sheet}/{file}".encode())
-            streams.append({"stream": n, "name": name, "file": f"{file}.{fmt}"})
-        (out_dir / "streams.json").write_text(json.dumps(streams), encoding="utf-8")
-
-    monkeypatch.setattr(cri, "acb_data", lambda cat, sheet: ({"acb": sheet_acb(sheet)}, cri.RAW_ACB))
-    monkeypatch.setattr(cri, "decode", decode)
-    common = argparse.Namespace(
-        session=lambda cfg: SimpleNamespace(master_dir=lambda: mdir, catalog=lambda bundles=True: Catalog())
-    )
-    dst = tmp_path / "got"
-    command(["voices", "get", "MasterCharacterVoice:1", "-o", str(dst)], common)
-    assert calls == [("VoiceSystem_02", "flac", 8)]
-    assert sorted(p.name for p in dst.iterdir()) == ["Shared_01.flac", "voice.json"]
-    assert (dst / "Shared_01.flac").read_bytes() == b"decoded VoiceSystem_02/Shared_01"
-    command(["voices", "get", "MasterTalk:561", "-o", str(tmp_path / "ogg"), "--format", "ogg"], common)
-    assert (tmp_path / "ogg" / "Growth_Alpha_RankUp_01.ogg").is_file()
 
 
 # ---------------------------------------------------------------- laziness and documentation

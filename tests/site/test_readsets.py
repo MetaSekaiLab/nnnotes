@@ -428,8 +428,22 @@ def test_web_read_workers_flag_reaches_the_build(tmp_path, capsys, monkeypatch):
     for rel in (sitefiles.READ_SET_SCRIPT, *sitefiles.PLAYER_BUNDLES, f"{sitefiles.PLAYER_PAGE_DIR}/index.html"):
         (player / rel).parent.mkdir(parents=True, exist_ok=True)
         (player / rel).write_text("x", encoding="utf-8")
-    cli.main(["web", str(tmp_path / "s"), "--player", str(player), "--pair", "7:hard", "--read-workers", "24"])
-    cli.main(["web", str(tmp_path / "s"), "--player", str(player), "--pair", "7:hard"])
+    cli.main(
+        [
+            "--json",
+            "site",
+            "build",
+            "-o",
+            str(tmp_path / "s"),
+            "--player",
+            str(player),
+            "--pair",
+            "7:hard",
+            "--read-workers",
+            "24",
+        ]
+    )
+    cli.main(["--json", "site", "build", "-o", str(tmp_path / "s"), "--player", str(player), "--pair", "7:hard"])
     capsys.readouterr()
     assert [kw["read_workers"] for kw in calls] == [24, None]
 
@@ -448,7 +462,10 @@ def test_web_pair_that_no_region_has_is_a_usage_error(tmp_path, capsys, monkeypa
         "zz",
         "--master",
         str(master),
-        "web",
+        "--json",
+        "site",
+        "build",
+        "-o",
         str(tmp_path / "s"),
         "--player",
         str(fake_player(tmp_path / "p")),

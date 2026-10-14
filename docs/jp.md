@@ -64,10 +64,10 @@ models must use a separate site directory from international releases, since the
 nnnotes --region jp master version
 nnnotes --region jp master download --latest -o work/jp-master-bin
 nnnotes master decode work/jp-master-bin -o work/jp-master
-nnnotes --region jp catalog --prefix Live/MusicScore/ --limit 10
-nnnotes --region jp pull Live/MusicScore/0001/0001_00
-nnnotes --region jp catalogs fetch
-nnnotes --region jp export --select key:Image/Jacket/jacket_temporary --views none -o out/jp-sample
+nnnotes --region jp catalog keys --prefix Live/MusicScore/ --limit 10
+nnnotes --region jp bundle pull Live/MusicScore/0001/0001_00
+nnnotes --region jp catalog fetch
+nnnotes --region jp export assets --select key:Image/Jacket/jacket_temporary --views none -o out/jp-sample
 nnnotes --region jp music-data --decoded-master --no-bgm -o out/jp-music-data.json
 ```
 
@@ -79,12 +79,13 @@ the JP hash in `provenance.catalog.resourceHash`.
 JP catalogs are `catalog_main.bin` in a version/hash directory, without a language suffix. The HTTP payload can
 be gzip; nnnotes keeps its original bytes and SHA-256, and bounds decompression before parsing. Remote bundle and
 CRI locations use `{Fwk.Resource.RemoteAssetDir}`. These are indexed, resolved and downloaded through the selected
-snapshot, including in `browse`, `catalogs`, `export`, `plan` and `run-stage`.
+snapshot, including in `catalog browse`, the other `catalog` commands, `export assets`, `store plan` and
+`store run`.
 
 The cache lives under `<cache>/jp/<CDN-origin-digest>/<asset-version>/<asset-hash>/`. It cannot reuse the
 international catalog cache. Embedded files are further isolated under `apk/<APK-catalog-SHA256>/`, so an APK
 update cannot reuse old local bundles when the CDN snapshot stays unchanged. Each cached `catalog_main.bin` has a `catalog_main.bin.source.json` with its SHA-256
-and public source metadata. For an offline `--catalog` or `catalogs import`, copy the pair together. Credentials
+and public source metadata. For an offline `--catalog` or `catalog import`, copy the pair together. Credentials
 are reacquired only when a missing file must be downloaded.
 
 Catalog database records include this source metadata, and JP catalog identity includes version/hash even when
@@ -104,7 +105,7 @@ Live validation on 2026-09-30 used JP client 1.0.4 and local JP Android 1.0.3 da
 - 238 master tables downloaded with manifest hashes and decoded successfully;
 - a 73-note chart and a 512×512 jacket read successfully;
 - one Live2D runtime model and one complete story exported; the story's 22 FLAC files passed full FFmpeg decoding;
-- selected `export` produced six files without failed tasks;
+- selected `export assets` produced six files without failed tasks;
 - `music-data --decoded-master --no-bgm` built 85 songs / 340 charts, including the pinned deck model's
   statistics, with no unplayable chart; output passed JSON Schema validation.
 

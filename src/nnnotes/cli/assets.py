@@ -1,21 +1,18 @@
-"""The asset commands: the default orchestration of the stages (export), its plan, single tasks, catalog versions and
-the store.
+"""The asset commands: the default orchestration of the stages (`export assets`), its plan and single tasks (`store
+plan`, `store run`).
 
-    nnnotes export -o OUT [--layout original[,cas]] [--select group:G|key:PREFIX|bundle:GLOB ...]
-                   [--views all|none|a,b] [--store DIR] [--workers N] [--memory GiB] [--fetch-workers N]
-                   [--catalog-version L|SHA] [--png-level N] [--flac-level N] [--only-class C,...]
-                   [--link auto|clone|hard|copy] [--strict] [--dry-run] [--explain]
-    nnnotes plan [the selection and parameters of export] [-o OUT] [--json] [--since RUN] [--check] [--census]
-                 [--emit-tasks DIR] [--why TASK]
-    nnnotes run-stage TASK.json|DIR [...] [--store DIR] [--fetch] [--force]
-    nnnotes catalogs list [--json] | import FILE [--label L] [--resource-version V] | fetch [--label L]
-                     | diff A B [--json]
-    nnnotes store verify [--quick]
+    nnnotes export assets -o OUT [--layout original[,cas]] [--select group:G|key:PREFIX|bundle:GLOB ...]
+                          [--views all|none|a,b] [--workers N] [--memory GiB] [--fetch-workers N]
+                          [--stored-catalog L|SHA] [--png-level N] [--flac-level N] [--only-class C,...]
+                          [--link auto|clone|hard|copy] [--strict] [--dry-run] [--explain]
+    nnnotes store plan [the selection and parameters of export assets] [-o OUT] [--since RUN] [--check] [--census]
+                       [--emit-tasks DIR] [--why TASK]
+    nnnotes store run TASK.json|DIR [...] [--fetch] [--force]
 
 The pipeline is the registry STAGE_SOURCES in order: each entry names the module and attribute of a stage (a Stage
 class) or of a family of stages (a function returning them, `view.`). An entry whose module or attribute is not
 installed is left out of the pipeline and named by --explain. Stage modules import heavy libraries (UnityPy) only
-when a task runs, so `plan`, and `run-stage` of stages that do not read bundles, never load them.
+when a task runs, so `store plan`, and `store run` of stages that do not read bundles, never load them.
 
 Facts the stages read while their tasks are described (stages.Env):
 
@@ -39,9 +36,10 @@ dependency is its own bundle), so script and atlas references resolve.
 Task cost estimates (scheduling only: never part of a key) are each stage's estimate scaled per stage by the
 costs measured in earlier runs (<store>/costs/calibration.json, updated after every export).
 
-Exit codes: export 0 complete (unsupported objects allowed), 1 item or task failures (reports written), 2 usage or
-settings, 3 aborted (results written so far stay valid); run-stage 0, 1 (a task failed or a result is partial), 2,
-4 an incompatible task (nothing of the batch runs); plan --check 1 when anything would run or change.
+Exit codes: export assets 0 complete (unsupported objects allowed), 1 item or task failures (reports written), 2
+usage or settings, 3 aborted (results written so far stay valid); store run 0, 1 (a task failed or a result is
+partial), 2, 4 an incompatible task (nothing of the batch runs); store plan --check 1 when anything would run or
+change.
 """
 
 from __future__ import annotations
@@ -49,7 +47,6 @@ from __future__ import annotations
 import argparse
 import fnmatch
 import json
-import re
 import sys
 import threading
 import zipfile
@@ -59,14 +56,15 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from importlib import import_module, util
 from pathlib import Path
-from types import SimpleNamespace
 
 from ..pipeline import contract
 from ..pipeline.contract import Cost, IncompatibleTask, Input, Task
 from ..pipeline.stages import Env, Pending, Stage, describe, execute
 from ..source.apkset import ApkSet
-from ..source.config import ConfigError, check_catalog_version, usable_cpus, use
-from ..source.config import describe as describe_setting
+from ..source.config import ConfigError, usable_cpus, use
+from ..source.session import Session
+from . import common
+from .common import nonnegative, print_json
 
 GIB = 1 << 30
 LAYOUT_NAMES = ("original", "cas")
@@ -149,7 +147,7 @@ class Installed:
 
 
 def installed(names=None) -> Installed:
-    """The stages of STAGE_SOURCES (`names`: only the sources of these stage names, for run-stage)."""
+    """The stages of STAGE_SOURCES (`names`: only the sources of these stage names, for `store run`)."""
     stages, of, missing = {}, {}, []
     for src in STAGE_SOURCES:
         if names is not None and not any(src.matches(n) for n in names):
@@ -230,23 +228,6 @@ def select(index: dict, selection: list[str]) -> Selection:
 
 
 # ---------------------------------------------------------------- settings
-def store_root(args, cfg) -> Path:
-    """--store, else [paths] store, else <[paths] cache>/store."""
-    p = getattr(args, "store", None)
-    if p:
-        return Path(p).expanduser()
-    p = cfg.path("paths", "store")
-    if p is not None:
-        return p
-    cache = cfg.path("paths", "cache")
-    if cache is not None:
-        return cache / "store"
-    raise ConfigError(
-        "setting paths.store is not set (nor paths.cache, whose store/ directory is the default): "
-        f"give it as {describe_setting('paths', 'store', '--store')}"
-    )
-
-
 def default_memory() -> int | None:
     """80 % of the physical memory (Linux), else None (no budget)."""
     try:
@@ -471,12 +452,12 @@ class Workspace:
     """What export and plan share: the store, the catalog version, its index, the selection, the pipeline and its
     parameters, the facts."""
 
-    def __init__(self, args, cfg, common, log=_log):
+    def __init__(self, args, cfg, log=_log):
         from ..pipeline.catalogdb import CatalogDB
         from ..pipeline.store import Store
 
-        self.args, self.cfg, self.common, self.log = args, cfg, common, log
-        self.root = store_root(args, cfg)
+        self.args, self.cfg, self.log = args, cfg, log
+        self.root = Session(cfg).store_root()
         self.cache = cfg.path("paths", "cache")
         self.apk = cfg.path("paths", "apk")
         self.fetcher = CatalogFetcher(self.root, self.cache, cfg)
@@ -506,7 +487,7 @@ class Workspace:
     def _catalog_version(self):
         from ..pipeline import catalogdb
 
-        ref = getattr(self.args, "catalog_version", None)
+        ref = getattr(self.args, "stored_catalog", None)
         if ref:
             try:
                 try:
@@ -514,10 +495,10 @@ class Workspace:
                 except ValueError:
                     v = self.db.get(ref, self.cfg.get("catalog", "region"), self.cfg.get("catalog", "language"))
             except (KeyError, ValueError) as e:
-                self.args.usage(f"--catalog-version {ref}: {e.args[0] if e.args else e}")
+                self.args.usage(f"--stored-catalog {ref}: {e.args[0] if e.args else e}")
             remote, apk = self.db.catalog_bytes(v)
             return v, remote, apk
-        cat = self.common.session(self.cfg).catalog(bundles=False)
+        cat = Session(self.cfg).catalog(bundles=False)
         src = cat.sources()
         remote, apk = src["remote"], src.get("apk")
         source = cat.source.to_dict() if getattr(cat, "source", None) else None
@@ -529,7 +510,7 @@ class Workspace:
                 apk,
                 region=self.cfg.get("catalog", "region"),
                 language=self.cfg.get("catalog", "language"),
-                apk_version_name=_apk_version(self.apk),
+                apk_version_name=catalogdb.apk_version(self.apk),
                 source=source,
                 resource_version=source["version"] if source else getattr(cat, "resource_version", None),
             )
@@ -1113,14 +1094,6 @@ def parse_layouts(spec: str) -> list[str]:
     return names
 
 
-def _apk_version(apk: Path | None) -> str | None:
-    if apk is None or not apk.is_file():
-        return None
-    from ..source.gameapi import apk_version_name
-
-    return apk_version_name(apk)
-
-
 # ---------------------------------------------------------------- export
 class Totals:
     """What export reports of the results besides the run's counts, from its one reading of each (Run.scan): the
@@ -1160,7 +1133,7 @@ def _write_report(d: Path, name: str, doc) -> Path:
     return p
 
 
-def cmd_export(args, cfg, common):
+def cmd_export(args, cfg):
     from ..pipeline import layout
     from ..pipeline.orchestrate import Orchestrator, failure
 
@@ -1169,7 +1142,7 @@ def cmd_export(args, cfg, common):
     except ValueError as e:
         args.usage(str(e))
     use(cfg)  # the tools the atoms name are part of the keys
-    ws = Workspace(args, cfg, common)
+    ws = Workspace(args, cfg)
     pipeline = ws.pipeline()
     params = ws.params(pipeline)
     orch = Orchestrator(
@@ -1283,7 +1256,8 @@ def cmd_export(args, cfg, common):
     _write_report(reports, "sources.json", {"problems": ws.problems()})
     s = manifest["summary"]
     gaps = view_gaps(totals.views)
-    common.print_json(
+    common.report(
+        args,
         {
             "run": manifest["id"],
             "selection": ws.selection,
@@ -1296,7 +1270,7 @@ def cmd_export(args, cfg, common):
             "placement": manifest["placement"],
             "layouts": written,
             "reports": str(reports),
-        }
+        },
     )
     if aborted:
         print(f"nnnotes: aborted: {aborted}", file=sys.stderr)
@@ -1319,7 +1293,7 @@ def link_mode(args, cfg) -> str:
 
 
 # ---------------------------------------------------------------- plan
-def cmd_plan(args, cfg, common):
+def cmd_plan(args, cfg):
     from ..pipeline.orchestrate import Orchestrator
 
     layouts = []
@@ -1329,7 +1303,7 @@ def cmd_plan(args, cfg, common):
         except ValueError as e:
             args.usage(str(e))
     use(cfg)  # the tools the atoms name are part of the keys
-    ws = Workspace(args, cfg, common)
+    ws = Workspace(args, cfg)
     pipeline = ws.pipeline()
     params = ws.params(pipeline)
     if args.explain:
@@ -1354,9 +1328,9 @@ def cmd_plan(args, cfg, common):
         files = p.emit(args.emit_tasks)
         ws.log(f"{len(files)} task descriptions in {args.emit_tasks}")
     if args.why:
-        common.print_json(why(ws, p, args.why, args.since))
+        common.report(args, why(ws, p, args.why, args.since), why_lines)
     elif args.json:
-        common.print_json(p.doc)
+        print_json(p.doc)
     else:
         sys.stdout.write(p.text())
     if args.check:
@@ -1391,7 +1365,27 @@ def why(ws: Workspace, p, tid: str, since=None) -> dict:
     }
 
 
-# ---------------------------------------------------------------- run-stage
+def why_lines(r: dict) -> list[str]:
+    from ..pipeline.plan import reason_text
+
+    prev = r["previous"]
+    return [
+        f"{r['task']}: {r['status']} ({', '.join(reason_text(x) for x in r['reasons']) or '-'})",
+        f"key {r['key'] or '-'}",
+        f"previous run {prev['run']}: {prev['status']}, key {prev['key'] or '-'}" if prev else "no previous run",
+    ]
+
+
+# ---------------------------------------------------------------- store run
+def run_lines(r: dict) -> list[str]:
+    lines = []
+    for t in r["tasks"]:
+        tail = t["result"] if t["status"] != "failed" else f"{t['code']}: {t['message']}"
+        lines.append(f"{t['status']:<6} {t['id']}  {tail}")
+    s = r["summary"]
+    return [*lines, f"{s['tasks']} tasks: {s['hit']} hit, {s['ran']} ran, {s['failed']} failed"]
+
+
 def _task_files(items) -> list[Path]:
     out = []
     for s in items:
@@ -1400,7 +1394,7 @@ def _task_files(items) -> list[Path]:
     return out
 
 
-def cmd_run_stage(args, cfg, common):
+def cmd_run_stage(args, cfg):
     from ..pipeline.orchestrate import run_one
     from ..pipeline.store import Store
 
@@ -1426,7 +1420,7 @@ def cmd_run_stage(args, cfg, common):
         for m in problems:
             print(f"nnnotes: incompatible task: {m}", file=sys.stderr)
         sys.exit(EXIT_INCOMPATIBLE)
-    root = store_root(args, cfg)
+    root = Session(cfg).store_root()
     cache = cfg.path("paths", "cache")
     store = Store(root, cache=cache, fetch=CatalogFetcher(root, cache, cfg) if args.fetch else None)
     use(cfg)
@@ -1442,155 +1436,16 @@ def cmd_run_stage(args, cfg, common):
             if r["code"] == "config":
                 break
     n = Counter(o["status"] for o in out)
-    common.print_json(
-        {"tasks": out, "summary": {"tasks": len(tasks), "hit": n["hit"], "ran": n["ran"], "failed": n["failed"]}}
+    common.report(
+        args,
+        {"tasks": out, "summary": {"tasks": len(tasks), "hit": n["hit"], "ran": n["ran"], "failed": n["failed"]}},
+        run_lines,
     )
     if bad:
         sys.exit(EXIT_FAILED)
 
 
-# ---------------------------------------------------------------- catalogs
-def _db(args, cfg):
-    from ..pipeline.catalogdb import CatalogDB
-
-    return CatalogDB(store_root(args, cfg))
-
-
-def _version_line(v: dict) -> str:
-    apk = v["apk"]["sha256"][:12] if v.get("apk") else "-"
-    return (
-        f"{v['seq']:>4}  {v['id'][:12]}  {','.join(v['labels']) or '-':<24}  {v.get('region') or '-':<6} "
-        f"{v.get('language') or '-':<8} remote {v['remote']['sha256'][:12]}  apk {apk}  "
-        f"resource {v.get('resourceVersion') or '-'}"
-    )
-
-
-def cmd_catalogs_list(args, cfg, common):
-    from ..pipeline.catalogdb import CATALOGS
-
-    vs = _db(args, cfg).versions()
-    if args.json:
-        common.print_json({"schema": CATALOGS, "versions": vs})
-        return
-    for v in vs:
-        print(_version_line(v))
-    print(f"# {len(vs)} catalog versions", file=sys.stderr)
-
-
-def _apk_catalog(args, cfg) -> bytes | None:
-    from ..pipeline.catalogdb import apk_catalog
-
-    if getattr(args, "apk_catalog", None):
-        return Path(args.apk_catalog).read_bytes()
-    apk = cfg.path("paths", "apk")
-    if apk is None:
-        return None
-    if not apk.exists():
-        raise ConfigError(f"setting paths.apk: file {apk} not found")
-    return apk_catalog(apk)
-
-
-CATALOG_FILE = re.compile(r"catalog_([A-Za-z0-9][A-Za-z0-9.-]*)_[A-Za-z0-9-]+\.bin")
-
-
-def _import_resource_version(given: str | None, file: Path, source: dict | None) -> str | None:
-    """The resource version of an imported catalog: `given` (--resource-version), else the JP source's version, else
-    the version in an international file name `catalog_<version>_<language>.bin` (none for `main`). A JP source is
-    authoritative: a different `given` is an error."""
-    if given is not None:
-        try:
-            check_catalog_version(given)
-        except ValueError as e:
-            raise ValueError(f"--resource-version {given!r}: {e}") from None
-    if source is not None:
-        if given is not None and given != source["version"]:
-            raise ValueError(
-                f"--resource-version {given} differs from the catalog's source version {source['version']}"
-            )
-        return source["version"]
-    if given is not None:
-        return given
-    m = CATALOG_FILE.fullmatch(file.name)
-    return m[1] if m and m[1] != "main" and ".." not in m[1] else None
-
-
-def cmd_catalogs_import(args, cfg, common):
-    try:
-        remote = Path(args.file).read_bytes()
-    except OSError as e:
-        args.usage(f"{args.file}: {e.strerror or e}")
-    try:
-        source = None
-        if cfg.provider() == "jp":
-            from ..source.jp import read_source
-
-            source = read_source(args.file, remote).to_dict()
-        resource = _import_resource_version(args.resource_version, Path(args.file), source)
-        v = _db(args, cfg).add(
-            remote,
-            _apk_catalog(args, cfg),
-            label=args.label,
-            region=cfg.get("catalog", "region"),
-            language=cfg.get("catalog", "language"),
-            resource_version=resource,
-            apk_version_name=_apk_version(cfg.path("paths", "apk")),
-            source=source,
-        )
-    except ValueError as e:
-        args.usage(str(e))
-    print(_version_line(v))
-
-
-def cmd_catalogs_fetch(args, cfg, common):
-    from ..pipeline import catalogdb
-    from ..source.catalog import Catalog
-
-    region = cfg.region()
-    if cfg.provider(region) == "jp":
-        from ..source.jp import open_catalog
-
-        cat = open_catalog(cfg, region, apk=cfg.path("paths", "apk"))
-        src = cat.sources()
-        v = _db(args, cfg).add(
-            src["remote"],
-            src.get("apk"),
-            label=args.label,
-            region=region,
-            language=cfg.get("catalog", "language") or "ja",
-            source=cat.source.to_dict(),
-            resource_version=cat.source.version,
-            apk_version_name=_apk_version(cfg.path("paths", "apk")),
-        )
-        print(_version_line(v))
-        return
-    cdn = cfg.cdn(region)
-    language = cfg.require("catalog", "language")
-    version = common.session(cfg).catalog_version(region)
-    filename = Catalog.cache_file(language, Path("."), version=version).name
-    try:
-        data, hash_text = catalogdb.fetch(cdn, language, version=version)
-    except OSError as e:  # URLError, HTTPError, timeouts (the message has no URL)
-        sys.exit(
-            f"nnnotes: {filename} could not be fetched: {type(e).__name__}: "
-            f"{getattr(e, 'reason', None) or getattr(e, 'code', None) or ''}".rstrip(": ")
-        )
-    resource = version if version != "main" else None
-    try:
-        v = _db(args, cfg).add(
-            data,
-            _apk_catalog(args, cfg),
-            label=args.label,
-            region=region,
-            language=language,
-            hash_text=hash_text,
-            resource_version=resource,
-            apk_version_name=_apk_version(cfg.path("paths", "apk")),
-        )
-    except ValueError as e:
-        args.usage(str(e))
-    print(_version_line(v))
-
-
+# ---------------------------------------------------------------- catalog versions
 def addresses_of(store, vid: str) -> dict | None:
     """The address table (link.addresses) of the latest run over a catalog version, None when no run has one."""
     runs = sorted((store.root / "runs").glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
@@ -1616,46 +1471,7 @@ def addresses_of(store, vid: str) -> dict | None:
     return None
 
 
-def cmd_catalogs_diff(args, cfg, common):
-    from ..pipeline import catalogdb
-    from ..pipeline.store import Store
-
-    db = _db(args, cfg)
-    vs = []
-    for ref in (args.old, args.new):
-        try:
-            vs.append(db.get(ref))
-        except (KeyError, ValueError) as e:
-            args.usage(f"{ref}: {e.args[0] if e.args else e}")
-    store = Store(store_root(args, cfg))
-    a, b = vs
-    d = catalogdb.diff(db.index(a), db.index(b), addresses_of(store, a["id"]), addresses_of(store, b["id"]))
-    if args.json:
-        common.print_json(d)
-    else:
-        sys.stdout.buffer.write(catalogdb.format_diff(d).encode("utf-8"))
-        sys.stdout.buffer.flush()
-
-
-# ---------------------------------------------------------------- store
-def cmd_store_verify(args, cfg, common):
-    from ..pipeline.store import Store
-
-    r = Store(store_root(args, cfg)).verify(quick=args.quick, workers=args.workers or FETCH_WORKERS)
-    common.print_json(r)
-    if r["problems"]:
-        sys.exit(EXIT_FAILED)
-
-
 # ---------------------------------------------------------------- parser
-def default_common():
-    """The helpers of the command line the handlers use (session: the data sources of a Config; print_json)."""
-    from .. import cli
-    from ..source.session import Session
-
-    return SimpleNamespace(session=Session, print_json=cli._print_json)
-
-
 def _gib(s: str) -> float:
     try:
         v = float(s)
@@ -1666,12 +1482,8 @@ def _gib(s: str) -> float:
     return v
 
 
-def _store_arg(c) -> None:
-    c.add_argument("--store", help="store directory ([paths] store; default <cache>/store)")
-
-
-def _run_args(c) -> None:
-    """The selection and parameters shared by export and plan."""
+def run_args(c) -> None:
+    """The selection and parameters shared by `export assets` and `store plan`."""
     c.add_argument(
         "--select",
         action="append",
@@ -1684,9 +1496,9 @@ def _run_args(c) -> None:
         help="semantic views to build (default: all when master data is set, else none)",
     )
     c.add_argument(
-        "--catalog-version",
+        "--stored-catalog",
         metavar="LABEL|SHA",
-        help="an imported catalog version (`catalogs list`; default: the current catalog)",
+        help="a catalog version of the store (`catalog versions`; default: the current catalog)",
     )
     c.add_argument("--png-level", type=int, metavar="N", help="PNG compression level 0-9 (changes the output)")
     c.add_argument(
@@ -1698,7 +1510,10 @@ def _run_args(c) -> None:
     )
     c.add_argument("--only-class", metavar="C,...", help="export only objects of these classes")
     c.add_argument(
-        "--workers", type=int, help="worker processes (default: the CPUs this process may use; 0: this process)"
+        "--workers",
+        type=nonnegative,
+        metavar="N",
+        help="worker processes (default: the CPUs this process may use; 0: this process)",
     )
     c.add_argument(
         "--memory",
@@ -1709,114 +1524,3 @@ def _run_args(c) -> None:
     c.add_argument("--fetch-workers", type=int, metavar="N", help=f"parallel downloads (default {FETCH_WORKERS})")
     c.add_argument("--layout", default="original", help="original, cas or original,cas (default original)")
     c.add_argument("--explain", action="store_true", help="print every setting of the run first")
-    _store_arg(c)
-
-
-def register(sub, common=None) -> None:
-    """Add the asset commands to the command line's subparsers. `common`: the helpers of cli (open_catalog,
-    print_json; default_common())."""
-    common = common or default_common()
-
-    def bind(fn):
-        return lambda args, cfg: fn(args, cfg, common)
-
-    c = sub.add_parser("export", help="every object of the selected bundles -> common formats (store + layouts)")
-    c.add_argument("-o", "--out", required=True, help="output directory")
-    _run_args(c)
-    c.add_argument(
-        "--link",
-        choices=("auto", "clone", "hard", "copy"),
-        help="how the layout files are made from the store: auto (default; [export] link): a clone where "
-        "the file system makes them, else a hard link (read-only), else a copy; or that method only",
-    )
-    c.add_argument("--strict", action="store_true", help="exit 1 when a view has gaps")
-    c.add_argument("--dry-run", action="store_true", help="print the plan, run nothing")
-    c.set_defaults(func=bind(cmd_export), usage=c.error)
-
-    c = sub.add_parser("plan", help="what export would run and why, without running it")
-    c.add_argument("-o", "--out", help="output directory of the export (counts the layout files to write)")
-    _run_args(c)
-    c.add_argument("--json", action="store_true", help="the plan document (nnnotes.plan/1)")
-    c.add_argument("--since", metavar="RUN", help="explain against this run (default: the latest of the selection)")
-    c.add_argument("--check", action="store_true", help="exit 1 when anything would run or change")
-    c.add_argument("--census", action="store_true", help="first fetch and census the bundles without one")
-    c.add_argument("--emit-tasks", metavar="DIR", help="write the runnable tasks as task descriptions")
-    c.add_argument("--why", metavar="TASK", help="the reasons and key parts of one task")
-    c.set_defaults(func=bind(cmd_plan), usage=c.error)
-
-    c = sub.add_parser("run-stage", help="run task descriptions (nnnotes.task/1) into the store")
-    c.add_argument("tasks", nargs="+", metavar="TASK", help="task description files, or directories of them")
-    _store_arg(c)
-    c.add_argument("--fetch", action="store_true", help="fetch inputs through their catalog locators")
-    c.add_argument("--force", action="store_true", help="run tasks whose result is stored (it must not change)")
-    c.set_defaults(func=bind(cmd_run_stage), usage=c.error)
-
-    c = sub.add_parser("catalogs", help="catalog versions of the store")
-    csub = c.add_subparsers(dest="catalogs_cmd", required=True, metavar="<catalogs command>")
-    m = csub.add_parser("list", help="the imported catalog versions")
-    m.add_argument("--json", action="store_true", help="the versions as JSON")
-    _store_arg(m)
-    m.set_defaults(func=bind(cmd_catalogs_list), usage=m.error)
-    m = csub.add_parser("import", help="import a catalog file (with the APK's catalog when [paths] apk is set)")
-    m.add_argument("file", help="catalog_<version>_<language>.bin")
-    m.add_argument("--label", help="label of the version (default: its resource version, else the sha256 prefix)")
-    m.add_argument("--apk-catalog", help="the APK's catalog.bin (default: read from [paths] apk)")
-    m.add_argument(
-        "--resource-version",
-        help="the game's resource version of this catalog (default: the JP source's version, else the "
-        "version in the file name catalog_<version>_<language>.bin)",
-    )
-    _store_arg(m)
-    m.set_defaults(func=bind(cmd_catalogs_import), usage=m.error)
-    m = csub.add_parser("fetch", help="fetch the region's current catalog and import it")
-    m.add_argument("--label", help="label of the version (default: the resource version when an API root is set)")
-    _store_arg(m)
-    m.set_defaults(func=bind(cmd_catalogs_fetch), usage=m.error)
-    m = csub.add_parser("diff", help="keys, bundles, raw files (and objects) that differ between two versions")
-    m.add_argument("old", help="label, version id or sha256 prefix")
-    m.add_argument("new", help="label, version id or sha256 prefix")
-    m.add_argument("--json", action="store_true", help="the diff document (nnnotes.catalog-diff/1)")
-    _store_arg(m)
-    m.set_defaults(func=bind(cmd_catalogs_diff), usage=m.error)
-
-    c = sub.add_parser("store", help="the store")
-    ssub = c.add_subparsers(dest="store_cmd", required=True, metavar="<store command>")
-    m = ssub.add_parser("verify", help="check every stored content and result")
-    m.add_argument("--quick", action="store_true", help="check sizes only, do not hash the contents")
-    m.add_argument("--workers", type=int, help=f"parallel hashing (default {FETCH_WORKERS})")
-    _store_arg(m)
-    m.set_defaults(func=bind(cmd_store_verify), usage=m.error)
-
-
-def main(argv=None) -> None:
-    """The asset commands alone, with the global flags of the command line (tests; `nnnotes` has them too)."""
-    from . import load_config
-
-    p = argparse.ArgumentParser(prog="nnnotes")
-    for flag in (
-        "--config",
-        "--region",
-        "--language",
-        "--catalog",
-        "--catalog-release",
-        "--cache",
-        "--master",
-        "--apk",
-        "--ffmpeg",
-        "--vgmstream",
-        "--node",
-    ):
-        p.add_argument(flag)
-    sub = p.add_subparsers(dest="cmd", required=True, metavar="<command>")
-    register(sub)
-    args = p.parse_args(argv)
-    try:
-        cfg = load_config(args)
-        args.func(args, cfg)
-    except ConfigError as e:
-        print(f"nnnotes: {e}", file=sys.stderr)
-        sys.exit(EXIT_USAGE)
-
-
-if __name__ == "__main__":  # pragma: no cover
-    main()

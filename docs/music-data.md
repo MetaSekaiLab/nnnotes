@@ -27,7 +27,7 @@ nnnotes music-data (--master-files DIR | --apk-master | --decoded-master) [--ful
   skills, bonuses, scores and events ([the deck input](#the-deck-input---full)), for tools that run a deck model of
   their own.
 - `--no-deck`: do not run the deck model; every chart's `deck` is null. A full statistics build evaluates many
-  complete lives per chart. `--workers N` sets the native worker count (default: every available processor).
+  complete lives per chart. `--workers N` sets the native worker count (default: every available processor; `0`: one thread).
 - `--seeds N`: list this many replay seeds for a chart with a luck range (default 8). Expectations and aptitude
   use the model's independent nominal probabilities, not a sample of these seeds. Increasing this option changes
   the replay examples without changing the expected scores or their numerical enclosures.
@@ -103,7 +103,7 @@ A **text** is an object with one string per language of `languages` (`{"ja": ...
 |---|---|
 | `region` | the region whose master data this is (a configured region name), or `embedded` for the APK's master data |
 | `client.versionName`, `client.versionCode` | the APK's version name and code (null without `[paths] apk`) |
-| `catalog.resourceVersion` | the resource version used to select the downloaded catalog, or recorded for an explicit file in the catalog store (`nnnotes catalogs fetch` / `import`); null when unknown |
+| `catalog.resourceVersion` | the resource version used to select the downloaded catalog, or recorded for an explicit file in the catalog store (`nnnotes catalog fetch` / `import`); null when unknown |
 | `catalog.sha256` | SHA-256 of the remote catalog file the charts were read with |
 | `master.source` | `api` (`--master-files`, `--decoded-master`: the region's files) or `embedded` (`--apk-master`) |
 | `master.version` | the `version` of the master data manifest |

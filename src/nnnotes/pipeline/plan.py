@@ -99,7 +99,7 @@ class Plan:
             shown[n["stage"]] = shown.get(n["stage"], 0) + 1
             if limit is not None and shown[n["stage"]] > limit:
                 continue
-            reasons = ", ".join(_reason_text(r) for r in n["reasons"])
+            reasons = ", ".join(reason_text(r) for r in n["reasons"])
             cpu = f"{n['cost']['cpuSeconds']:.1f}" if n.get("cost") else "-"
             rows.append((n["status"], n["id"], cpu, reasons))
         width = max((len(r[1]) for r in rows), default=4)
@@ -123,7 +123,7 @@ class Plan:
         return "\n".join(lines) + "\n"
 
 
-def _reason_text(r: dict) -> str:
+def reason_text(r: dict) -> str:
     extra = {k: v for k, v in r.items() if k != "code"}
     if not extra:
         return r["code"]
