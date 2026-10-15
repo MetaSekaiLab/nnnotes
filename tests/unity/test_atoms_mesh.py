@@ -224,6 +224,26 @@ def test_skin_with_two_weights_per_vertex():
     assert ex["bindPoses"][1] == (np.eye(4) * 2).tolist()
 
 
+def test_arrays_document_of_a_skinned_line_mesh_and_an_empty_mesh():
+    from nnnotes.unity.convert.files import arrays_document
+
+    count = 4
+    ch = channels(count, skin="x2", color=False)
+    tt = mesh_tt("m", count, ch, [0, 1, 1, 2], [submesh(0, 4, 3)], bind_poses=[matrix(np.eye(4))])
+    doc = arrays_document(mesh_of(tt))
+    assert doc["positions"] == ch[POSITION][2].astype(np.float32).astype(float).tolist()
+    assert doc["submeshes"] == [{"topology": "lines", "indices": [0, 1, 1, 2]}]
+    assert doc["colors"] is None and doc["uv1"] is None and doc["uv0"] is not None
+    assert len(doc["tangents"][0]) == 4 and len(doc["normals"][0]) == 3
+    assert [row[:2] for row in doc["joints"]] == ch[BLENDINDICES][2].tolist()
+    assert [row[2:] for row in doc["joints"]] == [[0, 0]] * count
+    assert [row[:2] for row in doc["weights"]] == ch[BLENDWEIGHT][2].astype(np.float32).astype(float).tolist()
+    assert [row[2:] for row in doc["weights"]] == [[0.0, 0.0]] * count
+    empty = arrays_document(mesh_of(mesh_tt("e", 0, {}, [], [])))
+    assert empty["positions"] == [] and empty["submeshes"] == []
+    assert all(empty[k] is None for k in ("normals", "tangents", "colors", "uv0", "joints", "weights"))
+
+
 def test_indices_only_skin_is_one_bone_per_vertex():
     count = 4
     ch = channels(count, skin="x1")

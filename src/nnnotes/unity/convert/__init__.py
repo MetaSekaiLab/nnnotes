@@ -7,7 +7,8 @@ objects it converts, with the atoms they use (CONVERTER_ATOMS).
 
     Texture2D             tex.png          `image`: PNG of the first mip level (HDR ASTC: the .astc file)
     Sprite                sprite.png       `image`: PNG on the sprite's rect; `json`: typetree, geometry, render data
-    Mesh                  mesh.glb         `mesh`: binary glTF in the mesh's local space
+    Mesh                  mesh.glb         `mesh`: binary glTF in the mesh's local space; `arrays`: its vertex
+                                           channels, submeshes and skin as JSON (files.arrays_document)
     GameObject (a root)   prefab.json      `json`: the hierarchy below it with its components
     Material              material.json    `json`
     Shader                shader.json      `json`: the parsed form as `nnnotes export shader` writes it;
@@ -69,7 +70,7 @@ __all__ = [
 CONVERTERS = {
     "tex.png": 2,
     "sprite.png": 3,
-    "mesh.glb": 2,
+    "mesh.glb": 3,
     "prefab.json": 3,
     "material.json": 2,
     "clip.json": 3,

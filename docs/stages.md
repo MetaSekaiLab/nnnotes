@@ -58,7 +58,7 @@ with its reason code; any other error of a converter gives it with `generic.erro
 |---|---|---|---|---|
 | Texture2D | `tex.png/2` | `image`: PNG of the first mip level (HDR ASTC: `.astc`), `json`: the typetree without `image data` (settings, colour space, mip count, stream data) | `texture.decode`, `png.encode`, `astc.container` | further mip levels as facts; a texture without pixels: `empty.texture` |
 | Sprite | `sprite.png/3` | `image`: PNG on the sprite's rect (packing undone, tight mask applied), `json`: the typetree, geometry, render data and image (see below) | `texture.decode`, `sprite.crop`, `png.encode`, `mesh.arrays` | the tasks of a bundle share the textures it decoded last; a sprite whose SpriteAtlas is in another bundle gets its `json` here (with its geometry and object facts) and its `image` from `sprite.crop` |
-| Mesh | `mesh.glb/2` | `mesh`: binary glTF in the mesh's local space, `json`: the typetree without the vertex, index and compressed mesh data | `mesh.arrays`, `gltf.write` | see `gltf.write` below; limits of the skin and blend shapes as issues of the artifact |
+| Mesh | `mesh.glb/3` | `mesh`: binary glTF in the mesh's local space, `arrays`: the vertex channels, submeshes and skin as JSON (below), `json`: the typetree without the vertex, index and compressed mesh data | `mesh.arrays`, `gltf.write` | see `gltf.write` below; limits of the skin and blend shapes as issues of the artifact |
 | GameObject (a root) | `prefab.json/3` | `json`: the hierarchy's nodes (path, path ids, transform) with their components' fields | | the objects below it are `contained`; a root of a scene's file names its scene |
 | Material | `material.json/2` | `json`: shader, keywords, textures, floats, colours | | |
 | Shader | `shader.json/2` | `json`: the parsed form (the bytes of `nnnotes export shader`'s `<name>.json`), `program:<platform>/s<S>p<P>_<stage>_<N>`: each compiled sub-program as stored (`.glsl`, `.metal`, `.vkprog`), `index`: the variants (platform, subshader, pass, stage, GPU program type, keywords, program role), `typetree`: the typetree JSON | | a shader without a parsed form: its typetree with `generic.error` |
@@ -68,6 +68,14 @@ with its reason code; any other error of a converter gives it with `generic.erro
 | TextAsset | `data/2` | `data`: the stored bytes, `json`: the typetree without `m_Script` | `sniff` | extension from the container path, else from the content |
 | Font | `font/3` | `font`: the font file, `json`: the typetree without `m_FontData` | `sniff` | |
 | any other class (a MonoScript, an AssetBundle, ...) | `generic.json/3` | `json`: the typetree | `sniff` | an object that can be read only in part (see below): that part, `unsupported.typetree` |
+
+A Mesh's `arrays` is a canon/1 JSON document in the mesh's local space, keys in this order: `positions` (per vertex
+`[x, y, z]` as stored), `normals`, `tangents`, `colors`, `uv0` to `uv7` (per vertex the channel's components as floats,
+keeping the channel's dimension; null when the mesh stores no such channel), `submeshes` (one per primitive, in order:
+`topology` (`triangles`, `lines`, `line_strip` or `points`) and `indices`, triangles as `[a, b, c]` triples, other
+topologies a flat list, null without an index buffer; indices are absolute vertex indices), and `joints` (per vertex 4
+integers) and `weights` (per vertex 4 floats), both null without a skin. Bind poses are not repeated here: they stay in
+the `json` typetree as `m_BindPose`. A mesh without vertices has `positions` as an empty list.
 
 Every object a converter takes has a `json` artifact or is contained in another object's. Each item lists in
 `refs` the objects its documents reference (by object id, other bundles' objects included, the objects of its own
