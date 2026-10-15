@@ -4,11 +4,11 @@ A product (a Live2D model, a story, a live, ...) is a stage whose task per subje
 objects of the catalog keys `keys(subject)` gives, of the Resources.Load paths `resources(subject)` gives, of the
 built-in selectors `builtins(subject)` gives (objects of the APK's built-in files by class or script class) and the
 objects `root_objects(subject)` names (all read from the planning facts alone, so a command can ask for the units its
-products need before anything runs: `request`). The
-objects it reaches are those of the units holding its roots and every unit an item of a reached unit references
-(contract.item `refs`), through the unity.export results; a sprite whose atlas is in another bundle has its image
-from sprite.crop. A reached unit that the request did not export is an error of the request; a referenced object
-that no census holds is listed as missing.
+products need before anything runs: `request`). The objects it reaches are those of the units holding its roots and
+every unit an item of a reached unit references (contract.item `refs`; an atlas reached through a reference does not
+reach the sprites it packs, units.PACKED), through the unity.export results; a sprite whose atlas is in another
+bundle has its image from sprite.crop. A reached unit that the request did not export is an error of the request; a
+referenced object that no census holds is listed as missing.
 
 A task's inputs are the object table of what it reaches ("objects", nnnotes.objects/1: every object with its class,
 name, item status and files, the contained ones with the object holding them, and the root objects of each of its
@@ -137,6 +137,7 @@ def reach(env, roots, results: _Results | None = None, keys: dict | None = None)
             missing.add(o)
         else:
             todo.append(s)
+    start = set(todo)
     objects: dict[str, dict] = {}
     read = []
     crops: dict[str, list] = {}  # atlas object id -> sprite object ids
@@ -160,7 +161,7 @@ def reach(env, roots, results: _Results | None = None, keys: dict | None = None)
                 t = table.subject_of(r)
                 if t is None:
                     missing.add(r)
-                elif t not in seen:
+                elif t not in seen and table.reaches(s, t, s in start):
                     todo.append(t)
     for atlas, sprites in sorted(crops.items()):
         s = table.subject_of(atlas)
