@@ -2,15 +2,18 @@
 
 import pytest
 
-from nnnotes.content import storyscene
+from nnnotes.content import storychat, storyepisode, storyscene
 from nnnotes.formats import crilips
 from nnnotes.pipeline import assemble, contract, cristages, live, story
+from nnnotes.pipeline.assemble import Objects
 from nnnotes.pipeline.contract import IncompatibleTask
 from nnnotes.pipeline.depot import Depot
+from nnnotes.pipeline.live2d import MODEL
 from nnnotes.pipeline.stages import Env
-from nnnotes.pipeline.story import AssetStage, CriLipsStage, SceneStage, SoundStage
+from nnnotes.pipeline.story import AssetStage, ChatStage, CriLipsStage, SceneStage, SoundStage, StoryStage
 from tests.formats.test_crilips import _elf_with_rodata, _synthetic_version
-from tests.pipeline.test_live import run, stored, table
+from tests.helpers import story as sh
+from tests.pipeline.test_live import master_record, run, stored, table
 from tests.site.test_story_site import mp4
 
 # the streams of a voice sheet as cri.audio lists them: cue v2 has two layers, cue loop loops
@@ -194,3 +197,176 @@ def test_the_crilips_product_needs_the_library_in_the_apk(tmp_path):
     env = Env(depot, {"apk": {}, "products": {story.CRILIPS: ["default"]}})
     with pytest.raises(ValueError, match="libcri_lips_unity.so of the APK"):
         CriLipsStage().inputs("default", env)
+
+
+# ---------------------------------------------------------------- the story product: subjects and inputs
+def test_the_story_product_selects_the_episodes_whose_keys_it_holds(tmp_path):
+    depot = Depot(tmp_path / "d")
+    env = Env(depot, {"master": sh.master_dir(tmp_path)})
+    stage = StoryStage()
+    assert stage.select(storyepisode.keys(sh.ASSET), env) == ["1", "10"]
+    assert stage.select(["Adv/Episode/other/other", "Cri/Sound/x"], env) == ["2"]
+    assert stage.select(["Cri/Sound/x"], env) == []
+    assert stage.select(storyepisode.keys(sh.ASSET), Env(depot, {"master": None})) == []
+
+
+def test_the_story_product_names_its_keys_and_manifest(tmp_path):
+    env = Env(Depot(tmp_path / "d"), {"master": sh.master_dir(tmp_path)})
+    stage = StoryStage()
+    assert stage.keys("1", env) == storyepisode.keys(sh.ASSET)
+    assert stage.manifest("1") == "stories/1.json"
+    for bad in ("", "1a", "-1"):
+        with pytest.raises(ValueError, match="not an episode id"):
+            stage.manifest(bad)
+
+
+def test_the_story_master_input_is_the_episode_record(tmp_path):
+    depot = Depot(tmp_path / "d")
+    env = Env(depot, {"master": sh.master_dir(tmp_path)})
+    inp = master_record(env, StoryStage(), "1")
+    assert inp.role == assemble.MASTER_INPUT
+    record = contract.loads(depot.input_bytes(inp))
+    assert record == storyepisode.episode_record(sh.master_tables(), 1)
+    assert [r["_id"] for r in record["MasterAdvChat"]] == [7, 9]
+
+
+# ---------------------------------------------------------------- the story product: assembly
+def test_the_story_product_holds_the_episode_and_the_story_document(tmp_path):
+    depot = Depot(tmp_path / "d")
+    env = Env(depot, {"master": sh.master_dir(tmp_path)})
+    stage = StoryStage()
+    doc = sh.episode_table(depot)
+    objects = stored(depot, contract.encode(doc), "objects")
+    _, _, arts = run(depot, stage, "1", [objects, master_record(env, stage, "1")])
+    assert {p: a["semantics"]["kind"] for p, a in arts.items()} == {
+        "episode.json": "story.episode",
+        "objects": "product.objects",
+        "story.json": "story",
+    }
+    record = storyepisode.episode_record(sh.master_tables(), 1)
+    # the stored document is the JSON of the episode: integer keys read back as strings
+    episode = contract.loads(
+        contract.encode(storyepisode.episode_json(storyepisode.episode(Objects(doc, depot), record)))
+    )
+    assert read_json(depot, arts["episode.json"]) == episode
+    assert all(set(r) == {"kind", "address"} for r in episode["resources"])
+    assert read_json(depot, arts["objects"])["objects"] == {}
+
+    story_doc = read_json(depot, arts["story.json"])
+    assert story_doc == {
+        "format": 1,
+        "advId": 1,
+        "episode": "episode.json",
+        "chats": {"7": {"_id": 7, "_chatWindowAssetName": "win_7", "_chatIconAssetName": "icon_7"}},
+        "effects": {},
+        "parts": {
+            "scene": "storyscenes/default.json",
+            "assets": {
+                "Adv/Chat/Prefabs/win_7": "storyassets/Adv~Chat~Prefabs~win_7.json",
+                "Adv/Stage/st_a/st_a": "storyassets/Adv~Stage~st_a~st_a.json",
+                "Adv/Transition/adv_transition_default/x": "storyassets/Adv~Transition~adv_transition_default~x.json",
+            },
+            "models": {},
+            "sounds": {},
+            "chat": "storychat/default.json",
+            "crilips": None,
+        },
+    }
+    assert story_doc["parts"] == story.part_paths(storyepisode.parts(episode))
+
+
+# ---------------------------------------------------------------- the chat product
+def test_the_chat_product_has_one_default_subject_and_needs_every_shard(tmp_path):
+    stage = ChatStage()
+    assert stage.keys("default", None) == storychat.keys() == sorted(storychat.SHARDS.values())
+    assert stage.manifest("default") == "storychat/default.json"
+    assert stage.select(storychat.keys(), None) == ["default"]
+    assert stage.select(storychat.keys()[1:], None) == []
+    with pytest.raises(ValueError, match="the only subject is default"):
+        stage.keys("other", None)
+    with pytest.raises(ValueError, match="the only subject is default"):
+        stage.manifest("other")
+
+
+def test_the_chat_product_holds_the_rows_of_the_shards(tmp_path):
+    depot = Depot(tmp_path / "d")
+    objects = stored(depot, contract.encode(sh.chat_table(depot)), "objects")
+    _, _, arts = run(depot, ChatStage(), "default", [objects])
+    assert {p: a["semantics"]["kind"] for p, a in arts.items()} == {
+        "chat.json": "story.chat",
+        "objects": "product.objects",
+    }
+    assert read_json(depot, arts["chat.json"]) == {
+        "format": 1,
+        "text": [{"_id": 1, "_text": "hello"}],
+        "sounds": [{"_id": 2, "_cueName": "chat_se"}],
+        "cueSheets": [{"_id": 3, "_cueSheetName": "chat_sheet"}],
+    }
+    assert read_json(depot, arts["objects"])["objects"] == {}
+
+
+def test_a_chat_shard_without_a_text_asset_has_no_rows(tmp_path):
+    depot = Depot(tmp_path / "d")
+    objects = stored(depot, contract.encode(sh.chat_table(depot, present=("text",))), "objects")
+    _, _, arts = run(depot, ChatStage(), "default", [objects])
+    chat = read_json(depot, arts["chat.json"])
+    assert chat["text"] == [{"_id": 1, "_text": "hello"}]
+    assert chat["sounds"] == [] and chat["cueSheets"] == []
+
+
+# ---------------------------------------------------------------- the products a story plays with
+def test_part_paths_give_the_manifest_of_each_part():
+    parts = {
+        "assets": ["Adv/Stage/st_a/st_a", "Adv/Still/st"],
+        "models": ["Character/Live2D/g/m/model/m"],
+        "sounds": ["sheet_a"],
+        "chat": True,
+        "crilips": False,
+    }
+    assert story.part_paths(parts) == {
+        "scene": "storyscenes/default.json",
+        "assets": {
+            "Adv/Stage/st_a/st_a": "storyassets/Adv~Stage~st_a~st_a.json",
+            "Adv/Still/st": "storyassets/Adv~Still~st.json",
+        },
+        "models": {"Character/Live2D/g/m/model/m": "models/m.json"},
+        "sounds": {"sheet_a": "cuesheets/sheet_a.json"},
+        "chat": "storychat/default.json",
+        "crilips": None,
+    }
+    quiet = {**parts, "assets": [], "models": [], "sounds": [], "chat": False, "crilips": True}
+    assert story.part_paths(quiet) == {
+        "scene": "storyscenes/default.json",
+        "assets": {},
+        "models": {},
+        "sounds": {},
+        "chat": None,
+        "crilips": "crilips/default.json",
+    }
+
+
+def test_part_products_list_the_subjects_of_each_product_the_story_needs():
+    parts = {
+        "assets": ["Adv/Stage/z", "Adv/Stage/a"],
+        "models": ["Character/Live2D/g/m/model/m"],
+        "sounds": ["sheet_a"],
+        "chat": True,
+        "crilips": True,
+    }
+    doc = {"parts": story.part_paths(parts)}  # story.json names each part by its manifest
+    assert story.part_products(doc) == {
+        story.SCENE: ["default"],
+        story.ASSET: ["Adv/Stage/a", "Adv/Stage/z"],
+        MODEL: ["Character/Live2D/g/m/model/m"],
+        story.SOUND: ["sheet_a"],
+        story.CHAT: ["default"],
+        story.CRILIPS: ["default"],
+    }
+
+
+def test_part_products_omit_the_products_a_story_does_not_need():
+    parts = {"assets": [], "models": [], "sounds": [], "chat": False, "crilips": False}
+    assert story.part_products({"parts": story.part_paths(parts)}) == {story.SCENE: ["default"]}
+    parts["sounds"] = ["sheet_a"]
+    doc = {"parts": story.part_paths(parts)}
+    assert story.part_products(doc) == {story.SCENE: ["default"], story.SOUND: ["sheet_a"]}

@@ -1569,3 +1569,51 @@ def test_export_live2d_writes_the_cubism_files_of_one_model(tmp_path, capsys, mo
     run = contract.loads((tmp_path / "m" / assets.REPORTS / "run.json").read_bytes())
     ids = {t["id"] for t in run["tasks"]}
     assert f"live2d.cubism:{MODEL_KEY}" in ids and "fake.product:Bg/x" not in ids
+
+
+def test_export_runs_the_request_expand_gives_and_places_the_last_run(tmp_path, capsys, monkeypatch):
+    from urllib.parse import quote
+
+    monkeypatch.setattr(assets, "STAGE_SOURCES", PRODUCT_SOURCES)
+    monkeypatch.setattr("nnnotes.pipeline.catalogdb.apk_version", lambda apk: None)
+    d = setup_data(tmp_path, censuses(broken=False), extra=[(MODEL_KEY, "Assets/Game/Bg/x.prefab", [3])])
+    apk = builtin_apk(tmp_path / "base.apk", {"assets/aa/catalog.bin": synth.CatalogWriter().build([])})
+    run_export = assets.export
+    calls = []
+
+    def hook(run):  # called once, with the first run (the command's own request: the product layout)
+        calls.append(set(run.tasks))
+        if len(calls) > 1:
+            pytest.fail("expand was called again after its second answer")
+        assert "fake.product:Bg/x" in calls[0]
+        return {"live2d.cubism": [MODEL_KEY]}, [f"key:{MODEL_KEY}"]
+
+    def hooked(args, cfg, ws, expand=None):  # the command's export takes the hook; its own re-run takes none
+        monkeypatch.setattr(assets, "export", run_export)
+        return run_export(args, cfg, ws, expand=hook)
+
+    monkeypatch.setattr(assets, "export", hooked)
+    argv = [
+        *flags(d),
+        "--apk",
+        apk,
+        "export",
+        "assets",
+        "-o",
+        tmp_path / "out",
+        "--depot",
+        tmp_path / "s",
+        "--layout",
+        "product",
+        "--workers",
+        "0",
+    ]
+    code, out, err = nn(capsys, *argv)
+    assert code == 0, err
+    assert len(calls) == 1
+    run = contract.loads((tmp_path / "out" / assets.REPORTS / "run.json").read_bytes())
+    ids = {t["id"] for t in run["tasks"]}
+    assert f"live2d.cubism:{MODEL_KEY}" in ids and "fake.product:Bg/x" not in ids
+    manifest = contract.loads((tmp_path / "out" / "live2d.cubism" / f"{quote(MODEL_KEY, safe='')}.json").read_bytes())
+    assert manifest["product"] == "live2d.cubism" and manifest["subject"] == MODEL_KEY
+    assert not (tmp_path / "out" / "fake.product").exists()  # the first run's product is not placed
