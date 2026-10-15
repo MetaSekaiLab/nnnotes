@@ -16,7 +16,7 @@ import pytest
 from nnnotes import cli
 from nnnotes.cli import assets, common
 from nnnotes.cli import catalog as catalog_cli
-from nnnotes.pipeline import contract, units
+from nnnotes.pipeline import contract, link, units
 from nnnotes.pipeline.census import CensusStage
 from nnnotes.pipeline.contract import Cost
 from nnnotes.pipeline.depot import Depot
@@ -75,6 +75,7 @@ def cdoc(file: str, objs: list, container=(), scripts=(), bundle_name=None) -> d
         ],
         "resources": [],
         "assetBundles": [ab],
+        "resourcePaths": [],
         "scripts": list(scripts),
         "classes": classes,
         "objects": len(objs),
@@ -915,8 +916,8 @@ def test_views_are_placed_with_paths_and_every_document_validates(tmp_path, caps
         contract.CATALOG_INDEX,
         contract.CENSUS,
         contract.VIEW,
-        "nnnotes.scripts/1",
-        "nnnotes.addresses/1",
+        link.SCRIPTS,
+        link.ADDRESSES,
     }, checked
     code, out, _ = nn(
         capsys,

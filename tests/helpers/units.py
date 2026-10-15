@@ -32,6 +32,7 @@ def census_doc(file: str, objects) -> dict:
         ],
         "resources": [],
         "assetBundles": [],
+        "resourcePaths": [],
         "scripts": [],
         "classes": dict(sorted(Counter(o["class"] for o in objs).items())),
         "objects": len(objs),
