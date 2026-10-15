@@ -269,7 +269,7 @@ Each document has `format` 1 and
 | `name`, `skin` (noteskin) | the skin's name and the object id of its `LiveNoteSkinAsset` |
 | `name`, `settings` (noteeffect) | the set's name and the object id of its `LiveNoteEffectAssetSettings`, which references the effect prefabs |
 | `bindings` | `{prefab GameObject id: {Animator node path: {clip id: [{path, attribute}]}}}`: the clips each Animator of the table's prefabs plays (its controller's clips and the `_loopAnim` of a `LoopAnimationTimeSync` on its `_animator`; for a skin, the arrow loop of each flick unit on its flick view's `LoopAnimationTimeSync`), named from the Animator's node (`nnnotes.unity.bindings`) |
-| `shaders` | `{shader name: object id}` of the shaders of the object table |
+| `shaders` | `{shader name: object id}`: the shader a lookup by name finds (a material names its shader by id). Copies of one shader in several bundles are one shader, named by the first id; a name of several different shaders names none of them |
 
 The object table holds every object the product reaches but the MonoScripts; of a shader it keeps the parsed form
 (`json`), the variant index (`index`) and every GLSL ES 3.00 program. The `product` layout makes `live.notes` when the
