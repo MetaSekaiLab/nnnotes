@@ -195,7 +195,7 @@ an ADV episode -> JSON
 
 ## nnnotes export story
 
-an ADV episode -> the story product and the products it plays with (scene, assets, Live2D models, cue sheets, chat, CRI Lips)
+an ADV episode -> the story product and the products it plays with (scene, assets, Live2D models, cue sheets, videos, chat, CRI Lips)
 
 | Argument | Description |
 | --- | --- |

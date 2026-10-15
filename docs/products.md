@@ -23,7 +23,10 @@ A product stage may also read cue sheets: the catalog keys `cue_sheets` gives (e
 sheet is the ACB its key loads, held in a bundle (the `acb` file of an object of the key) or a raw file of the
 catalog that `cri.audio` decoded. The task's inputs then hold each ACB (`acb:<key>`) and, as `sheets`, the files
 `cri.audio` made of it (`{key: {acb, status, reason, files: {name: {sha256, size, ext}}}}`); it depends on those
-`cri.audio` tasks, and a product file may be one of those files as stored, without copying its bytes. A stage that
+`cri.audio` tasks, and a product file may be one of those files as stored, without copying its bytes. Movies work the
+same way: the catalog keys `movies` gives, each the USM its key loads (the `usm` file of an object of the key, or a raw
+file of the catalog that `cri.movie` decoded), as `usm:<key>` and, in `movies`, the files `cri.movie` made of it with
+their facts (`{key: {usm, status, reason, files: {name: {sha256, size, ext, facts}}}}`). A stage that
 reads files of the APK names them in `APK`: inputs `apk:<path in the APK>`, from the fact `apk`.
 
 All are read from the planning facts alone, so a command can ask for what its products need before anything runs:
@@ -360,10 +363,12 @@ A story episode plays with products that several episodes share, made by `nnnote
 | `story.crilips` | `default` | `crilips/default.json` | none (it reads the APK) | `crilips.json` and `crilips.bin` |
 | `story.scene` | `default` | `storyscenes/default.json` | the ADV scene `EmbScene/Adv`, the prefabs `EmbCommon/Prefab/CameraManager`, `EmbCommon/Adv/Prefab/AdvCharacterField`, `AdvBackgroundField` and `AdvGlobalVolume`, the settings `EmbCommon/Adv/Settings/AdvPlayerSettings` and `AdvMasterIdSettings`, and the built-in `GraphicsSettings`, `QualitySettings` and `PlayerSettings` | `scene.json` and the object table |
 | `story.asset` | a catalog key a story loads: a stage (`Adv/Stage/<name>`), frame, effect, post effect, still, timeline, chat window, chat icon or stamp, transition | `storyassets/<name>.json`, `<name>` the key with `/` as `~` | the key | `asset.json` and the object table |
+| `story.video` | a video key `Cri/Video/<asset>` (the video of a Movie / Clip command) | `videos/<name>.json`, `<name>` the asset with `/` as `~` | the key | `video.json` and `movie.webm` |
 | `story.chat` | `default` | `storychat/default.json` | the shared chat shards `Adv/Chat/AdvChat-Text`, `Adv/Chat/AdvChat-Sound` and `Adv/Chat/AdvChat-SoundCueSheet` | `chat.json` |
 | `story` | a `MasterAdv` id | `stories/<id>.json` | the episode key `Adv/Episode/<asset>/<asset>` (`<asset>`: the row's `_advEpisodeAsset`), its shard keys (the key with `-Text`, `-Sound`, `-SoundCueSheet`, `-Video`) and `EmbCommon/Adv/Settings/AdvPlayerSettings` | `episode.json` and `story.json` |
 
-`story.sound`, `story.crilips`, `story.chat` and `story` keep no objects: their files are all they hold.
+`story.sound`, `story.crilips`, `story.video`, `story.chat` and `story` keep no objects: their files are all they
+hold.
 `story.sound` reads its cue sheet's `cri.audio` files; `cues.json` maps each cue name to the
 first stream of that name (in stream order): `file` (the sound, next to `cues.json`), `sampleRate`, `channels`,
 `samples` (frames at `sampleRate`, without encoder padding) and, for a looping stream, `loopStart` and `loopEnd`
@@ -391,8 +396,18 @@ the product `unsupported` (`unsupported.crilips.version`). Only a request makes 
 The renderers' shaders and post-processing textures are reached through the graphics settings' references (the
 render pipeline asset, its renderer data and their features). `story.asset` holds the objects of one catalog key
 and what they reach; an asset several stories load is one product. `asset.json` has `format` 1, `key`, `objects`
-(the key's object ids), `bindings` and `shaders` as above. The CRI Lips data and the story assets are made only when
-a request names them; the `product` layout makes `story.scene` when the selection holds every key of it.
+(the key's object ids), `bindings` and `shaders` as above. The CRI Lips data, the story assets and the videos are
+made only when a request names them; the `product` layout makes `story.scene` when the selection holds every key of
+it.
+
+`story.video` is one movie of a story. Its key loads a CriWare.Assets MonoBehaviour describing the movie and the movie
+itself, a USM; `movie.webm` is the `movie.webm` that `cri.movie` makes of the USM with its parameter `format` `webm`
+([stages](stages.md#cri-stages)): the first video stream, VP9 as stored or re-encoded as VP9 when it is in another
+codec or has an alpha stream (the alpha becoming the WebM's alpha channel), and the first audio stream as Opus.
+`video.json` has `format` 1, `file` (`movie.webm`), `codec` (the stored video codec: `vp9`, `h264` or
+`sofdec.prime`), `width` and `height` (the coded size), `displayWidth` and `displayHeight`, `frameRate`
+(`[numerator, denominator]`), `frames` and `tracks`, the tracks of `movie.webm` (`kind`, `channel`, `codec` and, for a
+converted stream, its `source` codec).
 
 `story.chat` holds the rows of the chat shards every chat of a story reads. `chat.json` has `format` 1, `text` (the
 chat message texts), `sounds` (their sound rows) and `cueSheets` (the cue sheet rows those name), each the `_allData`
@@ -412,11 +427,11 @@ language, the voices, sounds, cue sheets and videos the commands name, and the r
 | `episode` | `"episode.json"`, the file next to it |
 | `chats` | `{chat id: MasterAdvChat row}`: each chat id the commands name (`TargetChatID`) |
 | `effects` | `{TargetName: "Adv/Effect/<asset>"}`: the effect instances, the first asset an Effect command loads under a name |
-| `parts` | the manifests of the products the story plays with: `scene` (`storyscenes/default.json`), `assets` (`{address: manifest}` of each `story.asset`), `models` (`{address: manifest}` of each `live2d.model`), `sounds` (`{cue sheet: manifest}` of each `story.sound`), `chat` (`storychat/default.json` when a command names a chat, else null) and `crilips` (`crilips/default.json` when a voice command has a target and voice cues and sets neither `IgnoreData` nor `IgnoreLipSync`, else null) |
+| `parts` | the manifests of the products the story plays with: `scene` (`storyscenes/default.json`), `assets` (`{address: manifest}` of each `story.asset`), `models` (`{address: manifest}` of each `live2d.model`), `sounds` (`{cue sheet: manifest}` of each `story.sound`), `videos` (`{address: manifest}` of each `story.video`), `chat` (`storychat/default.json` when a command names a chat, else null) and `crilips` (`crilips/default.json` when a voice command has a target and voice cues and sets neither `IgnoreData` nor `IgnoreLipSync`, else null) |
 
 A model's MotionSync (model.json `motionSync`) decides whether a lip-synced voice runs the CRI Lips analysis, so
-`crilips` names the data whenever a voice can reach it. The episode's talk windows and videos are listed in
-`episode.json` `resources`. `parts` depend on the episode's commands, which only the story's result holds: a command
+`crilips` names the data whenever a voice can reach it. The episode's talk windows are listed in `episode.json`
+`resources`. `parts` depend on the episode's commands, which only the story's result holds: a command
 asks for the `story` product first, reads its `story.json`, then asks for the story with every product `parts` names
 (`nnnotes.pipeline.story.part_products`); `export story` works this way. The `product` layout makes the story of
 every episode whose key the selection holds.
