@@ -13,9 +13,9 @@ controller_clips  the clips each Animator of a prefab plays through its controll
                   controller.json `clips`), by the Animator's node path
 clip_bindings     the bindings of the clips each Animator plays, named in the prefab from the Animator's node
                   (unity.bindings.resolve)
-shader_table      the shaders of the table by name (copies of one shader in several bundles by the first id), and
-                  of each the files a player draws with: its parsed form (`json`), its variant index (`index`) and
-                  every program of the player's graphics API (formats.shader.player_roles)
+shader_table      the files a player draws each shader of the table with: its parsed form (`json`), its variant
+                  index (`index`) and every program of the player's graphics API (formats.shader.player_roles); and
+                  what a lookup by name (Shader.Find) finds, by name (a material names its shader by id)
 """
 
 from __future__ import annotations
@@ -140,12 +140,15 @@ def clip_bindings(objects: Objects, prefab: dict, plays: Mapping[str, Iterable[s
     return out
 
 
-def shader_table(objects: Objects) -> tuple[dict[str, str], dict[str, set[str]]]:
+def shader_table(objects: Objects, found: Iterable[str] = ()) -> tuple[dict[str, str], dict[str, set[str]]]:
     """({shader name: object id}, {object id: the roles of its files a player reads}) of the Shaders of the table that
-    have their variant index (module documentation). Bundles may each hold a copy of a shader: Shaders of one name
-    whose parsed form and index are the same content are one shader, named by the first id; different ones raise."""
-    names: dict[str, str] = {}
+    have their variant index (module documentation). The name table gives what a lookup by name finds. Bundles may
+    each hold a copy of a shader: Shaders of one name whose parsed form and index are the same content are one shader,
+    named by the first id. Of different Shaders of one name the lookup finds the one of `found` (the shaders it finds
+    first: GraphicsSettings' always-included shaders); without one, the name names none of them."""
+    groups: dict[str, list[str]] = {}
     roles: dict[str, set[str]] = {}
+    first = set(found)
 
     def content(sid: str) -> tuple:
         files = objects.info(sid)["files"]
@@ -155,11 +158,14 @@ def shader_table(objects: Objects) -> tuple[dict[str, str], dict[str, set[str]]]
         if "index" not in (objects.info(sid).get("files") or {}):
             continue
         index = objects.json(sid, "index")
-        first = names.setdefault(index["name"], sid)
-        if first != sid and content(first) != content(sid):
-            raise ValueError(f"shader {index['name']}: objects {first} and {sid} differ")
+        groups.setdefault(index["name"], []).append(sid)
         roles[sid] = {"json", "index"} | player_roles(index["variants"])
-    return dict(sorted(names.items())), roles
+    names = {}
+    for name, sids in sorted(groups.items()):
+        pick = sids if len({content(s) for s in sids}) == 1 else [s for s in sids if s in first]
+        if pick and len({content(s) for s in pick}) == 1:
+            names[name] = pick[0]
+    return names, roles
 
 
 def mat4(m: np.ndarray) -> list[float]:
