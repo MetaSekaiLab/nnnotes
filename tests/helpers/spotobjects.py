@@ -354,4 +354,4 @@ def table(depot, objs: dict, roots) -> dict:
             ext = {"image": "png", "mesh": "glb"}.get(role, "bin") if isinstance(body, bytes) else "json"
             recs[role] = {"sha256": depot.put(data), "size": len(data), "ext": ext}
         out[oid] = {"status": "exported", "class": cls, "name": name, "files": recs, **extra}
-    return {"schema": contract.OBJECTS, "roots": sorted(roots), "objects": out, "missing": []}
+    return {"schema": contract.OBJECTS, "roots": sorted(roots), "keys": {}, "objects": out, "missing": []}

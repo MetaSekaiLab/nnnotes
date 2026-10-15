@@ -11,7 +11,8 @@ from sprite.crop. A reached unit that the request did not export is an error of 
 that no census holds is listed as missing.
 
 A task's inputs are the object table of what it reaches ("objects", nnnotes.objects/1: every object with its class,
-name, item status and files, the contained ones with the object holding them), the APK files the stage names in `APK`
+name, item status and files, the contained ones with the object holding them, and the root objects of each of its
+keys), the APK files the stage names in `APK`
 ("apk:<path in the APK>", from the fact "apk"), the cue sheets of the catalog keys `cue_sheets(subject)` gives and
 what `more_inputs` adds (master tables, parameters' data); it depends on the unity.export and sprite.crop tasks it
 read and the cri.audio tasks of its cue sheets. A cue sheet is the ACB the key loads: held in a bundle (the `acb`
@@ -124,8 +125,9 @@ class _Results:
         return doc
 
 
-def reach(env, roots, results: _Results | None = None) -> Reach:
-    """The objects reachable from the object ids `roots` (module documentation)."""
+def reach(env, roots, results: _Results | None = None, keys: dict | None = None) -> Reach:
+    """The objects reachable from the object ids `roots` (module documentation); `keys` {catalog key: its object ids,
+    all among the roots} goes into the table as it is."""
     results = results or _Results()
     table = units.table(env)
     todo, seen, missing = [], set(), set()
@@ -175,6 +177,7 @@ def reach(env, roots, results: _Results | None = None) -> Reach:
     doc = {
         "schema": contract.OBJECTS,
         "roots": sorted(set(roots)),
+        "keys": {k: sorted(v) for k, v in sorted((keys or {}).items())},
         "objects": dict(sorted(objects.items())),
         "missing": sorted(missing),
     }
@@ -226,6 +229,7 @@ class Objects:
     def __init__(self, doc: dict, depot, sheets: dict | None = None):
         self.doc, self.depot = doc, depot
         self.roots: list[str] = doc["roots"]
+        self._keys: dict[str, list[str]] = doc["keys"]
         self._objects: dict = doc["objects"]
         self._json: dict = {}
         self._sheets: dict[str, Sheet] = sheets or {}
@@ -236,6 +240,13 @@ class Objects:
             return self._sheets[key]
         except KeyError:
             raise KeyError(f"cue sheet {key} is not an input of the product") from None
+
+    def key(self, key: str) -> list[str]:
+        """The root objects of the catalog key `key` (one of the stage's keys), sorted."""
+        try:
+            return self._keys[key]
+        except KeyError:
+            raise KeyError(f"{key} is not a key of the product") from None
 
     def __contains__(self, oid: str) -> bool:
         return oid in self._objects
@@ -364,18 +375,20 @@ class ProductStage(Stage):
     # ---------------------------------------------------------------- planning
     def reach(self, subject: str, env) -> Reach:
         """What `subject` reaches (kept while the results it read are the same)."""
+        keys = self.keys(subject, env)
         roots = units.root_objects(
             env,
-            self.keys(subject, env),
+            keys,
             self.root_objects(subject, env),
             self.resources(subject, env),
             self.builtins(subject, env),
         )
-        sig = (tuple(roots), id(units.table(env)))
+        by_key = {k: units.root_objects(env, [k]) for k in keys}
+        sig = (tuple(roots), tuple((k, tuple(v)) for k, v in sorted(by_key.items())), id(units.table(env)))
         memo = self._memo.get(subject)
         if memo is not None and memo[0] == sig and all(env.key(t) == k for t, k in memo[1]):
             return memo[2]
-        r = reach(env, roots, self._results)
+        r = reach(env, roots, self._results, by_key)
         self._memo[subject] = (sig, [(t, env.key(t)) for t in r.read], r)
         return r
 
