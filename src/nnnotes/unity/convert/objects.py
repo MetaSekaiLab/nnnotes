@@ -454,7 +454,7 @@ class BundleObjects:
         """{"$ref"} of an object, with its class and name when it is in the bundle (recorded in `seen`)."""
         file, pid = key
         self.seen.add(object_id(file, pid))
-        d = {"file": label(file), "pathId": pid}
+        d = {"file": label(file), "pathId": str(pid)}
         r = self.readers.get(key)
         if r is not None:
             d["class"] = r.type.name
@@ -472,7 +472,7 @@ class BundleObjects:
         fid = int(pptr.get("m_FileID", 0) or 0)
         file = self.file_of(owner.assets_file.name, fid)
         if file is None:
-            return {"$ref": {"fileId": fid, "pathId": pid}}
+            return {"$ref": {"fileId": fid, "pathId": str(pid)}}
         key = (file, pid)
         if self._local is not None:
             local = self._local(key)

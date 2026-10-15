@@ -7,11 +7,11 @@ from nnnotes.unity.bindings import crc
 
 PARAM = "Live2D.Cubism|Live2D.Cubism.Core|CubismParameter"
 PART = "Live2D.Cubism|Live2D.Cubism.Core|CubismPart"
-MAT = {"$ref": {"file": "CAB-m", "pathId": 7, "class": "Material"}}
+MAT = {"$ref": {"file": "CAB-m", "pathId": "7", "class": "Material"}}
 
 
 def mono(script, **fields):
-    return {"type": "MonoBehaviour", "pathId": 1, "script": script, "fields": fields}
+    return {"type": "MonoBehaviour", "pathId": "1", "script": script, "fields": fields}
 
 
 def node(path, *components):
@@ -31,7 +31,7 @@ def prefab():
             node("model/Drawables"),
             node(
                 "model/Drawables/ArtMesh0",
-                {"type": "MeshRenderer", "pathId": 2, "fields": {"m_Enabled": 1, "m_Materials": [MAT, None]}},
+                {"type": "MeshRenderer", "pathId": "2", "fields": {"m_Enabled": 1, "m_Materials": [MAT, None]}},
             ),
             node("model/Twin"),
             node("model/Twin"),
@@ -44,7 +44,7 @@ def binding(path, attr, type_id=114, script=None, **kw):
     b = {"pathCrc": crc(path), "attributeCrc": crc(attr) if isinstance(attr, str) else attr}
     b.update(typeID=type_id, customType=0, pptr=False, int=False, serializeReference=False)
     if script is not None:
-        b.update(script={"$ref": {"file": "CAB-s", "pathId": 3}}, scriptClass=script)
+        b.update(script={"$ref": {"file": "CAB-s", "pathId": "3"}}, scriptClass=script)
     b.update(kw)
     return b
 
@@ -88,7 +88,7 @@ def test_a_transform_bindings_attribute_is_the_clips():
 
 def test_a_renderer_material_binding_names_a_property_of_its_materials():
     tint = crc("_TintColor") & 0x0FFFFFFF
-    docs = {7: {"floats": {"_Cutoff": 0.5}, "colors": {"_TintColor": {"r": 1, "g": 1, "b": 1, "a": 1}}}}
+    docs = {"7": {"floats": {"_Cutoff": 0.5}, "colors": {"_TintColor": {"r": 1, "g": 1, "b": 1, "a": 1}}}}
 
     def material(ref):
         return docs.get(ref["$ref"]["pathId"])
