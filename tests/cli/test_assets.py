@@ -1438,7 +1438,7 @@ class FakeProduct(assemble.ProductStage):
     version = 1
     KIND = "FakeProduct"
 
-    def select(self, keys):
+    def select(self, keys, env):
         return [k for k in keys if k.startswith("Bg/")]
 
     def keys(self, subject, env):
@@ -1472,7 +1472,7 @@ class FakeReader(assemble.ProductStage):
     KIND = "FakeReader"
     MASTER = ("MasterX",)
 
-    def select(self, keys):
+    def select(self, keys, env):
         return [k for k in keys if k.startswith("Bg/")]
 
     def keys(self, subject, env):

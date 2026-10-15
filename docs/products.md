@@ -19,6 +19,13 @@ objects:
   the game reads without a path, through the same table;
 - the object ids the stage names besides (`root_objects`).
 
+A product stage may also read cue sheets: the catalog keys `cue_sheets` gives (each also one of its keys). A cue
+sheet is the ACB its key loads, held in a bundle (the `acb` file of an object of the key) or a raw file of the
+catalog that `cri.audio` decoded. The task's inputs then hold each ACB (`acb:<key>`) and, as `sheets`, the files
+`cri.audio` made of it (`{key: {acb, status, reason, files: {name: {sha256, size, ext}}}}`); it depends on those
+`cri.audio` tasks, and a product file may be one of those files as stored, without copying its bytes. A stage that
+reads files of the APK names them in `APK`: inputs `apk:<path in the APK>`, from the fact `apk`.
+
 All are read from the planning facts alone, so a command can ask for what its products need before anything runs:
 `assemble.request(stages, products, env)` gives the fact `roots` (`{"keys", "resources", "builtins", "objects"}`), and
 the request of `unity.export` then holds the units of those objects and every unit reachable from them through the
@@ -32,7 +39,7 @@ object that a reached object references and no census holds is listed as `missin
 | Part of the task | |
 |---|---|
 | inputs | `objects`: the object table of what it reaches (`nnnotes.objects/1`); the stage's own inputs (master tables, data its parameters name) |
-| depends | `link.addresses` (when it has keys, resource paths or built-in selectors), the `unity.export` and `sprite.crop` tasks whose results it read |
+| depends | `link.addresses` (when it has keys, resource paths or built-in selectors), the `unity.export` and `sprite.crop` tasks whose results it read, the `cri.audio` tasks of its cue sheets |
 | artifacts | `<task id>#<path>`: the product's own files; `<task id>#objects`: the object table of the objects its files use (the whole table unless the stage narrows it to some objects, or to some files of an object: a shader's programs for one graphics API) |
 | item | one for the subject: `exported`, or `unsupported` with a reason code |
 
@@ -193,3 +200,47 @@ null `focusWorld`.
 | `spine/<skeleton>.json` or `.skel` | the bytes of the SkeletonDataAsset's `skeletonJSON` (JSON when they start with `{`) |
 | `spine/<atlas>.atlas` | the bytes of each SpineAtlasAsset's `atlasFile`, as stored (an atlas two skeletons share is written once) |
 | `spine/<page>` | for each page of the atlas, the PNG of the `_MainTex` of the atlas asset's material of the same index |
+
+## Live sounds
+
+What a live plays besides its chart is two products of `nnnotes.pipeline.live`, each shared by every live that plays
+it: the BGM of a music (`live.music`) and the sounds of an option set (`live.sounds`). Their roots are the objects of
+the keys of their cue sheets, they read the sheets' `cri.audio` files, and neither keeps objects. A sound entry, of
+either, is
+
+| Field | |
+|---|---|
+| `row` | the `MasterSound` row |
+| `sheet`, `cue` | its cue sheet and cue name |
+| `category`, `categories` | the row's category and the CRI categories of the cue (ACB command 65) |
+| `volume`, `busSends` | the cue's volume (with the sheet's) and bus sends (ACB commands 146 and 111) |
+| `lengthMs`, `other` | the cue's length, its other commands as stored |
+| `layers` | one per track of the cue: `file` (`audio/<sheet>/<file>`), the stream's `stream`, `awbId`, `sampleRate`, `channels`, `samples`, `loopStart`, `loopEnd`, the waveform's `loopFlag`, the track's and synth's `volume` and `busSends`, `other` |
+
+`live.music`: its subject is a music id (`MasterLiveMusic._id`), its manifest `music/<id>.json` and its input
+`master` the music's rows of `MasterLiveMusic`, `MasterSound` and `MasterSoundCueSheet`. Its files are `music.json`
+(`format` 1, `musicId`, `music`: the BGM's `soundId`, `volume` and `startTimeSec`, and `sounds`: the BGM's entry)
+and each layer's file in the web format of the parameter `format`: `aac` (AAC-LC 160 kbit/s in MP4, the default),
+`opus`, `vorbis`, `mp3`, or `flac`, the decoded FLAC itself. An AAC layer records `encoderDelay`, the priming samples
+of the MP4 edit list, which a decoder that does not apply the edit list outputs first. The encode is bit-exact; the
+atom `audio.encode` names the ffmpeg build.
+
+`live.sounds`: its subject names the note sound sets offered besides the default, `default` or
+`NoteSePatternId=<id>,<id>,...` (the default set among them), and its manifest is `sounds/<subject>.json`. Its roots
+include the game's sound settings, the `SoundVolumeSettings` and `AppConfigDefaultData` MonoBehaviours of the APK's
+built-in files, and it reads the ACF of the APK (`assets/Cri/Sound/Sirius.acf`). Its input `master` holds the
+option defaults of preset 1 (`MasterOptionDefault`), `MasterLiveNoteSe`, `MasterLiveSe` and the `MasterSound` and
+`MasterSoundCueSheet` rows of its sounds. Its files are each sound's decoded FLAC and `sounds.json`:
+
+| Field of sounds.json | |
+|---|---|
+| `format` | 1 |
+| `sounds` | the entry of each sound by `MasterSound` id: the note sounds of the default options and of every set offered, and the live sounds of the start and finish cheers and of the finish direction of every result |
+| `categories` | the CRI category volumes of a fresh profile: each category's default volume, and the live categories' config volumes |
+| `acf`, `react` | the ACF's `name`, `buses` and `categories`; its REACT (ducking) entries |
+| `noteSe` | the note sounds of option preset 1: `types` (note sound type -> sound id), `volumes`, `mutes`, `patternId`, `useIndividualNoteSe`, `gekisouTraceVolume`; with sets offered `groups` (set id -> type -> sound id) |
+| `liveSe`, `liveSeNames` | live sound type -> sound id, and the types' names |
+| `timeline` | the intro and end timings of the cheers and the start voice |
+
+The `product` layout makes the `live.music` products of the musics whose BGM key the selection holds, and the
+default `live.sounds` when the selection holds every cue sheet of its sounds; both need the master data.

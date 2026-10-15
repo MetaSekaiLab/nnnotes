@@ -45,7 +45,7 @@ class ModelStage(ProductStage):
     version = 2
     KIND = "Live2DModel"
 
-    def select(self, keys: list[str]) -> list[str]:
+    def select(self, keys: list[str], env) -> list[str]:
         return sorted(live2d.model_keys(keys).values())
 
     def keys(self, subject: str, env) -> list[str]:
@@ -70,7 +70,7 @@ class CubismStage(ProductStage):
     version = 1
     KIND = "CubismModel"
 
-    def select(self, keys: list[str]) -> list[str]:
+    def select(self, keys: list[str], env) -> list[str]:
         return sorted(live2d.model_keys(keys).values())
 
     def keys(self, subject: str, env) -> list[str]:

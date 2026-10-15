@@ -51,7 +51,7 @@ class RoomStage(ProductStage):
     version = 1
     KIND = "SpotRoom"
 
-    def select(self, keys: list[str]) -> list[str]:
+    def select(self, keys: list[str], env) -> list[str]:
         return sorted(k for k in keys if re.fullmatch(room.BACKGROUND_KEY, k))
 
     def keys(self, subject: str, env) -> list[str]:
@@ -78,7 +78,7 @@ class SpotStage(ProductStage):
     KIND = "SpotSituation"
     MASTER = spot.MASTER_TABLES
 
-    def select(self, keys: list[str]) -> list[str]:
+    def select(self, keys: list[str], env) -> list[str]:
         out = []
         for k in keys:
             try:
