@@ -56,7 +56,7 @@ from pathlib import Path
 from ..content import live, liveaudio, livenotes, livescene
 from ..formats.encoders import DEFAULT_AUDIO_FORMAT, WEB_AUDIO, mp4_priming, web_encode
 from . import contract
-from .assemble import Assembly, ProductStage
+from .assemble import MASTER_INPUT, Assembly, ProductStage, master_input
 from .contract import IncompatibleTask, Input
 from .views import master_rows
 
@@ -83,7 +83,6 @@ NOTES, NOTESKIN, NOTEEFFECT = "live.notes", "live.noteskin", "live.noteeffect"
 SCENE = "live.scene"
 LIVE = "live"
 DEFAULT = "default"
-MASTER_INPUT = "master"
 
 
 def _ffmpeg() -> str:
@@ -105,11 +104,6 @@ def _music_id(subject: str) -> int:
     if not subject.isdigit():
         raise ValueError(f"{subject}: not a music id")
     return int(subject)
-
-
-def _record(env, data: dict) -> Input:
-    body = contract.encode(data)
-    return Input(MASTER_INPUT, env.depot.put(body), len(body), None, ({"kind": "depot"},))
 
 
 class MusicStage(ProductStage):
@@ -149,7 +143,7 @@ class MusicStage(ProductStage):
         return self.keys(subject, env)
 
     def more_inputs(self, subject: str, env) -> list[Input]:
-        return [_record(env, liveaudio.music_record(master_rows(env, self.MASTER), _music_id(subject)))]
+        return [master_input(env, liveaudio.music_record(master_rows(env, self.MASTER), _music_id(subject)))]
 
     def manifest(self, subject: str) -> str:
         return f"music/{_music_id(subject)}.json"
@@ -209,7 +203,7 @@ class SoundsStage(ProductStage):
         return [f"MonoBehaviour:{c}" for c in liveaudio.SETTINGS_SCRIPTS]
 
     def more_inputs(self, subject: str, env) -> list[Input]:
-        return [_record(env, liveaudio.sounds_record(master_rows(env, self.MASTER), subject))]
+        return [master_input(env, liveaudio.sounds_record(master_rows(env, self.MASTER), subject))]
 
     def manifest(self, subject: str) -> str:
         liveaudio.sounds_groups(subject)
@@ -263,7 +257,7 @@ class NotesStage(ProductStage):
         return livenotes.notes_keys()
 
     def more_inputs(self, subject: str, env) -> list[Input]:
-        return [_record(env, livenotes.notes_record(master_rows(env, self.MASTER)))]
+        return [master_input(env, livenotes.notes_record(master_rows(env, self.MASTER)))]
 
     def manifest(self, subject: str) -> str:
         return f"notes/{_default(subject)}.json"
@@ -340,7 +334,7 @@ class SceneStage(ProductStage):
         return list(livescene.GRAPHICS.values())
 
     def more_inputs(self, subject: str, env) -> list[Input]:
-        return [_record(env, livescene.scene_record(master_rows(env, self.MASTER)))]
+        return [master_input(env, livescene.scene_record(master_rows(env, self.MASTER)))]
 
     def manifest(self, subject: str) -> str:
         return f"scenes/{_default(subject)}.json"
@@ -415,7 +409,7 @@ class LiveStage(ProductStage):
     def more_inputs(self, subject: str, env) -> list[Input]:
         parts = self.parts(subject, env)
         paths = {part: PART_STAGES[name]().manifest(parts[name][0]) for part, name in PARTS.items()}
-        return [_record(env, {"live": self.live_record(subject, env), "parts": paths})]
+        return [master_input(env, {"live": self.live_record(subject, env), "parts": paths})]
 
     def manifest(self, subject: str) -> str:
         music_id, difficulty, band = live.parse_subject(subject)
