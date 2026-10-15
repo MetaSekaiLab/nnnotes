@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from nnnotes.pipeline import contract, views
+from nnnotes.pipeline import contract, link, views
 from nnnotes.pipeline.contract import Input
 from nnnotes.pipeline.depot import Depot
 from nnnotes.pipeline.orchestrate import Orchestrator
@@ -116,6 +116,7 @@ def test_stored_order_decides_not_ids():
                 }
             ]
         },
+        "resources": {},
         "objects": {f"b/s.png[{x.name}]": {"object": x.id, "class": x.cls, "name": x.name} for x in sheet},
     }
     assert [x.id for x in AddressIndex.from_addresses(doc).objects("S")] == [x.id for x in sheet]
@@ -162,7 +163,7 @@ def test_address_index_build_and_prefixes():
 
 def test_address_index_of_an_address_table():
     doc = {
-        "schema": "nnnotes.addresses/1",
+        "schema": link.ADDRESSES,
         "keys": {
             "MemberCard/1/member_full": [
                 {
@@ -191,7 +192,9 @@ def test_address_index_of_an_address_table():
             ],
             "Cri/Sound/bgm": [{"location": 4, "type": "System.Object", "raw": "bgm.acb", "internalId": "y"}],
         },
+        "resources": {"live2d/mask": ["resources.assets:3"]},
         "objects": {
+            "apk/data.unity3d/live2d/mask": {"object": "resources.assets:3", "class": "Material", "name": "Mask"},
             "membercard_1/assets/membercard/1/member_full.png": {
                 "object": "CAB-a:1",
                 "class": "Texture2D",
@@ -212,6 +215,8 @@ def test_address_index_of_an_address_table():
     assert ix.objects("MemberCard/2/member_full") == [] and ix.objects("Cri/Sound/bgm") == []
     r = views.resolve(ix, "MemberCard/1/member_full[member_full]", "Sprite")
     assert (r["object"], r["stable"]) == ("CAB-a:2", "membercard_1/assets/membercard/1/member_full.png[member_full]")
+    assert ix.resource("Live2D/Mask") == [Obj("resources.assets:3", "Material", "Mask", "apk/data.unity3d/live2d/mask")]
+    assert ix.resource("Live2D/Other") is None and ix.objects("live2d/mask") is None  # paths are no catalog keys
 
 
 # ---------------------------------------------------------------- rules
@@ -712,7 +717,7 @@ def test_master_tables_from_a_directory(tmp_path):
 
 # ---------------------------------------------------------------- the view stages
 def addresses_doc(entries: dict) -> dict:
-    """A synthetic address table (nnnotes.addresses/1) of {catalog key: objects}: one location per key in bundle
+    """A synthetic address table (nnnotes.addresses/2) of {catalog key: objects}: one location per key in bundle
     `b`, every object listed under a stable address of its own."""
     keys, objects = {}, {}
     for n, (key, objs) in enumerate(sorted(entries.items())):
@@ -734,11 +739,12 @@ def addresses_doc(entries: dict) -> dict:
                 "typeHash": None,
             }
     return {
-        "schema": "nnnotes.addresses/1",
+        "schema": link.ADDRESSES,
         "catalog": {"remote": None, "apk": None},
         "bundles": {},
         "files": {},
         "keys": keys,
+        "resources": {},
         "objects": objects,
         "problems": {"files": [], "bundleNames": [], "keys": []},
     }

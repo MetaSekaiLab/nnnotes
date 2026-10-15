@@ -12,14 +12,15 @@ The asset export is built from three layers:
 
 ## Stages
 
-Every stage is at version 1, except `unity.census` (version 3: it lists what every object references and the
-hierarchy holding it), `unity.export` (version 2: one task per unit), `cri.movie` (version 2: every stream kind,
+Every stage is at version 1, except `unity.census` (version 4: it lists what every object references, the
+hierarchy holding it and the Resources.Load paths of a ResourceManager), `link.addresses` (version 2: the
+Resources.Load paths), `unity.export` (version 2: one task per unit), `cri.movie` (version 2: every stream kind,
 codec and channel of a USM) and `catalog.index` (version 2: gzip input and Japanese remote asset placeholders).
 
 | Stage | Subject | Inputs | Outputs |
 |---|---|---|---|
 | `catalog.index` | a catalog (remote + APK) | the catalog files | every location (with the bundle hash, crc and size), bundles and raw remote files |
-| `unity.census` | a bundle, or a built-in file of the APK | the bundle | serialized files, externals, objects (file, path id, class, size, type hash, name, script, the scripts an AnimationClip's bindings name, the objects it references, the hierarchy holding it), container, scene hashes, dependencies, script fields |
+| `unity.census` | a bundle, or a built-in file of the APK | the bundle | serialized files, externals, objects (file, path id, class, size, type hash, name, script, the scripts an AnimationClip's bindings name, the objects it references, the hierarchy holding it), container, scene hashes, dependencies, script fields, the ResourceManager's paths (Resources.Load) |
 | `link.scripts` | global | the censuses holding MonoScripts | serialized file and path id -> assembly, namespace, class |
 | `unity.export` | a unit of a bundle or of a built-in file of the APK (below), by the stable address of its root object | the bundle; context `unit` (the root's object id), `bundle`, the script entries its objects use and, for files without type trees, the type trees nnnotes ships for their type hashes | its objects' artifacts and one item per object |
 | `sprite.crop` | a SpriteAtlas | the atlas' JSON, the images of its textures, the metas of the sprites of other bundles it packs | the sprites' images |
@@ -27,7 +28,7 @@ codec and channel of a USM) and `catalog.index` (version 2: gzip input and Japan
 | `cri.movie` | USM content | `usm` (a raw file of the catalog, or the `usm` artifact of a movie held in a bundle), `boot` | every stream as stored (video, alpha, audio, subtitles), `movie.mkv` (or `movie.webm`) |
 | `live2d.model` | a Live2D model key (`Character/Live2D/<group>/<name>/model/<name>`) whose bundle is selected | `bundle:<n>`: the bundles of the key's dependency closure in the order the extractor loads them (the order is part of the key); context `internalId` (the key's location); atom `live2d.extract_model` (the extractor of `nnnotes export live2d`, run unchanged) | `live2d.model:<key>#<path>`: every file `nnnotes export live2d` writes for the model, `<path>` relative to the model's directory; placed under `<key>/` |
 | `spine.skeleton` | a SkeletonDataAsset of a selected bundle, by its stable address `<bundle>:<pathId>` (in a bundle of several serialized files the file's tag follows the bundle name, as in `link.addresses`) | `bundle:<stable name>`: the bundles holding the serialized files the asset's file reaches through its externals; context `object` (the asset's object id); atom `spot.write_skeleton` (the Spine writer of `nnnotes export spot`) | `spine.skeleton:<subject>#<file>`: the skeleton (`.json` or `.skel`), its atlases (`.atlas`) and their page images, the bytes `nnnotes export spot` writes into `spine/`; one item for the asset |
-| `link.addresses` | global | catalog index, censuses (the built-in files' too) | key -> objects, serialized file -> bundle or built-in file, bundle -> keys |
+| `link.addresses` | global | catalog index, censuses (the built-in files' too) | key -> objects, Resources.Load path -> objects, serialized file -> bundle or built-in file, bundle -> keys |
 | `view.<name>` | a catalog (`main`) | `master:<Table>` per master table it reads, `rules` (the view's rule and the resolvers it uses), `addresses` (the part of the address table it read: the keys looked up and the prefixes listed); no parameters, atoms or context | `view.<name>:<subject>#view` (facts: rows, entries, gaps, unreferenced) |
 | `view.voices` | a catalog (`main`) | `master:<Table>` per master table its rules read, `rules`, `addresses`, `sheets` (each cue sheet the `cri.audio` results are known by that a voice names or the rules' prefixes list: its task and ACB content id), `acb:<sha256>` (the ACB of each decoded one), `episodes` (per story episode and part, the `unity.export` artifact holding the object its key names), `adv:<sha256>` (those contents); context `audio` (the keys of those `cri.audio` results); runs after `unity.export` and `cri.audio` | `view.voices:<subject>#view` (facts: rows, entries, gaps, unreferenced streams) |
 
@@ -110,9 +111,10 @@ several serialized files the file's tag follows the bundle name, as in `link.add
 bundle's content changes, so a unit keeps its task across catalog versions.
 
 A run exports the units holding an object of the selected bundles, the units of the objects the fact "roots" names
-(a product's roots: [products](products.md)) and every unit reachable from those through what their objects reference
-(the census `refs`, across the censuses of the run); with `--only-class` only the units whose root object is of those
-classes. The selection is not part of any key: a unit's task is the same whichever request reaches it.
+(catalog keys, Resources.Load paths and object ids: a product's roots, [products](products.md)) and every unit reachable
+from those through what their objects reference (the census `refs`, across the censuses of the run); with `--only-class`
+only the units whose root object is of those classes. The selection is not part of any key: a unit's task is the same
+whichever request reaches it.
 
 A task's key includes the atoms `reader` and `sniff`, the converter `generic.json`, the converters (with their
 atoms) of the classes of the unit's objects, its bundle, its root and the script entries and shipped type trees its

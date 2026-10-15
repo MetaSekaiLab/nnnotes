@@ -17,6 +17,9 @@ objects reference, read without decoding any object.
     assetBundles   the AssetBundle objects: {file, pathId, name, assetBundleName, dependencies,
                    isStreamedSceneAssetBundle, sceneHashes [[scene, hash]], container [{path, file, pathId,
                    preloadIndex, preloadSize}] (stored order)}
+    resourcePaths  the container of the ResourceManager objects (the paths Resources.Load finds objects at, in the
+                   APK's global managers): [{path, file, pathId}] in stored order; a path names one object per
+                   class it was saved as
     scripts        the MonoScript objects: {file, pathId, assembly, namespace, class, name}
     classes        objects per class; `objects` the total
     errors         [{object, message}] of the objects whose typetree could not be read (their record has no name,
@@ -140,6 +143,14 @@ def _asset_bundle(d: dict, refs: _Refs, oid: tuple[str, int]) -> dict:
     }
 
 
+def _resource_paths(d: dict, refs: _Refs) -> list:
+    out = []
+    for path, p in _pairs(d.get("m_Container")):
+        target = refs.ref(p) or {}
+        out.append({"path": path, "file": target.get("file"), "pathId": target.get("pathId")})
+    return out
+
+
 def _binding_scripts(d: dict, refs: _Refs) -> list:
     """The MonoScripts an AnimationClip's generic bindings name, {file, pathId} (or {fileId, pathId}), sorted."""
     out = {}
@@ -170,7 +181,7 @@ def census_env(env, shipped: bool = False) -> dict:
     by_file: dict[str, list] = {}
     for i in ctx.infos:
         by_file.setdefault(i.file, []).append(i)
-    files, bundles, scripts, errors, classes = [], [], [], [], {}
+    files, bundles, paths, scripts, errors, classes = [], [], [], [], [], {}
     for name in sorted(by_file):
         sf = view.serialized_file(name)
         refs = _Refs(name, ctx.ext_files[name])
@@ -204,6 +215,8 @@ def census_env(env, shipped: bool = False) -> dict:
                     rec["refs"] = sorted(contract.object_id(*k) for k in found)
                 if i.class_name == "AssetBundle":
                     bundles.append(_asset_bundle(d, refs, key))
+                elif i.class_name == "ResourceManager":
+                    paths.extend(_resource_paths(d, refs))
                 elif i.class_name == "MonoScript":
                     scripts.append(
                         {
@@ -241,6 +254,7 @@ def census_env(env, shipped: bool = False) -> dict:
         "files": files,
         "resources": resources,
         "assetBundles": sorted(bundles, key=lambda b: (b["file"], b["pathId"])),
+        "resourcePaths": paths,
         "scripts": sorted(scripts, key=lambda s: (s["file"], s["pathId"])),
         "classes": dict(sorted(classes.items())),
         "objects": sum(classes.values()),
@@ -332,7 +346,7 @@ class CensusStage(Stage):
     MonoBehaviours with."""
 
     name = "unity.census"
-    version = 3
+    version = 4
     ATOMS = {"reader": impl_id(("UnityPy",), 1)}
 
     def subjects(self, env) -> list[str]:

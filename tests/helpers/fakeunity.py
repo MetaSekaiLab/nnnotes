@@ -65,6 +65,7 @@ CLASS_IDS = {
     "PlayerSettings": 129,
     "Font": 128,
     "AssetBundle": 142,
+    "ResourceManager": 147,
     "AnimatorController": 91,
     "AnimatorOverrideController": 221,
     "RectTransform": 224,

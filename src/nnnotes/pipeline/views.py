@@ -121,11 +121,17 @@ class Addresses(Protocol):
 
 
 class AddressIndex:
-    """Addresses from {catalog key: objects in stored order} (a key mapped to None or [] has no census object)."""
+    """Addresses from {catalog key: objects in stored order} (a key mapped to None or [] has no census object), and
+    the objects of the resource paths of the APK's built-in files ({path: objects in stored order}, `resource`)."""
 
-    def __init__(self, entries: Mapping[str, Iterable[Obj] | None]):
+    def __init__(
+        self, entries: Mapping[str, Iterable[Obj] | None], resources: Mapping[str, Iterable[Obj]] | None = None
+    ):
         self._objs = {k: list(v or ()) for k, v in entries.items()}
         self._keys = sorted(self._objs)
+        self._resources: dict[str, list[Obj]] = {}
+        for path, objs in (resources or {}).items():
+            self._resources.setdefault(path.casefold(), []).extend(objs)
 
     def keys(self, prefix: str = "") -> list[str]:
         i = bisect.bisect_left(self._keys, prefix)
@@ -140,6 +146,12 @@ class AddressIndex:
         objs = self._objs.get(key)
         return None if objs is None else list(objs)
 
+    def resource(self, path: str) -> list[Obj] | None:
+        """The objects a Resources.Load `path` finds (compared ignoring case, as Unity does), in stored order; None
+        for a path no ResourceManager lists."""
+        objs = self._resources.get(path.casefold())
+        return None if objs is None else list(objs)
+
     @classmethod
     def build(cls, locations: Mapping[str, str], containers: Mapping[str, Iterable[Obj]]) -> AddressIndex:
         """The index of a catalog and its censuses: `locations` {key: internal id} (the asset path a key loads),
@@ -152,22 +164,27 @@ class AddressIndex:
 
     @classmethod
     def from_addresses(cls, doc: dict) -> AddressIndex:
-        """The index of an address table (nnnotes.addresses/1, the link.addresses stage): a key's objects are those
-        of all its locations (in the table's order, the order of the bundle's container), with class, name and
-        stable address from the table's `objects`; a location whose bundle has no census yet contributes none."""
+        """The index of an address table (nnnotes.addresses/2, the link.addresses stage): a key's objects are those
+        of all its locations (in the table's order, the order of the bundle's container), a resource path's those
+        its table lists, with class, name and stable address from the table's `objects`; a location whose bundle has
+        no census yet contributes none."""
         where: dict[str, str] = {}
         for addr, info in doc["objects"].items():
             where.setdefault(info["object"], addr)
+
+        def obj(oid: str) -> Obj:
+            addr = where.get(oid)
+            info = doc["objects"][addr] if addr is not None else {}
+            return Obj(oid, info.get("class") or "", info.get("name") or "", addr)
+
         entries = {}
         for key, locs in doc["keys"].items():
             objs = {}
             for loc in locs:
                 for oid in loc.get("objects") or ():
-                    addr = where.get(oid)
-                    info = doc["objects"][addr] if addr is not None else {}
-                    objs[oid] = Obj(oid, info.get("class") or "", info.get("name") or "", addr)
+                    objs[oid] = obj(oid)
             entries[key] = list(objs.values())
-        return cls(entries)
+        return cls(entries, {path: [obj(o) for o in oids] for path, oids in doc["resources"].items()})
 
     def to_json(self) -> dict:
         return {"keys": {k: [o.to_json() for o in self._objs[k]] for k in self._keys}}

@@ -5,7 +5,7 @@ link.scripts (nnnotes.scripts/1), one global task: every MonoScript of the censu
     stays empty). A MonoBehaviour's class is the entry of its m_Script; `script_context` picks the entries a task
     consumes.
 
-link.addresses (nnnotes.addresses/1), one task per catalog pair: the catalog index and the censuses of its bundles
+link.addresses (nnnotes.addresses/2), one task per catalog pair: the catalog index and the censuses of its bundles
 (by stable bundle name) and of the APK's built-in files (subjects `apk/...`, pipeline.builtins) ->
     bundles    {stable name: {name, files, assetBundleName, keys}}: the file name in this catalog version, its
                serialized files, the AssetBundle name the census found and the keys located in it; a built-in file
@@ -14,7 +14,10 @@ link.addresses (nnnotes.addresses/1), one task per catalog pair: the catalog ind
     keys       {primary key: [{location, type, internalId, bundle | raw, objects}]}: an asset location's bundle is the
                dependency whose container holds its internal id (compared ignoring case); `objects` the object ids
                the container path names (null when a dependency bundle has no census)
-    objects    {stable address: {object, class, name, byteSize, typeHash}} of the objects a container path names
+    resources  {resource path: [object ids]}: the paths of the ResourceManager container of the built-in files (what
+               Resources.Load finds, as stored), the objects each names in stored order
+    objects    {stable address: {object, class, name, byteSize, typeHash}} of the objects a container path or a
+               resource path names
     problems   files named by two bundles, bundles whose census AssetBundle name is not the catalog's, keys whose
                internal id no container holds
 
@@ -24,8 +27,9 @@ its extension names, else the first by file and path id: the object the `origina
 "<bundle>/<container>[<name>]" for another object under it with a name no other object under it has, else
 "<bundle>:<pathId>". In a bundle of several serialized files (their path ids may coincide) the path id form names
 the file after the bundle: the part of the file name after its CAB-<hex> prefix ("scene_x.sharedAssets:12"), or
-"|<file>" ("apk/data.unity3d|level0:3").
-Objects that no container path names are not listed; `address_of` gives any object's address.
+"|<file>" ("apk/data.unity3d|level0:3"). A resource path counts as a container path of the built-in file holding the
+ResourceManager ("apk/data.unity3d/live2d/cubism/materials/mask").
+Objects that no container or resource path names are not listed; `address_of` gives any object's address.
 
 """
 
@@ -40,7 +44,7 @@ from .layout import EXT_CLASSES
 from .stages import Output, Pending, Stage
 
 SCRIPTS = "nnnotes.scripts/1"
-ADDRESSES = "nnnotes.addresses/1"
+ADDRESSES = "nnnotes.addresses/2"
 _CAB = re.compile(r"^CAB-[0-9a-f]+")
 
 
@@ -125,7 +129,7 @@ def addresses(index: dict, censuses) -> dict:
     the index does not list are ignored."""
     files_of = catalogdb.file_refs(index)
     listed = {b["stable"]: b for b in index["bundles"]}
-    bundles, owners, info, groups, tags_of = {}, {}, {}, {}, {}
+    bundles, owners, info, groups, tags_of, resources = {}, {}, {}, {}, {}, {}
     problems = {"files": [], "bundleNames": [], "keys": []}
     pairs = sorted(censuses.items()) if isinstance(censuses, dict) else censuses
     for stable, doc in pairs:
@@ -141,8 +145,11 @@ def addresses(index: dict, censuses) -> dict:
         if b.get("bundleName") and found and b["bundleName"] + ".bundle" not in found:
             problems["bundleNames"].append({"bundle": stable, "catalog": b["bundleName"] + ".bundle", "census": found})
         g: dict[str, list[dict]] = {}
-        for e in census.container(doc):
+        for e in census.container(doc) + doc["resourcePaths"]:
             g.setdefault(e["path"].casefold(), []).append(e)
+        for e in doc["resourcePaths"]:
+            if e["file"] is not None:
+                resources.setdefault(e["path"], []).append(contract.object_id(e["file"], e["pathId"]))
         wanted = {(e["file"], e["pathId"]) for es in g.values() for e in es if e["file"] is not None}
         for file, o in census.objects(doc):
             if (file, o["pathId"]) in wanted:
@@ -208,6 +215,7 @@ def addresses(index: dict, censuses) -> dict:
         "bundles": dict(sorted(bundles.items())),
         "files": dict(sorted(cab.items())),
         "keys": dict(sorted(keys.items())),
+        "resources": dict(sorted(resources.items())),
         "objects": dict(sorted(objects.items())),
         "problems": problems,
     }
@@ -292,7 +300,7 @@ class AddressesStage(Stage):
     skips failed ones. Artifact "link.addresses:<subject>#addresses"."""
 
     name = "link.addresses"
-    version = 1
+    version = 2
     after = ("catalog.index", "unity.census")
 
     def subjects(self, env) -> list[str]:
@@ -323,6 +331,7 @@ class AddressesStage(Stage):
         facts = {
             "bundles": len(doc["bundles"]),
             "keys": len(doc["keys"]),
+            "resources": len(doc["resources"]),
             "objects": len(doc["objects"]),
             "problems": {k: len(v) for k, v in doc["problems"].items()},
         }
