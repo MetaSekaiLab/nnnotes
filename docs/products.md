@@ -32,7 +32,8 @@ the request of `unity.export` then holds the units of those objects and every un
 census `refs` ([units](stages.md#units)), and nothing else of their bundles.
 
 What a task reaches: the units holding its roots, then every unit that an item of a reached unit references (the
-item's `refs`), through the `unity.export` results. A sprite whose atlas is in another bundle has its `image` from the
+item's `refs`; a SpriteAtlas reached through a reference does not reach the sprites it packs), through the
+`unity.export` results. A sprite whose atlas is in another bundle has its `image` from the
 `sprite.crop` result of that atlas. A reached unit that the request did not export is an error of the request; an
 object that a reached object references and no census holds is listed as `missing`.
 
