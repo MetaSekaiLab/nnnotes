@@ -83,6 +83,7 @@ from ..content import live, livenotes, liveoptions, livescene
 from ..content.score import DIFFICULTIES, master_table
 from ..core import cache, jsonio
 from ..formats import cri
+from ..formats.encoders import DEFAULT_AUDIO_FORMAT, WEB_AUDIO, mp4_priming, web_encode
 from ..source import languages
 from ..source.config import Config, ConfigError, tool, usable_cpus, use
 from . import compress
@@ -98,7 +99,6 @@ from .sitefiles import (
     collect,
     configure_caches,
     merge_regions,
-    mp4_priming,
     open_data,
     region_masters,
     region_meta,
@@ -108,7 +108,6 @@ from .sitefiles import (
     write_player,
 )
 from .siteindex import write_index
-from .webaudio import DEFAULT_AUDIO_FORMAT, WEB_AUDIO
 
 AUDIO_EXT = {".flac", ".ogg", ".opus", ".wav", ".m4a", ".mp3"}
 # the live directories of a web build: no liveui/ (the player reads none of it), the BGM decoded once for the read
@@ -144,37 +143,12 @@ LIVE_TABLES = (
 
 # ---------------------------------------------------------------- audio
 def transcode(src: Path, fmt: str, work: Path) -> bytes:
-    """One FLAC waveform -> the web format's bytes (bit-exact container flags: the output depends on the input only)."""
-    ext, codec = WEB_AUDIO[fmt]
-    if codec is None:
-        return Path(src).read_bytes()
-    dst = Path(work) / f"transcode-{os.getpid()}{ext}"
-    r = subprocess.run(
-        [
-            tool("ffmpeg", "ffmpeg"),
-            "-hide_banner",
-            "-loglevel",
-            "error",
-            "-y",
-            "-i",
-            str(src),
-            "-map_metadata",
-            "-1",
-            "-fflags",
-            "+bitexact",
-            "-flags:a",
-            "+bitexact",
-            *codec,
-            str(dst),
-        ],
-        capture_output=True,
-        text=True,
-    )
-    if r.returncode != 0:
-        raise RuntimeError(f"ffmpeg {fmt} failed on {src}: {r.stderr[-2000:]}")
-    data = dst.read_bytes()
-    dst.unlink()
-    return data
+    """One FLAC waveform -> the web format's bytes (encoders.web_encode)."""
+    dst = Path(work) / f"transcode-{os.getpid()}{WEB_AUDIO[fmt][0]}"
+    try:
+        return web_encode(tool("ffmpeg", "ffmpeg"), src, dst, fmt)
+    finally:
+        dst.unlink(missing_ok=True)
 
 
 def _web_audio(
