@@ -51,9 +51,9 @@ nnnotes catalog keys --prefix Character/Live2D/ --limit 0     # every model key
 nnnotes export live2d adv_live2d_rana_003_casual_spring_01 -o out/live2d/rana
 ```
 
-`MODEL` is the model's key or its id, the last part of the key. The output is a Cubism runtime directory: moc3, atlas
-pages, motions, expressions, physics, `model3.json` and the whole prefab as JSON. Details:
-[export live2d](commands.md#export-live2d).
+`MODEL` is the model's key or its id, the last part of the key. The output is the model's Cubism SDK files: moc3,
+atlas pages, motions, expressions, physics and `model3.json`; `--player` writes the model the player reads instead.
+Details: [export live2d](commands.md#export-live2d).
 
 ## A spot or a room
 

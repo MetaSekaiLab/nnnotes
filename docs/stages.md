@@ -14,7 +14,7 @@ The asset export is built from three layers:
 
 Every stage is at version 1, except `unity.census` (version 4: it lists what every object references, the
 hierarchy holding it and the Resources.Load paths of a ResourceManager), `link.addresses` (version 2: the
-Resources.Load paths), `unity.export` (version 2: one task per unit), `cri.movie` (version 2: every stream kind,
+Resources.Load paths), `live2d.model` (version 2: assembled from the exported objects), `unity.export` (version 2: one task per unit), `cri.movie` (version 2: every stream kind,
 codec and channel of a USM) and `catalog.index` (version 2: gzip input and Japanese remote asset placeholders).
 
 | Stage | Subject | Inputs | Outputs |
@@ -26,7 +26,7 @@ codec and channel of a USM) and `catalog.index` (version 2: gzip input and Japan
 | `sprite.crop` | a SpriteAtlas | the atlas' JSON, the images of its textures, the metas of the sprites of other bundles it packs | the sprites' images |
 | `cri.audio` | ACB content | `acb` (a raw file of the catalog, or the `acb` artifact of a cue sheet held in a bundle), `awb` (an AWB the catalog pairs with it), `boot` (the game's boot data: the key's source) | FLAC per stream, `cues.json`, `streams.json` |
 | `cri.movie` | USM content | `usm` (a raw file of the catalog, or the `usm` artifact of a movie held in a bundle), `boot` | every stream as stored (video, alpha, audio, subtitles), `movie.mkv` (or `movie.webm`) |
-| `live2d.model` | a Live2D model key (`Character/Live2D/<group>/<name>/model/<name>`) whose bundle is selected | `bundle:<n>`: the bundles of the key's dependency closure in the order the extractor loads them (the order is part of the key); context `internalId` (the key's location); atom `live2d.extract_model` (the extractor of `nnnotes export live2d`, run unchanged) | `live2d.model:<key>#<path>`: every file `nnnotes export live2d` writes for the model, `<path>` relative to the model's directory; placed under `<key>/` |
+| `live2d.model`, `live2d.cubism` | a Live2D model key (`Character/Live2D/<group>/<name>/model/<name>`) a command asks for | `objects`: the object table of what the model reaches ([products](products.md#live2d-models)); depends on `link.addresses` and the `unity.export` tasks it reads | `model.json` (the player's model) and the object table; the Cubism SDK files |
 | `spine.skeleton` | a SkeletonDataAsset of a selected bundle, by its stable address `<bundle>:<pathId>` (in a bundle of several serialized files the file's tag follows the bundle name, as in `link.addresses`) | `bundle:<stable name>`: the bundles holding the serialized files the asset's file reaches through its externals; context `object` (the asset's object id); atom `spot.write_skeleton` (the Spine writer of `nnnotes export spot`) | `spine.skeleton:<subject>#<file>`: the skeleton (`.json` or `.skel`), its atlases (`.atlas`) and their page images, the bytes `nnnotes export spot` writes into `spine/`; one item for the asset |
 | `link.addresses` | global | catalog index, censuses (the built-in files' too) | key -> objects, Resources.Load path -> objects, serialized file -> bundle or built-in file, bundle -> keys |
 | `view.<name>` | a catalog (`main`) | `master:<Table>` per master table it reads, `rules` (the view's rule and the resolvers it uses), `addresses` (the part of the address table it read: the keys looked up and the prefixes listed); no parameters, atoms or context | `view.<name>:<subject>#view` (facts: rows, entries, gaps, unreferenced) |

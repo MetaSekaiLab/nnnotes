@@ -18,7 +18,7 @@ nnnotes depot plan --check && echo "up to date"
 ## Commands
 
 ```
-nnnotes export assets -o OUT [--layout original[,cas]] [--select group:G|key:PREFIX|bundle:GLOB ...] [--views all|none|a,b]
+nnnotes export assets -o OUT [--layout original[,cas][,product]] [--select group:G|key:PREFIX|bundle:GLOB ...] [--views all|none|a,b]
                [--depot DIR] [--workers N] [--memory GiB] [--fetch-workers N] [--stored-catalog L|SHA]
                [--png-level N] [--flac-level N] [--only-class C,...] [--link auto|clone|hard|copy] [--strict]
                [--dry-run] [--explain]
@@ -37,7 +37,7 @@ nnnotes depot verify [--quick] [--workers N]
 | `-o OUT` | output directory |
 | `--select SEL` | what to export (repeatable, the union; default everything): `group:G` the bundles of an Addressables group (the stable bundle name up to `_assets_`, else up to its first `_`), `key:PREFIX` the bundles and raw files the catalog keys under `PREFIX` load, `bundle:GLOB` the bundles and raw files whose stable name matches |
 | `--views` | the semantic views to build ([views.md](views.md)): `all`, `none` or names, comma-separated; default `all` when master data is set, else `none` |
-| `--layout` | `original`, `cas` or both (below) |
+| `--layout` | `original`, `cas`, `product`, comma-separated (below) |
 | `--depot DIR` | the depot (`[paths] depot`) |
 | `--workers N` | worker processes (default: the CPUs the process may run on, its affinity mask as `taskset` or a container's cpuset sets it; `0`: every task in this process) |
 | `--memory GiB` | memory budget (default: 80 % of the physical memory where it can be read, else none) |
@@ -182,6 +182,12 @@ replaces or removes it where the system needs that (Windows), and the depot obje
 `cas` is `assets/<sha256>.<ext>` per distinct content, plus the manifest. Each layout follows from the other: `cas`
 from the `original` manifest alone, `original` from `cas` and the results. The views are the exception: `original`
 has them with the paths of their objects, `cas` the view documents they are made from.
+
+`product` places the products of the selection ([products](products.md)): every product stage makes its products
+of the catalog keys the selected bundles hold (the Live2D stages: each model key), and the layout writes each
+product's manifest (`models/<name>.json`, `cubism/<name>.json`) with its files and the files of its objects at
+`assets/<sha256>.<ext>`. The product stages run only with this layout. Without `original` or `cas`, the run exports
+only the objects the products reach, not every object of the selection.
 
 ## Reports
 
