@@ -902,6 +902,23 @@ def test_mesh(exported):
         "channels": ["position", "normal", "uv0"],
         "skinned": False,
     }
+    assert art(doc, f"{oid(30)}#arrays")["semantics"] == {"kind": "mesh.arrays", "format": "json", "facts": {}}
+    arrays = obj(depot, doc, f"{oid(30)}#arrays")
+    assert list(arrays) == [
+        "positions",
+        "normals",
+        "tangents",
+        "colors",
+        *(f"uv{i}" for i in range(8)),
+        "submeshes",
+        "joints",
+        "weights",
+    ]
+    assert arrays["positions"] == [[0, 0, 0], [1, 0, 0], [0, 1, 0]]
+    assert arrays["normals"] == [[0, 0, 1]] * 3 and arrays["uv0"] == [[0, 0], [1, 0], [0, 1]]
+    assert arrays["tangents"] is None and arrays["colors"] is None and arrays["uv1"] is None
+    assert arrays["submeshes"] == [{"topology": "triangles", "indices": [[0, 1, 2]]}]
+    assert arrays["joints"] is None and arrays["weights"] is None
 
 
 def test_text_and_fonts(exported):

@@ -32,7 +32,7 @@ pipeline.assemble), never from a bundle, and shared by every live:
 
 A live plays the timeline and the background of one band: the band of the player's deck centre, which the live
 chooses. Of the objects the product keeps all but the MonoScripts; of a shader its parsed form, variant index and the
-programs of the player's graphics API.
+programs of the player's graphics API; of a Mesh its typetree JSON and its `arrays` document (prefabs.mesh_roles).
 
 `extract` writes the scene of a live directory instead (livescene/scene.json with textures and shaders) through
 export.Exporter in its "livescene" clip format (clips inlined once, bindings with crc32 keys, path candidates and
@@ -74,6 +74,7 @@ from .prefabs import (
     component_ref,
     has_json,
     key_object,
+    mesh_roles,
     ref_id,
     shader_table,
 )
@@ -457,7 +458,7 @@ def _builtin(objects: Objects, cls: str) -> str:
 
 
 def scene(objects: Objects, record: dict) -> tuple[dict, set[str], dict[str, set[str]]]:
-    """(scene.json, the object ids the player reads, {shader id: the roles of its files it reads}) of the scene
+    """(scene.json, the object ids the player reads, {object id: the roles of its files it reads}) of the scene
     product (module documentation; `record`: scene_record)."""
     roots = [o for o in objects.key(SCENE_KEY) if o in objects]
     gos = [o for o in roots if objects.info(o).get("class") == "GameObject" and has_json(objects, o)]
@@ -500,6 +501,7 @@ def scene(objects: Objects, record: dict) -> tuple[dict, set[str], dict[str, set
         "shaders": shaders,
     }
     keep = {o for o in objects.ids() if objects.info(o).get("class") != "MonoScript"}
+    roles.update(mesh_roles(objects, keep))
     return doc, keep, roles
 
 

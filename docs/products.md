@@ -273,7 +273,8 @@ Each document has `format` 1 and
 | `shaders` | `{shader name: object id}`: the shader a lookup by name finds (a material names its shader by id). Copies of one shader in several bundles are one shader, named by the first id; a name of several different shaders names none of them |
 
 The object table holds every object the product reaches but the MonoScripts; of a shader it keeps the parsed form
-(`json`), the variant index (`index`) and every GLSL ES 3.00 program. The `product` layout makes `live.notes` when the
+(`json`), the variant index (`index`) and every GLSL ES 3.00 program; of a Mesh its `json` and `arrays` (the vertex
+channels and submeshes as JSON, see [stages](stages.md#converters-unityexport)). The `product` layout makes `live.notes` when the
 selection holds all its keys and the master data is there, and the `live.noteskin` and `live.noteeffect` products of
 the skin and effect set keys the selection holds.
 
