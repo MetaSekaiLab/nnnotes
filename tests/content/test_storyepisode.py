@@ -1,14 +1,9 @@
 """storyepisode: episode documents from a synthetic object table and master rows."""
 
-import json
-
 import pytest
 
 from nnnotes.content import adv, storyepisode
-
-ASSET = "ep_test"
-BASE = f"Adv/Episode/{ASSET}/{ASSET}"
-ALL_LANGS = ("_japanese", "_english", "_traditionalChinese", "_simplifiedChinese", "_korean")
+from tests.helpers.story import ALL_LANGS, ASSET, BASE, COLLECTION, master_tables, shard
 
 
 class FakeObjects:
@@ -42,20 +37,9 @@ def put(objs: dict, oid: str, cls: str, **files) -> None:
     objs[oid] = ({"class": cls, "files": {role: {} for role in files}}, files)
 
 
-def shard(rows: list[dict]) -> bytes:
-    return json.dumps({"_header": [], "_allData": rows}).encode("utf-8")
-
-
 def table() -> FakeObjects:
     objs: dict = {}
-    collection = [
-        {"Index": 0, "Command": 2, "AdvTextID": 101, "VoiceIDs": [201, 202], "Speaker": 3, "Volume": 0.0, "Note": ""},
-        {"Index": 1, "Command": 25, "TargetAssetName": "st_a/st_a"},
-        {"Index": 2, "Command": 26, "VideoID": 41},
-        {"Index": 3, "Command": 36, "TargetChatID": 7},
-        {"Index": 4, "Command": 6, "Duration": 1.0},
-    ]
-    put(objs, "episode", "MonoBehaviour", json={"$script": "App|AdvEpisodeCollection", "Collection": collection})
+    put(objs, "episode", "MonoBehaviour", json={"$script": "App|AdvEpisodeCollection", "Collection": list(COLLECTION)})
     put(
         objs,
         "text",
@@ -83,21 +67,6 @@ def table() -> FakeObjects:
         adv.PLAYER_SETTINGS_KEY: ["settings"],
     }
     return FakeObjects(objs, keys)
-
-
-def master_tables() -> dict:
-    title = {"_id": "9001", **{lang: f"title{lang}" for lang in ALL_LANGS}}
-    return {
-        "MasterAdv": [
-            {"_id": 1, "_advEpisodeAsset": ASSET, "_titleTextId": "9001"},
-            {"_id": 2, "_advEpisodeAsset": "other", "_titleTextId": ""},
-        ],
-        "MasterText": [title, {"_id": "9002", **{lang: "x" for lang in ALL_LANGS}}],
-        "MasterAdvChat": [
-            {"_id": 9, "_chatWindowAssetName": "win_9", "_chatIconAssetName": ""},
-            {"_id": 7, "_chatWindowAssetName": "win_7", "_chatIconAssetName": "icon_7"},
-        ],
-    }
 
 
 def test_keys_are_sorted_and_cover_the_shards_and_player_settings():
