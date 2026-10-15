@@ -3,7 +3,7 @@
 import pytest
 
 from nnnotes.formats import crilips
-from nnnotes.pipeline import assemble, contract, cristages, story
+from nnnotes.pipeline import assemble, contract, cristages, live, story
 from nnnotes.pipeline.contract import IncompatibleTask
 from nnnotes.pipeline.depot import Depot
 from nnnotes.pipeline.stages import Env
@@ -101,6 +101,7 @@ def test_the_sound_product_in_aac_records_each_encoder_delay(tmp_path, monkeypat
     depot = Depot(tmp_path / "d")
     monkeypatch.setattr(cristages, "tool_id", lambda which, exe: f"{which}-fake/1")
     monkeypatch.setattr(story, "_ffmpeg", lambda: "ffmpeg")
+    monkeypatch.setattr(live, "_ffmpeg", lambda: "ffmpeg")
     seen = []
 
     def encode(ffmpeg, src, dst, fmt):
