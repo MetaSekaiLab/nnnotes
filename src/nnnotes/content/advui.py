@@ -729,7 +729,6 @@ def extract(
     # -- glyph blocks -------------------------------------------------------------
     if game:
         font_out = tmpfont.export_fonts(
-            ex,
             font_doc["fonts"],
             font_doc["primaries"],
             font_doc["needed"],
