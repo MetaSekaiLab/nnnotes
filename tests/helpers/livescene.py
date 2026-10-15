@@ -127,7 +127,15 @@ def objects() -> dict:
     out.update(
         {
             RENDER: ("RenderSettings", None, {"json": {"m_Fog": 0}}),
-            MESH: ("Mesh", "CreateedTrapeziumMesh", {"json": {"m_Name": "CreateedTrapeziumMesh"}}),
+            MESH: (
+                "Mesh",
+                "CreateedTrapeziumMesh",
+                {
+                    "json": {"m_Name": "CreateedTrapeziumMesh"},
+                    "mesh": b"glTF",
+                    "arrays": {"positions": [[0.0, 0.0, 0.0]], "submeshes": []},
+                },
+            ),
             BAR_LINE: (
                 "GameObject",
                 "LiveBarLineView",

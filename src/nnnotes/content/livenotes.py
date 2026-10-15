@@ -27,7 +27,7 @@ noteeffect.json `settings`; and each has
                shader by id)
 
 Of the objects a product keeps all but the MonoScripts; of a shader its parsed form, variant index and the programs of
-the player's graphics API.
+the player's graphics API; of a Mesh its typetree JSON and its `arrays` document (prefabs.mesh_roles).
 
 `extract` writes the note runtime of a live directory instead (livenotes/notes.json of the default options and the
 variants a liveoptions.LiveOptions offers, with textures and shaders) through export.Exporter, following references
@@ -51,6 +51,7 @@ from .prefabs import (
     controller_clips,
     has_json,
     key_object,
+    mesh_roles,
     prefab_ids,
     ref_id,
     shader_table,
@@ -330,11 +331,12 @@ def _product(objects: Objects, doc: dict) -> tuple[dict, set[str], dict[str, set
     shaders, roles = shader_table(objects)
     doc["shaders"] = shaders
     keep = {o for o in objects.ids() if objects.info(o).get("class") != "MonoScript"}
+    roles.update(mesh_roles(objects, keep))
     return doc, keep, roles
 
 
 def notes(objects: Objects, record: dict) -> tuple[dict, set[str], dict[str, set[str]]]:
-    """(notes.json, the object ids the player reads, {shader id: the roles of its files it reads}) of the notes
+    """(notes.json, the object ids the player reads, {object id: the roles of its files it reads}) of the notes
     product (module documentation; `record`: notes_record)."""
     doc = {
         "format": NOTES_FORMAT,
@@ -347,7 +349,7 @@ def notes(objects: Objects, record: dict) -> tuple[dict, set[str], dict[str, set
 
 
 def noteskin(objects: Objects, name: str) -> tuple[dict, set[str], dict[str, set[str]]]:
-    """(noteskin.json, the object ids the player reads, shader roles) of the note skin `name` (module
+    """(noteskin.json, the object ids the player reads, roles of its files) of the note skin `name` (module
     documentation)."""
     skin = key_object(objects, skin_key(asset_name(name)), "LiveNoteSkinAsset")
     fields = objects.json(skin)
@@ -374,7 +376,7 @@ def noteskin(objects: Objects, name: str) -> tuple[dict, set[str], dict[str, set
 
 
 def noteeffect(objects: Objects, name: str) -> tuple[dict, set[str], dict[str, set[str]]]:
-    """(noteeffect.json, the object ids the player reads, shader roles) of the note effect set `name` (module
+    """(noteeffect.json, the object ids the player reads, roles of its files) of the note effect set `name` (module
     documentation)."""
     settings_id = key_object(objects, effect_settings_key(asset_name(name)), "LiveNoteEffectAssetSettings")
     doc = {"format": NOTES_FORMAT, "name": name, "settings": settings_id, "bindings": animator_bindings(objects)}
