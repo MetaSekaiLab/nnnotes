@@ -14,7 +14,7 @@ schemas.load("plan")  # the schema as a dict
 
 | Schema | Format | Document |
 |---|---|---|
-| `addresses` | `nnnotes.addresses/2` | the address table of a catalog version and the censuses of its bundles |
+| `addresses` | `nnnotes.addresses/3` | the address table of a catalog version and the censuses of its bundles |
 | `artifact` | `nnnotes.artifact/1` | the content, provenance and semantics of one output file |
 | `catalog-diff` | `nnnotes.catalog-diff/1` | the difference between two catalog versions (`catalog diff`) |
 | `catalog-index` | `nnnotes.catalog-index/1` | the index of a catalog pair: remote and APK catalogs, every location in catalog order |

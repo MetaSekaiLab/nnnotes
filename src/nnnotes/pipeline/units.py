@@ -11,10 +11,12 @@ censuses of the bundles of the fact "bundles"; with the fact "classes" (a list o
 every class), only the units whose root object is of those classes. A bundle whose census failed has no units; a
 reference into a file no census holds is left out.
 
-The fact "roots" (absent: none) is {"keys": catalog keys, "resources": resource paths, "objects": object ids}, each
-list optional: the objects of each key and of each resource path (all those the address tables of link.addresses
-list for it: a resource path is a Resources.Load path of the APK's built-in files, compared ignoring case; one
-without objects adds none) and the objects named. The products of a request start from them (pipeline.assemble).
+The fact "roots" (absent: none) is {"keys": catalog keys, "resources": resource paths, "builtins": selectors,
+"objects": object ids}, each list optional: the objects of each key, of each resource path and of each built-in
+selector (all those the address tables of link.addresses list for it: a resource path is a Resources.Load path of the
+APK's built-in files, compared ignoring case; a selector names objects of the built-in files by class or script
+class; one without objects adds none) and the objects named. The products of a request start from them
+(pipeline.assemble).
 """
 
 from __future__ import annotations
@@ -187,17 +189,19 @@ def address_index(env, subject: str) -> views.AddressIndex:
     return index
 
 
-def root_objects(env, keys=(), objects=(), resources=()) -> list[str]:
-    """The object ids of the catalog `keys` and the resource paths `resources` (through the address tables of the
-    fact "catalogs") and the `objects`, sorted."""
+def root_objects(env, keys=(), objects=(), resources=(), builtins=()) -> list[str]:
+    """The object ids of the catalog `keys`, the resource paths `resources` and the built-in selectors `builtins`
+    (through the address tables of the fact "catalogs") and the `objects`, sorted."""
     out = set(objects)
-    if keys or resources:
+    if keys or resources or builtins:
         for subject in sorted(env.fact("catalogs")):
             index = address_index(env, subject)
             for k in keys:
                 out.update(o.id for o in index.objects(k) or ())
             for p in resources:
                 out.update(o.id for o in index.resource(p) or ())
+            for s in builtins:
+                out.update(o.id for o in index.builtin(s) or ())
     return sorted(out)
 
 
@@ -216,7 +220,13 @@ def table(env) -> Units:
                 raise
     classes = env.facts.get("classes")
     request = env.facts.get("roots") or {}
-    roots = root_objects(env, request.get("keys", ()), request.get("objects", ()), request.get("resources", ()))
+    roots = root_objects(
+        env,
+        request.get("keys", ()),
+        request.get("objects", ()),
+        request.get("resources", ()),
+        request.get("builtins", ()),
+    )
     sig = (
         id(env.depot),
         tuple(keys),

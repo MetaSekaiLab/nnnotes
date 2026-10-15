@@ -117,6 +117,7 @@ def test_stored_order_decides_not_ids():
             ]
         },
         "resources": {},
+        "builtins": {},
         "objects": {f"b/s.png[{x.name}]": {"object": x.id, "class": x.cls, "name": x.name} for x in sheet},
     }
     assert [x.id for x in AddressIndex.from_addresses(doc).objects("S")] == [x.id for x in sheet]
@@ -193,6 +194,7 @@ def test_address_index_of_an_address_table():
             "Cri/Sound/bgm": [{"location": 4, "type": "System.Object", "raw": "bgm.acb", "internalId": "y"}],
         },
         "resources": {"live2d/mask": ["resources.assets:3"]},
+        "builtins": {"GraphicsSettings": ["globalgamemanagers:1"]},
         "objects": {
             "apk/data.unity3d/live2d/mask": {"object": "resources.assets:3", "class": "Material", "name": "Mask"},
             "membercard_1/assets/membercard/1/member_full.png": {
@@ -217,6 +219,8 @@ def test_address_index_of_an_address_table():
     assert (r["object"], r["stable"]) == ("CAB-a:2", "membercard_1/assets/membercard/1/member_full.png[member_full]")
     assert ix.resource("Live2D/Mask") == [Obj("resources.assets:3", "Material", "Mask", "apk/data.unity3d/live2d/mask")]
     assert ix.resource("Live2D/Other") is None and ix.objects("live2d/mask") is None  # paths are no catalog keys
+    assert ix.builtin("GraphicsSettings") == [Obj("globalgamemanagers:1", "GraphicsSettings", "", None)]
+    assert ix.builtin("graphicssettings") is None  # selectors are compared exactly
 
 
 # ---------------------------------------------------------------- rules
@@ -717,7 +721,7 @@ def test_master_tables_from_a_directory(tmp_path):
 
 # ---------------------------------------------------------------- the view stages
 def addresses_doc(entries: dict) -> dict:
-    """A synthetic address table (nnnotes.addresses/2) of {catalog key: objects}: one location per key in bundle
+    """A synthetic address table (nnnotes.addresses/3) of {catalog key: objects}: one location per key in bundle
     `b`, every object listed under a stable address of its own."""
     keys, objects = {}, {}
     for n, (key, objs) in enumerate(sorted(entries.items())):
@@ -745,6 +749,7 @@ def addresses_doc(entries: dict) -> dict:
         "files": {},
         "keys": keys,
         "resources": {},
+        "builtins": {},
         "objects": objects,
         "problems": {"files": [], "bundleNames": [], "keys": []},
     }
