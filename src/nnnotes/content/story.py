@@ -18,11 +18,10 @@
                                 APK (crilips.py), when a voice reaches the CRI Lips path (needs_cri_lips)
     <out>/story.json            index of the above (a kind file the episode does not use is null)
 
-The Live2D models the episode uses come from a model source (webmodel: ModelDir, SiteModels), `ensure(address) ->
-{"id", "motionSync"}`: story.json `models` maps each model's address to its id, plus the source's `story_fields`
-(ModelDir: `modelsDir`, the directory that holds <id>/). Every resource kind of the closure has an exporter
-(KIND_OUTPUT); the build stops before writing anything when a resource is missing from the catalog or of a kind
-without one.
+The Live2D models the episode uses come from a model source (webmodel: SiteModels), `ensure(address) ->
+{"id", "motionSync"}`: story.json `models` maps each model's address to its id, plus the fields of the source's
+`story_fields` (SiteModels adds none). Every resource kind of the closure has an exporter (KIND_OUTPUT); the build
+stops before writing anything when a resource is missing from the catalog or of a kind without one.
 """
 
 from __future__ import annotations
