@@ -1,5 +1,5 @@
-"""The live products: a music's BGM (live.music), the sounds a live plays besides it (live.sounds) and the note
-highway (live.notes, live.noteskin, live.noteeffect).
+"""The live products: a music's BGM (live.music), the sounds a live plays besides it (live.sounds), the note highway
+(live.notes, live.noteskin, live.noteeffect) and the scene (live.scene).
 
 All are product stages (pipeline.assemble). The sound products read cue sheets: the ACBs their catalog keys load and
 the files cri.audio decoded from them. They keep no objects (their files are all they hold):
@@ -27,10 +27,15 @@ live.noteeffect  subject a note effect set (MasterLiveNoteEffectSkin._assetName 
                  `effect001Light`): "<task id>#noteeffect.json" (kind live.noteeffect); its manifest is
                  noteeffects/<name>.json
 
+live.scene       subject `default`: "<task id>#scene.json" (kind live.scene: content.livescene.scene) and the object
+                 table the player reads; its manifest is scenes/default.json, its input "master" the master record of
+                 its settings, lane skins and bands (livescene.scene_record), its roots also the built-in graphics
+                 settings (livescene.GRAPHICS)
+
 `select` (the `product` layout) makes the live.music products of the musics whose BGM key the selection holds, the
 default live.sounds when it holds every cue sheet of the default sounds (both need the master data), live.notes when
-it holds every key of it (and the master data is there), and the live.noteskin and live.noteeffect products of the
-skin and effect set keys it holds.
+it holds every key of it and live.scene when it holds the scene (and the master data is there), and the live.noteskin
+and live.noteeffect products of the skin and effect set keys it holds.
 """
 
 from __future__ import annotations
@@ -38,7 +43,7 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
-from ..content import liveaudio, livenotes
+from ..content import liveaudio, livenotes, livescene
 from ..formats.encoders import DEFAULT_AUDIO_FORMAT, WEB_AUDIO, mp4_priming, web_encode
 from . import contract
 from .assemble import Assembly, ProductStage
@@ -50,17 +55,20 @@ __all__ = [
     "NOTEEFFECT",
     "NOTES",
     "NOTESKIN",
+    "SCENE",
     "SOUNDS",
     "MusicStage",
     "NoteEffectStage",
     "NoteSkinStage",
     "NotesStage",
+    "SceneStage",
     "SoundsStage",
     "encode_atoms",
 ]
 
 MUSIC, SOUNDS = "live.music", "live.sounds"
 NOTES, NOTESKIN, NOTEEFFECT = "live.notes", "live.noteskin", "live.noteeffect"
+SCENE = "live.scene"
 DEFAULT = "default"
 MASTER_INPUT = "master"
 
@@ -216,7 +224,7 @@ class SoundsStage(ProductStage):
 
 def _default(subject: str) -> str:
     if subject != DEFAULT:
-        raise ValueError(f"{subject}: the live notes subject is {DEFAULT}")
+        raise ValueError(f"{subject}: the only subject is {DEFAULT}")
     return subject
 
 
@@ -296,3 +304,35 @@ class NoteEffectStage(ProductStage):
     def assemble(self, task, objects) -> Assembly:
         doc, keep, roles = livenotes.noteeffect(objects, task.subject)
         return Assembly({"noteeffect.json": _json(doc, NOTEEFFECT)}, keep, roles)
+
+
+class SceneStage(ProductStage):
+    """live.scene: the scene of a live and the start timeline of each band (module documentation)."""
+
+    name = SCENE
+    version = 1
+    KIND = "LiveScene"
+    MASTER = livescene.SCENE_TABLES
+
+    def select(self, keys: list[str], env) -> list[str]:
+        if env.facts.get("master") is None:
+            return []
+        return [DEFAULT] if livescene.SCENE_KEY in keys else []
+
+    def keys(self, subject: str, env) -> list[str]:
+        _default(subject)
+        return livescene.scene_keys(livescene.scene_record(master_rows(env, self.MASTER)))
+
+    def builtins(self, subject: str, env) -> list[str]:
+        return list(livescene.GRAPHICS.values())
+
+    def more_inputs(self, subject: str, env) -> list[Input]:
+        return [_record(env, livescene.scene_record(master_rows(env, self.MASTER)))]
+
+    def manifest(self, subject: str) -> str:
+        return f"scenes/{_default(subject)}.json"
+
+    def assemble(self, task, objects) -> Assembly:
+        record = contract.loads(objects.depot.input_bytes(task.input(MASTER_INPUT)))
+        doc, keep, roles = livescene.scene(objects, record)
+        return Assembly({"scene.json": _json(doc, SCENE)}, keep, roles)
