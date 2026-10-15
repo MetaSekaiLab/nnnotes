@@ -1496,7 +1496,7 @@ def test_the_product_layout_places_the_products_of_the_selection(tmp_path, capsy
     assert contract.loads(index)["roots"] == [f"{CABS['bg_x']}:3"]
     go = manifest["objects"][f"{CABS['bg_x']}:3"]
     assert go["class"] == "GameObject" and (tmp_path / "out" / go["files"]["json"]["asset"]).is_file()
-    assert manifest["objects"][f"{CABS['bg_x']}:2"] == {"class": "Transform", "in": f"{CABS['bg_x']}:3"}
+    assert f"{CABS['bg_x']}:2" not in manifest["objects"]  # a Transform of the prefab
     assert sorted(p.name for p in (tmp_path / "out").iterdir()) == [
         assets.REPORTS,
         "assets",
