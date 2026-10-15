@@ -17,8 +17,8 @@ nnnotes export story 10462 -o out/stories/10462            # everything the epis
 
 `export story` writes the story product of an episode and the products it plays with, as a product layout below `-o`:
 the story index in `stories/<id>.json`, the stage scene in `storyscenes/default.json`, each stage, frame, effect and
-other asset in `storyassets/`, each Live2D model in `models/`, each cue sheet in `cuesheets/`, and, when the episode
-uses them, the shared chat rows in `storychat/default.json` and the CRI Lips data in `crilips/default.json`. The files
+other asset in `storyassets/`, each Live2D model in `models/`, each cue sheet in `cuesheets/`, each video in
+`videos/` and, when the episode uses them, the shared chat rows in `storychat/default.json` and the CRI Lips data in `crilips/default.json`. The files
 themselves are under `assets/`.
 
 Products that several stories share (the scene, assets, models and cue sheets) are placed once, so exporting several

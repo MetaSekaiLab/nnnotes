@@ -68,8 +68,8 @@ nnnotes export story 10462 -o out/story_10462
 `export episode` writes the episode's command list with its lines in five languages and the index of its voices,
 sounds and videos. `export story` writes the story product of the episode and the products it plays with below
 `out/story_10462`: the story index, the stage scene, the assets, the Live2D models, the cue sheets decoded to audio
-(AAC by default, `--format` chooses another web format), and the shared chat rows and CRI Lips data when the episode
-uses them. The files are under `assets/`. Add `--json` to any command to get its report as JSON.
+(AAC by default, `--format` chooses another web format), the videos as WebM, and the shared chat rows and CRI Lips
+data when the episode uses them. The files are under `assets/`. Add `--json` to any command to get its report as JSON.
 
 ## Next
 
