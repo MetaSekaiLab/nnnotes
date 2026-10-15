@@ -1370,15 +1370,11 @@ def test_describe_reads_the_units_and_the_script_table(tmp_path):
     stage = ExportStage(FAKE_READER)
     subjects = stage.subjects(env)
     assert "all:60" in subjects and "all:61" not in subjects and "atlas:1" in subjects
-    # a selection's units and the units their objects reach in other bundles (a sprite's atlas, its texture and
-    # the sprites it packs); not the rest of those bundles
+    # a selection's units and the units their objects reach in other bundles (a sprite's atlas and its texture, not
+    # the other sprites the atlas packs); not the rest of those bundles
     assert [
         s for s in stage.subjects(planning_env(Depot(tmp_path / "t"), selected=["all"])) if s.startswith("atlas")
-    ] == [
-        "atlas:97",
-        "atlas:98",
-        "atlas:99",
-    ]
+    ] == ["atlas:98", "atlas:99"]
     assert stage.subjects(planning_env(Depot(tmp_path / "u"), selected=["plain"])) == ["plain:1", "plain:2"]
     t = describe(stage, "all:10", None, env)
     assert t.atoms == export_atoms(["Texture2D"], FAKE_READER.id) and t.subject == "all:10"
@@ -1504,13 +1500,13 @@ def test_the_context_holds_the_shipped_type_trees_of_its_scripts(tmp_path, monke
 def test_the_unit_table(tmp_path):
     env = planning_env(Depot(tmp_path / "s"), ("all", "atlas", "plain"), selected=["all"], classes=["Sprite"])
     t = units.table(env)
-    assert t.subjects() == ["all:11", "all:12", "all:13", "atlas:97"]
+    assert t.subjects() == ["all:11", "all:12", "all:13"]  # the atlas' own sprite 97 is not reached through 13
     u = t.unit("all:13")
     assert (u.bundle, u.root, u.cls, u.members) == ("all", oid(13), "Sprite", (oid(13),))
     assert t.subject_of(oid(62)) == "all:60" and t.subject_of(f"{ATLAS_CAB}:98") == "atlas:98"
     assert t.subject_of("CAB-plain:2") == "plain:2" and t.subject_of("CAB-x:1") is None
     assert t.files == {CAB: "all", ATLAS_CAB: "atlas", "CAB-plain": "plain"}
-    assert t.per_bundle == {"all": 3, "atlas": 1} and t.classes == {"Sprite": 4}
+    assert t.per_bundle == {"all": 3} and t.classes == {"Sprite": 3}
     assert units.table(env) is t  # kept for the same planning state
     h = units.table(planning_env(Depot(tmp_path / "t"), ("all",))).unit("all:60")
     assert h.members == tuple(oid(p) for p in (60, 61, 62, 63, 64, 65))
@@ -1661,3 +1657,33 @@ def test_a_converter_change_without_a_version_bump_fails_its_golden(tmp_path, mo
     problems = golden_problems(expected, actual, p["stage"])
     assert "unity.export: fixture font: output changed without a version bump" in problems
     assert not any("fixture tex.png" in x for x in problems)
+
+
+def test_a_sprite_reaches_its_atlas_and_not_the_atlas_other_sprites():
+    from tests.helpers.units import census_doc
+
+    def doc(file, objects, refs):
+        d = census_doc(file, objects)
+        for o in d["files"][0]["objects"]:
+            o["refs"] = [f"{file}:{t}" if isinstance(t, int) else t for t in refs.get(o["pathId"], ())]
+        return d
+
+    # the atlas packs sprites 2 and 3 and holds texture 4; each sprite references the atlas and the texture
+    atlas = doc(
+        "CAB-a",
+        [(1, "SpriteAtlas"), (2, "Sprite"), (3, "Sprite"), (4, "Texture2D")],
+        {1: [2, 3, 4], 2: [1, 4], 3: [1, 4]},
+    )
+    prefab = doc("CAB-p", [(9, "MonoBehaviour")], {9: ["CAB-a:2"]})
+    censuses = [("atlas", atlas), ("prefab", prefab)]
+    t = units.build(censuses, ["atlas", "prefab"], ["prefab"])
+    assert t.subjects() == ["atlas:1", "atlas:2", "atlas:4", "prefab:9"]  # not sprite 3
+    assert not t.reaches("atlas:1", "atlas:3", False) and t.reaches("atlas:1", "atlas:3", True)
+    assert t.reaches("atlas:1", "atlas:4", False)
+    # an atlas the request starts from reaches every sprite it packs
+    assert units.build(censuses, ["atlas", "prefab"], [], roots=["CAB-a:1"]).subjects() == [
+        "atlas:1",
+        "atlas:2",
+        "atlas:3",
+        "atlas:4",
+    ]

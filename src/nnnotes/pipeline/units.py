@@ -9,7 +9,9 @@ The request (`table`): every unit holding an object of the selected bundles (fac
 fact "roots", and every unit reachable from those through what their objects reference (census `refs`) across the
 censuses of the bundles of the fact "bundles"; with the fact "classes" (a list of class names; absent or None:
 every class), only the units whose root object is of those classes. A bundle whose census failed has no units; a
-reference into a file no census holds is left out.
+reference into a file no census holds is left out. A SpriteAtlas references the sprites it packs, and each of them
+references the atlas, whose textures hold its image: an atlas reached through a reference (`reaches`) adds its other
+references but not its sprites (PACKED), so a sprite brings its atlas' textures and not the atlas' other sprites.
 
 The fact "roots" (absent: none) is {"keys": catalog keys, "resources": resource paths, "builtins": selectors,
 "objects": object ids}, each list optional: the objects of each key, of each resource path and of each built-in
@@ -30,6 +32,8 @@ from .stages import Pending
 
 CENSUS = CensusStage.name
 ADDRESSES = views.ADDRESSES_STAGE
+# a unit's root class -> the class of the units it packs, which it does not reach when it is reached itself
+PACKED = {"SpriteAtlas": "Sprite"}
 
 
 @dataclass(frozen=True)
@@ -57,11 +61,12 @@ class Unit:
 class Units:
     """The units of a request: `units` {subject: Unit} of the requested units; `of` {object id: subject} of the
     objects of every unit of the censuses read; `files` {serialized file: stable bundle name}; `objects` {stable
-    bundle name: its objects}; `per_bundle` the number of requested units per bundle; `classes` the objects of the
-    requested units per class."""
+    bundle name: its objects}; `kinds` {subject: root class} of every unit of the censuses read; `per_bundle` the number
+    of requested units per bundle; `classes` the objects of the requested units per class."""
 
-    def __init__(self, units: dict, of: dict, files: dict, objects: dict):
+    def __init__(self, units: dict, of: dict, files: dict, objects: dict, kinds: dict | None = None):
         self.units, self.of, self.files, self.objects = units, of, files, objects
+        self.kinds: dict[str, str] = kinds if kinds is not None else {s: u.cls for s, u in units.items()}
         self.per_bundle = Counter(u.bundle for u in units.values())
         self.classes: Counter = Counter()
         for u in units.values():
@@ -80,6 +85,17 @@ class Units:
     def subject_of(self, oid: str) -> str | None:
         """The subject of the unit holding object `oid` (None when no census read holds it)."""
         return self.of.get(oid)
+
+    def reaches(self, source: str, target: str, start: bool) -> bool:
+        """A reference of the unit `source` to the unit `target` makes the target reachable (_reaches)."""
+        return _reaches(self.kinds, source, target, start)
+
+
+def _reaches(kinds: dict, source: str, target: str, start: bool) -> bool:
+    """A reference of the unit `source` to the unit `target` ({subject: root class} `kinds`) makes the target
+    reachable: always from a unit the walk starts from (`start`), else unless the source packs units of the target's
+    class (PACKED)."""
+    return start or PACKED.get(kinds.get(source, "")) != kinds.get(target)
 
 
 def _ref(r: dict | None) -> str | None:
@@ -156,22 +172,25 @@ def build(censuses, bundles, selected, classes=None, roots=()) -> Units:
         of.update(o)
         files.update(f)
         refs.update(r)
+    kinds = {s: u.cls for s, u in units.items()}
     if every:
         want = set(units)
     else:
         want = {s for s, u in units.items() if u.bundle in selected}
         want.update(of[o] for o in roots if o in of)
+        start = set(want)
         todo = list(want)
         while todo:
-            for oid in refs.get(todo.pop(), ()):
+            source = todo.pop()
+            for oid in refs.get(source, ()):
                 s = of.get(oid)
-                if s is not None and s not in want:
+                if s is not None and s not in want and _reaches(kinds, source, s, source in start):
                     want.add(s)
                     todo.append(s)
     if classes is not None:
         keep = set(classes)
         want = {s for s in want if units[s].cls in keep}
-    return Units({s: units[s] for s in sorted(want)}, of, files, objects)
+    return Units({s: units[s] for s in sorted(want)}, of, files, objects, kinds)
 
 
 _MEMO: list = []  # [(signature, Units)] of the last table
