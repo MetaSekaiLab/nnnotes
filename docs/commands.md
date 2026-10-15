@@ -188,6 +188,7 @@ OUT/storyassets/<name>.json    each stage, frame, effect, post effect, still, ti
                                chat icon and stamp the episode loads (`story.asset`; <name>: its key, "/" as "~")
 OUT/models/<id>.json           each Live2D model of the episode (`live2d.model`)
 OUT/cuesheets/<sheet>.json     each cue sheet of the episode, decoded (`story.sound`)
+OUT/videos/<name>.json         each video of the episode, as WebM (`story.video`; <name>: its asset, "/" as "~")
 OUT/storychat/default.json     the shared chat rows, when the episode shows chat (`story.chat`)
 OUT/crilips/default.json       the CRI Lips analysis data, when a voice can reach it (`story.crilips`)
 OUT/assets/<sha256>.<ext>      the files the manifests name
@@ -197,7 +198,9 @@ OUT/assets/<sha256>.<ext>      the files the manifests name
 `story.json` names the episode's chat rows, its effect instances and, in `parts`, the manifest of each product above
 it plays with. The command runs twice: it asks for the story, reads its `story.json`, then asks for the story and
 every product `parts` names and places them. It stops with a usage error before the second run when a key of such a
-product is not in the catalog. The episode's talk windows and videos are listed in `episode.json` `resources`.
+product is not in the catalog. The episode's talk windows are listed in `episode.json` `resources`. The videos are
+the `movie.webm` of `cri.movie` with `format` `webm`: VP9 as stored, re-encoded when the video is in another codec or
+has an alpha stream.
 
 A product several stories play with (the scene, a stage, a model, a cue sheet) is one product: stories exported into
 one directory share its manifest and files, and the depot keeps every result for the next export.
