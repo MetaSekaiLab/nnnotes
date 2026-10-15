@@ -18,14 +18,13 @@ import re
 
 from ..content import room, spot
 from . import contract
-from .assemble import Assembly, ProductStage
+from .assemble import MASTER_INPUT, Assembly, ProductStage, master_input
 from .contract import Input
 from .views import master_rows
 
 __all__ = ["ROOM", "SPOT", "RoomStage", "SpotStage", "spine_files"]
 
 ROOM, SPOT = "room.gltf", "spot.files"
-MASTER_INPUT = "master"
 
 
 def spine_files(doc: dict, spine: dict[str, bytes]) -> dict:
@@ -93,8 +92,7 @@ class SpotStage(ProductStage):
         return [subject]
 
     def more_inputs(self, subject: str, env) -> list[Input]:
-        data = contract.encode(spot.master_record(master_rows(env, self.MASTER), subject))
-        return [Input(MASTER_INPUT, env.depot.put(data), len(data), None, ({"kind": "depot"},))]
+        return [master_input(env, spot.master_record(master_rows(env, self.MASTER), subject))]
 
     def manifest(self, subject: str) -> str:
         return f"spots/{spot.situation_name(subject)}.json"
