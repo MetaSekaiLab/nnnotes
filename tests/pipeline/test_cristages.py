@@ -248,9 +248,23 @@ def test_audio_waits_for_raw_files_not_fetched(tmp_path, tools):
     with pytest.raises(Pending, match="fetch:b_1"):
         AudioStage().subjects(env)
     elsewhere = Input("raw", contract.sha256(b"x"), 1, "c_1", ({"kind": "catalog", "catalog": "v", "location": "r"},))
-    env.facts["raw"] = {"cri_assets_cri/sound/c": elsewhere}  # only a catalog locator: not fetched
+    env.facts["raw"] = {"cri_assets_cri/sound/c": elsewhere}  # only a catalog locator, and no fetcher
     with pytest.raises(Pending, match="fetch:c_1"):
         AudioStage().subjects(env)
+
+
+def test_the_magic_of_a_raw_file_is_recorded_in_the_depot(tmp_path, tools):
+    """A raw file read once needs no local copy later: its first bytes are a record of the depot."""
+    depot = Depot(tmp_path / "s")
+    env = planning(depot, tmp_path, {"cri_assets_cri/sound/a": ACB})
+    sha = contract.sha256(ACB)
+    with mock.patch.object(cristages, "_magic", {}):
+        assert AudioStage().subjects(env) == [sha]
+    gone = Input("raw", sha, len(ACB), "a_1", ({"kind": "catalog", "catalog": "v", "location": "r"},))
+    env.facts["raw"] = {"cri_assets_cri/sound/a": gone}  # its download removed since
+    with mock.patch.object(cristages, "_magic", {}):
+        assert AudioStage().subjects(env) == [sha]
+    assert Depot(tmp_path / "s").named("files", f"magic:{sha}") is not None
 
 
 def test_audio_artifacts_are_the_files_of_cri_decode(tmp_path, tools, monkeypatch):
