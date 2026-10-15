@@ -40,20 +40,15 @@ from ..core.jsonio import write_json
 from ..source import master as master_mod
 from ..source.catalog import Catalog
 from ..unity import fontsettings
-from ..unity import reader as unity
 from ..unity.export import HEADER, Exporter
 from ..unity.player import PlayerData
 from . import adv
+from .storychat import SHARDS as CHAT_SHARDS
 
 TMP_SHADER_PREFIX = "TextMeshPro/"
 TMP_ASSETS = ("TMP_FontAsset", "TMP_SpriteAsset", "TMP_StyleSheet")
 FONT_CHOICES = ("open", "game")
 FONT_NOTE = "font data not exported (fonts: open): draw the text with a font of your own"
-CHAT_SHARDS = {
-    "text": "Adv/Chat/AdvChat-Text",
-    "sounds": "Adv/Chat/AdvChat-Sound",
-    "cueSheets": "Adv/Chat/AdvChat-SoundCueSheet",
-}
 # resource kind -> (story.json key = file key, file, address prefix removed from the entry keys; None: last segment)
 FILES = {
     "frame": ("frames", "frames.json", adv.RESOURCE_PREFIX["Frame"][1]),
@@ -132,21 +127,6 @@ def _suffix(address: str, prefix: str | None) -> str:
     return address[len(prefix) :]
 
 
-def effect_instances(commands: list[dict]) -> dict[str, str]:
-    """TargetName -> TargetAssetName of the effect instances (LoadParticleEffect: the first asset loaded under a
-    TargetName is the instance every later Effect row with that TargetName drives)."""
-    out: dict[str, str] = {}
-    for c in commands:
-        if (
-            c["cmd"] == "Effect"
-            and not c.get("IgnoreData")
-            and adv._name(c.get("TargetName"))
-            and adv._name(c.get("TargetAssetName"))
-        ):
-            out.setdefault(c["TargetName"], c["TargetAssetName"])
-    return out
-
-
 def _chat(cat: Catalog, master: Path, ex: Exporter, episode: dict, resources: list[dict]) -> dict:
     rows = {r["_id"]: r for r in master_mod.table(master, "MasterAdvChat")}
     ids = sorted({c["TargetChatID"] for c in episode["commands"] if c.get("TargetChatID")})
@@ -160,7 +140,7 @@ def _chat(cat: Catalog, master: Path, ex: Exporter, episode: dict, resources: li
             doc["stamps"][_suffix(r["address"], adv.RESOURCE_PREFIX["ChatStamp"][1])] = ex.key_sprite(r["address"])
     for name, key in CHAT_SHARDS.items():
         t = adv._text_of(cat, key)
-        doc[name] = unity.parse_shard(t)["rows"] if t else []
+        doc[name] = adv.parse_shard(t)["rows"] if t else []
     return doc
 
 
@@ -193,7 +173,7 @@ def extract(cat: Catalog, player: PlayerData, master: Path, episode: dict, out_d
         entries = {_suffix(r["address"], prefix): ex.export_key(r["address"]) for r in by_kind[kind]}
         doc: dict = {key: entries}
         if kind == "effect":
-            doc["instances"] = effect_instances(episode["commands"])
+            doc["instances"] = adv.effect_instances(episode["commands"])
         done(ex, name, doc)
         files[key] = name
         counts[key] = len(entries)

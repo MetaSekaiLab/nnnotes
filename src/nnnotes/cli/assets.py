@@ -131,6 +131,8 @@ STAGE_SOURCES = (
     StageSource("story.crilips", "nnnotes.pipeline.story:CriLipsStage", output=True, product=True),
     StageSource("story.scene", "nnnotes.pipeline.story:SceneStage", output=True, product=True),
     StageSource("story.asset", "nnnotes.pipeline.story:AssetStage", output=True, product=True),
+    StageSource("story.chat", "nnnotes.pipeline.story:ChatStage", output=True, product=True),
+    StageSource("story", "nnnotes.pipeline.story:StoryStage", output=True, product=True),
     StageSource("view.", "nnnotes.pipeline.views:stages", output=True),
     StageSource("view.voices", "nnnotes.pipeline.voices:VoiceStage", output=True),
 )
@@ -1269,8 +1271,10 @@ def cmd_export(args, cfg):
     export(args, cfg, Workspace(args, cfg, layouts=names))
 
 
-def export(args, cfg, ws: Workspace) -> None:
-    """Run the request of `ws` and place its layouts (ws.layouts) in args.out (cmd_export; export live2d)."""
+def export(args, cfg, ws: Workspace, expand=None) -> None:
+    """Run the request of `ws` and place its layouts (ws.layouts) in args.out (cmd_export; export live2d). `expand`:
+    called with the run when it was not aborted, gives the request of a further run ((products, selection) for
+    Workspace.request) or None; the last run places the layouts (export story: the products a story names)."""
     from ..pipeline import builtins, layout
     from ..pipeline.orchestrate import Orchestrator, failure
 
@@ -1332,6 +1336,11 @@ def export(args, cfg, ws: Workspace) -> None:
         aborted = aborted or str(e)
     if isinstance(facts["raw"], Later) and aborted is None:
         ws.log(f"{sum(p['kind'] == 'raw' for p in ws.problems())} raw files not readable")
+    if expand is not None and aborted is None:
+        more = expand(run)
+        if more is not None:
+            ws.request(*more)
+            return export(args, cfg, ws)
     stage_of = {"bundle": "unity.census", "raw": next((n for n in RAW_STAGES if n in pipeline), "cri.audio")}
     for p in ws.problems():
         if p["code"] == "source.error":

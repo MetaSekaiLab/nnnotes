@@ -4,7 +4,6 @@ sheet, the APK's UI library."""
 
 from __future__ import annotations
 
-import os
 import sys
 from pathlib import Path
 
@@ -20,8 +19,6 @@ from .common import (
     command,
     flac_level_arg,
     flac_options,
-    fonts_arg,
-    fonts_extra,
     group,
     known_keys,
     known_row,
@@ -49,39 +46,43 @@ def cmd_episode(args, cfg):
 
 
 def cmd_story(args, cfg):
-    from ..content import story
-    from ..site import webmodel
-    from ..source import languages
-    from ..unity.player import PlayerData
+    from ..pipeline import contract
+    from ..pipeline import story as sp
+    from ..pipeline.stages import Env
 
-    fonts_extra(args.fonts)
-    flac = flac_options(args)
-    out = Path(os.path.abspath(args.out))
-    models = Path(os.path.abspath(args.models or Path(args.out) / os.pardir / "live2d"))
-    try:
-        os.path.relpath(models, out)
-    except ValueError:
-        usage(args, f"--models {models}: not on the drive of {out} (story.json names it relative to the story)")
-    language = languages.check(cfg.require("catalog", "language"))  # the story UI's language
+    cfg.require_path("paths", "apk")  # the ADV settings, the built-in graphics settings and CRI Lips are in the APK
+    use(cfg)  # the tools the atoms name are part of the keys
     md = Session(cfg).master_dir()
     known_row(args, md, "MasterAdv", args.adv_id, "episode")
-    cat = Session(cfg).catalog()
-    player = PlayerData(Session(cfg).apk())
-    source = webmodel.ModelDir(cat, player, models, force=args.force)
-    r = story.build(
-        cat,
-        md,
-        player,
-        args.adv_id,
-        out,
-        audio_format=args.format,
-        audio=not args.no_audio,
-        fonts=args.fonts,
-        models=source,
-        language=language,
-        audio_options=flac,
-    )
-    report(args, {**r, "modelsBuilt": source.built, "modelsSkipped": source.skipped})
+    ws = assets.Workspace(args, cfg, layouts=["product"])
+    env = Env(ws.depot, {"master": md})
+    subject = str(args.adv_id)
+    classes = {sp.STORY: sp.StoryStage, **sp.PART_STAGES}
+    ws.run_index()
+    held = {loc["primaryKey"] for loc in ws.index()["locations"]}
+
+    def request(products: dict) -> tuple[dict, list[str]]:
+        keys = {k for n, subjects in products.items() for s in subjects for k in classes[n]().keys(s, env)}
+        return products, sorted(f"key:{k}" for k in keys if k in held)
+
+    def parts(run):  # the products story.json names, with the story
+        tid = contract.task_id(sp.STORY, subject)
+        task = run.tasks.get(tid)
+        if task is None or task["status"] == "failed":
+            return None
+        doc = ws.depot.committed(task["key"], tid)
+        art = next((a for a in doc["artifacts"] if a["id"] == contract.artifact_id(tid, "story.json")), None)
+        if art is None:  # the story is unsupported: the run reports it
+            return None
+        products = {sp.STORY: [subject], **sp.part_products(contract.loads(ws.depot.read(art["content"]["sha256"])))}
+        missing = sorted(k for n, subjects in products.items() if n != sp.STORY for s in subjects
+                         for k in classes[n]().keys(s, env) if k not in held)  # fmt: skip
+        if missing:
+            usage(args, f"episode {args.adv_id}: {', '.join(missing)} not in the catalog")
+        return request(products)
+
+    ws.request(*request({sp.STORY: [subject]}))
+    assets.export(args, cfg, ws, expand=parts)
 
 
 def cmd_live(args, cfg):
@@ -286,21 +287,21 @@ def register(sub) -> None:
         es,
         "story",
         cmd_story,
-        "an ADV episode -> story directory (episode, audio, scene, UI, media, videos) + its Live2D models",
+        "an ADV episode -> the story product and the products it plays with (scene, assets, Live2D models, "
+        "cue sheets, chat, CRI Lips)",
     )
     c.add_argument("adv_id", type=int, help="MasterAdv id of the episode")
-    out_arg(c, "output directory")
     c.add_argument(
-        "--models", metavar="DIR", help="directory of the Live2D models, one <model id>/ each (default: OUT/../live2d)"
+        "--format",
+        dest="audio_format",
+        metavar="FORMAT",
+        default=DEFAULT_AUDIO_FORMAT,
+        choices=sorted(WEB_AUDIO),
+        help=f"web audio format of the cue sheets (default {DEFAULT_AUDIO_FORMAT})",
     )
-    c.add_argument("--force", action="store_true", help="export the models again whose directory exists")
-    audio_args(c)
-    c.add_argument("--no-audio", action="store_true", help="do not decode the cue sheets")
-    fonts_arg(
-        c,
-        "open (default): text layout and style only, no font data; game: also the game's TMP fonts "
-        "(needs the 'fonts' extra)",
-    )
+    flac_level_arg(c, "of the decoded sounds")
+    out_arg(c, "output directory")
+    product_args(c)
 
     c = command(
         es,

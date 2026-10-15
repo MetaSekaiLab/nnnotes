@@ -11,13 +11,13 @@ builds it row by row (see `closure`); cue sheets are not listed (the -SoundCueSh
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
 
 from ..source import master
 from ..source.catalog import Catalog
 from ..source.config import apk_missing
-from ..unity import reader as unity
 from .advcommand import COMMAND
 
 # AdvEpisodeResourceLoader.AddEpisodeLoadingTask, per command: (resource kind, catalog-key prefix) of the asset named
@@ -78,7 +78,23 @@ def _master_text(text_id: str, master_dir: Path) -> dict:
     raise KeyError(f"MasterText has no row {text_id}")
 
 
+def parse_shard(text: str) -> dict:
+    """A `-Text/-Sound/...` shard: {_header:[{_name,_type}], _allData:[rows]}.
+
+    Returns {"header": [...], "rows": [...]}. Row keys keep their leading
+    underscore + lowercased-first-letter form as serialized (e.g. `_cueName`).
+    """
+    d = json.loads(text)
+    return {"header": d.get("_header", []), "rows": d.get("_allData", [])}
+
+
+def shard_index(rows: list[dict], id_key: str = "_id") -> dict:
+    return {r[id_key]: r for r in rows if id_key in r}
+
+
 def _text_of(cat: Catalog, key: str) -> str | None:
+    from ..unity import reader as unity
+
     if not cat.has(key):
         return None
     for p in cat.fetch_key(key):
@@ -89,6 +105,8 @@ def _text_of(cat: Catalog, key: str) -> str | None:
 
 
 def extract(cat: Catalog, master_dir: Path, adv_id: int) -> AdvExtract:
+    from ..unity import reader as unity
+
     row = _master_row(adv_id, master_dir)
     a = row["_advEpisodeAsset"]
     base = f"Adv/Episode/{a}/{a}"
@@ -127,14 +145,14 @@ def build(row: dict, coll: list[dict], shards: dict, has, chat, transition, titl
 
     def shard(suf: str) -> list[dict]:
         t = shards.get(suf)
-        return unity.parse_shard(t)["rows"] if t else []
+        return parse_shard(t)["rows"] if t else []
 
     text_rows = shard("-Text")
     sound_rows = shard("-Sound")
     cue_rows = shard("-SoundCueSheet")
     video_rows = shard("-Video")
-    text_idx = unity.shard_index(text_rows)
-    sound_idx = unity.shard_index(sound_rows)
+    text_idx = shard_index(text_rows)
+    sound_idx = shard_index(sound_rows)
 
     # enrich commands
     out_cmds = []
@@ -165,7 +183,7 @@ def build(row: dict, coll: list[dict], shards: dict, has, chat, transition, titl
             default.append(transition())
         return default[0]
 
-    resources = closure(coll, has, unity.shard_index(video_rows), chat, default_transition)
+    resources = closure(coll, has, shard_index(video_rows), chat, default_transition)
 
     return AdvExtract(
         adv_id=row["_id"],
@@ -184,6 +202,21 @@ def build(row: dict, coll: list[dict], shards: dict, has, chat, transition, titl
 def _name(v) -> str | None:
     """A name field as GetXxxAssetAddress reads it: None when null, empty or white space, else the value as is."""
     return v if isinstance(v, str) and v.strip() else None
+
+
+def effect_instances(commands: list[dict]) -> dict[str, str]:
+    """TargetName -> TargetAssetName of the effect instances (LoadParticleEffect: the first asset loaded under a
+    TargetName is the instance every later Effect row with that TargetName drives)."""
+    out: dict[str, str] = {}
+    for c in commands:
+        if (
+            c["cmd"] == "Effect"
+            and not c.get("IgnoreData")
+            and _name(c.get("TargetName"))
+            and _name(c.get("TargetAssetName"))
+        ):
+            out.setdefault(c["TargetName"], c["TargetAssetName"])
+    return out
 
 
 def closure(rows: list[dict], has, videos: dict, chat, default_transition) -> list[dict]:
@@ -238,6 +271,8 @@ def closure(rows: list[dict], has, videos: dict, chat, default_transition) -> li
 
 def _default_transition(cat: Catalog) -> str:
     """AdvPlayerSettings._defaultTransitionAssetAddress (embedded content: the catalog needs the APK's)."""
+    from ..unity import reader as unity
+
     if not cat.has(PLAYER_SETTINGS_KEY):
         raise apk_missing("the default ADV transition (AdvPlayerSettings)")
     for p in cat.fetch_key(PLAYER_SETTINGS_KEY):
