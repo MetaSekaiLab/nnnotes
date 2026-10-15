@@ -426,12 +426,6 @@ def test_missing_master_table_names_it(data, tmp_path, capsys):
     assert code == 2 and "no MasterHomeSpot.json" in err and len(err.strip().splitlines()) == 1
 
 
-def test_story_needs_the_language(data, capsys):
-    i = data.index("--language")
-    code, _, err = run(data[:i] + data[i + 2 :] + ["export", "story", "1", "-o", "s"], capsys)
-    assert code == 2 and "catalog.language" in err and "NNNOTES_CATALOG_LANGUAGE" in err
-
-
 def test_the_command_line_starts_without_the_exporters():
     probe = (
         "import sys, nnnotes.cli as c; c.build_parser(); "
@@ -447,7 +441,6 @@ def test_the_command_line_starts_without_the_exporters():
         (["export", "audio", "s", "--flac-level", "13"], "--flac-level 13: expected 0 to 12"),
         (["export", "live", "7", "--flac-level", "-1"], "--flac-level -1: expected 0 to 12"),
         (["export", "audio", "s", "--format", "ogg", "--flac-level", "5"], "--flac-level: --format ogg writes no FLAC"),
-        (["export", "story", "1", "--no-audio", "--flac-level", "5"], "--flac-level: --no-audio decodes no audio"),
     ],
 )
 def test_flac_level_is_checked(data, argv, message, capsys):
@@ -459,18 +452,13 @@ def test_flac_level_is_checked(data, argv, message, capsys):
 def test_flac_level_reaches_the_decode(data, tmp_path, capsys, monkeypatch):
     from types import SimpleNamespace
 
-    from nnnotes.content import story
     from nnnotes.formats import cri
     from nnnotes.source.session import Session
-    from nnnotes.unity import player
 
     seen = []
     monkeypatch.setattr(Session, "catalog", lambda self: SimpleNamespace(has=lambda key: True))
-    monkeypatch.setattr(Session, "apk", lambda self, region=None: None)
-    monkeypatch.setattr(player, "PlayerData", lambda apk: None)
     monkeypatch.setattr(cri, "decode", lambda *a, **kw: seen.append(kw.get("flac_level")) or [])
-    monkeypatch.setattr(story, "build", lambda *a, **kw: seen.append(kw["audio_options"].get("flac_level")) or {})
-    for argv in (["export", "audio", "s"], ["export", "story", "1"]):
+    for argv in (["export", "audio", "s"],):
         for flag, level in (([], None), (["--flac-level", "5"], 5)):
             seen.clear()
             code, _, err = run(data + argv + flag + ["-o", str(tmp_path / "o")], capsys)

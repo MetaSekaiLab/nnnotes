@@ -55,7 +55,7 @@ def test_effect_instances_first_asset_per_target_name():
         {"cmd": "Effect", "TargetAssetName": "fx_d/fx_d"},
         {"cmd": "Still", "TargetName": "x", "TargetAssetName": "s"},
     ]
-    assert advmedia.effect_instances(cmds) == {"spot": "fx_a/fx_a"}
+    assert adv.effect_instances(cmds) == {"spot": "fx_a/fx_a"}
 
 
 class _Type:
@@ -87,10 +87,11 @@ def test_missing_script_component_is_recorded(tmp_path):
     }
 
 
-def test_story_no_audio_flag():
-    args = cli.parse_args(["export", "story", "10001", "-o", "out", "--no-audio"])
-    assert args.no_audio is True and args.format == "flac"
-    assert cli.parse_args(["export", "story", "10001", "-o", "out"]).no_audio is False
+def test_story_takes_the_web_audio_format_of_its_cue_sheets():
+    from nnnotes.formats.encoders import DEFAULT_AUDIO_FORMAT
+
+    assert cli.parse_args(["export", "story", "10001", "-o", "out"]).audio_format == DEFAULT_AUDIO_FORMAT
+    assert cli.parse_args(["export", "story", "10001", "-o", "out", "--format", "flac"]).audio_format == "flac"
 
 
 class _Parsed:

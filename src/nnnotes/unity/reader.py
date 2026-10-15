@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import hashlib
 import io
-import json
 import threading
 from collections import OrderedDict
 from pathlib import Path
@@ -174,20 +173,6 @@ def textassets(env) -> dict[str, str]:
             s = d.m_Script
             out[d.m_Name] = s if isinstance(s, str) else bytes(s).decode("utf-8", "replace")
     return out
-
-
-def parse_shard(text: str) -> dict:
-    """A `-Text/-Sound/...` shard: {_header:[{_name,_type}], _allData:[rows]}.
-
-    Returns {"header": [...], "rows": [...]}. Row keys keep their leading
-    underscore + lowercased-first-letter form as serialized (e.g. `_cueName`).
-    """
-    d = json.loads(text)
-    return {"header": d.get("_header", []), "rows": d.get("_allData", [])}
-
-
-def shard_index(rows: list[dict], id_key: str = "_id") -> dict:
-    return {r[id_key]: r for r in rows if id_key in r}
 
 
 # ---- meshes -------------------------------------------------------------

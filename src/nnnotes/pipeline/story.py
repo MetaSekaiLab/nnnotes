@@ -1,6 +1,7 @@
-"""The story products: the cue sheets a story plays (story.sound) and the CRI Lips analysis data (story.crilips).
+"""The story products: an ADV episode (story) and the products it plays with.
 
-Both are product stages (pipeline.assemble) that keep no objects (their files are all they hold):
+All are product stages (pipeline.assemble); story.sound, story.crilips, story.chat and story keep no objects (their
+files are all they hold):
 
 story.sound    subject a cue sheet name (the `_cueSheetName` of a story's cue sheet table): "<task id>#cues.json"
                (kind story.sound: cue name -> the cue's first stream: `file`, `sampleRate`, `channels`, `samples`,
@@ -26,9 +27,21 @@ story.asset    subject a catalog key a story loads (a stage, frame, effect, post
                object table of what the key reaches. Its manifest is storyassets/<name>.json, <name> the key with
                "/" as "~" (storyasset.manifest_name). An asset several stories load is one product.
 
-`select` (the `product` layout) makes the story.sound product of every cue sheet key the selection holds and
-story.scene when it holds every key of the scene; the CRI Lips data and the story assets are made only when a
-request names them.
+story.chat     subject `default`: "<task id>#chat.json" (kind story.chat: content.storychat.chat, the rows of the
+               shared chat shards). Its manifest is storychat/default.json.
+
+story          subject a MasterAdv id: "<task id>#episode.json" (kind story.episode: content.storyepisode.episode_json,
+               the command list with its text, sounds, videos and resource closure) and "<task id>#story.json" (kind
+               story: content.storyepisode.story, the episode's chat rows, its effect instances and `parts`, the
+               manifest paths of the products above it plays with: part_paths). Its roots are the episode key, its
+               shard keys and the ADV player settings; its input "master" the episode's master record
+               (storyepisode.episode_record). Its manifest is stories/<id>.json. The parts depend on the episode's
+               content, so a command asks for the story first and then for what its story.json names
+               (part_products).
+
+`select` (the `product` layout) makes the story.sound product of every cue sheet key the selection holds, story.scene
+and story.chat when it holds every key of theirs, and the story of every episode whose key it holds; the CRI Lips data
+and the story assets are made only when a request names them.
 """
 
 from __future__ import annotations
@@ -36,20 +49,39 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
-from ..content import liveaudio, storyasset, storyscene
+from ..content import liveaudio, storyasset, storychat, storyepisode, storyscene
 from ..content.livescene import GRAPHICS
 from ..formats import crilips
 from ..formats.encoders import DEFAULT_AUDIO_FORMAT, WEB_AUDIO, mp4_priming, web_encode
 from ..unity.atoms import Unsupported
 from . import contract
-from .assemble import Assembly, ProductStage
+from .assemble import MASTER_INPUT, Assembly, ProductStage, master_input
 from .contract import IncompatibleTask
 from .layout import escape_segment
 from .live import encode_atoms
+from .live2d import MODEL, ModelStage
+from .views import master_rows
 
-__all__ = ["ASSET", "CRILIPS", "SCENE", "SOUND", "AssetStage", "CriLipsStage", "SceneStage", "SoundStage", "cues"]
+__all__ = [
+    "ASSET",
+    "CHAT",
+    "CRILIPS",
+    "PART_STAGES",
+    "SCENE",
+    "SOUND",
+    "STORY",
+    "AssetStage",
+    "ChatStage",
+    "CriLipsStage",
+    "SceneStage",
+    "SoundStage",
+    "StoryStage",
+    "cues",
+    "part_products",
+]
 
 SOUND, CRILIPS, SCENE, ASSET = "story.sound", "story.crilips", "story.scene", "story.asset"
+CHAT, STORY = "story.chat", "story"
 DEFAULT = "default"
 SHEET_PREFIX = "Cri/Sound/"
 LIBRARY = crilips.LIB_ENTRY_SUFFIX
@@ -211,3 +243,107 @@ class AssetStage(ProductStage):
     def assemble(self, task, objects) -> Assembly:
         doc, keep, roles = storyasset.asset(objects, task.subject)
         return Assembly({"asset.json": (contract.encode(doc), "json", ASSET)}, keep, roles)
+
+
+class ChatStage(ProductStage):
+    """story.chat: the rows of the shared chat shards (module documentation)."""
+
+    name = CHAT
+    version = 1
+    KIND = "StoryChat"
+
+    def select(self, keys: list[str], env) -> list[str]:
+        return [DEFAULT] if set(storychat.keys()) <= set(keys) else []
+
+    def keys(self, subject: str, env) -> list[str]:
+        _default(subject)
+        return storychat.keys()
+
+    def manifest(self, subject: str) -> str:
+        return f"storychat/{_default(subject)}.json"
+
+    def assemble(self, task, objects) -> Assembly:
+        doc, keep, roles = storychat.chat(objects)
+        return Assembly({"chat.json": (contract.encode(doc), "json", CHAT)}, keep, roles)
+
+
+def _adv_id(subject: str) -> int:
+    if not subject.isdigit():
+        raise ValueError(f"{subject}: not an episode id")
+    return int(subject)
+
+
+def part_paths(parts: dict) -> dict:
+    """story.json `parts`: the manifest paths of the products of storyepisode.parts `parts`."""
+    return {
+        "scene": SceneStage().manifest(DEFAULT),
+        "assets": {a: AssetStage().manifest(a) for a in parts["assets"]},
+        "models": {a: ModelStage().manifest(a) for a in parts["models"]},
+        "sounds": {s: SoundStage().manifest(s) for s in parts["sounds"]},
+        "chat": ChatStage().manifest(DEFAULT) if parts["chat"] else None,
+        "crilips": CriLipsStage().manifest(DEFAULT) if parts["crilips"] else None,
+    }
+
+
+def part_products(story: dict) -> dict[str, list[str]]:
+    """{product stage: [subject]} of the products story.json `story` names in `parts`."""
+    parts = story["parts"]
+    out = {
+        SCENE: [DEFAULT],
+        ASSET: sorted(parts["assets"]),
+        MODEL: sorted(parts["models"]),
+        SOUND: sorted(parts["sounds"]),
+        CHAT: [DEFAULT] if parts["chat"] else [],
+        CRILIPS: [DEFAULT] if parts["crilips"] else [],
+    }
+    return {name: subjects for name, subjects in out.items() if subjects}
+
+
+# the products a story plays with: {product stage: its class}
+PART_STAGES = {
+    SCENE: SceneStage,
+    ASSET: AssetStage,
+    MODEL: ModelStage,
+    SOUND: SoundStage,
+    CHAT: ChatStage,
+    CRILIPS: CriLipsStage,
+}
+
+
+class StoryStage(ProductStage):
+    """story: an ADV episode -> episode.json and story.json (module documentation)."""
+
+    name = STORY
+    version = 1
+    KIND = "Story"
+    MASTER = storyepisode.TABLES
+
+    def select(self, keys: list[str], env) -> list[str]:
+        if env.facts.get("master") is None:
+            return []
+        held = set(keys)
+        rows = master_rows(env, ("MasterAdv",))["MasterAdv"]
+        return sorted(str(r["_id"]) for r in rows if storyepisode.episode_key(r["_advEpisodeAsset"]) in held)
+
+    def record(self, subject: str, env) -> dict:
+        """The episode's master record (storyepisode.episode_record)."""
+        return storyepisode.episode_record(master_rows(env, self.MASTER), _adv_id(subject))
+
+    def keys(self, subject: str, env) -> list[str]:
+        return storyepisode.keys(self.record(subject, env)["MasterAdv"][0]["_advEpisodeAsset"])
+
+    def more_inputs(self, subject: str, env) -> list:
+        return [master_input(env, self.record(subject, env))]
+
+    def manifest(self, subject: str) -> str:
+        return f"stories/{_adv_id(subject)}.json"
+
+    def assemble(self, task, objects) -> Assembly:
+        record = contract.loads(objects.depot.input_bytes(task.input(MASTER_INPUT)))
+        episode = storyepisode.episode_json(storyepisode.episode(objects, record))
+        doc = storyepisode.story(episode, record, part_paths(storyepisode.parts(episode)))
+        files = {
+            "episode.json": (contract.encode(episode), "json", "story.episode"),
+            "story.json": (contract.encode(doc), "json", STORY),
+        }
+        return Assembly(files, set())

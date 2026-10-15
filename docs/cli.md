@@ -195,18 +195,19 @@ an ADV episode -> JSON
 
 ## nnnotes export story
 
-an ADV episode -> story directory (episode, audio, scene, UI, media, videos) + its Live2D models
+an ADV episode -> the story product and the products it plays with (scene, assets, Live2D models, cue sheets, chat, CRI Lips)
 
 | Argument | Description |
 | --- | --- |
 | `adv_id` | MasterAdv id of the episode |
+| `--format` `FORMAT` | web audio format of the cue sheets (default aac) (one of `aac`, `flac`, `mp3`, `opus`, `vorbis`) |
+| `--flac-level` `N` | FLAC compression level 0-12 of the decoded sounds (default 8; every level decodes to the same samples) |
 | `-o`, `--out` `OUT` | output directory (required) |
-| `--models` `DIR` | directory of the Live2D models, one <model id>/ each (default: OUT/../live2d) |
-| `--force` | export the models again whose directory exists |
-| `--format` `FORMAT` | audio file format (default flac) (one of `flac`, `ogg`, `wav`) |
-| `--flac-level` `N` | FLAC compression level 0-12 of --format flac (default 8; every level decodes to the same samples) |
-| `--no-audio` | do not decode the cue sheets |
-| `--fonts` `FONTS` | open (default): text layout and style only, no font data; game: also the game's TMP fonts (needs the 'fonts' extra) (one of `open`, `game`) |
+| `--stored-catalog` `LABEL\|SHA` | a catalog version of the depot (`catalog versions`; default: the current catalog) |
+| `--workers` `N` | worker processes (default: the usable CPUs) |
+| `--link` `LINK` | as export assets --link (one of `auto`, `clone`, `hard`, `copy`) |
+| `--explain` | print every setting of the run first |
+| `--dry-run` | print the plan, run nothing |
 
 ## nnnotes export live
 
