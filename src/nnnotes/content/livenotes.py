@@ -37,6 +37,7 @@ to AnimatorControllers and SpriteAtlases.
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -49,9 +50,9 @@ from .prefabs import (
     component_class,
     controller_clips,
     has_json,
+    key_object,
     prefab_ids,
     ref_id,
-    script_class,
     shader_table,
 )
 
@@ -68,6 +69,7 @@ __all__ = [
     "NOTES_FORMAT",
     "NOTES_TABLES",
     "SKIN_KEY",
+    "animator_bindings",
     "asset_name",
     "effect_settings_key",
     "extract",
@@ -285,22 +287,6 @@ def display_time_ms(speed: float, smin: float, smax: float, vmin: float, vmax: f
 
 
 # ------------------------------------------------------------------ products
-def _game_object(objects: Objects, key: str) -> str:
-    """The prefab GameObject of the catalog key `key`."""
-    hits = [o for o in objects.key(key) if objects.info(o).get("class") == "GameObject" and has_json(objects, o)]
-    if len(hits) != 1:
-        raise ValueError(f"{key}: {len(hits)} prefab GameObjects")
-    return hits[0]
-
-
-def _mono(objects: Objects, key: str, cls: str) -> str:
-    """The MonoBehaviour of script class `cls` of the catalog key `key`."""
-    hits = [o for o in objects.key(key) if script_class(objects, o) == cls]
-    if len(hits) != 1:
-        raise ValueError(f"{key}: {len(hits)} {cls} MonoBehaviours")
-    return hits[0]
-
-
 def _loop_clips(prefab: Prefab) -> dict[str, list[str]]:
     """{Animator node path: clip ids} the LoopAnimationTimeSyncs of a prefab play: each one's `_loopAnim` on its
     `_animator`."""
@@ -313,13 +299,16 @@ def _loop_clips(prefab: Prefab) -> dict[str, list[str]]:
     return out
 
 
-def _bindings(objects: Objects) -> dict[str, dict]:
-    """`bindings` of every prefab of the table: its Animators' controller clips and LoopAnimationTimeSync clips."""
+def animator_bindings(objects: Objects, extra: Mapping[str, Mapping[str, Iterable[str]]] | None = None) -> dict:
+    """`bindings` of every prefab of the table: the clips of its Animators' controllers, of the LoopAnimationTimeSyncs
+    on them, and those `extra` {prefab GameObject id: {Animator node path: clip ids}} gives."""
     out = {}
     for gid in prefab_ids(objects):
         doc = objects.json(gid)
         plays = controller_clips(objects, doc)
         for path, clips in _loop_clips(Prefab(doc)).items():
+            plays.setdefault(path, []).extend(clips)
+        for path, clips in ((extra or {}).get(gid) or {}).items():
             plays.setdefault(path, []).extend(clips)
         table = clip_bindings(objects, doc, plays)
         if table:
@@ -340,9 +329,9 @@ def notes(objects: Objects, record: dict) -> tuple[dict, set[str], dict[str, set
     doc = {
         "format": NOTES_FORMAT,
         "settings": notes_settings(record),
-        "prefabs": {name: _game_object(objects, key) for name, key in NOTE_PREFABS.items()},
-        "laneEffect": _mono(objects, LANE_EFFECT_KEY, "LiveLaneEffectAssetSettings"),
-        "bindings": _bindings(objects),
+        "prefabs": {name: key_object(objects, key, "GameObject") for name, key in NOTE_PREFABS.items()},
+        "laneEffect": key_object(objects, LANE_EFFECT_KEY, "LiveLaneEffectAssetSettings"),
+        "bindings": animator_bindings(objects),
     }
     return _product(objects, doc)
 
@@ -350,7 +339,7 @@ def notes(objects: Objects, record: dict) -> tuple[dict, set[str], dict[str, set
 def noteskin(objects: Objects, name: str) -> tuple[dict, set[str], dict[str, set[str]]]:
     """(noteskin.json, the object ids the player reads, shader roles) of the note skin `name` (module
     documentation)."""
-    skin = _mono(objects, skin_key(asset_name(name)), "LiveNoteSkinAsset")
+    skin = key_object(objects, skin_key(asset_name(name)), "LiveNoteSkinAsset")
     fields = objects.json(skin)
     out = {}
     for view, unit_field in FLICK_SKIN_UNITS.items():
@@ -358,7 +347,7 @@ def noteskin(objects: Objects, name: str) -> tuple[dict, set[str], dict[str, set
         clip = ref_id(objects.json(unit).get("_arrowLoopAnimation")) if unit and has_json(objects, unit) else None
         if clip is None:
             continue
-        gid = _game_object(objects, NOTE_PREFABS[view])
+        gid = key_object(objects, NOTE_PREFABS[view], "GameObject")
         doc = objects.json(gid)
         prefab = Prefab(doc)
         syncs = [c for c in doc["nodes"][0]["components"] if "_loopAnimationTimeSync" in c["fields"]]
@@ -377,8 +366,8 @@ def noteskin(objects: Objects, name: str) -> tuple[dict, set[str], dict[str, set
 def noteeffect(objects: Objects, name: str) -> tuple[dict, set[str], dict[str, set[str]]]:
     """(noteeffect.json, the object ids the player reads, shader roles) of the note effect set `name` (module
     documentation)."""
-    settings_id = _mono(objects, effect_settings_key(asset_name(name)), "LiveNoteEffectAssetSettings")
-    doc = {"format": NOTES_FORMAT, "name": name, "settings": settings_id, "bindings": _bindings(objects)}
+    settings_id = key_object(objects, effect_settings_key(asset_name(name)), "LiveNoteEffectAssetSettings")
+    doc = {"format": NOTES_FORMAT, "name": name, "settings": settings_id, "bindings": animator_bindings(objects)}
     return _product(objects, doc)
 
 

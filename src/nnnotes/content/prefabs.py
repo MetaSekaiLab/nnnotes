@@ -7,8 +7,13 @@ same hierarchy by path: `{"gameObject": path}`, `{"transform": path}`, or `{"com
 "class": script class}` for a component. `Prefab` gives each node's parent, its world matrix (Unity's left-handed
 space, the root's own transform included) and whether it is active in the hierarchy, and resolves those references.
 
+A component of a hierarchy is in the table as an object contained in its root GameObject (its item `in`): a reference
+to it from outside the hierarchy (another root of a scene, an asset) is a `$ref` that `component_ref` resolves.
+
 What a player reads with the hierarchies of a table:
 
+key_object        the object of a catalog key of a class (a prefab by its GameObject, a MonoBehaviour by its script
+                  class)
 controller_clips  the clips each Animator of a prefab plays through its controller (Animator.m_Controller, the
                   controller.json `clips`), by the Animator's node path
 clip_bindings     the bindings of the clips each Animator plays, named in the prefab from the Animator's node
@@ -35,8 +40,10 @@ __all__ = [
     "Prefab",
     "clip_bindings",
     "component_class",
+    "component_ref",
     "controller_clips",
     "has_json",
+    "key_object",
     "mat4",
     "prefab_ids",
     "ref_id",
@@ -96,6 +103,43 @@ def root_game_object(objects: Objects, what: str) -> str:
     if len(gos) != 1:
         raise ValueError(f"{what}: {len(gos)} GameObjects among the roots, expected one")
     return gos[0]
+
+
+def key_object(objects: Objects, key: str, cls: str) -> str:
+    """The one object of the catalog key `key` of class `cls`: a GameObject with its prefab document, a MonoBehaviour
+    by its script class, any other object by its class (ValueError otherwise)."""
+
+    def of(oid: str) -> str | None:
+        c = objects.info(oid).get("class")
+        if c == "GameObject":
+            return c if has_json(objects, oid) else None
+        return script_class(objects, oid) if c == "MonoBehaviour" else c
+
+    hits = [o for o in objects.key(key) if o in objects and of(o) == cls]
+    if len(hits) != 1:
+        raise ValueError(f"{key}: {len(hits)} {'prefab GameObjects' if cls == 'GameObject' else cls + ' objects'}")
+    return hits[0]
+
+
+def component_ref(objects: Objects, prefab: str, v) -> tuple[str, int, dict] | None:
+    """(prefab GameObject id, node, component) that a component field of the hierarchy of GameObject `prefab` names:
+    a component of the same hierarchy by path, or a `$ref` to a component of another hierarchy of the table; None for
+    null (ValueError for a reference to anything else)."""
+    if v is None:
+        return None
+    oid = ref_id(v)
+    if oid is None:
+        hit = Prefab(objects.json(prefab)).component_of(v)
+        return None if hit is None else (prefab, *hit)
+    holder = objects.info(oid).get("in") if oid in objects else None
+    if holder is None or not has_json(objects, holder):
+        raise ValueError(f"{oid}: not a component of a hierarchy of the table")
+    pid = oid.rsplit(":", 1)[1]
+    for i, n in enumerate(objects.json(holder)["nodes"]):
+        for c in n["components"]:
+            if c.get("pathId") == pid:
+                return holder, i, c
+    raise ValueError(f"{oid}: no component of {holder}")
 
 
 def prefab_ids(objects: Objects) -> list[str]:
