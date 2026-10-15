@@ -5,7 +5,6 @@ command."""
 import copy
 import json
 import re
-import struct
 import subprocess
 import sys
 from pathlib import Path
@@ -19,6 +18,7 @@ from nnnotes.pipeline.depot import Depot
 from nnnotes.pipeline.stages import Env, Pending, describe, execute, registry
 from nnnotes.pipeline.views import AddressIndex, ViewError
 from nnnotes.source import languages
+from tests.helpers.cri import afs2, tlv, u16, utf
 from tests.pipeline.test_views import FakeAddresses, addresses_doc, write_master
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -26,52 +26,6 @@ RATE = 48000
 
 
 # ---------------------------------------------------------------- synthetic CRI tables
-def utf(name: str, cols: list, rows: list[dict]) -> bytes:
-    """A CRI @UTF table: `cols` [(column, type)] stored per row (types 0 u8, 2 u16, 4 u32, 0xA string, 0xB data)."""
-    strings, data = bytearray(b"<NULL>\0"), bytearray()
-
-    def s(x: str) -> int:
-        off = len(strings)
-        strings.extend(x.encode("utf-8") + b"\0")
-        return off
-
-    name_off = s(name)
-    head = b"".join(bytes([0x50 | t]) + struct.pack(">I", s(c)) for c, t in cols)
-    body = bytearray()
-    for r in rows:
-        for c, t in cols:
-            v = r.get(c)
-            if t == 0xA:
-                body += struct.pack(">I", s(v or ""))
-            elif t == 0xB:
-                v = bytes(v or b"")
-                body += struct.pack(">II", len(data), len(v))
-                data.extend(v)
-            else:
-                body += struct.pack({0: ">B", 2: ">H", 4: ">I"}[t], v or 0)
-    width = sum({0: 1, 2: 2, 4: 4, 0xA: 4, 0xB: 8}[t] for _, t in cols)
-    rows_off = 24 + len(head)
-    str_off = rows_off + len(body)
-    data_off = str_off + len(strings)
-    t = struct.pack(">HHIIIHHI", 1, rows_off, str_off, data_off, name_off, len(cols), width, len(rows))
-    t += head + bytes(body) + bytes(strings) + bytes(data)
-    return b"@UTF" + struct.pack(">I", len(t)) + t
-
-
-def afs2(ids: list[int]) -> bytes:
-    return (
-        b"AFS2"
-        + bytes([1, 4, 2, 0])
-        + struct.pack("<IHH", len(ids), 32, 0)
-        + b"".join(struct.pack("<H", i) for i in ids)
-        + bytes(4 * (len(ids) + 1))
-    )
-
-
-def tlv(code: int, payload: bytes) -> bytes:
-    return struct.pack(">HB", code, len(payload)) + payload
-
-
 def acb_bytes(*, names, cues, waves, synths=(), seqs=(), tracks=(), events=(), blockseqs=(), blocks=(), awb=()):
     """An ACB of the given tables (rows as dicts; bytes columns packed by the caller)."""
     tables = {
@@ -98,10 +52,6 @@ def acb_bytes(*, names, cues, waves, synths=(), seqs=(), tracks=(), events=(), b
     }
     cols = [(k, 0xB) for k in tables] + [("AwbFile", 0xB), ("Name", 0xA)]
     return utf("Header", cols, [{**tables, "AwbFile": afs2(list(awb)) if awb else b"", "Name": "sheet"}])
-
-
-def u16(*v) -> bytes:
-    return b"".join(struct.pack(">H", x) for x in v)
 
 
 def wave(awb_id, samples, streaming=0):

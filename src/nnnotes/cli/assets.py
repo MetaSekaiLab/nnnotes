@@ -31,6 +31,7 @@ Facts the stages read while their tasks are described (stages.Env):
     products   {product stage: subjects} (with a product stage in the pipeline: the `product` layout makes each
                stage's products of the keys the selected bundles hold, held_keys; `export live2d` asks for one)
     roots      the root objects of those products (pipeline.assemble.request)
+    apk        {path in the APK: Input "apk:<path>"} of the APK files the product stages read (their `APK`)
 
 Selection (--select, repeatable; the union; none: everything): `group:G` the bundles of an Addressables group (the
 stable name up to `_assets_`, else up to its first `_`), `key:PREFIX` the bundles and raw files the catalog keys
@@ -119,6 +120,8 @@ STAGE_SOURCES = (
     StageSource("live2d.cubism", "nnnotes.pipeline.live2d:CubismStage", output=True, product=True),
     StageSource("room.gltf", "nnnotes.pipeline.spot:RoomStage", output=True, product=True),
     StageSource("spot.files", "nnnotes.pipeline.spot:SpotStage", output=True, product=True),
+    StageSource("live.music", "nnnotes.pipeline.live:MusicStage", output=True, product=True),
+    StageSource("live.sounds", "nnnotes.pipeline.live:SoundsStage", output=True, product=True),
     StageSource("view.", "nnnotes.pipeline.views:stages", output=True),
     StageSource("view.voices", "nnnotes.pipeline.voices:VoiceStage", output=True),
 )
@@ -745,11 +748,15 @@ class Workspace:
             else:  # without master data, the products that read it have no subjects (as the views)
                 held = held_keys(index, sel.selected)
                 chosen = {
-                    n: [] if n in readers and facts["master"] is None else self.installed.stages[n].select(held)
+                    n: []
+                    if n in readers and facts["master"] is None
+                    else self.installed.stages[n].select(held, Env(self.depot, facts))
                     for n in products
                 }
             facts["products"] = chosen
             facts["roots"] = assemble.request(self.installed.stages, chosen, Env(self.depot, facts))
+            members = {m for n in products if chosen[n] for m in self.installed.stages[n].APK}
+            facts["apk"] = builtins.apk_files(self.depot, self.apk, members)
             if self.products is not None or not set(self.layouts) & set(OBJECT_LAYOUTS):
                 facts["selected"] = []  # products alone: what they reach
         if any(n in pipeline for n in RAW_STAGES):
