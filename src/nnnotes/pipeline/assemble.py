@@ -204,11 +204,35 @@ class Objects:
 
 @dataclass
 class Assembly:
-    """What `assemble` makes: the product's files {path: (bytes, extension, kind)} and the object ids its files use
-    (None: every object of the table)."""
+    """What `assemble` makes: the product's files {path: (bytes, extension, kind)} and what of the object table they
+    use: `objects` the object ids (None: every object of the table), `roles` {object id: the roles of its files the
+    product keeps} for an object of which it uses some files only (a shader's programs for one graphics API). The
+    product's object table, and so its manifest, holds only those."""
 
     files: dict
     objects: set | None = None
+    roles: dict = field(default_factory=dict)
+
+
+def _prune(tid: str, objects: dict, made: Assembly) -> dict:
+    """The entries of an object table an Assembly keeps."""
+    keep = set(objects) if made.objects is None else set(made.objects)
+    unknown = sorted((keep | set(made.roles)) - set(objects))
+    if unknown:
+        raise ValueError(f"{tid}: objects not in the table: {', '.join(unknown[:5])}")
+    out = {}
+    for o, e in objects.items():
+        if o not in keep:
+            continue
+        roles = made.roles.get(o)
+        if roles is not None:
+            files = e.get("files") or {}
+            lacking = sorted(set(roles) - set(files))
+            if lacking:
+                raise ValueError(f"{tid}: object {o} has no {', '.join(lacking)} file")
+            e = dict(e, files={r: f for r, f in files.items() if r in roles})
+        out[o] = e
+    return out
 
 
 class ProductStage(Stage):
@@ -303,11 +327,8 @@ class ProductStage(Stage):
                 raise ValueError(f"{task.id}: a product file cannot be named {PRODUCT_TABLE!r}")
             aid = contract.artifact_id(task.id, path)
             arts.append(contract.artifact(aid, depot.add(body, ext), prov, {"kind": kind}))
-        if made.objects is not None:
-            unknown = sorted(set(made.objects) - set(doc["objects"]))
-            if unknown:
-                raise ValueError(f"{task.id}: objects not in the table: {', '.join(unknown[:5])}")
-            doc = dict(doc, objects={o: e for o, e in doc["objects"].items() if o in made.objects})
+        if made.objects is not None or made.roles:
+            doc = dict(doc, objects=_prune(task.id, doc["objects"], made))
             data = contract.encode(doc)
         aid = contract.artifact_id(task.id, PRODUCT_TABLE)
         arts.append(contract.artifact(aid, depot.add(data, "json"), prov, {"kind": TABLE_KIND}))

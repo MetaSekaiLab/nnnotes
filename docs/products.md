@@ -30,7 +30,7 @@ object that a reached object references and no census holds is listed as `missin
 |---|---|
 | inputs | `objects`: the object table of what it reaches (`nnnotes.objects/1`); the stage's own inputs (master tables, data its parameters name) |
 | depends | `link.addresses` (when it has keys or resource paths), the `unity.export` and `sprite.crop` tasks whose results it read |
-| artifacts | `<task id>#<path>`: the product's own files; `<task id>#objects`: the object table of the objects its files use (the whole table unless the stage narrows it) |
+| artifacts | `<task id>#<path>`: the product's own files; `<task id>#objects`: the object table of the objects its files use (the whole table unless the stage narrows it to some objects, or to some files of an object: a shader's programs for one graphics API) |
 | item | one for the subject: `exported`, or `unsupported` with a reason code |
 
 The key holds the object table, so a product is assembled again exactly when a file of an object it reaches
