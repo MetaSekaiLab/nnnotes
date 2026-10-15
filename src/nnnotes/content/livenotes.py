@@ -23,7 +23,8 @@ noteeffect.json `settings`; and each has
                the table's prefabs plays (its controller's clips, the `_loopAnim` of a LoopAnimationTimeSync on its
                `_animator`; for a skin, the arrow loop of each flick unit on the flick view's LoopAnimationTimeSync,
                LiveFlickNoteView.OnSetupNoteSkin), named from the Animator's node (prefabs.clip_bindings)
-    shaders    {shader name: object id} (prefabs.shader_table)
+    shaders    {shader name: object id}: what a lookup by name finds (prefabs.shader_table; a material names its
+               shader by id)
 
 Of the objects a product keeps all but the MonoScripts; of a shader its parsed form, variant index and the programs of
 the player's graphics API.
