@@ -183,6 +183,12 @@ def _render(o, tt: dict, name: str) -> tuple[str, list[dict], list[bytes]]:
     return text, recs, codes
 
 
+def player_roles(variants: list[dict]) -> set[str]:
+    """The roles of a shader's programs the player draws with (variant index records): every PLAYER_TYPE program of
+    PLAYER_PLATFORM."""
+    return {v["role"] for v in variants if v["platform"] == PLAYER_PLATFORM and v["type"] == PLAYER_TYPE}
+
+
 def player_program(variants: list[dict], keywords) -> dict:
     """The variant record of a shader (platform, subShader, pass, type, keywords, ...) the player draws a material
     with `keywords` by: the PLAYER_TYPE program of subshader 0, pass 0 whose keywords are exactly the material's

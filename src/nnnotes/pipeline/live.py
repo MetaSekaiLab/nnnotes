@@ -1,7 +1,8 @@
-"""The live sound products: a music's BGM (live.music) and the sounds a live plays besides it (live.sounds).
+"""The live products: a music's BGM (live.music), the sounds a live plays besides it (live.sounds) and the note
+highway (live.notes, live.noteskin, live.noteeffect).
 
-Both are product stages (pipeline.assemble) that read cue sheets: the ACBs their catalog keys load and the files
-cri.audio decoded from them. They keep no objects (their files are all they hold):
+All are product stages (pipeline.assemble). The sound products read cue sheets: the ACBs their catalog keys load and
+the files cri.audio decoded from them. They keep no objects (their files are all they hold):
 
 live.music   subject a music id (MasterLiveMusic._id): "<task id>#music.json" (kind live.music, liveaudio.music_doc)
              and "<task id>#audio/<sheet>/<file>" for each layer of its BGM sound (kind audio.bgm) in the web
@@ -15,8 +16,21 @@ live.sounds  subject an option set of the note sounds (liveaudio.sounds_subject:
              inputs "master" (liveaudio.sounds_record), the CRI ACF of the APK and, as roots, the sound settings of
              the APK's built-in files (liveaudio.SETTINGS_SCRIPTS).
 
-`select` (the `product` layout) makes the live.music products of the musics whose BGM key the selection holds and
-the default live.sounds when it holds every cue sheet of the default sounds; both need the master data.
+The note highway products assemble with content.livenotes from the objects of their keys:
+
+live.notes       subject `default`: "<task id>#notes.json" (kind live.notes: content.livenotes.notes) and the object
+                 table the player reads; its manifest is notes/default.json, its input "master" the settings' master
+                 record (livenotes.notes_record)
+live.noteskin    subject a note skin (MasterLiveNoteSkin._assetName, `skin001`): "<task id>#noteskin.json" (kind
+                 live.noteskin); its manifest is noteskins/<name>.json
+live.noteeffect  subject a note effect set (MasterLiveNoteEffectSkin._assetName or its `Light` variant,
+                 `effect001Light`): "<task id>#noteeffect.json" (kind live.noteeffect); its manifest is
+                 noteeffects/<name>.json
+
+`select` (the `product` layout) makes the live.music products of the musics whose BGM key the selection holds, the
+default live.sounds when it holds every cue sheet of the default sounds (both need the master data), live.notes when
+it holds every key of it (and the master data is there), and the live.noteskin and live.noteeffect products of the
+skin and effect set keys it holds.
 """
 
 from __future__ import annotations
@@ -24,16 +38,30 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
-from ..content import liveaudio
+from ..content import liveaudio, livenotes
 from ..formats.encoders import DEFAULT_AUDIO_FORMAT, WEB_AUDIO, mp4_priming, web_encode
 from . import contract
 from .assemble import Assembly, ProductStage
 from .contract import IncompatibleTask, Input
 from .views import master_rows
 
-__all__ = ["MUSIC", "SOUNDS", "MusicStage", "SoundsStage", "encode_atoms"]
+__all__ = [
+    "MUSIC",
+    "NOTEEFFECT",
+    "NOTES",
+    "NOTESKIN",
+    "SOUNDS",
+    "MusicStage",
+    "NoteEffectStage",
+    "NoteSkinStage",
+    "NotesStage",
+    "SoundsStage",
+    "encode_atoms",
+]
 
 MUSIC, SOUNDS = "live.music", "live.sounds"
+NOTES, NOTESKIN, NOTEEFFECT = "live.notes", "live.noteskin", "live.noteeffect"
+DEFAULT = "default"
 MASTER_INPUT = "master"
 
 
@@ -184,3 +212,87 @@ class SoundsStage(ProductStage):
                 files[layer["file"]] = (s.file(name), name.rsplit(".", 1)[1], "audio.se")
         files["sounds.json"] = (contract.encode(doc), "json", "live.sounds")
         return Assembly(files, set())
+
+
+def _default(subject: str) -> str:
+    if subject != DEFAULT:
+        raise ValueError(f"{subject}: the live notes subject is {DEFAULT}")
+    return subject
+
+
+def _json(doc: dict, kind: str) -> tuple:
+    return contract.encode(doc), "json", kind
+
+
+class NotesStage(ProductStage):
+    """live.notes: the note highway and its settings (module documentation)."""
+
+    name = NOTES
+    version = 1
+    KIND = "LiveNotes"
+    MASTER = livenotes.NOTES_TABLES
+
+    def select(self, keys: list[str], env) -> list[str]:
+        if env.facts.get("master") is None:
+            return []
+        return [DEFAULT] if set(livenotes.notes_keys()) <= set(keys) else []
+
+    def keys(self, subject: str, env) -> list[str]:
+        _default(subject)
+        return livenotes.notes_keys()
+
+    def more_inputs(self, subject: str, env) -> list[Input]:
+        return [_record(env, livenotes.notes_record(master_rows(env, self.MASTER)))]
+
+    def manifest(self, subject: str) -> str:
+        return f"notes/{_default(subject)}.json"
+
+    def assemble(self, task, objects) -> Assembly:
+        record = contract.loads(objects.depot.input_bytes(task.input(MASTER_INPUT)))
+        doc, keep, roles = livenotes.notes(objects, record)
+        return Assembly({"notes.json": _json(doc, NOTES)}, keep, roles)
+
+
+class NoteSkinStage(ProductStage):
+    """live.noteskin: a note skin (module documentation)."""
+
+    name = NOTESKIN
+    version = 1
+    KIND = "LiveNoteSkin"
+
+    def select(self, keys: list[str], env) -> list[str]:
+        held = set(keys)
+        names = (m["name"] for m in map(livenotes.SKIN_KEY.fullmatch, keys) if m)
+        return sorted(n for n in names if livenotes.NAME.fullmatch(n) and set(livenotes.noteskin_keys(n)) <= held)
+
+    def keys(self, subject: str, env) -> list[str]:
+        return livenotes.noteskin_keys(subject)
+
+    def manifest(self, subject: str) -> str:
+        return f"noteskins/{livenotes.asset_name(subject)}.json"
+
+    def assemble(self, task, objects) -> Assembly:
+        doc, keep, roles = livenotes.noteskin(objects, task.subject)
+        return Assembly({"noteskin.json": _json(doc, NOTESKIN)}, keep, roles)
+
+
+class NoteEffectStage(ProductStage):
+    """live.noteeffect: a note effect set (module documentation)."""
+
+    name = NOTEEFFECT
+    version = 1
+    KIND = "LiveNoteEffect"
+
+    def select(self, keys: list[str], env) -> list[str]:
+        names = (m["name"] for m in map(livenotes.EFFECT_KEY.fullmatch, keys) if m)
+        return sorted(n for n in names if livenotes.NAME.fullmatch(n))
+
+    def keys(self, subject: str, env) -> list[str]:
+        return [livenotes.effect_settings_key(livenotes.asset_name(subject))]
+
+    def manifest(self, subject: str) -> str:
+        return f"noteeffects/{livenotes.asset_name(subject)}.json"
+
+    def assemble(self, task, objects) -> Assembly:
+        doc, keep, roles = livenotes.noteeffect(objects, task.subject)
+        return Assembly({"noteeffect.json": _json(doc, NOTEEFFECT)}, keep, roles)

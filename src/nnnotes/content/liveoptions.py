@@ -34,8 +34,6 @@ import itertools
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-from .score import master_table
-
 # App.Options.OptionItemType (every value but None 0), the names of MasterOptionDefault / MasterOptionRange
 # `_optionItemType`
 OPTION_ITEM_TYPES = {
@@ -312,6 +310,8 @@ class LiveOptions:
 
 def preset_defaults(master: Path) -> dict[int, str]:
     """OptionItemType -> MasterOptionDefault preset-1 value string (a fresh profile's options)."""
+    from .score import master_table
+
     return {
         r["_optionItemType"]: r["_valueString"]
         for r in master_table(master, "MasterOptionDefault")
@@ -326,6 +326,8 @@ def resolve(request: dict | None, master: Path | None) -> LiveOptions:
         return LiveOptions()
     if master is None:
         raise OptionSpecError("--live-option needs the master data")
+    from .score import master_table
+
     master = Path(master)
     everything = bool(request.get(ALL))
     preset = preset_defaults(master)
