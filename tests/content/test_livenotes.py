@@ -2,7 +2,7 @@
 
 import pytest
 
-from nnnotes.content import livenotes
+from nnnotes.content import livenotes, prefabs
 from nnnotes.pipeline.assemble import Objects
 from nnnotes.pipeline.depot import Depot
 from tests.helpers import livenotes as ln
@@ -95,15 +95,17 @@ def test_a_time_sync_plays_on_an_animator(tmp_path):
         livenotes.noteskin(objects_of(tmp_path, ln.SKIN_KEYS, objs), "skin001")
 
 
-def test_copies_of_a_shader_are_one_and_different_ones_of_a_name_an_error(tmp_path):
+def test_copies_of_a_shader_are_one_and_different_ones_of_a_name_none(tmp_path):
     objs = ln.objects()
     objs["CAB-z:1"] = objs[ln.SHADER]  # a copy in another bundle
     doc, _, roles = livenotes.noteeffect(objects_of(tmp_path, ln.EFFECT_KEYS, objs), "effect001Light")
     assert doc["shaders"] == {"Sirius/Sprite": ln.SHADER} and roles["CAB-z:1"] == roles[ln.SHADER]
     cls, name, files = objs[ln.SHADER]
     objs["CAB-z:1"] = (cls, name, {**files, "json": {"name": "Sirius/Sprite", "other": 1}})
-    with pytest.raises(ValueError, match="shader Sirius/Sprite: objects CAB-n:981 and CAB-z:1 differ"):
-        livenotes.noteeffect(objects_of(tmp_path, ln.EFFECT_KEYS, objs), "effect001Light")
+    objects = objects_of(tmp_path, ln.EFFECT_KEYS, objs)
+    doc, _, roles = livenotes.noteeffect(objects, "effect001Light")
+    assert doc["shaders"] == {} and set(roles) == {ln.SHADER, "CAB-z:1"}  # a lookup by name finds neither
+    assert prefabs.shader_table(objects, found=["CAB-z:1"])[0] == {"Sirius/Sprite": "CAB-z:1"}
 
 
 def test_skin_and_effect_names_are_url_safe():
