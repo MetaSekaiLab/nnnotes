@@ -365,8 +365,8 @@ def _asset(c: dict) -> dict:
 
 def product_manifest(task: str, result: dict, table: dict) -> dict:
     """The manifest (nnnotes.product/1) of a product: its files {path: {asset, size}} and the objects of its object
-    table `table` that have files ({class, name, files: {role: {asset, size}}}) or are contained in one ({class,
-    in})."""
+    table `table` that have files ({class, name, files: {role: {asset, size}}}). An object contained in another's
+    file (a Transform or a component in a prefab) is named by that file and not listed."""
     stage, subject = contract.parse_task_id(task)
     files = {}
     for a in result["artifacts"]:
@@ -375,14 +375,10 @@ def product_manifest(task: str, result: dict, table: dict) -> dict:
             files[role] = _asset(a["content"])
     objects = {}
     for oid, o in table["objects"].items():
-        e = {k: o[k] for k in ("class", "name") if k in o}
         if o.get("files"):
+            e = {k: o[k] for k in ("class", "name") if k in o}
             e["files"] = {r: _asset(f) for r, f in sorted(o["files"].items())}
-        elif "in" in o:
-            e["in"] = o["in"]
-        else:
-            continue
-        objects[oid] = e
+            objects[oid] = e
     return {"schema": contract.PRODUCT, "product": stage, "subject": subject, "files": files, "objects": objects}
 
 

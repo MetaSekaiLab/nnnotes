@@ -376,7 +376,7 @@ def test_the_product_layout_places_the_files_and_the_objects(tmp_path):
         "size": json_rec["content"]["size"],
     }
     assert manifest["objects"][oid(10)]["class"] == "Texture2D"
-    assert manifest["objects"][oid(61)]["in"] == oid(60)
+    assert oid(61) not in manifest["objects"]  # contained in the prefab of oid(60), named by its file
     assert "assets" in manifest["objects"][oid(10)]["files"]["image"]["asset"]
     # the manifest path is one directory and one file
     assert len(entries) == len({(e["path"], e["id"]) for e in entries})

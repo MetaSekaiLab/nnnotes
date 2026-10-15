@@ -80,12 +80,12 @@ placement: the Cubism SDK files as a directory).
  "files": {"model.json": {"asset": "assets/<sha256>.json", "size": 2048}},
  "objects": {
    "CAB-…:-4153…": {"class": "GameObject", "name": "model",
-                    "files": {"json": {"asset": "assets/<sha256>.json", "size": 5120}}},
-   "CAB-…:12": {"class": "Transform", "in": "CAB-…:-4153…"}}}
+                    "files": {"json": {"asset": "assets/<sha256>.json", "size": 5120}}}}}
 ```
 
-`files` are the product's own files by path; `objects` are the objects of its object table that have files, or are
-contained in an object that has one. An asset path is relative to the directory above the manifest's directory, as
+`files` are the product's own files by path; `objects` are the objects of its object table that have files. An object
+contained in another object's file (a Transform or a component in a prefab) is not listed: the prefab's JSON holds it
+(its nodes and components carry their `pathId`). An asset path is relative to the directory above the manifest's directory, as
 in the chart manifests of ournotes-player. A reference in an object's JSON (`{"$ref": {"file", "pathId"}}`) names
 the object `<file>:<pathId>` of `objects`.
 
