@@ -43,23 +43,12 @@
             "additionalProperties": {
               "$ref": "#/$defs/asset"
             }
-          },
-          "in": {
-            "type": "string"
           }
         },
-        "oneOf": [
-          {
-            "required": [
-              "files"
-            ]
-          },
-          {
-            "required": [
-              "in"
-            ]
-          }
-        ]
+        "required": [
+          "files"
+        ],
+        "additionalProperties": false
       }
     }
   },
