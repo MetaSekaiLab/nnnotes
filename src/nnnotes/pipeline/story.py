@@ -22,9 +22,9 @@ story.scene    subject `default`: "<task id>#scene.json" (kind story.scene: cont
                global volume, the ADV player and master id settings, and as roots also the built-in graphics settings
                (livescene.GRAPHICS). Its manifest is storyscenes/default.json.
 
-story.asset    subject a catalog key a story loads (a stage, frame, effect, post effect, still, chat window, chat icon
-               or stamp, transition): "<task id>#asset.json" (kind story.asset: content.storyasset.asset) and the
-               object table of what the key reaches. Its manifest is storyassets/<name>.json, <name> the key with
+story.asset    subject a catalog key a story loads (a stage, frame, effect, post effect, still, timeline, chat window,
+               chat icon or stamp, transition): "<task id>#asset.json" (kind story.asset: content.storyasset.asset) and
+               the object table of what the key reaches. Its manifest is storyassets/<name>.json, <name> the key with
                "/" as "~" (storyasset.manifest_name). An asset several stories load is one product.
 
 story.chat     subject `default`: "<task id>#chat.json" (kind story.chat: content.storychat.chat, the rows of the

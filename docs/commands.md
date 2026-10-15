@@ -175,114 +175,45 @@ row of a Movie / Clip row's video id.
 ## export story
 
 ```
-nnnotes export story ADV_ID -o OUT [--models MODELS] [--force] [--format flac|ogg|wav] [--flac-level N] [--no-audio]
-              [--fonts open|game]
+nnnotes export story ADV_ID -o OUT [--format FORMAT] [--flac-level N] [--stored-catalog LABEL|SHA] [--workers N]
+              [--link auto|clone|hard|copy] [--explain] [--dry-run]
 ```
 
-One ADV episode as a directory, and its Live2D models in a models directory:
+One ADV episode and the products it plays with, in the `product` layout ([products](products.md#stories)):
 
 ```
-MODELS/<id>/              every Live2D model of the episode (MODELS: `--models`, default OUT/../live2d), the files
-                          of a site's model manifest (see `site build`): model.json, moc3, prefab, the atlas pages and the
-                          shader programs its drawables use
-OUT/episode.json          as `export episode`
-OUT/audio/<cueSheet>/     every cue sheet of the episode, one file per cue + cues.json, streams.json
-OUT/scene.json            player graphics, cameras, ADV fields, volumes, settings and stages
-OUT/frames.json           Frame prefabs by asset name: uGUI, Animator controllers and clips, UI particle systems
-OUT/effects.json          particle effect prefabs by asset name, `instances` (effect name -> asset name)
-OUT/posteffects.json      PostEffect volume profiles by asset name
-OUT/stills.json           Still prefabs by asset name
-OUT/talkwindows.json      talk window prefabs of the TalkWindow rows
-OUT/chat.json             chat window prefabs, icons and stamps (sprites), the MasterAdvChat rows, shared chat texts,
-                          sounds and cue sheet rows
-OUT/textures/, shaders/   textures and shaders of the scene and of the files above
-OUT/videos/               Movie / Clip videos as WebM + videos.json (video id -> file, video row, size, frame rate)
-OUT/ui/                   ADV UI: ui.json (front canvas, still / frame / video canvases and their camera, letterbox),
-                          packed textures, UI shaders, rule transitions
-OUT/crilips/              crilips.json + crilips.bin: the CRI Lips analysis data, when a voice reaches the analysis
-OUT/story.json            index of the above (a file the episode does not need is null and not written)
+OUT/stories/<id>.json          the story (`story`): episode.json and story.json
+OUT/storyscenes/default.json   the ADV scene (`story.scene`)
+OUT/storyassets/<name>.json    each stage, frame, effect, post effect, still, timeline, transition, chat window,
+                               chat icon and stamp the episode loads (`story.asset`; <name>: its key, "/" as "~")
+OUT/models/<id>.json           each Live2D model of the episode (`live2d.model`)
+OUT/cuesheets/<sheet>.json     each cue sheet of the episode, decoded (`story.sound`)
+OUT/storychat/default.json     the shared chat rows, when the episode shows chat (`story.chat`)
+OUT/crilips/default.json       the CRI Lips analysis data, when a voice can reach it (`story.crilips`)
+OUT/assets/<sha256>.<ext>      the files the manifests name
 ```
 
-story.json `models` maps the key of each model to its id (`<name>` of `Character/Live2D/<group>/<name>/model/<name>`)
-and `modelsDir` is the path from OUT to MODELS. A model directory that exists is used as it is, so the stories of one
-models directory export each model once; `--force` exports the episode's models again. The printed summary lists
-the models exported (`modelsBuilt`) and those used as they were (`modelsSkipped`). Several `export story` processes may
-share a models directory: a model appears in it in one rename, whole, and a model two processes export at once is
-kept from the first to finish (the other's export, the same bytes, is dropped and counted in `modelsSkipped`).
+`episode.json` is the episode as `export episode` writes it, each resource given by its kind and address.
+`story.json` names the episode's chat rows, its effect instances and, in `parts`, the manifest of each product above
+it plays with. The command runs twice: it asks for the story, reads its `story.json`, then asks for the story and
+every product `parts` names and places them. It stops with a usage error before the second run when a key of such a
+product is not in the catalog. The episode's talk windows and videos are listed in `episode.json` `resources`.
 
-`--format` (default `flac`) is the audio format and `--flac-level` its FLAC compression level (as for `export audio`);
-`--no-audio` leaves the cue sheets undecoded (no `audio/`, `audio`
-in story.json is empty). With audio, `crilips/` holds the weights of the game's CRI Lips mouth analysis, read from the
-CRI Lips library in `[paths] apk` (or in the arm64-v8a split next to it, `split_config.arm64_v8a.apk`), when a voice
-reaches that analysis: a lip-synced voice while a model has no MotionSync controller (model.json `motionSync`), or a
-voice that other speakers follow (story.json `crilips`; ournotes-player docs/crilips.md). Videos keep the VP9 stream
-of the game's USM file and carry its ADX audio as Opus (FFmpeg,
-`[paths] ffmpeg`); the USM streams are unmasked with the CRI key read from `[paths] apk`. TextMesh Pro text in
-frames, talk windows and chat keeps its layout and style; with `--fonts open` its font and sprite assets and text
-materials are only named (no atlas is written), with `--fonts game` they are exported. The command stops before
-writing anything when the episode uses resources that are not in the catalog or resource kinds that are not
-supported (`timeline`). Prints the index with a summary.
+A product several stories play with (the scene, a stage, a model, a cue sheet) is one product: stories exported into
+one directory share its manifest and files, and the depot keeps every result for the next export.
 
-The shared chat sound rows (`chat.json` `sounds`, `cueSheets`) name the cue sheet `AdvSe_Common`. In the version
-1.0.1 data nothing holds it: no catalog language (`ja`, `en`, `zh-Hant`, `zh-Hans`, `ko`) has a key
-`Cri/Sound/AdvSe_Common` or `EmbCri/Sound/AdvSe_Common` (remote or APK catalog), the APK has no ACB file of that
-name, and it is not a Resources asset. The story therefore has no audio for these rows; the rows are kept as they
-are. Every cue sheet of the episodes' own `-SoundCueSheet` shards has its `Cri/Sound/` key.
+`--format` (default `aac`) is the web audio format of the cue sheets: `aac` (AAC-LC in MP4, `cues.json` records each
+file's encoder delay), `opus`, `vorbis`, `mp3`, or `flac` (the decoded FLAC as it is); `--flac-level` is the FLAC
+compression level of the decoded sounds (as for `export audio`). `crilips/` holds the weights of the game's CRI Lips
+mouth analysis, read from the CRI Lips library in `[paths] apk` (or in the arm64-v8a split next to it,
+`split_config.arm64_v8a.apk`); `story.json` names it when a voice of the episode is lip-synced, and the models'
+MotionSync (model.json `motionSync`) decides whether a player runs the analysis.
 
-`ui/ui.json` holds the parts of the game's ADV widget the story draws: the front canvas (talk window, speaker plate,
-location caption, title, rule transition, curtains, flash, subtitles caption, next indicator, menu entry button, menu
-panel and video buttons, backlog, choices, tap areas), the canvases of stills, frames and videos with the screen
-image and the camera they render with (`videoAndStillCamera`), the UI camera that renders the frame canvas
-(`uiCamera`), and the letterbox bands; per node its transform, rect
-and uGUI components, the views' serialized references as node paths (the menu view with its fast-forward sprites),
-the other game components' serialized fields (`behaviours`), the widget's canvas sort orders (`widget`), the ADV
-screen's dialogs (`dialogs`: the skip confirm and common dialog prefabs) and their texts of the language
-(`masterIdTexts`), the chat phone (`chatWidget`), the text
-records of the episode's chat windows (`chatTexts`) with their status texts (`chatStatusTexts`). The talk windows
-sit under `TalkView`: the default window,
-then each other window the episode's TalkWindow rows attach; when one of them dims and blurs the screen behind its
-talk (`UICenterTalkWindow`), the front canvas' `CenterTalkBackdrop` node, the renderer's blur settings (`blur`) and
-the blur shader come with it.
-
-`ui/` follows the client language `[catalog] language` (`ja`, `en`, `zh-Hant`, `zh-Hans` or `ko`): the localized
-fonts and materials, the line spacing LocalizeText applies, and, with `--fonts game`, the characters of the lines
-(Talk, Location and Subtitles rows, ruby readings included), speaker names, title and UI texts in that language
-(`ui/ui.json` `language`: `mode`, `field`, `lineSpacing`).
-
-`--fonts` (default `open`) chooses how `ui/` handles text. Both modes write a text record `textStyle` for each text
-node of `ui/ui.json`, and a document-level `textStyle` that holds the units and the line metrics of each font role.
-With `open`, `ui/` contains no font data: no font atlases, glyph tables, font materials or text shader. `game` also
-exports the game's TextMesh Pro fonts: per node the serialized text settings with the localized font and material
-(`text`), and in the document the font assets reduced to the characters the episode shows (`fonts`), runtime glyphs,
-text materials, `glyphCoverage`, `tmpSettings` and the text shader. `game` needs the optional `fonts` dependencies
-(`pip install -e ".[fonts]"`).
-
-The `ui/ui.json` text record (`textStyle` of a node; the node's `rect` and transform give its layout box):
-
-| Field | Value |
-|---|---|
-| `class`, `enabled` | TMP component class, enabled flag |
-| `fontRole` | font slot of the game's localized fonts: `primary` (main text face), `number` (Latin / numeral face) |
-| `materialType` | material style name of the text (`Default`, `OutlineAdvCommon`, ...) |
-| `localized`, `textKey` | LocalizeText enabled; its master text id, or null when the runtime sets the text (talk, speaker, location and title texts come from `episode.json`, one field per language) |
-| `text`, `richText`, `parseControlCharacters` | serialized text, rich text tags on, `\n`-style escapes parsed |
-| `fontSize`, `autoSize` | size in canvas units; auto-size `enabled`, `min`, `max`, `maxCharWidthAdjust`, `maxLineSpacingAdjust` |
-| `fontStyle`, `fontWeight` | style flags (`bold`, `italic`, `underline`, `strikethrough`, `lowerCase`, `upperCase`, `smallCaps`, `superscript`, `subscript`, `highlight`), weight 100-900 |
-| `alignment` | `horizontal` (`left`, `center`, `right`, `justified`, `flush`, `geometry`), `vertical` (`top`, `middle`, `bottom`, `baseline`, `geometry`, `capline`) |
-| `wrapping`, `overflow` | `noWrap` / `normal` / `preserveWhitespace` / `preserveWhitespaceNoWrap`; `overflow` / `ellipsis` / `masking` / `truncate` / `scrollRect` / `page` / `linked` |
-| `margin` | `left`, `top`, `right`, `bottom` insets of the rect |
-| `lineSpacing` | `serialized`, `applied` (the value for the export language), `byLanguage` (the per-language line spacing LocalizeText applies; null when not localized) |
-| `paragraphSpacing`, `characterSpacing`, `wordSpacing` | spacing in 1/100 em |
-| `characterHorizontalScale`, `kerning`, `rightToLeft`, `orthographic` | as serialized |
-| `color`, `colorMode`, `colorGradient`, `overrideHtmlColors` | vertex colour, gradient mode, four-corner gradient (null when off) |
-| `face` | `color` (fill = `color` x `face.color`), `dilateEm`, `boldDilateEm` (glyph edge moved outwards), `softnessEm` (edge ramp width) |
-| `outline` | null, or `color`, `widthEm` (band on each side of the glyph edge: stroke width 2 x `widthEm`, drawn over the fill), `softnessEm` |
-| `underlay` | null, or `color`, `offsetEm` [x, y] (+x right, +y down), `dilateEm`, `softnessEm`, `inner` (shadow inside the glyph) |
-
-`*Em` values are fractions of the drawn font size, converted from the text material's distance-field properties the
-way the TMP shader applies them. The document-level `textStyle.roles` gives, per role, `lineHeightEm`, `ascentEm`,
-`descentEm` (line pitch = `lineHeightEm` + `lineSpacing` / 100 em) and the font's `spacingOffset` / `boldSpacing`
-(1/100 em) for the export language.
+The shared chat sound rows (`chat.json` `sounds` and `cueSheets` of `storychat/default.json`) name the cue sheet
+`AdvSe_Common`. In the version 1.0.1 data nothing holds it: no catalog language (`ja`, `en`, `zh-Hant`, `zh-Hans`,
+`ko`) has a key `Cri/Sound/AdvSe_Common` or `EmbCri/Sound/AdvSe_Common` (remote or APK catalog), the APK has no ACB
+file of that name, and it is not a Resources asset. The story therefore has no audio for these rows; the rows are
+kept as they are. Every cue sheet of the episodes' own `-SoundCueSheet` shards has its `Cri/Sound/` key.
 
 ## export live2d
 
@@ -603,7 +534,7 @@ SITE/assets/<sha256>.<ext>[.gz|.br]       content-addressed files shared by all 
 
 ### Stories
 
-A story's manifest lists what the player's story page reads, in the layout of `export story` (below the site's `assets/`):
+A story's manifest lists what the player's story page reads (below the site's `assets/`):
 `story.json`, `episode.json`, `scene.json`, the scene shaders (GLSL ES 3.00 programs only), textures, per cue sheet
 `cues.json` and the file of each cue in the `--format` (an AAC file's encoder delay in
 `cues.json` as `encoderDelay`; the CRI category names a cue plays in as `categories`, e.g. `["Voice", "VoiceConfig"]`), the media files the episode uses and its videos; per language (`--story-languages`,
@@ -659,6 +590,60 @@ root), and `stories.json` counts their files in `size.models`. The format is des
   The text nodes of the episode's frames get theirs in `frameTexts`, and the font assets also hold the texts a frame
   that receives texts is given at run time (the texts of its Frame rows' `TargetTextIDs`, as the frame formats them).
 - Stories that fail are listed in the printed summary and in `SITE.story-failures.json`; the exit status is then 1.
+
+`ui/ui.json` holds the parts of the game's ADV widget the story draws: the front canvas (talk window, speaker plate,
+location caption, title, rule transition, curtains, flash, subtitles caption, next indicator, menu entry button, menu
+panel and video buttons, backlog, choices, tap areas), the canvases of stills, frames and videos with the screen
+image and the camera they render with (`videoAndStillCamera`), the UI camera that renders the frame canvas
+(`uiCamera`), and the letterbox bands; per node its transform, rect
+and uGUI components, the views' serialized references as node paths (the menu view with its fast-forward sprites),
+the other game components' serialized fields (`behaviours`), the widget's canvas sort orders (`widget`), the ADV
+screen's dialogs (`dialogs`: the skip confirm and common dialog prefabs) and their texts of the language
+(`masterIdTexts`), the chat phone (`chatWidget`), the text
+records of the episode's chat windows (`chatTexts`) with their status texts (`chatStatusTexts`). The talk windows
+sit under `TalkView`: the default window,
+then each other window the episode's TalkWindow rows attach; when one of them dims and blurs the screen behind its
+talk (`UICenterTalkWindow`), the front canvas' `CenterTalkBackdrop` node, the renderer's blur settings (`blur`) and
+the blur shader come with it.
+
+Each language's `ui/` holds the localized fonts and materials, the line spacing LocalizeText applies, and, with
+`--fonts game`, the characters of the lines (Talk, Location and Subtitles rows, ruby readings included), speaker
+names, title and UI texts in that language (`ui/ui.json` `language`: `mode`, `field`, `lineSpacing`).
+
+`--fonts` (default `open`) chooses how `ui/` handles text. Both modes write a text record `textStyle` for each text
+node of `ui/ui.json`, and a document-level `textStyle` that holds the units and the line metrics of each font role.
+With `open`, `ui/` contains no font data: no font atlases, glyph tables, font materials or text shader. `game` also
+exports the game's TextMesh Pro fonts: per node the serialized text settings with the localized font and material
+(`text`), and in the document the font assets reduced to the characters the episode shows (`fonts`), runtime glyphs,
+text materials, `glyphCoverage`, `tmpSettings` and the text shader. `game` needs the optional `fonts` dependencies
+(`pip install -e ".[fonts]"`).
+
+The `ui/ui.json` text record (`textStyle` of a node; the node's `rect` and transform give its layout box):
+
+| Field | Value |
+|---|---|
+| `class`, `enabled` | TMP component class, enabled flag |
+| `fontRole` | font slot of the game's localized fonts: `primary` (main text face), `number` (Latin / numeral face) |
+| `materialType` | material style name of the text (`Default`, `OutlineAdvCommon`, ...) |
+| `localized`, `textKey` | LocalizeText enabled; its master text id, or null when the runtime sets the text (talk, speaker, location and title texts come from `episode.json`, one field per language) |
+| `text`, `richText`, `parseControlCharacters` | serialized text, rich text tags on, `\n`-style escapes parsed |
+| `fontSize`, `autoSize` | size in canvas units; auto-size `enabled`, `min`, `max`, `maxCharWidthAdjust`, `maxLineSpacingAdjust` |
+| `fontStyle`, `fontWeight` | style flags (`bold`, `italic`, `underline`, `strikethrough`, `lowerCase`, `upperCase`, `smallCaps`, `superscript`, `subscript`, `highlight`), weight 100-900 |
+| `alignment` | `horizontal` (`left`, `center`, `right`, `justified`, `flush`, `geometry`), `vertical` (`top`, `middle`, `bottom`, `baseline`, `geometry`, `capline`) |
+| `wrapping`, `overflow` | `noWrap` / `normal` / `preserveWhitespace` / `preserveWhitespaceNoWrap`; `overflow` / `ellipsis` / `masking` / `truncate` / `scrollRect` / `page` / `linked` |
+| `margin` | `left`, `top`, `right`, `bottom` insets of the rect |
+| `lineSpacing` | `serialized`, `applied` (the value for the export language), `byLanguage` (the per-language line spacing LocalizeText applies; null when not localized) |
+| `paragraphSpacing`, `characterSpacing`, `wordSpacing` | spacing in 1/100 em |
+| `characterHorizontalScale`, `kerning`, `rightToLeft`, `orthographic` | as serialized |
+| `color`, `colorMode`, `colorGradient`, `overrideHtmlColors` | vertex colour, gradient mode, four-corner gradient (null when off) |
+| `face` | `color` (fill = `color` x `face.color`), `dilateEm`, `boldDilateEm` (glyph edge moved outwards), `softnessEm` (edge ramp width) |
+| `outline` | null, or `color`, `widthEm` (band on each side of the glyph edge: stroke width 2 x `widthEm`, drawn over the fill), `softnessEm` |
+| `underlay` | null, or `color`, `offsetEm` [x, y] (+x right, +y down), `dilateEm`, `softnessEm`, `inner` (shadow inside the glyph) |
+
+`*Em` values are fractions of the drawn font size, converted from the text material's distance-field properties the
+way the TMP shader applies them. The document-level `textStyle.roles` gives, per role, `lineHeightEm`, `ascentEm`,
+`descentEm` (line pitch = `lineHeightEm` + `lineSpacing` / 100 em) and the font's `spacingOffset` / `boldSpacing`
+(1/100 em) for the export language.
 
 ### Regions and languages
 

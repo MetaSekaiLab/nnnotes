@@ -1,6 +1,6 @@
 # Quick start
 
-This walk-through takes you from an empty configuration to an exported ADV episode and a story directory. It needs
+This walk-through takes you from an empty configuration to an exported ADV episode and a story export. It needs
 your own installation of the game: its `base.apk`, and the keys and server addresses of your client
 ([where the values come from](configuration.md#where-the-values-come-from)).
 
@@ -66,9 +66,10 @@ nnnotes export story 10462 -o out/story_10462
 ```
 
 `export episode` writes the episode's command list with its lines in five languages and the index of its voices,
-sounds and videos. `export story` writes the whole story directory: the episode, its audio, the stage scene and
-shaders, the story UI, frames, effects, stills, chats and videos; the Live2D models it uses go to `out/live2d/`,
-where the next story reuses them. Add `--json` to any command to get its report as JSON.
+sounds and videos. `export story` writes the story product of the episode and the products it plays with below
+`out/story_10462`: the story index, the stage scene, the assets, the Live2D models, the cue sheets decoded to audio
+(AAC by default, `--format` chooses another web format), and the shared chat rows and CRI Lips data when the episode
+uses them. The files are under `assets/`. Add `--json` to any command to get its report as JSON.
 
 ## Next
 

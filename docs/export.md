@@ -15,14 +15,19 @@ nnnotes export episode 10462 -o out/episode_10462.json     # the episode's comma
 nnnotes export story 10462 -o out/stories/10462            # everything the episode plays
 ```
 
-`export story` writes the episode, its decoded cue sheets, the stage scene, the story UI, frames, effects, stills,
-chats and videos below `-o`, and its Live2D models below the models directory (`--models`, default `live2d/` next to
-the story directory). A model directory that exists is used as it is, so exporting the stories of a season into
-sibling directories exports each model once.
+`export story` writes the story product of an episode and the products it plays with, as a product layout below `-o`:
+the story index in `stories/<id>.json`, the stage scene in `storyscenes/default.json`, each stage, frame, effect and
+other asset in `storyassets/`, each Live2D model in `models/`, each cue sheet in `cuesheets/`, and, when the episode
+uses them, the shared chat rows in `storychat/default.json` and the CRI Lips data in `crilips/default.json`. The files
+themselves are under `assets/`.
 
-- `--format flac|ogg|wav` and `--flac-level N` choose the audio format; `--no-audio` leaves the cue sheets undecoded.
-- `--fonts game` also writes the game's fonts reduced to the characters shown (needs `pip install 'nnnotes[fonts]'`).
-- `--force` exports the episode's models again.
+Products that several stories share (the scene, assets, models and cue sheets) are placed once, so exporting several
+stories into one directory keeps one copy of each. Every product goes through the depot, so a second export reuses
+its results.
+
+- `--format NAME` chooses the web audio format of the cue sheets: `aac` (default), `opus`, `vorbis`, `mp3` or `flac`.
+- `--flac-level N` sets the FLAC compression level (0 to 12, default 8) of the decoded sounds.
+- `--dry-run` prints the plan and runs nothing.
 
 `MasterAdv` lists the episode ids; `nnnotes voices list --source story --episode ID` lists the voiced lines of one.
 Details: [export episode](commands.md#export-episode), [export story](commands.md#export-story).
