@@ -131,6 +131,7 @@ STAGE_SOURCES = (
     StageSource("story.crilips", "nnnotes.pipeline.story:CriLipsStage", output=True, product=True),
     StageSource("story.scene", "nnnotes.pipeline.story:SceneStage", output=True, product=True),
     StageSource("story.asset", "nnnotes.pipeline.story:AssetStage", output=True, product=True),
+    StageSource("story.video", "nnnotes.pipeline.story:VideoStage", output=True, product=True),
     StageSource("story.chat", "nnnotes.pipeline.story:ChatStage", output=True, product=True),
     StageSource("story", "nnnotes.pipeline.story:StoryStage", output=True, product=True),
     StageSource("view.", "nnnotes.pipeline.views:stages", output=True),
@@ -658,6 +659,9 @@ class Workspace:
     def request(self, products: dict, selection: list[str]) -> None:
         """Ask for the products `products` {product stage: subjects} alone, with the selection `selection` (what
         their census needs) instead of the command's: only what the products reach is exported."""
+        unknown = sorted(n for n in products if n not in self.installed.stages)
+        if unknown:
+            raise ValueError(f"no product stage {', '.join(unknown)} is installed")
         self.products, self.selection = {k: sorted(v) for k, v in products.items()}, list(selection)
 
     def _wanted(self, name: str) -> bool:
@@ -686,6 +690,10 @@ class Workspace:
         if fmt is not None:
             for n in [n for n in pipeline if "audio" in stages[n].PARAMS]:
                 out.setdefault(n, {})["audio"] = fmt
+        fmt = getattr(self.args, "movie_format", None)
+        if fmt is not None:
+            for n in [n for n in pipeline if "format" in stages[n].PARAMS]:
+                out.setdefault(n, {})["format"] = fmt
         level = getattr(self.args, "flac_level", None)
         if level is not None:
             if not 0 <= level <= 12:
