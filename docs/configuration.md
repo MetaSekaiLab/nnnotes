@@ -86,7 +86,7 @@ exist when they are given.
 | `[master] key` | `NNNOTES_MASTER_KEY` | — | Rijndael-256 key of the master data files: 32 bytes as 64 hex digits |
 | `[master] iv` | `NNNOTES_MASTER_IV` | — | Rijndael-256 CBC initialization vector: 32 bytes as 64 hex digits |
 | `[catalog] region` | `NNNOTES_CATALOG_REGION` | `--region` | name of one `[servers.<region>]` table |
-| `[catalog] language` | `NNNOTES_CATALOG_LANGUAGE` | `--language` | catalog language: the `<language>` of `catalog_<version>_<language>.bin`: `ja`, `en`, `zh-Hant`, `zh-Hans` or `ko`; also the client language of `export story` and `site build` (the text field, fonts and line spacing of their UI) and of the model labels of `site build --live2d` |
+| `[catalog] language` | `NNNOTES_CATALOG_LANGUAGE` | `--language` | catalog language: the `<language>` of `catalog_<version>_<language>.bin`: `ja`, `en`, `zh-Hant`, `zh-Hans` or `ko`; also the client language of `site build` (the text field, fonts and line spacing of its story UI) and of the model labels of `site build --live2d` |
 | `[catalog] version` | `NNNOTES_CATALOG_VERSION` | `--catalog-version` | optional international resource version; unset: query the configured region API, or use legacy `main` when no API is configured; JP uses its own discovery |
 | `[servers.<region>] name` | `NNNOTES_SERVERS_<REGION>_NAME` | — | label of the region in `catalog browse` (default: the region name) |
 | `[servers.<region>] provider` | `NNNOTES_SERVERS_<REGION>_PROVIDER` | — | `international` or `jp`; empty selects `jp` for the region named jp, international otherwise |
@@ -156,7 +156,7 @@ in, and bundles that ship inside the APK can only be read with it.
 "Master data" means the decoded master data directory of the region: the `--master` flag, else
 `[servers.<region>] master` of `[catalog] region`, else `[paths] master`.
 
-`--fonts game` (`export story`, `site build`) also needs the optional `fonts` dependencies (`pip install 'nnnotes[fonts]'`),
+`--fonts game` (`site build`) also needs the optional `fonts` dependencies (`pip install 'nnnotes[fonts]'`),
 and so does `site build --story` / `--all-stories` with either font source (it generates the TextMesh Pro font assets of the
 story text); it is not a setting.
 
@@ -170,7 +170,7 @@ story text); it is not a setting.
 | `master version` | `[catalog] region` and that region's `api`; the client version: `[client] version` or `[paths] apk` |
 | `servers` | `[bootstrap] api`; the client version: `[client] version` or `[paths] apk` |
 | `export episode` | catalog, master data |
-| `export story` | catalog, `[catalog] language`, master data, `[paths] apk`, `ffmpeg` (audio and videos), `vgmstream` (not with `--no-audio`) |
+| `export story` | catalog, master data, `[paths] apk`, `vgmstream`, `ffmpeg` |
 | `export live2d` | catalog, `[paths] apk` |
 | `export spot` | catalog, master data, `[paths] apk` |
 | `export room` | catalog |
