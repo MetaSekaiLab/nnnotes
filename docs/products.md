@@ -35,7 +35,8 @@ What a task reaches: the units holding its roots, then every unit that an item o
 item's `refs`; a SpriteAtlas reached through a reference does not reach the sprites it packs), through the
 `unity.export` results. A sprite whose atlas is in another bundle has its `image` from the
 `sprite.crop` result of that atlas. A reached unit that the request did not export is an error of the request; an
-object that a reached object references and no census holds is listed as `missing`.
+object that a reached object references and no census holds is listed as `missing`. A subject without roots (a
+product made from the APK alone) reaches nothing and reads no census.
 
 | Part of the task | |
 |---|---|
@@ -348,3 +349,24 @@ paths of the parts.
 The object table holds the jacket Sprite and its texture; the chart's `TextAsset` is in `chart.json`. The `product`
 layout makes the live of each chart whose key and jacket the selection holds (with the master data), without a band.
 `export live` asks for one live and its parts ([export live](commands.md#export-live)).
+
+## Stories
+
+A story episode plays with products that several episodes share, made by `nnnotes.pipeline.story`:
+
+| Product | Subject | Manifest | Roots | Files |
+|---|---|---|---|---|
+| `story.sound` | a cue sheet name (`_cueSheetName` of an episode's cue sheet table) | `cuesheets/<sheet>.json` | the cue sheet's key `Cri/Sound/<sheet>` | `cues.json` and the cues' sounds |
+| `story.crilips` | `default` | `crilips/default.json` | none (it reads the APK) | `crilips.json` and `crilips.bin` |
+
+Neither keeps objects. `story.sound` reads its cue sheet's `cri.audio` files; `cues.json` maps each cue name to the
+first stream of that name (in stream order): `file` (the sound, next to `cues.json`), `sampleRate`, `channels`,
+`samples` (frames at `sampleRate`, without encoder padding) and, for a looping stream, `loopStart` and `loopEnd`
+(sample frames). The sounds are in the web format of the parameter `audio`, as for `live.music`: `aac` (the default)
+records `encoderDelay`, the priming samples of the MP4 edit list; `flac` keeps the decoded FLAC. The `product`
+layout makes the `story.sound` product of every cue sheet key the selection holds.
+
+`story.crilips` reads the CRI Lips library of the APK (`apk:lib/arm64-v8a/libcri_lips_unity.so`, in the arm64-v8a
+split of an installed app) and writes the analysis data a player needs to run the CRI Lips analysis on a voice: the
+descriptor `crilips.json` and the float32 weights `crilips.bin`. A library of a version nnnotes does not know makes
+the product `unsupported` (`unsupported.crilips.version`). Only a request makes it.
