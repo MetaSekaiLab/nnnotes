@@ -133,22 +133,26 @@ def _tool(which: str) -> str:
 
 
 def _magic_of(depot, inp: Input, name: str) -> bytes:
-    """The first 4 bytes of a raw file, from a local copy (the depot, the cache, a file); one that is not fetched
-    yet is Pending("fetch:<name>")."""
+    """The first 4 bytes of a raw file: recorded in the depot by content ("magic:<sha256>"), else read from the file
+    (its locators: a local copy, else fetched through the catalog) and recorded; one that cannot be read yet is
+    Pending("fetch:<name>")."""
     with _lock:
         m = _magic.get(inp.sha256)
     if m is None:
-        from .depot import InputMissing
+        record = f"magic:{inp.sha256}"
+        known = depot.named("files", record)
+        if known is not None and depot.has(*known):
+            m = depot.read(known[0])
+        else:
+            from .depot import InputMissing
 
-        local = Input(
-            inp.role, inp.sha256, inp.size, inp.name, tuple(loc for loc in inp.locators if loc.get("kind") != "catalog")
-        )
-        try:
-            path = depot.open_input(local)
-        except InputMissing:
-            raise Pending(f"fetch:{inp.name or name}") from None
-        with open(path, "rb") as f:
-            m = f.read(4)
+            try:
+                path = depot.open_input(inp)
+            except InputMissing:
+                raise Pending(f"fetch:{inp.name or name}") from None
+            with open(path, "rb") as f:
+                m = f.read(4)
+            depot.identify(depot.local(depot.put(m)), "files", record)
         with _lock:
             _magic[inp.sha256] = m
     return m
