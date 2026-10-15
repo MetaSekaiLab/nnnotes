@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 from ..core.jsonio import write_json
+from ..formats.encoders import DEFAULT_AUDIO_FORMAT, WEB_AUDIO
 from ..source.config import use
 from ..source.session import Session
 from . import assets
@@ -17,6 +18,7 @@ from .common import (
     audio_args,
     band_args,
     command,
+    flac_level_arg,
     flac_options,
     fonts_arg,
     fonts_extra,
@@ -83,44 +85,54 @@ def cmd_story(args, cfg):
 
 
 def cmd_live(args, cfg):
-    from ..content import live, liveoptions
-    from ..site.web import all_pairs
-    from ..source import languages
-    from ..unity.player import PlayerData
+    from ..content import live, liveaudio, livenotes, liveoptions
+    from ..pipeline import live as lp
+    from ..pipeline.stages import Env
+    from ..source.master import table
 
-    fonts_extra(args.fonts)
-    request = live_options(args)
-    flac = flac_options(args)
-    language = languages.check(cfg.require("catalog", "language"))
+    cfg.require_path("paths", "apk")  # the built-in graphics and sound settings and the CRI ACF are in the APK
+    use(cfg)  # the tools the atoms name are part of the keys
     md = Session(cfg).master_dir()
     known_row(args, md, "MasterLiveMusic", args.music_id, "music")
-    if (args.music_id, args.difficulty) not in all_pairs(md):
-        usage(args, f"music {args.music_id}: no {args.difficulty} chart (no MasterLiveMusicScore row)")
     try:
-        options = liveoptions.resolve(request, md)
+        options = liveoptions.resolve(live_options(args), md)
     except liveoptions.OptionSpecError as e:
         usage(args, str(e))
-    cat = Session(cfg).catalog()
-    try:  # an unknown --leader-card, a --band without its scene keys
-        live.resolve_band(cat, md, args.music_id, band=args.band, leader_card=args.leader_card)
+    band = args.band
+    if args.leader_card is not None:
+        tables = {n: table(md, n) for n in ("MasterMemberCard", "MasterCharacter", "MasterLiveMusic")}
+        try:
+            band = live.band_choice(tables, args.music_id, leader_card=args.leader_card)["band"]
+        except KeyError as e:
+            usage(args, e.args[0])
+    ws = assets.Workspace(args, cfg, layouts=["product"])
+    env = Env(ws.depot, {"master": md})
+    stage, subject = lp.LiveStage(), live.live_subject(args.music_id, args.difficulty, band)
+    try:  # no chart of the difficulty, a music without a vocal character, a master table missing
+        b = stage.live_record(subject, env)["band"]["band"]
+        products = {lp.LIVE: [subject], **stage.parts(subject, env)}
     except (KeyError, ValueError) as e:
         usage(args, e.args[0] if e.args else type(e).__name__)
-    r = live.build(
-        cat,
-        md,
-        PlayerData(Session(cfg).apk()),
-        args.music_id,
-        args.difficulty,
-        Path(args.out),
-        audio_format=args.format,
-        band=args.band,
-        leader_card=args.leader_card,
-        language=language,
-        fonts=args.fonts,
-        options=options,
-        **flac,
-    )
-    report(args, r)
+    ws.request(products, [])
+    ws.params(ws.pipeline())  # the flags the stages take, checked before the index
+    ws.run_index()
+    held = {loc["primaryKey"] for loc in ws.index()["locations"]}
+    missing = [k.format(band=b) for k in live.BAND_KEYS if k.format(band=b) not in held]
+    if missing:
+        usage(args, f"band {b}: {', '.join(missing)} not in the catalog")
+    skins = {r["_id"]: r["_assetName"] for r in table(md, "MasterLiveNoteSkin")}
+    effects = {r["_id"]: r["_assetName"] for r in table(md, "MasterLiveNoteEffectSkin")}
+    products[lp.NOTESKIN] += [skins[i] for i in options.designs if skins[i] not in products[lp.NOTESKIN]]
+    products[lp.NOTEEFFECT] += [  # a Light variant where the catalog has one, as the game
+        n for n, light in options.effect_sets(effects) if not light or livenotes.effect_settings_key(n) in held
+    ]
+    if options.se_patterns:
+        products[lp.SOUNDS].append(liveaudio.sounds_subject(options.se_patterns))
+    classes = {lp.LIVE: lp.LiveStage, **lp.PART_STAGES}
+    stages = {n: classes[n]() for n in products}
+    keys = {k for n, subjects in products.items() for s in subjects for k in stages[n].keys(s, env)}
+    ws.request(products, sorted(f"key:{k}" for k in keys))
+    assets.export(args, cfg, ws)
 
 
 def cmd_live2d(args, cfg):
@@ -290,20 +302,30 @@ def register(sub) -> None:
         "(needs the 'fonts' extra)",
     )
 
-    c = command(es, "live", cmd_live, "a live (music + difficulty) -> self-contained live directory")
+    c = command(
+        es,
+        "live",
+        cmd_live,
+        "a live (music + difficulty) -> the live product and the products it plays with (scene, note highway, "
+        "sounds, music)",
+    )
     c.add_argument("music_id", type=int, help="MasterLiveMusic id")
     c.add_argument(
         "--difficulty", default="expert", choices=DIFFICULTY_CHOICES, help="chart difficulty (default expert)"
     )
-    audio_args(c)
-    fonts_arg(
-        c,
-        "start canvas text: open (default): layout and style only, no font data (your fonts are not used); "
-        "game: also the game's TMP fonts (needs the 'fonts' extra)",
+    c.add_argument(
+        "--format",
+        dest="audio_format",
+        metavar="FORMAT",
+        default=DEFAULT_AUDIO_FORMAT,
+        choices=sorted(WEB_AUDIO),
+        help=f"web audio format of the BGM (default {DEFAULT_AUDIO_FORMAT})",
     )
+    flac_level_arg(c, "of the decoded sounds")
     band_args(c)
     live_option_arg(c)
     out_arg(c, "output directory")
+    product_args(c)
 
     c = command(es, "live2d", cmd_live2d, "a Live2D model -> its Cubism SDK files, or the player's model")
     c.add_argument("key", help="model key Character/Live2D/<group>/<name>/model/<name>, or its model id <name>")

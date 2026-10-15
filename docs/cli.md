@@ -210,19 +210,23 @@ an ADV episode -> story directory (episode, audio, scene, UI, media, videos) + i
 
 ## nnnotes export live
 
-a live (music + difficulty) -> self-contained live directory
+a live (music + difficulty) -> the live product and the products it plays with (scene, note highway, sounds, music)
 
 | Argument | Description |
 | --- | --- |
 | `music_id` | MasterLiveMusic id |
 | `--difficulty` `DIFFICULTY` | chart difficulty (default expert) (one of `easy`, `normal`, `hard`, `expert`) |
-| `--format` `FORMAT` | audio file format (default flac) (one of `flac`, `ogg`, `wav`) |
-| `--flac-level` `N` | FLAC compression level 0-12 of --format flac (default 8; every level decodes to the same samples) |
-| `--fonts` `FONTS` | start canvas text: open (default): layout and style only, no font data (your fonts are not used); game: also the game's TMP fonts (needs the 'fonts' extra) (one of `open`, `game`) |
+| `--format` `FORMAT` | web audio format of the BGM (default aac) (one of `aac`, `flac`, `mp3`, `opus`, `vorbis`) |
+| `--flac-level` `N` | FLAC compression level 0-12 of the decoded sounds (default 8; every level decodes to the same samples) |
 | `--band` `BAND` | band of the LightWeight background and start timeline (default: band of the music's first vocal character) |
 | `--leader-card` `LEADER_CARD` | deck centre MasterMemberCard id (its character's band) |
 | `--live-option` `OPTION[=VALUES]` | also export the files of a Live option's variants (repeatable): MirrorChart, MeasureLineDisplay, NoteDesignId, NoteEffectId, LiveQuality, NoteSePatternId (every value of the master data, or =v,v...), defaults (the option defaults and ranges only) or all |
 | `-o`, `--out` `OUT` | output directory (required) |
+| `--stored-catalog` `LABEL\|SHA` | a catalog version of the depot (`catalog versions`; default: the current catalog) |
+| `--workers` `N` | worker processes (default: the usable CPUs) |
+| `--link` `LINK` | as export assets --link (one of `auto`, `clone`, `hard`, `copy`) |
+| `--explain` | print every setting of the run first |
+| `--dry-run` | print the plan, run nothing |
 
 At most one of `--band`, `--leader-card`.
 

@@ -6,6 +6,7 @@ import pytest
 
 from nnnotes.content import live, liveaudio, livenotes, liveoptions, livescene, score
 from nnnotes.content.liveoptions import LiveOptions, OptionSpecError, parse_specs, resolve
+from tests.helpers.live import CHART
 
 SWITCHES = {
     4,
@@ -392,18 +393,6 @@ def test_note_se_individual_and_trace_mute(tmp_path):
 
 
 # ---------------------------------------------------------------- mirrored score
-CHART = {
-    "score": {
-        "events": {"bpm": [{"t": 0, "bpm": 120}], "sig": [{"t": 0, "sig": [4, 4]}]},
-        "notes": [
-            {"type": "tap", "t": 480, "pos": 2, "size": 3},
-            {"type": "flick", "t": 960, "pos": 10, "size": 4, "dir": "left"},
-            {"type": "long", "node": [{"t": 1440, "pos": 0, "size": 2}, {"t": 1920, "pos": 5.5, "size": 2}]},
-        ],
-    }
-}
-
-
 def test_mirrored_conversion():
     a, b = score.convert(CHART), score.convert(CHART, mirror=True)
     assert (a["mirror"], b["mirror"]) == (False, True)
