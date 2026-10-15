@@ -178,7 +178,7 @@ every object of the selected bundles -> common formats (the depot and its layout
 | `--workers` `N` | worker processes (default: the CPUs this process may use; 0: this process) |
 | `--memory` `GiB` | memory budget of the running tasks and workers (default: 80 % of the physical memory) |
 | `--fetch-workers` `N` | parallel downloads (default 8) |
-| `--layout` `LAYOUT` | original, cas or original,cas (default original) |
+| `--layout` `LAYOUT` | original, cas, product, comma-separated (default original; product: the products of the selection) |
 | `--explain` | print every setting of the run first |
 | `--link` `LINK` | how the layout files are made from the depot: auto (default; [export] link): a clone where the file system makes them, else a hard link (read-only), else a copy; or that method only (one of `auto`, `clone`, `hard`, `copy`) |
 | `--strict` | exit 1 when a view has gaps |
@@ -228,12 +228,18 @@ At most one of `--band`, `--leader-card`.
 
 ## nnnotes export live2d
 
-a Live2D model -> runtime model directory
+a Live2D model -> its Cubism SDK files, or the player's model
 
 | Argument | Description |
 | --- | --- |
 | `key` | model key Character/Live2D/<group>/<name>/model/<name>, or its model id <name> |
 | `-o`, `--out` `OUT` | output directory (required) |
+| `--player` | write the player's model (models/<id>.json and assets/) instead of the Cubism SDK files |
+| `--stored-catalog` `LABEL\|SHA` | a catalog version of the depot (`catalog versions`; default: the current catalog) |
+| `--workers` `N` | worker processes (default: the usable CPUs) |
+| `--link` `LINK` | as export assets --link (one of `auto`, `clone`, `hard`, `copy`) |
+| `--explain` | print every setting of the run first |
+| `--dry-run` | print the plan, run nothing |
 
 ## nnnotes export spot
 
@@ -321,7 +327,7 @@ what `export assets` would run and why, without running it (--json: nnnotes.plan
 | `--workers` `N` | worker processes (default: the CPUs this process may use; 0: this process) |
 | `--memory` `GiB` | memory budget of the running tasks and workers (default: 80 % of the physical memory) |
 | `--fetch-workers` `N` | parallel downloads (default 8) |
-| `--layout` `LAYOUT` | original, cas or original,cas (default original) |
+| `--layout` `LAYOUT` | original, cas, product, comma-separated (default original; product: the products of the selection) |
 | `--explain` | print every setting of the run first |
 | `--since` `RUN` | explain against this run (default: the latest of the selection) |
 | `--check` | exit 1 when anything would run or change |

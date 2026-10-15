@@ -30,6 +30,8 @@
 `product` (product_entries): the products of pipeline.assemble. Every file of a product and of the objects of its
 object table is at `assets/<sha256>.<ext>`; each product has a manifest (nnnotes.product/1, product_manifest) at
 `<directory>/<file>.json` (ProductStage.manifest), whose asset paths are relative to the directory above its own.
+`files` (product_files): the files of one product at their own paths (a model's Cubism SDK files as a directory); a
+path two products give is an error.
 So every path ends with its artifact's extension, and `cas` follows from the `original` manifest alone; `original`
 follows from `cas` plus the results (the records). Documents a stage derives for `original` from its records and
 the paths (the views with the files of their objects) are the exception: `original` has the derived documents,
@@ -65,7 +67,7 @@ from .depot import write_doc, write_file
 
 MANIFEST = "manifest.json"
 JOURNAL = ".nnnotes-layout-journal.json"
-LAYOUTS = ("original", "cas")
+LAYOUTS = ("original", "cas", "product", "files")
 PRODUCT_TABLE = "objects"  # the role of a product's object table (nnnotes.objects/1) among its artifacts
 PLACEMENTS = ("clone", "hard", "copy")  # how a file is made from its byte source
 LINKS = ("auto", *PLACEMENTS)  # what a run may ask for: auto probes
@@ -410,13 +412,28 @@ def product_entries(products) -> list[dict]:
     return [out[k] for k in sorted(out)]
 
 
+def product_files(results) -> list[dict]:
+    """The entries of the `files` layout: the files of the product results `results` at their own paths."""
+    out: dict[str, dict] = {}
+    for result in results:
+        for a in result["artifacts"]:
+            path = contract.parse_artifact_id(a["id"])[1]
+            if path == PRODUCT_TABLE:
+                continue
+            e = _entry(escape_path(path.split("/")), a)
+            seen = out.setdefault(e["path"].casefold(), e)
+            if seen["id"] != e["id"]:
+                raise LayoutError(f"{e['path']}: a file of {seen['id']} and of {e['id']}")
+    return sorted(out.values(), key=lambda e: (e["path"], e["id"]))
+
+
 def entries(name: str, sources, **kw) -> tuple[list[dict], dict]:
-    """The entries and report of layout `name`."""
+    """The entries and report of layout `original` or `cas`."""
     if name == "cas":
         return cas_entries(sources, kw.get("extra", ())), {"collisions": [], "shared": []}
     if name == "original":
         return original_entries(sources, **kw)
-    raise ValueError(f"unknown layout {name!r} (one of {', '.join(LAYOUTS)})")
+    raise ValueError(f"layout {name!r}: entries() places original or cas")
 
 
 def paths(entries_: list[dict]) -> dict[str, str]:

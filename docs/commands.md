@@ -287,24 +287,29 @@ way the TMP shader applies them. The document-level `textStyle.roles` gives, per
 ## export live2d
 
 ```
-nnnotes export live2d MODEL -o OUT
+nnnotes export live2d MODEL -o OUT [--player]
 ```
 
-A Live2D (Cubism) model prefab as a Cubism runtime directory. `MODEL` is the model's key
+A Live2D (Cubism) model as the Cubism SDK files other tools read. `MODEL` is the model's key
 `Character/Live2D/<group>/<name>/model/<name>` or its id `<name>` (`nnnotes catalog keys --prefix Character/Live2D/` lists
 the keys):
 
 ```
 OUT/<name>.moc3                   the model's moc3
-OUT/textures/*.png                atlas pages
-OUT/<name>.prefab.json            the whole prefab: every GameObject and component, motions and expressions inlined
-OUT/<exp>.exp3.json               expressions
+OUT/textures/<page>.png           the atlas pages the drawables draw with, by name
 OUT/<name>.physics3.json          physics (not written for a model without physics)
-OUT/motions/<motion>.motion3.json motions (and motions/_fades.json)
-OUT/<name>.model3.json            file references, EyeBlink / LipSync groups
+OUT/<exp>.exp3.json               expressions
+OUT/motions/<motion>.motion3.json motions
+OUT/<name>.model3.json            file references, the model's fade times per motion, EyeBlink / LipSync groups
 ```
 
-Needs `[paths] apk` (component classes are resolved through the APK). Prints a JSON summary.
+With `--player`, the model the player reads instead: the product layout of `live2d.model`, `OUT/models/<name>.json`
+and the files it names under `OUT/assets/` ([products](products.md#live2d-models)).
+
+The command runs the depot's pipeline for the model alone (the census of the bundles of its key, the objects its
+prefab reaches, the product) like `export assets`, and writes the same reports in `OUT/_reports/`; it takes
+`--stored-catalog`, `--workers`, `--link`, `--explain` and `--dry-run` as `export assets` does. Needs `[paths] apk`
+(the component classes and the mask materials are in the APK).
 
 ## export spot
 

@@ -24,8 +24,6 @@ from __future__ import annotations
 import zlib
 from collections.abc import Callable, Iterable
 
-from UnityPy.enums import ClassIDType
-
 __all__ = [
     "ENGINE_PROPS",
     "MATERIAL_PROPS",
@@ -150,6 +148,8 @@ def material_attribute(attribute: int, kinds: dict[str, str]) -> str | None:
 
 
 def _class_name(type_id: int) -> str | None:
+    from UnityPy.enums import ClassIDType
+
     try:
         return ClassIDType(type_id).name
     except ValueError:
