@@ -11,18 +11,20 @@ HA, HB, HC = "a" * 32, "b" * 32, "c" * 32
 CAB_A, CAB_B, CAB_S, CAB_M = (f"CAB-{c * 32}" for c in "1234")
 
 
-def obj(pid, cls, name=None, size=10, script=None):
+def obj(pid, cls, name=None, size=10, script=None, unit=None):
     o = {"pathId": pid, "classId": 0, "class": cls, "byteSize": size, "typeHash": "00" * 16}
     if name is not None:
         o["name"] = name
     if script is not None:
         o["script"] = script
+    if unit is not None:
+        o["unit"] = unit
     return o
 
 
-def cdoc(files: dict, container=(), name=None, scripts=(), resource_paths=()):
-    """A census document: files {file: [objects]}, container [(path, file, pathId)] on the first file's AssetBundle,
-    resource_paths [(path, file, pathId)] of a ResourceManager."""
+def cdoc(files: dict, container=(), name=None, scripts=(), resource_paths=(), scenes=()):
+    """A census document: files {file: [objects]}, container [(path, file, pathId)] and scene hashes `scenes`
+    [(path, file)] on the first file's AssetBundle, resource_paths [(path, file, pathId)] of a ResourceManager."""
     fs = [
         {
             "name": f,
@@ -42,7 +44,7 @@ def cdoc(files: dict, container=(), name=None, scripts=(), resource_paths=()):
         "assetBundleName": name,
         "dependencies": [],
         "isStreamedSceneAssetBundle": False,
-        "sceneHashes": [],
+        "sceneHashes": [[p, f] for p, f in scenes],
         "container": [
             {"path": p, "file": f, "pathId": i, "preloadIndex": 0, "preloadSize": 0} for p, f, i in container
         ],
@@ -105,11 +107,17 @@ def censuses():
     shared = cdoc({CAB_B: [obj(1, "AssetBundle", "y")]}, name="wrong.bundle")
     scene = cdoc(
         {
-            CAB_S: [obj(1, "AssetBundle"), obj(3, "GameObject", "root")],
-            CAB_S + ".sharedAssets": [obj(3, "Material", "m")],
+            CAB_S: [
+                obj(2, "Mesh", "m"),
+                obj(3, "GameObject", "root"),
+                obj(4, "Transform", unit=CAB_S + ":3"),
+                obj(5, "RenderSettings"),
+            ],
+            CAB_S + ".sharedAssets": [obj(1, "AssetBundle"), obj(3, "Material", "m")],
         },
         [("Assets/Scenes/X.unity", None, None)],
         name="nc_3.bundle",
+        scenes=[("Assets/Scenes/X.unity", CAB_S)],
     )
     scripts = cdoc(
         {CAB_M: [obj(42, "MonoScript", "Widget")]},
@@ -247,7 +255,13 @@ def test_addresses():
     assert objs["card_a/assets/game/card/a.png[A]"]["object"] == CAB_A + ":6"
     assert objs["card_a/assets/game/card/a.png[A_square]"]["object"] == CAB_A + ":7"
     assert objs["card_a:8"]["object"] == CAB_A + ":8" and objs["card_a:9"]["object"] == CAB_A + ":9"
-    assert len(objs) == 5
+    scene = {a: o["object"] for a, o in objs.items() if a.startswith("scene_x")}
+    assert scene == {
+        "scene_x/Assets/Scenes/X.unity": CAB_S + ":2",
+        "scene_x/Assets/Scenes/X.unity[root]": CAB_S + ":3",
+        "scene_x:5": CAB_S + ":5",
+    }
+    assert len(objs) == 8
     gone = doc["keys"]["Card/Gone"]
     assert gone == [
         {
@@ -258,7 +272,9 @@ def test_addresses():
             "objects": [],
         }
     ]
-    assert doc["keys"]["Scene/X"][0]["objects"] == [] and doc["keys"]["Scene/X"][0]["bundle"] == "scene_x"
+    # a scene: the objects of its file outside a hierarchy
+    assert doc["keys"]["Scene/X"][0]["objects"] == [CAB_S + ":2", CAB_S + ":3", CAB_S + ":5"]
+    assert doc["keys"]["Scene/X"][0]["bundle"] == "scene_x"
     assert doc["keys"]["Sound/S"][0]["raw"] == ["cri/s"] and doc["keys"]["Sound/S"][0]["bundle"] is None
     assert doc["keys"]["Other/O"][0]["objects"] is None  # its bundle has no census
     assert doc["keys"][f"shared_{HB}.bundle"][0]["bundle"] == "shared"
@@ -274,7 +290,8 @@ def test_addresses():
     rev = link.reverse(doc)
     assert link.address_of(doc, CAB_A + ":6", rev) == "card_a/assets/game/card/a.png[A]"
     assert link.address_of(doc, CAB_A + ":10") == "card_a:10"
-    assert link.address_of(doc, CAB_S + ":3") == "scene_x:3"
+    assert link.address_of(doc, CAB_S + ":3") == "scene_x/Assets/Scenes/X.unity[root]"
+    assert link.address_of(doc, CAB_S + ":4") == "scene_x:4"
     assert link.address_of(doc, CAB_S + ".sharedAssets:3") == "scene_x.sharedAssets:3"
     assert link.address_of(doc, "CAB-unknown:3") is None
 
@@ -312,8 +329,8 @@ def test_diff_addresses():
         "card_a/assets/game/card/a.png[A]",
         "card_a/assets/game/card/a.png[A_square]",
     ]
-    assert d["summary"] == {"added": 1, "removed": 2, "changed": 1, "rebuilt": 2, "unchanged": 0}
-    assert catalogdb.diff_addresses(old, old)["summary"]["unchanged"] == 5
+    assert d["summary"] == {"added": 1, "removed": 2, "changed": 1, "rebuilt": 2, "unchanged": 3}  # the scene's 3
+    assert catalogdb.diff_addresses(old, old)["summary"]["unchanged"] == 8
 
 
 # ---------------------------------------------------------------- stages
@@ -366,7 +383,7 @@ def test_link_stages(tmp_path):
     assert [i.role for i in at.inputs] == ["census:card_a", "census:scene_x", "census:shared", "index"]
     execute(at, depot, stages)
     (rec,) = depot.result(at.key)["artifacts"]
-    assert rec["id"] == "link.addresses:main#addresses" and rec["semantics"]["facts"]["objects"] == 5
+    assert rec["id"] == "link.addresses:main#addresses" and rec["semantics"]["facts"]["objects"] == 8
     expected = link.addresses(index(*db.catalog_bytes(v)), {s: docs[s] for s in ("card_a", "scene_x", "shared")})
     assert contract.loads(depot.read(rec["content"]["sha256"])) == expected
     assert execute(at, depot, stages).status == "hit"
