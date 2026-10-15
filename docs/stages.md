@@ -116,7 +116,9 @@ bundle's content changes, so a unit keeps its task across catalog versions.
 A run exports the units holding an object of the selected bundles, the units of the objects the fact "roots" names
 (catalog keys, Resources.Load paths, built-in selectors and object ids: a product's roots, [products](products.md)) and every unit reachable
 from those through what their objects reference (the census `refs`, across the censuses of the run); with `--only-class`
-only the units whose root object is of those classes. The selection is not part of any key: a unit's task is the same
+only the units whose root object is of those classes. A SpriteAtlas reached through a reference adds its textures
+but not the sprites it packs: a sprite needs its atlas' textures, not the atlas' other sprites (an atlas the run
+starts from adds them all). The selection is not part of any key: a unit's task is the same
 whichever request reaches it.
 
 A task's key includes the atoms `reader` and `sniff`, the converter `generic.json`, the converters (with their

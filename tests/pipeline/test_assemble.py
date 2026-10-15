@@ -7,7 +7,7 @@ import json
 
 import pytest
 
-from nnnotes.pipeline import assemble, contract, layout, link
+from nnnotes.pipeline import assemble, contract, layout, link, units
 from nnnotes.pipeline.contract import Task
 from nnnotes.pipeline.depot import Depot
 from nnnotes.pipeline.objexport import ExportStage, SpriteCropStage
@@ -249,7 +249,9 @@ def test_sprite_images_come_from_the_crop_of_their_atlas(tmp_path):
     sprite = table["objects"][oid(13)]
     assert set(sprite["files"]) == {"json", "image"}  # the image from sprite.crop
     assert table["objects"][f"{ATLAS_CAB}:99"]["class"] == "SpriteAtlas"
-    assert table["objects"][f"{ATLAS_CAB}:97"]["status"] == "exported"  # the atlas references its own sprite
+    # the request starts from the atlas, so its own sprite is exported; the product reaches the atlas through sprite
+    # 13 and not that sprite
+    assert f"{ATLAS_CAB}:97" not in table["objects"] and units.table(env).unit("atlas:97")
     crop = [c for c in [*doc["artifacts"]] if c["semantics"]["kind"] == "sprite.meta"]
     assert crop == []  # the sprite's meta belongs to its export result, not to the product
     assert f"{t.id}#objects" in {a["id"] for a in doc["artifacts"]}
