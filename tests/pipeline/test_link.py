@@ -1,6 +1,6 @@
 import pytest
 
-from nnnotes.pipeline import catalogdb, census, contract, link
+from nnnotes.pipeline import catalogdb, census, contract, link, views
 from nnnotes.pipeline.catalogdb import CatalogDB, IndexStage, index
 from nnnotes.pipeline.contract import Input
 from nnnotes.pipeline.depot import Depot
@@ -20,8 +20,9 @@ def obj(pid, cls, name=None, size=10, script=None):
     return o
 
 
-def cdoc(files: dict, container=(), name=None, scripts=()):
-    """A census document: files {file: [objects]}, container [(path, file, pathId)] on the first file's AssetBundle."""
+def cdoc(files: dict, container=(), name=None, scripts=(), resource_paths=()):
+    """A census document: files {file: [objects]}, container [(path, file, pathId)] on the first file's AssetBundle,
+    resource_paths [(path, file, pathId)] of a ResourceManager."""
     fs = [
         {
             "name": f,
@@ -55,6 +56,7 @@ def cdoc(files: dict, container=(), name=None, scripts=()):
         "files": fs,
         "resources": [],
         "assetBundles": [ab],
+        "resourcePaths": [{"path": p, "file": f, "pathId": i} for p, f, i in resource_paths],
         "scripts": list(scripts),
         "classes": classes,
         "objects": sum(classes.values()),
@@ -131,6 +133,39 @@ def censuses():
         ],
     )
     return {"card_a": card, "shared": shared, "scene_x": scene, "scripts": scripts}
+
+
+def test_resource_paths_name_objects_of_the_builtin_files():
+    """A built-in file's ResourceManager paths: the resources table, and addresses like container paths."""
+    idx = index(synth.CatalogWriter().build(catalog_entries()))
+    data = cdoc(
+        {
+            "globalgamemanagers.assets": [obj(1, "ResourceManager")],
+            "resources.assets": [obj(4, "Material", "Mask"), obj(5, "Texture2D", "Mask"), obj(6, "Shader", "S")],
+        },
+        resource_paths=[
+            ("live2d/cubism/materials/mask", "resources.assets", 4),
+            ("live2d/cubism/materials/mask", "resources.assets", 5),
+            ("shaders/s", "resources.assets", 6),
+            ("gone", None, None),
+        ],
+    )
+    doc = link.addresses(idx, {**censuses(), "apk/data.unity3d": data})
+    assert doc["resources"] == {
+        "live2d/cubism/materials/mask": ["resources.assets:4", "resources.assets:5"],
+        "shaders/s": ["resources.assets:6"],
+    }
+    objs = doc["objects"]
+    assert objs["apk/data.unity3d/live2d/cubism/materials/mask"]["object"] == "resources.assets:4"
+    assert objs["apk/data.unity3d/live2d/cubism/materials/mask[Mask]"]["object"] == "resources.assets:5"
+    assert objs["apk/data.unity3d/shaders/s"]["class"] == "Shader"
+    assert doc["bundles"]["apk/data.unity3d"]["keys"] == [] and doc["problems"]["keys"] == ["Card/Gone"]
+    ix = views.AddressIndex.from_addresses(doc)
+    mask = ix.resource("Live2D/Cubism/Materials/Mask")
+    assert [(o.id, o.cls) for o in mask] == [("resources.assets:4", "Material"), ("resources.assets:5", "Texture2D")]
+    assert mask[0].stable == "apk/data.unity3d/live2d/cubism/materials/mask"
+    assert ix.resource("live2d/cubism/materials/maskculling") is None
+    assert link.addresses(idx, censuses())["resources"] == {}
 
 
 def test_scripts_table_and_context():

@@ -251,6 +251,26 @@ def test_monoscripts_and_unknown_file_index():
     assert refs.ref(None) is None and refs.ref(pptr(5)) == {"file": "CAB-1", "pathId": 5}
 
 
+def test_the_resource_manager_lists_the_resources_load_paths():
+    env = FakeEnvironment()
+    f = env.file("globalgamemanagers.assets", externals=["resources.assets"])
+    container = [
+        ("live2d/cubism/materials/mask", pptr(4, 1)),
+        ("live2d/cubism/materials/mask", pptr(5, 1)),
+        ("missing", pptr(0)),
+    ]
+    f.add(3, "ResourceManager", {"m_Container": container, "m_DependentAssets": []})
+    doc = census.census_env(env)
+    assert doc["resourcePaths"] == [
+        {"path": "live2d/cubism/materials/mask", "file": "resources.assets", "pathId": 4},
+        {"path": "live2d/cubism/materials/mask", "file": "resources.assets", "pathId": 5},
+        {"path": "missing", "file": None, "pathId": None},
+    ]
+    (rm,) = doc["files"][0]["objects"]
+    assert rm["refs"] == ["resources.assets:4", "resources.assets:5"]
+    assert doc["assetBundles"] == []
+
+
 def player_file() -> FakeEnvironment:
     """A player's own file without type trees: a MonoBehaviour that references a built-in texture."""
     env = FakeEnvironment()
@@ -293,7 +313,7 @@ def test_census_stage(tmp_path, monkeypatch):
     env = Env(depot, {"bundles": {"x": inp}})
     assert stage.subjects(env) == ["x"]
     task = describe(stage, "x", None, env)
-    assert task.id == "unity.census:x" and task.atoms == census.CensusStage.ATOMS and task.version == 3
+    assert task.id == "unity.census:x" and task.atoms == census.CensusStage.ATOMS and task.version == 4
     assert task.atoms["reader"].startswith("unitypy-")
     assert task.cost.peak_bytes > size
     assert execute(task, depot, registry(stage)).status == "ran"

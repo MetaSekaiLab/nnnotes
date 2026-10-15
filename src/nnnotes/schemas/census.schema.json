@@ -2,13 +2,14 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:nnnotes:schema:census",
   "title": "nnnotes.census/2",
-  "description": "The census of one bundle (stage unity.census), read without decoding any object: its serialized files by name (Unity version, platform, type trees, externals, objects by path id with class, size, type hash, m_Name, m_Script, the objects they reference and the hierarchy holding them), the other files of the bundle, its AssetBundle objects (container in stored order, dependencies, scene hashes), its MonoScripts, objects per class and the objects whose typetree could not be read. A function of the bundle's bytes.",
+  "description": "The census of one bundle (stage unity.census), read without decoding any object: its serialized files by name (Unity version, platform, type trees, externals, objects by path id with class, size, type hash, m_Name, m_Script, the objects they reference and the hierarchy holding them), the other files of the bundle, its AssetBundle objects (container in stored order, dependencies, scene hashes), the container of its ResourceManager (the paths Resources.Load finds objects at), its MonoScripts, objects per class and the objects whose typetree could not be read. A function of the bundle's bytes.",
   "type": "object",
   "required": [
     "schema",
     "files",
     "resources",
     "assetBundles",
+    "resourcePaths",
     "scripts",
     "classes",
     "objects",
@@ -325,6 +326,35 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "resourcePaths": {
+      "description": "The container of the ResourceManager objects (in the APK's global managers): the paths Resources.Load finds objects at, in stored order; a path names one object per class it was saved as.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "path",
+          "file",
+          "pathId"
+        ],
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "file": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "pathId": {
+            "type": [
+              "integer",
+              "null"
+            ]
           }
         }
       }

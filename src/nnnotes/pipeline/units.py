@@ -11,9 +11,10 @@ censuses of the bundles of the fact "bundles"; with the fact "classes" (a list o
 every class), only the units whose root object is of those classes. A bundle whose census failed has no units; a
 reference into a file no census holds is left out.
 
-The fact "roots" (absent: none) is {"keys": catalog keys, "objects": object ids}: the objects of each key (all those
-the address table of link.addresses lists for it; a key without objects adds none) and the objects named. The
-products of a request start from them (pipeline.assemble).
+The fact "roots" (absent: none) is {"keys": catalog keys, "resources": resource paths, "objects": object ids}, each
+list optional: the objects of each key and of each resource path (all those the address tables of link.addresses
+list for it: a resource path is a Resources.Load path of the APK's built-in files, compared ignoring case; one
+without objects adds none) and the objects named. The products of a request start from them (pipeline.assemble).
 """
 
 from __future__ import annotations
@@ -186,22 +187,24 @@ def address_index(env, subject: str) -> views.AddressIndex:
     return index
 
 
-def root_objects(env, keys=(), objects=()) -> list[str]:
-    """The object ids of the catalog `keys` (through the address tables of the fact "catalogs") and the `objects`,
-    sorted."""
+def root_objects(env, keys=(), objects=(), resources=()) -> list[str]:
+    """The object ids of the catalog `keys` and the resource paths `resources` (through the address tables of the
+    fact "catalogs") and the `objects`, sorted."""
     out = set(objects)
-    if keys:
+    if keys or resources:
         for subject in sorted(env.fact("catalogs")):
             index = address_index(env, subject)
             for k in keys:
                 out.update(o.id for o in index.objects(k) or ())
+            for p in resources:
+                out.update(o.id for o in index.resource(p) or ())
     return sorted(out)
 
 
 def table(env) -> Units:
     """The Units of the request of a planning environment: the censuses of the fact "bundles" (Pending while one
     has not run; a failed one is skipped), the facts "selected", "roots" (Pending while link.addresses has not run,
-    when it names keys) and "classes". Kept for the planning state it was made in."""
+    when it names keys or resource paths) and "classes". Kept for the planning state it was made in."""
     bundles = sorted(env.fact("bundles"))
     keys = []
     for b in bundles:
@@ -213,7 +216,7 @@ def table(env) -> Units:
                 raise
     classes = env.facts.get("classes")
     request = env.facts.get("roots") or {}
-    roots = root_objects(env, request.get("keys", ()), request.get("objects", ()))
+    roots = root_objects(env, request.get("keys", ()), request.get("objects", ()), request.get("resources", ()))
     sig = (
         id(env.depot),
         tuple(keys),

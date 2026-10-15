@@ -1,8 +1,9 @@
 """Product stages: products assembled from the unity.export results of the objects they reach, never from a bundle.
 
 A product (a Live2D model, a story, a live, ...) is a stage whose task per subject starts from root objects: the
-objects of the catalog keys `keys(subject)` gives and the objects `root_objects(subject)` names (both read from the
-planning facts alone, so a command can ask for the units its products need before anything runs: `request`). The
+objects of the catalog keys `keys(subject)` gives, of the Resources.Load paths `resources(subject)` gives and the
+objects `root_objects(subject)` names (all read from the planning facts alone, so a command can ask for the units its
+products need before anything runs: `request`). The
 objects it reaches are those of the units holding its roots and every unit an item of a reached unit references
 (contract.item `refs`), through the unity.export results; a sprite whose atlas is in another bundle has its image
 from sprite.crop. A reached unit that the request did not export is an error of the request; a referenced object
@@ -34,15 +35,16 @@ TABLE_KIND = "product.objects"
 
 
 def request(stages: dict, products: dict, env) -> dict:
-    """The fact "roots" (pipeline.units) of a request for `products` {stage name: subjects}: the catalog keys and the
-    root objects of every subject, sorted."""
-    keys, objects = set(), set()
+    """The fact "roots" (pipeline.units) of a request for `products` {stage name: subjects}: the catalog keys, the
+    resource paths and the root objects of every subject, sorted."""
+    keys, resources, objects = set(), set(), set()
     for name, subjects in sorted(products.items()):
         stage = stages[name]
         for s in subjects:
             keys.update(stage.keys(s, env))
+            resources.update(stage.resources(s, env))
             objects.update(stage.root_objects(s, env))
-    return {"keys": sorted(keys), "objects": sorted(objects)}
+    return {"keys": sorted(keys), "resources": sorted(resources), "objects": sorted(objects)}
 
 
 def _entry(item: dict, arts: dict) -> dict:
@@ -211,7 +213,8 @@ class Assembly:
 
 class ProductStage(Stage):
     """Base of the product stages (module documentation). Subclasses set `name`, `version` and `KIND`, and define
-    `keys` and/or `root_objects` and `assemble`; `subjects` defaults to the subjects of the fact "products"."""
+    `keys`, `resources` and/or `root_objects` and `assemble`; `subjects` defaults to the subjects of the fact
+    "products"."""
 
     after = (ADDRESSES, EXPORT, CROP)
     KIND = "product"
@@ -235,8 +238,13 @@ class ProductStage(Stage):
         """The catalog keys whose objects are roots of `subject` (from the facts alone)."""
         return []
 
+    def resources(self, subject: str, env) -> list[str]:
+        """The Resources.Load paths whose objects are roots of `subject` (from the facts alone)."""
+        return []
+
     def root_objects(self, subject: str, env) -> list[str]:
-        """Object ids that are roots of `subject` besides those of its keys (from the facts alone)."""
+        """Object ids that are roots of `subject` besides those of its keys and resource paths (from the facts
+        alone)."""
         return []
 
     def more_inputs(self, subject: str, env) -> list[Input]:
@@ -253,7 +261,9 @@ class ProductStage(Stage):
     # ---------------------------------------------------------------- planning
     def reach(self, subject: str, env) -> Reach:
         """What `subject` reaches (kept while the results it read are the same)."""
-        roots = units.root_objects(env, self.keys(subject, env), self.root_objects(subject, env))
+        roots = units.root_objects(
+            env, self.keys(subject, env), self.root_objects(subject, env), self.resources(subject, env)
+        )
         sig = (tuple(roots), id(units.table(env)))
         memo = self._memo.get(subject)
         if memo is not None and memo[0] == sig and all(env.key(t) == k for t, k in memo[1]):
@@ -268,7 +278,8 @@ class ProductStage(Stage):
         return [table, *self.more_inputs(subject, env)]
 
     def depends(self, subject: str, env) -> list[str]:
-        own = [contract.task_id(ADDRESSES, s) for s in sorted(env.fact("catalogs"))] if self.keys(subject, env) else []
+        named = self.keys(subject, env) or self.resources(subject, env)
+        own = [contract.task_id(ADDRESSES, s) for s in sorted(env.fact("catalogs"))] if named else []
         return own + self.reach(subject, env).read
 
     def estimate(self, subject: str, env, inputs: list[Input]) -> Cost:

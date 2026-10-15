@@ -15,12 +15,14 @@ from nnnotes.pipeline.stages import Env, Pending, describe, execute, registry
 from tests.pipeline.test_objexport import ATLAS_CAB, FAKE_READER, oid, planning_env
 
 
-def addresses(depot, env, keys: dict) -> None:
-    """A committed link.addresses result whose table maps `keys` {catalog key: [object ids]}."""
+def addresses(depot, env, keys: dict, resources=None) -> None:
+    """A committed link.addresses result whose table maps `keys` {catalog key: [object ids]} and `resources`
+    {resource path: [object ids]}."""
     t = Task("link.addresses", 1, "main", {}, {}, ())
     doc = {
         "schema": link.ADDRESSES,
         "keys": {k: [{"objects": ids}] for k, ids in sorted(keys.items())},
+        "resources": dict(sorted((resources or {}).items())),
         "objects": {},
         "files": {},
         "bundles": {},
@@ -75,11 +77,25 @@ class Rooted(Toy):
         return self.objects
 
 
-def env_for(depot, keys=None, names=("all", "atlas"), roots_objects=(), selected=None):
+class Loaded(Toy):
+    """A Toy rooted at the objects of Resources.Load paths alone."""
+
+    def __init__(self, paths):
+        super().__init__()
+        self.paths = list(paths)
+
+    def keys(self, subject, env):
+        return []
+
+    def resources(self, subject, env):
+        return self.paths
+
+
+def env_for(depot, keys=None, names=("all", "atlas"), roots_objects=(), selected=None, resources=None):
     """A planning environment over the fake bundles with a committed address table and the facts of a request."""
     env = planning_env(depot, names, selected=selected)
     env.facts["catalogs"] = {"main": []}
-    addresses(depot, env, keys if keys is not None else {})
+    addresses(depot, env, keys if keys is not None else {}, resources)
     subjects = sorted(keys if keys is not None else {})
     env.facts["products"] = {"toy.thing": subjects}
     env.facts["roots"] = {"keys": subjects, "objects": list(roots_objects)}
@@ -117,7 +133,8 @@ def test_a_products_key_is_asked_for_before_anything_runs(tmp_path):
     stage = Toy({"m/a": "key/a", "m/b": "key/b"})
     stages = {"toy.thing": stage}
     env = Env(depot, {"keys": {}})
-    assert assemble.request(stages, {"toy.thing": ["m/b", "m/a"]}, env) == {"keys": ["key/a", "key/b"], "objects": []}
+    roots = assemble.request(stages, {"toy.thing": ["m/b", "m/a"]}, env)
+    assert roots == {"keys": ["key/a", "key/b"], "resources": [], "objects": []}
     assert stage.subjects(Env(depot, {"products": {"toy.thing": ["m/b"]}})) == ["m/b"]
 
 
@@ -173,6 +190,20 @@ def test_the_request_roots_select_the_units_and_nothing_else(tmp_path):
     env = env_for(depot, {"key/a": [oid(60)]}, names=("all",), selected=[])
     subjects = ExportStage(FAKE_READER).subjects(env)
     assert subjects == ["all:10", "all:60"]  # the prefab and the texture it references
+
+
+def test_a_resources_load_path_is_a_root(tmp_path):
+    """A product's Resources.Load paths name its roots through the address table, ignoring case."""
+    depot = Depot(tmp_path / "s")
+    env = env_for(depot, {}, names=("all",), selected=[], resources={"shaders/thing": [oid(60)]})
+    stage = Loaded(["Shaders/Thing"])
+    env.facts["roots"] = assemble.request({"toy.thing": stage}, {"toy.thing": ["m/a"]}, env)
+    assert env.facts["roots"] == {"keys": [], "resources": ["Shaders/Thing"], "objects": []}
+    assert ExportStage(FAKE_READER).subjects(env) == ["all:10", "all:60"]
+    exported(depot, env)
+    assert stage.depends("m/a", env) == ["link.addresses:main", "unity.export:all:10", "unity.export:all:60"]
+    _, doc = product(depot, env, "m/a", stage=stage)
+    assert table_of(depot, doc)["roots"] == [oid(60)]
 
 
 def test_sprite_images_come_from_the_crop_of_their_atlas(tmp_path):
