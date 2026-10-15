@@ -359,9 +359,12 @@ A story episode plays with products that several episodes share, made by `nnnote
 | `story.sound` | a cue sheet name (`_cueSheetName` of an episode's cue sheet table) | `cuesheets/<sheet>.json` | the cue sheet's key `Cri/Sound/<sheet>` | `cues.json` and the cues' sounds |
 | `story.crilips` | `default` | `crilips/default.json` | none (it reads the APK) | `crilips.json` and `crilips.bin` |
 | `story.scene` | `default` | `storyscenes/default.json` | the ADV scene `EmbScene/Adv`, the prefabs `EmbCommon/Prefab/CameraManager`, `EmbCommon/Adv/Prefab/AdvCharacterField`, `AdvBackgroundField` and `AdvGlobalVolume`, the settings `EmbCommon/Adv/Settings/AdvPlayerSettings` and `AdvMasterIdSettings`, and the built-in `GraphicsSettings`, `QualitySettings` and `PlayerSettings` | `scene.json` and the object table |
-| `story.asset` | a catalog key a story loads: a stage (`Adv/Stage/<name>`), frame, effect, post effect, still, chat window, chat icon or stamp, transition | `storyassets/<name>.json`, `<name>` the key with `/` as `~` | the key | `asset.json` and the object table |
+| `story.asset` | a catalog key a story loads: a stage (`Adv/Stage/<name>`), frame, effect, post effect, still, timeline, chat window, chat icon or stamp, transition | `storyassets/<name>.json`, `<name>` the key with `/` as `~` | the key | `asset.json` and the object table |
+| `story.chat` | `default` | `storychat/default.json` | the shared chat shards `Adv/Chat/AdvChat-Text`, `Adv/Chat/AdvChat-Sound` and `Adv/Chat/AdvChat-SoundCueSheet` | `chat.json` |
+| `story` | a `MasterAdv` id | `stories/<id>.json` | the episode key `Adv/Episode/<asset>/<asset>` (`<asset>`: the row's `_advEpisodeAsset`), its shard keys (the key with `-Text`, `-Sound`, `-SoundCueSheet`, `-Video`) and `EmbCommon/Adv/Settings/AdvPlayerSettings` | `episode.json` and `story.json` |
 
-Neither keeps objects. `story.sound` reads its cue sheet's `cri.audio` files; `cues.json` maps each cue name to the
+`story.sound`, `story.crilips`, `story.chat` and `story` keep no objects: their files are all they hold.
+`story.sound` reads its cue sheet's `cri.audio` files; `cues.json` maps each cue name to the
 first stream of that name (in stream order): `file` (the sound, next to `cues.json`), `sampleRate`, `channels`,
 `samples` (frames at `sampleRate`, without encoder padding) and, for a looping stream, `loopStart` and `loopEnd`
 (sample frames). The sounds are in the web format of the parameter `audio`, as for `live.music`: `aac` (the default)
@@ -390,3 +393,30 @@ render pipeline asset, its renderer data and their features). `story.asset` hold
 and what they reach; an asset several stories load is one product. `asset.json` has `format` 1, `key`, `objects`
 (the key's object ids), `bindings` and `shaders` as above. The CRI Lips data and the story assets are made only when
 a request names them; the `product` layout makes `story.scene` when the selection holds every key of it.
+
+`story.chat` holds the rows of the chat shards every chat of a story reads. `chat.json` has `format` 1, `text` (the
+chat message texts), `sounds` (their sound rows) and `cueSheets` (the cue sheet rows those name), each the `_allData`
+rows of its shard as stored; a shard key without a TextAsset gives `[]`. The `product` layout makes it when the
+selection holds the three shard keys.
+
+`story` is one episode. Its input `master` is the episode's master record: its `MasterAdv` row, the `MasterText` row
+of its title (none when `_titleTextId` is empty) and every `MasterAdvChat` row. `episode.json` is the episode as
+`export episode` writes it, each resource given by its kind and address: the command list with the lines of every
+language, the voices, sounds, cue sheets and videos the commands name, and the resources the episode loads.
+`story.json` has
+
+| Field | |
+|---|---|
+| `format` | 1 |
+| `advId` | the `MasterAdv` id |
+| `episode` | `"episode.json"`, the file next to it |
+| `chats` | `{chat id: MasterAdvChat row}`: each chat id the commands name (`TargetChatID`) |
+| `effects` | `{TargetName: "Adv/Effect/<asset>"}`: the effect instances, the first asset an Effect command loads under a name |
+| `parts` | the manifests of the products the story plays with: `scene` (`storyscenes/default.json`), `assets` (`{address: manifest}` of each `story.asset`), `models` (`{address: manifest}` of each `live2d.model`), `sounds` (`{cue sheet: manifest}` of each `story.sound`), `chat` (`storychat/default.json` when a command names a chat, else null) and `crilips` (`crilips/default.json` when a voice command has a target and voice cues and sets neither `IgnoreData` nor `IgnoreLipSync`, else null) |
+
+A model's MotionSync (model.json `motionSync`) decides whether a lip-synced voice runs the CRI Lips analysis, so
+`crilips` names the data whenever a voice can reach it. The episode's talk windows and videos are listed in
+`episode.json` `resources`. `parts` depend on the episode's commands, which only the story's result holds: a command
+asks for the `story` product first, reads its `story.json`, then asks for the story with every product `parts` names
+(`nnnotes.pipeline.story.part_products`); `export story` works this way. The `product` layout makes the story of
+every episode whose key the selection holds.
