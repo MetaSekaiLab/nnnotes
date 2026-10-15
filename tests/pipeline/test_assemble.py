@@ -159,7 +159,7 @@ def test_the_object_table_is_what_the_root_reaches(tmp_path):
     exported(depot, env)
     t, doc = product(depot, env, "m/a", {"m/a": "key/a"})
     table = table_of(depot, doc)
-    assert table["roots"] == [oid(60)]
+    assert table["roots"] == [oid(60)] and table["keys"] == {"key/a": [oid(60)]}
     assert table["missing"] and all(m.startswith("CAB-scripts:") for m in table["missing"])  # no census of it
     # the hierarchy: the root exported, its members contained in its prefab
     assert table["objects"][oid(60)] == {
@@ -218,7 +218,7 @@ def test_a_resources_load_path_is_a_root(tmp_path):
     exported(depot, env)
     assert stage.depends("m/a", env) == ["link.addresses:main", "unity.export:all:10", "unity.export:all:60"]
     _, doc = product(depot, env, "m/a", stage=stage)
-    assert table_of(depot, doc)["roots"] == [oid(60)]
+    assert table_of(depot, doc)["roots"] == [oid(60)] and table_of(depot, doc)["keys"] == {}
 
 
 def test_a_builtin_selector_is_a_root(tmp_path):
