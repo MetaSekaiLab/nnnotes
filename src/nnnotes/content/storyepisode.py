@@ -160,13 +160,14 @@ def chat_ids(episode: dict) -> list[int]:
 
 def parts(episode: dict) -> dict:
     """What the story plays with, from episode.json: the addresses of the ASSET_KINDS resources, the addresses of the
-    live2d models, the cue sheets of the episode, whether it shows chat and whether a voice reaches the CRI Lips
-    analysis. Talk windows and videos are products of their own and are not listed."""
+    live2d models, the cue sheets of the episode, the addresses of its videos, whether it shows chat and whether a
+    voice reaches the CRI Lips analysis. Talk windows are not listed."""
     resources = episode["resources"]
     return {
         "assets": sorted(r["address"] for r in resources if r["kind"] in ASSET_KINDS),
         "models": sorted(r["address"] for r in resources if r["kind"] == "live2d"),
         "sounds": sorted({cs["_cueSheetName"] for cs in episode["cuesheets"].values() if cs.get("_cueSheetName")}),
+        "videos": sorted(r["address"] for r in resources if r["kind"] == "video"),
         "chat": bool(chat_ids(episode)),
         "crilips": lip_synced(episode),
     }
@@ -176,7 +177,7 @@ def story(episode: dict, record: dict, paths: dict) -> dict:
     """The story.json document: the MasterAdvChat row of each chat id of the episode (KeyError when there is none), the
     effect instances (TargetName -> "Adv/Effect/" + TargetAssetName) and `parts`. `paths` are the manifest paths of the
     products the story plays with, given by the caller: {"scene", "assets": {address: path}, "models": {address: path},
-    "sounds": {cue sheet: path}, "chat", "crilips"}."""
+    "sounds": {cue sheet: path}, "videos": {address: path}, "chat", "crilips"}."""
     chats = {}
     for chat_id in chat_ids(episode):
         hits = [r for r in record["MasterAdvChat"] if r["_id"] == chat_id]
