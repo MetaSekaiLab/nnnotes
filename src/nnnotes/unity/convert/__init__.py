@@ -27,6 +27,8 @@ Every object a converter takes has a `json` artifact (or is contained in one): t
 typetree JSON (a Texture2D, Mesh, TextAsset or Font without the bytes its other artifact holds).
 
 Object JSON (canon/1 in the object's own field order):
+- a path id is a 64-bit integer, written as its decimal string (a JSON number of that size does not survive a
+  reader that parses numbers as doubles), so the object a reference names is "<file>:<pathId>" as it is written;
 - a reference is {"$ref": {"file", "pathId"}}, with "class" and "name" when the target is in the bundle; a null
   reference is null. Inside a prefab, a GameObject, Transform or component of the same prefab is named by its path:
   {"gameObject": path}, {"transform": path}, {"component": class, "gameObject": path};
@@ -66,17 +68,17 @@ __all__ = [
 # converter -> version
 CONVERTERS = {
     "tex.png": 2,
-    "sprite.png": 2,
+    "sprite.png": 3,
     "mesh.glb": 2,
-    "prefab.json": 2,
-    "material.json": 1,
-    "clip.json": 2,
-    "controller.json": 2,
-    "mono.json": 2,
+    "prefab.json": 3,
+    "material.json": 2,
+    "clip.json": 3,
+    "controller.json": 3,
+    "mono.json": 3,
     "data": 2,
-    "font": 2,
-    "shader.json": 1,
-    "generic.json": 2,
+    "font": 3,
+    "shader.json": 2,
+    "generic.json": 3,
     "cri.usm": 1,
 }
 # class -> the converters its objects may use (every class may fall back to generic.json)

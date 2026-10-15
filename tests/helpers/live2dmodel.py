@@ -21,7 +21,7 @@ CANVAS = (100.0, 0.5, 0.5, 20.0, 30.0)
 
 def ref(oid: str, cls: str | None = None) -> dict:
     file, _, pid = oid.rpartition(":")
-    r = {"file": file, "pathId": int(pid)}
+    r = {"file": file, "pathId": pid}
     if cls:
         r["class"] = cls
     return {"$ref": r}
@@ -38,7 +38,7 @@ def moc3() -> bytes:
 
 
 def mono(script: str, **fields) -> dict:
-    return {"type": "MonoBehaviour", "pathId": 0, "script": script, "fields": fields}
+    return {"type": "MonoBehaviour", "pathId": "0", "script": script, "fields": fields}
 
 
 def node(path: str, *components) -> dict:
@@ -89,7 +89,7 @@ def prefab() -> dict:
                 mono(FRAMEWORK + "CubismPhysicsController", _rig=rig),
                 mono("Live2D.Cubism|Live2D.Cubism.Framework.MotionSync|CubismMotionSyncController"),
                 mono("Assembly-CSharp||Live2DMotionSyncCriAudioInput"),
-                {"type": "Animator", "pathId": 2, "fields": {}},
+                {"type": "Animator", "pathId": "2", "fields": {}},
             ),
             node("m001/Parameters"),
             node(
@@ -106,12 +106,12 @@ def prefab() -> dict:
             node(
                 "m001/Drawables/ArtMesh0",
                 mono("Live2D.Cubism|Live2D.Cubism.Rendering|CubismRenderer", _mainTexture=ref(TEX1, "Texture2D")),
-                {"type": "MeshRenderer", "pathId": 3, "fields": {"m_Materials": [ref(MAT0, "Material")]}},
+                {"type": "MeshRenderer", "pathId": "3", "fields": {"m_Materials": [ref(MAT0, "Material")]}},
             ),
             node(
                 "m001/Drawables/ArtMesh1",
                 mono("Live2D.Cubism|Live2D.Cubism.Rendering|CubismRenderer", _mainTexture=ref(TEX0, "Texture2D")),
-                {"type": "MeshRenderer", "pathId": 4, "fields": {"m_Materials": [ref(MAT1, "Material")]}},
+                {"type": "MeshRenderer", "pathId": "4", "fields": {"m_Materials": [ref(MAT1, "Material")]}},
             ),
         ],
     }
