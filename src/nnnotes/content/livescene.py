@@ -38,6 +38,7 @@ import numpy as np
 
 from ..core.jsonio import write_json
 from ..unity.export import Exporter
+from .livenotes import LANE_COUNT, LANE_VIEW
 from .liveoptions import OPTION_ITEM_TYPES
 from .score import master_table
 
@@ -115,15 +116,6 @@ def master_rows(master: Path, music_id: int) -> dict:
 # (None, Lane4, Lane6, Lane8, Lane12)
 SPLIT_MAIN = (0, 4, 6, 8, 12)
 SPLIT_SUB = (12, 12, 12, 0, 0)
-LANE_COUNT = 24  # LiveDataCreator.CreateBootData passes 0x18
-# LiveBootDataCreator.CreateViewData: arguments of LiveSettingCreator.CreateLaneViewSettings
-LANE_VIEW = {
-    "size": (1920.0, 1080.0),
-    "topRange": 0.05,
-    "bottomRange": 1.0,
-    "judgementScreenBottomPosition": 2.24,
-    "topPosition": 0.0,
-}
 REF_ASPECT = 1.7777778  # LiveGameView.FullInitialize
 REF_FOV = 54.0
 

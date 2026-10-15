@@ -122,6 +122,9 @@ STAGE_SOURCES = (
     StageSource("spot.files", "nnnotes.pipeline.spot:SpotStage", output=True, product=True),
     StageSource("live.music", "nnnotes.pipeline.live:MusicStage", output=True, product=True),
     StageSource("live.sounds", "nnnotes.pipeline.live:SoundsStage", output=True, product=True),
+    StageSource("live.notes", "nnnotes.pipeline.live:NotesStage", output=True, product=True),
+    StageSource("live.noteskin", "nnnotes.pipeline.live:NoteSkinStage", output=True, product=True),
+    StageSource("live.noteeffect", "nnnotes.pipeline.live:NoteEffectStage", output=True, product=True),
     StageSource("view.", "nnnotes.pipeline.views:stages", output=True),
     StageSource("view.voices", "nnnotes.pipeline.voices:VoiceStage", output=True),
 )

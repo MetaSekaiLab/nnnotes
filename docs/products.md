@@ -247,3 +247,31 @@ option defaults of preset 1 (`MasterOptionDefault`), `MasterLiveNoteSe`, `Master
 
 The `product` layout makes the `live.music` products of the musics whose BGM key the selection holds, and the
 default `live.sounds` when the selection holds every cue sheet of its sounds; both need the master data.
+
+## Note highway
+
+What a live spawns and animates per note is three products of `nnnotes.pipeline.live`, each shared by every live that
+loads it. Their roots are the objects of their keys, and each document names objects of its object table:
+
+| Product | Subject | Manifest | Roots | Document |
+|---|---|---|---|---|
+| `live.notes` | `default` | `notes/default.json` | the note view prefabs (`EmbLive/Prefabs/LiveGame/<view>_note_view`), the slide and guide line views, the pair line, the groove loop, and the lane effect settings `Effect/Live/LaneEffect/effect001/LiveLaneEffectAssetSettings` | `notes.json` |
+| `live.noteskin` | a note skin, `MasterLiveNoteSkin._assetName` | `noteskins/<name>.json` | the skin asset `Live/Note/<name>/LiveNoteSkinAsset` and the three flick views | `noteskin.json` |
+| `live.noteeffect` | a note effect set, `MasterLiveNoteEffectSkin._assetName` or its `Light` variant (the set the game loads at quality Low where the catalog has it) | `noteeffects/<name>.json` | the effect settings `Effect/Live/NoteEffect/<name>/LiveNoteEffectAssetSettings` | `noteeffect.json` |
+
+Each document has `format` 1 and
+
+| Field | |
+|---|---|
+| `prefabs` (notes) | `{name: object id}` of the prefab GameObjects: `tap_note_view`, ..., `slide_line_view`, `guide_line_view`, `pair_note_line`, `note_groove_loop` |
+| `laneEffect` (notes) | the object id of the lane effect settings |
+| `settings` (notes) | the option defaults of preset 1 (`optionDefaults`) and the ranges (`optionRanges`) of the items the note runtime and the player read, the `MasterLiveSettings` values of the note speed and slides (`liveSettings`), the note display time of the default speed (`noteDisplayTimeMs`), the lane geometry, the default skin and effect set (`skin`, `effect`) and the lane effect set (`laneEffect`), and the names of every skin and effect set by option value (`skins`, `effects`) |
+| `name`, `skin` (noteskin) | the skin's name and the object id of its `LiveNoteSkinAsset` |
+| `name`, `settings` (noteeffect) | the set's name and the object id of its `LiveNoteEffectAssetSettings`, which references the effect prefabs |
+| `bindings` | `{prefab GameObject id: {Animator node path: {clip id: [{path, attribute}]}}}`: the clips each Animator of the table's prefabs plays (its controller's clips and the `_loopAnim` of a `LoopAnimationTimeSync` on its `_animator`; for a skin, the arrow loop of each flick unit on its flick view's `LoopAnimationTimeSync`), named from the Animator's node (`nnnotes.unity.bindings`) |
+| `shaders` | `{shader name: object id}` of the shaders of the object table |
+
+The object table holds every object the product reaches but the MonoScripts; of a shader it keeps the parsed form
+(`json`), the variant index (`index`) and every GLSL ES 3.00 program. The `product` layout makes `live.notes` when the
+selection holds all its keys and the master data is there, and the `live.noteskin` and `live.noteeffect` products of
+the skin and effect set keys the selection holds.
