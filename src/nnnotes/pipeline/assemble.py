@@ -13,17 +13,19 @@ referenced object that no census holds is listed as missing.
 A task's inputs are the object table of what it reaches ("objects", nnnotes.objects/1: every object with its class,
 name, item status and files, the contained ones with the object holding them, and the root objects of each of its keys),
 the APK files the stage names in `APK` ("apk:<path in the APK>", from the fact "apk"), the cue sheets of the catalog
-keys `cue_sheets(subject)` gives and what `more_inputs` adds (a master record as "master": master_input; parameters'
-data); it depends on the unity.export and sprite.crop tasks it read and the cri.audio tasks of its cue sheets. A cue
-sheet is the ACB the key loads: held in a bundle (the `acb` file of an object of the key) or a raw file of the catalog
-(a dependency of the key that cri.audio decoded); its inputs are the ACB ("acb:<key>") and, in "sheets", the files
-cri.audio made of it ({key: {acb, status, reason?, files}}).
+keys `cue_sheets(subject)` gives, the movies of the catalog keys `movies(subject)` gives and what `more_inputs` adds (a
+master record as "master": master_input; parameters' data); it depends on the unity.export and sprite.crop tasks it
+read and the cri.audio and cri.movie tasks of its cue sheets and movies. A cue sheet is the ACB the key loads, a movie
+the USM: held in a bundle (the `acb` / `usm` file of an object of the key) or a raw file of the catalog (a dependency
+of the key that cri.audio / cri.movie decoded); the inputs are that file ("acb:<key>" / "usm:<key>") and, in "sheets"
+/ "movies", the files the stage made of it ({key: {acb or usm, status, reason?, files}}; a movie's files also carry
+their facts).
 
-`assemble` makes the product's own files from the table, the bytes of its objects and its cue sheets (Sheet); a file
-may be content the depot already holds (Stored: a decoded waveform), recorded without reading it again. The result
-holds them as "<task id>#<path>", the table of the objects they use as "<task id>#objects", and one item for the
-subject. A product layout (layout.product_entries) places the files and the objects' files and writes the product's
-manifest.
+`assemble` makes the product's own files from the table, the bytes of its objects, its cue sheets (Sheet) and movies
+(Movie); a file may be content the depot already holds (Stored: a decoded waveform, a movie), recorded without reading
+it again. The result holds them as "<task id>#<path>", the table of the objects they use as "<task id>#objects", and one
+item for the subject. A product layout (layout.product_entries) places the files and the objects' files and writes the
+product's manifest.
 """
 
 from __future__ import annotations
@@ -38,11 +40,28 @@ from .layout import PRODUCT_TABLE, escape_segment
 from .orchestrate import SEVERITY
 from .stages import Output, Stage
 
-EXPORT, CROP, AUDIO = "unity.export", "sprite.crop", "cri.audio"
+EXPORT, CROP, AUDIO, MOVIE = "unity.export", "sprite.crop", "cri.audio", "cri.movie"
 ADDRESSES = units.ADDRESSES
 TABLE_KIND = "product.objects"
-SHEETS_INPUT = "sheets"
+SHEETS_INPUT, MOVIES_INPUT = "sheets", "movies"
 MASTER_INPUT = "master"
+
+
+@dataclass(frozen=True)
+class Decodes:
+    """How a product reads the results of a CRI stage: the file role of the content in the object table and of its
+    input ("<role>:<key>"), the stage that decodes it, the input that lists the stage's files, what the content is
+    called and whether the files carry their facts."""
+
+    role: str
+    stage: str
+    input: str
+    what: str
+    facts: bool = False
+
+
+SHEETS = Decodes("acb", AUDIO, SHEETS_INPUT, "cue sheet")
+MOVIES = Decodes("usm", MOVIE, MOVIES_INPUT, "movie", facts=True)
 
 
 def master_input(env, record: dict) -> Input:
@@ -200,46 +219,77 @@ class Stored:
     size: int
 
 
-class Sheet:
-    """A cue sheet of a product task: its ACB and the files cri.audio made of it (one per stream, `cues.json`,
-    `streams.json`)."""
+class _Decoded:
+    """The content of a catalog key a CRI stage decoded for a product task, and the files the stage made of it."""
 
-    def __init__(self, key: str, entry: dict, acb: Input, depot):
-        self.key, self.entry, self._acb, self.depot = key, entry, acb, depot
+    WHAT = ""
+    REASON = ""
+
+    def __init__(self, key: str, entry: dict, source: Input, depot):
+        self.key, self.entry, self._source, self.depot = key, entry, source, depot
 
     def _check(self) -> None:
         if self.entry["status"] != "exported":
-            reason = self.entry.get("reason") or "unsupported.cri.sheet"
-            raise Unsupported(reason, f"cue sheet {self.key} was not decoded ({self.entry['status']})")
+            reason = self.entry.get("reason") or self.REASON
+            raise Unsupported(reason, f"{self.WHAT} {self.key} was not decoded ({self.entry['status']})")
 
-    def acb(self) -> bytes:
-        return self.depot.input_bytes(self._acb)
-
-    def file(self, name: str) -> Stored:
+    def _file(self, name: str) -> dict:
         self._check()
         f = self.entry["files"].get(name)
         if f is None:
-            raise KeyError(f"cue sheet {self.key} has no file {name!r}")
+            raise KeyError(f"{self.WHAT} {self.key} has no file {name!r}")
+        return f
+
+    def file(self, name: str) -> Stored:
+        f = self._file(name)
         return Stored(f["sha256"], f["size"])
 
     def bytes(self, name: str) -> bytes:
         return self.depot.read(self.file(name).sha256)
+
+
+class Sheet(_Decoded):
+    """A cue sheet of a product task: its ACB and the files cri.audio made of it (one per stream, `cues.json`,
+    `streams.json`)."""
+
+    WHAT, REASON = "cue sheet", "unsupported.cri.sheet"
+
+    def acb(self) -> bytes:
+        return self.depot.input_bytes(self._source)
 
     def streams(self) -> list[dict]:
         """streams.json: every stream in decoder order ({stream, name, file, sampleRate, channels, samples, ...})."""
         return contract.loads(self.bytes("streams.json"))
 
 
+class Movie(_Decoded):
+    """A movie of a product task: its USM and the files cri.movie made of it (its streams, `movie.<format>`), each
+    with its facts."""
+
+    WHAT, REASON = "movie", "unsupported.cri.movie"
+
+    def _file(self, name: str) -> dict:
+        """A movie whose subtitles cannot be read is `unsupported` and keeps its other files: a file it made is
+        there."""
+        f = self.entry["files"].get(name)
+        return f if f is not None else super()._file(name)
+
+    def facts(self, name: str) -> dict:
+        """The facts cri.movie recorded for its file `name`."""
+        return self._file(name).get("facts") or {}
+
+
 class Objects:
     """The object table of a product task, the bytes of its objects' files (from the depot) and its cue sheets."""
 
-    def __init__(self, doc: dict, depot, sheets: dict | None = None):
+    def __init__(self, doc: dict, depot, sheets: dict | None = None, movies: dict | None = None):
         self.doc, self.depot = doc, depot
         self.roots: list[str] = doc["roots"]
         self._keys: dict[str, list[str]] = doc["keys"]
         self._objects: dict = doc["objects"]
         self._json: dict = {}
         self._sheets: dict[str, Sheet] = sheets or {}
+        self._movies: dict[str, Movie] = movies or {}
 
     def sheet(self, key: str) -> Sheet:
         """The cue sheet of the catalog key `key` (one of the stage's cue_sheets)."""
@@ -247,6 +297,13 @@ class Objects:
             return self._sheets[key]
         except KeyError:
             raise KeyError(f"cue sheet {key} is not an input of the product") from None
+
+    def movie(self, key: str) -> Movie:
+        """The movie of the catalog key `key` (one of the stage's movies)."""
+        try:
+            return self._movies[key]
+        except KeyError:
+            raise KeyError(f"movie {key} is not an input of the product") from None
 
     def key(self, key: str) -> list[str]:
         """The root objects of the catalog key `key` (one of the stage's keys), sorted."""
@@ -321,7 +378,7 @@ class ProductStage(Stage):
     fact "products". A stage that reads master tables names them in `MASTER` (its inputs come from the fact
     "master"), one that reads files of the APK names them in `APK`."""
 
-    after = (ADDRESSES, EXPORT, CROP, AUDIO)
+    after = (ADDRESSES, EXPORT, CROP, AUDIO, MOVIE)
     KIND = "product"
     MASTER: tuple[str, ...] = ()
     APK: tuple[str, ...] = ()
@@ -368,6 +425,10 @@ class ProductStage(Stage):
         """The catalog keys of the cue sheets `subject` reads (from the facts alone; each also one of its `keys`)."""
         return []
 
+    def movies(self, subject: str, env) -> list[str]:
+        """The catalog keys of the movies `subject` reads (from the facts alone; each also one of its `keys`)."""
+        return []
+
     def more_inputs(self, subject: str, env) -> list[Input]:
         """Inputs besides the object table."""
         return []
@@ -399,30 +460,37 @@ class ProductStage(Stage):
 
     def sheets(self, subject: str, env) -> dict[str, tuple[Input, str]]:
         """{catalog key: (its ACB as input "acb:<key>", the cri.audio task id)} of the cue sheets of `subject`."""
-        keys = self.cue_sheets(subject, env)
+        return self._decodes(SHEETS, self.cue_sheets(subject, env), subject, env)
+
+    def movie_files(self, subject: str, env) -> dict[str, tuple[Input, str]]:
+        """{catalog key: (its USM as input "usm:<key>", the cri.movie task id)} of the movies of `subject`."""
+        return self._decodes(MOVIES, self.movies(subject, env), subject, env)
+
+    def _decodes(self, d: Decodes, keys: list[str], subject: str, env) -> dict[str, tuple[Input, str]]:
+        """{catalog key: (the content it loads as input "<role>:<key>", the task id of stage d.stage)} of `keys`."""
         if not keys:
             return {}
         objects = self.reach(subject, env).table["objects"]
         out = {}
         for key in keys:
-            held: dict[str, Input] = {}  # content id -> the ACB
+            held: dict[str, Input] = {}  # content id -> the file
             for o in units.root_objects(env, [key]):
-                f = (objects.get(o, {}).get("files") or {}).get("acb")
+                f = (objects.get(o, {}).get("files") or {}).get(d.role)
                 if f is not None:
-                    held[f["sha256"]] = Input(f"acb:{key}", f["sha256"], f["size"], None, ({"kind": "depot"},))
-            if not held:  # a raw file of the catalog that cri.audio decodes
+                    held[f["sha256"]] = Input(f"{d.role}:{key}", f["sha256"], f["size"], None, ({"kind": "depot"},))
+            if not held:  # a raw file of the catalog that the stage decodes
                 raw = env.facts.get("raw") or {}
                 for stable in _raw_files(env.fact("index")).get(key, ()):
                     if stable not in raw:
-                        raise ValueError(f"cue sheet {key}: the request does not hold its file {stable}")
+                        raise ValueError(f"{d.what} {key}: the request does not hold its file {stable}")
                     i = raw[stable]
-                    if env.known(contract.task_id(AUDIO, i.sha256)):
-                        held[i.sha256] = Input(f"acb:{key}", i.sha256, i.size, i.name, i.locators)
+                    if env.known(contract.task_id(d.stage, i.sha256)):
+                        held[i.sha256] = Input(f"{d.role}:{key}", i.sha256, i.size, i.name, i.locators)
             if len(held) != 1:
-                what = "no ACB" if not held else f"{len(held)} ACBs"
-                raise ValueError(f"cue sheet {key}: {what} in what the request holds")
-            (acb,) = held.values()
-            out[key] = (acb, contract.task_id(AUDIO, acb.sha256))
+                what = f"no {d.role.upper()}" if not held else f"{len(held)} {d.role.upper()}s"
+                raise ValueError(f"{d.what} {key}: {what} in what the request holds")
+            (src,) = held.values()
+            out[key] = (src, contract.task_id(d.stage, src.sha256))
         return out
 
     def inputs(self, subject: str, env) -> list[Input]:
@@ -435,30 +503,16 @@ class ProductStage(Stage):
                 if m not in have:
                     raise ValueError(f"{self.name} reads {m} of the APK: set [paths] apk to an APK that holds it")
                 out.append(have[m])
-        sheets = self.sheets(subject, env)
-        if sheets:
-            doc = {}
-            for key, (acb, tid) in sheets.items():
-                res = env.result(tid)
-                (item,) = res["items"]
-                e = {"acb": acb.sha256, "status": item["status"]}
-                if "reason" in item:
-                    e["reason"] = item["reason"]["code"]
-                e["files"] = {
-                    contract.parse_artifact_id(a["id"])[1]: {k: a["content"][k] for k in ("sha256", "size", "ext")}
-                    for a in res["artifacts"]
-                }
-                doc[key] = e
-                out.append(acb)
-            data = contract.encode(doc)
-            out.append(Input(SHEETS_INPUT, env.depot.put(data), len(data), None, ({"kind": "depot"},)))
+        for d, held in ((SHEETS, self.sheets(subject, env)), (MOVIES, self.movie_files(subject, env))):
+            if held:
+                out += _decodes_inputs(d, held, env)
         return out + self.more_inputs(subject, env)
 
     def depends(self, subject: str, env) -> list[str]:
         named = self.keys(subject, env) or self.resources(subject, env) or self.builtins(subject, env)
         own = [contract.task_id(ADDRESSES, s) for s in sorted(env.fact("catalogs"))] if named else []
-        audio = sorted({tid for _, tid in self.sheets(subject, env).values()})
-        return own + self.reach(subject, env).read + audio
+        cri = {tid for _, tid in (*self.sheets(subject, env).values(), *self.movie_files(subject, env).values())}
+        return own + self.reach(subject, env).read + sorted(cri)
 
     def estimate(self, subject: str, env, inputs: list[Input]) -> Cost:
         """From the bytes of the objects' files: a product reads each of them about once."""
@@ -469,12 +523,13 @@ class ProductStage(Stage):
     def run(self, task, depot) -> Output:
         data = depot.input_bytes(task.input("objects"))
         doc = contract.loads(data)
-        sheets = {}
-        if any(i.role == SHEETS_INPUT for i in task.inputs):
-            for key, e in contract.loads(depot.input_bytes(task.input(SHEETS_INPUT))).items():
-                sheets[key] = Sheet(key, e, task.input(f"acb:{key}"), depot)
+        decoded: dict = {SHEETS_INPUT: {}, MOVIES_INPUT: {}}
+        for d, cls in ((SHEETS, Sheet), (MOVIES, Movie)):
+            if any(i.role == d.input for i in task.inputs):
+                for key, e in contract.loads(depot.input_bytes(task.input(d.input))).items():
+                    decoded[d.input][key] = cls(key, e, task.input(f"{d.role}:{key}"), depot)
         try:
-            made = self.assemble(task, Objects(doc, depot, sheets))
+            made = self.assemble(task, Objects(doc, depot, decoded[SHEETS_INPUT], decoded[MOVIES_INPUT]))
         except Unsupported as e:
             why = contract.reason(e.code, e.message)
             return Output([], [contract.item(task.id, "unsupported", why=why, cls=self.KIND)])
@@ -498,6 +553,29 @@ class ProductStage(Stage):
         arts.append(contract.artifact(aid, depot.add(data, "json"), prov, {"kind": TABLE_KIND}))
         item = contract.item(task.id, "exported", artifacts=[a["id"] for a in arts], cls=self.KIND)
         return Output(arts, [item])
+
+
+def _decodes_inputs(d: Decodes, held: dict[str, tuple[Input, str]], env) -> list[Input]:
+    """The inputs of the contents `held` (ProductStage._decodes): each content as "<role>:<key>" and the input d.input
+    that lists, per key, the status and the files of its d.stage result."""
+    doc, out = {}, []
+    for key, (src, tid) in held.items():
+        res = env.result(tid)
+        (item,) = res["items"]
+        e = {d.role: src.sha256, "status": item["status"]}
+        if "reason" in item:
+            e["reason"] = item["reason"]["code"]
+        files = {}
+        for a in res["artifacts"]:
+            f = {k: a["content"][k] for k in ("sha256", "size", "ext")}
+            if d.facts and a["semantics"].get("facts"):
+                f["facts"] = a["semantics"]["facts"]
+            files[contract.parse_artifact_id(a["id"])[1]] = f
+        e["files"] = files
+        doc[key] = e
+        out.append(src)
+    data = contract.encode(doc)
+    return [*out, Input(d.input, env.depot.put(data), len(data), None, ({"kind": "depot"},))]
 
 
 _RAW: dict = {}  # id of the last catalog index -> (the index, {catalog key: the raw files its locations depend on})
