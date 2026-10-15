@@ -40,6 +40,7 @@ codec and channel of a USM) and `catalog.index` (version 2: gzip input and Japan
 | `story.crilips` | `default` | `objects` (empty); `apk:lib/arm64-v8a/libcri_lips_unity.so` | `crilips.json` and `crilips.bin` |
 | `story.scene` | `default` | `objects`: the object table of the ADV scene, its prefabs and settings and the built-in graphics settings ([products](products.md#stories)) | `scene.json` and the object table |
 | `story.asset` | a catalog key a story loads | `objects`: the object table of what the key reaches | `asset.json` and the object table |
+| `story.video` | a video key `Cri/Video/<asset>` | `objects`: the object table of the key; `usm:<key>` and `movies`: the key's USM and its `cri.movie` files with their facts ([products](products.md#stories)); the `cri.movie` task takes `format` `webm` | `video.json` and `movie.webm` |
 | `story.chat` | `default` | `objects`: the object table of the shared chat shards | `chat.json` |
 | `story` | a `MasterAdv` id | `objects`: the object table of the episode's command list, its shards and the ADV player settings ([products](products.md#stories)); `master`: the episode's master record | `episode.json` and `story.json` |
 | `link.addresses` | global | catalog index, censuses (the built-in files' too) | key -> objects (a scene key: the objects of the scene's file outside a hierarchy), Resources.Load path -> objects, built-in selector (class, MonoBehaviour script class) -> objects, serialized file -> bundle or built-in file, bundle -> keys |
