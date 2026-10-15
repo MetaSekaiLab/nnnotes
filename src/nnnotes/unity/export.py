@@ -26,7 +26,6 @@ import io
 import json
 import math
 import re
-import zlib
 from pathlib import Path
 from typing import Literal
 
@@ -37,6 +36,7 @@ from UnityPy.helpers import MeshHelper
 
 from ..core import cache
 from ..source.catalog import Catalog
+from .bindings import ENGINE_PROPS, RECT_PROPS, crc, flat_names, material_attribute, material_prop_names
 from .convert.animation import CLASS_ID, TRANSFORM_ATTR, controller_doc, streamed_frames
 from .convert.material import material_doc
 from .reader import (
@@ -114,100 +114,6 @@ def _key(o) -> tuple[str, int]:
 def _rid(o, name: str) -> str:
     """Stable id for an object exported into a registry: name + hash of (file, path id)."""
     return f"{name}#{hashlib.sha1(f'{o.assets_file.name}:{o.path_id}'.encode()).hexdigest()[:8]}"
-
-
-def _crc(s: str) -> int:
-    return zlib.crc32(s.encode("utf-8"))
-
-
-def flat_names(tt, prefix: str = "") -> list[str]:
-    """Every field path of a typetree ("m_Color", "m_Color.r", "m_Enabled", ...); lists are leaves."""
-    out = []
-    if isinstance(tt, dict):
-        for k, v in tt.items():
-            p = f"{prefix}.{k}" if prefix else k
-            out.append(p)
-            out.extend(flat_names(v, p))
-    return out
-
-
-# --- clip bindings ------------------------------------------------------------
-# Animatable property names a binding can name (attribute = crc32 of the name) that are not field paths of a
-# component the exporter has seen: common component properties, RectTransform driven fields, and material
-# properties ("material.<name>[.<channel>]", renderer material property blocks).
-ENGINE_PROPS = (
-    "m_IsActive",
-    "m_Enabled",
-    "m_Color.r",
-    "m_Color.g",
-    "m_Color.b",
-    "m_Color.a",
-    "m_Size.x",
-    "m_Size.y",
-    "m_FlipX",
-    "m_FlipY",
-    "m_SortingOrder",
-    "m_Sprite",
-    "m_Alpha",
-    "m_SizeDelta.x",
-    "m_SizeDelta.y",
-    "m_AnchoredPosition.x",
-    "m_AnchoredPosition.y",
-    "m_LocalPosition.x",
-    "m_LocalPosition.y",
-    "m_LocalPosition.z",
-    "m_LocalScale.x",
-    "m_LocalScale.y",
-    "m_LocalScale.z",
-)
-RECT_PROPS = (
-    "m_AnchoredPosition.x",
-    "m_AnchoredPosition.y",
-    "m_SizeDelta.x",
-    "m_SizeDelta.y",
-    "m_AnchorMin.x",
-    "m_AnchorMin.y",
-    "m_AnchorMax.x",
-    "m_AnchorMax.y",
-    "m_Pivot.x",
-    "m_Pivot.y",
-)
-MATERIAL_PROPS = (
-    "_Color",
-    "_TintColor",
-    "_MainTex_ST",
-    "_BaseColor",
-    "_EmissionColor",
-    "_Alpha",
-    "_Cutoff",
-    "_Intensity",
-    "_Offset",
-    "_Scroll",
-    "_ScrollX",
-    "_ScrollY",
-    "_Power",
-    "_Value",
-    "_Glow",
-    "_GlowColor",
-    "_AddColor",
-    "_MultiplyColor",
-    "_Progress",
-    "_Fade",
-    "_Brightness",
-    "_Dissolve",
-    "_MainTex",
-    "_Speed",
-    "_Rotation",
-)
-
-
-def material_prop_names(extra) -> list[str]:
-    out = []
-    for p in sorted(set(MATERIAL_PROPS) | set(extra)):
-        out.append(f"material.{p}")
-        for c in ("r", "g", "b", "a", "x", "y", "z", "w"):
-            out.append(f"material.{p}.{c}")
-    return out
 
 
 def _events(tt: dict) -> list[dict]:
@@ -822,7 +728,7 @@ class Exporter:
     def _crc_of(self, name: str) -> int:
         c = self._crcs.get(name)
         if c is None:
-            c = self._crcs[name] = _crc(name)
+            c = self._crcs[name] = crc(name)
         return c
 
     def _names(self, o, tt: dict | None = None) -> list[str]:
@@ -932,15 +838,8 @@ class Exporter:
         return names
 
     def _material_attribute(self, r: dict) -> str | None:
-        """Attribute of a renderer material property binding (customType 22, RendererMaterial):
-        attribute = (crc32(property) & 0x0FFFFFFF) | channel << 28, bit 30 set for colour channels (r, g, b, a),
-        clear for vector channels (x, y, z, w) or a float property. The property is one of the materials of the
-        renderer the binding names; returns "material.<property>[.<channel>]" (Unity's property path).
-        The bit layout is native engine code (not in the C# reference); the layout above is the one the data
-        shows: the four _TintColor bindings of the live intro's lane_mesh carry 4..7 << 28 over
-        crc32("_TintColor") & 0x0FFFFFFF, with 4..6 constant (0.538, 0.510, 2.040: the effect's _TintColor rgb)
-        and 7 animated 0 -> 1 -> 0 (alpha)."""
-        a = r["attributeCrc"]
+        """Attribute of a renderer material property binding (customType 22): a property of the materials of the
+        renderer the binding names (bindings.material_attribute)."""
         kinds: dict[str, str] = {}
         for g, go_pid in self._binding_gos(r):
             for c in g.go[go_pid]["m_Component"]:
@@ -954,13 +853,7 @@ class Exporter:
                     sp = mo.read_typetree()["m_SavedProperties"]
                     kinds.update({k: "float" for k, _ in sp.get("m_Floats", [])})
                     kinds.update({k: "vector" for k, _ in sp.get("m_Colors", [])})
-        hits = [k for k in kinds if self._crc_of(k) & 0x0FFFFFFF == a & 0x0FFFFFFF]
-        if len(hits) != 1:
-            return None
-        name, channel, colour = hits[0], (a >> 28) & 3, (a >> 30) & 1
-        if kinds[name] == "float" and not colour and channel == 0:
-            return f"material.{name}"
-        return f"material.{name}.{('rgba' if colour else 'xyzw')[channel]}"
+        return material_attribute(r["attributeCrc"], kinds)
 
     def _class_names(self, r: dict) -> set[str]:
         """Names any binding of the class can target: engine properties, material properties of the
