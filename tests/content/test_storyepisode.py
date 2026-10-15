@@ -201,3 +201,111 @@ def test_episode_record_selects_rows_and_reports_missing_ones():
     broken["MasterText"] = []
     with pytest.raises(KeyError, match="MasterText"):
         storyepisode.episode_record(broken, 1)
+
+
+def _episode_doc() -> dict:
+    record = storyepisode.episode_record(master_tables(), 1)
+    return storyepisode.episode_json(storyepisode.episode(table(), record))
+
+
+def test_episode_json_resources_have_no_presence_flag():
+    doc = _episode_doc()
+    assert doc["resources"] == [
+        {"kind": "chatwindow", "address": "Adv/Chat/Prefabs/win_7"},
+        {"kind": "stage", "address": "Adv/Stage/st_a/st_a"},
+        {"kind": "transition", "address": "Adv/Transition/adv_transition_default/x"},
+        {"kind": "video", "address": "Cri/Video/adv/movie_a/movie_a"},
+    ]
+    assert all("present" not in r for r in doc["resources"])
+
+
+def test_lip_synced_voice_rows():
+    def episode(*commands) -> dict:
+        return {"commands": list(commands)}
+
+    voice = {"cmd": "Talk", "TargetName": "a", "VoiceIDs": [1]}
+    assert storyepisode.lip_synced(episode(voice))
+    assert storyepisode.lip_synced(episode({"cmd": "Voice", "TargetName": "a", "VoiceIDs": [1]}))
+    assert storyepisode.lip_synced(episode({**voice, "Parameter1": "EveryoneLipSync", "Speaker": 3}))
+    assert not storyepisode.lip_synced(episode({**voice, "IgnoreLipSync": True}))
+    assert not storyepisode.lip_synced(episode({**voice, "IgnoreData": True}))
+    assert not storyepisode.lip_synced(episode({"cmd": "Talk", "TargetName": "a"}))
+    assert not storyepisode.lip_synced(episode({"cmd": "Talk", "VoiceIDs": [1]}))
+    assert not storyepisode.lip_synced(episode({"cmd": "Stage", "TargetName": "a", "VoiceIDs": [1]}))
+    assert not storyepisode.lip_synced(episode())
+
+
+def test_chat_ids_are_sorted_distinct_and_non_zero():
+    commands = [{"TargetChatID": 9}, {"TargetChatID": 0}, {}, {"TargetChatID": 7}, {"TargetChatID": 9}]
+    assert storyepisode.chat_ids({"commands": commands}) == [7, 9]
+    assert storyepisode.chat_ids({"commands": []}) == []
+
+
+def test_parts_lists_the_products_the_story_plays_with():
+    episode = {
+        "advId": 1,
+        "commands": [
+            {"cmd": "Talk", "TargetName": "a", "VoiceIDs": [1], "TargetChatID": 7},
+            {"cmd": "Stage", "TargetAssetName": "s"},
+        ],
+        "resources": [
+            {"kind": "live2d", "address": "Character/Live2D/b"},
+            {"kind": "live2d", "address": "Character/Live2D/a"},
+            {"kind": "stage", "address": "Adv/Stage/s"},
+            {"kind": "transition", "address": "Adv/Transition/t"},
+            {"kind": "talkwindow", "address": "UI/Prefab/Parts/Adv/Talk/UIDefaultTalkWindow"},
+            {"kind": "video", "address": "Cri/Video/v"},
+        ],
+        "cuesheets": {
+            "1": {"_cueSheetName": "sheet_b"},
+            "2": {"_cueSheetName": "sheet_a"},
+            "3": {"_cueSheetName": ""},
+            "4": {"_id": 4},
+            "5": {"_cueSheetName": "sheet_a"},
+        },
+    }
+    assert storyepisode.parts(episode) == {
+        "assets": ["Adv/Stage/s", "Adv/Transition/t"],
+        "models": ["Character/Live2D/a", "Character/Live2D/b"],
+        "sounds": ["sheet_a", "sheet_b"],
+        "chat": True,
+        "crilips": True,
+    }
+    quiet = {**episode, "commands": [{"cmd": "Stage", "TargetAssetName": "s"}], "cuesheets": {}}
+    assert storyepisode.parts(quiet) == {
+        "assets": ["Adv/Stage/s", "Adv/Transition/t"],
+        "models": ["Character/Live2D/a", "Character/Live2D/b"],
+        "sounds": [],
+        "chat": False,
+        "crilips": False,
+    }
+
+
+def test_story_document_names_chats_effects_and_parts():
+    doc = _episode_doc()
+    doc["commands"].append({"i": 5, "cmd": "Effect", "TargetName": "spot", "TargetAssetName": "fx_a/fx_a"})
+    paths = {
+        "scene": "scene.json",
+        "assets": {},
+        "models": {},
+        "sounds": {},
+        "chat": "chat.json",
+        "crilips": "crilips.json",
+    }
+    record = storyepisode.episode_record(master_tables(), 1)
+    assert storyepisode.story(doc, record, paths) == {
+        "format": 1,
+        "advId": 1,
+        "episode": "episode.json",
+        "chats": {"7": {"_id": 7, "_chatWindowAssetName": "win_7", "_chatIconAssetName": "icon_7"}},
+        "effects": {"spot": "Adv/Effect/fx_a/fx_a"},
+        "parts": paths,
+    }
+
+
+def test_story_document_needs_a_row_for_each_chat_id():
+    doc = _episode_doc()
+    doc["commands"].append({"i": 5, "cmd": "ChatWindow", "TargetChatID": 99})
+    record = storyepisode.episode_record(master_tables(), 1)
+    with pytest.raises(KeyError, match="MasterAdvChat has no row 99"):
+        storyepisode.story(doc, record, {})
