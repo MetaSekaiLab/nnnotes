@@ -1617,3 +1617,20 @@ def test_export_runs_the_request_expand_gives_and_places_the_last_run(tmp_path, 
     manifest = contract.loads((tmp_path / "out" / "live2d.cubism" / f"{quote(MODEL_KEY, safe='')}.json").read_bytes())
     assert manifest["product"] == "live2d.cubism" and manifest["subject"] == MODEL_KEY
     assert not (tmp_path / "out" / "fake.product").exists()  # the first run's product is not placed
+
+
+def test_every_product_a_story_plays_with_is_installed():
+    from nnnotes.pipeline import story
+
+    names = {s.name for s in assets.STAGE_SOURCES}
+    assert {story.STORY, *story.PART_STAGES} <= names
+
+
+def test_a_request_for_a_product_no_stage_makes_is_an_error():
+    from types import SimpleNamespace
+
+    ws = SimpleNamespace(installed=SimpleNamespace(stages={"story": object()}))
+    with pytest.raises(ValueError, match="no product stage story.nothing is installed"):
+        assets.Workspace.request(ws, {"story": ["1"], "story.nothing": ["x"]}, [])
+    assets.Workspace.request(ws, {"story": ["2", "1"]}, ["key:k"])
+    assert ws.products == {"story": ["1", "2"]} and ws.selection == ["key:k"]
