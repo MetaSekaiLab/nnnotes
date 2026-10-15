@@ -237,6 +237,7 @@ def test_parts_lists_the_products_the_story_plays_with():
         "assets": ["Adv/Stage/s", "Adv/Transition/t"],
         "models": ["Character/Live2D/a", "Character/Live2D/b"],
         "sounds": ["sheet_a", "sheet_b"],
+        "videos": ["Cri/Video/v"],
         "chat": True,
         "crilips": True,
     }
@@ -245,6 +246,7 @@ def test_parts_lists_the_products_the_story_plays_with():
         "assets": ["Adv/Stage/s", "Adv/Transition/t"],
         "models": ["Character/Live2D/a", "Character/Live2D/b"],
         "sounds": [],
+        "videos": ["Cri/Video/v"],
         "chat": False,
         "crilips": False,
     }

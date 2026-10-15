@@ -6,13 +6,25 @@ from nnnotes.content import storychat, storyepisode, storyscene
 from nnnotes.formats import crilips
 from nnnotes.pipeline import assemble, contract, cristages, live, story
 from nnnotes.pipeline.assemble import Objects
-from nnnotes.pipeline.contract import IncompatibleTask
+from nnnotes.pipeline.contract import IncompatibleTask, Input
+from nnnotes.pipeline.cristages import MovieStage
 from nnnotes.pipeline.depot import Depot
 from nnnotes.pipeline.live2d import MODEL
-from nnnotes.pipeline.stages import Env
-from nnnotes.pipeline.story import AssetStage, ChatStage, CriLipsStage, SceneStage, SoundStage, StoryStage
+from nnnotes.pipeline.stages import Env, describe, execute, registry
+from nnnotes.pipeline.story import (
+    AssetStage,
+    ChatStage,
+    CriLipsStage,
+    SceneStage,
+    SoundStage,
+    StoryStage,
+    VideoStage,
+)
 from tests.formats.test_crilips import _elf_with_rodata, _synthetic_version
+from tests.formats.test_usm import KEY
 from tests.helpers import story as sh
+from tests.pipeline.test_assemble import addresses
+from tests.pipeline.test_cristages import export_result, fake_tools, planning, usm_file
 from tests.pipeline.test_live import master_record, run, stored, table
 from tests.site.test_story_site import mp4
 
@@ -268,6 +280,7 @@ def test_the_story_product_holds_the_episode_and_the_story_document(tmp_path):
             },
             "models": {},
             "sounds": {},
+            "videos": {"Cri/Video/adv/movie_a/movie_a": "videos/adv~movie_a~movie_a.json"},
             "chat": "storychat/default.json",
             "crilips": None,
         },
@@ -320,6 +333,7 @@ def test_part_paths_give_the_manifest_of_each_part():
         "assets": ["Adv/Stage/st_a/st_a", "Adv/Still/st"],
         "models": ["Character/Live2D/g/m/model/m"],
         "sounds": ["sheet_a"],
+        "videos": ["Cri/Video/adv/m/m"],
         "chat": True,
         "crilips": False,
     }
@@ -331,15 +345,17 @@ def test_part_paths_give_the_manifest_of_each_part():
         },
         "models": {"Character/Live2D/g/m/model/m": "models/m.json"},
         "sounds": {"sheet_a": "cuesheets/sheet_a.json"},
+        "videos": {"Cri/Video/adv/m/m": "videos/adv~m~m.json"},
         "chat": "storychat/default.json",
         "crilips": None,
     }
-    quiet = {**parts, "assets": [], "models": [], "sounds": [], "chat": False, "crilips": True}
+    quiet = {**parts, "assets": [], "models": [], "sounds": [], "videos": [], "chat": False, "crilips": True}
     assert story.part_paths(quiet) == {
         "scene": "storyscenes/default.json",
         "assets": {},
         "models": {},
         "sounds": {},
+        "videos": {},
         "chat": None,
         "crilips": "crilips/default.json",
     }
@@ -350,6 +366,7 @@ def test_part_products_list_the_subjects_of_each_product_the_story_needs():
         "assets": ["Adv/Stage/z", "Adv/Stage/a"],
         "models": ["Character/Live2D/g/m/model/m"],
         "sounds": ["sheet_a"],
+        "videos": ["Cri/Video/adv/m/m"],
         "chat": True,
         "crilips": True,
     }
@@ -359,14 +376,212 @@ def test_part_products_list_the_subjects_of_each_product_the_story_needs():
         story.ASSET: ["Adv/Stage/a", "Adv/Stage/z"],
         MODEL: ["Character/Live2D/g/m/model/m"],
         story.SOUND: ["sheet_a"],
+        story.VIDEO: ["Cri/Video/adv/m/m"],
         story.CHAT: ["default"],
         story.CRILIPS: ["default"],
     }
 
 
 def test_part_products_omit_the_products_a_story_does_not_need():
-    parts = {"assets": [], "models": [], "sounds": [], "chat": False, "crilips": False}
+    parts = {"assets": [], "models": [], "sounds": [], "videos": [], "chat": False, "crilips": False}
     assert story.part_products({"parts": story.part_paths(parts)}) == {story.SCENE: ["default"]}
     parts["sounds"] = ["sheet_a"]
     doc = {"parts": story.part_paths(parts)}
     assert story.part_products(doc) == {story.SCENE: ["default"], story.SOUND: ["sheet_a"]}
+
+
+# ---------------------------------------------------------------- the video product
+VIDEO_KEY = "Cri/Video/adv/m/m"
+WEBM = b"\x1aE\xdf\xa3 synthetic webm"
+TRACKS = [
+    {"kind": "video", "channel": 0, "codec": "vp9"},
+    {"kind": "audio", "channel": 1, "codec": "opus", "source": "adx"},
+]
+
+
+def video_table(depot, key=VIDEO_KEY, info=None) -> Input:
+    """The object table of the video key `key`: one MonoBehaviour whose json carries `movieInfo`."""
+    info = info or {
+        "codecType": 9,
+        "width": 640,
+        "height": 360,
+        "dispWidth": 640,
+        "dispHeight": 360,
+        "framerateN": 30,
+        "framerateD": 1,
+        "totalFrames": 90,
+    }
+    data = contract.encode({"movieInfo": info})
+    oid = "globalgamemanagers.assets:1"
+    objects = {
+        oid: {"status": "exported", "class": "MonoBehaviour", "files": {"json": {"sha256": depot.put(data),
+              "size": len(data), "ext": "json"}}},
+    }  # fmt: skip
+    doc = {"schema": contract.OBJECTS, "roots": [oid], "keys": {key: [oid]}, "objects": objects, "missing": []}
+    return stored(depot, contract.encode(doc), "objects")
+
+
+def movie_inputs(depot, key=VIDEO_KEY, entry=None) -> list[Input]:
+    """The inputs "usm:<key>" and "movies" of a movie decoded as movie.webm (with its tracks)."""
+    usm = b"synthetic usm of " + key.encode()
+    if entry is None:
+        entry = {
+            "usm": contract.sha256(usm),
+            "status": "exported",
+            "files": {"movie.webm": {"sha256": depot.put(WEBM), "size": len(WEBM), "ext": "webm",
+                                     "facts": {"tracks": TRACKS}}},
+        }  # fmt: skip
+    doc = {key: entry}
+    return [
+        stored(depot, usm, f"usm:{key}"),
+        stored(depot, contract.encode(doc), assemble.MOVIES_INPUT),
+    ]
+
+
+def test_a_video_key_names_its_manifest():
+    stage = VideoStage()
+    assert stage.keys(VIDEO_KEY, None) == [VIDEO_KEY]
+    assert stage.movies(VIDEO_KEY, None) == [VIDEO_KEY]
+    assert stage.manifest("Cri/Video/adv/movie_a/movie_a") == "videos/adv~movie_a~movie_a.json"
+    for bad in ("Cri/Sound/adv/m", "Cri/Video/", "Cri/Video/a b/c", "adv/m"):
+        with pytest.raises(ValueError, match="not a video key"):
+            stage.keys(bad, None)
+        with pytest.raises(ValueError, match="not a video key"):
+            stage.manifest(bad)
+
+
+def test_the_video_product_holds_the_movie_as_webm_and_its_description(tmp_path):
+    depot = Depot(tmp_path / "d")
+    inputs = movie_inputs(depot)
+    _, res, arts = run(depot, VideoStage(), VIDEO_KEY, [video_table(depot), *inputs])
+    assert {p: a["semantics"]["kind"] for p, a in arts.items()} == {
+        "movie.webm": "video.story",
+        "objects": "product.objects",
+        "video.json": "story.video",
+    }
+    (item,) = res["items"]
+    assert item["status"] == "exported"
+    webm = arts["movie.webm"]["content"]
+    assert webm["sha256"] == contract.sha256(WEBM) and depot.read(webm["sha256"]) == WEBM
+    assert read_json(depot, arts["video.json"]) == {
+        "format": 1,
+        "file": "movie.webm",
+        "codec": "vp9",
+        "width": 640,
+        "height": 360,
+        "displayWidth": 640,
+        "displayHeight": 360,
+        "frameRate": [30, 1],
+        "frames": 90,
+        "tracks": TRACKS,
+    }
+    assert read_json(depot, arts["objects"])["objects"] == {}
+
+
+def test_a_movie_that_is_unsupported_keeps_the_webm_it_made(tmp_path):
+    depot = Depot(tmp_path / "d")
+    usm_sha = contract.sha256(b"synthetic usm of " + VIDEO_KEY.encode())
+    entry = {
+        "usm": usm_sha,
+        "status": "unsupported",
+        "reason": "unsupported.usm.subtitle",
+        "files": {"movie.webm": {"sha256": depot.put(WEBM), "size": len(WEBM), "ext": "webm",
+                                 "facts": {"tracks": TRACKS}}},
+    }  # fmt: skip
+    _, res, arts = run(depot, VideoStage(), VIDEO_KEY, [video_table(depot), *movie_inputs(depot, entry=entry)])
+    (item,) = res["items"]
+    assert item["status"] == "exported"
+    assert arts["movie.webm"]["content"]["sha256"] == contract.sha256(WEBM)
+    assert read_json(depot, arts["video.json"])["tracks"] == TRACKS
+
+
+def test_an_unsupported_movie_without_its_webm_makes_the_video_product_unsupported(tmp_path):
+    depot = Depot(tmp_path / "d")
+    usm_sha = contract.sha256(b"synthetic usm of " + VIDEO_KEY.encode())
+    entry = {"usm": usm_sha, "status": "unsupported", "reason": "unsupported.usm.codec", "files": {}}
+    _, res, arts = run(depot, VideoStage(), VIDEO_KEY, [video_table(depot), *movie_inputs(depot, entry=entry)])
+    (item,) = res["items"]
+    assert item["status"] == "unsupported" and item["reason"]["code"] == "unsupported.usm.codec"
+    assert arts == {}
+
+
+class Movies(VideoStage):
+    """A product reading the movies of its keys (the planning of a product that holds several movies)."""
+
+    def __init__(self, keys):
+        super().__init__()
+        self.movie_keys = list(keys)
+
+    def keys(self, subject, env) -> list[str]:
+        return self.movie_keys
+
+    def movies(self, subject, env) -> list[str]:
+        return self.movie_keys
+
+
+def test_the_movies_of_a_product_are_the_usms_the_request_holds(tmp_path):
+    """A USM held in a bundle is the `usm` file of an object of its key; a raw one is the raw file of the key that
+    cri.movie decoded. The product's inputs are the movies' USMs and cri.movie's files (movie.webm), and it depends on
+    both cri.movie tasks."""
+    depot = Depot(tmp_path / "d")
+    held_key, raw_key = "Cri/Video/adv/m/held", "Cri/Video/adv/m/raw"
+    held, _ = usm_file(audio=False)
+    raw, _ = usm_file()
+    with fake_tools(key=KEY):
+        env = planning(depot, tmp_path, {"cri_assets_cri/video/raw": raw}, keys={raw_key: ["cri_assets_cri/video/raw"]})
+        export_result(env, "movies_a", {}, {"Held": held})
+        env.facts["catalogs"] = {"main": []}
+        addresses(depot, env, {held_key: ["CAB-movies_a:100"], raw_key: []})
+        stage = Movies([held_key, raw_key])
+        env.facts["products"] = {stage.name: ["x"]}
+        env.facts["roots"] = assemble.request({stage.name: stage}, {stage.name: ["x"]}, env)
+        movie = MovieStage()
+        for s in movie.subjects(env):
+            t = describe(movie, s, {"format": "webm"}, env)
+            execute(t, depot, registry(movie), force=True)
+            env.done(t.id, t.key)
+        sha, raw_sha = contract.sha256(held), contract.sha256(raw)
+        files = stage.movie_files("x", env)
+        assert {k: (i.role, i.sha256, tid) for k, (i, tid) in files.items()} == {
+            held_key: (f"usm:{held_key}", sha, f"cri.movie:{sha}"),
+            raw_key: (f"usm:{raw_key}", raw_sha, f"cri.movie:{raw_sha}"),
+        }
+        assert {f"cri.movie:{sha}", f"cri.movie:{raw_sha}"} <= set(stage.depends("x", env))
+        t = describe(stage, "x", None, env)
+        assert sorted(i.role for i in t.inputs) == sorted([f"usm:{held_key}", f"usm:{raw_key}", "objects", "movies"])
+
+
+def test_a_movie_the_request_does_not_hold_is_an_error(tmp_path):
+    depot = Depot(tmp_path / "d")
+    with fake_tools(key=KEY):
+        env = planning(depot, tmp_path, {}, keys={"Cri/Video/adv/m/raw": ["cri_assets_cri/video/raw"]})
+        env.facts["catalogs"], env.facts["bundles"] = {"main": []}, []
+        env.facts["selected"] = []
+        addresses(depot, env, {"Cri/Video/adv/m/held": []})
+        env.facts["roots"] = {"keys": [], "objects": []}
+        with pytest.raises(ValueError, match="movie Cri/Video/adv/m/held: no USM"):
+            Movies(["Cri/Video/adv/m/held"]).movie_files("x", env)
+        with pytest.raises(ValueError, match="does not hold its file cri_assets_cri/video/raw"):
+            Movies(["Cri/Video/adv/m/raw"]).movie_files("x", env)
+
+
+def test_a_video_product_needs_the_webm_of_each_movie(tmp_path):
+    """cri.movie made only movie.mkv (its default format): the video product names the format it needs."""
+    depot = Depot(tmp_path / "d")
+    raw, _ = usm_file()
+    key = "Cri/Video/adv/m/raw"
+    with fake_tools(key=KEY):
+        env = planning(depot, tmp_path, {"cri_assets_cri/video/raw": raw}, keys={key: ["cri_assets_cri/video/raw"]})
+        env.facts["catalogs"], env.facts["bundles"] = {"main": []}, []
+        env.facts["selected"] = []
+        addresses(depot, env, {key: []})
+        stage = Movies([key])
+        env.facts["products"] = {stage.name: ["x"]}
+        env.facts["roots"] = assemble.request({stage.name: stage}, {stage.name: ["x"]}, env)
+        movie = MovieStage()
+        for s in movie.subjects(env):
+            t = describe(movie, s, None, env)
+            execute(t, depot, registry(movie), force=True)
+            env.done(t.id, t.key)
+        with pytest.raises(ValueError, match="format webm"):
+            stage.inputs("x", env)
