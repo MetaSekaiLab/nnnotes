@@ -13,14 +13,15 @@ link.addresses (nnnotes.addresses/3), one task per catalog pair: the catalog ind
     files      {serialized file: stable bundle name} (CAB -> bundle; `unity_builtin_extra` -> `apk/data.unity3d`)
     keys       {primary key: [{location, type, internalId, bundle | raw, objects}]}: an asset location's bundle is the
                dependency whose container holds its internal id (compared ignoring case); `objects` the object ids
-               the container path names (null when a dependency bundle has no census)
+               the container path names, for a scene the objects of its file outside a hierarchy (census.scenes);
+               null when a dependency bundle has no census
     resources  {resource path: [object ids]}: the paths of the ResourceManager container of the built-in files (what
                Resources.Load finds, as stored), the objects each names in stored order
     builtins   {selector: [object ids]}: the objects of the built-in files (not MonoScripts, a hierarchy by its root
                GameObject alone) by class, "<class>", and a MonoBehaviour by its script's class,
                "MonoBehaviour:<class>" (its MonoScript in the built-in files), each list sorted
-    objects    {stable address: {object, class, name, byteSize, typeHash}} of the objects a container path or a
-               resource path names
+    objects    {stable address: {object, class, name, byteSize, typeHash}} of the objects a container path, a scene
+               or a resource path names
     problems   files named by two bundles, bundles whose census AssetBundle name is not the catalog's, keys whose
                internal id no container holds
 
@@ -150,7 +151,7 @@ def addresses(index: dict, censuses) -> dict:
         if b.get("bundleName") and found and b["bundleName"] + ".bundle" not in found:
             problems["bundleNames"].append({"bundle": stable, "catalog": b["bundleName"] + ".bundle", "census": found})
         g: dict[str, list[dict]] = {}
-        for e in census.container(doc) + doc["resourcePaths"]:
+        for e in census.container(doc) + census.scenes(doc) + doc["resourcePaths"]:
             g.setdefault(e["path"].casefold(), []).append(e)
         for e in doc["resourcePaths"]:
             if e["file"] is not None:
@@ -334,7 +335,7 @@ class AddressesStage(Stage):
     skips failed ones. Artifact "link.addresses:<subject>#addresses"."""
 
     name = "link.addresses"
-    version = 3
+    version = 4
     after = ("catalog.index", "unity.census")
 
     def subjects(self, env) -> list[str]:

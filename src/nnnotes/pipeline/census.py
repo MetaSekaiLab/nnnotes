@@ -15,8 +15,8 @@ objects reference, read without decoding any object.
                    the same path ids (a scene bundle's scene and its shared assets).
     resources      the other files of the bundle (.resS / .resource): {name, size}
     assetBundles   the AssetBundle objects: {file, pathId, name, assetBundleName, dependencies,
-                   isStreamedSceneAssetBundle, sceneHashes [[scene, hash]], container [{path, file, pathId,
-                   preloadIndex, preloadSize}] (stored order)}
+                   isStreamedSceneAssetBundle, sceneHashes [[scene, hash]] (the hash is the name of the scene's
+                   serialized file), container [{path, file, pathId, preloadIndex, preloadSize}] (stored order)}
     resourcePaths  the container of the ResourceManager objects (the paths Resources.Load finds objects at, in the
                    APK's global managers): [{path, file, pathId}] in stored order; a path names one object per
                    class it was saved as
@@ -305,6 +305,23 @@ def objects(doc: dict):
 def container(doc: dict) -> list[dict]:
     """The container entries of every AssetBundle object of a census, in stored order."""
     return [e for b in doc["assetBundles"] for e in b["container"]]
+
+
+def scenes(doc: dict) -> list[dict]:
+    """The objects of the scenes of a scene bundle as container entries {path, file, pathId}: a scene's container
+    entry names no object, its scene hash names its serialized file, and the scene is the objects of that file outside
+    a hierarchy (without `unit`: the root GameObjects and the scene's settings), by scene and path id."""
+    files = {f["name"]: f for f in doc["files"]}
+    out = []
+    for b in doc["assetBundles"]:
+        for path, name in b["sceneHashes"]:
+            if name in files:
+                out += [
+                    {"path": path, "file": name, "pathId": o["pathId"]}
+                    for o in files[name]["objects"]
+                    if "unit" not in o
+                ]
+    return out
 
 
 def script_refs(doc: dict) -> list[str]:
