@@ -275,3 +275,34 @@ The object table holds every object the product reaches but the MonoScripts; of 
 (`json`), the variant index (`index`) and every GLSL ES 3.00 program. The `product` layout makes `live.notes` when the
 selection holds all its keys and the master data is there, and the `live.noteskin` and `live.noteeffect` products of
 the skin and effect set keys the selection holds.
+
+## Live scene
+
+What exists on the live screen before the first note, and the start timeline of each band, is one product of
+`nnnotes.pipeline.live`, shared by every live:
+
+| Product | Subject | Manifest | Roots | Document |
+|---|---|---|---|---|
+| `live.scene` | `default` | `scenes/default.json` | the scene `EmbScene/Live`, the lane line prefab, the judge effect view prefab, the combo and judgement sprite assets, the sprites of every lane skin (`MasterLiveLaneSkin`), the start timeline and LightWeight background of every band (`MasterBand`), and the built-in `GraphicsSettings`, `QualitySettings` and `PlayerSettings` | `scene.json` |
+
+The objects of a scene key are the objects of the scene's file outside a hierarchy: its root GameObjects, each a
+prefab document, and its settings. A root references a component of another root with a `$ref`; the object table
+lists that component as contained in the root GameObject holding it (`in`).
+
+`scene.json` has `format` 1 and
+
+| Field | |
+|---|---|
+| `scene` | the object ids of the scene's root GameObjects |
+| `renderSettings` | the object id of the scene's `RenderSettings` |
+| `graphics` | the object ids of the built-in settings: `graphics` (`GraphicsSettings`: the render pipeline asset, its renderers and their post-process data), `quality` (`QualitySettings`), `player` (`PlayerSettings`: the colour space) |
+| `laneSkins` | `{lane skin asset name: {lane_base, lane_tap_area, out_side_line: Sprite id}}` |
+| `prefabs` | the GameObject ids of `laneLine` (the inner lane lines), `judgeEffectView` and `barLineView` (the prefab the scene's bar line container instantiates) |
+| `spriteAssets` | the object ids of the `combo` and `judgement` sprite assets |
+| `bands` | `{band id: {timeline, background, tracks}}` of the bands whose start timeline the catalog holds: the timeline prefab's GameObject, the background Sprite, and `{AnimationTrack id: {name, prefab, animator}}`, the GameObject and node path of the Animator each track plays on |
+| `settings` | the option defaults of preset 1 (`optionDefaults`) and the ranges (`optionRanges`) of the items the render path reads, the `MasterLiveQualitySettings` rows (`qualitySettings`), the default lane skin (`laneSkin`), every lane skin by option value (`laneSkins`), and the judgement sprite names by judgement (`judgementSprites`) |
+| `bindings` | as in the note highway, with the clips of each band's timeline tracks on the Animators they play on |
+| `shaders` | as in the note highway; of different shaders of one name, the name names the one `GraphicsSettings` always includes. It holds the shaders the live screen finds by name: `Hidden/CompositeRectBlit`, `Hidden/SimpleGaussianBlur`, `Sirius/Live/LiveSofdecPrimeYuv`, `Sirius/Live/LiveSofdecPrimeYuv_Android` and `UI/Default` |
+
+A live plays the timeline and background of one band. The object table and the shader files are kept as in the note
+highway. The `product` layout makes `live.scene` when the selection holds the scene and the master data is there.
