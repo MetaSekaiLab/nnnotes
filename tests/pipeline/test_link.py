@@ -168,6 +168,47 @@ def test_resource_paths_name_objects_of_the_builtin_files():
     assert link.addresses(idx, censuses())["resources"] == {}
 
 
+def test_builtin_selectors_name_objects_of_the_builtin_files_by_class():
+    """The builtins table: objects of the built-in files by class and MonoBehaviours by their script's class; no
+    MonoScript, no member of a hierarchy, nothing of a bundle."""
+    idx = index(synth.CatalogWriter().build(catalog_entries()))
+    settings = {"file": "globalgamemanagers.assets", "pathId": 20}
+    other = {"file": "globalgamemanagers.assets", "pathId": 21}
+    data = cdoc(
+        {
+            "globalgamemanagers": [obj(1, "GraphicsSettings")],
+            "globalgamemanagers.assets": [
+                obj(20, "MonoScript", "SoundSettings"),
+                obj(21, "MonoScript", "Unnamed"),
+                obj(30, "MonoBehaviour", "b", script=settings),
+                obj(31, "MonoBehaviour", "a", script=settings),
+                obj(32, "MonoBehaviour", "", script=other),
+                obj(33, "MonoBehaviour", "", script={"file": CAB_M, "pathId": 42}),
+                obj(34, "MonoBehaviour", ""),
+                obj(40, "GameObject", "root"),
+                {**obj(41, "Transform"), "unit": "globalgamemanagers.assets:40"},
+                obj(50, "Texture2D", "t"),
+            ],
+        },
+        scripts=[{**settings, "assembly": "Game.dll", "namespace": "Game", "class": "SoundSettings", "name": "S"}],
+    )
+    doc = link.addresses(idx, {**censuses(), "apk/data.unity3d": data})
+    assert doc["builtins"] == {
+        "GameObject": ["globalgamemanagers.assets:40"],
+        "GraphicsSettings": ["globalgamemanagers:1"],
+        "MonoBehaviour:SoundSettings": ["globalgamemanagers.assets:30", "globalgamemanagers.assets:31"],
+        "Texture2D": ["globalgamemanagers.assets:50"],
+    }
+    ix = views.AddressIndex.from_addresses(doc)
+    assert [(o.id, o.cls) for o in ix.builtin("GraphicsSettings")] == [("globalgamemanagers:1", "GraphicsSettings")]
+    assert [o.id for o in ix.builtin("MonoBehaviour:SoundSettings")] == [
+        "globalgamemanagers.assets:30",
+        "globalgamemanagers.assets:31",
+    ]
+    assert ix.builtin("MonoBehaviour:Unnamed") is None and ix.builtin("MonoScript") is None
+    assert link.addresses(idx, censuses())["builtins"] == {}
+
+
 def test_scripts_table_and_context():
     docs = censuses()
     table = link.scripts(docs.values())

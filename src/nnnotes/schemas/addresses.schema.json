@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:nnnotes:schema:addresses",
-  "title": "nnnotes.addresses/2",
-  "description": "The address table of a catalog version and the censuses of its bundles (stage link.addresses): per stable bundle name its file name, serialized files, AssetBundle name and keys; serialized file -> bundle; per catalog key its locations with their bundle (or raw files) and the objects the container path names; per resource path (Resources.Load, the APK's built-in files) the objects it names; per stable address the object it names; the problems found.",
+  "title": "nnnotes.addresses/3",
+  "description": "The address table of a catalog version and the censuses of its bundles (stage link.addresses): per stable bundle name its file name, serialized files, AssetBundle name and keys; serialized file -> bundle; per catalog key its locations with their bundle (or raw files) and the objects the container path names; per resource path (Resources.Load, the APK's built-in files) the objects it names; per selector of the built-in files (a class, or a MonoBehaviour's script class) the objects it names; per stable address the object it names; the problems found.",
   "type": "object",
   "required": [
     "schema",
@@ -11,12 +11,13 @@
     "files",
     "keys",
     "resources",
+    "builtins",
     "objects",
     "problems"
   ],
   "properties": {
     "schema": {
-      "const": "nnnotes.addresses/2"
+      "const": "nnnotes.addresses/3"
     },
     "catalog": {
       "type": "object",
@@ -151,6 +152,17 @@
     },
     "resources": {
       "description": "Per path of a ResourceManager container (the paths Resources.Load finds objects at, as stored) the object ids it names, in stored order.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "pattern": "^.+:-?[0-9]+$"
+        }
+      }
+    },
+    "builtins": {
+      "description": "Per selector the objects of the APK's built-in files it names (not MonoScripts; a hierarchy by its root GameObject alone): \"<class>\" by class, \"MonoBehaviour:<class>\" a MonoBehaviour by its script's class; sorted.",
       "type": "object",
       "additionalProperties": {
         "type": "array",

@@ -5,7 +5,7 @@ link.scripts (nnnotes.scripts/1), one global task: every MonoScript of the censu
     stays empty). A MonoBehaviour's class is the entry of its m_Script; `script_context` picks the entries a task
     consumes.
 
-link.addresses (nnnotes.addresses/2), one task per catalog pair: the catalog index and the censuses of its bundles
+link.addresses (nnnotes.addresses/3), one task per catalog pair: the catalog index and the censuses of its bundles
 (by stable bundle name) and of the APK's built-in files (subjects `apk/...`, pipeline.builtins) ->
     bundles    {stable name: {name, files, assetBundleName, keys}}: the file name in this catalog version, its
                serialized files, the AssetBundle name the census found and the keys located in it; a built-in file
@@ -16,6 +16,9 @@ link.addresses (nnnotes.addresses/2), one task per catalog pair: the catalog ind
                the container path names (null when a dependency bundle has no census)
     resources  {resource path: [object ids]}: the paths of the ResourceManager container of the built-in files (what
                Resources.Load finds, as stored), the objects each names in stored order
+    builtins   {selector: [object ids]}: the objects of the built-in files (not MonoScripts, a hierarchy by its root
+               GameObject alone) by class, "<class>", and a MonoBehaviour by its script's class,
+               "MonoBehaviour:<class>" (its MonoScript in the built-in files), each list sorted
     objects    {stable address: {object, class, name, byteSize, typeHash}} of the objects a container path or a
                resource path names
     problems   files named by two bundles, bundles whose census AssetBundle name is not the catalog's, keys whose
@@ -44,7 +47,7 @@ from .layout import EXT_CLASSES
 from .stages import Output, Pending, Stage
 
 SCRIPTS = "nnnotes.scripts/1"
-ADDRESSES = "nnnotes.addresses/2"
+ADDRESSES = "nnnotes.addresses/3"
 _CAB = re.compile(r"^CAB-[0-9a-f]+")
 
 
@@ -130,12 +133,14 @@ def addresses(index: dict, censuses) -> dict:
     files_of = catalogdb.file_refs(index)
     listed = {b["stable"]: b for b in index["bundles"]}
     bundles, owners, info, groups, tags_of, resources = {}, {}, {}, {}, {}, {}
+    builtin_docs = []
     problems = {"files": [], "bundleNames": [], "keys": []}
     pairs = sorted(censuses.items()) if isinstance(censuses, dict) else censuses
     for stable, doc in pairs:
         b = listed.get(stable)
         if b is None and builtins.is_builtin(stable):
             b = {"name": stable[len(builtins.PREFIX) :]}
+            builtin_docs.append(doc)
         if b is None:
             continue
         names = [f["name"] for f in doc["files"]]
@@ -216,9 +221,38 @@ def addresses(index: dict, censuses) -> dict:
         "files": dict(sorted(cab.items())),
         "keys": dict(sorted(keys.items())),
         "resources": dict(sorted(resources.items())),
+        "builtins": builtin_selectors(builtin_docs),
         "objects": dict(sorted(objects.items())),
         "problems": problems,
     }
+
+
+def builtin_selectors(docs) -> dict[str, list[str]]:
+    """The `builtins` table of an address table: {selector: [object ids]} of the census documents `docs` of the
+    built-in files (module documentation)."""
+    docs = list(docs)
+    names = {
+        contract.object_id(s["file"], s["pathId"]): s.get("class")
+        for doc in docs
+        for s in doc["scripts"]
+        if s.get("class")
+    }
+    out: dict[str, list[str]] = {}
+    for doc in docs:
+        for file, o in census.objects(doc):
+            oid = contract.object_id(file, o["pathId"])
+            if o["class"] == "MonoScript" or "unit" in o:
+                continue
+            if o["class"] == "MonoBehaviour":
+                s = o.get("script")
+                cls = names.get(contract.object_id(s["file"], s["pathId"])) if s and s.get("file") else None
+                if cls is None:
+                    continue
+                selector = f"MonoBehaviour:{cls}"
+            else:
+                selector = o["class"]
+            out.setdefault(selector, []).append(oid)
+    return {k: sorted(v) for k, v in sorted(out.items())}
 
 
 def address_of(doc: dict, oid: str, container_objects: dict | None = None) -> str | None:
@@ -300,7 +334,7 @@ class AddressesStage(Stage):
     skips failed ones. Artifact "link.addresses:<subject>#addresses"."""
 
     name = "link.addresses"
-    version = 2
+    version = 3
     after = ("catalog.index", "unity.census")
 
     def subjects(self, env) -> list[str]:
@@ -332,6 +366,7 @@ class AddressesStage(Stage):
             "bundles": len(doc["bundles"]),
             "keys": len(doc["keys"]),
             "resources": len(doc["resources"]),
+            "builtins": len(doc["builtins"]),
             "objects": len(doc["objects"]),
             "problems": {k: len(v) for k, v in doc["problems"].items()},
         }

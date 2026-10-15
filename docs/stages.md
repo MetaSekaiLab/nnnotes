@@ -13,8 +13,8 @@ The asset export is built from three layers:
 ## Stages
 
 Every stage is at version 1, except `unity.census` (version 4: it lists what every object references, the
-hierarchy holding it and the Resources.Load paths of a ResourceManager), `link.addresses` (version 2: the
-Resources.Load paths), `live2d.model` (version 2: assembled from the exported objects), `unity.export` (version 2: one task per unit), `cri.movie` (version 2: every stream kind,
+hierarchy holding it and the Resources.Load paths of a ResourceManager), `link.addresses` (version 3: the
+Resources.Load paths and the built-in selectors), `live2d.model` (version 2: assembled from the exported objects), `unity.export` (version 2: one task per unit), `cri.movie` (version 2: every stream kind,
 codec and channel of a USM) and `catalog.index` (version 2: gzip input and Japanese remote asset placeholders).
 
 | Stage | Subject | Inputs | Outputs |
@@ -29,7 +29,7 @@ codec and channel of a USM) and `catalog.index` (version 2: gzip input and Japan
 | `live2d.model`, `live2d.cubism` | a Live2D model key (`Character/Live2D/<group>/<name>/model/<name>`) a command asks for | `objects`: the object table of what the model reaches ([products](products.md#live2d-models)); depends on `link.addresses` and the `unity.export` tasks it reads | `model.json` (the player's model) and the object table; the Cubism SDK files |
 | `room.gltf` | a spot background key (`Spot/<place>/Background/<place>`) | `objects`: the object table of what the background reaches ([products](products.md#spots)) | `room.glb` and `room.json` |
 | `spot.files` | a spot situation key (`Spot/<place>/<situation>/<situation>`) | `objects`; `master`: the spot's master record | `spot.json` and the Spine files |
-| `link.addresses` | global | catalog index, censuses (the built-in files' too) | key -> objects, Resources.Load path -> objects, serialized file -> bundle or built-in file, bundle -> keys |
+| `link.addresses` | global | catalog index, censuses (the built-in files' too) | key -> objects, Resources.Load path -> objects, built-in selector (class, MonoBehaviour script class) -> objects, serialized file -> bundle or built-in file, bundle -> keys |
 | `view.<name>` | a catalog (`main`) | `master:<Table>` per master table it reads, `rules` (the view's rule and the resolvers it uses), `addresses` (the part of the address table it read: the keys looked up and the prefixes listed); no parameters, atoms or context | `view.<name>:<subject>#view` (facts: rows, entries, gaps, unreferenced) |
 | `view.voices` | a catalog (`main`) | `master:<Table>` per master table its rules read, `rules`, `addresses`, `sheets` (each cue sheet the `cri.audio` results are known by that a voice names or the rules' prefixes list: its task and ACB content id), `acb:<sha256>` (the ACB of each decoded one), `episodes` (per story episode and part, the `unity.export` artifact holding the object its key names), `adv:<sha256>` (those contents); context `audio` (the keys of those `cri.audio` results); runs after `unity.export` and `cri.audio` | `view.voices:<subject>#view` (facts: rows, entries, gaps, unreferenced streams) |
 
@@ -112,7 +112,7 @@ several serialized files the file's tag follows the bundle name, as in `link.add
 bundle's content changes, so a unit keeps its task across catalog versions.
 
 A run exports the units holding an object of the selected bundles, the units of the objects the fact "roots" names
-(catalog keys, Resources.Load paths and object ids: a product's roots, [products](products.md)) and every unit reachable
+(catalog keys, Resources.Load paths, built-in selectors and object ids: a product's roots, [products](products.md)) and every unit reachable
 from those through what their objects reference (the census `refs`, across the censuses of the run); with `--only-class`
 only the units whose root object is of those classes. The selection is not part of any key: a unit's task is the same
 whichever request reaches it.
