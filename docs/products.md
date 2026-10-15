@@ -53,6 +53,7 @@ changes, or what it reaches changes.
 ```json
 {"schema": "nnnotes.objects/1",
  "roots": ["CAB-…:-4153…"],
+ "keys": {"Character/Live2D/…/model/…": ["CAB-…:-4153…"]},
  "objects": {
    "CAB-…:-4153…": {"status": "exported", "class": "GameObject", "name": "model",
                     "files": {"json": {"sha256": "…", "size": 5120, "ext": "json"}}},
@@ -63,8 +64,9 @@ changes, or what it reaches changes.
  "missing": []}
 ```
 
-Each object has the status of its item (the most severe when two stages made items for it), its class and name
-where known, its files by role (the artifacts of its items), the object whose file holds it (`in`, a contained
+`keys` gives the root objects of each catalog key of the product, so an assembler finds an object by the key the
+game loads it by. Each object has the status of its item (the most severe when two stages made items for it), its
+class and name where known, its files by role (the artifacts of its items), the object whose file holds it (`in`, a contained
 object), or the reason code of a generic, unsupported or failed object.
 
 ## Product layout

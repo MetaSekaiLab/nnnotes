@@ -7,6 +7,7 @@
   "required": [
     "schema",
     "roots",
+    "keys",
     "objects",
     "missing"
   ],
@@ -18,6 +19,16 @@
       "type": "array",
       "items": {
         "type": "string"
+      }
+    },
+    "keys": {
+      "type": "object",
+      "description": "The root objects of each catalog key of the product.",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
       }
     },
     "objects": {
