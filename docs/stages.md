@@ -174,13 +174,13 @@ whose atlas is in its own bundle.
 
 `cri.audio` and `cri.movie` take their subjects by content: a task is `cri.audio:<sha256 of the ACB>` or
 `cri.movie:<sha256 of the USM>`, so an ACB or a USM stored both as a raw file and in a bundle, or in several bundles,
-is decoded once. Raw files are told apart by their first bytes (`@UTF` ACB, `AFS2` AWB, `CRID` USM). Both read the
-HCA keycode from the `boot` input when the task runs; the key itself is never part of a task, a record or a log.
-Each task has one item (object: the task id; class `ACB` or `USM`): `exported`, or `unsupported` with a reason code.
-Their artifacts belong to no object; the `original` layout places them under each name the stage gives the content:
-the catalog keys that load a raw file, `Cri/Sound/<cue sheet>` for a cue sheet held in a bundle (the sheet's name
-when the catalog has no such key), the keys of its bundle that end in the movie asset's name for a movie held in a
-bundle.
+is decoded once. Raw files are told apart by their first bytes (`@UTF` ACB, `AFS2` AWB, `CRID` USM), read once per
+content and recorded in the depot, so a later plan reads no raw file it has seen. Both read the HCA keycode from the
+`boot` input when the task runs; the key itself is never part of a task, a record or a log. Each task has one item
+(object: the task id; class `ACB` or `USM`): `exported`, or `unsupported` with a reason code. Their artifacts belong
+to no object; the `original` layout places them under each name the stage gives the content: the catalog keys that
+load a raw file, `Cri/Sound/<cue sheet>` for a cue sheet held in a bundle (the sheet's name when the catalog has no
+such key), the keys of its bundle that end in the movie asset's name for a movie held in a bundle.
 
 | Stage | Parameters | Atoms | Artifacts (`<task id>#<role>`) |
 |---|---|---|---|
