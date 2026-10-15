@@ -71,6 +71,7 @@ __all__ = [
     "SKIN_KEY",
     "animator_bindings",
     "asset_name",
+    "default_assets",
     "effect_settings_key",
     "extract",
     "notes",
@@ -245,12 +246,21 @@ def notes_record(tables: dict) -> dict:
     }
 
 
+def default_assets(record: dict) -> tuple[str, str]:
+    """(note skin, note effect set) of the option defaults (NoteDesignId, NoteEffectId) of a notes_record."""
+    opts = {NOTE_ITEMS[r["_optionItemType"]]: r["_valueString"] for r in record["MasterOptionDefault"]}
+    skins = {r["_id"]: r["_assetName"] for r in record["MasterLiveNoteSkin"]}
+    effects = {r["_id"]: r["_assetName"] for r in record["MasterLiveNoteEffectSkin"]}
+    return skins[int(opts["NoteDesignId"])], effects[int(opts["NoteEffectId"])]
+
+
 def notes_settings(record: dict) -> dict:
     """notes.json `settings` (module documentation) from a notes_record."""
     opts = {NOTE_ITEMS[r["_optionItemType"]]: r["_valueString"] for r in record["MasterOptionDefault"]}
     ls = {r["_key"]: r["_value"] for r in record["MasterLiveSettings"]}
     skins = {r["_id"]: r["_assetName"] for r in record["MasterLiveNoteSkin"]}
     effects = {r["_id"]: r["_assetName"] for r in record["MasterLiveNoteEffectSkin"]}
+    skin, effect = default_assets(record)
     return {
         **_lane_settings(),
         "optionDefaults": dict(sorted(opts.items())),
@@ -266,8 +276,8 @@ def notes_settings(record: dict) -> dict:
             float(ls["note_speed_view_min"]),
             float(ls["note_speed_view_max"]),
         ),
-        "skin": skins[int(opts["NoteDesignId"])],
-        "effect": effects[int(opts["NoteEffectId"])],
+        "skin": skin,
+        "effect": effect,
         "laneEffect": LANE_EFFECT,
         "skins": {str(i): n for i, n in sorted(skins.items())},
         "effects": {str(i): n for i, n in sorted(effects.items())},

@@ -14,10 +14,19 @@ from nnnotes.pipeline.assemble import Assembly, ProductStage
 from nnnotes.pipeline.contract import IncompatibleTask, Input, Task
 from nnnotes.pipeline.cristages import AudioStage
 from nnnotes.pipeline.depot import Depot
-from nnnotes.pipeline.live import MusicStage, NoteEffectStage, NoteSkinStage, NotesStage, SceneStage, SoundsStage
+from nnnotes.pipeline.live import (
+    LiveStage,
+    MusicStage,
+    NoteEffectStage,
+    NoteSkinStage,
+    NotesStage,
+    SceneStage,
+    SoundsStage,
+)
 from nnnotes.pipeline.stages import Env, describe, execute, registry
 from tests.content.test_live_options import write_master
 from tests.helpers import cri
+from tests.helpers import live as lh
 from tests.helpers import livenotes as ln
 from tests.helpers import livescene as ls
 from tests.pipeline.test_assemble import addresses
@@ -214,6 +223,72 @@ def test_the_scene_product_keeps_what_the_player_reads(tmp_path):
     assert ls.SCRIPT not in kept and ls.LIVE in kept and ls.GRAPHICS in kept
 
 
+def live_master_dir(tmp_path):
+    """scene_master_dir with the tables of music 7's charts, title, bands and vocal characters."""
+    md = scene_master_dir(tmp_path)
+    tables = lh.master()
+    tables["MasterLiveMusic"][0]["_musicSoundID"] = 900  # bgm_7 of master_dir
+    for name, rows in tables.items():
+        if name not in ("MasterSound", "MasterSoundCueSheet"):  # master_dir's sounds
+            (md / f"{name}.json").write_text(json.dumps({"_allData": rows}), encoding="utf-8")
+    return md
+
+
+def test_a_live_names_its_subjects_keys_parts_and_manifest(tmp_path):
+    env = Env(Depot(tmp_path / "d"), {"master": live_master_dir(tmp_path)})
+    stage = LiveStage()
+    expert, normal, jacket = f"Live/MusicScore/{lh.EXPERT}", f"Live/MusicScore/{lh.NORMAL}", "Image/Jacket/jacket7"
+    assert stage.keys("7/expert", env) == stage.keys("7/expert/1", env) == [jacket, expert]
+    assert stage.select([expert, normal, jacket], env) == ["7/expert", "7/normal"]
+    assert stage.select([expert, normal], env) == []  # without the jacket
+    assert stage.select([expert, jacket], Env(env.depot, {"master": None})) == []
+    assert stage.live_record("7/expert", env)["band"]["band"] == 2
+    assert (
+        stage.manifest("7/expert") == "lives/7_expert.json" and stage.manifest("7/expert/1") == "lives/7_expert_1.json"
+    )
+    assert stage.parts("7/expert", env) == {
+        live.SCENE: ["default"],
+        live.NOTES: ["default"],
+        live.NOTESKIN: ["skin001"],
+        live.NOTEEFFECT: ["fxA"],
+        live.SOUNDS: ["default"],
+        live.MUSIC: ["7"],
+    }
+    with pytest.raises(ValueError, match="not a live subject"):
+        stage.manifest("7")
+    with pytest.raises(KeyError, match="no easy chart"):
+        stage.keys("7/easy", env)
+
+
+def test_the_live_product_holds_the_chart_and_the_manifests_of_its_parts(tmp_path):
+    depot = Depot(tmp_path / "d")
+    env = Env(depot, {"master": live_master_dir(tmp_path)})
+    stage = LiveStage()
+    record = master_record(env, stage, "7/expert")
+    assert contract.loads(depot.input_bytes(record))["parts"] == {
+        "music": "music/7.json",
+        "noteeffect": "noteeffects/fxA.json",
+        "notes": "notes/default.json",
+        "noteskin": "noteskins/skin001.json",
+        "scene": "scenes/default.json",
+        "sounds": "sounds/default.json",
+    }
+    objects = stored(depot, contract.encode(lh.table(depot)), "objects")
+    _, _, arts = run(depot, stage, "7/expert", [objects, record])
+    kinds = {n: a["semantics"]["kind"] for n, a in arts.items() if n != "objects"}
+    assert kinds == {
+        "live.json": "live",
+        "chart.json": "live.chart",
+        "notes.json": "live.notes.chart",
+        "notes.mirror.json": "live.notes.chart",
+    }
+    doc = contract.loads(depot.read(arts["live.json"]["content"]["sha256"]))
+    assert doc["jacket"] == lh.JACKET and doc["parts"]["scene"] == "scenes/default.json"
+    assert depot.read(arts["chart.json"]["content"]["sha256"]) == contract.encode(lh.CHART)
+    kept = contract.loads(depot.read(arts["objects"]["content"]["sha256"]))["objects"]
+    assert sorted(kept) == [lh.JACKET, lh.TEXTURE]
+
+
 def test_sounds_subjects_name_the_offered_sets():
     assert liveaudio.sounds_subject() == "default" and liveaudio.sounds_groups("default") == ()
     assert liveaudio.sounds_subject((3, 1)) == "NoteSePatternId=1,3"
@@ -224,9 +299,9 @@ def test_sounds_subjects_name_the_offered_sets():
 
 
 def test_the_music_parameter_is_a_web_format(tmp_path):
-    assert MusicStage().normalize(None) == {"format": "aac"}
-    with pytest.raises(ValueError, match="format 'wav'"):
-        MusicStage().normalize({"format": "wav"})
+    assert MusicStage().normalize(None) == {"audio": "aac"}
+    with pytest.raises(ValueError, match="audio 'wav'"):
+        MusicStage().normalize({"audio": "wav"})
     assert live.encode_atoms("flac") == {}
 
 
@@ -236,7 +311,7 @@ def test_the_music_product_keeps_the_decoded_flac(tmp_path):
     env = Env(depot, {"master": master_dir(tmp_path)})
     stage = MusicStage()
     sheets, doc = sheet_inputs(depot, ["bgm_7"])
-    t, res, arts = run(depot, stage, "7", [table(depot), *sheets, master_record(env, stage, "7")], {"format": "flac"})
+    t, res, arts = run(depot, stage, "7", [table(depot), *sheets, master_record(env, stage, "7")], {"audio": "flac"})
     assert {p: a["semantics"]["kind"] for p, a in arts.items()} == {
         "audio/bgm_7/bgm_7.flac": "audio.bgm",
         "music.json": "live.music",
@@ -364,7 +439,7 @@ def test_a_cue_sheet_that_was_not_decoded_makes_the_product_unsupported(tmp_path
         "files": {},
     }
     sheets[-1] = stored(depot, contract.encode(doc), assemble.SHEETS_INPUT)
-    _, res, arts = run(depot, stage, "7", [table(depot), *sheets, master_record(env, stage, "7")], {"format": "flac"})
+    _, res, arts = run(depot, stage, "7", [table(depot), *sheets, master_record(env, stage, "7")], {"audio": "flac"})
     (item,) = res["items"]
     assert item["status"] == "unsupported" and item["reason"]["code"] == "unsupported.cri.awb_external"
 

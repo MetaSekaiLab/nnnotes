@@ -10,6 +10,7 @@ import pytest
 
 from nnnotes import cli
 from nnnotes.cli import common
+from tests.helpers import livenotes as notes_helper
 from tests.helpers import synth
 
 KEY_HEX = synth.BUNDLE_KEY.hex()
@@ -327,10 +328,24 @@ def test_crikey_write_creates_the_directory(tmp_path, capsys, monkeypatch):
 MASTER_TABLES = {
     "MasterAdv": [{"_id": 1}],
     "MasterHomeSpot": [{"_id": 1}],
-    "MasterLiveMusic": [{"_id": 7, "_expertID": 70, "_easyID": 0, "_vocalCharacterIDs": [1]}],
-    "MasterLiveMusicScore": [{"_id": 70}],
+    "MasterLiveMusic": [
+        {
+            "_id": 7,
+            **{f"_{d}ID": 0 for d in ("easy", "normal", "hard")},
+            "_expertID": 70,
+            "_vocalCharacterIDs": [1],
+            "_titleTextID": 1,
+            "_bandIDs": [2],
+            "_musicSoundID": 1,
+            "_jingleSoundID": 0,
+            "_jacketAssetName": "jacket7",
+        }
+    ],
+    "MasterLiveMusicScore": [{"_id": 70, "_musicScoreTextFileName": "m7_03", "_fullComboCount": 1}],
     "MasterMemberCard": [{"_id": 5, "_characterID": 1}],
     "MasterCharacter": [{"_id": 1, "_bandID": 2}],
+    **{t: [] for t in ("MasterText", "MasterBand", "MasterSound", "MasterSoundCueSheet")},
+    **notes_helper.master(),
 }
 
 
@@ -432,7 +447,6 @@ def test_the_command_line_starts_without_the_exporters():
         (["export", "audio", "s", "--flac-level", "13"], "--flac-level 13: expected 0 to 12"),
         (["export", "live", "7", "--flac-level", "-1"], "--flac-level -1: expected 0 to 12"),
         (["export", "audio", "s", "--format", "ogg", "--flac-level", "5"], "--flac-level: --format ogg writes no FLAC"),
-        (["export", "live", "7", "--format", "wav", "--flac-level", "5"], "--flac-level: --format wav writes no FLAC"),
         (["export", "story", "1", "--no-audio", "--flac-level", "5"], "--flac-level: --no-audio decodes no audio"),
     ],
 )
@@ -445,7 +459,7 @@ def test_flac_level_is_checked(data, argv, message, capsys):
 def test_flac_level_reaches_the_decode(data, tmp_path, capsys, monkeypatch):
     from types import SimpleNamespace
 
-    from nnnotes.content import live, story
+    from nnnotes.content import story
     from nnnotes.formats import cri
     from nnnotes.source.session import Session
     from nnnotes.unity import player
@@ -456,9 +470,7 @@ def test_flac_level_reaches_the_decode(data, tmp_path, capsys, monkeypatch):
     monkeypatch.setattr(player, "PlayerData", lambda apk: None)
     monkeypatch.setattr(cri, "decode", lambda *a, **kw: seen.append(kw.get("flac_level")) or [])
     monkeypatch.setattr(story, "build", lambda *a, **kw: seen.append(kw["audio_options"].get("flac_level")) or {})
-    monkeypatch.setattr(live, "resolve_band", lambda *a, **kw: None)
-    monkeypatch.setattr(live, "build", lambda *a, **kw: seen.append(kw.get("flac_level")) or {})
-    for argv in (["export", "audio", "s"], ["export", "story", "1"], ["export", "live", "7"]):
+    for argv in (["export", "audio", "s"], ["export", "story", "1"]):
         for flag, level in (([], None), (["--flac-level", "5"], 5)):
             seen.clear()
             code, _, err = run(data + argv + flag + ["-o", str(tmp_path / "o")], capsys)
@@ -466,7 +478,7 @@ def test_flac_level_reaches_the_decode(data, tmp_path, capsys, monkeypatch):
 
 
 def test_live_passes_the_flac_level_to_its_decodes(tmp_path, monkeypatch):
-    from nnnotes.content import live, liveaudio
+    from nnnotes.content import live, liveaudio, score
     from nnnotes.formats import cri
 
     class Stop(Exception):
@@ -474,13 +486,13 @@ def test_live_passes_the_flac_level_to_its_decodes(tmp_path, monkeypatch):
 
     seen = {}
     monkeypatch.setattr(live, "resolve_band", lambda *a, **kw: {"band": 1})
-    monkeypatch.setattr(live.score, "extract", lambda *a, **kw: seen.update(score=kw["flac_level"]) or {})
+    monkeypatch.setattr(score, "extract", lambda *a, **kw: seen.update(score=kw["flac_level"]) or {})
 
     def sounds(*a, **kw):
         seen["liveaudio"] = kw["flac_level"]
         raise Stop
 
-    monkeypatch.setattr(live.liveaudio, "extract", sounds)
+    monkeypatch.setattr(liveaudio, "extract", sounds)
     with pytest.raises(Stop):
         live.build(None, tmp_path, None, 7, "expert", tmp_path / "o", language="ja", flac_level=3)
     assert seen == {"score": 3, "liveaudio": 3}
@@ -493,3 +505,46 @@ def test_live_passes_the_flac_level_to_its_decodes(tmp_path, monkeypatch):
     monkeypatch.setattr(cri, "decode", decode)
     assert liveaudio._decode(None, "s", tmp_path, "flac", 3) == []
     assert seen["decode"] == {"fmt": "flac", "flac_level": 3}
+
+
+def test_export_live_asks_for_the_live_and_the_products_it_plays_with(data, tmp_path, capsys, monkeypatch):
+    from nnnotes.cli import assets
+    from nnnotes.content import livenotes
+    from tests.pipeline.test_live import live_master_dir
+
+    md = live_master_dir(tmp_path / "live")
+    qualities = [{"_id": q, "_quality": q, "_effectRenderingScale": 0.5} for q in (1, 2)]  # 2: Low
+    (md / "MasterLiveQualitySettings.json").write_text(json.dumps({"_allData": qualities}), encoding="utf-8")
+    argv = list(data)
+    argv[argv.index("--master") + 1] = str(md)
+    held = [
+        "Band/1/live_stage/lightweight_background",
+        "Band/1/timeline/live_start_playable_timeline",
+        livenotes.effect_settings_key("fxALight"),
+    ]
+    seen = {}
+    monkeypatch.setattr(assets.Workspace, "run_index", lambda self: None)
+    monkeypatch.setattr(assets.Workspace, "index", lambda self: {"locations": [{"primaryKey": k} for k in held]})
+
+    def export(args, cfg, ws):
+        seen.update(products=ws.products, selection=ws.selection, params=ws.params(ws.pipeline()))
+
+    monkeypatch.setattr(assets, "export", export)
+    opts = ["NoteDesignId=2", "NoteEffectId", "LiveQuality", "NoteSePatternId=1,3"]
+    flags = [*(x for o in opts for x in ("--live-option", o)), "--format", "flac", "--flac-level", "5"]
+    code, _, err = run(argv + ["export", "live", "7", "--leader-card", "5", *flags, "-o", str(tmp_path / "o")], capsys)
+    assert code == 0, err
+    assert seen["products"] == {
+        "live": ["7/expert/1"],  # the band of the leader card
+        "live.scene": ["default"],
+        "live.notes": ["default"],
+        "live.noteskin": ["skin001", "skin002"],
+        "live.noteeffect": ["fxA", "fxALight", "fxASimple"],  # no Light variant of fxASimple in the catalog
+        "live.sounds": ["NoteSePatternId=1,3", "default"],
+        "live.music": ["7"],
+    }
+    keys = {s[4:] for s in seen["selection"]}
+    assert {"EmbScene/Live", "Image/Jacket/jacket7", "Live/MusicScore/m7_03", "Cri/Sound/se3"} <= keys
+    assert livenotes.effect_settings_key("fxALight") in keys and livenotes.skin_key("skin002") in keys
+    assert seen["params"]["live.music"] == {"audio": "flac"}
+    assert seen["params"]["cri.audio"] == {"flac": {"level": 5}}

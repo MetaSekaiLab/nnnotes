@@ -86,7 +86,7 @@ exist when they are given.
 | `[master] key` | `NNNOTES_MASTER_KEY` | — | Rijndael-256 key of the master data files: 32 bytes as 64 hex digits |
 | `[master] iv` | `NNNOTES_MASTER_IV` | — | Rijndael-256 CBC initialization vector: 32 bytes as 64 hex digits |
 | `[catalog] region` | `NNNOTES_CATALOG_REGION` | `--region` | name of one `[servers.<region>]` table |
-| `[catalog] language` | `NNNOTES_CATALOG_LANGUAGE` | `--language` | catalog language: the `<language>` of `catalog_<version>_<language>.bin`: `ja`, `en`, `zh-Hant`, `zh-Hans` or `ko`; also the client language of `export live`, `export story` and `site build` (the text field, fonts and line spacing of their UI) and of the model labels of `site build --live2d` |
+| `[catalog] language` | `NNNOTES_CATALOG_LANGUAGE` | `--language` | catalog language: the `<language>` of `catalog_<version>_<language>.bin`: `ja`, `en`, `zh-Hant`, `zh-Hans` or `ko`; also the client language of `export story` and `site build` (the text field, fonts and line spacing of their UI) and of the model labels of `site build --live2d` |
 | `[catalog] version` | `NNNOTES_CATALOG_VERSION` | `--catalog-version` | optional international resource version; unset: query the configured region API, or use legacy `main` when no API is configured; JP uses its own discovery |
 | `[servers.<region>] name` | `NNNOTES_SERVERS_<REGION>_NAME` | — | label of the region in `catalog browse` (default: the region name) |
 | `[servers.<region>] provider` | `NNNOTES_SERVERS_<REGION>_PROVIDER` | — | `international` or `jp`; empty selects `jp` for the region named jp, international otherwise |
@@ -156,7 +156,7 @@ in, and bundles that ship inside the APK can only be read with it.
 "Master data" means the decoded master data directory of the region: the `--master` flag, else
 `[servers.<region>] master` of `[catalog] region`, else `[paths] master`.
 
-`--fonts game` (`export story`, `export live`, `site build`) also needs the optional `fonts` dependencies (`pip install 'nnnotes[fonts]'`),
+`--fonts game` (`export story`, `site build`) also needs the optional `fonts` dependencies (`pip install 'nnnotes[fonts]'`),
 and so does `site build --story` / `--all-stories` with either font source (it generates the TextMesh Pro font assets of the
 story text); it is not a setting.
 
@@ -178,8 +178,8 @@ story text); it is not a setting.
 | `export audio` | catalog, `[paths] apk`, `vgmstream`, `ffmpeg` (not for `--format wav`) |
 | `apk hca-key` | `[paths] apk` |
 | `apk settings` | `[paths] apk` |
-| `export live` | catalog, `[catalog] language`, master data, `[paths] apk`, `vgmstream`, `ffmpeg` |
-| `site build --pair` / `--all` | as `export live`, plus `[paths] player`, `node`; with `--site-region` / `--all-regions` each region's `[servers.<region>]` table (its `cdn` for what must be downloaded) and master data (`[servers.<region>] master`; `[paths] master` for at most one region) |
+| `export live` | catalog, master data, `[paths] apk`, `vgmstream`, `ffmpeg` |
+| `site build --pair` / `--all` | as `export live`, plus `[catalog] language`, `[paths] player`, `node`; with `--site-region` / `--all-regions` each region's `[servers.<region>]` table (its `cdn` for what must be downloaded) and master data (`[servers.<region>] master`; `[paths] master` for at most one region) |
 | `site build --live2d` / `--all-live2d` | catalog (bundles from the CDN of the site's first region), `[paths] apk`, `[paths] player`; not `node`; master data only for the model names (optional: without it `models.json` has no names) |
 | `site build --player-only` / `--reingest-json` | `[paths] player` |
 | `music-data` | catalog, `[master] key` + `iv` (not with `--decoded-master`); `--master-files` also `[catalog] region`; `--apk-master` also `[paths] apk`; `--decoded-master` also `[catalog] region` and master data with its `MasterManifest.json`; `[paths] apk` (optional otherwise) for the client version |
@@ -235,7 +235,7 @@ nnnotes: game API call Version to [servers.tw] api failed: UNAVAILABLE (server u
   can hold several alternatives separated by `|`, and any one of them can be used as `cdn` / `api`.
 - **Client version**: the version of your game client (`versionName` of its `base.apk`). The game's API rejects a
   version older than the one it accepts (`game error code CLIENT_UPDATE_REQUIRED`).
-- **`[paths] apk`**: the `base.apk` of your own installation of the game. `apk settings`, `export story`, `export live` and `site build`
+- **`[paths] apk`**: the `base.apk` of your own installation of the game. `apk settings`, `export story` and `site build`
   read MonoBehaviours of its boot data with type trees that ship with nnnotes, one set per Unity version (currently
   game version 1.0.1, Unity 6000.3.12f1). With an APK whose classes do not match them, these commands stop with
   exit status 2 and a line naming the class, the game version and the Unity version.

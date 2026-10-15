@@ -1,12 +1,13 @@
 """The live products: a music's BGM (live.music), the sounds a live plays besides it (live.sounds), the note highway
-(live.notes, live.noteskin, live.noteeffect) and the scene (live.scene).
+(live.notes, live.noteskin, live.noteeffect), the scene (live.scene), and a live (live), the chart of a music at a
+difficulty that names the others it plays with.
 
 All are product stages (pipeline.assemble). The sound products read cue sheets: the ACBs their catalog keys load and
 the files cri.audio decoded from them. They keep no objects (their files are all they hold):
 
 live.music   subject a music id (MasterLiveMusic._id): "<task id>#music.json" (kind live.music, liveaudio.music_doc)
              and "<task id>#audio/<sheet>/<file>" for each layer of its BGM sound (kind audio.bgm) in the web
-             format of the parameter `format` (encoders.WEB_AUDIO; default aac: AAC-LC in MP4, each layer recording
+             format of the parameter `audio` (encoders.WEB_AUDIO; default aac: AAC-LC in MP4, each layer recording
              its encoder delay `encoderDelay`; flac: the decoded FLAC as it is). Its manifest is music/<id>.json, its
              input "master" the music's master record (liveaudio.music_record). The atom `audio.encode` (ffmpeg)
              encodes the layers.
@@ -32,10 +33,19 @@ live.scene       subject `default`: "<task id>#scene.json" (kind live.scene: con
                  its settings, lane skins and bands (livescene.scene_record), its roots also the built-in graphics
                  settings (livescene.GRAPHICS)
 
+live             subject a live (content.live.live_subject: `<musicId>/<difficulty>[/<band>]`): "<task id>#live.json"
+                 (kind live: content.live.live), "<task id>#chart.json" (kind live.chart: the chart as shipped),
+                 "<task id>#notes.json" and "#notes.mirror.json" (kind live.notes.chart: the converted chart) and the
+                 object table of its jacket; its manifest is lives/<musicId>_<difficulty>[_<band>].json, its input
+                 "master" the live's master record (live.live_record) with the manifest paths of its parts. `parts`
+                 gives the products a live plays with: the scene, the note highway with the default note skin and
+                 effect set, the default sounds and the music.
+
 `select` (the `product` layout) makes the live.music products of the musics whose BGM key the selection holds, the
 default live.sounds when it holds every cue sheet of the default sounds (both need the master data), live.notes when
-it holds every key of it and live.scene when it holds the scene (and the master data is there), and the live.noteskin
-and live.noteeffect products of the skin and effect set keys it holds.
+it holds every key of it, live.scene when it holds the scene and the live of each chart whose key and jacket it holds
+(and the master data is there), and the live.noteskin and live.noteeffect products of the skin and effect set keys it
+holds.
 """
 
 from __future__ import annotations
@@ -43,7 +53,7 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
-from ..content import liveaudio, livenotes, livescene
+from ..content import live, liveaudio, livenotes, livescene
 from ..formats.encoders import DEFAULT_AUDIO_FORMAT, WEB_AUDIO, mp4_priming, web_encode
 from . import contract
 from .assemble import Assembly, ProductStage
@@ -51,12 +61,14 @@ from .contract import IncompatibleTask, Input
 from .views import master_rows
 
 __all__ = [
+    "LIVE",
     "MUSIC",
     "NOTEEFFECT",
     "NOTES",
     "NOTESKIN",
     "SCENE",
     "SOUNDS",
+    "LiveStage",
     "MusicStage",
     "NoteEffectStage",
     "NoteSkinStage",
@@ -69,6 +81,7 @@ __all__ = [
 MUSIC, SOUNDS = "live.music", "live.sounds"
 NOTES, NOTESKIN, NOTEEFFECT = "live.notes", "live.noteskin", "live.noteeffect"
 SCENE = "live.scene"
+LIVE = "live"
 DEFAULT = "default"
 MASTER_INPUT = "master"
 
@@ -106,16 +119,16 @@ class MusicStage(ProductStage):
     version = 1
     KIND = "LiveMusic"
     MASTER = liveaudio.MUSIC_TABLES
-    PARAMS = {"format": DEFAULT_AUDIO_FORMAT}
+    PARAMS = {"audio": DEFAULT_AUDIO_FORMAT}
 
     def normalize(self, params: dict | None) -> dict:
         p = super().normalize(params)
-        if p["format"] not in WEB_AUDIO:
-            raise ValueError(f"stage {self.name}: format {p['format']!r}: one of {', '.join(WEB_AUDIO)}")
+        if p["audio"] not in WEB_AUDIO:
+            raise ValueError(f"stage {self.name}: audio {p['audio']!r}: one of {', '.join(WEB_AUDIO)}")
         return p
 
     def uses(self, subject: str, env) -> dict:
-        return encode_atoms(env.params["format"])
+        return encode_atoms(env.params["audio"])
 
     def select(self, keys: list[str], env) -> list[str]:
         if env.facts.get("master") is None:
@@ -142,7 +155,7 @@ class MusicStage(ProductStage):
         return f"music/{_music_id(subject)}.json"
 
     def assemble(self, task, objects) -> Assembly:
-        fmt = task.params["format"]
+        fmt = task.params["audio"]
         want = encode_atoms(fmt)
         if task.atoms != want:
             raise IncompatibleTask(f"task {task.id}: the audio encoder here is {want} (task: {task.atoms})")
@@ -336,3 +349,81 @@ class SceneStage(ProductStage):
         record = contract.loads(objects.depot.input_bytes(task.input(MASTER_INPUT)))
         doc, keep, roles = livescene.scene(objects, record)
         return Assembly({"scene.json": _json(doc, SCENE)}, keep, roles)
+
+
+# the parts of a live: {part: product stage}
+PARTS = {
+    "scene": SCENE,
+    "notes": NOTES,
+    "noteskin": NOTESKIN,
+    "noteeffect": NOTEEFFECT,
+    "sounds": SOUNDS,
+    "music": MUSIC,
+}
+PART_STAGES = {
+    SCENE: SceneStage,
+    NOTES: NotesStage,
+    NOTESKIN: NoteSkinStage,
+    NOTEEFFECT: NoteEffectStage,
+    SOUNDS: SoundsStage,
+    MUSIC: MusicStage,
+}
+
+
+class LiveStage(ProductStage):
+    """live: a music's chart at a difficulty and the products it plays with (module documentation)."""
+
+    name = LIVE
+    version = 1
+    KIND = "Live"
+    MASTER = tuple(sorted({*live.LIVE_TABLES, *livenotes.NOTES_TABLES}))
+
+    def select(self, keys: list[str], env) -> list[str]:
+        if env.facts.get("master") is None:
+            return []
+        tables, held = master_rows(env, live.LIVE_TABLES), set(keys)
+        scores = {r["_id"]: r for r in tables["MasterLiveMusicScore"]}
+        out = []
+        for m in tables["MasterLiveMusic"]:
+            jacket = live.jacket_key(m["_jacketAssetName"])
+            for d in live.DIFFICULTIES:
+                s = scores.get(m[f"_{d}ID"])
+                if s is not None and {live.chart_key(s["_musicScoreTextFileName"]), jacket} <= held:
+                    out.append(live.live_subject(m["_id"], d))
+        return sorted(out)
+
+    def live_record(self, subject: str, env) -> dict:
+        """The live's master record (content.live.live_record)."""
+        return live.live_record(master_rows(env, live.LIVE_TABLES), subject)
+
+    def keys(self, subject: str, env) -> list[str]:
+        return live.live_keys(self.live_record(subject, env))
+
+    def parts(self, subject: str, env) -> dict[str, list[str]]:
+        """{product stage: [subject]} of the products the live plays with (module documentation)."""
+        music_id, _, _ = live.parse_subject(subject)
+        skin, effect = livenotes.default_assets(livenotes.notes_record(master_rows(env, livenotes.NOTES_TABLES)))
+        return {
+            SCENE: [DEFAULT],
+            NOTES: [DEFAULT],
+            NOTESKIN: [skin],
+            NOTEEFFECT: [effect],
+            SOUNDS: [liveaudio.sounds_subject()],
+            MUSIC: [str(music_id)],
+        }
+
+    def more_inputs(self, subject: str, env) -> list[Input]:
+        parts = self.parts(subject, env)
+        paths = {part: PART_STAGES[name]().manifest(parts[name][0]) for part, name in PARTS.items()}
+        return [_record(env, {"live": self.live_record(subject, env), "parts": paths})]
+
+    def manifest(self, subject: str) -> str:
+        music_id, difficulty, band = live.parse_subject(subject)
+        return f"lives/{music_id}_{difficulty}{'' if band is None else f'_{band}'}.json"
+
+    def assemble(self, task, objects) -> Assembly:
+        record = contract.loads(objects.depot.input_bytes(task.input(MASTER_INPUT)))
+        doc, chart, notes, keep = live.live(objects, record["live"], record["parts"])
+        out = {"live.json": _json(doc, LIVE), "chart.json": (chart, "json", "live.chart")}
+        out.update({name: _json(body, "live.notes.chart") for name, body in notes.items()})
+        return Assembly(out, keep)
