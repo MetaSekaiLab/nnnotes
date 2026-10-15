@@ -21,6 +21,8 @@ clip_bindings     the bindings of the clips each Animator plays, named in the pr
 shader_table      the files a player draws each shader of the table with: its parsed form (`json`), its variant
                   index (`index`) and every program of the player's graphics API (formats.shader.player_roles); and
                   what a lookup by name (Shader.Find) finds, by name (a material names its shader by id)
+mesh_roles        the files a player draws each Mesh of a product with: its typetree JSON (`json`) and its `arrays`
+                  document
 """
 
 from __future__ import annotations
@@ -45,6 +47,7 @@ __all__ = [
     "has_json",
     "key_object",
     "mat4",
+    "mesh_roles",
     "prefab_ids",
     "ref_id",
     "root_game_object",
@@ -210,6 +213,17 @@ def shader_table(objects: Objects, found: Iterable[str] = ()) -> tuple[dict[str,
         if pick and len({content(s) for s in pick}) == 1:
             names[name] = pick[0]
     return names, roles
+
+
+def mesh_roles(objects: Objects, keep: Iterable[str]) -> dict[str, set[str]]:
+    """{Mesh id: {"json", "arrays"}} of the Meshes of `keep` that have their `arrays` document (module documentation).
+    A Mesh without one (it converted as generic JSON) keeps all its files."""
+    kept = set(keep)
+    out = {}
+    for mid in objects.ids("Mesh"):
+        if mid in kept and "arrays" in (objects.info(mid).get("files") or {}):
+            out[mid] = {"json", "arrays"}
+    return out
 
 
 def mat4(m: np.ndarray) -> list[float]:

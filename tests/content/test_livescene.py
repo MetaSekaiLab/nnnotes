@@ -28,6 +28,7 @@ def test_the_scene_document(tmp_path):
     assert doc["prefabs"] == {"laneLine": ls.LANE_LINE, "judgeEffectView": ls.JUDGE_EFFECT, "barLineView": ls.BAR_LINE}
     assert doc["spriteAssets"] == {"combo": ls.COMBO_ASSET, "judgement": ls.JUDGEMENT_ASSET}
     assert ls.SCRIPT not in keep and ls.TL in keep and ls.UI_COPY in roles
+    assert ls.MESH in keep and roles[ls.MESH] == {"json", "arrays"}
 
 
 def test_each_band_with_a_timeline_binds_its_tracks(tmp_path):
@@ -80,7 +81,8 @@ def test_the_scene_keys_name_every_band_and_lane_skin():
 def test_a_lookup_by_name_finds_the_always_included_shader(tmp_path):
     doc, _, roles = livescene.scene(objects_of(tmp_path, record()), record())
     assert doc["shaders"]["UI/Default"] == ls.SHADERS["UI/Default"]  # not the bundle's different copy
-    assert set(doc["shaders"]) == set(livescene.PLAYER_SHADERS) and len(roles) == len(ls.SHADERS) + 1
+    assert set(doc["shaders"]) == set(livescene.PLAYER_SHADERS)
+    assert len(roles) == len(ls.SHADERS) + 2  # the shaders (one more: UI_COPY) and the Mesh
 
 
 def test_a_shader_the_live_screen_finds_by_name_is_required(tmp_path):

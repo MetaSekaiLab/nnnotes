@@ -10,7 +10,7 @@
   "gltf.write": "numpy-2.4.6/1",
   "material.json": "material.json/2",
   "mesh.arrays": "numpy-2.4.6/1",
-  "mesh.glb": "mesh.glb/2",
+  "mesh.glb": "mesh.glb/3",
   "mono.json": "mono.json/3",
   "png.encode": "pillow-12.3.0/1",
   "prefab.json": "prefab.json/3",
@@ -52,8 +52,8 @@
    "result": "f58509825571f63771d27fa675bb98b849a6e3d17afd9047eaf8e5c1ce86034e"
   },
   "mesh.glb": {
-   "key": "608ccea80ac1758cf022d3a21b9bca4bf61cfc4a716bbb05e58a5db26d531b0e",
-   "result": "04060bd45010e278b6659d5619ae5f9e4207211411f68573c95202119e8b4b44"
+   "key": "3fde6cd3c7e331ac0891861951591c6d85a01973f02473ca79f0af4d9461122c",
+   "result": "b1c0411e06015fa8a404a6f2183a7e81ed9582d37c3e9cc9a05a4da32d9f5e4c"
   },
   "mono.json": {
    "key": "a005d9bbfb99bf1d67498f26ec4fa2d1f59cab6f30361d93d41ae815f4e25311",
