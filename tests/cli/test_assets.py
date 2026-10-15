@@ -1464,6 +1464,31 @@ class FakeCubism(assemble.ProductStage):
         return assemble.Assembly(files, set())
 
 
+class FakeReader(assemble.ProductStage):
+    """A product per Bg/ key of the selection that reads the master table MasterX: its rows as rows.json."""
+
+    name = "fake.reader"
+    version = 1
+    KIND = "FakeReader"
+    MASTER = ("MasterX",)
+
+    def select(self, keys):
+        return [k for k in keys if k.startswith("Bg/")]
+
+    def keys(self, subject, env):
+        return [subject]
+
+    def more_inputs(self, subject, env):
+        from nnnotes.pipeline.views import master_rows
+
+        data = contract.encode(master_rows(env, self.MASTER))
+        return [contract.Input("master", env.depot.put(data), len(data), None, ({"kind": "depot"},))]
+
+    def assemble(self, task, objects):
+        rows = objects.depot.input_bytes(task.input("master"))
+        return assemble.Assembly({"rows.json": (rows, "json", "fake.rows")}, set())
+
+
 PRODUCT_SOURCES = FAKE_SOURCES + (
     assets.StageSource("fake.product", "tests.cli.test_assets:FakeProduct", output=True, product=True),
     assets.StageSource("live2d.cubism", "tests.cli.test_assets:FakeCubism", output=True, product=True),
@@ -1507,6 +1532,26 @@ def test_the_product_layout_places_the_products_of_the_selection(tmp_path, capsy
     assert code == 0, err
     assert (tmp_path / "both" / "original" / "Assets" / "Game" / "Card" / "1" / "full.png.json").is_file()
     assert (tmp_path / "both" / "product" / "fake.product" / "Bg%2Fx.json").is_file()
+
+
+def test_products_that_read_master_data_have_subjects_only_with_it(tmp_path, capsys, monkeypatch):
+    sources = PRODUCT_SOURCES + (
+        assets.StageSource("fake.reader", "tests.cli.test_assets:FakeReader", output=True, product=True),
+    )
+    monkeypatch.setattr(assets, "STAGE_SOURCES", sources)
+    d = setup_data(tmp_path, censuses(broken=False))
+    code, out, err = export(capsys, tmp_path, d, "s", "out", "--layout", "product")
+    assert code == 0, err
+    run = contract.loads((tmp_path / "out" / assets.REPORTS / "run.json").read_bytes())
+    assert [t["id"] for t in run["tasks"] if t["id"].startswith("fake.")] == ["fake.product:Bg/x"]
+    master = tmp_path / "master"
+    master.mkdir()
+    (master / "MasterX.json").write_text('{"_allData": [{"_id": 1}]}', encoding="utf-8")
+    code, out, err = export(capsys, tmp_path, d, "s", "out2", "--layout", "product", "--master", master)
+    assert code == 0, err
+    manifest = contract.loads((tmp_path / "out2" / "fake.reader" / "Bg%2Fx.json").read_bytes())
+    rows = (tmp_path / "out2" / manifest["files"]["rows.json"]["asset"]).read_bytes()
+    assert contract.loads(rows) == {"MasterX": [{"_id": 1}]}
 
 
 def test_export_live2d_writes_the_cubism_files_of_one_model(tmp_path, capsys, monkeypatch):

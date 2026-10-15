@@ -141,43 +141,35 @@ def cmd_live2d(args, cfg):
 
 
 def cmd_spot(args, cfg):
-    from ..content import room, spot
-    from ..formats import shader
+    from ..pipeline.spot import ROOM, SPOT
+    from ..source.master import table
 
     cfg.require_path("paths", "apk")  # the Spot / Spine component classes are read from the APK
+    use(cfg)  # the tools the atoms name are part of the keys
     md = Session(cfg).master_dir()
     known_row(args, md, "MasterHomeSpot", args.spot_id, "spot")
-    cat = Session(cfg).catalog()
-    out = Path(args.out)
-    doc = spot.extract(cat, md, args.spot_id, out)
-    bg = doc["master"]["_backgroundAssetPath"]
-    rm = room.extract_room(cat, bg, out / "room.glb")
-    bundles = cat.fetch_key(bg) + cat.fetch_key(doc["master"]["_situationAssetPath"])
-    s = shader.dump(bundles, out / "shaders")
-    r = {
-        "out": str(out),
-        "spot": {"tapTargets": len(doc["characters"]), "skeletons": len(doc["skeletons"])},
-        "room": {"meshes": rm["meshCount"], "inactiveMeshes": rm["inactiveMeshes"]},
-        "shaders": {"shaders": s["count"], "variants": s["variants"]},
-    }
-    report(
-        args,
-        r,
-        lambda r: [
-            f"{r['out']}/spot.json  ({r['spot']['tapTargets']} tap targets, {r['spot']['skeletons']} skeletons)",
-            f"{r['out']}/room.glb  ({r['room']['meshes']} meshes, {r['room']['inactiveMeshes']} inactive)",
-            f"{r['out']}/shaders/  ({r['shaders']['shaders']} shaders, {r['shaders']['variants']} variants)",
-        ],
-    )
+    (row,) = [r for r in table(md, "MasterHomeSpot") if r.get("_id") == args.spot_id]
+    situation, background = row["_situationAssetPath"], row["_backgroundAssetPath"]
+    ws = assets.Workspace(args, cfg, layouts=["files"])
+    ws.request({SPOT: [situation], ROOM: [background]}, [f"key:{situation}", f"key:{background}"])
+    assets.export(args, cfg, ws)
 
 
 def cmd_room(args, cfg):
     from ..content import room
+    from ..pipeline.spot import ROOM
 
-    cat = Session(cfg).catalog()
-    known_keys(args, cat, [args.key])
-    r = room.extract_room(cat, args.key, Path(args.out))
-    report(args, r, lambda r: [f"{r['glb']}  ({r['meshCount']} meshes, {r['inactiveMeshes']} inactive)"])
+    try:
+        room.room_name(args.key)
+    except ValueError as e:
+        usage(args, str(e))
+    use(cfg)
+    ws = assets.Workspace(args, cfg, layouts=["files"])
+    ws.run_index()
+    if not any(loc["primaryKey"] == args.key for loc in ws.index()["locations"]):
+        usage(args, f"{args.key}: not a key of the catalog")
+    ws.request({ROOM: [args.key]}, [f"key:{args.key}"])
+    assets.export(args, cfg, ws)
 
 
 def cmd_shader(args, cfg):
@@ -238,6 +230,20 @@ def cmd_ui(args, cfg):
     )
     if index["counts"].get("failed"):
         sys.exit(1)
+
+
+def product_args(c) -> None:
+    """The options of a command that exports products through the depot (as export assets)."""
+    c.add_argument(
+        "--stored-catalog",
+        metavar="LABEL|SHA",
+        help="a catalog version of the depot (`catalog versions`; default: the current catalog)",
+    )
+    c.add_argument("--workers", type=nonnegative, metavar="N", help="worker processes (default: the usable CPUs)")
+    c.add_argument("--link", choices=("auto", "clone", "hard", "copy"), help="as export assets --link")
+    c.add_argument("--explain", action="store_true", help="print every setting of the run first")
+    c.add_argument("--dry-run", action="store_true", help="print the plan, run nothing")
+    c.set_defaults(views="none", strict=False)
 
 
 def register(sub) -> None:
@@ -307,24 +313,17 @@ def register(sub) -> None:
         action="store_true",
         help="write the player's model (models/<id>.json and assets/) instead of the Cubism SDK files",
     )
-    c.add_argument(
-        "--stored-catalog",
-        metavar="LABEL|SHA",
-        help="a catalog version of the depot (`catalog versions`; default: the current catalog)",
-    )
-    c.add_argument("--workers", type=nonnegative, metavar="N", help="worker processes (default: the usable CPUs)")
-    c.add_argument("--link", choices=("auto", "clone", "hard", "copy"), help="as export assets --link")
-    c.add_argument("--explain", action="store_true", help="print every setting of the run first")
-    c.add_argument("--dry-run", action="store_true", help="print the plan, run nothing")
-    c.set_defaults(views="none", strict=False)
+    product_args(c)
 
-    c = command(es, "spot", cmd_spot, "a spot -> spot.json + Spine + room.glb + shaders")
+    c = command(es, "spot", cmd_spot, "a spot -> spot.json + Spine files + room.glb + room.json")
     c.add_argument("spot_id", type=int, help="MasterHomeSpot id")
     out_arg(c, "output directory")
+    product_args(c)
 
-    c = command(es, "room", cmd_room, "a background prefab -> glb")
-    c.add_argument("key", help="addressable key of the prefab")
-    out_arg(c, "output .glb file")
+    c = command(es, "room", cmd_room, "a spot background -> room.glb + room.json")
+    c.add_argument("key", help="background key Spot/<place>/Background/<place>")
+    out_arg(c, "output directory")
+    product_args(c)
 
     c = command(es, "shader", cmd_shader, "the shaders of a key's bundle closure or of APK bundles")
     g = c.add_mutually_exclusive_group(required=True)

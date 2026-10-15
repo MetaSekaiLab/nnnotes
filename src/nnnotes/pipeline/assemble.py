@@ -238,10 +238,11 @@ def _prune(tid: str, objects: dict, made: Assembly) -> dict:
 class ProductStage(Stage):
     """Base of the product stages (module documentation). Subclasses set `name`, `version` and `KIND`, and define
     `keys`, `resources` and/or `root_objects` and `assemble`; `subjects` defaults to the subjects of the fact
-    "products"."""
+    "products". A stage that reads master tables names them in `MASTER` (its inputs come from the fact "master")."""
 
     after = (ADDRESSES, EXPORT, CROP)
     KIND = "product"
+    MASTER: tuple[str, ...] = ()
 
     def __init__(self):
         self._memo: dict = {}

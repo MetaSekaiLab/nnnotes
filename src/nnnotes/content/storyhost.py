@@ -9,8 +9,8 @@ spot (SpotManager), or the reward phase of a live result (LiveResultDisplayPrese
   host/host.json       kind, the capture camera of a slot (CameraTargetRenderer prefab), the SimpleAdv root and its
                        SimpleAdvLayoutRoot fields, the sequences the host screen has played when the talk starts,
                        and per kind:
-                         home       spot.json + Spine files (spot.extract) and room.glb + room.json
-                                    (room.extract_room) under host/spot/; per placed glb node its object path, its
+                         home       spot.json + Spine files (hostspot.extract_spot) and room.glb + room.json
+                                    (hostspot.extract_room) under host/spot/; per placed glb node its object path, its
                                     state after SpotBackground.Prepare and the SpotSceneRoot.SetObject "floor" render
                                     queue; the room materials as saved; the "Spot" scene's object root, lights,
                                     volumes and RenderSettings; the lights of the placed prefabs; the background
@@ -43,7 +43,8 @@ from ..unity.bindings import RECT_PROPS
 from ..unity.convert.animation import streamed_frames
 from ..unity.export import Exporter, TexelPacker
 from ..unity.reader import SceneGraph, deref, mesh_arrays, referent, script_class
-from . import advui, room, spot, storyfonts
+from . import advui, hostspot, storyfonts
+from .spot import atlas_pages
 
 FORMAT = "ournotes.story-host/1"
 OVERLAY = 1  # MasterAdv._playbackMode of the episodes SimpleAdvPlayer plays
@@ -600,14 +601,14 @@ def _go_ref(owner, pptr: dict) -> int | None:
 
 def background(cat, key: str, situation_name: str, ex: Exporter) -> dict:
     """The placed background prefab `key` as SpotSceneRoot.SetObject leaves it, over the nodes and materials of
-    room.extract_room (the same bundle load, glb_order): SpotBackground.Prepare(situation_name) on the prefab
+    hostspot.extract_room (the same bundle load, glb_order): SpotBackground.Prepare(situation_name) on the prefab
     root, the "floor" render queue (FindFirstChildWithName(background, "floor", "shadow"), its
     GetComponentInChildren<MeshRenderer>().material.renderQueue = 2000, before the root is activated), then
     SetActiveFast(background, true). Objects outside the placed prefab (other prefabs of the bundle closure) are
     not placed: inactive."""
     env = UnityPy.load(*[str(p) for p in cat.fetch_key(key)])
     graph = SceneGraph(env)
-    mf_by_go, mr_by_go = room.mesh_components(env)
+    mf_by_go, mr_by_go = hostspot.mesh_components(env)
     rendered = {go for _, go in mr_by_go}  # SceneGraph: a GameObject path id is in one file only
     root_go = container_go(env, cat.entry(key)["internal_id"]).path_id
     root = graph.tf_of_go[root_go]
@@ -648,7 +649,7 @@ def background(cat, key: str, situation_name: str, ex: Exporter) -> dict:
         )
     )
     shown = {**overrides, root_go: True}
-    nodes, mats = glb_order(room.drawn_meshes(mf_by_go, mr_by_go, graph, lambda p: None))
+    nodes, mats = glb_order(hostspot.drawn_meshes(mf_by_go, mr_by_go, graph, lambda p: None))
     rows = []
     for p in mats:
         mat = p.deref()
@@ -712,7 +713,7 @@ def background(cat, key: str, situation_name: str, ex: Exporter) -> dict:
 
 
 def spine_records(env, ex: Exporter) -> tuple[dict, list, dict]:
-    """The Spine data of a situation prefab's bundle closure (loaded as spot.extract loads it): the material of
+    """The Spine data of a situation prefab's bundle closure (loaded as hostspot.extract_spot loads it): the material of
     every atlas page (Exporter.material records by name), per SpotSpineCharacter in spot.json's order its
     SkeletonAnimation's MeshRenderer sorting order / layer and {atlas page: material name} (SpineAtlasAsset
     materials in page order), and the shaders the materials name. -> (materials, characters, {name: shader})."""
@@ -734,7 +735,7 @@ def spine_records(env, ex: Exporter) -> tuple[dict, list, dict]:
                 if a is None:
                     continue
                 att = a.read_typetree()
-                names = spot._atlas_pages(spot._text_bytes(referent(a, att["atlasFile"]).read()).decode("utf-8"))
+                names = atlas_pages(hostspot.text_bytes(referent(a, att["atlasFile"]).read()).decode("utf-8"))
                 mats = [deref(a, m) for m in att["materials"]]
                 if len(names) != len(mats):
                     raise RuntimeError(f"atlas {att.get('m_Name')}: {len(names)} pages vs {len(mats)} materials")
@@ -860,17 +861,17 @@ def scene_root(ex: Exporter, key: str | None) -> dict:
 
 
 def home_host(cat, master_dir, player, host: dict, hdir: Path, keys: dict) -> dict:
-    """host.json `home`: spot.extract and room.extract_room into host/spot/, the placed background (background),
-    the Spine records, the Spot scene root, the blur, the ambient sound and the shaders (host/shaders/, GLES3
-    programs only) with each material's GLES3 keyword set."""
+    """host.json `home`: hostspot.extract_spot and hostspot.extract_room into host/spot/, the placed background
+    (background), the Spine records, the Spot scene root, the blur, the ambient sound and the shaders (host/shaders/,
+    GLES3 programs only) with each material's GLES3 keyword set."""
     sdir = hdir / "spot"
-    doc = spot.extract(cat, Path(master_dir), host["spotId"], sdir)
+    doc = hostspot.extract_spot(cat, Path(master_dir), host["spotId"], sdir)
     row = doc["master"]
     # A tap talk's character need not be among the spot's SpotCharacters (spot.json `characters`): the game then has
     # no tap target that starts the talk (HomeSpotAfterTalkRequestFactory.TrySelectAdv matches the tapped
     # SpotCharacter's _characterId), and the player plays it without the camera focus
     bg_key, sit_key = row["_backgroundAssetPath"], row["_situationAssetPath"]
-    room_doc = room.extract_room(cat, bg_key, sdir / "room.glb")
+    room_doc = hostspot.extract_room(cat, bg_key, sdir / "room.glb")
     ex = Exporter(cat, hdir, player=player, textures="deferred", inline_meshes=False)
     sit_env = UnityPy.load(*[str(p) for p in cat.fetch_key(sit_key)])
     sit_go = container_go(sit_env, cat.entry(sit_key)["internal_id"])
@@ -1082,15 +1083,15 @@ def component_in_children(graph, tf: int, has, active) -> int | None:
 
 
 def glb_order(drawn, arrays_of=mesh_arrays) -> tuple[list, list]:
-    """The nodes and materials room.extract_room writes, in its order, from its room.drawn_meshes items
+    """The nodes and materials hostspot.extract_room writes, in its order, from its hostspot.drawn_meshes items
     [(transform id, Mesh, material PPtrs)]: a mesh without vertex data or triangles, or whose submeshes all lack
-    a material, is no node; a material is numbered at its first use (room.submesh_primitives order, by
-    room.object_key). -> ([(transform id, mesh name)], [material PPtr])."""
+    a material, is no node; a material is numbered at its first use (hostspot.submesh_primitives order, by
+    hostspot.object_key). -> ([(transform id, mesh name)], [material PPtr])."""
     index: dict[tuple[str, int], int] = {}
     mats, nodes = [], []
 
     def material_for(p) -> int:
-        key = room.object_key(p.deref())
+        key = hostspot.object_key(p.deref())
         if key not in index:
             index[key] = len(mats)
             mats.append(p)
@@ -1105,29 +1106,29 @@ def glb_order(drawn, arrays_of=mesh_arrays) -> tuple[list, list]:
             continue
         if len(pptrs) < len(tris):
             raise NotImplementedError(f"{mesh.m_Name}: {len(tris)} submeshes, {len(pptrs)} materials")
-        if room.submesh_primitives(tris, pptrs, material_for, lambda i: None):
+        if hostspot.submesh_primitives(tris, pptrs, material_for, lambda i: None):
             nodes.append((tf, mesh.m_Name))
     return nodes, mats
 
 
 def glb_textures(materials: list) -> dict[tuple[str, int], int]:
-    """{texture room.object_key: glb texture index} of room.extract_room for its materials [(material object,
-    typetree, shader name)] in glb order: the main texture slot of each (room.main_textures), numbered at first
+    """{texture hostspot.object_key: glb texture index} of hostspot.extract_room for its materials [(material object,
+    typetree, shader name)] in glb order: the main texture slot of each (hostspot.main_textures), numbered at first
     use."""
     index: dict[tuple[str, int], int] = {}
     for owner, tt, shader_name in materials:
-        for tex, _ in room.main_textures(owner, tt, shader_name):
-            index.setdefault(room.object_key(tex), len(index))
+        for tex, _ in hostspot.main_textures(owner, tt, shader_name):
+            index.setdefault(hostspot.object_key(tex), len(index))
     return index
 
 
 def _texture_key(owner, ref: dict) -> tuple[str, int] | None:
-    """room.object_key of the texture a material's PPtr `ref` names (read from `owner`'s typetree); None for an
+    """hostspot.object_key of the texture a material's PPtr `ref` names (read from `owner`'s typetree); None for an
     empty slot or a texture outside the loaded files (so not in the glb)."""
     if not ref["m_PathID"]:
         return None
     try:
-        return room.object_key(deref(owner, ref))
+        return hostspot.object_key(deref(owner, ref))
     except FileNotFoundError:
         return None
 
@@ -1169,7 +1170,7 @@ def glb_json(path) -> dict:
 
 
 def check_room(key: str, glb: dict, room_doc: dict, bg: dict) -> None:
-    """room.extract_room's room.glb (its JSON chunk `glb`) and room.json (`room_doc`) have the nodes, materials and
+    """hostspot.extract_room's room.glb (its JSON chunk `glb`) and room.json (`room_doc`) have the nodes, materials and
     glTF textures of the background record `bg` (background), in its order."""
     if (
         [n["name"] for n in glb["nodes"]] != bg["check"]["nodes"]

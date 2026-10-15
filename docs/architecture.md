@@ -36,9 +36,10 @@ decrypted bundles in the depot's `downloads/` directory.
 
 ## Two ways to export
 
-- **One subject.** `export episode`, `export story`, `export live`, `export live2d`, `export spot`, `export room`,
-  `export shader`, `export audio`, `export ui`, `site build` and `music-data` read what one subject needs through the
-  Session and write their output directory directly ([Export stories and lives](export.md)).
+- **One subject.** `export episode`, `export story`, `export live`, `export shader`, `export audio`, `export ui`,
+  `site build` and `music-data` read what one subject needs through the Session and write their output directory
+  directly ([Export stories and lives](export.md)). `export live2d`, `export spot` and `export room` ask the pipeline
+  below for the products of one subject ([products](products.md)).
 - **Every asset.** `export assets` splits the work into stages ([stages](stages.md)). A task is one stage applied to
   one subject (a bundle, a content id, a view); its key covers exactly what its output depends on: the stage and
   converter versions, the input contents and the options ([contracts](contracts.md)). Results and their files are

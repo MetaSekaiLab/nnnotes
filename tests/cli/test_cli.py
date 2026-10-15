@@ -368,7 +368,8 @@ def data(catalog_file, tmp_path, cdn, monkeypatch):
     "argv, message",
     [
         (["bundle", "pull", "Char/A", "Nope/1", "Nope/2", "-o", "b"], "not a key of the catalog: Nope/1, Nope/2"),
-        (["export", "room", "Nope/1", "-o", "r.glb"], "not a key of the catalog: Nope/1"),
+        (["export", "room", "Nope/1", "-o", "r"], "Nope/1: not a spot background key"),
+        (["export", "room", "Spot/a/Background/a", "-o", "r"], "Spot/a/Background/a: not a key of the catalog"),
         (["export", "shader", "--key", "Nope/1", "-o", "s"], "not a key of the catalog: Nope/1"),
         (["export", "shader", "--apk-bundle", "zz", "-o", "s"], "--apk-bundle 'zz': 0 APK bundles match"),
         (["export", "audio", "Nope", "-o", "a"], "cue sheet Nope: no key Cri/Sound/Nope in the catalog"),

@@ -9,9 +9,9 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from nnnotes.content import advui, room, storyhost
+from nnnotes.content import advui, hostspot, storyhost
 from nnnotes.unity.reader import SceneGraph
-from tests.content.test_room import ROOM_KEY, File, RoomCatalog, load_room, two_file_room
+from tests.content.test_hostspot import ROOM_KEY, File, RoomCatalog, load_room, two_file_room
 
 V0 = {"x": 0.0, "y": 0.0, "z": 0.0}
 V1 = {"x": 1.0, "y": 1.0, "z": 1.0}
@@ -153,7 +153,7 @@ def test_glb_json_reads_the_json_chunk(tmp_path):
         storyhost.glb_json(tmp_path / "x.glb")
 
 
-def test_glb_order_follows_room_extract_room():
+def test_glb_order_follows_hostspot_extract_room():
     tri = [[0, 1, 2]]
     drawn = [
         (1, Mesh("a", [tri, tri]), [pp(20), pp(10)]),
@@ -165,7 +165,7 @@ def test_glb_order_follows_room_extract_room():
     ]  # path id 10 of another file: another material
     nodes, mats = storyhost.glb_order(drawn, arrays)
     assert nodes == [(1, "a"), (5, "b"), (6, "c")]
-    assert [room.object_key(m.deref()) for m in mats] == [("CAB-a", 20), ("CAB-a", 10), ("CAB-b", 10)]
+    assert [hostspot.object_key(m.deref()) for m in mats] == [("CAB-a", 20), ("CAB-a", 10), ("CAB-b", 10)]
     with pytest.raises(NotImplementedError, match="2 submeshes, 1 materials"):
         storyhost.glb_order([(1, Mesh("c", [tri, tri]), [pp(1)])], arrays)
 
@@ -226,11 +226,11 @@ def test_glb_textures_and_room_materials_keep_the_glb_order():
     assert storyhost.room_material(oa, empty, "U", index)["texEnvs"]["_MainTex"]["texture"] is None
 
 
-def test_background_numbers_the_room_as_room_extract_room(tmp_path, monkeypatch):
+def test_background_numbers_the_room_as_hostspot_extract_room(tmp_path, monkeypatch):
     """Materials and textures of two serialized files that reuse path ids: the background record and room.glb agree
     (check_room), and a texture slot names the glTF texture, not the image."""
     load_room(monkeypatch, two_file_room())
-    doc = room.extract_room(RoomCatalog(), ROOM_KEY, tmp_path / "room.glb")
+    doc = hostspot.extract_room(RoomCatalog(), ROOM_KEY, tmp_path / "room.glb")
     gltf = storyhost.glb_json(tmp_path / "room.glb")
     bg = storyhost.background(RoomCatalog(), ROOM_KEY, "situation(Clone)", None)
     storyhost.check_room(ROOM_KEY, gltf, doc, bg)
