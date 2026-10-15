@@ -313,6 +313,41 @@ def test_a_product_names_an_object_the_table_lacks(tmp_path):
         execute(t, depot, registry(Wrong({"m/a": "key/a"})), force=True)
 
 
+class Roles(Toy):
+    """A Toy that keeps the `json` file alone of the texture its prefab references."""
+
+    ROLES: dict = {oid(10): {"json"}}
+
+    def assemble(self, task, objects):
+        made = super().assemble(task, objects)
+        return assemble.Assembly(made.files, roles=self.ROLES)
+
+
+def test_a_product_keeps_some_files_of_an_object(tmp_path):
+    depot = Depot(tmp_path / "s")
+    env = env_for(depot, {"key/a": [oid(60)]})
+    exported(depot, env)
+    t, doc = product(depot, env, "m/a", {"m/a": "key/a"}, stage=Roles({"m/a": "key/a"}))
+    table = table_of(depot, doc)
+    assert set(table["objects"][oid(10)]["files"]) == {"json"}  # no image
+    assert oid(60) in table["objects"] and oid(61) in table["objects"]  # the others whole
+    entries, manifest = manifest_of(depot, t, doc)
+    assert set(manifest["objects"][oid(10)]["files"]) == {"json"}
+    assert f"{oid(10)}#image" not in {e["id"] for e in entries}
+
+
+def test_a_product_cannot_keep_a_file_an_object_lacks(tmp_path):
+    class Wrong(Roles):
+        ROLES = {oid(10): {"json", "mesh"}}
+
+    depot = Depot(tmp_path / "s")
+    env = env_for(depot, {"key/a": [oid(60)]})
+    exported(depot, env)
+    t = describe(Wrong({"m/a": "key/a"}), "m/a", None, env)
+    with pytest.raises(ValueError, match="has no mesh file"):
+        execute(t, depot, registry(Wrong({"m/a": "key/a"})), force=True)
+
+
 # ---------------------------------------------------------------- the layout
 def manifest_of(depot, t, doc):
     """(entries, the manifest) of a product layout for one result."""
