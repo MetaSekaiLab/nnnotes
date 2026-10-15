@@ -40,6 +40,7 @@ if TYPE_CHECKING:
 __all__ = [
     "Objects",
     "Prefab",
+    "builtin_root",
     "clip_bindings",
     "component_class",
     "component_ref",
@@ -106,6 +107,14 @@ def root_game_object(objects: Objects, what: str) -> str:
     if len(gos) != 1:
         raise ValueError(f"{what}: {len(gos)} GameObjects among the roots, expected one")
     return gos[0]
+
+
+def builtin_root(objects: Objects, cls: str) -> str:
+    """The one root of class `cls` (a built-in setting: GraphicsSettings, QualitySettings, PlayerSettings)."""
+    hits = [o for o in objects.roots if o in objects and objects.info(o).get("class") == cls]
+    if len(hits) != 1:
+        raise ValueError(f"{len(hits)} {cls} roots")
+    return hits[0]
 
 
 def key_object(objects: Objects, key: str, cls: str) -> str:
