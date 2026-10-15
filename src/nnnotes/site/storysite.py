@@ -51,6 +51,7 @@ from pathlib import Path
 
 from ..content import adv, advui, live2d, story, storyfonts, storyhost
 from ..core import jsonio
+from ..formats.encoders import WEB_AUDIO, mp4_priming
 from ..source import languages, master
 from ..source.config import Config, ConfigError, usable_cpus, use
 from . import webmodel
@@ -68,7 +69,6 @@ from .sitefiles import (
     configure_caches,
     join_parts,
     merge_regions,
-    mp4_priming,
     open_data,
     region_masters,
     region_meta,
@@ -78,7 +78,6 @@ from .sitefiles import (
     write_player,
 )
 from .siteindex import write_index, write_stories_index
-from .webaudio import WEB_AUDIO
 
 MANIFEST_FORMAT = "ournotes.story-manifest/2"
 FONT_SOURCES = storyfonts.SOURCES
@@ -726,7 +725,7 @@ def build(
     """Add the stories `adv_ids` (MasterAdv ids; None: every story of every region's master data) to the site at
     `out_dir`, with the player of the ournotes-player checkout or package at `player_dir` (its page files are
     written, the indexes rebuilt). The data comes from the settings `cfg` (each worker process opens its own).
-    `audio_format`: webaudio.WEB_AUDIO format of every waveform (`audio` False: none); `story_languages`: the language
+    `audio_format`: encoders.WEB_AUDIO format of every waveform (`audio` False: none); `story_languages`: the language
     groups (default every language); `fonts`: "open" (glyphs from the font file of each language: `fonts_flags`
     {language: path}, else `[paths] fonts.<language>`; the emoji sprites from `fonts_flags` ["emoji"], else
     `[paths] fonts.emoji`, when given) or "game"; `regions`: as for web.build (module docstring);
