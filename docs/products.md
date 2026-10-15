@@ -358,6 +358,8 @@ A story episode plays with products that several episodes share, made by `nnnote
 |---|---|---|---|---|
 | `story.sound` | a cue sheet name (`_cueSheetName` of an episode's cue sheet table) | `cuesheets/<sheet>.json` | the cue sheet's key `Cri/Sound/<sheet>` | `cues.json` and the cues' sounds |
 | `story.crilips` | `default` | `crilips/default.json` | none (it reads the APK) | `crilips.json` and `crilips.bin` |
+| `story.scene` | `default` | `storyscenes/default.json` | the ADV scene `EmbScene/Adv`, the prefabs `EmbCommon/Prefab/CameraManager`, `EmbCommon/Adv/Prefab/AdvCharacterField`, `AdvBackgroundField` and `AdvGlobalVolume`, the settings `EmbCommon/Adv/Settings/AdvPlayerSettings` and `AdvMasterIdSettings`, and the built-in `GraphicsSettings`, `QualitySettings` and `PlayerSettings` | `scene.json` and the object table |
+| `story.asset` | a catalog key a story loads: a stage (`Adv/Stage/<name>`), frame, effect, post effect, still, chat window, chat icon or stamp, transition | `storyassets/<name>.json`, `<name>` the key with `/` as `~` | the key | `asset.json` and the object table |
 
 Neither keeps objects. `story.sound` reads its cue sheet's `cri.audio` files; `cues.json` maps each cue name to the
 first stream of that name (in stream order): `file` (the sound, next to `cues.json`), `sampleRate`, `channels`,
@@ -370,3 +372,21 @@ layout makes the `story.sound` product of every cue sheet key the selection hold
 split of an installed app) and writes the analysis data a player needs to run the CRI Lips analysis on a voice: the
 descriptor `crilips.json` and the float32 weights `crilips.bin`. A library of a version nnnotes does not know makes
 the product `unsupported` (`unsupported.crilips.version`). Only a request makes it.
+
+`story.scene` holds what the ADV screen loads before an episode's first line. `scene.json` has `format` 1 and
+
+| Field | |
+|---|---|
+| `scene` | the root GameObjects of the ADV scene that have their prefab document |
+| `renderSettings` | the scene's RenderSettings |
+| `prefabs` | the root GameObjects of `cameraManager`, `characterField`, `backgroundField` and `globalVolume` |
+| `settings` | the `playerSettings` (AdvPlayerSettings) and `masterIdSettings` (AdvMasterIdSettings) MonoBehaviours |
+| `graphics` | the built-in `graphics`, `quality` and `player` settings |
+| `bindings` | `{prefab GameObject id: {Animator node path: {clip id: [{path, attribute}]}}}`: the clips each Animator plays through its controller, named in its prefab |
+| `shaders` | `{shader name: object id}`: what a lookup by name finds; of different shaders of one name, the one GraphicsSettings always includes |
+
+The renderers' shaders and post-processing textures are reached through the graphics settings' references (the
+render pipeline asset, its renderer data and their features). `story.asset` holds the objects of one catalog key
+and what they reach; an asset several stories load is one product. `asset.json` has `format` 1, `key`, `objects`
+(the key's object ids), `bindings` and `shaders` as above. The CRI Lips data and the story assets are made only when
+a request names them; the `product` layout makes `story.scene` when the selection holds every key of it.
