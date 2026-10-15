@@ -6,19 +6,44 @@ fields}`. A component's fields name objects of the table by reference (`{"$ref":
 same hierarchy by path: `{"gameObject": path}`, `{"transform": path}`, or `{"component": type, "gameObject": path,
 "class": script class}` for a component. `Prefab` gives each node's parent, its world matrix (Unity's left-handed
 space, the root's own transform included) and whether it is active in the hierarchy, and resolves those references.
+
+What a player reads with the hierarchies of a table:
+
+controller_clips  the clips each Animator of a prefab plays through its controller (Animator.m_Controller, the
+                  controller.json `clips`), by the Animator's node path
+clip_bindings     the bindings of the clips each Animator plays, named in the prefab from the Animator's node
+                  (unity.bindings.resolve)
+shader_table      the shaders of the table by name (copies of one shader in several bundles by the first id), and
+                  of each the files a player draws with: its parsed form (`json`), its variant index (`index`) and
+                  every program of the player's graphics API (formats.shader.player_roles)
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator, Mapping
 from typing import TYPE_CHECKING, Any, Protocol
 
+from ..formats.shader import player_roles
+from ..unity import bindings
 from ..unity.ids import object_id
 
 if TYPE_CHECKING:
     import numpy as np
 
-__all__ = ["Objects", "Prefab", "component_class", "mat4", "ref_id", "root_game_object", "script_class"]
+__all__ = [
+    "Objects",
+    "Prefab",
+    "clip_bindings",
+    "component_class",
+    "controller_clips",
+    "has_json",
+    "mat4",
+    "prefab_ids",
+    "ref_id",
+    "root_game_object",
+    "script_class",
+    "shader_table",
+]
 
 
 class Objects(Protocol):
@@ -52,9 +77,14 @@ def component_class(c: dict) -> str:
     return c["type"]
 
 
+def has_json(objects: Objects, oid: str) -> bool:
+    """`oid` is an object of the table with a `json` file."""
+    return oid in objects and "json" in (objects.info(oid).get("files") or {})
+
+
 def script_class(objects: Objects, oid: str) -> str | None:
     """The script class of a MonoBehaviour outside a hierarchy (its `json`'s `$script`), None without one."""
-    if "json" not in (objects.info(oid).get("files") or {}):
+    if not has_json(objects, oid):
         return None
     entry = objects.json(oid).get("$script")
     return entry.rsplit("|", 1)[-1] if isinstance(entry, str) else None
@@ -66,6 +96,70 @@ def root_game_object(objects: Objects, what: str) -> str:
     if len(gos) != 1:
         raise ValueError(f"{what}: {len(gos)} GameObjects among the roots, expected one")
     return gos[0]
+
+
+def prefab_ids(objects: Objects) -> list[str]:
+    """The GameObjects of the table with a prefab document (the roots of their hierarchies), sorted."""
+    return [o for o in objects.ids("GameObject") if has_json(objects, o)]
+
+
+def controller_clips(objects: Objects, prefab: dict) -> dict[str, list[str]]:
+    """{node path: clip ids} of every Animator of a prefab document whose controller is in the table: the clips its
+    controller plays, in the controller's order."""
+    out: dict[str, list[str]] = {}
+    for n in prefab["nodes"]:
+        for c in n["components"]:
+            ctl = ref_id(c["fields"].get("m_Controller")) if c["type"] == "Animator" else None
+            if ctl is not None and has_json(objects, ctl):
+                clips = [ref_id(r) for r in objects.json(ctl).get("clips", ())]
+                out[n["path"]] = [o for o in clips if o is not None]
+    return out
+
+
+def clip_bindings(objects: Objects, prefab: dict, plays: Mapping[str, Iterable[str]]) -> dict[str, dict[str, list]]:
+    """{node path: {clip id: [{path, attribute}]}} of the clips `plays` gives each Animator of a prefab document
+    ({the Animator's node path: clip ids}), named in the prefab from the Animator's node (unity.bindings.resolve). A
+    clip without its `json` in the table is left out, and so is an Animator left without clips. A path in `plays` that
+    holds no Animator raises."""
+
+    def material(ref) -> dict | None:
+        oid = ref_id(ref)
+        return objects.json(oid) if oid is not None and has_json(objects, oid) else None
+
+    animators = {n["path"] for n in prefab["nodes"] for c in n["components"] if c["type"] == "Animator"}
+    out = {}
+    for path, clips in sorted(plays.items()):
+        if path not in animators:
+            raise ValueError(f"{prefab['name']}: no Animator at {path!r}")
+        table = {}
+        for cid in clips:
+            if cid not in table and has_json(objects, cid):
+                table[cid] = bindings.resolve(objects.json(cid)["bindings"], prefab, path, material)
+        if table:
+            out[path] = dict(sorted(table.items()))
+    return out
+
+
+def shader_table(objects: Objects) -> tuple[dict[str, str], dict[str, set[str]]]:
+    """({shader name: object id}, {object id: the roles of its files a player reads}) of the Shaders of the table that
+    have their variant index (module documentation). Bundles may each hold a copy of a shader: Shaders of one name
+    whose parsed form and index are the same content are one shader, named by the first id; different ones raise."""
+    names: dict[str, str] = {}
+    roles: dict[str, set[str]] = {}
+
+    def content(sid: str) -> tuple:
+        files = objects.info(sid)["files"]
+        return tuple(files[r]["sha256"] for r in ("json", "index"))
+
+    for sid in objects.ids("Shader"):
+        if "index" not in (objects.info(sid).get("files") or {}):
+            continue
+        index = objects.json(sid, "index")
+        first = names.setdefault(index["name"], sid)
+        if first != sid and content(first) != content(sid):
+            raise ValueError(f"shader {index['name']}: objects {first} and {sid} differ")
+        roles[sid] = {"json", "index"} | player_roles(index["variants"])
+    return dict(sorted(names.items())), roles
 
 
 def mat4(m: np.ndarray) -> list[float]:
