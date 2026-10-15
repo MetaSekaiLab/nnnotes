@@ -33,7 +33,7 @@ import numpy as np
 from ..core.jsonio import write_json
 from ..formats import cri
 from ..formats.encoders import FLAC_LEVEL
-from ..source import languages
+from .live import DIFFICULTIES, MUSIC_RECORD_TABLES, chart_key, music_record
 
 f32 = np.float32
 
@@ -41,7 +41,6 @@ LANE_COUNT = 24  # MusicScore.LaneCount (SsMusicScoreConverter.Load sets 0x18)
 TICKS_PER_BEAT = 480  # 60000 / (bpm * 480) in SsTickConverter.TickToTimeMs
 TICKS_PER_WHOLE = 1920  # ticks per measure = numerator * 1920 / denominator
 MAX_LINES = 20  # LineIndexAssigner(0x14)
-DIFFICULTIES = ("easy", "normal", "hard", "expert")  # _easyID.._expertID -> file suffix _00.._03
 
 # SsNoteType / SsFlickDir / SsEase / SsFadeType (SsRootDeserializer.Parse*)
 NOTE_TYPES = {"tap": 0, "flick": 1, "trace": 2, "long": 3, "guide": 4, "node": 5}
@@ -1209,11 +1208,6 @@ def master_table(master_dir: Path, name: str) -> list:
     return json.loads((Path(master_dir) / f"{name}.json").read_text(encoding="utf-8"))["_allData"]
 
 
-def chart_key(file_name: str) -> str:
-    """LiveEntry loads `Live/MusicScore/` + MasterLiveMusicScore._musicScoreTextFileName."""
-    return f"Live/MusicScore/{file_name}"
-
-
 def fetch_chart(cat, file_name: str) -> bytes:
     """Raw TextAsset bytes of a chart (still gzip, as shipped)."""
     from ..unity.reader import load_closure
@@ -1235,36 +1229,8 @@ def fetch_chart(cat, file_name: str) -> bytes:
 
 
 def music_rows(master_dir: Path, music_id: int) -> dict:
-    """MasterLiveMusic row, its 4 MasterLiveMusicScore rows, title / band name texts in every language
-    (languages.LANGUAGES) and sound rows."""
-    music = next(r for r in master_table(master_dir, "MasterLiveMusic") if r["_id"] == music_id)
-    scores = {r["_id"]: r for r in master_table(master_dir, "MasterLiveMusicScore")}
-    text = {r["_id"]: r for r in master_table(master_dir, "MasterText")}
-    bands = {r["_id"]: r for r in master_table(master_dir, "MasterBand")}
-    sounds = {r["_id"]: r for r in master_table(master_dir, "MasterSound")}
-    sheets = {r["_id"]: r for r in master_table(master_dir, "MasterSoundCueSheet")}
-
-    def tx(i):
-        r = text.get(i)
-        return None if r is None else {"id": i, **languages.texts(r)}
-
-    def snd(i):
-        r = sounds.get(i)
-        if r is None:
-            return None
-        return {"MasterSound": r, "MasterSoundCueSheet": sheets.get(r["_soundCueSheetID"])}
-
-    return {
-        "MasterLiveMusic": music,
-        "MasterLiveMusicScore": {d: scores.get(music[f"_{d}ID"]) for d in DIFFICULTIES},
-        "title": tx(music["_titleTextID"]),
-        "bands": [
-            {"MasterBand": bands.get(b), "name": tx(bands[b]["_nameTextID"]) if b in bands else None}
-            for b in music["_bandIDs"]
-        ],
-        "music": snd(music["_musicSoundID"]),
-        "jingle": snd(music["_jingleSoundID"]),
-    }
+    """live.music_record of the master tables in `master_dir`."""
+    return music_record({n: master_table(master_dir, n) for n in MUSIC_RECORD_TABLES}, music_id)
 
 
 def extract_audio(

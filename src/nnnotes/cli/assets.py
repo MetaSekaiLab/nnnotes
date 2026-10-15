@@ -126,6 +126,7 @@ STAGE_SOURCES = (
     StageSource("live.noteskin", "nnnotes.pipeline.live:NoteSkinStage", output=True, product=True),
     StageSource("live.noteeffect", "nnnotes.pipeline.live:NoteEffectStage", output=True, product=True),
     StageSource("live.scene", "nnnotes.pipeline.live:SceneStage", output=True, product=True),
+    StageSource("live", "nnnotes.pipeline.live:LiveStage", output=True, product=True),
     StageSource("view.", "nnnotes.pipeline.views:stages", output=True),
     StageSource("view.voices", "nnnotes.pipeline.voices:VoiceStage", output=True),
 )
@@ -675,6 +676,10 @@ class Workspace:
             for n in takers:
                 base = stages[n].PARAMS["png"]
                 out.setdefault(n, {})["png"] = {**(base if isinstance(base, dict) else {}), "level": level}
+        fmt = getattr(self.args, "audio_format", None)
+        if fmt is not None:
+            for n in [n for n in pipeline if "audio" in stages[n].PARAMS]:
+                out.setdefault(n, {})["audio"] = fmt
         level = getattr(self.args, "flac_level", None)
         if level is not None:
             if not 0 <= level <= 12:
