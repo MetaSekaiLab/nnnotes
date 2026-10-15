@@ -16,8 +16,19 @@ story.crilips  subject `default`: "<task id>#crilips.json" (kind story.crilips: 
                crilips/default.json. A library none of the versions formats.crilips knows makes the product
                `unsupported` (unsupported.crilips.version).
 
-`select` (the `product` layout) makes the story.sound product of every cue sheet key the selection holds; the
-CRI Lips data is made only when a request names it.
+story.scene    subject `default`: "<task id>#scene.json" (kind story.scene: content.storyscene.scene) and the object
+               table the player reads: the ADV scene, the camera manager, the character and background fields, the
+               global volume, the ADV player and master id settings, and as roots also the built-in graphics settings
+               (livescene.GRAPHICS). Its manifest is storyscenes/default.json.
+
+story.asset    subject a catalog key a story loads (a stage, frame, effect, post effect, still, chat window, chat icon
+               or stamp, transition): "<task id>#asset.json" (kind story.asset: content.storyasset.asset) and the
+               object table of what the key reaches. Its manifest is storyassets/<name>.json, <name> the key with
+               "/" as "~" (storyasset.manifest_name). An asset several stories load is one product.
+
+`select` (the `product` layout) makes the story.sound product of every cue sheet key the selection holds and
+story.scene when it holds every key of the scene; the CRI Lips data and the story assets are made only when a
+request names them.
 """
 
 from __future__ import annotations
@@ -25,7 +36,8 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
-from ..content import liveaudio
+from ..content import liveaudio, storyasset, storyscene
+from ..content.livescene import GRAPHICS
 from ..formats import crilips
 from ..formats.encoders import DEFAULT_AUDIO_FORMAT, WEB_AUDIO, mp4_priming, web_encode
 from ..unity.atoms import Unsupported
@@ -35,9 +47,9 @@ from .contract import IncompatibleTask
 from .layout import escape_segment
 from .live import encode_atoms
 
-__all__ = ["CRILIPS", "SOUND", "CriLipsStage", "SoundStage", "cues"]
+__all__ = ["ASSET", "CRILIPS", "SCENE", "SOUND", "AssetStage", "CriLipsStage", "SceneStage", "SoundStage", "cues"]
 
-SOUND, CRILIPS = "story.sound", "story.crilips"
+SOUND, CRILIPS, SCENE, ASSET = "story.sound", "story.crilips", "story.scene", "story.asset"
 DEFAULT = "default"
 SHEET_PREFIX = "Cri/Sound/"
 LIBRARY = crilips.LIB_ENTRY_SUFFIX
@@ -137,9 +149,7 @@ class CriLipsStage(ProductStage):
     APK = (LIBRARY,)
 
     def manifest(self, subject: str) -> str:
-        if subject != DEFAULT:
-            raise ValueError(f"{subject}: the only subject is {DEFAULT}")
-        return f"crilips/{DEFAULT}.json"
+        return f"crilips/{_default(subject)}.json"
 
     def assemble(self, task, objects) -> Assembly:
         so = objects.depot.input_bytes(task.input(f"apk:{LIBRARY}"))
@@ -151,3 +161,53 @@ class CriLipsStage(ProductStage):
             {"crilips.json": (contract.encode(desc), "json", CRILIPS), "crilips.bin": (blob, "bin", "crilips.weights")},
             set(),
         )
+
+
+def _default(subject: str) -> str:
+    if subject != DEFAULT:
+        raise ValueError(f"{subject}: the only subject is {DEFAULT}")
+    return subject
+
+
+class SceneStage(ProductStage):
+    """story.scene: the ADV scene, its prefabs and settings (module documentation)."""
+
+    name = SCENE
+    version = 1
+    KIND = "StoryScene"
+
+    def select(self, keys: list[str], env) -> list[str]:
+        return [DEFAULT] if set(storyscene.keys()) <= set(keys) else []
+
+    def keys(self, subject: str, env) -> list[str]:
+        _default(subject)
+        return storyscene.keys()
+
+    def builtins(self, subject: str, env) -> list[str]:
+        return sorted(GRAPHICS.values())
+
+    def manifest(self, subject: str) -> str:
+        return f"storyscenes/{_default(subject)}.json"
+
+    def assemble(self, task, objects) -> Assembly:
+        doc, keep, roles = storyscene.scene(objects)
+        return Assembly({"scene.json": (contract.encode(doc), "json", SCENE)}, keep, roles)
+
+
+class AssetStage(ProductStage):
+    """story.asset: the objects of one catalog key a story loads (module documentation)."""
+
+    name = ASSET
+    version = 1
+    KIND = "StoryAsset"
+
+    def keys(self, subject: str, env) -> list[str]:
+        storyasset.manifest_name(subject)
+        return [subject]
+
+    def manifest(self, subject: str) -> str:
+        return f"storyassets/{storyasset.manifest_name(subject)}.json"
+
+    def assemble(self, task, objects) -> Assembly:
+        doc, keep, roles = storyasset.asset(objects, task.subject)
+        return Assembly({"asset.json": (contract.encode(doc), "json", ASSET)}, keep, roles)

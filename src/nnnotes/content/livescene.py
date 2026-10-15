@@ -70,6 +70,7 @@ from .liveoptions import OPTION_ITEM_TYPES
 from .prefabs import (
     Objects,
     Prefab,
+    builtin_root,
     component_class,
     component_ref,
     has_json,
@@ -449,14 +450,6 @@ def _bar_line_view(objects: Objects, scene: list[str]) -> str:
     return gid
 
 
-def _builtin(objects: Objects, cls: str) -> str:
-    """The one root of class `cls` (a built-in setting)."""
-    hits = [o for o in objects.roots if o in objects and objects.info(o).get("class") == cls]
-    if len(hits) != 1:
-        raise ValueError(f"{len(hits)} {cls} roots")
-    return hits[0]
-
-
 def scene(objects: Objects, record: dict) -> tuple[dict, set[str], dict[str, set[str]]]:
     """(scene.json, the object ids the player reads, {object id: the roles of its files it reads}) of the scene
     product (module documentation; `record`: scene_record)."""
@@ -471,7 +464,7 @@ def scene(objects: Objects, record: dict) -> tuple[dict, set[str], dict[str, set
         for r in sorted(record["MasterBand"], key=lambda r: r["_id"])
         if objects.key(TIMELINE_KEY.format(band=r["_id"]))
     }
-    graphics = {name: _builtin(objects, cls) for name, cls in GRAPHICS.items()}
+    graphics = {name: builtin_root(objects, cls) for name, cls in GRAPHICS.items()}
     always = (ref_id(r) for r in objects.json(graphics["graphics"]).get("m_AlwaysIncludedShaders", ()))
     shaders, roles = shader_table(objects, found=[o for o in always if o is not None])
     missing = [n for n in PLAYER_SHADERS if n not in shaders]

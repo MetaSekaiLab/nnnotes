@@ -2,12 +2,13 @@
 
 import pytest
 
+from nnnotes.content import storyscene
 from nnnotes.formats import crilips
 from nnnotes.pipeline import assemble, contract, cristages, live, story
 from nnnotes.pipeline.contract import IncompatibleTask
 from nnnotes.pipeline.depot import Depot
 from nnnotes.pipeline.stages import Env
-from nnnotes.pipeline.story import CriLipsStage, SoundStage
+from nnnotes.pipeline.story import AssetStage, CriLipsStage, SceneStage, SoundStage
 from tests.formats.test_crilips import _elf_with_rodata, _synthetic_version
 from tests.pipeline.test_live import run, stored, table
 from tests.site.test_story_site import mp4
@@ -64,6 +65,26 @@ def test_the_crilips_product_has_one_subject_and_reads_the_library():
         stage.manifest("other")
     assert stage.APK == ("lib/arm64-v8a/libcri_lips_unity.so",)
     assert stage.select(["Cri/Sound/a"], None) == []
+
+
+def test_the_scene_product_has_one_subject_its_keys_and_the_graphics_settings():
+    stage = SceneStage()
+    assert stage.keys("default", None) == storyscene.keys() and len(storyscene.keys()) == 7
+    assert stage.builtins("default", None) == ["GraphicsSettings", "PlayerSettings", "QualitySettings"]
+    assert stage.manifest("default") == "storyscenes/default.json"
+    assert stage.select([*storyscene.keys(), "Adv/Stage/bg"], None) == ["default"]
+    assert stage.select(storyscene.keys()[1:], None) == []
+    with pytest.raises(ValueError, match="the only subject is default"):
+        stage.keys("other", None)
+
+
+def test_a_story_asset_is_named_by_its_key():
+    stage = AssetStage()
+    assert stage.keys("Adv/Effect/fx/fx", None) == ["Adv/Effect/fx/fx"]
+    assert stage.manifest("Adv/Effect/fx/fx") == "storyassets/Adv~Effect~fx~fx.json"
+    assert stage.select(["Adv/Stage/bg", "Adv/Still/st"], None) == []
+    with pytest.raises(ValueError, match="not a story asset key"):
+        stage.keys("Adv/Stage/a b", None)
 
 
 def test_cues_take_the_first_stream_of_each_name():
