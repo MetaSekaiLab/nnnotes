@@ -1,13 +1,46 @@
-"""Live (rhythm game) stage/render data -> livescene/scene.json + textures + shaders.
+"""The scene of a live: what exists on the live screen before the first note, and the start timeline of each band.
 
-What exists on the live screen before the first note:
+One product (`scene`, scene.json format SCENE_FORMAT), read from a product's object table (`Objects`,
+pipeline.assemble), never from a bundle, and shared by every live:
+
+    scene           the root GameObjects of the addressable scene EmbScene/Live, each a prefab document (the Live
+                    prefab instance with the cameras, render canvas, background view and UI canvases; LiveGameView
+                    with the lane camera, the lane and the note and effect containers; LiveStartTimelineDirector);
+                    their references to each other are `$ref`s to components (prefabs.component_ref)
+    renderSettings  the scene's RenderSettings
+    graphics        the built-in settings the render path reads, by id: `graphics` (GraphicsSettings: the render
+                    pipeline asset, its renderers and their post-process data), `quality` (QualitySettings), `player`
+                    (PlayerSettings: the colour space)
+    laneSkins       {lane skin asset name: {part: Sprite}} of the lane skins of MasterLiveLaneSkin (LANE_SKIN_PARTS)
+    prefabs         `laneLine` (LiveLaneLineView._linePrefab), `judgeEffectView` (UILiveNoteJudgeEffectView) and
+                    `barLineView` (the LiveBarLineView prefab the scene's bar line container instantiates,
+                    livenotes.BAR_LINE_CHAIN)
+    spriteAssets    the combo and judgement sprite assets of the live UI (SPRITE_ASSETS)
+    bands           {band id: {timeline, background, tracks}} of the bands of MasterBand whose start timeline the
+                    catalog holds: the live_start_playable_timeline prefab (LiveStartTimelineLoadStep), the
+                    LightWeight background sprite (LightWeightBackgroundLoadStep) and {AnimationTrack id: {name,
+                    prefab, animator}}, the Animator each track of the timeline plays on (TIMELINE_TRACK_ANIMATORS)
+    settings        the option defaults (preset 1) and ranges of the items the render path reads (OPTION_ITEMS), the
+                    MasterLiveQualitySettings rows, the default lane skin and every lane skin by option value, and
+                    the judgement sprite names by judgement (scene_settings)
+    bindings        {prefab GameObject id: {Animator node path: {clip id: [{path, attribute}]}}}: the clips each
+                    Animator plays through its controller and LoopAnimationTimeSyncs (livenotes.animator_bindings)
+                    and the clips of each band's timeline tracks on theirs
+    shaders         {shader name: object id}: what a lookup by name finds (prefabs.shader_table; of different
+                    shaders of one name the one GraphicsSettings always includes), holding the shaders the live
+                    screen finds by name (PLAYER_SHADERS); a material names its shader by id
+
+A live plays the timeline and the background of one band: the band of the player's deck centre, which the live
+chooses. Of the objects the product keeps all but the MonoScripts; of a shader its parsed form, variant index and the
+programs of the player's graphics API.
+
+`extract` writes the scene of a live directory instead (livescene/scene.json with textures and shaders) through
+export.Exporter in its "livescene" clip format (clips inlined once, bindings with crc32 keys, path candidates and
+curve counts):
 
   player          colour space, quality levels, URP pipelines, renderer data (player.py)
-  scene           the addressable scene EmbScene/Live as a node list (Live prefab instance with
-                  cameras, render canvas, background view and UI canvases; LiveGameView with
-                  the lane camera, lane, note/effect containers; LiveStartTimelineDirector)
-  laneSkin        lane skin sprites (lane_base, lane_tap_area, out_side_line) of the LiveSkinId option's
-                  MasterLiveLaneSkin row
+  scene           the scene as a node list
+  laneSkin        lane skin sprites of the LiveSkinId option's MasterLiveLaneSkin row
   assets          further prefabs by key: the start timeline of the band, the lane line prefab
   master          master rows the render path reads (music, quality settings, option defaults)
   derived         lane geometry computed with the game's formulas for the default options
@@ -19,13 +52,9 @@ What exists on the live screen before the first note:
 Only what the LightWeight screen (mode 3) loads is exported (LiveResourceLoadPipelineFactory.Create): the mode-1
 stage (Band/{b}/live_stage/live_stage, its Volume Profile, StageBlinkLight), the background director and camera
 blends are not loaded in mode 3; EmbLive/Volume/LiveStageVolume is referenced by nothing; the LiveGameVolume
-profile is part of the scene (LiveEffectCamera's Volume).
-
-Objects are exported with export.Exporter in its "livescene" clip format (clips inlined once,
-bindings with crc32 keys, path candidates and curve counts).
-
-Only the music row, the slice and the jacket sprite depend on the music: `band_part` exports the rest once for a
-band and `music_part` completes it for each music of that band (the same document as `extract`).
+profile is part of the scene (LiveEffectCamera's Volume). Only the music row, the slice and the jacket sprite depend
+on the music: `band_part` exports the rest once for a band and `music_part` completes it for each music of that band
+(the same document as `extract`).
 """
 
 from __future__ import annotations
@@ -33,14 +62,24 @@ from __future__ import annotations
 import json
 import math
 from pathlib import Path
-
-import numpy as np
+from typing import TYPE_CHECKING
 
 from ..core.jsonio import write_json
-from ..unity.export import Exporter
-from .livenotes import LANE_COUNT, LANE_VIEW
+from .livenotes import BAR_LINE_CHAIN, LANE_COUNT, LANE_VIEW, NOTE_VIEW, animator_bindings
 from .liveoptions import OPTION_ITEM_TYPES
-from .score import master_table
+from .prefabs import (
+    Objects,
+    Prefab,
+    component_class,
+    component_ref,
+    has_json,
+    key_object,
+    ref_id,
+    shader_table,
+)
+
+if TYPE_CHECKING:
+    from ..unity.export import Exporter
 
 # --- keys -------------------------------------------------------------------
 SCENE_KEY = "EmbScene/Live"
@@ -90,7 +129,36 @@ OPTION_ITEMS = {
 }
 
 
+SCENE_FORMAT = 1  # scene.json "format"
+SCENE_TABLES = (
+    "MasterOptionDefault",
+    "MasterOptionRange",
+    "MasterLiveQualitySettings",
+    "MasterLiveLaneSkin",
+    "MasterBand",
+    "MasterLiveJudgementSprite",
+)
+LANE_LINE_KEY = ASSET_KEYS["laneLinePrefab"]
+JUDGE_EFFECT_KEY = "EmbLive/Prefabs/UILiveNoteJudgeEffectView"
+# the sprite assets of the live UI: {name: (key, script class)}
+SPRITE_ASSETS = {
+    "combo": ("Live/UiSpriteAssets/LiveComboSpriteAsset", "LiveComboSpriteAsset"),
+    "judgement": ("Live/UiSpriteAssets/LiveJudgementSpriteAsset", "LiveJudgementSpriteAsset"),
+}
+TIMELINE_KEY = ASSET_KEYS["startTimeline"]
+BACKGROUND_KEY = SPRITE_KEYS["lightweightBackground"]
+# the built-in settings of `graphics`: {name: built-in selector}
+GRAPHICS = {"graphics": "GraphicsSettings", "quality": "QualitySettings", "player": "PlayerSettings"}
+
+
+def lane_skin_key(name: str, part: str) -> str:
+    """The sprite of part `part` (LANE_SKIN_PARTS) of the lane skin of MasterLiveLaneSkin._assetName `name`."""
+    return f"Live/Lane/{name}/{part}"
+
+
 def master_rows(master: Path, music_id: int) -> dict:
+    from .score import master_table
+
     music = next(r for r in master_table(master, "MasterLiveMusic") if r["_id"] == music_id)
     opts = {
         r["_optionItemType"]: r["_valueString"]
@@ -143,6 +211,8 @@ def _comp(node: dict, cls: str) -> dict:
 
 def derive_lane(nodes: list, options: dict) -> dict:
     """Lane geometry for the given option values (MasterOptionDefault preset 1 strings)."""
+    import numpy as np
+
     lv = _comp(_node(nodes, "LiveGameView/root/LiveGameLane"), "LiveLaneView")
     llv = _comp(_node(nodes, "LiveGameView/root/LiveGameLane/lines"), "LiveLaneLineView")
     jr = _node(nodes, "LiveGameView/root/LiveGameLane/judgement_root")
@@ -246,6 +316,191 @@ def lane_2d(lane_count: int = LANE_COUNT) -> dict:
         "spawnPosition": [sx, c1 + s1 * sx],
         "pixelsPerUnit": 100.0,
     }
+
+
+# --- product ----------------------------------------------------------------
+def scene_record(tables: dict) -> dict:
+    """What scene_settings and scene_keys read of the master tables `tables` {name: rows} (SCENE_TABLES): the
+    preset-1 defaults and the ranges of OPTION_ITEMS, the quality settings, the lane skins, the bands and the
+    judgement sprites."""
+    return {
+        "MasterOptionDefault": [
+            r for r in tables["MasterOptionDefault"] if r["_presetId"] == 1 and r["_optionItemType"] in OPTION_ITEMS
+        ],
+        "MasterOptionRange": [r for r in tables["MasterOptionRange"] if r["_optionItemType"] in OPTION_ITEMS],
+        "MasterLiveQualitySettings": tables["MasterLiveQualitySettings"],
+        "MasterLiveLaneSkin": tables["MasterLiveLaneSkin"],
+        "MasterBand": tables["MasterBand"],
+        "MasterLiveJudgementSprite": tables["MasterLiveJudgementSprite"],
+    }
+
+
+def scene_keys(record: dict) -> list[str]:
+    """The catalog keys of the scene product: the scene, the lane line and judge effect prefabs, the UI sprite assets,
+    the sprites of every lane skin and the start timeline and background of every band."""
+    keys = {SCENE_KEY, LANE_LINE_KEY, JUDGE_EFFECT_KEY, *(k for k, _ in SPRITE_ASSETS.values())}
+    keys.update(lane_skin_key(r["_assetName"], p) for r in record["MasterLiveLaneSkin"] for p in LANE_SKIN_PARTS)
+    keys.update(k.format(band=r["_id"]) for r in record["MasterBand"] for k in (TIMELINE_KEY, BACKGROUND_KEY))
+    return sorted(keys)
+
+
+def scene_settings(record: dict) -> dict:
+    """scene.json `settings` (module documentation) from a scene_record."""
+    opts = {OPTION_ITEMS[r["_optionItemType"]]: r["_valueString"] for r in record["MasterOptionDefault"]}
+    skins = {r["_id"]: r["_assetName"] for r in record["MasterLiveLaneSkin"]}
+    judgements = sorted(record["MasterLiveJudgementSprite"], key=lambda r: r["_noteSimulateJudgement"])
+    return {
+        "optionDefaults": dict(sorted(opts.items())),
+        "optionRanges": {
+            OPTION_ITEMS[r["_optionItemType"]]: [r["_minValue"], r["_maxValue"]]
+            for r in sorted(record["MasterOptionRange"], key=lambda r: r["_optionItemType"])
+        },
+        "qualitySettings": record["MasterLiveQualitySettings"],
+        "laneSkin": skins[int(opts["LiveSkinId"])],
+        "laneSkins": {str(i): n for i, n in sorted(skins.items())},
+        "judgementSprites": {str(r["_noteSimulateJudgement"]): r["_spriteName"] for r in judgements},
+    }
+
+
+def _one_component(objects: Objects, prefabs: list[str], cls: str) -> tuple[str, dict]:
+    """(prefab GameObject id, component) of the one component of class `cls` of the hierarchies `prefabs`."""
+    hits = [(g, c) for g in prefabs for _, c in Prefab(objects.json(g)).components(cls)]
+    if len(hits) != 1:
+        raise ValueError(f"{len(hits)} {cls} components")
+    return hits[0]
+
+
+def _tracks(objects: Objects, asset: str) -> list[tuple[str, dict]]:
+    """(id, document) of every track of a TimelineAsset, depth first through group tracks."""
+    out = []
+
+    def walk(refs) -> None:
+        for r in refs:
+            t = ref_id(r)
+            if t is not None:
+                out.append((t, objects.json(t)))
+                walk(out[-1][1].get("m_Children", ()))
+
+    walk(objects.json(asset).get("m_Tracks", ()))
+    return out
+
+
+def _track_clips(objects: Objects, track: dict) -> list[str]:
+    """The clips a track plays: the clips of its TimelineClips' AnimationPlayableAssets and its infinite clip."""
+    out = []
+    for c in track.get("m_Clips", ()):
+        a = ref_id(c.get("m_Asset"))
+        clip = ref_id(objects.json(a).get("m_Clip")) if a is not None else None
+        if clip is not None:
+            out.append(clip)
+    infinite = ref_id(track.get("m_AnimClip"))
+    return out + ([infinite] if infinite is not None else [])
+
+
+def _band(objects: Objects, band: int, scene: list[str], plays: dict) -> dict:
+    """The `bands` entry of band `band` (module documentation); adds what each track plays to `plays` {prefab
+    GameObject id: {Animator node path: clip ids}}."""
+    key = TIMELINE_KEY.format(band=band)
+    gid = key_object(objects, key, "GameObject")
+    assets = [
+        ref_id(c["fields"].get("m_PlayableAsset")) for _, c in Prefab(objects.json(gid)).components("PlayableDirector")
+    ]
+    if len(assets) != 1 or assets[0] is None:
+        raise ValueError(f"{key}: {len(assets)} PlayableDirectors, expected one playing a TimelineAsset")
+    owners = {"scene": scene, "timeline": [gid]}
+    tracks = {}
+    for tid, track in _tracks(objects, assets[0]):
+        name, clips = track.get("m_Name"), _track_clips(objects, track)
+        if name not in TIMELINE_TRACK_ANIMATORS:
+            if clips:
+                raise ValueError(f"{key}: track {name} plays clips on no known Animator")
+            continue
+        where, cls, field = TIMELINE_TRACK_ANIMATORS[name]
+        owner, comp = _one_component(objects, owners[where], cls)
+        hit = component_ref(objects, owner, comp["fields"].get(field))
+        if hit is None or component_class(hit[2]) != "Animator":
+            raise ValueError(f"{key}: {cls}.{field} of track {name} is no Animator")
+        path = objects.json(hit[0])["nodes"][hit[1]]["path"]
+        tracks[tid] = {"name": name, "prefab": hit[0], "animator": path}
+        plays.setdefault(hit[0], {}).setdefault(path, []).extend(clips)
+    return {
+        "timeline": gid,
+        "background": key_object(objects, BACKGROUND_KEY.format(band=band), "Sprite"),
+        "tracks": tracks,
+    }
+
+
+def _bar_line_view(objects: Objects, scene: list[str]) -> str:
+    """The prefab GameObject of the bar line view: BAR_LINE_CHAIN from the scene's LiveAllNoteView."""
+    path, cls = NOTE_VIEW
+    owners = [g for g in scene if any(n["path"] == path for n in objects.json(g)["nodes"])]
+    if len(owners) != 1:
+        raise ValueError(f"{SCENE_KEY}: {len(owners)} hierarchies with a node at {path}")
+    gid, comp = _one_component(objects, owners, cls)
+    node = 0
+    for field, want in BAR_LINE_CHAIN:
+        hit = component_ref(objects, gid, comp["fields"].get(field))
+        if hit is None or component_class(hit[2]) != want:
+            raise ValueError(f"{SCENE_KEY}: {cls}.{field} is no {want}")
+        (gid, node, comp), cls = hit, want
+    if node != 0:
+        raise ValueError(f"{SCENE_KEY}: the bar line view is not the root of its prefab")
+    return gid
+
+
+def _builtin(objects: Objects, cls: str) -> str:
+    """The one root of class `cls` (a built-in setting)."""
+    hits = [o for o in objects.roots if o in objects and objects.info(o).get("class") == cls]
+    if len(hits) != 1:
+        raise ValueError(f"{len(hits)} {cls} roots")
+    return hits[0]
+
+
+def scene(objects: Objects, record: dict) -> tuple[dict, set[str], dict[str, set[str]]]:
+    """(scene.json, the object ids the player reads, {shader id: the roles of its files it reads}) of the scene
+    product (module documentation; `record`: scene_record)."""
+    roots = [o for o in objects.key(SCENE_KEY) if o in objects]
+    gos = [o for o in roots if objects.info(o).get("class") == "GameObject" and has_json(objects, o)]
+    render = [o for o in roots if objects.info(o).get("class") == "RenderSettings"]
+    if len(render) != 1:
+        raise ValueError(f"{SCENE_KEY}: {len(render)} RenderSettings")
+    plays: dict[str, dict[str, list[str]]] = {}
+    bands = {
+        str(r["_id"]): _band(objects, r["_id"], gos, plays)
+        for r in sorted(record["MasterBand"], key=lambda r: r["_id"])
+        if objects.key(TIMELINE_KEY.format(band=r["_id"]))
+    }
+    graphics = {name: _builtin(objects, cls) for name, cls in GRAPHICS.items()}
+    always = (ref_id(r) for r in objects.json(graphics["graphics"]).get("m_AlwaysIncludedShaders", ()))
+    shaders, roles = shader_table(objects, found=[o for o in always if o is not None])
+    missing = [n for n in PLAYER_SHADERS if n not in shaders]
+    if missing:
+        raise ValueError(f"{SCENE_KEY}: a lookup by name finds no shader {', '.join(missing)}")
+    skins = sorted(record["MasterLiveLaneSkin"], key=lambda r: r["_id"])
+    doc = {
+        "format": SCENE_FORMAT,
+        "scene": gos,
+        "renderSettings": render[0],
+        "graphics": graphics,
+        "laneSkins": {
+            r["_assetName"]: {
+                p: key_object(objects, lane_skin_key(r["_assetName"], p), "Sprite") for p in LANE_SKIN_PARTS
+            }
+            for r in skins
+        },
+        "prefabs": {
+            "laneLine": key_object(objects, LANE_LINE_KEY, "GameObject"),
+            "judgeEffectView": key_object(objects, JUDGE_EFFECT_KEY, "GameObject"),
+            "barLineView": _bar_line_view(objects, gos),
+        },
+        "spriteAssets": {name: key_object(objects, key, cls) for name, (key, cls) in SPRITE_ASSETS.items()},
+        "bands": bands,
+        "settings": scene_settings(record),
+        "bindings": animator_bindings(objects, plays),
+        "shaders": shaders,
+    }
+    keep = {o for o in objects.ids() if objects.info(o).get("class") != "MonoScript"}
+    return doc, keep, roles
 
 
 # --- extraction -------------------------------------------------------------
@@ -356,6 +611,8 @@ def _export(
 ):
     """The export sequence of extract (jacket None: without the jacket sprite, the slice and the music rows left as
     placeholders for music_part). -> (exporter, doc, shader index, shader summary, timeline counts, dropped)."""
+    from ..unity.export import Exporter
+
     ex = Exporter(cat, base, player=player, clip_format="livescene", defer_writes=True)
     graphics = player.graphics()
     doc: dict = {"player": graphics}
@@ -504,14 +761,14 @@ def music_part(
     already in <out_dir>/livescene): the document extract writes. Raises SharedSceneMismatch when the jacket's
     bundle closure holds shaders or a hierarchy (extract would dump or resolve against them) or the jacket texture
     is one of the scene's (extract would keep it)."""
-    from ..unity.export import Exporter as _Exporter
+    from ..unity.export import Exporter
 
     out_dir = Path(out_dir)
     band = part["band"]
     rows = master_rows(master, music_id)
     doc = json.loads(json.dumps(part["doc"]))
     key = SPRITE_KEYS["jacket"].format(band=band, jacket=rows["liveMusic"]["_jacketAssetName"])
-    ex = _Exporter(cat, out_dir / "livescene", player=player, clip_format="livescene")
+    ex = Exporter(cat, out_dir / "livescene", player=player, clip_format="livescene")
     env, _ = ex.load(key)
     kinds = {o.type.name for o in env.objects} & {"Shader", "GameObject", "Transform", "RectTransform"}
     if kinds:

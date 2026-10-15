@@ -7,18 +7,19 @@ import sys
 
 import pytest
 
-from nnnotes.content import liveaudio, livenotes
+from nnnotes.content import liveaudio, livenotes, livescene
 from nnnotes.formats import encoders
 from nnnotes.pipeline import assemble, contract, cristages, live
 from nnnotes.pipeline.assemble import Assembly, ProductStage
 from nnnotes.pipeline.contract import IncompatibleTask, Input, Task
 from nnnotes.pipeline.cristages import AudioStage
 from nnnotes.pipeline.depot import Depot
-from nnnotes.pipeline.live import MusicStage, NoteEffectStage, NoteSkinStage, NotesStage, SoundsStage
+from nnnotes.pipeline.live import MusicStage, NoteEffectStage, NoteSkinStage, NotesStage, SceneStage, SoundsStage
 from nnnotes.pipeline.stages import Env, describe, execute, registry
 from tests.content.test_live_options import write_master
 from tests.helpers import cri
 from tests.helpers import livenotes as ln
+from tests.helpers import livescene as ls
 from tests.pipeline.test_assemble import addresses
 from tests.pipeline.test_cristages import export_result, fake_tools, planning
 from tests.site.test_story_site import mp4
@@ -161,7 +162,7 @@ def test_the_note_stages_name_their_subjects_keys_and_manifests(tmp_path):
     assert notes.select(keys, env) == ["default"] and notes.select(keys[1:], env) == []
     assert notes.select(keys, Env(env.depot, {"master": None})) == []
     assert notes.manifest("default") == "notes/default.json"
-    with pytest.raises(ValueError, match="live notes subject is default"):
+    with pytest.raises(ValueError, match="the only subject is default"):
         notes.keys("NoteDesignId=1", env)
     flicks = [livenotes.NOTE_PREFABS[v] for v in livenotes.FLICK_SKIN_UNITS]
     assert skins.keys("skin002", env) == sorted([livenotes.skin_key("skin002"), *flicks])
@@ -175,6 +176,42 @@ def test_the_note_stages_name_their_subjects_keys_and_manifests(tmp_path):
     assert effects.manifest("effect001Light") == "noteeffects/effect001Light.json"
     with pytest.raises(ValueError, match="not a note skin or effect set name"):
         effects.keys("a/b", env)
+
+
+def scene_master_dir(tmp_path):
+    """master_dir with the tables of the scene's lane skins, bands, quality settings and judgement sprites."""
+    md = master_dir(tmp_path)
+    for name in ("MasterLiveQualitySettings", "MasterLiveLaneSkin", "MasterBand", "MasterLiveJudgementSprite"):
+        (md / f"{name}.json").write_text(json.dumps({"_allData": ls.master()[name]}), encoding="utf-8")
+    return md
+
+
+def test_the_scene_stage_names_its_subject_keys_and_manifest(tmp_path):
+    env = Env(Depot(tmp_path / "d"), {"master": scene_master_dir(tmp_path)})
+    stage = SceneStage()
+    keys = stage.keys("default", env)
+    assert livescene.SCENE_KEY in keys and "Band/2/timeline/live_start_playable_timeline" in keys
+    assert stage.builtins("default", env) == ["GraphicsSettings", "QualitySettings", "PlayerSettings"]
+    assert stage.select([livescene.SCENE_KEY], env) == ["default"]
+    assert stage.select([k for k in keys if k != livescene.SCENE_KEY], env) == []
+    assert stage.select(keys, Env(env.depot, {"master": None})) == []
+    assert stage.manifest("default") == "scenes/default.json"
+    with pytest.raises(ValueError, match="the only subject is default"):
+        stage.keys("band/1", env)
+
+
+def test_the_scene_product_keeps_what_the_player_reads(tmp_path):
+    depot = Depot(tmp_path / "d")
+    env = Env(depot, {"master": scene_master_dir(tmp_path)})
+    stage = SceneStage()
+    record = master_record(env, stage, "default")
+    objects = stored(depot, contract.encode(ls.table(depot, contract.loads(depot.input_bytes(record)))), "objects")
+    _, _, arts = run(depot, stage, "default", [objects, record])
+    assert set(arts) == {"scene.json", "objects"} and arts["scene.json"]["semantics"]["kind"] == "live.scene"
+    scene = contract.loads(depot.read(arts["scene.json"]["content"]["sha256"]))
+    assert scene["bands"]["1"]["timeline"] == ls.TL and scene["settings"]["laneSkin"] == "skin001"
+    kept = contract.loads(depot.read(arts["objects"]["content"]["sha256"]))["objects"]
+    assert ls.SCRIPT not in kept and ls.LIVE in kept and ls.GRAPHICS in kept
 
 
 def test_sounds_subjects_name_the_offered_sets():
@@ -411,7 +448,7 @@ def test_a_cue_sheet_the_request_does_not_hold_is_an_error(tmp_path):
 def test_planning_the_stages_does_not_import_unitypy():
     code = (
         "import sys, nnnotes.pipeline.live as m; m.MusicStage(); m.SoundsStage(); m.NotesStage(); "
-        "m.NoteSkinStage(); m.NoteEffectStage(); "
+        "m.NoteSkinStage(); m.NoteEffectStage(); m.SceneStage(); "
         "print(sorted(x for x in ('UnityPy', 'numpy', 'PIL') if x in sys.modules))"
     )
     r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
