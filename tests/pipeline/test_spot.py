@@ -40,8 +40,8 @@ def test_the_stages_start_from_their_key():
     assert rooms.manifest(so.BACKGROUND) == "rooms/home_a.json"
     assert spots.manifest(so.SITUATION) == "spots/home_a_01.json"
     keys = [so.BACKGROUND, so.SITUATION, "Spot/b/b_01/b_01", "Spot/a/b/c", "Character/x"]
-    assert rooms.select(keys) == [so.BACKGROUND]
-    assert spots.select(keys) == ["Spot/b/b_01/b_01", so.SITUATION]
+    assert rooms.select(keys, None) == [so.BACKGROUND]
+    assert spots.select(keys, None) == ["Spot/b/b_01/b_01", so.SITUATION]
     assert rooms.MASTER == () and spots.MASTER == spot.MASTER_TABLES
     with pytest.raises(ValueError, match="not a spot situation key"):
         spots.keys(so.BACKGROUND, None)

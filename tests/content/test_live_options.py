@@ -350,8 +350,12 @@ def test_live_se_sounds_cover_every_result():
     assert list(liveaudio.LIVE_SE_SOUNDS) == sorted(liveaudio.LIVE_SE_SOUNDS)
 
 
+def note_se_tables(m) -> dict:
+    return {t: score.master_table(m, t) for t in ("MasterOptionDefault", "MasterLiveNoteSe")}
+
+
 def test_note_se_settings_default_and_groups(tmp_path):
-    m = write_master(tmp_path / "m")
+    m = note_se_tables(write_master(tmp_path / "m"))
     d = liveaudio.note_se_settings(m)
     assert d["types"] == {str(t): 1000 + t for t in range(1, 15)} and d["patternId"] == 1
     assert not d["useIndividualNoteSe"] and "groups" not in d
@@ -364,7 +368,7 @@ def test_note_se_settings_default_and_groups(tmp_path):
 
 
 def test_note_se_individual_and_trace_mute(tmp_path):
-    m = write_master(tmp_path / "m", individual=True, trace_mute=True)
+    m = note_se_tables(write_master(tmp_path / "m", individual=True, trace_mute=True))
     d = liveaudio.note_se_settings(m)
     assert d["useIndividualNoteSe"]
     # TapSeId (432) 3 -> types 2, 3, 4, 8; SlideSeId (438) 3 -> 7, 10; the others set 1

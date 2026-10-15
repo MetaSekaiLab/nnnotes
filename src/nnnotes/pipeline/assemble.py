@@ -11,11 +11,19 @@ from sprite.crop. A reached unit that the request did not export is an error of 
 that no census holds is listed as missing.
 
 A task's inputs are the object table of what it reaches ("objects", nnnotes.objects/1: every object with its class,
-name, item status and files, the contained ones with the object holding them) and what `more_inputs` adds (master
-tables, parameters' data); it depends on the unity.export and sprite.crop tasks it read. `assemble` makes the
-product's own files from the table and the bytes of its objects; the result holds them as "<task id>#<path>", the
-table of the objects they use as "<task id>#objects", and one item for the subject. A product layout
-(layout.product_entries) places the files and the objects' files and writes the product's manifest.
+name, item status and files, the contained ones with the object holding them), the APK files the stage names in `APK`
+("apk:<path in the APK>", from the fact "apk"), the cue sheets of the catalog keys `cue_sheets(subject)` gives and
+what `more_inputs` adds (master tables, parameters' data); it depends on the unity.export and sprite.crop tasks it
+read and the cri.audio tasks of its cue sheets. A cue sheet is the ACB the key loads: held in a bundle (the `acb`
+file of an object of the key) or a raw file of the catalog (a dependency of the key that cri.audio decoded); its
+inputs are the ACB ("acb:<key>") and, in "sheets", the files cri.audio made of it ({key: {acb, status, reason?,
+files}}).
+
+`assemble` makes the product's own files from the table, the bytes of its objects and its cue sheets (Sheet); a file
+may be content the depot already holds (Stored: a decoded waveform), recorded without reading it again. The result
+holds them as "<task id>#<path>", the table of the objects they use as "<task id>#objects", and one item for the
+subject. A product layout (layout.product_entries) places the files and the objects' files and writes the product's
+manifest.
 """
 
 from __future__ import annotations
@@ -30,9 +38,10 @@ from .layout import PRODUCT_TABLE, escape_segment
 from .orchestrate import SEVERITY
 from .stages import Output, Stage
 
-EXPORT, CROP = "unity.export", "sprite.crop"
+EXPORT, CROP, AUDIO = "unity.export", "sprite.crop", "cri.audio"
 ADDRESSES = units.ADDRESSES
 TABLE_KIND = "product.objects"
+SHEETS_INPUT = "sheets"
 
 
 def request(stages: dict, products: dict, env) -> dict:
@@ -173,14 +182,60 @@ def reach(env, roots, results: _Results | None = None) -> Reach:
     return Reach(doc, sorted(read), size)
 
 
-class Objects:
-    """The object table of a product task and the bytes of its objects' files (from the depot)."""
+@dataclass(frozen=True)
+class Stored:
+    """A product file that is content the depot holds: its content id and size."""
 
-    def __init__(self, doc: dict, depot):
+    sha256: str
+    size: int
+
+
+class Sheet:
+    """A cue sheet of a product task: its ACB and the files cri.audio made of it (one per stream, `cues.json`,
+    `streams.json`)."""
+
+    def __init__(self, key: str, entry: dict, acb: Input, depot):
+        self.key, self.entry, self._acb, self.depot = key, entry, acb, depot
+
+    def _check(self) -> None:
+        if self.entry["status"] != "exported":
+            reason = self.entry.get("reason") or "unsupported.cri.sheet"
+            raise Unsupported(reason, f"cue sheet {self.key} was not decoded ({self.entry['status']})")
+
+    def acb(self) -> bytes:
+        return self.depot.input_bytes(self._acb)
+
+    def file(self, name: str) -> Stored:
+        self._check()
+        f = self.entry["files"].get(name)
+        if f is None:
+            raise KeyError(f"cue sheet {self.key} has no file {name!r}")
+        return Stored(f["sha256"], f["size"])
+
+    def bytes(self, name: str) -> bytes:
+        return self.depot.read(self.file(name).sha256)
+
+    def streams(self) -> list[dict]:
+        """streams.json: every stream in decoder order ({stream, name, file, sampleRate, channels, samples, ...})."""
+        return contract.loads(self.bytes("streams.json"))
+
+
+class Objects:
+    """The object table of a product task, the bytes of its objects' files (from the depot) and its cue sheets."""
+
+    def __init__(self, doc: dict, depot, sheets: dict | None = None):
         self.doc, self.depot = doc, depot
         self.roots: list[str] = doc["roots"]
         self._objects: dict = doc["objects"]
         self._json: dict = {}
+        self._sheets: dict[str, Sheet] = sheets or {}
+
+    def sheet(self, key: str) -> Sheet:
+        """The cue sheet of the catalog key `key` (one of the stage's cue_sheets)."""
+        try:
+            return self._sheets[key]
+        except KeyError:
+            raise KeyError(f"cue sheet {key} is not an input of the product") from None
 
     def __contains__(self, oid: str) -> bool:
         return oid in self._objects
@@ -211,10 +266,10 @@ class Objects:
 
 @dataclass
 class Assembly:
-    """What `assemble` makes: the product's files {path: (bytes, extension, kind)} and what of the object table they
-    use: `objects` the object ids (None: every object of the table), `roles` {object id: the roles of its files the
-    product keeps} for an object of which it uses some files only (a shader's programs for one graphics API). The
-    product's object table, and so its manifest, holds only those."""
+    """What `assemble` makes: the product's files {path: (bytes or Stored, extension, kind)} and what of the object
+    table they use: `objects` the object ids (None: every object of the table), `roles` {object id: the roles of its
+    files the product keeps} for an object of which it uses some files only (a shader's programs for one graphics
+    API). The product's object table, and so its manifest, holds only those."""
 
     files: dict
     objects: set | None = None
@@ -244,12 +299,14 @@ def _prune(tid: str, objects: dict, made: Assembly) -> dict:
 
 class ProductStage(Stage):
     """Base of the product stages (module documentation). Subclasses set `name`, `version` and `KIND`, and define
-    `keys`, `resources` and/or `root_objects` and `assemble`; `subjects` defaults to the subjects of the fact
-    "products". A stage that reads master tables names them in `MASTER` (its inputs come from the fact "master")."""
+    `keys`, `resources`, `builtins` and/or `root_objects` and `assemble`; `subjects` defaults to the subjects of the
+    fact "products". A stage that reads master tables names them in `MASTER` (its inputs come from the fact
+    "master"), one that reads files of the APK names them in `APK`."""
 
-    after = (ADDRESSES, EXPORT, CROP)
+    after = (ADDRESSES, EXPORT, CROP, AUDIO)
     KIND = "product"
     MASTER: tuple[str, ...] = ()
+    APK: tuple[str, ...] = ()
 
     def __init__(self):
         self._memo: dict = {}
@@ -266,8 +323,9 @@ class ProductStage(Stage):
     def subjects(self, env) -> list[str]:
         return sorted((env.facts.get("products") or {}).get(self.name, ()))
 
-    def select(self, keys: list[str]) -> list[str]:
-        """The subjects among the catalog keys `keys` (those a selection's bundles hold), sorted."""
+    def select(self, keys: list[str], env) -> list[str]:
+        """The subjects among the catalog keys `keys` (those a selection's bundles hold), sorted (from the facts
+        alone)."""
         return []
 
     def keys(self, subject: str, env) -> list[str]:
@@ -286,6 +344,10 @@ class ProductStage(Stage):
     def root_objects(self, subject: str, env) -> list[str]:
         """Object ids that are roots of `subject` besides those of its keys and resource paths (from the facts
         alone)."""
+        return []
+
+    def cue_sheets(self, subject: str, env) -> list[str]:
+        """The catalog keys of the cue sheets `subject` reads (from the facts alone; each also one of its `keys`)."""
         return []
 
     def more_inputs(self, subject: str, env) -> list[Input]:
@@ -317,15 +379,68 @@ class ProductStage(Stage):
         self._memo[subject] = (sig, [(t, env.key(t)) for t in r.read], r)
         return r
 
+    def sheets(self, subject: str, env) -> dict[str, tuple[Input, str]]:
+        """{catalog key: (its ACB as input "acb:<key>", the cri.audio task id)} of the cue sheets of `subject`."""
+        keys = self.cue_sheets(subject, env)
+        if not keys:
+            return {}
+        objects = self.reach(subject, env).table["objects"]
+        out = {}
+        for key in keys:
+            held: dict[str, Input] = {}  # content id -> the ACB
+            for o in units.root_objects(env, [key]):
+                f = (objects.get(o, {}).get("files") or {}).get("acb")
+                if f is not None:
+                    held[f["sha256"]] = Input(f"acb:{key}", f["sha256"], f["size"], None, ({"kind": "depot"},))
+            if not held:  # a raw file of the catalog that cri.audio decodes
+                raw = env.facts.get("raw") or {}
+                for stable in _raw_files(env.fact("index")).get(key, ()):
+                    if stable not in raw:
+                        raise ValueError(f"cue sheet {key}: the request does not hold its file {stable}")
+                    i = raw[stable]
+                    if env.known(contract.task_id(AUDIO, i.sha256)):
+                        held[i.sha256] = Input(f"acb:{key}", i.sha256, i.size, i.name, i.locators)
+            if len(held) != 1:
+                what = "no ACB" if not held else f"{len(held)} ACBs"
+                raise ValueError(f"cue sheet {key}: {what} in what the request holds")
+            (acb,) = held.values()
+            out[key] = (acb, contract.task_id(AUDIO, acb.sha256))
+        return out
+
     def inputs(self, subject: str, env) -> list[Input]:
         data = contract.encode(self.reach(subject, env).table)
         table = Input("objects", env.depot.put(data), len(data), None, ({"kind": "depot"},))
-        return [table, *self.more_inputs(subject, env)]
+        out = [table]
+        if self.APK:
+            have = env.fact("apk")
+            for m in self.APK:
+                if m not in have:
+                    raise ValueError(f"{self.name} reads {m} of the APK: set [paths] apk to an APK that holds it")
+                out.append(have[m])
+        sheets = self.sheets(subject, env)
+        if sheets:
+            doc = {}
+            for key, (acb, tid) in sheets.items():
+                res = env.result(tid)
+                (item,) = res["items"]
+                e = {"acb": acb.sha256, "status": item["status"]}
+                if "reason" in item:
+                    e["reason"] = item["reason"]["code"]
+                e["files"] = {
+                    contract.parse_artifact_id(a["id"])[1]: {k: a["content"][k] for k in ("sha256", "size", "ext")}
+                    for a in res["artifacts"]
+                }
+                doc[key] = e
+                out.append(acb)
+            data = contract.encode(doc)
+            out.append(Input(SHEETS_INPUT, env.depot.put(data), len(data), None, ({"kind": "depot"},)))
+        return out + self.more_inputs(subject, env)
 
     def depends(self, subject: str, env) -> list[str]:
         named = self.keys(subject, env) or self.resources(subject, env) or self.builtins(subject, env)
         own = [contract.task_id(ADDRESSES, s) for s in sorted(env.fact("catalogs"))] if named else []
-        return own + self.reach(subject, env).read
+        audio = sorted({tid for _, tid in self.sheets(subject, env).values()})
+        return own + self.reach(subject, env).read + audio
 
     def estimate(self, subject: str, env, inputs: list[Input]) -> Cost:
         """From the bytes of the objects' files: a product reads each of them about once."""
@@ -336,8 +451,12 @@ class ProductStage(Stage):
     def run(self, task, depot) -> Output:
         data = depot.input_bytes(task.input("objects"))
         doc = contract.loads(data)
+        sheets = {}
+        if any(i.role == SHEETS_INPUT for i in task.inputs):
+            for key, e in contract.loads(depot.input_bytes(task.input(SHEETS_INPUT))).items():
+                sheets[key] = Sheet(key, e, task.input(f"acb:{key}"), depot)
         try:
-            made = self.assemble(task, Objects(doc, depot))
+            made = self.assemble(task, Objects(doc, depot, sheets))
         except Unsupported as e:
             why = contract.reason(e.code, e.message)
             return Output([], [contract.item(task.id, "unsupported", why=why, cls=self.KIND)])
@@ -347,7 +466,13 @@ class ProductStage(Stage):
             if path == PRODUCT_TABLE:
                 raise ValueError(f"{task.id}: a product file cannot be named {PRODUCT_TABLE!r}")
             aid = contract.artifact_id(task.id, path)
-            arts.append(contract.artifact(aid, depot.add(body, ext), prov, {"kind": kind}))
+            if isinstance(body, Stored):
+                if not depot.has(body.sha256, body.size):
+                    raise ValueError(f"{task.id}: {path} is content {body.sha256} the depot does not hold")
+                content = {"sha256": body.sha256, "size": body.size, "mediaType": contract.media_type(ext), "ext": ext}
+            else:
+                content = depot.add(body, ext)
+            arts.append(contract.artifact(aid, content, prov, {"kind": kind}))
         if made.objects is not None or made.roles:
             doc = dict(doc, objects=_prune(task.id, doc["objects"], made))
             data = contract.encode(doc)
@@ -355,3 +480,26 @@ class ProductStage(Stage):
         arts.append(contract.artifact(aid, depot.add(data, "json"), prov, {"kind": TABLE_KIND}))
         item = contract.item(task.id, "exported", artifacts=[a["id"] for a in arts], cls=self.KIND)
         return Output(arts, [item])
+
+
+_RAW: dict = {}  # id of the last catalog index -> (the index, {catalog key: the raw files its locations depend on})
+
+
+def _raw_files(index: dict) -> dict[str, list[str]]:
+    """{catalog key: stable names of the raw files its locations depend on} of a catalog index (kept for the last
+    index)."""
+    hit = _RAW.get(id(index))
+    if hit is not None and hit[0] is index:
+        return hit[1]
+    from . import catalogdb
+
+    refs = catalogdb.file_refs(index)
+    out: dict[str, set] = {}
+    for loc in index["locations"]:
+        raws = {refs[d][1] for d in loc["dependencies"] if d in refs and refs[d][0] == "raw"}
+        if raws and loc["kind"] not in catalogdb.FILE_KINDS:
+            out.setdefault(loc["primaryKey"], set()).update(raws)
+    table = {k: sorted(v) for k, v in out.items()}
+    _RAW.clear()
+    _RAW[id(index)] = (index, table)
+    return table
