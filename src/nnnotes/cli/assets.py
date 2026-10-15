@@ -129,6 +129,8 @@ STAGE_SOURCES = (
     StageSource("live", "nnnotes.pipeline.live:LiveStage", output=True, product=True),
     StageSource("story.sound", "nnnotes.pipeline.story:SoundStage", output=True, product=True),
     StageSource("story.crilips", "nnnotes.pipeline.story:CriLipsStage", output=True, product=True),
+    StageSource("story.scene", "nnnotes.pipeline.story:SceneStage", output=True, product=True),
+    StageSource("story.asset", "nnnotes.pipeline.story:AssetStage", output=True, product=True),
     StageSource("view.", "nnnotes.pipeline.views:stages", output=True),
     StageSource("view.voices", "nnnotes.pipeline.voices:VoiceStage", output=True),
 )
