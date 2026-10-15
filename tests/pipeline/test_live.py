@@ -1,5 +1,5 @@
-"""The live sound products (pipeline.live) and the cue sheets of product stages (pipeline.assemble) on synthetic
-master tables, ACBs and decodes."""
+"""The live products (pipeline.live) and the cue sheets of product stages (pipeline.assemble) on synthetic master
+tables, ACBs, decodes and object tables."""
 
 import json
 import subprocess
@@ -7,17 +7,18 @@ import sys
 
 import pytest
 
-from nnnotes.content import liveaudio
+from nnnotes.content import liveaudio, livenotes
 from nnnotes.formats import encoders
 from nnnotes.pipeline import assemble, contract, cristages, live
 from nnnotes.pipeline.assemble import Assembly, ProductStage
 from nnnotes.pipeline.contract import IncompatibleTask, Input, Task
 from nnnotes.pipeline.cristages import AudioStage
 from nnnotes.pipeline.depot import Depot
-from nnnotes.pipeline.live import MusicStage, SoundsStage
+from nnnotes.pipeline.live import MusicStage, NoteEffectStage, NoteSkinStage, NotesStage, SoundsStage
 from nnnotes.pipeline.stages import Env, describe, execute, registry
 from tests.content.test_live_options import write_master
 from tests.helpers import cri
+from tests.helpers import livenotes as ln
 from tests.pipeline.test_assemble import addresses
 from tests.pipeline.test_cristages import export_result, fake_tools, planning
 from tests.site.test_story_site import mp4
@@ -152,6 +153,30 @@ def test_the_stages_name_their_subjects_keys_and_manifests(tmp_path):
         sounds.keys("NoteSePatternId=1,9", env)
 
 
+def test_the_note_stages_name_their_subjects_keys_and_manifests(tmp_path):
+    env = Env(Depot(tmp_path / "d"), {"master": master_dir(tmp_path)})
+    notes, skins, effects = NotesStage(), NoteSkinStage(), NoteEffectStage()
+    keys = notes.keys("default", env)
+    assert keys == livenotes.notes_keys() and livenotes.LANE_EFFECT_KEY in keys and len(keys) == 17
+    assert notes.select(keys, env) == ["default"] and notes.select(keys[1:], env) == []
+    assert notes.select(keys, Env(env.depot, {"master": None})) == []
+    assert notes.manifest("default") == "notes/default.json"
+    with pytest.raises(ValueError, match="live notes subject is default"):
+        notes.keys("NoteDesignId=1", env)
+    flicks = [livenotes.NOTE_PREFABS[v] for v in livenotes.FLICK_SKIN_UNITS]
+    assert skins.keys("skin002", env) == sorted([livenotes.skin_key("skin002"), *flicks])
+    held = [*keys, livenotes.skin_key("skin001"), livenotes.skin_key("skin002"), "Live/Note/x y/LiveNoteSkinAsset"]
+    assert skins.select(held, env) == ["skin001", "skin002"]  # a name that is no path segment is left out
+    assert skins.select([livenotes.skin_key("skin001")], env) == []  # without the flick views
+    assert skins.manifest("skin001") == "noteskins/skin001.json"
+    fx = [livenotes.effect_settings_key(n) for n in ("effect001", "effect001Light")]
+    assert effects.select([*fx, "Effect/Live/NoteEffect/effect001/note_normal"], env) == ["effect001", "effect001Light"]
+    assert effects.keys("effect001Light", env) == [fx[1]]
+    assert effects.manifest("effect001Light") == "noteeffects/effect001Light.json"
+    with pytest.raises(ValueError, match="not a note skin or effect set name"):
+        effects.keys("a/b", env)
+
+
 def test_sounds_subjects_name_the_offered_sets():
     assert liveaudio.sounds_subject() == "default" and liveaudio.sounds_groups("default") == ()
     assert liveaudio.sounds_subject((3, 1)) == "NoteSePatternId=1,3"
@@ -218,6 +243,26 @@ def test_the_music_product_in_aac_records_the_encoder_delay(tmp_path, monkeypatc
     assert layer["file"] == "audio/bgm_7/bgm_7.m4a" and layer["encoderDelay"] == 2112
     with pytest.raises(IncompatibleTask, match="audio encoder"):
         run(depot, stage, "7", inputs, None, {"audio.encode": "ffmpeg-other/1"})
+
+
+def test_the_notes_product_keeps_what_the_player_reads(tmp_path):
+    depot = Depot(tmp_path / "d")
+    env = Env(depot, {"master": master_dir(tmp_path)})
+    stage = NotesStage()
+    objects = stored(depot, contract.encode(ln.table(depot, ln.NOTES_KEYS)), "objects")
+    t, doc, arts = run(depot, stage, "default", [objects, master_record(env, stage, "default")])
+    assert set(arts) == {"notes.json", "objects"} and arts["notes.json"]["semantics"]["kind"] == "live.notes"
+    notes = contract.loads(depot.read(arts["notes.json"]["content"]["sha256"]))
+    assert notes["prefabs"]["tap_note_view"] == ln.prefab_id("tap_note_view")
+    assert notes["settings"]["skins"] == {"1": "skin001", "2": "skin002", "3": "skin003"}
+    kept = contract.loads(depot.read(arts["objects"]["content"]["sha256"]))["objects"]
+    assert ln.SCRIPT not in kept and ln.prefab_id("tap_note_view") in kept
+    assert sorted(kept[ln.SHADER]["files"]) == [
+        "index",
+        "json",
+        "program:gles3/s0p0_progVertex_0",
+        "program:gles3/s0p1_progVertex_1",
+    ]
 
 
 def test_the_sounds_product(tmp_path):
@@ -365,7 +410,8 @@ def test_a_cue_sheet_the_request_does_not_hold_is_an_error(tmp_path):
 
 def test_planning_the_stages_does_not_import_unitypy():
     code = (
-        "import sys, nnnotes.pipeline.live as m; m.MusicStage(); m.SoundsStage(); "
+        "import sys, nnnotes.pipeline.live as m; m.MusicStage(); m.SoundsStage(); m.NotesStage(); "
+        "m.NoteSkinStage(); m.NoteEffectStage(); "
         "print(sorted(x for x in ('UnityPy', 'numpy', 'PIL') if x in sys.modules))"
     )
     r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
