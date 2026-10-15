@@ -133,7 +133,7 @@ def _subtree(ctx: BundleObjects, h: Hierarchies, f: str, g, root_tf: int):
 def _component(ctx: BundleObjects, h: Hierarchies, o, root: tuple, unresolved: list) -> dict:
     key = ctx.key(o)
     tt = ctx.tt(key, whole=False)
-    out = {"type": o.type.name, "pathId": key[1]}
+    out = {"type": o.type.name, "pathId": str(key[1])}
     if o.type.name == "MonoBehaviour":
         entry = ctx.mono_script(key, tt)
         out["script"] = entry if entry and entry != NO_SCRIPT else None
@@ -164,8 +164,8 @@ def prefab(ctx: BundleObjects, info, h: Hierarchies, root: Root) -> None:
         node = {
             "path": g.path(tf),
             "name": go["m_Name"],
-            "pathId": go_pid,
-            "transformPathId": tf,
+            "pathId": str(go_pid),
+            "transformPathId": str(tf),
             "active": bool(go["m_IsActive"]),
             "layer": go["m_Layer"],
             "tag": go.get("m_Tag"),

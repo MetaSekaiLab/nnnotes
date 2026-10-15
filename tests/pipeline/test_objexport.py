@@ -855,7 +855,7 @@ def test_sprites_same_bundle(exported):
         assert load(depot, doc, f"{oid(pid)}#image") == png.encode(want)
         meta = obj(depot, doc, f"{oid(pid)}#json")
         rd = meta["renderData"]
-        assert rd["texture"] == {"$ref": {"file": CAB, "pathId": 10, "class": "Texture2D", "name": "tex"}}
+        assert rd["texture"] == {"$ref": {"file": CAB, "pathId": "10", "class": "Texture2D", "name": "tex"}}
         assert rd["textureRect"] == src["textureRect"] and rd["uvTransform"] == src["uvTransform"]
         assert rd["settingsRaw"] == src["settingsRaw"] and rd["alphaTexture"] is None
         assert meta["sprite"]["m_Name"] == tt["m_Name"]
@@ -873,7 +873,7 @@ def test_sprites_same_bundle(exported):
     meta = obj(depot, doc, f"{oid(11)}#json")
     assert meta["renderData"]["source"] == "renderData" and meta["renderData"]["atlas"] is None
     meta = obj(depot, doc, f"{oid(12)}#json")
-    assert meta["renderData"]["source"] == "atlas" and meta["renderData"]["atlas"]["$ref"]["pathId"] == 20
+    assert meta["renderData"]["source"] == "atlas" and meta["renderData"]["atlas"]["$ref"]["pathId"] == "20"
     assert meta["sprite"]["m_RD"]["m_VertexData"]["m_DataSize"]["$hex"]  # small: inline
     refs = art(doc, f"{oid(12)}#image")["semantics"]["refs"]
     assert refs == [{"rel": "texture", "object": oid(10)}, {"rel": "atlas", "object": oid(20)}]
@@ -885,7 +885,7 @@ def test_sprite_with_its_atlas_elsewhere_gets_a_meta_only(exported):
     a = art(doc, f"{oid(13)}#json")
     assert a["semantics"]["facts"] == {"crop": CROP, "atlas": f"{ATLAS_CAB}:99"}
     meta = obj(depot, doc, a["id"])
-    assert meta["image"] == {"source": "atlas", "atlas": {"$ref": {"file": ATLAS_CAB, "pathId": 99}}, "stage": CROP}
+    assert meta["image"] == {"source": "atlas", "atlas": {"$ref": {"file": ATLAS_CAB, "pathId": "99"}}, "stage": CROP}
     assert meta["object"]["name"] == "remote" and len(meta["mesh"]["positions"]) == 4
 
 
@@ -957,13 +957,13 @@ def test_prefab(exported):
     p = obj(depot, doc, f"{oid(60)}#json")
     assert p["name"] == "root" and [n["path"] for n in p["nodes"]] == ["root", "root/child"]
     root, child = p["nodes"]
-    assert root["pathId"] == 60 and root["transformPathId"] == 61 and root["layer"] == 5
+    assert root["pathId"] == "60" and root["transformPathId"] == "61" and root["layer"] == 5
     (b,) = root["components"]
     assert b["type"] == "MonoBehaviour" and b["script"] == "Assembly-CSharp|Game|Behaviour"
     fields = b["fields"]
     assert fields["target"] == {"gameObject": "root/child"}
-    assert fields["tex"] == {"$ref": {"file": CAB, "pathId": 10, "class": "Texture2D", "name": "tex"}}
-    assert fields["m_Script"] == {"$ref": {"file": "CAB-scripts", "pathId": 7}}
+    assert fields["tex"] == {"$ref": {"file": CAB, "pathId": "10", "class": "Texture2D", "name": "tex"}}
+    assert fields["m_Script"] == {"$ref": {"file": "CAB-scripts", "pathId": "7"}}
     assert math.isnan(fields["value"]) and fields["small"] == {"$hex": "616263"}
     assert b'{"$float": "nan"}' in load(depot, doc, f"{oid(60)}#json").replace(b"\n", b"").replace(
         b" ", b""
@@ -971,7 +971,7 @@ def test_prefab(exported):
     (c,) = child["components"]
     assert c["fields"]["up"] == {"transform": "root"}
     assert c["fields"]["comp"] == {"component": "MonoBehaviour", "gameObject": "root", "class": "Behaviour"}
-    assert c["fields"]["far"] == {"$ref": {"file": "CAB-scripts", "pathId": 3}}
+    assert c["fields"]["far"] == {"$ref": {"file": "CAB-scripts", "pathId": "3"}}
     assert c["script"] == "Assembly-CSharp||Holder"
 
 
@@ -991,7 +991,7 @@ def test_scriptable_objects_blobs_and_strings(exported):
     assert m["text"] == {"$hex": b"caf".hex() + "c3"}
     assert by_object(doc)[oid(70)]["artifacts"] == [f"{oid(70)}#blob:_bytes", f"{oid(70)}#json"]
     lost = obj(depot, doc, f"{oid(71)}#json")
-    assert "$script" not in lost and lost["m_Script"] == {"$ref": {"file": "CAB-scripts", "pathId": 9}}
+    assert "$script" not in lost and lost["m_Script"] == {"$ref": {"file": "CAB-scripts", "pathId": "9"}}
 
 
 def test_cue_sheets_held_in_the_bundle(exported):
@@ -1164,7 +1164,7 @@ def test_clip_bindings_name_scripts_of_other_bundles(exported):
         "pptr": False,
         "int": False,
         "serializeReference": False,
-        "script": {"$ref": {"file": "CAB-scripts", "pathId": 12}},
+        "script": {"$ref": {"file": "CAB-scripts", "pathId": "12"}},
         "scriptClass": "Assembly-CSharp|Game|Fader",
     }
     assert census_mod.script_refs(census_mod.census_env(bundle_all())) == sorted(SCRIPTS) + ["CAB-scripts:9"]
@@ -1173,8 +1173,8 @@ def test_clip_bindings_name_scripts_of_other_bundles(exported):
 def test_material_clip_controller(exported):
     depot, doc = exported
     mat = obj(depot, doc, f"{oid(50)}#json")
-    assert mat["shader"] == {"$ref": {"file": ATLAS_CAB, "pathId": 5}}
-    assert mat["textures"]["_MainTex"]["texture"]["$ref"]["pathId"] == 10
+    assert mat["shader"] == {"$ref": {"file": ATLAS_CAB, "pathId": "5"}}
+    assert mat["textures"]["_MainTex"]["texture"]["$ref"]["pathId"] == "10"
     assert mat["colors"]["_Color"]["g"] == INF and b"1e999" in load(depot, doc, f"{oid(50)}#json")
     clip = obj(depot, doc, f"{oid(90)}#json")
     assert list(clip) == [
@@ -1209,7 +1209,7 @@ def test_material_clip_controller(exported):
     ]
     ctl = obj(depot, doc, f"{oid(92)}#json")
     assert list(ctl) == ["name", "clips", "layers", "stateMachines", "parameters", "defaultValues"]
-    assert ctl["clips"] == [{"$ref": {"file": CAB, "pathId": 90, "class": "AnimationClip", "name": "clip"}}]
+    assert ctl["clips"] == [{"$ref": {"file": CAB, "pathId": "90", "class": "AnimationClip", "name": "clip"}}]
     assert obj(depot, doc, f"{oid(95)}#json")["m_Speed"] == INF
 
 
@@ -1223,7 +1223,7 @@ def test_scripts_and_asset_bundles_have_their_typetree(exported):
         {
             "preloadIndex": 0,
             "preloadSize": 1,
-            "asset": {"$ref": {"file": CAB, "pathId": 10, "class": "Texture2D", "name": "tex"}},
+            "asset": {"$ref": {"file": CAB, "pathId": "10", "class": "Texture2D", "name": "tex"}},
         },
     ]
 
@@ -1442,7 +1442,7 @@ def test_files_without_type_trees_read_their_scripts_with_the_shipped_ones(tmp_p
         return oid(pid, PLAYER)
 
     def script(pid, cls):
-        return {"$ref": {"file": PLAYER, "pathId": pid, "class": "MonoScript", "name": cls}}
+        return {"$ref": {"file": PLAYER, "pathId": str(pid), "class": "MonoScript", "name": cls}}
 
     assert items[p(2)]["status"] == "exported"
     assert obj(depot, doc, f"{p(2)}#json") == {
@@ -1451,7 +1451,7 @@ def test_files_without_type_trees_read_their_scripts_with_the_shipped_ones(tmp_p
         "m_Enabled": 1,
         "m_Script": script(50, "SoundVolumeSettings"),
         "m_Name": "volume",
-        "target": {"$ref": {"file": "unity default resources", "pathId": 10}},
+        "target": {"$ref": {"file": "unity default resources", "pathId": "10"}},
         "volume": 0.5,
     }
     assert items[p(2)]["refs"] == [p(50), "unity default resources:10"]
