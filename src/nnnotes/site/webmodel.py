@@ -47,13 +47,23 @@ from __future__ import annotations
 import json
 import multiprocessing as mp
 import os
-import re
 import shutil
 import tempfile
 import time
 import traceback
 from pathlib import Path
 
+from ..content.live2d import (
+    LIVE2D_PREFIX,
+    MASK_KEYWORD,
+    MOTION_SYNC_COMPONENTS,
+    RESOURCES,
+    STORY_KEYWORDS,
+    model_id,
+    model_keys,
+    model_match,
+    select_models,
+)
 from ..core import jsonio
 from ..formats import shader as shader_mod
 from ..source import languages, master
@@ -63,8 +73,6 @@ from ..unity.export import Exporter
 from .sitefiles import (
     MANIFEST_FORMAT,
     MODELS_DIR,
-    SHADER_PLATFORM,
-    SHADER_TYPE,
     Store,
     _dump,
     _lock_fetches,
@@ -78,80 +86,19 @@ from .sitefiles import (
 )
 from .siteindex import write_index
 
-__all__ = ["catalog_models", "model_id", "model_keys"]
+__all__ = ["catalog_models"]
 
-LIVE2D_PREFIX = "Character/Live2D/"
-MODEL_KEY = re.compile(r"Character/Live2D/(?P<group>[^/]+)/(?P<name>[^/]+)/model/(?P=name)")
-MODEL_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*")
 MODEL_INDEX = "model.json"
 MODEL_FORMAT = 2  # model.json "format"
 SHADER_DIR = "shaders"
-MASK_KEYWORD = "CUBISM_MASK_ON"  # a drawable material's keyword: the drawable is masked
-# keywords the story renderer adds to a character draw (_ADDITIONAL_LIGHTS_VERTEX: at quality 4); the mask pass draws
-# with none
-STORY_KEYWORDS = ("_ADDITIONAL_LIGHTS_VERTEX",)
-# Resources.Load paths of the materials the Cubism mask pass draws with
-RESOURCES = {
-    "cubismMask": "Live2D/Cubism/Materials/Mask",
-    "cubismMaskCulling": "Live2D/Cubism/Materials/MaskCulling",
-}
-# a model's MotionSync path (the player's CubismMotionSyncController.fromPrefab): both components on the prefab's root
-MOTION_SYNC_COMPONENTS = ("CubismMotionSyncController", "Live2DMotionSyncCriAudioInput")
 COSTUME_TABLE = "MasterCharacterCostume"  # _live2dPath (the key after LIVE2D_PREFIX) -> _characterID
 NAME_FIELDS = ("character", "names", "label")  # listing fields from the master data (model_names)
 
 
 # ---------------------------------------------------------------- models and ids
-def _model_key(key: str) -> re.Match[str]:
-    m = MODEL_KEY.fullmatch(key)
-    if not m:
-        raise ValueError(f"{key}: not a Live2D model key (Character/Live2D/<group>/<name>/model/<name>)")
-    return m
-
-
-def model_id(key: str) -> str:
-    """The id of a model key: its <name>."""
-    m = _model_key(key)
-    if not MODEL_ID.fullmatch(m["name"]):
-        raise ValueError(f"{key}: model name {m['name']!r} is not URL-safe")
-    return m["name"]
-
-
-def model_keys(keys) -> dict[str, str]:
-    """{id: key} of the model keys among `keys`, in id order; two keys with the same id raise."""
-    out: dict[str, str] = {}
-    for k in keys:
-        if MODEL_KEY.fullmatch(k):
-            i = model_id(k)
-            if out.get(i, k) != k:
-                raise ValueError(f"model id {i}: keys {out[i]} and {k}")
-            out[i] = k
-    return dict(sorted(out.items()))
-
-
-def select(specs, models: dict[str, str]) -> dict[str, str]:
-    """The models `specs` names (ids or keys; None: all) as {id: key} in id order, from `models` ({id: key})."""
-    if specs is None:
-        return dict(models)
-    by_key = {k: i for i, k in models.items()}
-    out, unknown = {}, []
-    for s in specs:
-        i = s if s in models else by_key.get(s)
-        if i is None:
-            unknown.append(s)
-        else:
-            out[i] = models[i]
-    if unknown:
-        raise ValueError(
-            f"not a Live2D model of the catalog: {', '.join(unknown)} "
-            f"(give a model id or a key Character/Live2D/<group>/<name>/model/<name>)"
-        )
-    return dict(sorted(out.items()))
-
-
 def catalog_models(cat, specs=None) -> dict[str, str]:
-    """`select` over the model keys of the catalog `cat`."""
-    return select(specs, model_keys(cat.keys(LIVE2D_PREFIX)))
+    """content.live2d.select_models over the model keys of the catalog `cat`."""
+    return select_models(specs, model_keys(cat.keys(LIVE2D_PREFIX)))
 
 
 # ---------------------------------------------------------------- names from the master data
@@ -275,16 +222,11 @@ def shader_files(index: list, materials: list[dict], extra: tuple[str, ...] = ()
     for name, kws in sorted(sets):
         if name not in recs:
             raise RuntimeError(f"shader {name}: not in the shader index")
-        variants = [
-            v
-            for v in recs[name]["variants"]
-            if v["platform"] == SHADER_PLATFORM and v["type"] == SHADER_TYPE and v["subShader"] == 0 and v["pass"] == 0
-        ]
-        want = set(kws) & {k for v in variants for k in v["keywords"]}
-        hits = [v for v in variants if set(v["keywords"]) == want]
-        if len(hits) != 1:
-            raise RuntimeError(f"shader {name}: {len(hits)} GLES3 programs with the keywords {sorted(want)}")
-        files |= {recs[name]["parsed"], hits[0]["file"]}
+        try:
+            program = shader_mod.player_program(recs[name]["variants"], kws)
+        except ValueError as e:
+            raise RuntimeError(f"shader {name}: {e}") from None
+        files |= {recs[name]["parsed"], program["file"]}
     return sorted(files)
 
 
@@ -354,7 +296,7 @@ def model_facts(key: str, summary: dict, names: dict | None = None) -> dict:
     """What a model listing needs, from the key and the export summary, plus the NAME_FIELDS of `names` (an entry
     of model_names)."""
     facts = {
-        "group": _model_key(key)["group"],
+        "group": model_match(key)["group"],
         "canvas": summary["canvas"],
         "textures": len(summary["textures"]),
         "nodes": summary["nodes"],

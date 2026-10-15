@@ -49,7 +49,7 @@ import traceback
 import uuid
 from pathlib import Path
 
-from ..content import adv, advui, story, storyfonts, storyhost
+from ..content import adv, advui, live2d, story, storyfonts, storyhost
 from ..core import jsonio
 from ..source import languages, master
 from ..source.config import Config, ConfigError, usable_cpus, use
@@ -802,7 +802,7 @@ def build(
     if keys:
         model_build = webmodel.build(
             site,
-            webmodel.model_keys(keys),
+            live2d.model_keys(keys),
             cfg,
             player_dir,
             force,

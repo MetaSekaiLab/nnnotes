@@ -1,7 +1,7 @@
 """The asset commands: the default orchestration of the stages (`export assets`), its plan and single tasks (`depot
 plan`, `depot run`).
 
-    nnnotes export assets -o OUT [--layout original[,cas]] [--select group:G|key:PREFIX|bundle:GLOB ...]
+    nnnotes export assets -o OUT [--layout original[,cas][,product]] [--select group:G|key:PREFIX|bundle:GLOB ...]
                           [--views all|none|a,b] [--workers N] [--memory GiB] [--fetch-workers N]
                           [--stored-catalog L|SHA] [--png-level N] [--flac-level N] [--only-class C,...]
                           [--link auto|clone|hard|copy] [--strict] [--dry-run] [--explain]
@@ -21,12 +21,16 @@ Facts the stages read while their tasks are described (stages.Env):
     bundles    {stable bundle name: Input "bundle"} of the selected bundles and their dependencies (a bundle whose
                bytes are not known yet: a Pending "fetch:<file name>"), and of the APK's built-in files
                (`apk/data.unity3d`, `apk/Resources/unity default resources`: pipeline.builtins)
-    selected   the selected bundles' stable names, sorted (the subjects of the export stages)
+    selected   the selected bundles' stable names, sorted (the subjects of the export stages; none when only products
+               are asked for: the run exports what they reach)
     raw        {stable raw file name: Input "raw"} of the selected raw files (only with a stage that reads them;
                export fetches them while the stages before run, and reading the fact waits for that)
     boot       the Input of the game's boot data (with a CRI stage: cristages.boot_input; None without an APK)
     master     the decoded master data directory, or None
     views      the names of the selected views, sorted
+    products   {product stage: subjects} (with a product stage in the pipeline: the `product` layout makes each
+               stage's products of the keys the selected bundles hold, held_keys; `export live2d` asks for one)
+    roots      the root objects of those products (pipeline.assemble.request)
 
 Selection (--select, repeatable; the union; none: everything): `group:G` the bundles of an Addressables group (the
 stable name up to `_assets_`, else up to its first `_`), `key:PREFIX` the bundles and raw files the catalog keys
@@ -69,7 +73,8 @@ from . import common
 from .common import nonnegative, print_json, usage
 
 GIB = 1 << 30
-LAYOUT_NAMES = ("original", "cas")
+LAYOUT_NAMES = ("original", "cas", "product")
+OBJECT_LAYOUTS = ("original", "cas")  # the layouts of the objects: they ask for every object of the selection
 FETCH_WORKERS = 8
 RECYCLE_TASKS = 500
 RECYCLE_RSS = 3 * GIB  # a worker whose resident memory after a task is above this is replaced ...
@@ -88,12 +93,14 @@ EXIT_FAILED, EXIT_USAGE, EXIT_ABORTED, EXIT_INCOMPATIBLE = 1, 2, 3, 4
 class StageSource:
     """Where a stage (or, for a name ending with '.', a family of stages) comes from. `output`: its artifacts are
     placed in the layouts; `root`: the layout root of its artifacts without a container path (format fields
-    {stage} and {subject}; a stage's LAYOUT_ROOT attribute wins)."""
+    {stage} and {subject}; a stage's LAYOUT_ROOT attribute wins); `product`: a product stage (pipeline.assemble),
+    in the pipeline only when products are asked for, its results placed by the product layouts only."""
 
     name: str
     target: str
     output: bool = False
     root: str | None = None
+    product: bool = False
 
     def matches(self, stage: str) -> bool:
         return stage.startswith(self.name) if self.name.endswith(".") else stage == self.name
@@ -108,8 +115,9 @@ STAGE_SOURCES = (
     StageSource("sprite.crop", "nnnotes.pipeline.objexport:SpriteCropStage", output=True),
     StageSource("cri.audio", "nnnotes.pipeline.cristages:AudioStage", output=True),
     StageSource("cri.movie", "nnnotes.pipeline.cristages:MovieStage", output=True),
-    StageSource("live2d.model", "nnnotes.pipeline.modelstages:Live2DStage", output=True),
     StageSource("spine.skeleton", "nnnotes.pipeline.modelstages:SpineStage", output=True),
+    StageSource("live2d.model", "nnnotes.pipeline.live2d:ModelStage", output=True, product=True),
+    StageSource("live2d.cubism", "nnnotes.pipeline.live2d:CubismStage", output=True, product=True),
     StageSource("view.", "nnnotes.pipeline.views:stages", output=True),
     StageSource("view.voices", "nnnotes.pipeline.voices:VoiceStage", output=True),
 )
@@ -230,6 +238,23 @@ def select(index: dict, selection: list[str], builtin=()) -> Selection:
     own = [s for s in builtin if any(fnmatch.fnmatchcase(s, g) for g in globs)]
     pick = lambda s, kind: sorted(n for k, n in s if k == kind)  # noqa: E731
     return Selection(sorted(pick(chosen, "bundle") + own), sorted(pick(deps, "bundle") + builtin), pick(chosen, "raw"))
+
+
+def held_keys(index: dict, bundles) -> list[str]:
+    """The catalog keys of the asset locations the bundles `bundles` hold (a location's first dependency is the
+    bundle holding it), sorted."""
+    from ..pipeline import catalogdb
+
+    files, want = catalogdb.file_refs(index), {("bundle", b) for b in bundles}
+    return sorted(
+        {
+            loc["primaryKey"]
+            for loc in index["locations"]
+            if loc["kind"] not in catalogdb.FILE_KINDS
+            and loc["dependencies"]
+            and files.get(loc["dependencies"][0]) in want
+        }
+    )
 
 
 # ---------------------------------------------------------------- settings
@@ -459,11 +484,13 @@ class Workspace:
     """What export and plan share: the depot, the catalog version, its index, the selection, the pipeline and its
     parameters, the facts."""
 
-    def __init__(self, args, cfg, log=_log):
+    def __init__(self, args, cfg, log=_log, layouts=()):
         from ..pipeline.catalogdb import CatalogDB
         from ..pipeline.depot import open_depot
 
         self.args, self.cfg, self.log = args, cfg, log
+        self.layouts = list(layouts)
+        self.products: dict | None = None  # {product stage: subjects} a command asks for (request)
         self.root = Session(cfg).depot_root()
         self.apk = cfg.path("paths", "apk")
         self.fetcher = CatalogFetcher(self.root, cfg)
@@ -613,9 +640,19 @@ class Workspace:
             raise self.cfg.missing(*self.cfg.master(self.cfg.get("catalog", "region")))
         return want
 
+    def request(self, products: dict, selection: list[str]) -> None:
+        """Ask for the products `products` {product stage: subjects} alone, with the selection `selection` (what
+        their census needs) instead of the command's: only what the products reach is exported."""
+        self.products, self.selection = {k: sorted(v) for k, v in products.items()}, list(selection)
+
+    def _wanted(self, name: str) -> bool:
+        if not self.installed.sources[name].product:
+            return True
+        return name in self.products if self.products is not None else "product" in self.layouts
+
     def pipeline(self) -> list[str]:
         views = set(self.views())
-        return [n for n in self.installed.stages if not n.startswith("view.") or n in views]
+        return [n for n in self.installed.stages if (not n.startswith("view.") or n in views) and self._wanted(n)]
 
     def params(self, pipeline: list[str]) -> dict:
         """{stage: parameters} from the flags; a flag no stage of the pipeline takes is a usage error."""
@@ -695,6 +732,19 @@ class Workspace:
             "classes": self.classes(),
             "raw": Inputs({}),
         }
+        products = [n for n in pipeline if self.installed.sources[n].product]
+        if products:
+            from ..pipeline import assemble
+
+            if self.products is not None:
+                chosen = {n: self.products.get(n, []) for n in products}
+            else:
+                held = held_keys(index, sel.selected)
+                chosen = {n: self.installed.stages[n].select(held) for n in products}
+            facts["products"] = chosen
+            facts["roots"] = assemble.request(self.installed.stages, chosen, Env(self.depot, facts))
+            if self.products is not None or not set(self.layouts) & set(OBJECT_LAYOUTS):
+                facts["selected"] = []  # products alone: what they reach
         if any(n in pipeline for n in RAW_STAGES):
             from ..pipeline.cristages import boot_input
 
@@ -906,9 +956,13 @@ class Workspace:
         from ..pipeline import layout
 
         stages = self.installed.stages
+        if name not in OBJECT_LAYOUTS:
+            return self._product_entries(name, placed, store_derived)
         sources, named = [], []
         for tid, doc in placed.results:
             stage_name, subject = contract.parse_task_id(tid)
+            if self.installed.sources[stage_name].product:
+                continue
             stage = stages[stage_name]
             names = self.names(stage_name).get(subject) if name == "original" else None
             if names:
@@ -936,6 +990,25 @@ class Workspace:
                 raise layout.LayoutError(f"derived document {e['id']}: {e['path']} is taken")
             taken.add(e["path"].casefold())
         return sorted(entries + extra, key=lambda e: (e["path"], e["id"])), report
+
+    def _product_entries(self, name: str, placed: LayoutInput, store: bool) -> tuple[list[dict], dict]:
+        """The entries of a product layout (`product`: manifests and files; `files`: the products' own files at
+        their paths) for the product results given to `placed`, and its report."""
+        from ..pipeline import layout
+
+        results = [(t, d) for t, d in placed.results if self.installed.sources[contract.parse_task_id(t)[0]].product]
+        if name == "files":
+            return layout.product_files(d for _, d in results), {"collisions": [], "products": len(results)}
+        products = []
+        for tid, doc in results:
+            stage_name, subject = contract.parse_task_id(tid)
+            rec = next(a for a in doc["artifacts"] if a["id"] == contract.artifact_id(tid, layout.PRODUCT_TABLE))
+            table = contract.loads(self.depot.read(rec["content"]["sha256"]))
+            body = contract.encode(layout.product_manifest(tid, doc, table))
+            sha = self.depot.put(body) if store else contract.sha256(body)
+            manifest = {"id": contract.artifact_id(tid, "manifest"), "sha256": sha, "size": len(body)}
+            products.append((self.installed.stages[stage_name].manifest(subject), manifest, doc, table))
+        return layout.product_entries(products), {"collisions": [], "products": len(products)}
 
     def done(self, tasks: dict) -> None:
         """The tasks whose results the layouts place, {task id: key} (after a run: every task with a result)."""
@@ -1161,15 +1234,20 @@ def _write_report(d: Path, name: str, doc) -> Path:
 
 
 def cmd_export(args, cfg):
-    from ..pipeline import builtins, layout
-    from ..pipeline.orchestrate import Orchestrator, failure
-
     try:
         names = parse_layouts(args.layout)
     except ValueError as e:
         usage(args, str(e))
     use(cfg)  # the tools the atoms name are part of the keys
-    ws = Workspace(args, cfg)
+    export(args, cfg, Workspace(args, cfg, layouts=names))
+
+
+def export(args, cfg, ws: Workspace) -> None:
+    """Run the request of `ws` and place its layouts (ws.layouts) in args.out (cmd_export; export live2d)."""
+    from ..pipeline import builtins, layout
+    from ..pipeline.orchestrate import Orchestrator, failure
+
+    names = ws.layouts
     pipeline = ws.pipeline()
     params = ws.params(pipeline)
     orch = Orchestrator(
@@ -1334,7 +1412,7 @@ def cmd_plan(args, cfg):
         except ValueError as e:
             usage(args, str(e))
     use(cfg)  # the tools the atoms name are part of the keys
-    ws = Workspace(args, cfg)
+    ws = Workspace(args, cfg, layouts=layouts)
     pipeline = ws.pipeline()
     params = ws.params(pipeline)
     if args.explain:
@@ -1552,5 +1630,9 @@ def run_args(c) -> None:
         help="memory budget of the running tasks and workers (default: 80 %% of the physical memory)",
     )
     c.add_argument("--fetch-workers", type=int, metavar="N", help=f"parallel downloads (default {FETCH_WORKERS})")
-    c.add_argument("--layout", default="original", help="original, cas or original,cas (default original)")
+    c.add_argument(
+        "--layout",
+        default="original",
+        help="original, cas, product, comma-separated (default original; product: the products of the selection)",
+    )
     c.add_argument("--explain", action="store_true", help="print every setting of the run first")

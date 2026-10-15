@@ -258,6 +258,10 @@ class ProductStage(Stage):
     def subjects(self, env) -> list[str]:
         return sorted((env.facts.get("products") or {}).get(self.name, ()))
 
+    def select(self, keys: list[str]) -> list[str]:
+        """The subjects among the catalog keys `keys` (those a selection's bundles hold), sorted."""
+        return []
+
     def keys(self, subject: str, env) -> list[str]:
         """The catalog keys whose objects are roots of `subject` (from the facts alone)."""
         return []

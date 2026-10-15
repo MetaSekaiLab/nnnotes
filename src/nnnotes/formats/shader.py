@@ -29,10 +29,6 @@ import re
 import struct
 from pathlib import Path
 
-import UnityPy
-from UnityPy.enums import ShaderGpuProgramType
-from UnityPy.export.ShaderConverter import CompressionHelper
-
 from ..core import cache
 from ..core.jsonio import dumps, write_json
 
@@ -59,6 +55,8 @@ PLATFORM_TYPES = {
 }
 TEXT_TYPES = {"GLES", "GLES3", "GLES31", "GLES31AEP", "GLCore32", "GLCore41", "GLCore43", "MetalVS", "MetalFS"}
 STAGES = ("progVertex", "progFragment", "progGeometry", "progHull", "progDomain")
+# the programs the player draws with: GLSL ES 3.00 (WebGL2)
+PLAYER_PLATFORM, PLAYER_TYPE = "gles3", "GLES3"
 
 
 def _safe(name: str) -> str:
@@ -71,6 +69,8 @@ def _entry(arr, i):
 
 
 def _type_name(v: int) -> str:
+    from UnityPy.enums import ShaderGpuProgramType
+
     return ShaderGpuProgramType(v).name.replace("kShaderGpuProgram", "")
 
 
@@ -97,6 +97,8 @@ def _code_of(entry: bytes) -> bytes:
 
 
 def platform_blobs(shader) -> dict[int, list[bytes]]:
+    from UnityPy.export.ShaderConverter import CompressionHelper
+
     blob = bytes(shader.compressedBlob or b"")
     out = {}
     n = min(len(shader.platforms), len(shader.compressedLengths), len(shader.decompressedLengths))
@@ -181,6 +183,22 @@ def _render(o, tt: dict, name: str) -> tuple[str, list[dict], list[bytes]]:
     return text, recs, codes
 
 
+def player_program(variants: list[dict], keywords) -> dict:
+    """The variant record of a shader (platform, subShader, pass, type, keywords, ...) the player draws a material
+    with `keywords` by: the PLAYER_TYPE program of subshader 0, pass 0 whose keywords are exactly the material's
+    among those the programs there use. ValueError when not exactly one fits."""
+    vs = [
+        v
+        for v in variants
+        if v["platform"] == PLAYER_PLATFORM and v["type"] == PLAYER_TYPE and v["subShader"] == 0 and v["pass"] == 0
+    ]
+    want = set(keywords) & {k for v in vs for k in v["keywords"]}
+    hits = [v for v in vs if set(v["keywords"]) == want]
+    if len(hits) != 1:
+        raise ValueError(f"{len(hits)} {PLAYER_TYPE} programs with the keywords {sorted(want)}")
+    return hits[0]
+
+
 def _dump_key(o) -> str:
     st = o.serialized_type
     type_hash = bytes(st.old_type_hash) if st is not None and st.old_type_hash else b""
@@ -239,6 +257,8 @@ def write_index(index: list, out_dir: Path) -> dict:
 
 
 def dump(bundles: list, out_dir: Path) -> dict:
+    import UnityPy
+
     index: list = []
     for bpath in bundles:
         env = UnityPy.load(str(bpath))
