@@ -94,6 +94,19 @@ def test_story_takes_the_web_audio_format_of_its_cue_sheets():
     assert cli.parse_args(["export", "story", "10001", "-o", "out", "--format", "flac"]).audio_format == "flac"
 
 
+def test_story_takes_the_webm_format_of_its_movies():
+    from types import SimpleNamespace
+
+    from nnnotes.cli import assets
+    from nnnotes.pipeline import cristages
+
+    args = cli.parse_args(["export", "story", "10001", "-o", "out"])
+    assert args.movie_format == "webm"
+    installed = SimpleNamespace(stages={"cri.movie": cristages.MovieStage(), "cri.audio": cristages.AudioStage()})
+    ws = SimpleNamespace(args=args, installed=installed)
+    assert assets.Workspace.params(ws, ["cri.movie", "cri.audio"]) == {"cri.movie": {"format": "webm"}}
+
+
 class _Parsed:
     def __init__(self, name):
         self.m_ParsedForm = type("P", (), {"m_Name": name})()
