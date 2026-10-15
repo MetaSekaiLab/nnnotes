@@ -1,0 +1,6 @@
+nnnotes 0.2.4 pins the deck model of ournotes-deck 0.0.11, `ournotes-sim==0.0.11`.
+
+- **LUCK rewards at the expected score.** Under a LUCK lottery the recommendation engine pays each performance order the reward of its expected score: the reward step that holds the integer part of the expected score, the score target it meets, or the capped expected score. Teams with equal rewards rank by their expected score. Combined metrics and challenge-point priorities are available under an active LUCK range.
+- **Chart statistics.** The simulation model and the replay module are unchanged, so chart statistics keep their values.
+
+Validation: Python 3.11, 3.12, 3.13 and 3.14 CI with the deck model, strict golden records, the commit message check, and the wheel installed with `[deck]` in a fresh environment.
