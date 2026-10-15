@@ -11,14 +11,13 @@ bundle has its image from sprite.crop. A reached unit that the request did not e
 referenced object that no census holds is listed as missing.
 
 A task's inputs are the object table of what it reaches ("objects", nnnotes.objects/1: every object with its class,
-name, item status and files, the contained ones with the object holding them, and the root objects of each of its
-keys), the APK files the stage names in `APK`
-("apk:<path in the APK>", from the fact "apk"), the cue sheets of the catalog keys `cue_sheets(subject)` gives and
-what `more_inputs` adds (master tables, parameters' data); it depends on the unity.export and sprite.crop tasks it
-read and the cri.audio tasks of its cue sheets. A cue sheet is the ACB the key loads: held in a bundle (the `acb`
-file of an object of the key) or a raw file of the catalog (a dependency of the key that cri.audio decoded); its
-inputs are the ACB ("acb:<key>") and, in "sheets", the files cri.audio made of it ({key: {acb, status, reason?,
-files}}).
+name, item status and files, the contained ones with the object holding them, and the root objects of each of its keys),
+the APK files the stage names in `APK` ("apk:<path in the APK>", from the fact "apk"), the cue sheets of the catalog
+keys `cue_sheets(subject)` gives and what `more_inputs` adds (a master record as "master": master_input; parameters'
+data); it depends on the unity.export and sprite.crop tasks it read and the cri.audio tasks of its cue sheets. A cue
+sheet is the ACB the key loads: held in a bundle (the `acb` file of an object of the key) or a raw file of the catalog
+(a dependency of the key that cri.audio decoded); its inputs are the ACB ("acb:<key>") and, in "sheets", the files
+cri.audio made of it ({key: {acb, status, reason?, files}}).
 
 `assemble` makes the product's own files from the table, the bytes of its objects and its cue sheets (Sheet); a file
 may be content the depot already holds (Stored: a decoded waveform), recorded without reading it again. The result
@@ -43,6 +42,13 @@ EXPORT, CROP, AUDIO = "unity.export", "sprite.crop", "cri.audio"
 ADDRESSES = units.ADDRESSES
 TABLE_KIND = "product.objects"
 SHEETS_INPUT = "sheets"
+MASTER_INPUT = "master"
+
+
+def master_input(env, record: dict) -> Input:
+    """The input "master" of a product task: the master record `record` (the rows it reads), stored in the depot."""
+    body = contract.encode(record)
+    return Input(MASTER_INPUT, env.depot.put(body), len(body), None, ({"kind": "depot"},))
 
 
 def request(stages: dict, products: dict, env) -> dict:
