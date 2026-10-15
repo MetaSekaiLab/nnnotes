@@ -299,6 +299,7 @@ def cdoc(files, scripts=()):
         "files": fs,
         "resources": [],
         "assetBundles": [],
+        "resourcePaths": [],
         "scripts": list(scripts),
         "classes": classes,
         "objects": sum(classes.values()),

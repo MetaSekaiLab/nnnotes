@@ -12,10 +12,12 @@ objects:
 
 - the objects of the catalog keys the stage gives for the subject (`keys`), through the address table of
   `link.addresses`;
+- the objects of the Resources.Load paths it gives (`resources`): paths of the ResourceManager in the APK's built-in
+  files, such as the materials a runtime loads by name, through the same table and compared ignoring case;
 - the object ids the stage names besides (`root_objects`).
 
-Both are read from the planning facts alone, so a command can ask for what its products need before anything runs:
-`assemble.request(stages, products, env)` gives the fact `roots` (`{"keys", "objects"}`), and the request of
+All are read from the planning facts alone, so a command can ask for what its products need before anything runs:
+`assemble.request(stages, products, env)` gives the fact `roots` (`{"keys", "resources", "objects"}`), and the request of
 `unity.export` then holds the units of those objects and every unit reachable from them through the census `refs`
 ([units](stages.md#units)), and nothing else of their bundles.
 
@@ -27,7 +29,7 @@ object that a reached object references and no census holds is listed as `missin
 | Part of the task | |
 |---|---|
 | inputs | `objects`: the object table of what it reaches (`nnnotes.objects/1`); the stage's own inputs (master tables, data its parameters name) |
-| depends | `link.addresses` (when it has keys), the `unity.export` and `sprite.crop` tasks whose results it read |
+| depends | `link.addresses` (when it has keys or resource paths), the `unity.export` and `sprite.crop` tasks whose results it read |
 | artifacts | `<task id>#<path>`: the product's own files; `<task id>#objects`: the object table of the objects its files use (the whole table unless the stage narrows it) |
 | item | one for the subject: `exported`, or `unsupported` with a reason code |
 
