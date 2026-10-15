@@ -164,7 +164,6 @@ def _game_fonts(ex: Exporter, fontset, texts: dict, chars_by_font: dict, packer:
         ex, fontset, [t["localized"] for t in texts.values()], primaries, needed, runtime_units
     )
     font_out = tmpfont.export_fonts(
-        ex,
         fontset,
         primaries,
         needed,

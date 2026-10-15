@@ -19,13 +19,12 @@ import importlib.util
 import io
 import math
 from collections.abc import Callable
-from typing import cast
+from typing import Protocol, cast
 
 import numpy as np
-from UnityPy.files import ObjectReader
 
 from ..source.config import ConfigError
-from .export import Exporter, TexelPacker, _key, grow_box
+from .export import Exporter, MemoryPacker, TexelPacker, _key, grow_box
 from .fontsettings import (
     END_OF_TEXT,
     FONT_CLASS,
@@ -60,9 +59,49 @@ def require_extra(what: str = "TextMesh Pro font assets") -> None:
 # --------------------------------------------------------------------------
 # fonts
 # --------------------------------------------------------------------------
+def font_cmap(data: bytes, face_index: int) -> tuple[set[int], dict[tuple[int, int], str]]:
+    """The code points a font file maps (its best cmap) and its variation sequences that map a glyph other than the
+    base's (cmap format 14): {(base, selector): the variant's glyph name}."""
+    from fontTools.ttLib import TTFont
+
+    ft = TTFont(io.BytesIO(data), fontNumber=face_index, lazy=True)
+    best = ft.getBestCmap() or {}
+    variants: dict[tuple[int, int], str] = {}
+    for t in ft["cmap"].tables:  # variation sequences (cmap format 14), non-default ones
+        if t.format == 14:
+            for vs, entries in t.uvsDict.items():
+                for base, glyph in entries:
+                    if glyph is not None and glyph != best.get(base):
+                        variants[(base, vs)] = glyph
+    return set(best), variants
+
+
+class FontAsset(Protocol):
+    """A TextMesh Pro font asset as the lookup, the glyph tables and the runtime glyphs read it: Font (read through an
+    Exporter) and tmpassets.Font (read from an object table)."""
+
+    name: str
+    tt: dict
+    chars: dict
+    glyphs: dict
+    dynamic: bool
+    cmap: set[int]
+    variants: dict[tuple[int, int], str]
+    font_data: bytes | None
+    source_font: dict | None
+    atlases: list
+
+    def atlas_names(self) -> list[str | None]: ...
+
+    def atlas_settings(self) -> list[dict]: ...
+
+    def default_material(self) -> dict: ...
+
+
 class Font:
     def __init__(self, ex: Exporter, obj):
         self.obj = obj
+        self._ex = ex
         tt = obj.read_typetree()
         self.tt = tt
         self.name = tt["m_Name"]
@@ -79,18 +118,8 @@ class Font:
         self.font_data: bytes | None = None
         src = ex.deref(obj, tt["m_SourceFontFile"]) if tt["m_SourceFontFile"]["m_PathID"] else None
         if src is not None:
-            from fontTools.ttLib import TTFont
-
             data = bytes(src.read_typetree()["m_FontData"])
-            ft = TTFont(io.BytesIO(data), fontNumber=tt["m_FaceInfo"]["m_FaceIndex"], lazy=True)
-            best = ft.getBestCmap() or {}
-            self.cmap = set(best)
-            for t in ft["cmap"].tables:  # variation sequences (cmap format 14), non-default ones
-                if t.format == 14:
-                    for vs, entries in t.uvsDict.items():
-                        for base, glyph in entries:
-                            if glyph is not None and glyph != best.get(base):
-                                self.variants[(base, vs)] = glyph
+            self.cmap, self.variants = font_cmap(data, tt["m_FaceInfo"]["m_FaceIndex"])
             self.font_data = data
             self.source_font = {
                 "name": src.read_typetree()["m_Name"],
@@ -100,35 +129,33 @@ class Font:
         else:
             self.source_font = None
 
+    def atlas_names(self) -> list[str | None]:
+        """The names of the atlas textures (None for a missing page)."""
+        return [a.read_typetree()["m_Name"] if a is not None else None for a in self.atlases]
 
-class FontSet:
-    """Font assets reachable from the localized fonts, with TMP character lookup."""
+    def atlas_settings(self) -> list[dict]:
+        """The sampler settings of the atlas textures that are there."""
+        return [a.read_typetree()["m_TextureSettings"] for a in self.atlases if a is not None]
 
-    def __init__(self, ex: Exporter):
-        self.ex = ex
-        self.fonts: dict[str, Font] = {}
-        self._by_obj: dict[tuple, Font] = {}
+    def default_material(self) -> dict:
+        """The record of the default material (Exporter.material)."""
+        return self._ex.material(self.material_obj)
 
-    def by_key(self, key: str) -> Font:
-        return self.of(self.ex.key_object(key))
 
-    def of(self, obj) -> Font:
-        k = _key(obj)
-        if k not in self._by_obj:
-            f = Font(self.ex, obj)
-            if f.name in self.fonts:
-                raise RuntimeError(f"two font assets named {f.name}")
-            self._by_obj[k] = f
-            self.fonts[f.name] = f
-            for fb in f.fallback_objs:
-                if fb is not None:
-                    self.of(fb)
-        return self._by_obj[k]
+class FontLookup:
+    """TMP character lookup over font assets: a font's own characters, then its fallback chain (`fallbacks(f)`, as
+    TextMeshPro searches it; see lookup). Results are (kind, font asset) with kind "baked", "runtime" (a dynamic asset
+    renders it at runtime from its source font) or "synthesized" (TextMeshPro's control characters). A subclass adds
+    the font assets it reads to `fonts` and the names of their fallbacks to `_fallback_names`."""
 
-    def fallbacks(self, f: Font) -> list[Font]:
-        return [self._by_obj[_key(o)] for o in f.fallback_objs if o is not None]
+    def __init__(self):
+        self.fonts: dict[str, FontAsset] = {}
+        self._fallback_names: dict[str, list[str]] = {}
 
-    def _in_font(self, f: Font, u: int):
+    def fallbacks(self, f: FontAsset) -> list[FontAsset]:
+        return [self.fonts[n] for n in self._fallback_names[f.name]]
+
+    def _in_font(self, f: FontAsset, u: int) -> tuple[str, FontAsset] | None:
         """GetCharacterFromFontAsset_Internal without fallbacks (regular weight, no italic)."""
         if u in f.chars:
             return ("baked", f)
@@ -138,7 +165,7 @@ class FontSet:
             return ("runtime", f)  # TryAddCharacterInternal: SDF rendered at runtime
         return None
 
-    def _search(self, f: Font, u: int, searched: set):
+    def _search(self, f: FontAsset, u: int, searched: set) -> tuple[str, FontAsset] | None:
         r = self._in_font(f, u)
         if r:
             return r
@@ -151,7 +178,7 @@ class FontSet:
                 return r
         return None
 
-    def lookup(self, primary: Font, u: int):
+    def lookup(self, primary: FontAsset, u: int) -> tuple[str, FontAsset] | None:
         """TMP_Text.GetTextElement for a font asset with no global fallbacks set."""
         r = self._in_font(primary, u)
         if r:
@@ -170,6 +197,33 @@ class FontSet:
         return sorted(f.name for f in self.fonts.values() if u in f.chars)
 
 
+class FontSet(FontLookup):
+    """Font assets reachable from the localized fonts, with TMP character lookup."""
+
+    def __init__(self, ex: Exporter):
+        super().__init__()
+        self.ex = ex
+        self._by_obj: dict[tuple, Font] = {}
+
+    def by_key(self, key: str) -> Font:
+        return self.of(self.ex.key_object(key))
+
+    def loaded(self, name: str) -> Font:
+        """The font asset `name`, read by `of` or `by_key`."""
+        return cast(Font, self.fonts[name])
+
+    def of(self, obj) -> Font:
+        k = _key(obj)
+        if k not in self._by_obj:
+            f = Font(self.ex, obj)
+            if f.name in self.fonts:
+                raise RuntimeError(f"two font assets named {f.name}")
+            self._by_obj[k] = f
+            self.fonts[f.name] = f
+            self._fallback_names[f.name] = [self.of(fb).name for fb in f.fallback_objs if fb is not None]
+        return self._by_obj[k]
+
+
 # --------------------------------------------------------------------------
 # missing glyph
 # --------------------------------------------------------------------------
@@ -186,7 +240,7 @@ def missing_glyph_character(player) -> int:
     return tt["m_missingGlyphCharacter"] or MISSING_GLYPH_CHARACTER
 
 
-def missing_glyph(fonts: FontSet, font: Font, chars, character: int = MISSING_GLYPH_CHARACTER) -> dict | None:
+def missing_glyph(fonts: FontLookup, font: FontAsset, chars, character: int = MISSING_GLYPH_CHARACTER) -> dict | None:
     """The missing glyph of a text of `font` (TMP_Text.SetArraySizes, a character GetTextElement finds in no font asset
     and no sprite asset): {unicode: the substitute, characters: the code points of `chars` that `font` and its
     fallbacks lack}, or None when they have every one. The substitute is `character` (missing_glyph_character) when
@@ -199,14 +253,14 @@ def missing_glyph(fonts: FontSet, font: Font, chars, character: int = MISSING_GL
     return {"unicode": sub, "characters": miss}
 
 
-def underline_character(fonts: FontSet, font: Font) -> bool:
+def underline_character(fonts: FontLookup, font: FontAsset) -> bool:
     """Whether `font` itself has U+005F (TMP_Text.GetUnderlineSpecialCharacter: GetCharacterFromFontAsset without
     fallbacks; a dynamic asset adds it from its source font): the glyph its texts' underline and highlight draw with."""
     r = fonts._in_font(font, 0x5F)
     return r is not None and r[0] in ("baked", "runtime")
 
 
-def check_glyph_variants(fonts: FontSet, font: Font, texts) -> None:
+def check_glyph_variants(fonts: FontLookup, font: FontAsset, texts) -> None:
     """Raise NotImplementedError when a character of `texts` that `font` (or a fallback) has is followed by a variation
     selector its source font maps to a variant glyph (SetArraySizes: GetGlyphVariantIndex -> the alternative glyph);
     any other selector after a font character is dropped (rewritten to U+001A)."""
@@ -270,7 +324,7 @@ class RuntimeGlyphs:
         "the SDF block is the rect grown by padding on each side"
     )
 
-    def __init__(self, font: Font):
+    def __init__(self, font: FontAsset):
         import freetype
         from scipy.ndimage import distance_transform_edt
 
@@ -406,7 +460,7 @@ class RuntimeGlyphs:
         a = np.floor(255.0 * np.clip(0.5 + d / (2.0 * self.spread), 0.0, 1.0) + 0.5).astype(np.uint8)
         return m, (xmin, ymin, w, h), a
 
-    def validate(self, packer: TexelPacker, units) -> dict:
+    def validate(self, packer: TexelPacker | MemoryPacker, units) -> dict:
         """Generate the baked characters `units` of the same font asset and compare with its atlas."""
         f, p = self.font, self.pad
         errs, per, metric_diff = [], {}, {k: 0.0 for k in GLYPH_METRIC_FIELDS}
@@ -462,15 +516,29 @@ def rgba_alpha(a: np.ndarray) -> np.ndarray:
     return out
 
 
-def material_by_name(ex: Exporter, font: Font, mat_name: str):
+def material_by_name(ex: Exporter, font: FontAsset, mat_name: str):
     key = font_dir(font.name) + mat_name
     if not ex.cat.has(key):
         raise KeyError(f"material key {key}")
     return ex.material(ex.key_object(key))
 
 
+def shared_settings(name: str, settings: list[dict]) -> dict:
+    """The sampler settings that all the atlas pages of the font asset `name` have (RuntimeError when they differ or
+    there is no page)."""
+    if not settings or any(s != settings[0] for s in settings):
+        raise RuntimeError(f"{name}: atlas pages with different sampler settings")
+    return settings[0]
+
+
 def runtime_glyphs(
-    f: Font, extra: set, baked: set, margin: int, packer: TexelPacker, chars_out: dict, glyphs_out: dict
+    f: FontAsset,
+    extra: set,
+    baked: set,
+    margin: int,
+    packer: TexelPacker | MemoryPacker,
+    chars_out: dict,
+    glyphs_out: dict,
 ) -> dict:
     """Characters of a dynamic font asset that TMP renders into the atlas at runtime: generate their
     SDF glyphs + metrics from the source font, add them to the glyph/character tables and the packed
@@ -480,9 +548,7 @@ def runtime_glyphs(
     if margin < p:
         raise RuntimeError(f"{f.name}: sampling margin {margin} < padding {p}")
     validation = gen.validate(packer, baked)
-    settings = [a.read_typetree()["m_TextureSettings"] for a in f.atlases if a is not None]
-    if not settings or any(s != settings[0] for s in settings):
-        raise RuntimeError(f"{f.name}: atlas pages with different sampler settings")
+    settings = shared_settings(f.name, f.atlas_settings())
     x = 0
     generated = []
     for u in sorted(extra):
@@ -504,7 +570,7 @@ def runtime_glyphs(
                 f"runtime glyph {gi}",
                 rgba_alpha(cell),
                 (rect["m_X"] - margin, rect["m_Y"] - margin),
-                settings[0],
+                settings,
             )
         chars_out[str(u)] = {"glyph": gi, "scale": 1.0, "elementType": 1}
         glyphs_out[str(gi)] = rec
@@ -547,7 +613,7 @@ def runtime_glyphs(
 # --------------------------------------------------------------------------
 # characters -> font assets, materials, glyph tables
 # --------------------------------------------------------------------------
-def glyph_coverage(fonts: FontSet, primary: Font, chars: list[int]) -> tuple[dict, dict, dict]:
+def glyph_coverage(fonts: FontLookup, primary: FontAsset, chars: list[int]) -> tuple[dict, dict, dict]:
     """TMP character lookup of `chars` (distinct code points) from `primary` through its fallback chain.
     -> (coverage report, {font: baked units}, {font: runtime units})."""
     coverage = {
@@ -595,31 +661,44 @@ def glyph_coverage(fonts: FontSet, primary: Font, chars: list[int]) -> tuple[dic
     return coverage, needed, runtime_units
 
 
-def text_materials(
-    ex: Exporter, fonts: FontSet, localized: list[dict], primaries: set, needed: dict, runtime_units: dict
+def text_material_records(
+    fonts: FontLookup,
+    localized: list[dict],
+    primaries: set,
+    needed: dict,
+    runtime_units: dict,
+    material_named: Callable[[FontAsset, str], dict],
 ) -> tuple[dict, dict]:
-    """The localized text materials (in text order), then the default material of every font asset that
-    serves a character or is a primary. -> (all materials, text materials)."""
+    """The localized text materials (in text order, `material_named(font asset, name)`), then the default material of
+    every font asset that serves a character or is a primary. -> (all materials, text materials)."""
     materials: dict[str, dict] = {}
     for loc in localized:
         if loc["material"] not in materials:
-            materials[loc["material"]] = material_by_name(ex, fonts.fonts[loc["fontAsset"]], loc["material"])
+            materials[loc["material"]] = material_named(fonts.fonts[loc["fontAsset"]], loc["material"])
     text_mats = dict(materials)
     for f in fonts.fonts.values():
         if f.name in needed or f.name in runtime_units or f.name in primaries:
-            m = ex.material(f.material_obj)
+            m = f.default_material()
             materials.setdefault(m["material"], m)
     return materials, text_mats
 
 
+def text_materials(
+    ex: Exporter, fonts: FontSet, localized: list[dict], primaries: set, needed: dict, runtime_units: dict
+) -> tuple[dict, dict]:
+    """text_material_records for the font assets of `fonts`, their materials read through `ex`."""
+    return text_material_records(
+        fonts, localized, primaries, needed, runtime_units, lambda f, name: material_by_name(ex, f, name)
+    )
+
+
 def export_fonts(
-    ex: Exporter,
-    fonts: FontSet,
+    fonts: FontLookup,
     primaries: set,
     needed: dict,
     runtime_units: dict,
     text_mats: dict,
-    packer: TexelPacker,
+    packer: TexelPacker | MemoryPacker,
     subset: str,
 ) -> dict:
     """Font asset records with the character / glyph tables reduced to the `needed` baked characters (plus the
@@ -631,7 +710,7 @@ def export_fonts(
         extra = runtime_units.get(f.name, set())
         if f.name not in primaries and not units and not extra:
             continue
-        mat = ex.material(f.material_obj)
+        mat = f.default_material()
         gs = mat["floats"]["_GradientScale"]
         aw, ah = f.tt["m_AtlasWidth"], f.tt["m_AtlasHeight"]
         # the runtime replaces _TextureWidth/_TextureHeight with the packed size
@@ -679,7 +758,7 @@ def export_fonts(
             "atlasPadding": tt["m_AtlasPadding"],
             "atlasRenderMode": tt["m_AtlasRenderMode"],
             "atlasPopulationMode": tt["m_AtlasPopulationMode"],
-            "atlases": [a.read_typetree()["m_Name"] if a is not None else None for a in f.atlases],
+            "atlases": f.atlas_names(),
             "normalStyle": tt["normalStyle"],
             "normalSpacingOffset": tt["normalSpacingOffset"],
             "boldStyle": tt["boldStyle"],
@@ -739,46 +818,62 @@ def resolve_font_blocks(font_out: dict) -> None:
 
 
 # ---------------------------------------------------------------- the font settings of the game's assets
-class AssetFontSettings(FontSettings):
+def font_record(f: FontAsset, material: str, fallbacks: list[str], bundle: str) -> dict:
+    """The table's record of the font asset `f` (FontSettings.font): face info, atlas padding and render mode, style
+    settings, default material name, fallback names, coverage, variants and the bundle that holds it."""
+    tt = f.tt
+    return {
+        "faceInfo": tt["m_FaceInfo"],
+        "atlasPadding": tt["m_AtlasPadding"],
+        "atlasRenderMode": tt["m_AtlasRenderMode"],
+        **{k: tt[k] for k in STYLE_KEYS},
+        "material": material,
+        "fallbacks": fallbacks,
+        "coverage": encode_coverage(set(f.chars) | (f.cmap if f.dynamic else set())),
+        "variants": sorted([b, vs] for b, vs in f.variants),
+        "bundle": bundle,
+    }
+
+
+class BuiltFontSettings(FontSettings):
+    """FontSettings read from font assets, which record the path id of each object they read (font_document)."""
+
+    def __init__(self):
+        super().__init__({"format": FORMAT, "fonts": {}, "materials": {}})
+        self.font_ids: dict[str, int] = {}  # font asset name -> its object's path id
+        self.material_ids: dict[str, int] = {}  # material name -> its object's path id
+
+
+class AssetFontSettings(BuiltFontSettings):
     """FontSettings read from the game's font assets (`ex`: an Exporter of the catalog and player data): a font asset
     at its address (fontsettings.font_key), its fallbacks through their references (FontSet), its materials at their
     addresses. Needs the `fonts` extra for the source font files of dynamic assets."""
 
     def __init__(self, ex):
-        super().__init__({"format": FORMAT, "fonts": {}, "materials": {}})
+        super().__init__()
         self.ex = ex
         self._set = None
-        self._mat_objs: dict[str, ObjectReader] = {}  # material name -> its object
 
     def _fontset(self):
         if self._set is None:
             self._set = FontSet(self.ex)
         return self._set
 
-    def _font_obj(self, name: str):
+    def _font_obj(self, name: str) -> Font:
         fs = self._fontset()
         if name not in fs.fonts:
             fs.by_key(font_key(self.ex.cat, name, name))
-        return fs.fonts[name]
+        return fs.loaded(name)
 
     def font(self, name: str) -> dict:
         if name not in self.fonts:
             f = self._font_obj(name)
-            mat = self.ex.material(f.material_obj)
+            mat = f.default_material()
             self.materials.setdefault(mat["material"], mat)
-            self._mat_objs.setdefault(mat["material"], f.material_obj)
-            tt = f.tt
-            self.fonts[name] = {
-                "faceInfo": tt["m_FaceInfo"],
-                "atlasPadding": tt["m_AtlasPadding"],
-                "atlasRenderMode": tt["m_AtlasRenderMode"],
-                **{k: tt[k] for k in STYLE_KEYS},
-                "material": mat["material"],
-                "fallbacks": [fb.name for fb in self._fontset().fallbacks(f)],
-                "coverage": encode_coverage(set(f.chars) | (f.cmap if f.dynamic else set())),
-                "variants": sorted([b, vs] for b, vs in f.variants),
-                "bundle": f.obj.assets_file.parent.name,
-            }
+            self.material_ids.setdefault(mat["material"], f.material_obj.path_id)
+            self.font_ids[name] = f.obj.path_id
+            fallbacks = [fb.name for fb in self._fontset().fallbacks(f)]
+            self.fonts[name] = font_record(f, mat["material"], fallbacks, f.obj.assets_file.parent.name)
         return self.fonts[name]
 
     def has_material(self, font: str, name: str) -> bool:
@@ -791,22 +886,25 @@ class AssetFontSettings(FontSettings):
             key = font_key(self.ex.cat, font, name)
             if not self.ex.cat.has(key):
                 raise KeyError(f"material key {key}")
-            self._mat_objs[name] = self.ex.key_object(key)
-            self.materials[name] = self.ex.material(self._mat_objs[name])
+            obj = self.ex.key_object(key)
+            self.material_ids[name] = obj.path_id
+            self.materials[name] = self.ex.material(obj)
         return copy.deepcopy(self.materials[name])
 
     def where(self) -> str:
         return "the game's font assets"
 
 
-def build_font_settings(ex, player, game_version: str) -> dict:
-    """The font settings table (fontsettings.FORMAT) from the game's assets: every font asset LocalizeManager lists
-    for a language (font names and additional font names) with the assets of their fallback chains, their default
-    materials and the localized text materials of the listed assets that the catalog has (table_material), and the
-    objects index of those assets."""
-    lang = language_fonts(player)
-    settings = AssetFontSettings(ex)
-    listed = sorted({f"{n} SDF" for d in lang["languages"].values() for n in d["fontNames"] + d["additionalFontNames"]})
+def listed_fonts(lang: dict) -> list[str]:
+    """The font assets LocalizeManager lists for the languages (`lang`: textstyle.language_fonts): "<name> SDF" for
+    every font name and additional font name, sorted."""
+    return sorted({f"{n} SDF" for d in lang["languages"].values() for n in d["fontNames"] + d["additionalFontNames"]})
+
+
+def load_listed(settings: BuiltFontSettings, lang: dict) -> list[str]:
+    """Reads the font assets `lang` lists with their fallback chains, and the text materials of the listed assets
+    (one per material type of `lang`) that the game has. -> the names of the font assets read, sorted."""
+    listed = listed_fonts(lang)
     todo, seen = list(listed), set()
     while todo:
         name = todo.pop(0)
@@ -818,15 +916,27 @@ def build_font_settings(ex, player, game_version: str) -> dict:
         for t in lang["materialTypes"]:
             if settings.has_material(name, f"{base} - {t}"):
                 settings.material(name, f"{base} - {t}")
-    fs = settings._fontset()
-    objects = {
-        str(fs.fonts[n].obj.path_id): {"type": "MonoBehaviour", "class": FONT_CLASS, "name": n} for n in sorted(seen)
-    }
-    objects.update({str(o.path_id): {"type": "Material", "name": n} for n, o in sorted(settings._mat_objs.items())})
+    return sorted(seen)
+
+
+def font_document(settings: BuiltFontSettings, names: list[str], game_version: str) -> dict:
+    """The table (fontsettings.FORMAT) of the font assets `names` and of the materials `settings` read (table_material),
+    with the path id, type and name of each of those objects as the table's `objects` index."""
+    objects = {str(settings.font_ids[n]): {"type": "MonoBehaviour", "class": FONT_CLASS, "name": n} for n in names}
+    objects.update({str(pid): {"type": "Material", "name": n} for n, pid in sorted(settings.material_ids.items())})
     return {
         "format": FORMAT,
         "gameVersion": game_version,
-        "fonts": {n: settings.fonts[n] for n in sorted(seen)},
+        "fonts": {n: settings.fonts[n] for n in names},
         "materials": {n: table_material(settings.materials[n]) for n in sorted(settings.materials)},
         "objects": dict(sorted(objects.items(), key=lambda kv: int(kv[0]))),
     }
+
+
+def build_font_settings(ex, player, game_version: str) -> dict:
+    """The font settings table (fontsettings.FORMAT) from the game's assets: every font asset LocalizeManager lists
+    for a language (font names and additional font names) with the assets of their fallback chains, their default
+    materials and the localized text materials of the listed assets that the catalog has (table_material), and the
+    objects index of those assets."""
+    settings = AssetFontSettings(ex)
+    return font_document(settings, load_listed(settings, language_fonts(player)), game_version)
