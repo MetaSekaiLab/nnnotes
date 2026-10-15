@@ -229,7 +229,7 @@ Documents written by particular stages (artifacts of no object: their ids are `<
 | `nnnotes.catalog-index/1` | `catalog.index` | [catalog-index.schema.json](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/schemas/catalog-index.schema.json) |
 | `nnnotes.census/2` | `unity.census` | [census.schema.json](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/schemas/census.schema.json) |
 | `nnnotes.scripts/1` | `link.scripts` | [scripts.schema.json](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/schemas/scripts.schema.json) |
-| `nnnotes.addresses/2` | `link.addresses` | [addresses.schema.json](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/schemas/addresses.schema.json) |
+| `nnnotes.addresses/3` | `link.addresses` | [addresses.schema.json](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/schemas/addresses.schema.json) |
 | `nnnotes.view/1` | `view.<name>` | [view.schema.json](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/schemas/view.schema.json) |
 | `nnnotes.objects/1` | `pipeline.assemble` (a product's object table) | [objects.schema.json](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/schemas/objects.schema.json) |
 

@@ -121,17 +121,22 @@ class Addresses(Protocol):
 
 
 class AddressIndex:
-    """Addresses from {catalog key: objects in stored order} (a key mapped to None or [] has no census object), and
-    the objects of the resource paths of the APK's built-in files ({path: objects in stored order}, `resource`)."""
+    """Addresses from {catalog key: objects in stored order} (a key mapped to None or [] has no census object), the
+    objects of the resource paths of the APK's built-in files ({path: objects in stored order}, `resource`) and of
+    their selectors ({selector: objects}, `builtin`)."""
 
     def __init__(
-        self, entries: Mapping[str, Iterable[Obj] | None], resources: Mapping[str, Iterable[Obj]] | None = None
+        self,
+        entries: Mapping[str, Iterable[Obj] | None],
+        resources: Mapping[str, Iterable[Obj]] | None = None,
+        builtins: Mapping[str, Iterable[Obj]] | None = None,
     ):
         self._objs = {k: list(v or ()) for k, v in entries.items()}
         self._keys = sorted(self._objs)
         self._resources: dict[str, list[Obj]] = {}
         for path, objs in (resources or {}).items():
             self._resources.setdefault(path.casefold(), []).extend(objs)
+        self._builtins = {k: list(v) for k, v in (builtins or {}).items()}
 
     def keys(self, prefix: str = "") -> list[str]:
         i = bisect.bisect_left(self._keys, prefix)
@@ -152,6 +157,12 @@ class AddressIndex:
         objs = self._resources.get(path.casefold())
         return None if objs is None else list(objs)
 
+    def builtin(self, selector: str) -> list[Obj] | None:
+        """The objects of the built-in files a selector names ("<class>", "MonoBehaviour:<script class>": the
+        `builtins` table of link.addresses); None for a selector no object has."""
+        objs = self._builtins.get(selector)
+        return None if objs is None else list(objs)
+
     @classmethod
     def build(cls, locations: Mapping[str, str], containers: Mapping[str, Iterable[Obj]]) -> AddressIndex:
         """The index of a catalog and its censuses: `locations` {key: internal id} (the asset path a key loads),
@@ -164,18 +175,19 @@ class AddressIndex:
 
     @classmethod
     def from_addresses(cls, doc: dict) -> AddressIndex:
-        """The index of an address table (nnnotes.addresses/2, the link.addresses stage): a key's objects are those
-        of all its locations (in the table's order, the order of the bundle's container), a resource path's those
-        its table lists, with class, name and stable address from the table's `objects`; a location whose bundle has
-        no census yet contributes none."""
+        """The index of an address table (nnnotes.addresses/3, the link.addresses stage): a key's objects are those
+        of all its locations (in the table's order, the order of the bundle's container), a resource path's and a
+        built-in selector's those its tables list, with class, name and stable address from the table's `objects` (a
+        built-in object without a stable address has the class of its selector); a location whose bundle has no
+        census yet contributes none."""
         where: dict[str, str] = {}
         for addr, info in doc["objects"].items():
             where.setdefault(info["object"], addr)
 
-        def obj(oid: str) -> Obj:
+        def obj(oid: str, cls: str = "") -> Obj:
             addr = where.get(oid)
             info = doc["objects"][addr] if addr is not None else {}
-            return Obj(oid, info.get("class") or "", info.get("name") or "", addr)
+            return Obj(oid, info.get("class") or cls, info.get("name") or "", addr)
 
         entries = {}
         for key, locs in doc["keys"].items():
@@ -184,7 +196,11 @@ class AddressIndex:
                 for oid in loc.get("objects") or ():
                     objs[oid] = obj(oid)
             entries[key] = list(objs.values())
-        return cls(entries, {path: [obj(o) for o in oids] for path, oids in doc["resources"].items()})
+        return cls(
+            entries,
+            {path: [obj(o) for o in oids] for path, oids in doc["resources"].items()},
+            {sel: [obj(o, sel.partition(":")[0]) for o in oids] for sel, oids in doc["builtins"].items()},
+        )
 
     def to_json(self) -> dict:
         return {"keys": {k: [o.to_json() for o in self._objs[k]] for k in self._keys}}

@@ -1,7 +1,8 @@
 """Product stages: products assembled from the unity.export results of the objects they reach, never from a bundle.
 
 A product (a Live2D model, a story, a live, ...) is a stage whose task per subject starts from root objects: the
-objects of the catalog keys `keys(subject)` gives, of the Resources.Load paths `resources(subject)` gives and the
+objects of the catalog keys `keys(subject)` gives, of the Resources.Load paths `resources(subject)` gives, of the
+built-in selectors `builtins(subject)` gives (objects of the APK's built-in files by class or script class) and the
 objects `root_objects(subject)` names (all read from the planning facts alone, so a command can ask for the units its
 products need before anything runs: `request`). The
 objects it reaches are those of the units holding its roots and every unit an item of a reached unit references
@@ -36,15 +37,21 @@ TABLE_KIND = "product.objects"
 
 def request(stages: dict, products: dict, env) -> dict:
     """The fact "roots" (pipeline.units) of a request for `products` {stage name: subjects}: the catalog keys, the
-    resource paths and the root objects of every subject, sorted."""
-    keys, resources, objects = set(), set(), set()
+    resource paths, the built-in selectors and the root objects of every subject, sorted."""
+    keys, resources, builtins, objects = set(), set(), set(), set()
     for name, subjects in sorted(products.items()):
         stage = stages[name]
         for s in subjects:
             keys.update(stage.keys(s, env))
             resources.update(stage.resources(s, env))
+            builtins.update(stage.builtins(s, env))
             objects.update(stage.root_objects(s, env))
-    return {"keys": sorted(keys), "resources": sorted(resources), "objects": sorted(objects)}
+    return {
+        "keys": sorted(keys),
+        "resources": sorted(resources),
+        "builtins": sorted(builtins),
+        "objects": sorted(objects),
+    }
 
 
 def _entry(item: dict, arts: dict) -> dict:
@@ -271,6 +278,11 @@ class ProductStage(Stage):
         """The Resources.Load paths whose objects are roots of `subject` (from the facts alone)."""
         return []
 
+    def builtins(self, subject: str, env) -> list[str]:
+        """The built-in selectors ("<class>", "MonoBehaviour:<script class>") whose objects are roots of `subject`
+        (from the facts alone)."""
+        return []
+
     def root_objects(self, subject: str, env) -> list[str]:
         """Object ids that are roots of `subject` besides those of its keys and resource paths (from the facts
         alone)."""
@@ -291,7 +303,11 @@ class ProductStage(Stage):
     def reach(self, subject: str, env) -> Reach:
         """What `subject` reaches (kept while the results it read are the same)."""
         roots = units.root_objects(
-            env, self.keys(subject, env), self.root_objects(subject, env), self.resources(subject, env)
+            env,
+            self.keys(subject, env),
+            self.root_objects(subject, env),
+            self.resources(subject, env),
+            self.builtins(subject, env),
         )
         sig = (tuple(roots), id(units.table(env)))
         memo = self._memo.get(subject)
@@ -307,7 +323,7 @@ class ProductStage(Stage):
         return [table, *self.more_inputs(subject, env)]
 
     def depends(self, subject: str, env) -> list[str]:
-        named = self.keys(subject, env) or self.resources(subject, env)
+        named = self.keys(subject, env) or self.resources(subject, env) or self.builtins(subject, env)
         own = [contract.task_id(ADDRESSES, s) for s in sorted(env.fact("catalogs"))] if named else []
         return own + self.reach(subject, env).read
 
