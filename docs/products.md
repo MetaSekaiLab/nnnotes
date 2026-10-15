@@ -72,7 +72,8 @@ object), or the reason code of a generic, unsupported or failed object.
 
 ## Product layout
 
-A product layout places products for a player (`export assets --layout product`, `export live2d --player`):
+A product layout places products for a player (`export assets --layout product`, `export live`,
+`export live2d --player`):
 
 - every file of a product and every file of the objects of its object table at `assets/<sha256>.<ext>` (a file
   several products or objects share is written once);
@@ -81,9 +82,9 @@ A product layout places products for a player (`export assets --layout product`,
 
 A command asks for products in one of two ways: `export assets --layout product` makes, with each product stage, the
 products of the catalog keys the selected bundles hold (the stage's `select`; a stage that reads master data has none
-without it); `export live2d`, `export spot` and `export room` ask for the products of one subject. `export live2d`
-without `--player`, `export spot` and `export room` place the files of their products at their own paths instead (the
-`files` placement: the Cubism SDK files as a directory, a spot's files).
+without it); `export live`, `export live2d`, `export spot` and `export room` ask for the products of one subject.
+`export live2d` without `--player`, `export spot` and `export room` place the files of their products at their own
+paths instead (the `files` placement: the Cubism SDK files as a directory, a spot's files).
 
 ## Product manifest: nnnotes.product/1
 
@@ -223,7 +224,7 @@ either, is
 `live.music`: its subject is a music id (`MasterLiveMusic._id`), its manifest `music/<id>.json` and its input
 `master` the music's rows of `MasterLiveMusic`, `MasterSound` and `MasterSoundCueSheet`. Its files are `music.json`
 (`format` 1, `musicId`, `music`: the BGM's `soundId`, `volume` and `startTimeSec`, and `sounds`: the BGM's entry)
-and each layer's file in the web format of the parameter `format`: `aac` (AAC-LC 160 kbit/s in MP4, the default),
+and each layer's file in the web format of the parameter `audio`: `aac` (AAC-LC 160 kbit/s in MP4, the default),
 `opus`, `vorbis`, `mp3`, or `flac`, the decoded FLAC itself. An AAC layer records `encoderDelay`, the priming samples
 of the MP4 edit list, which a decoder that does not apply the edit list outputs first. The encode is bit-exact; the
 atom `audio.encode` names the ffmpeg build.
@@ -306,3 +307,43 @@ lists that component as contained in the root GameObject holding it (`in`).
 
 A live plays the timeline and background of one band. The object table and the shader files are kept as in the note
 highway. The `product` layout makes `live.scene` when the selection holds the scene and the master data is there.
+
+## Lives
+
+A live is one chart of a music. It is a product of `nnnotes.pipeline.live` that holds what belongs to the chart and
+names the products it plays with:
+
+| Product | Subject | Manifest | Roots | Document |
+|---|---|---|---|---|
+| `live` | `<musicId>/<difficulty>[/<band>]`: a `MasterLiveMusic` id, `easy`, `normal`, `hard` or `expert`, and optionally a band | `lives/<musicId>_<difficulty>[_<band>].json` | the chart `Live/MusicScore/<_musicScoreTextFileName>` and the jacket `Image/Jacket/<_jacketAssetName>` | `live.json` |
+
+The band is the one whose start timeline and LightWeight background the live plays. The game takes it from the
+player's deck centre; a subject without a band takes the band of the music's first vocal character
+(`MasterLiveMusic._vocalCharacterIDs[0]`, its `MasterCharacter._bandID`). The input `master` holds the music's rows
+(`MasterLiveMusic`, its `MasterLiveMusicScore` row of each difficulty, the title and band names in every language from
+`MasterText`, the BGM and jingle `MasterSound` rows with their cue sheets), the difficulty, the band and the manifest
+paths of the parts.
+
+| File | |
+|---|---|
+| `live.json` | the document below |
+| `chart.json` | the chart as shipped: the `TextAsset` of the chart key, un-gzipped |
+| `notes.json` | the runtime notes the game converts the chart to, with `source`: the chart key, the music, the difficulty, the `MasterLiveMusicScore` id and the full combo count |
+| `notes.mirror.json` | the same with the `MirrorChart` option on: lanes and flick directions mirrored |
+
+`live.json` has `format` 1 and
+
+| Field | |
+|---|---|
+| `musicId`, `difficulty` | the chart |
+| `band` | `{band, source, note}`: the band, what it was taken from, and that the game takes it from the deck centre |
+| `chart`, `notes`, `notesMirror` | the files above |
+| `judgementNoteCount`, `noteCount`, `lastNoteTimeMs` | of the converted chart |
+| `fullComboCount` | `MasterLiveMusicScore._fullComboCount` |
+| `master` | the music's rows of the input `master` |
+| `jacket` | the object id of the jacket Sprite |
+| `parts` | `{part: manifest path}` of the products the live plays with: `scene` (`scenes/default.json`), `notes` (`notes/default.json`), `noteskin` and `noteeffect` (the note skin and effect set of the option defaults, `NoteDesignId` and `NoteEffectId` of preset 1), `sounds` (`sounds/default.json`) and `music` (`music/<musicId>.json`). A path is relative to the layout's root, as a manifest path |
+
+The object table holds the jacket Sprite and its texture; the chart's `TextAsset` is in `chart.json`. The `product`
+layout makes the live of each chart whose key and jacket the selection holds (with the master data), without a band.
+`export live` asks for one live and its parts ([export live](commands.md#export-live)).

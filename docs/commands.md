@@ -427,63 +427,64 @@ nnnotes apk settings -o OUT.json
 The game's render settings from the APK's boot data as JSON: `colorSpace`, `defaultPipeline`, `qualityLevels`,
 `qualityPerPlatform`, `pipelines`, `renderers`, `postProcessData`. Needs `[paths] apk`. The MonoBehaviours are read
 with the type trees that ship with nnnotes; an APK whose classes do not match them stops the command with exit
-status 2 and a line naming the class, the game version and the Unity version (as `export story`, `export live` and `site build`).
+status 2 and a line naming the class, the game version and the Unity version (as `export story` and `site build`).
 
 ## export live
 
 ```
-nnnotes export live MUSIC_ID -o OUT [--difficulty easy|normal|hard|expert] [--format flac|ogg|wav]
-                             [--flac-level N] [--fonts open|game] [--band BAND | --leader-card CARD_ID]
+nnnotes export live MUSIC_ID -o OUT [--difficulty easy|normal|hard|expert] [--format aac|flac|mp3|opus|vorbis]
+                             [--flac-level N] [--band BAND | --leader-card CARD_ID]
                              [--live-option OPTION[=VALUES] ...]
 ```
 
-One chart (music + difficulty, default `expert`) as a self-contained directory, the format ournotes-player reads:
+One chart (music + difficulty, default `expert`) and the products it plays with, in the product layout
+([products](products.md#lives)):
 
 ```
-OUT/score/                   the chart as shipped, the converted runtime notes, master rows (title and band
-                             names in every language), summary.json
-OUT/audio/<cueSheet>/        the BGM cue sheet decoded per cue + cues.json, streams.json
-OUT/audio/live-audio.json    the live's sounds (BGM, note SE, live SE: the start and finish cheers and the finish
-                             sound of every result, all perfect, full combo, assist full combo and clear) with
-                             their CRI routing; their cue sheets decoded next to the BGM
-OUT/livescene/               scene graph, cameras, lane, background, start timeline, textures and shaders
-OUT/livenotes/               note, line and effect prefabs, skins, clips, particle systems, textures and shaders
-OUT/liveui/                  the start canvas in [catalog] language: strings, text records or fonts, sprites
-OUT/live.json                index of the above
+OUT/lives/<musicId>_<difficulty>[_<band>].json  the live: the chart as shipped, its converted notes (also mirrored),
+                                                the music's master rows, the jacket, the manifest paths of the parts
+OUT/scenes/default.json                         the live scene: scene graph, cameras, lane, UI assets, the start
+                                                timeline and LightWeight background of every band, the built-in
+                                                graphics settings
+OUT/notes/default.json                          the note highway: note, line and lane effect prefabs, settings
+OUT/noteskins/<skin>.json                       a note skin
+OUT/noteeffects/<set>.json                      a note effect set
+OUT/sounds/<sets>.json                          the note and live sounds with their CRI routing and volumes
+OUT/music/<musicId>.json                        the BGM in a web format
+OUT/assets/<sha256>.<ext>                       every file the manifests name, once
 ```
 
-`--format` (default `flac`) is the format of every decoded cue sheet and `--flac-level` its FLAC compression level
-(as for `export audio`).
-
-The start canvas follows the client language `[catalog] language` (`ja`, `en`, `zh-Hant`, `zh-Hans` or `ko`): its
-text table column, fonts and line spacing. `--fonts open` (default) writes each text's layout and style (size,
-alignment, wrapping, spacing, colours, outline / underlay from its material) and only the names of the game's fonts
-and materials; `--fonts game` also writes the game's TextMesh Pro fonts reduced to the characters shown, with their
-atlas textures (needs the optional `fonts` dependencies: `pip install 'nnnotes[fonts]'`).
+`--format` (default `aac`) is the web format of the BGM: `aac` (AAC-LC in MP4), `opus`, `vorbis`, `mp3`, or `flac`,
+the decoded FLAC itself. `--flac-level` is the FLAC compression level the cue sheets are decoded at (every level
+decodes to the same samples).
 
 The game takes the band of the background and start timeline from the player's deck centre. Without a deck the
 band is `--band`, or the band of the character of `--leader-card` (a `MasterMemberCard` id), or by default the band
-of the music's first vocal character; the choice is recorded in `livescene/scene.json`. Prints the index with a
-summary.
+of the music's first vocal character; `live.json` `band` records the choice, and the live's manifest path holds the
+band only when one of the two flags is given. A band whose start timeline or background the catalog does not hold is
+a usage error.
 
-The directory holds what a live reads with the game's default options (option preset 1 of a fresh profile).
-`--live-option` (repeatable) adds the files of other values of the options that select files, so that a player can
-offer them; the options are named as in the game (the names ournotes-player's settings use):
+The products hold what a live reads with the game's default options (option preset 1 of a fresh profile), and always
+the mirrored notes, the bar line view and the option tables. `--live-option` (repeatable) adds the products of other
+values of the options that select files, so that a player can offer them; the options are named as in the game (the
+names ournotes-player's settings use):
 
 | `--live-option` | Adds |
 |---|---|
-| `MirrorChart` | `score/<chart>.mirror.notes.json`, the chart converted with lanes and flick directions mirrored (the game mirrors while it converts the chart); `live.json` `notesMirror` |
-| `NoteDesignId` | the other note skins (`MasterLiveNoteSkin`): `livenotes/notes.json` `noteSkins` (skin asset name -> a record like `noteSkin`) and `settings.skins` (`NoteDesignId` -> skin asset name) |
-| `NoteEffectId` | the other note effect sets (`MasterLiveNoteEffectSkin`; the lane effects are the same for every set): their assets in `livenotes/notes.json` `assets`, and `settings.effects` (`NoteEffectId` -> effect set name) |
-| `LiveQuality` | the qualities of `MasterLiveQualitySettings`; at the Low quality (2) the game loads the `<name>Light` variant of a note effect set where the catalog has one (else the set itself), whose assets are added (and `settings.effects`) |
-| `NoteSePatternId` | the other note sound sets (`MasterLiveNoteSe` groups): `audio/live-audio.json` `noteSe.groups` (set -> `LiveNoteSeType` -> sound id) and their sounds, decoded next to the others |
-| `MeasureLineDisplay` | the bar lines: `livenotes/notes.json` `prefabs.bar_line_view`, the bar line view the live scene's bar line container instantiates (a node list like the note view prefabs), and its sprite's texture; the bar times and the BPM and time signature changes are in the score's notes (`barLineTimeMs`, `bpmChanges`, `barChanges`) with or without the option |
-| `defaults` | only `settings.optionDefaults` / `optionRanges` of every option the player offers (note timing, the live and note sound volumes and mutes, the note sound set and per-type sounds, ...) |
+| `NoteDesignId` | the other note skins (`MasterLiveNoteSkin`): a `live.noteskin` product each |
+| `NoteEffectId` | the other note effect sets (`MasterLiveNoteEffectSkin`; the lane effects are the same for every set): a `live.noteeffect` product each |
+| `LiveQuality` | the qualities of `MasterLiveQualitySettings`; at the Low quality (2) the game loads the `<name>Light` variant of a note effect set where the catalog has one (else the set itself), whose `live.noteeffect` products are added |
+| `NoteSePatternId` | the other note sound sets (`MasterLiveNoteSe` groups): the `live.sounds` product `NoteSePatternId=<ids>`, which holds them and the default set |
+| `MirrorChart`, `MeasureLineDisplay`, `defaults` | nothing: the products always hold their files |
 | `all` | every option above with every value |
 
 An option without values offers every value the master data has; `NAME=v,v,...` offers those values (the default
-value is always included; a value the master data does not have is a usage error). Any option also writes the
-`defaults` tables. Without `--live-option` the directory holds the files of the default options only.
+value is always included; a value the master data does not have is a usage error).
+
+The command runs the depot's pipeline for these products alone, as `export live2d` does, writes the same reports in
+`OUT/_reports/` and takes `--stored-catalog`, `--workers`, `--link`, `--explain` and `--dry-run` as `export assets`
+does. Needs `[paths] apk` (the built-in graphics and sound settings and the CRI ACF are in the APK), master data,
+`vgmstream` and `ffmpeg`.
 
 ## site build
 
@@ -580,8 +581,8 @@ SITE/assets/<sha256>.<ext>[.gz|.br]       content-addressed files shared by all 
   and nnnotes' own code), so a later build with the same `--tmp` reuses what is unchanged and writes the same files
   faster. Deleting it is
   safe at any time outside a build; the next build then makes everything again.
-- `--band` / `--leader-card`: as for `export live`, for every chart. `--fonts`: for charts as for `export live` (the site stores
-  no start canvas files); for stories where the glyphs of the story text come from (see Stories).
+- `--band` / `--leader-card`: as for `export live`, for every chart. `--fonts`: for stories, where the glyphs of the
+  story text come from (see Stories); the site stores no start canvas of a chart.
 - `--live-option` (repeatable): as for `export live`, for the charts of this run (with `--pair` or `--all`). The live
   directories carry the variants' files, and a chart's read set is the union of its read set with the default
   options and its read sets with the settings of each offered variant (every combination of the offered mirror,
