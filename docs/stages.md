@@ -36,6 +36,8 @@ codec and channel of a USM) and `catalog.index` (version 2: gzip input and Japan
 | `live.noteeffect` | a note effect set (`effect001`, `effect001Light`) | `objects`: the object table of the effect settings | `noteeffect.json` and the object table |
 | `live.scene` | `default` | `objects`: the object table of the scene, the bands' start timelines and backgrounds, the lane skins, the UI assets and the built-in graphics settings ([products](products.md#live-scene)); `master`: the master record of its settings, lane skins and bands | `scene.json` and the object table |
 | `live` | a live: `<musicId>/<difficulty>[/<band>]` | `objects`: the object table of the chart and the jacket ([products](products.md#lives)); `master`: the live's master record and the manifest paths of its parts | `live.json`, `chart.json`, `notes.json`, `notes.mirror.json` and the object table |
+| `story.sound` | a cue sheet name | `objects`; `acb:<key>` and `sheets`: the cue sheet and its `cri.audio` files ([products](products.md#stories)); parameter `audio` (`aac`) | `cues.json` and the cues' sounds in the web format |
+| `story.crilips` | `default` | `objects` (empty); `apk:lib/arm64-v8a/libcri_lips_unity.so` | `crilips.json` and `crilips.bin` |
 | `link.addresses` | global | catalog index, censuses (the built-in files' too) | key -> objects (a scene key: the objects of the scene's file outside a hierarchy), Resources.Load path -> objects, built-in selector (class, MonoBehaviour script class) -> objects, serialized file -> bundle or built-in file, bundle -> keys |
 | `view.<name>` | a catalog (`main`) | `master:<Table>` per master table it reads, `rules` (the view's rule and the resolvers it uses), `addresses` (the part of the address table it read: the keys looked up and the prefixes listed); no parameters, atoms or context | `view.<name>:<subject>#view` (facts: rows, entries, gaps, unreferenced) |
 | `view.voices` | a catalog (`main`) | `master:<Table>` per master table its rules read, `rules`, `addresses`, `sheets` (each cue sheet the `cri.audio` results are known by that a voice names or the rules' prefixes list: its task and ACB content id), `acb:<sha256>` (the ACB of each decoded one), `episodes` (per story episode and part, the `unity.export` artifact holding the object its key names), `adv:<sha256>` (those contents); context `audio` (the keys of those `cri.audio` results); runs after `unity.export` and `cri.audio` | `view.voices:<subject>#view` (facts: rows, entries, gaps, unreferenced streams) |
@@ -296,6 +298,7 @@ The codes of items that are `generic`, `unsupported` or `failed`, and of limits 
 | `unsupported.usm.codec` | a USM video or alpha stream in a codec other than VP9, H.264 or MPEG-1, an audio stream in a codec other than ADX or HCA, or an H.264 stream without a frame rate |
 | `unsupported.usm.stream` | a USM stream of a kind other than video, alpha, audio or subtitles |
 | `unsupported.usm.subtitle` | USM subtitles that are not records, or whose text is not UTF-8 (the movie's other artifacts are made) |
+| `unsupported.crilips.version` | a CRI Lips library of a version whose analysis data nnnotes cannot locate |
 | `unsupported.class.AudioClip` | an AudioClip |
 | `unsupported.class.VideoClip` | a VideoClip |
 | `unsupported.class.MovieTexture` | a MovieTexture |

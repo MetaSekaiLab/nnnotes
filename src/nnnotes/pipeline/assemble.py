@@ -375,15 +375,13 @@ class ProductStage(Stage):
 
     # ---------------------------------------------------------------- planning
     def reach(self, subject: str, env) -> Reach:
-        """What `subject` reaches (kept while the results it read are the same)."""
+        """What `subject` reaches (kept while the results it read are the same); nothing, and no census read, for a
+        subject without roots."""
         keys = self.keys(subject, env)
-        roots = units.root_objects(
-            env,
-            keys,
-            self.root_objects(subject, env),
-            self.resources(subject, env),
-            self.builtins(subject, env),
-        )
+        named = (self.root_objects(subject, env), self.resources(subject, env), self.builtins(subject, env))
+        if not keys and not any(named):
+            return Reach({"schema": contract.OBJECTS, "roots": [], "keys": {}, "objects": {}, "missing": []})
+        roots = units.root_objects(env, keys, *named)
         by_key = {k: units.root_objects(env, [k]) for k in keys}
         sig = (tuple(roots), tuple((k, tuple(v)) for k, v in sorted(by_key.items())), id(units.table(env)))
         memo = self._memo.get(subject)
