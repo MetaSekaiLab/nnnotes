@@ -5,8 +5,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+from ..formats.encoders import DEFAULT_AUDIO_FORMAT, WEB_AUDIO
 from ..site.compress import DEFAULT_ENCODING, ENCODINGS
-from ..site.webaudio import DEFAULT_AUDIO_FORMAT, WEB_AUDIO
 from ..source.config import ConfigError, use
 from ..source.session import Session
 from .common import (
