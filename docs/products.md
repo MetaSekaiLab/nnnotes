@@ -67,9 +67,10 @@ A product layout places products for a player (`export assets --layout product`,
   `<stage>/<subject>.json` with the subject escaped as one path segment).
 
 A command asks for products in one of two ways: `export assets --layout product` makes, with each product stage, the
-products of the catalog keys the selected bundles hold (the stage's `select`); `export live2d` asks for one model.
-`export live2d` without `--player` places the files of its one product at their own paths instead (the `files`
-placement: the Cubism SDK files as a directory).
+products of the catalog keys the selected bundles hold (the stage's `select`; a stage that reads master data has none
+without it); `export live2d`, `export spot` and `export room` ask for the products of one subject. `export live2d`
+without `--player`, `export spot` and `export room` place the files of their products at their own paths instead (the
+`files` placement: the Cubism SDK files as a directory, a spot's files).
 
 ## Product manifest: nnnotes.product/1
 
@@ -127,3 +128,65 @@ story renderer adds to a character draw), and the mask materials' when a drawabl
 | `<expression>.exp3.json` | each CubismExpressionData of the table |
 | `motions/<motion>.motion3.json` | each CubismFadeMotionData, with the sample rate of the clip of its name |
 | `<id>.model3.json` | the files, the model's fade times of each motion, and the EyeBlink and LipSync groups (the GameObjects holding a CubismEyeBlinkParameter or a CubismMouthParameter) |
+
+## Spots
+
+A spot of the home is a background prefab (a room) and a situation prefab placed on it. Two product stages
+(`nnnotes.pipeline.spot`) assemble them; the roots of each are the objects of its subject's catalog key, and neither
+keeps objects: its files are all it holds.
+
+`room.gltf` is a background as binary glTF. Its subject is a background key, `Spot/<place>/Background/<place>`, and
+its manifest `rooms/<place>.json`. Its files:
+
+| File | |
+|---|---|
+| `room.glb` | every drawn mesh of the prefab (a MeshFilter with a mesh beside an enabled MeshRenderer), in hierarchy order |
+| `room.json` | the summary: `backgroundKey`, `glb`, `meshCount`, `inactiveMeshes`, `materials`, `textures`, `samplers`, and what draws nothing (below) |
+
+Each drawn mesh is one glTF node without a transform: its vertices are baked into the prefab's space through the
+world matrix of its node (the root's own transform included) and written in glTF's right-handed space (z negated,
+v = 1 - v). Each non-empty submesh is one primitive with the renderer's material of the same index. A node inactive in
+the prefab is kept with `extras.unityActive = false`. The situation's `backgroundPosition`, `backgroundRotation` and
+`backgroundScale` are not baked in: they go on top, as the game applies them to the prefab root.
+
+Materials are translated from the shader's own render state, the first pass's: blend factors (colour and alpha), blend
+operations, colour mask, culling, depth write, depth test and alpha to mask. A state the shader takes from a property
+(`Blend [_SrcBlend] [_DstBlend]`, `Cull [_Cull]`, `ZWrite [_ZWrite]`, ...) is the material's value of that property,
+else the shader's default for it. Each glTF material keeps the resolved state in `extras.unityRenderState` (and
+`room.json` in `materials[].renderState`); a shader or a state glTF cannot express is an error of the task. Each
+material and each texture is one object of the table, so materials and textures are told apart by object id. Each
+texture a material's main slot names is one glTF texture with its own sampler (from the texture's filter, wrap and
+mip count), and textures whose PNG bytes are equal share one glTF image. The `textures` of `room.json` has one entry
+per glTF texture, in glTF order: the Unity texture's name.
+
+What draws nothing is not written and `room.json` lists it: a submesh whose material slot is empty
+(`nullMaterialSubmeshes`: `mesh`, object `path` in the prefab, `submesh` index), a MeshFilter without a mesh
+(`nullMeshFilters`: the object path) and a mesh without vertices or triangles (`emptyMeshes`: `mesh` and `path`).
+
+`spot.files` is a situation: its subject is a situation key, `Spot/<place>/<situation>/<situation>`, and its manifest
+`spots/<situation>.json`. Its input `master` is the spot's record of the master tables `MasterHomeSpot`,
+`MasterText` and `MasterStoryHomeSpotTapTalkEpisode` (the row whose `_situationAssetPath` is the key, its name, its
+tap talks), made at planning from the master data. Its files are `spot.json` and the Spine files under `spine/`:
+
+| Field of spot.json | |
+|---|---|
+| `spotId`, `master` | the spot's id and its `MasterHomeSpot` row |
+| `name` | its name per language (`japanese`, `english`, `traditionalChinese`, `simplifiedChinese`, `korean`) |
+| `tapTalk` | `{character id: [ADV ids]}` of its tap talks |
+| `situationSettings` | the fields of the prefab's SpotSituationSettings (camera and interaction parameters) |
+| `controller` | the fields of its SpotCharacterController but the character lists |
+| `characters` | each SpotCharacter (a tap target) by character id: its object `path`, its fields, its `world` matrix and the world matrix of its `_focus` (`focusWorld`) |
+| `spineCharacters` | each SpotSpineCharacter in hierarchy order: `path`, the name of the skeleton its SkeletonAnimation draws (`skeletonData`), that animation's settings (`animation`) and its `world` matrix |
+| `skeletons` | each SkeletonDataAsset of the table, by name: `name`, `skeleton` and `atlases` (its files), `scale`, `defaultMix`, `mixes` |
+| `matrixConvention` | `Unity world space (left-handed), 4x4 column-major` |
+
+World matrices are in the space of the situation prefab, its root's own transform included. Fields that name objects
+are written as the prefab document writes them. A reference the prefab leaves empty is written as null: a Spine
+character with no `_animation` has null `skeletonData`, `animation` and `world`, and a tap target with no `_focus` a
+null `focusWorld`.
+
+| Spine file | From |
+|---|---|
+| `spine/<skeleton>.json` or `.skel` | the bytes of the SkeletonDataAsset's `skeletonJSON` (JSON when they start with `{`) |
+| `spine/<atlas>.atlas` | the bytes of each SpineAtlasAsset's `atlasFile`, as stored (an atlas two skeletons share is written once) |
+| `spine/<page>` | for each page of the atlas, the PNG of the `_MainTex` of the atlas asset's material of the same index |

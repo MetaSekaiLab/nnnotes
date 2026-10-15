@@ -59,11 +59,11 @@ Details: [export live2d](commands.md#export-live2d).
 
 ```sh
 nnnotes export spot SPOT_ID -o out/spots/SPOT_ID
-nnnotes export room KEY -o out/rooms/room.glb             # a background prefab key
+nnnotes export room KEY -o out/rooms/PLACE                 # a background key
 ```
 
-`export spot` writes the spot's master row with its names and tap-talk episodes, its Spine characters, its
-background as binary glTF and the shaders of its bundles. `export room` writes one background prefab as binary glTF
+`export spot` writes the spot's master row with its names and tap-talk episodes, its tap targets, its Spine
+characters and their files, and its background as binary glTF. `export room` writes one background as binary glTF
 with a summary next to it. Details: [export spot](commands.md#export-spot), [export room](commands.md#export-room).
 
 ## Shaders, audio and the UI library
