@@ -3,23 +3,41 @@
 The episode logic is `adv.build`. This module reads its inputs from a product: the episode's command list and shard
 TextAssets from the object table (`Objects`), and the MasterAdv, MasterText and MasterAdvChat rows from master tables.
 Every address is taken as present, since the product names the addresses it is asked for.
+
+`episode_json` gives episode.json; `story` gives story.json, which names the chats, the effect instances and the
+products the story plays with (`parts`).
 """
 
 from __future__ import annotations
 
+from . import adv
 from .adv import LANGS, PLAYER_SETTINGS_KEY, SHARD_SUFFIXES, AdvExtract, build
 from .prefabs import Objects, has_json
 
 TABLES = ("MasterAdv", "MasterText", "MasterAdvChat")
+STORY_FORMAT = 1  # story.json "format"
+ASSET_KINDS = (
+    "chaticon",
+    "chatstamp",
+    "chatwindow",
+    "effect",
+    "frame",
+    "posteffect",
+    "stage",
+    "still",
+    "timeline",
+    "transition",
+)
 
 
-def _base(asset: str) -> str:
+def episode_key(asset: str) -> str:
+    """The catalog key of the episode whose `_advEpisodeAsset` is `asset`."""
     return f"Adv/Episode/{asset}/{asset}"
 
 
 def keys(asset: str) -> list[str]:
     """The catalog keys of an episode: its key, the four shard keys and the AdvPlayerSettings key, sorted."""
-    base = _base(asset)
+    base = episode_key(asset)
     return sorted([base, *(f"{base}{suf}" for suf in SHARD_SUFFIXES), PLAYER_SETTINGS_KEY])
 
 
@@ -57,7 +75,7 @@ def _collection(objects: Objects, key: str) -> list[dict]:
     return objects.json(_single(key, "MonoBehaviours with a Collection", hits))["Collection"]
 
 
-def _shard_text(objects: Objects, key: str) -> str | None:
+def shard_text(objects: Objects, key: str) -> str | None:
     """The text of the TextAsset of `key` (its `data` file, UTF-8); None when the key has no TextAsset."""
     hits = [o for o in objects.key(key) if o in objects and objects.info(o).get("class") == "TextAsset"]
     if not hits:
@@ -93,9 +111,9 @@ def _always(address: str) -> bool:
 def episode(objects: Objects, record: dict) -> AdvExtract:
     """The episode of `record` (episode_record) from the object table: pass the result to `adv.to_json`."""
     row = record["MasterAdv"][0]
-    base = _base(row["_advEpisodeAsset"])
+    base = episode_key(row["_advEpisodeAsset"])
     coll = _collection(objects, base)
-    shards = {suf: _shard_text(objects, f"{base}{suf}") for suf in SHARD_SUFFIXES}
+    shards = {suf: shard_text(objects, f"{base}{suf}") for suf in SHARD_SUFFIXES}
     chats = {r["_id"]: r for r in record["MasterAdvChat"]}
 
     def chat(chat_id: int) -> dict:
@@ -112,3 +130,65 @@ def episode(objects: Objects, record: dict) -> AdvExtract:
         lambda: _default_transition(objects),
         _title(row, record["MasterText"]),
     )
+
+
+def episode_json(x: AdvExtract) -> dict:
+    """`adv.to_json(x)` with each resource reduced to its kind and address. The product names the addresses it is
+    asked for, so a resource carries no presence flag."""
+    doc = adv.to_json(x)
+    doc["resources"] = [{"kind": r["kind"], "address": r["address"]} for r in doc["resources"]]
+    return doc
+
+
+def lip_synced(episode: dict) -> bool:
+    """A command of the episode is a voice with a target and voice cues, and neither IgnoreData nor IgnoreLipSync is
+    set. Such a voice can reach the CRI Lips analysis; whether it does depends on the MotionSync of its models."""
+    return any(
+        c["cmd"] in ("Talk", "Voice")
+        and c.get("TargetName")
+        and c.get("VoiceIDs")
+        and not c.get("IgnoreData")
+        and not c.get("IgnoreLipSync")
+        for c in episode["commands"]
+    )
+
+
+def chat_ids(episode: dict) -> list[int]:
+    """The distinct non-zero TargetChatID values of the episode's commands, sorted."""
+    return sorted({c["TargetChatID"] for c in episode["commands"] if c.get("TargetChatID")})
+
+
+def parts(episode: dict) -> dict:
+    """What the story plays with, from episode.json: the addresses of the ASSET_KINDS resources, the addresses of the
+    live2d models, the cue sheets of the episode, whether it shows chat and whether a voice reaches the CRI Lips
+    analysis. Talk windows and videos are products of their own and are not listed."""
+    resources = episode["resources"]
+    return {
+        "assets": sorted(r["address"] for r in resources if r["kind"] in ASSET_KINDS),
+        "models": sorted(r["address"] for r in resources if r["kind"] == "live2d"),
+        "sounds": sorted({cs["_cueSheetName"] for cs in episode["cuesheets"].values() if cs.get("_cueSheetName")}),
+        "chat": bool(chat_ids(episode)),
+        "crilips": lip_synced(episode),
+    }
+
+
+def story(episode: dict, record: dict, paths: dict) -> dict:
+    """The story.json document: the MasterAdvChat row of each chat id of the episode (KeyError when there is none), the
+    effect instances (TargetName -> "Adv/Effect/" + TargetAssetName) and `parts`. `paths` are the manifest paths of the
+    products the story plays with, given by the caller: {"scene", "assets": {address: path}, "models": {address: path},
+    "sounds": {cue sheet: path}, "chat", "crilips"}."""
+    chats = {}
+    for chat_id in chat_ids(episode):
+        hits = [r for r in record["MasterAdvChat"] if r["_id"] == chat_id]
+        if not hits:
+            raise KeyError(f"MasterAdvChat has no row {chat_id}")
+        chats[str(chat_id)] = hits[0]
+    prefix = adv.RESOURCE_PREFIX["Effect"][1]
+    return {
+        "format": STORY_FORMAT,
+        "advId": episode["advId"],
+        "episode": "episode.json",
+        "chats": chats,
+        "effects": {name: prefix + asset for name, asset in adv.effect_instances(episode["commands"]).items()},
+        "parts": paths,
+    }
