@@ -1,7 +1,7 @@
 """The story products: an ADV episode (story) and the products it plays with.
 
-All are product stages (pipeline.assemble); story.sound, story.crilips, story.chat and story keep no objects (their
-files are all they hold):
+All are product stages (pipeline.assemble); story.sound, story.crilips, story.video, story.chat and story keep no
+objects (their files are all they hold):
 
 story.sound    subject a cue sheet name (the `_cueSheetName` of a story's cue sheet table): "<task id>#cues.json"
                (kind story.sound: cue name -> the cue's first stream: `file`, `sampleRate`, `channels`, `samples`,
@@ -27,6 +27,12 @@ story.asset    subject a catalog key a story loads (a stage, frame, effect, post
                the object table of what the key reaches. Its manifest is storyassets/<name>.json, <name> the key with
                "/" as "~" (storyasset.manifest_name). An asset several stories load is one product.
 
+story.video    subject a video key `Cri/Video/<asset>` (a Movie / Clip command's video): "<task id>#video.json" (kind
+               story.video: content.storyvideo.video, the movie's description and the tracks of movie.webm) and
+               "<task id>#movie.webm" (kind video.story), the movie.webm of the key's USM that cri.movie made with its
+               parameter `format` webm. Its root is the key (the CriWare.Assets MonoBehaviour describing the movie) and
+               its manifest videos/<name>.json, <name> the asset with "/" as "~" (storyvideo.manifest_name).
+
 story.chat     subject `default`: "<task id>#chat.json" (kind story.chat: content.storychat.chat, the rows of the
                shared chat shards). Its manifest is storychat/default.json.
 
@@ -40,8 +46,8 @@ story          subject a MasterAdv id: "<task id>#episode.json" (kind story.epis
                (part_products).
 
 `select` (the `product` layout) makes the story.sound product of every cue sheet key the selection holds, story.scene
-and story.chat when it holds every key of theirs, and the story of every episode whose key it holds; the CRI Lips data
-and the story assets are made only when a request names them.
+and story.chat when it holds every key of theirs, and the story of every episode whose key it holds; the CRI Lips data,
+the story assets and the videos are made only when a request names them.
 """
 
 from __future__ import annotations
@@ -49,7 +55,7 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
-from ..content import liveaudio, storyasset, storychat, storyepisode, storyscene
+from ..content import liveaudio, storyasset, storychat, storyepisode, storyscene, storyvideo
 from ..content.livescene import GRAPHICS
 from ..formats import crilips
 from ..formats.encoders import DEFAULT_AUDIO_FORMAT, WEB_AUDIO, mp4_priming, web_encode
@@ -70,18 +76,20 @@ __all__ = [
     "SCENE",
     "SOUND",
     "STORY",
+    "VIDEO",
     "AssetStage",
     "ChatStage",
     "CriLipsStage",
     "SceneStage",
     "SoundStage",
     "StoryStage",
+    "VideoStage",
     "cues",
     "part_products",
 ]
 
 SOUND, CRILIPS, SCENE, ASSET = "story.sound", "story.crilips", "story.scene", "story.asset"
-CHAT, STORY = "story.chat", "story"
+CHAT, STORY, VIDEO = "story.chat", "story", "story.video"
 DEFAULT = "default"
 SHEET_PREFIX = "Cri/Sound/"
 LIBRARY = crilips.LIB_ENTRY_SUFFIX
@@ -245,6 +253,43 @@ class AssetStage(ProductStage):
         return Assembly({"asset.json": (contract.encode(doc), "json", ASSET)}, keep, roles)
 
 
+class VideoStage(ProductStage):
+    """story.video: a story's movie as WebM and its description (module documentation)."""
+
+    name = VIDEO
+    version = 1
+    KIND = "StoryVideo"
+    WEBM = "movie.webm"
+
+    def keys(self, subject: str, env) -> list[str]:
+        storyvideo.manifest_name(subject)
+        return [subject]
+
+    def movies(self, subject: str, env) -> list[str]:
+        return self.keys(subject, env)
+
+    def manifest(self, subject: str) -> str:
+        return f"videos/{storyvideo.manifest_name(subject)}.json"
+
+    def inputs(self, subject: str, env) -> list:
+        for key, (_, tid) in self.movie_files(subject, env).items():
+            res = env.result(tid)
+            if not any(a["id"] == contract.artifact_id(tid, self.WEBM) for a in res["artifacts"]):
+                if res["items"][0]["status"] == "exported":
+                    raise ValueError(f"{self.name} {key}: {tid} made no {self.WEBM} (cri.movie takes format webm)")
+        return super().inputs(subject, env)
+
+    def assemble(self, task, objects) -> Assembly:
+        movie = objects.movie(task.subject)
+        webm = movie.file(self.WEBM)
+        doc = storyvideo.video(objects, task.subject, movie.facts(self.WEBM).get("tracks", []))
+        files = {
+            "video.json": (contract.encode(doc), "json", VIDEO),
+            self.WEBM: (webm, "webm", "video.story"),
+        }
+        return Assembly(files, set())
+
+
 class ChatStage(ProductStage):
     """story.chat: the rows of the shared chat shards (module documentation)."""
 
@@ -280,6 +325,7 @@ def part_paths(parts: dict) -> dict:
         "assets": {a: AssetStage().manifest(a) for a in parts["assets"]},
         "models": {a: ModelStage().manifest(a) for a in parts["models"]},
         "sounds": {s: SoundStage().manifest(s) for s in parts["sounds"]},
+        "videos": {v: VideoStage().manifest(v) for v in parts["videos"]},
         "chat": ChatStage().manifest(DEFAULT) if parts["chat"] else None,
         "crilips": CriLipsStage().manifest(DEFAULT) if parts["crilips"] else None,
     }
@@ -293,6 +339,7 @@ def part_products(story: dict) -> dict[str, list[str]]:
         ASSET: sorted(parts["assets"]),
         MODEL: sorted(parts["models"]),
         SOUND: sorted(parts["sounds"]),
+        VIDEO: sorted(parts["videos"]),
         CHAT: [DEFAULT] if parts["chat"] else [],
         CRILIPS: [DEFAULT] if parts["crilips"] else [],
     }
@@ -305,6 +352,7 @@ PART_STAGES = {
     ASSET: AssetStage,
     MODEL: ModelStage,
     SOUND: SoundStage,
+    VIDEO: VideoStage,
     CHAT: ChatStage,
     CRILIPS: CriLipsStage,
 }

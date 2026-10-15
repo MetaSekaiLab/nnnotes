@@ -288,7 +288,7 @@ def register(sub) -> None:
         "story",
         cmd_story,
         "an ADV episode -> the story product and the products it plays with (scene, assets, Live2D models, "
-        "cue sheets, chat, CRI Lips)",
+        "cue sheets, videos, chat, CRI Lips)",
     )
     c.add_argument("adv_id", type=int, help="MasterAdv id of the episode")
     c.add_argument(
@@ -302,6 +302,7 @@ def register(sub) -> None:
     flac_level_arg(c, "of the decoded sounds")
     out_arg(c, "output directory")
     product_args(c)
+    c.set_defaults(movie_format="webm")  # the story videos: cri.movie's movie.webm
 
     c = command(
         es,
