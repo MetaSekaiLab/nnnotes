@@ -14,12 +14,15 @@ objects:
   `link.addresses`;
 - the objects of the Resources.Load paths it gives (`resources`): paths of the ResourceManager in the APK's built-in
   files, such as the materials a runtime loads by name, through the same table and compared ignoring case;
+- the objects of the built-in selectors it gives (`builtins`): objects of the APK's built-in files by class
+  (`GraphicsSettings`) or a MonoBehaviour by its script's class (`MonoBehaviour:<class>`), such as settings assets
+  the game reads without a path, through the same table;
 - the object ids the stage names besides (`root_objects`).
 
 All are read from the planning facts alone, so a command can ask for what its products need before anything runs:
-`assemble.request(stages, products, env)` gives the fact `roots` (`{"keys", "resources", "objects"}`), and the request of
-`unity.export` then holds the units of those objects and every unit reachable from them through the census `refs`
-([units](stages.md#units)), and nothing else of their bundles.
+`assemble.request(stages, products, env)` gives the fact `roots` (`{"keys", "resources", "builtins", "objects"}`), and
+the request of `unity.export` then holds the units of those objects and every unit reachable from them through the
+census `refs` ([units](stages.md#units)), and nothing else of their bundles.
 
 What a task reaches: the units holding its roots, then every unit that an item of a reached unit references (the
 item's `refs`), through the `unity.export` results. A sprite whose atlas is in another bundle has its `image` from the
@@ -29,7 +32,7 @@ object that a reached object references and no census holds is listed as `missin
 | Part of the task | |
 |---|---|
 | inputs | `objects`: the object table of what it reaches (`nnnotes.objects/1`); the stage's own inputs (master tables, data its parameters name) |
-| depends | `link.addresses` (when it has keys or resource paths), the `unity.export` and `sprite.crop` tasks whose results it read |
+| depends | `link.addresses` (when it has keys, resource paths or built-in selectors), the `unity.export` and `sprite.crop` tasks whose results it read |
 | artifacts | `<task id>#<path>`: the product's own files; `<task id>#objects`: the object table of the objects its files use (the whole table unless the stage narrows it to some objects, or to some files of an object: a shader's programs for one graphics API) |
 | item | one for the subject: `exported`, or `unsupported` with a reason code |
 
