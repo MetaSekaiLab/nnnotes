@@ -37,14 +37,13 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterator
-from typing import Any, Protocol
 
 from ..core.jsonio import dumps
 from ..formats import motion
 from ..formats.cubism import expression_json, moc3_canvas, physics_json
 from ..formats.shader import player_program
 from ..unity import bindings
-from ..unity.ids import object_id
+from .prefabs import Objects, component_class, ref_id, root_game_object, script_class
 
 __all__ = [
     "MASK_KEYWORD",
@@ -81,22 +80,6 @@ STORY_KEYWORDS = ("_ADDITIONAL_LIGHTS_VERTEX",)
 MOTION_SYNC_COMPONENTS = ("CubismMotionSyncController", "Live2DMotionSyncCriAudioInput")
 SHADER_ROLES = ("json", "index")  # a shader's files the player reads besides its programs
 _UNSAFE = re.compile(r"[^A-Za-z0-9_.-]+")
-
-
-class Objects(Protocol):
-    """A product's object table and its objects' files (pipeline.assemble.Objects)."""
-
-    roots: list[str]
-
-    def __contains__(self, oid: str) -> bool: ...
-
-    def ids(self, cls: str | None = None) -> list[str]: ...
-
-    def info(self, oid: str) -> dict: ...
-
-    def bytes(self, oid: str, role: str) -> bytes: ...
-
-    def json(self, oid: str, role: str = "json") -> Any: ...
 
 
 def model_match(key: str) -> re.Match[str]:
@@ -148,28 +131,12 @@ def select_models(specs, models: dict[str, str]) -> dict[str, str]:
     return dict(sorted(out.items()))
 
 
-def ref_id(v) -> str | None:
-    """The object id of a reference value ({"$ref": {file, pathId}}); None for anything else."""
-    r = v.get("$ref") if isinstance(v, dict) else None
-    return object_id(r["file"], r["pathId"]) if isinstance(r, dict) and "file" in r else None
-
-
-def _class(c: dict) -> str:
-    """A component's class: a MonoBehaviour's is its script's."""
-    if c["type"] == "MonoBehaviour" and isinstance(c.get("script"), str):
-        return c["script"].rsplit("|", 1)[-1]
-    return c["type"]
-
-
 class _Model:
     """A model's GameObject, prefab document and components."""
 
     def __init__(self, objects: Objects, key: str):
         self.objects, self.key, self.name = objects, key, model_id(key)
-        gos = [o for o in objects.roots if o in objects and objects.info(o).get("class") == "GameObject"]
-        if len(gos) != 1:
-            raise ValueError(f"{key}: {len(gos)} GameObjects among the roots, expected the model's")
-        self.id = gos[0]
+        self.id = root_game_object(objects, key)
         self.prefab = objects.json(self.id)
         self.root = self.prefab["nodes"][0]
 
@@ -177,7 +144,7 @@ class _Model:
         """(node, component) of every component of class `cls` (of the root node only)."""
         for n in [self.root] if root_only else self.prefab["nodes"]:
             for c in n["components"]:
-                if _class(c) == cls:
+                if component_class(c) == cls:
                     yield n, c
 
     def one(self, cls: str) -> dict:
@@ -213,14 +180,7 @@ class _Model:
 
     def scripted(self, cls: str) -> list[str]:
         """The MonoBehaviours of the table whose script class is `cls` (outside the prefab: data assets)."""
-        return [o for o in self.objects.ids("MonoBehaviour") if _script_class(self.objects, o) == cls]
-
-
-def _script_class(objects: Objects, oid: str) -> str | None:
-    if "json" not in (objects.info(oid).get("files") or {}):
-        return None
-    entry = objects.json(oid).get("$script")
-    return entry.rsplit("|", 1)[-1] if isinstance(entry, str) else None
+        return [o for o in self.objects.ids("MonoBehaviour") if script_class(self.objects, o) == cls]
 
 
 def _resources(m: _Model) -> dict[str, str]:
@@ -274,7 +234,7 @@ def model(objects: Objects, key: str) -> tuple[dict, set[str], dict[str, set[str
             except ValueError as e:
                 raise ValueError(f"{key}: shader {index['name']}: {e}") from None
         roles[sid] = keep
-    classes = {_class(c) for c in m.root["components"]}
+    classes = {component_class(c) for c in m.root["components"]}
 
     def material(ref) -> dict | None:
         oid = ref_id(ref)

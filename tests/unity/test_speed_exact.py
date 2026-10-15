@@ -425,7 +425,7 @@ def ref_dump_objects(shaders, out_dir: Path, source: str, index: list) -> list:
             continue
         done.add(name)
         safe = shader._safe(name)
-        jsonio.write_json(out_dir / f"{safe}.json", shader._parsed_summary(tt), default=str)
+        jsonio.write_json(out_dir / f"{safe}.json", shader.parsed_summary(tt), default=str)
         rec = {"name": name, "source": source, "parsed": f"{safe}.json", "variants": []}
         for plat, si, pi, stage, n, t, kws, code in shader.variants(tt, shader.platform_blobs(o.read())):
             tag = shader.PLATFORM.get(plat, str(plat))

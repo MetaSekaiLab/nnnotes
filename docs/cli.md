@@ -243,21 +243,31 @@ a Live2D model -> its Cubism SDK files, or the player's model
 
 ## nnnotes export spot
 
-a spot -> spot.json + Spine + room.glb + shaders
+a spot -> spot.json + Spine files + room.glb + room.json
 
 | Argument | Description |
 | --- | --- |
 | `spot_id` | MasterHomeSpot id |
 | `-o`, `--out` `OUT` | output directory (required) |
+| `--stored-catalog` `LABEL\|SHA` | a catalog version of the depot (`catalog versions`; default: the current catalog) |
+| `--workers` `N` | worker processes (default: the usable CPUs) |
+| `--link` `LINK` | as export assets --link (one of `auto`, `clone`, `hard`, `copy`) |
+| `--explain` | print every setting of the run first |
+| `--dry-run` | print the plan, run nothing |
 
 ## nnnotes export room
 
-a background prefab -> glb
+a spot background -> room.glb + room.json
 
 | Argument | Description |
 | --- | --- |
-| `key` | addressable key of the prefab |
-| `-o`, `--out` `OUT` | output .glb file (required) |
+| `key` | background key Spot/<place>/Background/<place> |
+| `-o`, `--out` `OUT` | output directory (required) |
+| `--stored-catalog` `LABEL\|SHA` | a catalog version of the depot (`catalog versions`; default: the current catalog) |
+| `--workers` `N` | worker processes (default: the usable CPUs) |
+| `--link` `LINK` | as export assets --link (one of `auto`, `clone`, `hard`, `copy`) |
+| `--explain` | print every setting of the run first |
+| `--dry-run` | print the plan, run nothing |
 
 ## nnnotes export shader
 
