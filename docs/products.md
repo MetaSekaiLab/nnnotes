@@ -59,12 +59,17 @@ object), or the reason code of a generic, unsupported or failed object.
 
 ## Product layout
 
-A product layout places products for a player:
+A product layout places products for a player (`export assets --layout product`, `export live2d --player`):
 
 - every file of a product and every file of the objects of its object table at `assets/<sha256>.<ext>` (a file
   several products or objects share is written once);
 - each product's manifest at `<directory>/<file>.json` (the stage's `manifest(subject)`, by default
   `<stage>/<subject>.json` with the subject escaped as one path segment).
+
+A command asks for products in one of two ways: `export assets --layout product` makes, with each product stage, the
+products of the catalog keys the selected bundles hold (the stage's `select`); `export live2d` asks for one model.
+`export live2d` without `--player` places the files of its one product at their own paths instead (the `files`
+placement: the Cubism SDK files as a directory).
 
 ## Product manifest: nnnotes.product/1
 
@@ -83,3 +88,42 @@ A product layout places products for a player:
 contained in an object that has one. An asset path is relative to the directory above the manifest's directory, as
 in the chart manifests of ournotes-player. A reference in an object's JSON (`{"$ref": {"file", "pathId"}}`) names
 the object `<file>:<pathId>` of `objects`.
+
+## Live2D models
+
+Two product stages (`nnnotes.pipeline.live2d`) assemble a Live2D model from the objects its prefab reaches. Their
+subjects are model keys, `Character/Live2D/<group>/<name>/model/<name>`; a model's id is its `<name>`.
+
+`live2d.model` is the model the player reads. Its roots are the model's GameObject (the object of its key) and the
+materials the Cubism mask pass draws with, which the APK's built-in files hold at the `Resources.Load` paths
+`Live2D/Cubism/Materials/Mask` and `Live2D/Cubism/Materials/MaskCulling`. Its manifest is `models/<id>.json`, and its
+one file `model.json` (format 3) names objects of its object table:
+
+| Field | |
+|---|---|
+| `name`, `key` | the model's id and key |
+| `prefab` | the object id of the model's GameObject; its `json` is the hierarchy (prefab.json) |
+| `moc` | the object id of its CubismMoc (the root's `CubismModel._moc`); the moc3 is its file `blob:_bytes` |
+| `canvas` | the moc3's canvas: `pixelsPerUnit`, `originX`, `originY`, `width`, `height`, `mocVersion` |
+| `textures` | the object ids of the atlas pages the drawables draw with (`CubismRenderer._mainTexture`), by name |
+| `shaders` | `{shader name: object id}` of the shaders of the object table |
+| `resources` | `{"cubismMask", "cubismMaskCulling"}`: the object ids of the two mask materials |
+| `motionSync` | the root has the MotionSync controller and its CRI audio input |
+| `bindings` | `{clip object id: [{path, attribute}]}`: the bindings of every AnimationClip of the table named in the model's hierarchy, played from its root (`nnnotes.unity.bindings`; `null` where no name, or several, fit) |
+
+Its object table holds every object the model reaches but the MonoScripts. Of a shader it keeps the parsed form
+(`json`), the variant index (`index`) and the GLSL ES 3.00 programs (subshader 0, pass 0) the player draws the
+drawables' materials with: for each material's keywords, alone and with `_ADDITIONAL_LIGHTS_VERTEX` (the keyword the
+story renderer adds to a character draw), and the mask materials' when a drawable is masked (`CUBISM_MASK_ON`).
+
+`live2d.cubism` is the model as the Cubism SDK files other tools read (`export live2d`); its manifest is
+`cubism/<id>.json` and it has no objects:
+
+| File | From |
+|---|---|
+| `<id>.moc3` | the CubismMoc's bytes |
+| `textures/<page>.png` | the atlas pages, by name (a name two pages share is numbered: `<page>-2.png`) |
+| `<id>.physics3.json` | the root's `CubismPhysicsController._rig` (when it has sub-rigs) |
+| `<expression>.exp3.json` | each CubismExpressionData of the table |
+| `motions/<motion>.motion3.json` | each CubismFadeMotionData, with the sample rate of the clip of its name |
+| `<id>.model3.json` | the files, the model's fade times of each motion, and the EyeBlink and LipSync groups (the GameObjects holding a CubismEyeBlinkParameter or a CubismMouthParameter) |

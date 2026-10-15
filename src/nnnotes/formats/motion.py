@@ -17,8 +17,6 @@ from __future__ import annotations
 import math
 from pathlib import Path
 
-from ..core.jsonio import write_json
-
 SEG_LINEAR, SEG_BEZIER, SEG_STEPPED = 0, 1, 2
 WEIGHT_IN, WEIGHT_OUT = 1, 2  # UnityEngine.WeightedMode flags
 
@@ -54,14 +52,6 @@ def _segments(kf: list[dict]):
         ]
         npts += 3
     return segs, nseg, npts, restricted
-
-
-def _clip_rates(env) -> dict[str, float]:
-    return {
-        o.read_typetree()["m_Name"]: float(o.read_typetree()["m_SampleRate"])
-        for o in env.objects
-        if o.type.name == "AnimationClip"
-    }
 
 
 def convert_fade(fade: dict, fps: float | None) -> dict:
@@ -110,30 +100,3 @@ def convert_fade(fade: dict, fps: float | None) -> dict:
 
 def motion_name(fade: dict) -> str:
     return Path(str(fade["MotionName"])).name.removesuffix(".motion3.json")
-
-
-def extract_motions(env, out_dir: Path) -> dict[str, str]:
-    """Every CubismFadeMotionData in env -> <out_dir>/<motion>.motion3.json.
-
-    Returns {motionName: fileName}. Also writes `_fades.json` with the
-    model-level fade overrides (ModelFadeIn/OutTime, -1 = unset) the model3
-    motion entries need.
-    """
-    out_dir = Path(out_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    rates = _clip_rates(env)
-    manifest: dict[str, str] = {}
-    model_fades: dict[str, dict] = {}
-    for o in env.objects:
-        if o.type.name != "MonoBehaviour":
-            continue
-        if o.read().m_Script.read().m_ClassName != "CubismFadeMotionData":
-            continue
-        tt = o.read_typetree()
-        name = motion_name(tt)
-        fn = f"{name}.motion3.json"
-        write_json(out_dir / fn, convert_fade(tt, rates.get(name)), indent=None)
-        manifest[name] = fn
-        model_fades[name] = {"FadeInTime": tt["ModelFadeInTime"], "FadeOutTime": tt["ModelFadeOutTime"]}
-    write_json(out_dir / "_fades.json", model_fades, indent=None, ensure_ascii=True)
-    return manifest

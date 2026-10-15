@@ -1,263 +1,28 @@
-"""The model stages: the closures of Live2D model keys (as Catalog.resolve gives them), the task catalog the
-Live2D extractor runs on, the keys of both stages, and their runs with synthetic extractors, censuses and objects."""
+"""The Spine skeleton stage: its subjects, closures, keys and runs with synthetic censuses and objects."""
 
 import subprocess
 import sys
-import zipfile
 from pathlib import Path
 
 import pytest
 
 from nnnotes.pipeline import census, contract, link, modelstages
-from nnnotes.pipeline.catalogdb import index
 from nnnotes.pipeline.census import CensusStage
-from nnnotes.pipeline.contract import IncompatibleTask, Input, Task
+from nnnotes.pipeline.contract import Input, Task
 from nnnotes.pipeline.depot import Depot
-from nnnotes.pipeline.modelstages import Closures, Live2DStage, SpineStage, TaskCatalog
+from nnnotes.pipeline.modelstages import SpineStage
 from nnnotes.pipeline.stages import Env, Pending, describe, execute, registry
-from nnnotes.source.catalog import Catalog
-from tests.helpers import synth
-
-H = [f"{i:x}" * 32 for i in range(1, 10)]
-M1 = "Character/Live2D/g1/m1/model/m1"
-M2 = "Character/Live2D/g2/m2/model/m2"
-PREFAB = "Assets/AddressableResources/Character/Live2D/g1/m1/model/m1.prefab"
 
 
-def remote_entries(order=(2, 3, 5), m1_prefab=PREFAB):
-    return [
-        (M1, "Character/Live2D/g1/m1/model/m1", [3]),  # an alias location first
-        (M1, m1_prefab, list(order), {"type": "UnityEngine.GameObject"}),
-        (f"model_m1_{H[0]}.bundle", synth.remote(f"model_m1_{H[0]}.bundle"), [4]),
-        (f"shared_{H[1]}.bundle", synth.remote(f"shared_{H[1]}.bundle"), []),
-        (f"tex_{H[2]}.bundle", synth.remote(f"tex_{H[2]}.bundle"), [2]),  # a cycle back to the model bundle
-        ("monoscripts.bundle", synth.local("monoscripts.bundle"), []),
-        (M2, "Assets/AddressableResources/Character/Live2D/g2/m2/model/m2.prefab", [7, 5, 3]),
-        (f"model_m2_{H[3]}.bundle", synth.remote(f"model_m2_{H[3]}.bundle"), []),
-        ("Character/Live2D/g2/m2/motion/idle", "Assets/Game/idle.anim", [7]),
-        ("Character/Live2D/g3/m3/model/m3", "Assets/Game/m3.prefab", []),  # no bundle
-    ]
-
-
-APK = [("Shared/S", "Assets/Game/Shared/S.prefab", [1]), ("monoscripts.bundle", synth.local("monoscripts.bundle"), [])]
-
-
-def build(entries):
-    return synth.CatalogWriter().build(entries)
-
-
-def make_apk(path, entries=APK):
-    with zipfile.ZipFile(path, "w") as z:
-        z.writestr("assets/aa/catalog.bin", build(entries))
-    return path
-
-
-def test_closures_are_those_of_catalog_resolve(tmp_path):
-    remote = build(remote_entries())
-    cat = Catalog(remote, tmp_path / "downloads", apk=make_apk(tmp_path / "base.apk"))
-    doc = index(remote, build(APK))
-    c = Closures(doc)
-    names = {b["stable"]: b["name"] for b in doc["bundles"]}
-    assert c.keys() == cat.keys()
-    for key in cat.keys():
-        assert c.entry(key)["internalId"] == cat.entry(key)["internal_id"]
-        assert [names[s] for s in c.closure_bundles(key)] == [b.name for b in cat.resolve(key)], key
-    assert c.entry(M1)["internalId"] == PREFAB  # the location inside a bundle
-    assert c.closure_bundles(M1) == ["monoscripts", "shared", "model_m1", "tex"]
-    assert c.own_bundle(M1) == "model_m1" and c.own_bundle("Character/Live2D/g3/m3/model/m3") is None
-    with pytest.raises(KeyError):
-        c.entry("Character/Live2D/none")
-
-
-# ---------------------------------------------------------------- live2d.model
-def contents(tag=b""):
-    return {
-        "model_m1": b"UnityFS m1" + tag,
-        "shared": b"UnityFS shared",
-        "tex": b"UnityFS tex",
-        "monoscripts": b"UnityFS scripts",
-        "model_m2": b"UnityFS m2",
-    }
-
-
-def bundles_fact(doc, data, locators=True):
-    out = {}
-    for b in doc["bundles"]:
-        body = data[b["stable"]]
-        locs = ({"kind": "download", "path": f"bundles/{b['name']}"},) if locators else ()
-        out[b["stable"]] = Input("bundle", contract.sha256(body), len(body), b["name"], locs)
-    return out
-
-
-def live2d_env(depot, entries=None, data=None, selected=None, locators=True):
-    doc = index(build(entries or remote_entries()), build(APK))
-    data = data or contents()
-    bundles = bundles_fact(doc, data, locators)
-    return Env(depot, {"index": doc, "bundles": bundles, "selected": sorted(selected or bundles)})
-
-
-def test_live2d_subjects_inputs_and_context(tmp_path):
-    stage = Live2DStage()
-    env = live2d_env(Depot(tmp_path / "s"))
-    assert stage.subjects(env) == [M1, M2]  # model keys with their bundle
-    assert stage.subjects(live2d_env(Depot(tmp_path / "s"), selected=["model_m2", "shared"])) == [M2]
-    t = describe(stage, M1, None, env)
-    assert t.id == "live2d.model:" + M1 and t.params == {} and t.atoms == Live2DStage.ATOMS
-    assert [(i.role, i.name) for i in t.inputs] == [
-        ("bundle:000", "monoscripts.bundle"),
-        ("bundle:001", f"shared_{H[1]}.bundle"),
-        ("bundle:002", f"model_m1_{H[0]}.bundle"),
-        ("bundle:003", f"tex_{H[2]}.bundle"),
-    ]
-    assert t.inputs[2].sha256 == contract.sha256(contents()["model_m1"])
-    assert t.context == {"internalId": PREFAB}
-    assert t.inputs[0].locators == ({"kind": "download", "path": "bundles/monoscripts.bundle"},)
-    assert set(Live2DStage.ATOMS) == {"live2d.extract_model"}
-    assert all(lib.lower() in Live2DStage.ATOMS["live2d.extract_model"] for lib in modelstages.LIBRARIES)
-
-
-def test_live2d_keys_follow_the_closure_contents_and_order_only(tmp_path):
-    stage, depot = Live2DStage(), Depot(tmp_path / "s")
-    key = describe(stage, M1, None, live2d_env(depot)).key
-    # other file names, no locators, another catalog with more keys: the same task
-    renamed = [(e[0].replace(H[1], H[8]), e[1].replace(H[1], H[8]), *e[2:]) for e in remote_entries()]
-    renamed.append(("Other/key", "Assets/Game/other.asset", [3]))
-    assert describe(stage, M1, None, live2d_env(depot, renamed, locators=False)).key == key
-    # a bundle of the closure changed, the closure's order changed, the key's location changed: another task
-    assert describe(stage, M1, None, live2d_env(depot, data=contents(b"!"))).key != key
-    assert describe(stage, M1, None, live2d_env(depot, remote_entries(order=(3, 2, 5)))).key != key
-    assert describe(stage, M1, None, live2d_env(depot, remote_entries(m1_prefab=PREFAB + "x"))).key != key
-    # a bundle outside the closure changed: the same task
-    other = dict(contents(), model_m2=b"UnityFS m2 changed")
-    assert describe(stage, M1, None, live2d_env(depot, data=other)).key == key
-    bumped = type("Bumped", (Live2DStage,), {"version": 2})()
-    assert describe(bumped, M1, None, live2d_env(depot)).key != key
-
-
-def test_live2d_waits_for_unfetched_bundles_and_names_unreadable_ones(tmp_path):
-    stage, depot = Live2DStage(), Depot(tmp_path / "s")
-    env = live2d_env(depot)
-    env.facts["bundles"] = dict(env.facts["bundles"], tex=Pending("fetch:tex"))
-    with pytest.raises(Pending, match="fetch:tex"):
-        describe(stage, M1, None, env)
-    env.facts["bundles"]["tex"] = None
-    with pytest.raises(Pending, match="fetch:tex"):
-        describe(stage, M1, None, env)
-    del env.facts["bundles"]["tex"]
-    with pytest.raises(ValueError, match="bundle tex is not readable"):
-        describe(stage, M1, None, env)
-
-
-def stored_task(depot, stage=None):
-    """The live2d.model task of M1 with every bundle in the depot (depot locators only)."""
-    for body in contents().values():
-        depot.put(body)
-    return describe(stage or Live2DStage(), M1, None, live2d_env(depot, locators=False))
-
-
-def test_task_catalog_answers_from_the_task(tmp_path):
-    depot = Depot(tmp_path / "s")
-    t = stored_task(depot)
-    cat = TaskCatalog.from_task(t, depot)
-    assert cat.apk is not None and cat.has(M1) and not cat.has(M2)
-    assert cat.keys("Character/") == [M1] and cat.keys("Other/") == []
-    assert cat.entry(M1)["internal_id"] == PREFAB and cat.entries_for(M2) == []
-    order = ["monoscripts", "shared", "model_m1", "tex"]
-    assert [p.read_bytes() for p in cat.fetch_key(M1)] == [contents()[s] for s in order]
-    assert [b.name for b in cat.resolve(M1)] == [i.name for i in t.inputs]
-    assert [b.offset for b in cat.resolve(M1)] == [0, 1, 2, 3]
-    for f in (cat.entry, cat.fetch_key, cat.resolve):
-        with pytest.raises(KeyError):
-            f(M2)
-    # inputs are ordered by position, not by role text
-    many = [Input(f"bundle:{i}", contract.sha256(b"x%d" % i), 2) for i in (10, 2, 1)]
-    assert [
-        i.role
-        for i in TaskCatalog(
-            "k", "Assets/k", modelstages._ordered(Task(Live2DStage.name, 1, "k", inputs=tuple(many))), depot
-        ).bundles
-    ] == ["bundle:1", "bundle:2", "bundle:10"]
-
-
-def fake_extract(calls):
-    def extract_model(cat, key, out_dir):
-        assert cat.apk is not None
-        data = b"".join(p.read_bytes() for p in cat.fetch_key(key))
-        name = key.rsplit("/", 1)[-1]
-        calls.append((key, cat.entry(key)["internal_id"]))
-        (out_dir / "textures").mkdir()
-        (out_dir / "motions").mkdir()
-        (out_dir / f"{name}.moc3").write_bytes(b"MOC3" + data)
-        (out_dir / "textures" / "texture_00-1a2b3c4d.png").write_bytes(b"\x89PNG page")
-        (out_dir / f"{name}.prefab.json").write_text('{"nodes": []}', encoding="utf-8")
-        (out_dir / "motions" / "idle.motion3.json").write_text("{}", encoding="utf-8")
-        (out_dir / "motions" / "_fades.json").write_text("{}", encoding="utf-8")
-        (out_dir / "smile.exp3.json").write_text("{}", encoding="utf-8")
-        (out_dir / f"{name}.model3.json").write_text('{"Version": 3}\n', encoding="utf-8")
-        return {"name": name, "textures": ["textures/texture_00-1a2b3c4d.png"], "motions": 1, "expressions": 1}
-
-    return extract_model
-
-
-def test_live2d_run_stores_every_file_of_the_extractor(tmp_path, monkeypatch):
-    from nnnotes.unity import live2d
-
-    calls = []
-    monkeypatch.setattr(live2d, "extract_model", fake_extract(calls))
-    depot = Depot(tmp_path / "s")
-    stage = Live2DStage()
-    t = stored_task(depot, stage)
-    ex = execute(t, depot, registry(stage))
-    assert ex.status == "ran" and calls == [(M1, PREFAB)]
-    doc = depot.result(t.key)
-    tid = "live2d.model:" + M1
-    got = {contract.parse_artifact_id(a["id"])[1]: a for a in doc["artifacts"]}
-    assert sorted(got) == [
-        "m1.moc3",
-        "m1.model3.json",
-        "m1.prefab.json",
-        "motions/_fades.json",
-        "motions/idle.motion3.json",
-        "smile.exp3.json",
-        "textures/texture_00-1a2b3c4d.png",
-    ]
-    assert all(a["id"].startswith(tid + "#") for a in doc["artifacts"]) and doc["items"] == []
-    kinds = {r: (a["semantics"]["kind"], a["content"]["ext"]) for r, a in got.items()}
-    assert kinds == {
-        "m1.model3.json": ("live2d.model3", "json"),
-        "m1.moc3": ("live2d.moc3", "moc3"),
-        "m1.prefab.json": ("live2d.prefab", "json"),
-        "motions/_fades.json": ("live2d.fades", "json"),
-        "motions/idle.motion3.json": ("live2d.motion", "json"),
-        "smile.exp3.json": ("live2d.expression", "json"),
-        "textures/texture_00-1a2b3c4d.png": ("live2d.texture", "png"),
-    }
-    order = ["monoscripts", "shared", "model_m1", "tex"]
-    assert depot.read(got["m1.moc3"]["content"]["sha256"]) == b"MOC3" + b"".join(contents()[s] for s in order)
-    assert got["m1.model3.json"]["semantics"]["facts"] == {
-        "expressions": 1,
-        "motions": 1,
-        "name": "m1",
-        "textures": ["textures/texture_00-1a2b3c4d.png"],
-    }
-    assert execute(t, depot, registry(stage)).status == "hit"
-    assert execute(t, depot, registry(stage), force=True).status == "ran"  # the same result again
-    other = Task(t.stage, t.version, t.subject, t.params, {"live2d.extract_model": "unitypy-0/1"}, t.inputs, t.context)
-    with pytest.raises(IncompatibleTask):
-        execute(other, depot, registry(stage))
-
-
-def test_the_model_key_and_libraries_are_those_of_the_extractors():
-    from nnnotes.site import webmodel
+def test_the_libraries_are_those_of_the_extractor():
     from nnnotes.unity import export
 
-    assert modelstages.MODEL_KEY.pattern == webmodel.MODEL_KEY.pattern
     assert modelstages.LIBRARIES == export._LIBS
 
 
 def test_importing_the_stages_does_not_import_unitypy():
     code = (
-        "import sys, nnnotes.pipeline.modelstages as m; m.Live2DStage(); m.SpineStage(); "
+        "import sys, nnnotes.pipeline.modelstages as m; m.SpineStage(); "
         "assert 'UnityPy' not in sys.modules, 'UnityPy imported'"
     )
     r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)

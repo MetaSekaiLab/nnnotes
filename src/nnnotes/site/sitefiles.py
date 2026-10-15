@@ -26,6 +26,8 @@ import time
 from pathlib import Path
 
 from ..core import cache, jsonio
+from ..formats.shader import PLAYER_PLATFORM as SHADER_PLATFORM
+from ..formats.shader import PLAYER_TYPE as SHADER_TYPE
 from ..source.config import Config, ConfigError
 from . import compress
 from .compress import DEFAULT_ENCODING
@@ -73,8 +75,6 @@ BINARY_EXT = {
     ".skel",
     ".bin",
 }  # .glb / .atlas / .skel: an Overlay story's home spot; .bin: a story's CRI Lips data (crilips.py)
-SHADER_PLATFORM = "gles3"
-SHADER_TYPE = "GLES3"
 CHARTS_INDEX = "charts.json"
 # documentation fields of the extractors the player does not read (live-audio.json `spec`, the voice rule notes,
 # scene.json `slice` / `derived` notes): left out of the site's copies

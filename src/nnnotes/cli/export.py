@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 from ..core.jsonio import write_json
+from ..source.config import use
 from ..source.session import Session
 from . import assets
 from .common import (
@@ -24,6 +25,7 @@ from .common import (
     known_row,
     live_option_arg,
     live_options,
+    nonnegative,
     out_arg,
     report,
     usage,
@@ -122,16 +124,20 @@ def cmd_live(args, cfg):
 
 
 def cmd_live2d(args, cfg):
-    from ..site import webmodel
-    from ..unity import live2d
+    from ..content import live2d
+    from ..pipeline.live2d import CUBISM, MODEL
 
-    cfg.require_path("paths", "apk")  # the Cubism component classes are read from the APK
-    cat = Session(cfg).catalog()
+    cfg.require_path("paths", "apk")  # the Cubism component classes and the mask materials are in the APK
+    use(cfg)  # the tools the atoms name are part of the keys
+    ws = assets.Workspace(args, cfg, layouts=["product" if args.player else "files"])
+    ws.run_index()
+    keys = (loc["primaryKey"] for loc in ws.index()["locations"])
     try:  # a model id or a model key
-        (key,) = webmodel.catalog_models(cat, [args.key]).values()
+        (key,) = live2d.select_models([args.key], live2d.model_keys(keys)).values()
     except ValueError as e:
         usage(args, str(e))
-    report(args, live2d.extract_model(cat, key, Path(args.out)))
+    ws.request({MODEL if args.player else CUBISM: [key]}, [f"key:{key}"])
+    assets.export(args, cfg, ws)
 
 
 def cmd_spot(args, cfg):
@@ -293,9 +299,24 @@ def register(sub) -> None:
     live_option_arg(c)
     out_arg(c, "output directory")
 
-    c = command(es, "live2d", cmd_live2d, "a Live2D model -> runtime model directory")
+    c = command(es, "live2d", cmd_live2d, "a Live2D model -> its Cubism SDK files, or the player's model")
     c.add_argument("key", help="model key Character/Live2D/<group>/<name>/model/<name>, or its model id <name>")
     out_arg(c, "output directory")
+    c.add_argument(
+        "--player",
+        action="store_true",
+        help="write the player's model (models/<id>.json and assets/) instead of the Cubism SDK files",
+    )
+    c.add_argument(
+        "--stored-catalog",
+        metavar="LABEL|SHA",
+        help="a catalog version of the depot (`catalog versions`; default: the current catalog)",
+    )
+    c.add_argument("--workers", type=nonnegative, metavar="N", help="worker processes (default: the usable CPUs)")
+    c.add_argument("--link", choices=("auto", "clone", "hard", "copy"), help="as export assets --link")
+    c.add_argument("--explain", action="store_true", help="print every setting of the run first")
+    c.add_argument("--dry-run", action="store_true", help="print the plan, run nothing")
+    c.set_defaults(views="none", strict=False)
 
     c = command(es, "spot", cmd_spot, "a spot -> spot.json + Spine + room.glb + shaders")
     c.add_argument("spot_id", type=int, help="MasterHomeSpot id")

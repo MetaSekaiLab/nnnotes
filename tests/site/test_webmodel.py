@@ -18,34 +18,6 @@ KEY_A = "Character/Live2D/001_adv/adv_model_a/model/adv_model_a"
 KEY_B = "Character/Live2D/sub_x/adv_model_b/model/adv_model_b"
 
 
-def test_model_id_is_the_model_name():
-    assert webmodel.model_id(KEY_A) == "adv_model_a"
-    for bad in (
-        "Character/Live2D/001_adv/a/model/b",
-        "Character/Live2D/a/model/a",
-        "Other/001/a/model/a",
-        "Character/Live2D/001_adv/a/model/a/extra",
-    ):
-        with pytest.raises(ValueError, match="not a Live2D model key"):
-            webmodel.model_id(bad)
-    with pytest.raises(ValueError, match="not URL-safe"):
-        webmodel.model_id("Character/Live2D/g/a b/model/a b")
-
-
-def test_model_keys_and_select():
-    keys = [KEY_B, "Character/Live2D/001_adv/adv_model_a/motion/x", KEY_A, "Live/Score/1"]
-    models = webmodel.model_keys(keys)
-    assert models == {"adv_model_a": KEY_A, "adv_model_b": KEY_B}
-    assert list(models) == ["adv_model_a", "adv_model_b"]
-    assert webmodel.select(None, models) == models
-    assert webmodel.select([KEY_B, "adv_model_a"], models) == models
-    assert webmodel.select(["adv_model_b"], models) == {"adv_model_b": KEY_B}
-    with pytest.raises(ValueError, match="nope"):
-        webmodel.select(["adv_model_a", "nope"], models)
-    with pytest.raises(ValueError, match="model id adv_model_a"):
-        webmodel.model_keys([KEY_A, "Character/Live2D/002_adv/adv_model_a/model/adv_model_a"])
-
-
 def test_shader_names():
     doc = {
         "nodes": [

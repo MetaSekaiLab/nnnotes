@@ -1,17 +1,5 @@
-"""The model stages: Live2D models and Spine skeletons, written by the extractors of `nnnotes export live2d` and
-`nnnotes export spot` (unchanged) from the bundles of their tasks.
-
-live2d.model, one task per Live2D model key (Character/Live2D/<group>/<name>/model/<name>, the keys `nnnotes export
-live2d` takes) whose own bundle (the first dependency of the key's location) is selected:
-    inputs     "bundle:<n>": the bundles of the key's dependency closure in the order the catalog gives them
-               (Catalog.resolve; n is the position: the extractor loads them in this order, so the order is part of
-               the key)
-    context    {"internalId": the internal id of the key's location} (the container path the model is read from)
-    artifacts  "live2d.model:<key>#<path>": every file live2d.extract_model writes, <path> relative to the model's
-               directory (<name>.moc3, <name>.prefab.json, textures/*.png, <name>.model3.json, *.exp3.json,
-               <name>.physics3.json, motions/*.motion3.json, motions/_fades.json), with its bytes
-The extractor runs through TaskCatalog, which answers what it asks of a catalog from the task. It reads nothing of
-the APK but the APK's bundles of the closure, which are inputs like the others.
+"""The Spine skeleton stage, written by the extractor of `nnnotes export spot` (unchanged) from the bundles of its
+tasks.
 
 spine.skeleton, one task per SkeletonDataAsset (a MonoBehaviour whose script the script table names
 SkeletonDataAsset) of a selected bundle; its subject is the asset's stable address by path id,
@@ -24,46 +12,28 @@ SkeletonDataAsset) of a selected bundle; its subject is the asset's stable addre
                the atlas pages (PNG), as spot.write_skeleton writes them for `nnnotes export spot`
     item       the asset: exported (its artifacts), or failed with the writer's error
 
-Both tasks name their extractor as their one atom ("live2d.extract_model", "spot.write_skeleton"), whose id carries
-the versions of the libraries the files depend on; this module imports UnityPy only when a task runs.
+The task names its extractor as its one atom ("spot.write_skeleton"), whose id carries the versions of the libraries
+the files depend on; this module imports UnityPy only when a task runs.
 """
 
 from __future__ import annotations
 
 import re
-import tempfile
-from pathlib import Path
 
-from ..source.catalog import Bundle
 from ..unity.atoms import impl_id
-from . import catalogdb, contract, link
+from . import contract, link
 from .contract import Cost, IncompatibleTask, Input
 from .stages import Output, Pending, Stage
 
-LIVE2D = "live2d.model"
 SPINE = "spine.skeleton"
 CENSUS = "unity.census"
 SCRIPTS = "link.scripts"
 SCRIPTS_TASK = contract.task_id(SCRIPTS, "all")
-# the model keys of `nnnotes export live2d` (webmodel.MODEL_KEY; webmodel imports UnityPy)
-MODEL_KEY = re.compile(r"Character/Live2D/(?P<group>[^/]+)/(?P<name>[^/]+)/model/(?P=name)")
 SKELETON_CLASS = "SkeletonDataAsset"
-# the libraries the extractors' output depends on (export._LIBS, the salt of export's PNG cache)
+# the libraries the extractor's output depends on (export._LIBS, the salt of export's PNG cache)
 LIBRARIES = ("UnityPy", "Pillow", "texture2ddecoder", "astc-encoder-py", "etcpak", "numpy")
-_ASSET_PREFIXES = ("Assets/", "Packages/")
 _ADDRESS = re.compile(r"0x[0-9a-fA-F]{6,}")
 _EXT = re.compile(r"[0-9a-z]+")
-# live2d.extract_model files -> artifact kinds (by suffix, the first that matches)
-LIVE2D_KINDS = (
-    (".model3.json", "live2d.model3"),
-    (".prefab.json", "live2d.prefab"),
-    (".physics3.json", "live2d.physics3"),
-    (".exp3.json", "live2d.expression"),
-    (".motion3.json", "live2d.motion"),
-    ("motions/_fades.json", "live2d.fades"),
-    (".moc3", "live2d.moc3"),
-    ("textures/", "live2d.texture"),
-)
 
 
 def _message(e: BaseException) -> str:
@@ -92,203 +62,6 @@ def _fact_input(bundles, stable: str, what: str) -> Input:
     if inp.role != "bundle":
         raise ValueError(f"{what}: input role {inp.role!r}, expected 'bundle'")
     return inp
-
-
-def _ordered(task, prefix: str = "bundle:") -> list[Input]:
-    """The inputs "bundle:<n>" of a task by n."""
-    ins = [i for i in task.inputs if i.role.startswith(prefix)]
-    return sorted(ins, key=lambda i: int(i.role[len(prefix) :]))
-
-
-# ---------------------------------------------------------------- the catalog of a task
-class Closures:
-    """Key lookup and dependency closures of a catalog index, as Catalog.entry and Catalog.resolve give them on the
-    catalogs the index was made of: a key's location is its first one inside a bundle (internal id under Assets/ or
-    Packages/), else its first one (remote catalog before APK catalog, each by offset); its closure is every bundle
-    location its dependencies reach, depth first, in the order Catalog.resolve lists them."""
-
-    def __init__(self, index: dict):
-        self.index = index
-        self.locations = catalogdb.by_id(index)
-        self.files = catalogdb.file_refs(index)
-        self.by_key: dict[str, list[dict]] = {}
-        for loc in index["locations"]:
-            self.by_key.setdefault(loc["primaryKey"], []).append(loc)
-
-    def keys(self) -> list[str]:
-        return sorted(self.by_key)
-
-    def entry(self, key: str) -> dict:
-        locs = self.by_key.get(key)
-        if not locs:
-            raise KeyError(key)
-        return next((loc for loc in locs if loc["internalId"].startswith(_ASSET_PREFIXES)), locs[0])
-
-    def own_bundle(self, key: str) -> str | None:
-        """The stable name of the bundle a key's location names first (the bundle holding it), else None."""
-        deps = self.entry(key)["dependencies"]
-        ref = self.files.get(deps[0]) if deps else None
-        return ref[1] if ref is not None and ref[0] == "bundle" else None
-
-    def closure(self, key: str) -> list[str]:
-        """The location ids of the bundles of a key's closure, in Catalog.resolve order."""
-        seen: set[str] = set()
-        out: dict[str, None] = {}
-        stack = [self.entry(key)["id"]]
-        while stack:
-            lid = stack.pop()
-            if lid in seen:
-                continue
-            seen.add(lid)
-            loc = self.locations.get(lid)
-            if loc is None:
-                continue
-            if loc["kind"] == "bundle":
-                out.setdefault(lid, None)
-            for d in loc["dependencies"]:
-                if d not in seen:
-                    stack.append(d)
-        return list(out)
-
-    def closure_bundles(self, key: str) -> list[str]:
-        """The stable names of the bundles of a key's closure, in Catalog.resolve order (a file two locations name
-        is listed twice, as Catalog.fetch_key gives it twice)."""
-        return [self.files[lid][1] for lid in self.closure(key)]
-
-
-# the value of TaskCatalog.apk: not None, the APK's bundles of the closure are inputs of the task
-APK_FROM_INPUTS = "<the task's inputs>"
-
-
-class TaskCatalog:
-    """What the model extractors ask of a Catalog (live2d.extract_model through export.Exporter: fetch_key, entry,
-    apk), answered from a task: its key, the internal id of the key's location and the bundles of the key's closure
-    in load order, each bundle read through the depot (Depot.open_input: its locators, checked against its content
-    id). Another key is not in it (KeyError). `apk` is not None: the extractors need the APK's bundles, and those of
-    the closure are inputs of the task like the others."""
-
-    def __init__(self, key: str, internal_id: str, bundles: list[Input], depot):
-        self.key, self.internal_id, self.bundles, self.depot = key, internal_id, list(bundles), depot
-        self.apk = APK_FROM_INPUTS
-
-    @classmethod
-    def from_task(cls, task, depot) -> TaskCatalog:
-        """The catalog of a live2d.model task: its subject, context internalId and inputs "bundle:<n>"."""
-        return cls(task.subject, task.context["internalId"], _ordered(task), depot)
-
-    def _check(self, key: str) -> None:
-        if key != self.key:
-            raise KeyError(key)
-
-    def has(self, key: str) -> bool:
-        return key == self.key
-
-    def keys(self, prefix: str = "") -> list[str]:
-        return [self.key] if self.key.startswith(prefix) else []
-
-    def entry(self, key: str) -> dict:
-        self._check(key)
-        return {"primary_key": key, "internal_id": self.internal_id}
-
-    def entries_for(self, key: str) -> list[dict]:
-        return [self.entry(key)] if key == self.key else []
-
-    def resolve(self, key: str) -> list[Bundle]:
-        """The closure as Bundles in load order: offset = the position, name = the input's file name (its content
-        id when it has none); internal_id is empty and remote True (a task has a file's content, not its place in
-        a catalog; every bundle is read from the inputs)."""
-        self._check(key)
-        return [Bundle(i, "", inp.name or inp.sha256, True) for i, inp in enumerate(self.bundles)]
-
-    def fetch_key(self, key: str) -> list[Path]:
-        """The files of the closure's bundles, in load order."""
-        self._check(key)
-        return [self.depot.open_input(inp) for inp in self.bundles]
-
-
-# ---------------------------------------------------------------- live2d.model
-def live2d_kind(path: str) -> str:
-    """The artifact kind of a file live2d.extract_model writes (LIVE2D_KINDS; else "live2d.file")."""
-    for suffix, kind in LIVE2D_KINDS:
-        if path.endswith(suffix) or (suffix.endswith("/") and path.startswith(suffix)):
-            return kind
-    return "live2d.file"
-
-
-def _tree(root: Path) -> list[tuple[str, Path]]:
-    """(relative POSIX path, file) of every file under `root`, sorted by path."""
-    return sorted((p.relative_to(root).as_posix(), p) for p in root.rglob("*") if p.is_file())
-
-
-class Live2DStage(Stage):
-    """live2d.model: a Live2D model key -> the files of `nnnotes export live2d` (module documentation). Subjects and
-    inputs come from the facts "index" (the catalog index), "selected" and "bundles" ({stable name: Input "bundle"})."""
-
-    name = LIVE2D
-    version = 1
-    ATOMS = {"live2d.extract_model": impl_id(LIBRARIES, 1)}
-    LAYOUT_ROOT = "{subject}"
-
-    def __init__(self):
-        self._closures: Closures | None = None
-
-    def __getstate__(self):
-        return {}
-
-    def __setstate__(self, state):
-        self.__init__()
-
-    def closures(self, env) -> Closures:
-        index = env.fact("index")
-        if self._closures is None or self._closures.index is not index:
-            self._closures = Closures(index)
-        return self._closures
-
-    def subjects(self, env) -> list[str]:
-        c, selected = self.closures(env), set(env.fact("selected"))
-        return [k for k in c.keys() if MODEL_KEY.fullmatch(k) and c.own_bundle(k) in selected]
-
-    def inputs(self, subject: str, env) -> list[Input]:
-        bundles, what = env.fact("bundles"), f"{self.name} {subject}"
-        names = self.closures(env).closure_bundles(subject)
-        width = max(3, len(str(len(names) - 1)))
-        out = []
-        for i, stable in enumerate(names):
-            inp = _fact_input(bundles, stable, what)
-            out.append(Input(f"bundle:{i:0{width}d}", inp.sha256, inp.size, inp.name, inp.locators))
-        return out
-
-    def context(self, subject: str, env) -> dict:
-        return {"internalId": self.closures(env).entry(subject)["internalId"]}
-
-    def estimate(self, subject: str, env, inputs: list[Input]) -> Cost:
-        """From the closure's bytes (least squares over the models of a catalog: CPU seconds; peak resident bytes
-        of a worker process)."""
-        size = sum(i.size for i in inputs)
-        return Cost(0.9 + size * 2.2e-7, (420 << 20) + 10 * size)
-
-    def run(self, task, depot) -> Output:
-        _check_atoms(task, self.ATOMS)
-        from ..unity import live2d
-
-        cat = TaskCatalog.from_task(task, depot)
-        arts = []
-        with tempfile.TemporaryDirectory(prefix="nnnotes-live2d-") as d:
-            # TaskCatalog answers the catalog calls of the model extractor
-            summary = live2d.extract_model(cat, task.subject, Path(d))  # pyright: ignore[reportArgumentType]
-            for rel, p in _tree(Path(d)):
-                kind = live2d_kind(rel)
-                facts = {k: summary[k] for k in sorted(summary)} if kind == "live2d.model3" else {}
-                ext = _ext(rel)
-                arts.append(
-                    contract.artifact(
-                        contract.artifact_id(task.id, rel),
-                        depot.add(p.read_bytes(), ext),
-                        contract.provenance(task),
-                        {"kind": kind, "format": ext, "facts": facts},
-                    )
-                )
-        return Output(arts, [])
 
 
 # ---------------------------------------------------------------- spine.skeleton
@@ -407,7 +180,7 @@ class SpineStage(Stage):
         return sorted({*(contract.task_id(CENSUS, s) for s in self.closure(subject, env)), SCRIPTS_TASK})
 
     def estimate(self, subject: str, env, inputs: list[Input]) -> Cost:
-        """From the closure's bytes (least squares over the skeletons of a catalog, as Live2DStage.estimate)."""
+        """From the closure's bytes (least squares over the skeletons of a catalog)."""
         size = sum(i.size for i in inputs)
         return Cost(0.27 + size * 1.9e-7, (440 << 20) + 20 * size)
 

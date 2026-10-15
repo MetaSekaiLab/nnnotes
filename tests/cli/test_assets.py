@@ -16,7 +16,7 @@ import pytest
 from nnnotes import cli
 from nnnotes.cli import assets, common
 from nnnotes.cli import catalog as catalog_cli
-from nnnotes.pipeline import contract, link, units
+from nnnotes.pipeline import assemble, catalogdb, contract, link, units
 from nnnotes.pipeline.census import CensusStage
 from nnnotes.pipeline.contract import Cost
 from nnnotes.pipeline.depot import Depot
@@ -1428,3 +1428,99 @@ def test_worker_counts_follow_the_cpus_this_process_may_use(monkeypatch):
     assert ws.workers() == 12 and cri.default_workers() == 3
     ws.args.workers = 0
     assert ws.workers() == 0
+
+
+# ---------------------------------------------------------------- products
+class FakeProduct(assemble.ProductStage):
+    """A product per Bg/ key of the selection: index.json naming its roots and objects."""
+
+    name = "fake.product"
+    version = 1
+    KIND = "FakeProduct"
+
+    def select(self, keys):
+        return [k for k in keys if k.startswith("Bg/")]
+
+    def keys(self, subject, env):
+        return [subject]
+
+    def assemble(self, task, objects):
+        doc = {"roots": objects.roots, "objects": objects.ids()}
+        return assemble.Assembly({"index.json": (contract.encode(doc), "json", "fake.index")})
+
+
+class FakeCubism(assemble.ProductStage):
+    """live2d.cubism standing in for the real stage: a model3.json and a texture."""
+
+    name = "live2d.cubism"
+    version = 1
+    KIND = "CubismModel"
+
+    def keys(self, subject, env):
+        return [subject]
+
+    def assemble(self, task, objects):
+        files = {"m.model3.json": (b'{"Version": 3}', "json", "live2d.model3"), "textures/t.png": (b"png", "png", "x")}
+        return assemble.Assembly(files, set())
+
+
+PRODUCT_SOURCES = FAKE_SOURCES + (
+    assets.StageSource("fake.product", "tests.cli.test_assets:FakeProduct", output=True, product=True),
+    assets.StageSource("live2d.cubism", "tests.cli.test_assets:FakeCubism", output=True, product=True),
+)
+MODEL_KEY = "Character/Live2D/g/m/model/m"
+
+
+def test_held_keys_are_those_of_the_bundles_holding_them():
+    idx = catalogdb.index(catalog_bytes([(MODEL_KEY, "Assets/Game/Bg/x.prefab", [3])]))
+    assert assets.held_keys(idx, ["bg_x"]) == ["Bg/x", MODEL_KEY]
+    assert assets.held_keys(idx, [contract.stable_bundle_name(NAMES["card_1"])]) == ["Card/1/full"]
+    assert assets.held_keys(idx, []) == []
+
+
+def test_the_product_layout_places_the_products_of_the_selection(tmp_path, capsys, monkeypatch):
+    monkeypatch.setattr(assets, "STAGE_SOURCES", PRODUCT_SOURCES)
+    d = setup_data(tmp_path, censuses(broken=False))
+    code, out, err = export(capsys, tmp_path, d, "s", "out", "--layout", "product")
+    assert code == 0, err
+    run = contract.loads((tmp_path / "out" / assets.REPORTS / "run.json").read_bytes())
+    ids = sorted(t["id"] for t in run["tasks"])
+    bg = f"{contract.stable_bundle_name(NAMES['bg_x'])}:3"
+    assert [i for i in ids if i.startswith(("unity.export:", "fake.product:", "live2d."))] == [
+        "fake.product:Bg/x",
+        f"unity.export:{bg}",  # what the product reaches, not every unit of the selection
+    ]
+    manifest = contract.loads((tmp_path / "out" / "fake.product" / "Bg%2Fx.json").read_bytes())
+    assert manifest["product"] == "fake.product" and manifest["subject"] == "Bg/x"
+    index = (tmp_path / "out" / manifest["files"]["index.json"]["asset"]).read_bytes()
+    assert contract.loads(index)["roots"] == [f"{CABS['bg_x']}:3"]
+    go = manifest["objects"][f"{CABS['bg_x']}:3"]
+    assert go["class"] == "GameObject" and (tmp_path / "out" / go["files"]["json"]["asset"]).is_file()
+    assert manifest["objects"][f"{CABS['bg_x']}:2"] == {"class": "Transform", "in": f"{CABS['bg_x']}:3"}
+    assert sorted(p.name for p in (tmp_path / "out").iterdir()) == [
+        assets.REPORTS,
+        "assets",
+        "fake.product",
+        "manifest.json",
+    ]  # no object layout
+    code, out, err = export(capsys, tmp_path, d, "s", "both", "--layout", "original,product")
+    assert code == 0, err
+    assert (tmp_path / "both" / "original" / "Assets" / "Game" / "Card" / "1" / "full.png.json").is_file()
+    assert (tmp_path / "both" / "product" / "fake.product" / "Bg%2Fx.json").is_file()
+
+
+def test_export_live2d_writes_the_cubism_files_of_one_model(tmp_path, capsys, monkeypatch):
+    monkeypatch.setattr(assets, "STAGE_SOURCES", PRODUCT_SOURCES)
+    monkeypatch.setattr("nnnotes.pipeline.catalogdb.apk_version", lambda apk: None)
+    d = setup_data(tmp_path, censuses(broken=False), extra=[(MODEL_KEY, "Assets/Game/Bg/x.prefab", [3])])
+    apk = builtin_apk(tmp_path / "base.apk", {"assets/aa/catalog.bin": synth.CatalogWriter().build([])})
+    argv = [*flags(d), "--apk", apk, "export", "live2d", "m", "-o", tmp_path / "m", "--depot", tmp_path / "s"]
+    code, out, err = nn(capsys, *argv, "--workers", "0")
+    assert code == 0, err
+    assert tree(tmp_path / "m", skip=(assets.REPORTS, "manifest.json")) == {
+        "m.model3.json": hashlib.sha256(b'{"Version": 3}').hexdigest(),
+        "textures/t.png": hashlib.sha256(b"png").hexdigest(),
+    }
+    run = contract.loads((tmp_path / "m" / assets.REPORTS / "run.json").read_bytes())
+    ids = {t["id"] for t in run["tasks"]}
+    assert f"live2d.cubism:{MODEL_KEY}" in ids and "fake.product:Bg/x" not in ids
