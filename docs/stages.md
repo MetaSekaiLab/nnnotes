@@ -13,8 +13,8 @@ The asset export is built from three layers:
 ## Stages
 
 Every stage is at version 1, except `unity.census` (version 4: it lists what every object references, the
-hierarchy holding it and the Resources.Load paths of a ResourceManager), `link.addresses` (version 3: the
-Resources.Load paths and the built-in selectors), `live2d.model` (version 2: assembled from the exported objects), `unity.export` (version 2: one task per unit), `cri.movie` (version 2: every stream kind,
+hierarchy holding it and the Resources.Load paths of a ResourceManager), `link.addresses` (version 4: the
+Resources.Load paths, the built-in selectors and the objects of a scene key), `live2d.model` (version 2: assembled from the exported objects), `unity.export` (version 2: one task per unit), `cri.movie` (version 2: every stream kind,
 codec and channel of a USM) and `catalog.index` (version 2: gzip input and Japanese remote asset placeholders).
 
 | Stage | Subject | Inputs | Outputs |
@@ -34,7 +34,7 @@ codec and channel of a USM) and `catalog.index` (version 2: gzip input and Japan
 | `live.notes` | `default` | `objects`: the object table of the note prefabs and the lane effect settings ([products](products.md#note-highway)); `master`: the settings' master record | `notes.json` and the object table |
 | `live.noteskin` | a note skin (`skin001`) | `objects`: the object table of the skin and the flick views | `noteskin.json` and the object table |
 | `live.noteeffect` | a note effect set (`effect001`, `effect001Light`) | `objects`: the object table of the effect settings | `noteeffect.json` and the object table |
-| `link.addresses` | global | catalog index, censuses (the built-in files' too) | key -> objects, Resources.Load path -> objects, built-in selector (class, MonoBehaviour script class) -> objects, serialized file -> bundle or built-in file, bundle -> keys |
+| `link.addresses` | global | catalog index, censuses (the built-in files' too) | key -> objects (a scene key: the objects of the scene's file outside a hierarchy), Resources.Load path -> objects, built-in selector (class, MonoBehaviour script class) -> objects, serialized file -> bundle or built-in file, bundle -> keys |
 | `view.<name>` | a catalog (`main`) | `master:<Table>` per master table it reads, `rules` (the view's rule and the resolvers it uses), `addresses` (the part of the address table it read: the keys looked up and the prefixes listed); no parameters, atoms or context | `view.<name>:<subject>#view` (facts: rows, entries, gaps, unreferenced) |
 | `view.voices` | a catalog (`main`) | `master:<Table>` per master table its rules read, `rules`, `addresses`, `sheets` (each cue sheet the `cri.audio` results are known by that a voice names or the rules' prefixes list: its task and ACB content id), `acb:<sha256>` (the ACB of each decoded one), `episodes` (per story episode and part, the `unity.export` artifact holding the object its key names), `adv:<sha256>` (those contents); context `audio` (the keys of those `cri.audio` results); runs after `unity.export` and `cri.audio` | `view.voices:<subject>#view` (facts: rows, entries, gaps, unreferenced streams) |
 
