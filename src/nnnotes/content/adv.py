@@ -45,6 +45,7 @@ PLAYER_SETTINGS_KEY = "EmbCommon/Adv/Settings/AdvPlayerSettings"
 TRANSITION_COMMANDS = ("FadeOut", "FadeIn")
 VIDEO_COMMANDS = ("Movie", "Clip")
 CHAT_ICON_COMMANDS = ("ChatTalk", "ChatStamp")
+SHARD_SUFFIXES = ("-Text", "-Sound", "-SoundCueSheet", "-Video")  # sibling keys of the episode key
 
 LANGS = ("_japanese", "_english", "_traditionalChinese", "_simplifiedChinese", "_korean")
 
@@ -102,9 +103,30 @@ def extract(cat: Catalog, master_dir: Path, adv_id: int) -> AdvExtract:
     if coll is None:
         raise RuntimeError(f"episode Collection not found for {a}")
 
-    # 2) shards
-    def shard(suf):
-        t = _text_of(cat, f"{base}{suf}")
+    # 2) shards and the catalog-backed lookups of the resource closure
+    shards = {suf: _text_of(cat, f"{base}{suf}") for suf in SHARD_SUFFIXES}
+
+    chats: dict = {}
+
+    def chat(chat_id: int) -> dict:
+        if not chats:
+            chats.update({r["_id"]: r for r in master.table(master_dir, "MasterAdvChat")})
+        if chat_id not in chats:
+            raise KeyError(f"MasterAdvChat has no row {chat_id}")
+        return chats[chat_id]
+
+    title = _master_text(row["_titleTextId"], master_dir) if row["_titleTextId"] else None
+    return build(row, coll, shards, cat.has, chat, lambda: _default_transition(cat), title)
+
+
+def build(row: dict, coll: list[dict], shards: dict, has, chat, transition, title: dict | None) -> AdvExtract:
+    """The episode of the MasterAdv `row` from its command list `coll` (the raw `Collection` rows) and its shard texts
+    `shards` ({suffix: JSON text or None} for SHARD_SUFFIXES; None or missing means no rows). `has`, `chat` and
+    `transition` are as in `closure`; `transition()` is called at most once. `title` is the MasterText lines of the
+    episode's title, or None."""
+
+    def shard(suf: str) -> list[dict]:
+        t = shards.get(suf)
         return unity.parse_shard(t)["rows"] if t else []
 
     text_rows = shard("-Text")
@@ -114,7 +136,7 @@ def extract(cat: Catalog, master_dir: Path, adv_id: int) -> AdvExtract:
     text_idx = unity.shard_index(text_rows)
     sound_idx = unity.shard_index(sound_rows)
 
-    # 3) enrich commands
+    # enrich commands
     out_cmds = []
     for c in coll:
         name = COMMAND.get(c["Command"], f"Cmd{c['Command']}")
@@ -135,27 +157,19 @@ def extract(cat: Catalog, master_dir: Path, adv_id: int) -> AdvExtract:
             item["lines"] = {lang[1:]: r.get(lang, "") for lang in LANGS}
         out_cmds.append(item)
 
-    # 4) resource closure
-    chats: dict = {}
-    default_transition: list[str] = []
+    # resource closure
+    default: list[str] = []
 
-    def chat(chat_id: int) -> dict:
-        if not chats:
-            chats.update({r["_id"]: r for r in master.table(master_dir, "MasterAdvChat")})
-        if chat_id not in chats:
-            raise KeyError(f"MasterAdvChat has no row {chat_id}")
-        return chats[chat_id]
+    def default_transition() -> str:
+        if not default:
+            default.append(transition())
+        return default[0]
 
-    def transition() -> str:
-        if not default_transition:
-            default_transition.append(_default_transition(cat))
-        return default_transition[0]
-
-    resources = closure(coll, cat.has, unity.shard_index(video_rows), chat, transition)
+    resources = closure(coll, has, unity.shard_index(video_rows), chat, default_transition)
 
     return AdvExtract(
-        adv_id=adv_id,
-        asset=a,
+        adv_id=row["_id"],
+        asset=row["_advEpisodeAsset"],
         commands=out_cmds,
         text={r["_id"]: {lang[1:]: r.get(lang, "") for lang in LANGS} for r in text_rows if "_id" in r},
         sounds={r["_id"]: r for r in sound_rows if "_id" in r},
@@ -163,7 +177,7 @@ def extract(cat: Catalog, master_dir: Path, adv_id: int) -> AdvExtract:
         videos={r["_id"]: r for r in video_rows if "_id" in r},
         resources=resources,
         master=row,
-        title=_master_text(row["_titleTextId"], master_dir) if row["_titleTextId"] else None,
+        title=title,
     )
 
 
