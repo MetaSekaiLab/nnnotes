@@ -320,42 +320,26 @@ nnnotes export spot SPOT_ID -o OUT
 ```
 OUT/spot.json         master row, names, tap-talk episodes, situation settings, tap targets, Spine characters
 OUT/spine/            Spine skeletons (.json or .skel), atlases, atlas page PNGs
-OUT/room.glb          the spot's background as binary glTF (as `export room`), with room.json
-OUT/shaders/          shaders of the spot's bundles (as `export shader`)
+OUT/room.glb          the spot's background as binary glTF (as `export room`)
+OUT/room.json         its summary
 ```
 
-Needs `[paths] apk` and master data (`MasterHomeSpot`, `MasterText`, `MasterStoryHomeSpotTapTalkEpisode`). `room.glb` and
-`room.json` are the `export room` export of the spot's background.
-
-A reference the situation prefab leaves empty is written as null: a Spine character with no `_animation` has null
-`skeletonData`, `animation` and `world`, and a tap target with no `_focus` has a null `focusWorld`.
+The spot whose `MasterHomeSpot` row has the id `SPOT_ID`: the products `spot.files` of its situation
+(`_situationAssetPath`) and `room.gltf` of its background (`_backgroundAssetPath`), their files at their own paths
+([products](products.md#spots)). The command runs the depot's pipeline for the two products alone, as `export live2d`
+does, writes the same reports in `OUT/_reports/` and takes the same options. Needs `[paths] apk` (the Spot and Spine
+component classes are in the APK) and master data (`MasterHomeSpot`, `MasterText`,
+`MasterStoryHomeSpotTapTalkEpisode`).
 
 ## export room
 
 ```
-nnnotes export room KEY -o OUT.glb
+nnnotes export room KEY -o OUT
 ```
 
-A spot background prefab as binary glTF: every mesh baked into prefab space, converted to glTF's right-handed space,
-textures embedded, materials translated from the shader's render state. Objects inactive in the prefab are kept with
-`extras.unityActive = false`. A summary (`meshCount`, materials, textures, samplers) is written next to it as
-`OUT.json`.
-
-Materials and textures are told apart by serialized file and path id (the prefab's bundle and its dependencies can
-reuse a path id). Each texture is one glTF texture with its own sampler, and textures whose PNG bytes are equal share
-one glTF image. The summary's `textures` has one entry per glTF texture, in glTF order (the index a material's
-`baseColorTexture` names): the Unity texture's name.
-
-The render state is that of the shader's first pass for the material: blend factors (colour and alpha), blend
-operations, colour mask, culling, depth write, depth test and alpha to mask. A state the shader takes from a
-property (`Blend [_SrcBlend] [_DstBlend]`, `Cull [_Cull]`, `ZWrite [_ZWrite]`, ...) is the material's value of that
-property, else the shader's default for it. Each glTF material keeps the resolved state in
-`extras.unityRenderState` (and `OUT.json` in `materials[].renderState`); a shader or a state glTF cannot express
-stops the command. A submesh whose material slot is empty is not written (there is no material to draw it with): the
-summary lists each as `nullMaterialSubmeshes` (`mesh`, object `path` in the prefab, `submesh` index), and a mesh
-left with no submesh is not written. A MeshFilter with no mesh, or a mesh with no triangles (no index data), draws
-nothing and is not written; the summary lists the object path in `nullMeshFilters`, or the mesh and object path in
-`meshesWithoutTriangles`.
+A spot background as binary glTF, `OUT/room.glb`, with its summary `OUT/room.json`: the product `room.gltf` of the
+background key `KEY` (`Spot/<place>/Background/<place>`; [products](products.md#spots)). Runs and reports as
+`export spot`.
 
 ## export shader
 

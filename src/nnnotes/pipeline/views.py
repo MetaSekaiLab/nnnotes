@@ -874,6 +874,20 @@ def _cached_rows(sha: str, read) -> list[dict]:
     return rows
 
 
+def master_rows(env, tables: Iterable[str]) -> dict[str, list[dict]]:
+    """{table: rows} of the master tables `tables` in the directory of the fact "master" (ViewError for a table the
+    master data lacks)."""
+    mdir = Path(env.fact("master"))
+    out = {}
+    for t in tables:
+        p = mdir / f"{t}.json"
+        if not p.is_file():
+            raise ViewError(f"master table {t} is not in the master data")
+        sha, _ = env.depot.identify(p)
+        out[t] = _cached_rows(sha, p.read_bytes)
+    return out
+
+
 def _address_index(env, tid: str) -> AddressIndex:
     """The address index of the result of the link.addresses task `tid` (Pending until it has run)."""
     sha = env.artifact(tid, "addresses")["content"]["sha256"]

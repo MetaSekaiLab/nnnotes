@@ -115,9 +115,10 @@ STAGE_SOURCES = (
     StageSource("sprite.crop", "nnnotes.pipeline.objexport:SpriteCropStage", output=True),
     StageSource("cri.audio", "nnnotes.pipeline.cristages:AudioStage", output=True),
     StageSource("cri.movie", "nnnotes.pipeline.cristages:MovieStage", output=True),
-    StageSource("spine.skeleton", "nnnotes.pipeline.modelstages:SpineStage", output=True),
     StageSource("live2d.model", "nnnotes.pipeline.live2d:ModelStage", output=True, product=True),
     StageSource("live2d.cubism", "nnnotes.pipeline.live2d:CubismStage", output=True, product=True),
+    StageSource("room.gltf", "nnnotes.pipeline.spot:RoomStage", output=True, product=True),
+    StageSource("spot.files", "nnnotes.pipeline.spot:SpotStage", output=True, product=True),
     StageSource("view.", "nnnotes.pipeline.views:stages", output=True),
     StageSource("view.voices", "nnnotes.pipeline.voices:VoiceStage", output=True),
 )
@@ -722,25 +723,31 @@ class Workspace:
         inputs = self._inputs("bundle", [bundles[s] for s in sel.census if s not in builtin], fetch)
         inputs = inputs.plus(builtin)
         sel.selected = [s for s in sel.selected if s in inputs]  # files that cannot be read: problems()
+        products = [n for n in pipeline if self.installed.sources[n].product]
+        readers = [n for n in products if self.installed.stages[n].MASTER]  # products that read master tables
         facts = {
             "catalogs": self.catalogs_fact(),
             "index": index,
             "selected": sel.selected,
-            "master": self.master() if any(n.startswith("view.") for n in pipeline) else None,
+            "master": self.master() if readers or any(n.startswith("view.") for n in pipeline) else None,
             "views": sorted(n[5:] for n in pipeline if n.startswith("view.")),
             "bundles": inputs,
             "classes": self.classes(),
             "raw": Inputs({}),
         }
-        products = [n for n in pipeline if self.installed.sources[n].product]
         if products:
             from ..pipeline import assemble
 
             if self.products is not None:
                 chosen = {n: self.products.get(n, []) for n in products}
-            else:
+                if facts["master"] is None and any(chosen[n] for n in readers):
+                    raise self.cfg.missing(*self.cfg.master(self.cfg.get("catalog", "region")))
+            else:  # without master data, the products that read it have no subjects (as the views)
                 held = held_keys(index, sel.selected)
-                chosen = {n: self.installed.stages[n].select(held) for n in products}
+                chosen = {
+                    n: [] if n in readers and facts["master"] is None else self.installed.stages[n].select(held)
+                    for n in products
+                }
             facts["products"] = chosen
             facts["roots"] = assemble.request(self.installed.stages, chosen, Env(self.depot, facts))
             if self.products is not None or not set(self.layouts) & set(OBJECT_LAYOUTS):

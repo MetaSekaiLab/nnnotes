@@ -19,6 +19,7 @@ from UnityPy.helpers import MeshHelper
 from UnityPy.helpers.TypeTreeNode import TypeTreeNode
 
 from ..core import cache
+from .transform import trs
 
 # ---- typetree blobs ---------------------------------------------------------
 # A serialized file lists the typetree of each of its classes as a blob, and UnityPy parses every blob in Python
@@ -249,25 +250,6 @@ def texture_image(tex):
 
 
 # ---- scene graph ----------------------------------------------------------
-def quat_matrix(q: dict) -> np.ndarray:
-    x, y, z, w = q["x"], q["y"], q["z"], q["w"]
-    return np.array(
-        [
-            [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w), 0],
-            [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w), 0],
-            [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y), 0],
-            [0, 0, 0, 1],
-        ],
-        dtype=np.float64,
-    )
-
-
-def trs(pos: dict, rot: dict, scale: dict) -> np.ndarray:
-    t = np.eye(4)
-    t[:3, 3] = [pos["x"], pos["y"], pos["z"]]
-    return t @ quat_matrix(rot) @ np.diag([scale["x"], scale["y"], scale["z"], 1.0])
-
-
 class SceneGraph:
     """GameObject/Transform hierarchy of an environment, with world matrices."""
 

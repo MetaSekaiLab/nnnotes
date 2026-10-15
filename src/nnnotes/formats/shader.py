@@ -132,7 +132,7 @@ def variants(tt: dict, blobs: dict[int, list[bytes]]):
                         n += 1
 
 
-def _parsed_summary(tt: dict) -> dict:
+def parsed_summary(tt: dict) -> dict:
     pf = tt["m_ParsedForm"]
     return {
         "name": pf.get("m_Name"),
@@ -160,7 +160,7 @@ def _parsed_summary(tt: dict) -> dict:
 def _render(o, tt: dict, name: str) -> tuple[str, list[dict], list[bytes]]:
     """(parsed summary JSON text, variant records, variant program bytes) of one Shader object."""
     safe = _safe(name)
-    text = dumps(_parsed_summary(tt), indent=1, ensure_ascii=False, default=str)
+    text = dumps(parsed_summary(tt), indent=1, ensure_ascii=False, default=str)
     recs, codes = [], []
     for plat, si, pi, stage, n, t, kws, code in variants(tt, platform_blobs(o.read())):
         tag = PLATFORM.get(plat, str(plat))
