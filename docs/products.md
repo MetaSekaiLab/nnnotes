@@ -372,7 +372,9 @@ hold.
 `story.sound` reads its cue sheet's `cri.audio` files; `cues.json` maps each cue name to the
 first stream of that name (in stream order): `file` (the sound, next to `cues.json`), `sampleRate`, `channels`,
 `samples` (frames at `sampleRate`, without encoder padding) and, for a looping stream, `loopStart` and `loopEnd`
-(sample frames). The sounds are in the web format of the parameter `audio`, as for `live.music`: `aac` (the default)
+(sample frames). A cue whose ACB sequence names CRI categories also has `categories`, the ordered category names
+(for example `["Voice", "VoiceConfig"]`), read from sequence command 65 and the ACB's ACF category references.
+The sounds are in the web format of the parameter `audio`, as for `live.music`: `aac` (the default)
 records `encoderDelay`, the priming samples of the MP4 edit list; `flac` keeps the decoded FLAC. The `product`
 layout makes the `story.sound` product of every cue sheet key the selection holds.
 
