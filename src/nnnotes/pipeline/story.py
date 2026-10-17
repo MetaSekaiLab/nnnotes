@@ -5,7 +5,8 @@ objects (their files are all they hold):
 
 story.sound    subject a cue sheet name (the `_cueSheetName` of a story's cue sheet table): "<task id>#cues.json"
                (kind story.sound: cue name -> the cue's first stream: `file`, `sampleRate`, `channels`, `samples`,
-               `loopStart`, `loopEnd` and, in AAC, `encoderDelay`) and "<task id>#<file>" for each of those streams
+               `loopStart`, `loopEnd`, the nonempty CRI `categories` from the ACB and, in AAC, `encoderDelay`) and
+               "<task id>#<file>" for each of those streams
                (kind audio.story) in the web format of the parameter `audio` (encoders.WEB_AUDIO; default aac:
                AAC-LC in MP4, each file recording its encoder delay; flac: the decoded FLAC as it is). Its root is the
                cue sheet's catalog key `Cri/Sound/<sheet>` and its manifest cuesheets/<sheet>.json. The atom
@@ -57,7 +58,7 @@ from pathlib import Path
 
 from ..content import liveaudio, storyasset, storychat, storyepisode, storyscene, storyvideo
 from ..content.livescene import GRAPHICS
-from ..formats import crilips
+from ..formats import acb, crilips
 from ..formats.encoders import DEFAULT_AUDIO_FORMAT, WEB_AUDIO, mp4_priming, web_encode
 from ..unity.atoms import Unsupported
 from . import contract
@@ -127,7 +128,7 @@ class SoundStage(ProductStage):
     """story.sound: a cue sheet -> cues.json and its streams in the web format (module documentation)."""
 
     name = SOUND
-    version = 1
+    version = 2
     KIND = "StorySound"
     PARAMS = {"audio": DEFAULT_AUDIO_FORMAT}
 
@@ -161,6 +162,10 @@ class SoundStage(ProductStage):
         sheet = objects.sheet(liveaudio.sheet_key(_sheet(task.subject)))
         ext = WEB_AUDIO[fmt][0]
         doc, sources = cues(sheet.streams(), ext)
+        categories = acb.cue_categories(sheet.acb())
+        for cue, entry in doc.items():
+            if categories.get(cue):
+                entry["categories"] = categories[cue]
         files, delays = {}, {}
         for name, src in sources.items():
             if WEB_AUDIO[fmt][1] is None:
