@@ -114,7 +114,14 @@ def table(depot, monos=()) -> Input:
             "class": "MonoBehaviour",
             "files": {"json": {"sha256": depot.put(data), "size": len(data), "ext": "json"}},
         }
-    doc = {"schema": contract.OBJECTS, "roots": sorted(objects), "keys": {}, "objects": objects, "missing": []}
+    doc = {
+        "schema": contract.OBJECTS,
+        "roots": sorted(objects),
+        "keys": {},
+        "objects": objects,
+        "fenced": {},
+        "missing": [],
+    }
     return stored(depot, contract.encode(doc), "objects")
 
 

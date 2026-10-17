@@ -119,6 +119,7 @@ def planning(depot, tmp, files: dict, keys=None, boot=True, bundles=()) -> Env:
     facts = {
         "raw": raw,
         "index": catalog_index(keys or {}, bundles),
+        "catalogs": {},
         "boot": boot_input(depot, tmp) if boot else None,
     }
     return Env(depot, facts)
