@@ -279,6 +279,7 @@ def test_the_live_product_holds_the_chart_and_the_manifests_of_its_parts(tmp_pat
         "noteskin": "noteskins/skin001.json",
         "scene": "scenes/default.json",
         "sounds": "sounds/default.json",
+        "ui": {code: f"liveui/7_expert_{code}.json" for code in ("ja", "en", "zh-Hant", "zh-Hans", "ko")},
     }
     objects = stored(depot, contract.encode(lh.table(depot)), "objects")
     _, _, arts = run(depot, stage, "7/expert", [objects, record])
