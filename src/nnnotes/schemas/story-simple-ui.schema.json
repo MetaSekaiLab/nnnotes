@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:nnnotes:schema:story-simple-ui",
+  "title": "Overlay story talk-window and system-message UI",
+  "type": "object",
+  "required": ["format", "language", "talkWindow", "systemMessage", "uiManager", "settings", "graphics", "texts", "textStyle", "bindings", "shaders"],
+  "properties": {
+    "format": {"const": "nnnotes.story-simple-ui/1"},
+    "language": {"type": "object", "required": ["code", "mode", "field", "lineSpacing", "fontNames", "fontSwap"], "properties": {"code": {"enum": ["ja", "en", "zh-Hant", "zh-Hans", "ko"]}}},
+    "talkWindow": {"type": "string"},
+    "systemMessage": {"type": "string"},
+    "uiManager": {"type": "string"},
+    "settings": {"type": "object", "required": ["localizeManager", "tmpSettings", "dotween"], "additionalProperties": {"type": "string"}},
+    "graphics": {"type": "object", "required": ["graphics"], "additionalProperties": {"type": "string"}},
+    "texts": {"type": "object", "additionalProperties": {"type": "object", "required": ["style", "localized"], "properties": {"style": {"type": "object"}, "localized": {"type": ["object", "null"]}}}},
+    "textStyle": {"type": "object"},
+    "bindings": {"type": "object"},
+    "shaders": {"type": "object", "additionalProperties": {"type": "string"}}
+  }
+}

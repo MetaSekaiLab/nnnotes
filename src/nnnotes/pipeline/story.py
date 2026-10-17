@@ -65,7 +65,17 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
-from ..content import liveaudio, storyasset, storychat, storyepisode, storyscene, storyui, storyvideo
+from ..content import (
+    liveaudio,
+    storyasset,
+    storychat,
+    storyepisode,
+    storyhostproduct,
+    storyscene,
+    storysimpleui,
+    storyui,
+    storyvideo,
+)
 from ..content.livescene import GRAPHICS
 from ..content.prefabs import mono_json
 from ..formats import acb, crilips
@@ -80,6 +90,8 @@ from .contract import IncompatibleTask, Input
 from .layout import escape_segment
 from .live import encode_atoms
 from .live2d import MODEL, ModelStage
+from .spot import ROOM, SPOT, RoomStage, SpotStage
+from .storyhost import HOST, HostStage
 from .textfonts import FontInputsStage
 from .textfonts import font_atoms as font_atoms
 from .textfonts import font_settings as _font_settings
@@ -105,6 +117,10 @@ __all__ = [
     "FONTS",
     "FontsStage",
     "UiStage",
+    "SimpleUiStage",
+    "SIMPLE_UI",
+    "HOST",
+    "HostStage",
     "VideoStage",
     "cues",
     "part_products",
@@ -113,6 +129,7 @@ __all__ = [
 SOUND, CRILIPS, SCENE, ASSET = "story.sound", "story.crilips", "story.scene", "story.asset"
 CHAT, STORY, UI, VIDEO = "story.chat", "story", "story.ui", "story.video"
 FONTS = "story.fonts"
+SIMPLE_UI = "story.simpleui"
 DEFAULT = "default"
 SHEET_PREFIX = "Cri/Sound/"
 LIBRARY = crilips.LIB_ENTRY_SUFFIX
@@ -405,6 +422,32 @@ class UiStage(FontInputsStage):
         return Assembly({"ui.json": (contract.encode(doc), "json", UI)}, keep, roles, ui_table)
 
 
+class SimpleUiStage(UiStage):
+    """The localized talk window and system-message UI of Overlay stories."""
+
+    name = SIMPLE_UI
+    version = 1
+    KIND = "StorySimpleUi"
+
+    def ui_keys(self, subject, env):
+        _language(subject)
+        return storysimpleui.keys({loc["primaryKey"] for loc in env.fact("index")["locations"]})
+
+    def keys(self, subject, env):
+        catalog = {loc["primaryKey"] for loc in env.fact("index")["locations"]}
+        return sorted({*self.ui_keys(subject, env), *storyui.font_keys(catalog)})
+
+    def manifest(self, subject):
+        return f"storysimpleui/{_language(subject)}.json"
+
+    def assemble(self, task, objects):
+        table = contract.loads(objects.depot.input_bytes(task.input("ui.objects")))
+        ui_objects = Objects(table, objects.depot)
+        lang = textstyle.language_fonts_json(mono_json(ui_objects, storyui.script_root(ui_objects, "LocalizeManager")))
+        doc, keep, roles = storysimpleui.ui(ui_objects, task.subject, _font_settings(task, objects, lang))
+        return Assembly({"ui.json": (contract.encode(doc), "json", SIMPLE_UI)}, keep, roles, table)
+
+
 def font_subject(subject: str) -> tuple[str, str]:
     episode, sep, language = subject.partition("/")
     if not sep or str(_adv_id(episode)) != episode:
@@ -416,7 +459,7 @@ class FontsStage(UiStage):
     """An episode and language's font records and glyph pages from its object and font inputs."""
 
     name = FONTS
-    version = 1
+    version = 3
     KIND = "StoryFonts"
     PARAMS = {"fonts": "open"}
 
@@ -437,6 +480,8 @@ class FontsStage(UiStage):
         _, language = font_subject(subject)
         episode = contract.loads(env.depot.input_bytes(self.episode_input(subject, env)))
         assets = {r["address"] for r in episode["resources"] if r["kind"] in ("chatwindow", "frame")}
+        if (episode.get("master") or {}).get("_playbackMode") == 1:
+            assets.update(storysimpleui.keys({loc["primaryKey"] for loc in env.fact("index")["locations"]}))
         return sorted({*UiStage().keys(language, env), *assets})
 
     def resources(self, subject, env):
@@ -492,9 +537,9 @@ def _adv_id(subject: str) -> int:
     return int(subject)
 
 
-def part_paths(parts: dict, adv_id: int) -> dict:
+def part_paths(parts: dict, adv_id: int, *, overlay: bool = False, host: dict | None = None) -> dict:
     """story.json `parts`: the manifest paths of the products of storyepisode.parts `parts`."""
-    return {
+    paths = {
         "scene": SceneStage().manifest(DEFAULT),
         "assets": {a: AssetStage().manifest(a) for a in parts["assets"]},
         "models": {a: ModelStage().manifest(a) for a in parts["models"]},
@@ -505,6 +550,14 @@ def part_paths(parts: dict, adv_id: int) -> dict:
         "ui": {lang: UiStage().manifest(lang) for lang in languages.LANGUAGES},
         "fonts": {lang: FontsStage().manifest(f"{adv_id}/{lang}") for lang in languages.LANGUAGES},
     }
+    if overlay:
+        paths["simpleui"] = {lang: SimpleUiStage().manifest(lang) for lang in languages.LANGUAGES}
+    if host is not None:
+        paths["host"] = {host["subject"]: HostStage().manifest(host["subject"])}
+        if host["kind"] == "home":
+            paths["spots"] = {host["spotKey"]: SpotStage().manifest(host["spotKey"])}
+            paths["rooms"] = {host["roomKey"]: RoomStage().manifest(host["roomKey"])}
+    return paths
 
 
 def part_products(story: dict, requested_languages=()) -> dict[str, list[str]]:
@@ -521,6 +574,11 @@ def part_products(story: dict, requested_languages=()) -> dict[str, list[str]]:
         UI: sorted({_language(lang) for lang in requested_languages}),
         FONTS: sorted({f"{story['advId']}/{_language(lang)}" for lang in requested_languages}),
     }
+    if parts.get("simpleui"):
+        out[SIMPLE_UI] = sorted({_language(lang) for lang in requested_languages})
+    out[HOST] = sorted(parts.get("host", {}))
+    out[SPOT] = sorted(parts.get("spots", {}))
+    out[ROOM] = sorted(parts.get("rooms", {}))
     return {name: subjects for name, subjects in out.items() if subjects}
 
 
@@ -535,6 +593,10 @@ PART_STAGES = {
     CRILIPS: CriLipsStage,
     UI: UiStage,
     FONTS: FontsStage,
+    SIMPLE_UI: SimpleUiStage,
+    HOST: HostStage,
+    SPOT: SpotStage,
+    ROOM: RoomStage,
 }
 
 
@@ -542,9 +604,9 @@ class StoryStage(ProductStage):
     """story: an ADV episode -> episode.json and story.json (module documentation)."""
 
     name = STORY
-    version = 2
+    version = 4
     KIND = "Story"
-    MASTER = storyepisode.TABLES
+    MASTER = tuple(sorted({*storyepisode.TABLES, *storyhostproduct.TABLES}))
 
     def select(self, keys: list[str], env) -> list[str]:
         if env.facts.get("master") is None:
@@ -555,7 +617,12 @@ class StoryStage(ProductStage):
 
     def record(self, subject: str, env) -> dict:
         """The episode's master record (storyepisode.episode_record)."""
-        return storyepisode.episode_record(master_rows(env, self.MASTER), _adv_id(subject))
+        record = storyepisode.episode_record(master_rows(env, storyepisode.TABLES), _adv_id(subject))
+        if record["MasterAdv"][0].get("_playbackMode") == storyhostproduct.OVERLAY:
+            record["host"] = storyhostproduct.episode_host(
+                master_rows(env, storyhostproduct.TABLES), record["MasterAdv"][0]
+            )
+        return record
 
     def keys(self, subject: str, env) -> list[str]:
         return storyepisode.keys(self.record(subject, env)["MasterAdv"][0]["_advEpisodeAsset"])
@@ -569,7 +636,17 @@ class StoryStage(ProductStage):
     def assemble(self, task, objects) -> Assembly:
         record = contract.loads(objects.depot.input_bytes(task.input(MASTER_INPUT)))
         episode = storyepisode.episode_json(storyepisode.episode(objects, record))
-        doc = storyepisode.story(episode, record, part_paths(storyepisode.parts(episode), _adv_id(task.subject)))
+        if record.get("host") is not None:
+            episode["host"] = record["host"]
+        paths = part_paths(
+            storyepisode.parts(episode),
+            _adv_id(task.subject),
+            overlay=record["MasterAdv"][0].get("_playbackMode") == 1,
+            host=record.get("host"),
+        )
+        doc = storyepisode.story(episode, record, paths)
+        if record.get("host") is not None:
+            doc["host"] = record["host"]
         files = {
             "episode.json": (contract.encode(episode), "json", "story.episode"),
             "story.json": (contract.encode(doc), "json", STORY),
