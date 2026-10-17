@@ -359,6 +359,31 @@ The object table holds the jacket Sprite and its texture; the chart's `TextAsset
 layout makes the live of each chart whose key and jacket the selection holds (with the master data), without a band.
 `export live` asks for one live and its parts ([export live](commands.md#export-live)).
 
+### Live start UI
+
+`live.ui` has subject `<musicId>/<difficulty>/<language>` and manifest
+`liveui/<musicId>_<difficulty>_<language>.json`. It reads the live scene, the jacket, the client's font assets,
+LocalizeManager and TMP Settings, plus the chart's master rows. `ui.json` uses format `nnnotes.live-ui/1`.
+
+- `scene` identifies the manifest, prefab and canvas path in `live.scene`.
+- `strings` contains the title, singer, credits, level and a fresh profile's high score (`0`). The title uses the
+  Japanese column; singer and credit labels use the requested language. Empty localized strings stay empty.
+- `texts` maps TMP component ids to their path, displayed `text`, `setByInitialize`, localized layout `style`,
+  original `localized` font selection and generated `font` selection.
+- `images` maps Image component ids to the selected jacket and difficulty Sprite ids. `difficultyIcons` lists
+  the canvas's icons, and `jacket` identifies the jacket. Canvas components and difficulty sprites belong to
+  `live.scene`; the jacket and its texture belong to this product.
+- `fonts`, `materials`, `textures`, `materialKeywords`, `coverage`, `lineBreaking` and `shaders` describe the
+  generated text resources, with the same fields as the story font product.
+
+The `fonts` parameter is `open` (default) or `game`. Both modes generate glyph pages and use the client's font
+metrics, layout settings and fallback chains. Open fonts use explicit `font:<language>` byte inputs; their
+contents participate in the task key. The exported object table holds the jacket and text shaders. The canvas
+hierarchy is shared through `live.scene`.
+
+`live.json` includes `parts.ui`, a language-to-manifest map. `export live` requests the languages selected by
+`--live-languages`, defaulting to `[catalog] language`.
+
 ## Stories
 
 A story episode plays with products that several episodes share, made by `nnnotes.pipeline.story`:

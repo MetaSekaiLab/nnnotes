@@ -225,6 +225,9 @@ a live (music + difficulty) -> the live product and the products it plays with (
 | `--band` `BAND` | band of the LightWeight background and start timeline (default: band of the music's first vocal character) |
 | `--leader-card` `LEADER_CARD` | deck centre MasterMemberCard id (its character's band) |
 | `--live-option` `OPTION[=VALUES]` | also export the files of a Live option's variants (repeatable): MirrorChart, MeasureLineDisplay, NoteDesignId, NoteEffectId, LiveQuality, NoteSePatternId (every value of the master data, or =v,v...), defaults (the option defaults and ranges only) or all |
+| `--live-languages` `CODES` | comma-separated UI languages, or all (default: catalog language) |
+| `--fonts` `FONTS` | glyph source: open font files (default) or game TMP assets (one of `open`, `game`) |
+| `--font` `LANG=PATH` | font file for a language (repeatable; [paths] fonts.<lang>) |
 | `-o`, `--out` `OUT` | output directory (required) |
 | `--stored-catalog` `LABEL\|SHA` | a catalog version of the depot (`catalog versions`; default: the current catalog) |
 | `--workers` `N` | worker processes (default: the usable CPUs) |

@@ -40,17 +40,22 @@ Details: [export episode](commands.md#export-episode), [export story](commands.m
 ## A live
 
 ```sh
-nnnotes export live 100001 --difficulty expert -o out/lives/100001_expert
+nnnotes export live 100001 --difficulty expert --fonts game -o out/lives/100001_expert
 ```
 
 One chart and the products it plays with, in the layout ournotes-player reads: the chart as shipped and its
 converted runtime notes, the 3D scene, the note highway with its skins and effect sets, the sound effects with their
-routing, and the BGM in a web format.
+routing, the BGM in a web format, and localized start-canvas text with glyph pages.
 
 - `--band BAND` or `--leader-card CARD_ID` picks the band of the background and start timeline (default: the band of
   the music's first vocal character).
 - `--live-option NAME[=VALUES]` (repeatable) adds the products of other values of the live options, such as
   `NoteDesignId` or `NoteSePatternId`; `--live-option all` adds every option with every value.
+
+- `--live-languages ja,en` selects UI languages (default: catalog language; `all` selects all client languages).
+- `--fonts game` uses the client's TMP fonts. The default, `--fonts open`, reads font files from `[paths.fonts]`
+  or repeatable `--font LANG=PATH` flags. Supply the languages used by the fallback chain. Both modes need the
+  `fonts` extra.
 
 Details: [export live](commands.md#export-live).
 
