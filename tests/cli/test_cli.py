@@ -519,7 +519,17 @@ def test_export_live_asks_for_the_live_and_the_products_it_plays_with(data, tmp_
 
     monkeypatch.setattr(assets, "export", export)
     opts = ["NoteDesignId=2", "NoteEffectId", "LiveQuality", "NoteSePatternId=1,3"]
-    flags = [*(x for o in opts for x in ("--live-option", o)), "--format", "flac", "--flac-level", "5"]
+    flags = [
+        *(x for o in opts for x in ("--live-option", o)),
+        "--format",
+        "flac",
+        "--flac-level",
+        "5",
+        "--fonts",
+        "game",
+        "--live-languages",
+        "ja,zh-Hant",
+    ]
     code, _, err = run(argv + ["export", "live", "7", "--leader-card", "5", *flags, "-o", str(tmp_path / "o")], capsys)
     assert code == 0, err
     assert seen["products"] == {
@@ -530,6 +540,7 @@ def test_export_live_asks_for_the_live_and_the_products_it_plays_with(data, tmp_
         "live.noteeffect": ["fxA", "fxALight", "fxASimple"],  # no Light variant of fxASimple in the catalog
         "live.sounds": ["NoteSePatternId=1,3", "default"],
         "live.music": ["7"],
+        "live.ui": ["7/expert/ja", "7/expert/zh-Hant"],
     }
     keys = {s[4:] for s in seen["selection"]}
     assert {"EmbScene/Live", "Image/Jacket/jacket7", "Live/MusicScore/m7_03", "Cri/Sound/se3"} <= keys

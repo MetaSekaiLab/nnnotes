@@ -127,6 +127,7 @@ STAGE_SOURCES = (
     StageSource("live.noteeffect", "nnnotes.pipeline.live:NoteEffectStage", output=True, product=True),
     StageSource("live.scene", "nnnotes.pipeline.live:SceneStage", output=True, product=True),
     StageSource("live", "nnnotes.pipeline.live:LiveStage", output=True, product=True),
+    StageSource("live.ui", "nnnotes.pipeline.live:UiStage", output=True, product=True),
     StageSource("story.sound", "nnnotes.pipeline.story:SoundStage", output=True, product=True),
     StageSource("story.crilips", "nnnotes.pipeline.story:CriLipsStage", output=True, product=True),
     StageSource("story.scene", "nnnotes.pipeline.story:SceneStage", output=True, product=True),
@@ -771,7 +772,7 @@ class Workspace:
             "raw": Inputs({}),
             "product_inputs": self.product_inputs,
         }
-        if "story.fonts" in products:
+        if {"story.fonts", "live.ui"}.intersection(products):
             from ..source.languages import LANGUAGES
 
             font_paths = {code: self.cfg.path("paths.fonts", code) for code in (*LANGUAGES, "emoji")}
