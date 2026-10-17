@@ -51,6 +51,7 @@ from ..core.jsonio import dumps, write_json
 from ..source.addressables import remote_path
 from ..source.catalog import Catalog
 from ..source.config import tool, usable_cpus
+from . import acb as acbtables
 from . import crikey
 from .encoders import FLAC_LEVEL, encode_args
 
@@ -215,6 +216,7 @@ def decode(
     flac_level: int = FLAC_LEVEL,
     workers: int | None = None,
     also: tuple[str, list[str]] | None = None,
+    categories: bool = False,
 ) -> dict[str, Path]:
     """Decode every stream of a cue sheet. Returns {streamName: file of its first stream}.
 
@@ -223,6 +225,8 @@ def decode(
     `also` = (extension, ffmpeg codec options): every stream is encoded a second time from the same decoded samples
     into `<stem><extension>` next to its file (encode_args: no metadata, bit-exact flags), e.g. the web format of a
     BGM, so that it need not be transcoded from the first file later; the manifests name the first file only.
+    `categories`: each cue of cues.json also names the CRI categories its sequence puts it in (`categories`, as
+    acb.cue_categories reads them; a cue without any has no such key).
     """
     vgm = tool("vgmstream", "vgmstream-cli")
     ffmpeg = tool("ffmpeg", "ffmpeg") if fmt != "wav" or also else None
@@ -245,6 +249,7 @@ def decode(
         cache.file_id(vgm),
         cache.file_id(ffmpeg) if ffmpeg else None,
         None if also is None else [also[0], list(also[1])],
+        bool(categories),
     )
     hit = DECODED.get(ck)
     if hit is not None:
@@ -259,6 +264,7 @@ def decode(
         flac_level=flac_level,
         workers=workers,
         also=also,
+        categories=categories,
         vgmstream=vgm,
         ffmpeg=ffmpeg,
     )
@@ -296,6 +302,7 @@ def decode_acb_bytes(
     flac_level: int = FLAC_LEVEL,
     workers: int | None = None,
     also: tuple[str, list[str]] | None = None,
+    categories: bool = False,
     vgmstream: str | None = None,
     ffmpeg: str | None = None,
 ) -> Decoded:
@@ -389,6 +396,11 @@ def decode_acb_bytes(
         if cue not in manifest:
             manifest[cue] = entry
             result[cue] = dst
+    if categories:
+        named = acbtables.cue_categories(acb)
+        for cue, entry in manifest.items():
+            if named.get(cue):
+                entry["categories"] = named[cue]
     write_json(out_dir / "cues.json", manifest, ensure_ascii=True)
     write_json(out_dir / "streams.json", streams, ensure_ascii=True)
     shutil.rmtree(work)
