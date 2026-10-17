@@ -26,15 +26,17 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from ..core.jsonio import write_json
 from ..source import languages
-from ..source.catalog import Catalog
-from ..unity import fontsettings, textstyle, tmpfont
-from ..unity.export import Exporter, TexelPacker, _safe
-from ..unity.player import PlayerData
+from ..unity import fontsettings, textstyle
 from ..unity.textstyle import LANGUAGE_LINE_SPACING
-from .score import master_table
+
+if TYPE_CHECKING:
+    from ..source.catalog import Catalog
+    from ..unity.export import Exporter, TexelPacker
+    from ..unity.player import PlayerData
 
 SCENE_KEY = "EmbScene/Live"
 CANVAS = "Live/UILiveStartCanvas"
@@ -66,8 +68,19 @@ def _comp(node: dict, cls: str) -> dict | None:
 def resolve_strings(master: Path, music_id: int, difficulty: str, column: str) -> tuple[dict, dict]:
     """The strings UILiveStartCanvas.Initialize sets (IReadOnlyLiveMusicScore slots 2..8), for a fresh profile, with
     the text table column `column` of the current LanguageMode. -> (strings, sources)."""
-    music = next(r for r in master_table(master, "MasterLiveMusic") if r["_id"] == music_id)
-    text = {r["_id"]: r for r in master_table(master, "MasterText")}
+    from .score import master_table
+
+    tables = {
+        name: master_table(master, name)
+        for name in ("MasterLiveMusic", "MasterText", "MasterBand", "MasterLiveMusicScore")
+    }
+    return record_strings(tables, music_id, difficulty, column)
+
+
+def record_strings(tables: dict, music_id: int, difficulty: str, column: str) -> tuple[dict, dict]:
+    """The live start strings and their sources from explicit master-table rows."""
+    music = next(r for r in tables["MasterLiveMusic"] if r["_id"] == music_id)
+    text = {r["_id"]: r for r in tables["MasterText"]}
 
     def localized(tid: str) -> str:
         # MasterLoader.GetLocalizedText in the current LanguageMode: the column as it is, "" included (no
@@ -93,10 +106,10 @@ def resolve_strings(master: Path, music_id: int, difficulty: str, column: str) -
     # GetBandNameTextId: _bandNameTextID, else MasterBand(_bandIDs[0])._nameTextID
     band_tid = music["_bandNameTextID"]
     if not band_tid:
-        band = next(r for r in master_table(master, "MasterBand") if r["_id"] == music["_bandIDs"][0])
+        band = next(r for r in tables["MasterBand"] if r["_id"] == music["_bandIDs"][0])
         band_tid = band["_nameTextID"]
     score_id = music[f"_{difficulty}ID"]
-    score = next(r for r in master_table(master, "MasterLiveMusicScore") if r["_id"] == score_id)
+    score = next(r for r in tables["MasterLiveMusicScore"] if r["_id"] == score_id)
     strings = {
         "musicTitle": title,
         "singerName": localized(band_tid),
@@ -145,6 +158,8 @@ TEXT_FIELDS = {
 def _game_fonts(ex: Exporter, fontset, texts: dict, chars_by_font: dict, packer: TexelPacker):
     """The game's TMP fonts of the texts, reduced to the characters shown (tmpfont), their atlas blocks added to
     `packer`. -> (glyph coverage, materials, fonts)."""
+    from ..unity import tmpfont
+
     coverage: dict[str, dict] = {}
     needed: dict[str, set] = {}
     runtime_units: dict[str, set] = {}
@@ -191,6 +206,10 @@ def extract(
     <out_dir>/livescene/shaders/shaders.json (livescene.extract) for the shader check. `language`: the client
     language (a languages.LANGUAGES code); `fonts`: "open" (text records, font names only) or "game" (the game's
     TMP fonts reduced to the characters shown; needs the `fonts` extra)."""
+    from ..unity import tmpfont
+    from ..unity.export import Exporter, TexelPacker, _safe
+    from .score import master_table
+
     out_dir = Path(out_dir)
     base = out_dir / "liveui"
     base.mkdir(parents=True, exist_ok=True)

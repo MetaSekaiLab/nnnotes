@@ -120,6 +120,7 @@ def cmd_live(args, cfg):
     from ..content import live, liveaudio, livenotes, liveoptions
     from ..pipeline import live as lp
     from ..pipeline.stages import Env
+    from ..source.languages import check
     from ..source.master import table
 
     cfg.require_path("paths", "apk")  # the built-in graphics and sound settings and the CRI ACF are in the APK
@@ -140,18 +141,28 @@ def cmd_live(args, cfg):
     ws = assets.Workspace(args, cfg, layouts=["product"])
     env = Env(ws.depot, {"master": md})
     stage, subject = lp.LiveStage(), live.live_subject(args.music_id, args.difficulty, band)
+    wanted_languages = getattr(args, "live_languages", None) or [check(cfg.get("catalog", "language"))]
     try:  # no chart of the difficulty, a music without a vocal character, a master table missing
         b = stage.live_record(subject, env)["band"]["band"]
-        products = {lp.LIVE: [subject], **stage.parts(subject, env)}
+        products = {lp.LIVE: [subject], **stage.parts(subject, env, wanted_languages)}
     except (KeyError, ValueError) as e:
         usage(args, e.args[0] if e.args else type(e).__name__)
     ws.request(products, [])
     ws.params(ws.pipeline())  # the flags the stages take, checked before the index
     ws.run_index()
+    env.facts["index"] = ws.index()
     held = {loc["primaryKey"] for loc in ws.index()["locations"]}
     missing = [k.format(band=b) for k in live.BAND_KEYS if k.format(band=b) not in held]
     if missing:
         usage(args, f"band {b}: {', '.join(missing)} not in the catalog")
+    if getattr(args, "fonts", "open") == "open":
+        supplied = dict(getattr(args, "font", None) or [])
+        for code in wanted_languages:
+            path = Path(supplied[code]) if code in supplied else cfg.path("paths.fonts", code)
+            if path is None or not path.is_file():
+                raise ConfigError(
+                    f"the live text of {code} needs a font file: --font {code}=PATH or [paths.fonts] {code}"
+                )
     skins = {r["_id"]: r["_assetName"] for r in table(md, "MasterLiveNoteSkin")}
     effects = {r["_id"]: r["_assetName"] for r in table(md, "MasterLiveNoteEffectSkin")}
     products[lp.NOTESKIN] += [skins[i] for i in options.designs if skins[i] not in products[lp.NOTESKIN]]
@@ -376,6 +387,25 @@ def register(sub) -> None:
     flac_level_arg(c, "of the decoded sounds")
     band_args(c)
     live_option_arg(c)
+    c.add_argument(
+        "--live-languages",
+        type=parse_languages,
+        metavar="CODES",
+        help="comma-separated UI languages, or all (default: catalog language)",
+    )
+    c.add_argument(
+        "--fonts",
+        choices=("open", "game"),
+        default="open",
+        help="glyph source: open font files (default) or game TMP assets",
+    )
+    c.add_argument(
+        "--font",
+        type=parse_font,
+        action="append",
+        metavar="LANG=PATH",
+        help="font file for a language (repeatable; [paths] fonts.<lang>)",
+    )
     out_arg(c, "output directory")
     product_args(c)
 

@@ -33,13 +33,18 @@ live.scene       subject `default`: "<task id>#scene.json" (kind live.scene: con
                  its settings, lane skins and bands (livescene.scene_record), its roots also the built-in graphics
                  settings (livescene.GRAPHICS)
 
+live.ui          subject `<musicId>/<difficulty>/<language>`: ui.json with start-canvas strings, text records,
+                 generated glyph pages and image bindings, with manifest liveui/<musicId>_<difficulty>_<language>.json.
+                 It reads the client's font assets, localization settings, jacket and master text. The `fonts`
+                 parameter is open or game; open font bytes are explicit inputs. The canvas belongs to live.scene.
+
 live             subject a live (content.live.live_subject: `<musicId>/<difficulty>[/<band>]`): "<task id>#live.json"
                  (kind live: content.live.live), "<task id>#chart.json" (kind live.chart: the chart as shipped),
                  "<task id>#notes.json" and "#notes.mirror.json" (kind live.notes.chart: the converted chart) and the
                  object table of its jacket; its manifest is lives/<musicId>_<difficulty>[_<band>].json, its input
                  "master" the live's master record (live.live_record) with the manifest paths of its parts. `parts`
                  gives the products a live plays with: the scene, the note highway with the default note skin and
-                 effect set, the default sounds and the music.
+                 effect set, the default sounds, the music and UI manifests by language.
 
 `select` (the `product` layout) makes the live.music products of the musics whose BGM key the selection holds, the
 default live.sounds when it holds every cue sheet of the default sounds (both need the master data), live.notes when
@@ -53,11 +58,15 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
-from ..content import live, liveaudio, livenotes, livescene
+from ..content import live, liveaudio, livenotes, livescene, liveuiproduct
+from ..content.prefabs import mono_json
 from ..formats.encoders import DEFAULT_AUDIO_FORMAT, WEB_AUDIO, mp4_priming, web_encode
-from . import contract
-from .assemble import MASTER_INPUT, Assembly, ProductStage, master_input
+from ..source import languages
+from ..unity import textstyle
+from . import contract, units
+from .assemble import MASTER_INPUT, Assembly, ProductStage, master_input, reach
 from .contract import IncompatibleTask, Input
+from .textfonts import FontInputsStage, font_atoms, font_settings, record_input
 from .views import master_rows
 
 __all__ = [
@@ -68,6 +77,7 @@ __all__ = [
     "NOTESKIN",
     "SCENE",
     "SOUNDS",
+    "UI",
     "LiveStage",
     "MusicStage",
     "NoteEffectStage",
@@ -75,6 +85,7 @@ __all__ = [
     "NotesStage",
     "SceneStage",
     "SoundsStage",
+    "UiStage",
     "encode_atoms",
 ]
 
@@ -82,6 +93,7 @@ MUSIC, SOUNDS = "live.music", "live.sounds"
 NOTES, NOTESKIN, NOTEEFFECT = "live.notes", "live.noteskin", "live.noteeffect"
 SCENE = "live.scene"
 LIVE = "live"
+UI = "live.ui"
 DEFAULT = "default"
 
 
@@ -345,6 +357,80 @@ class SceneStage(ProductStage):
         return Assembly({"scene.json": _json(doc, SCENE)}, keep, roles)
 
 
+class UiStage(FontInputsStage):
+    """live.ui: start-canvas strings, text styles, font pages and image bindings."""
+
+    name = UI
+    version = 1
+    KIND = "LiveUi"
+    MASTER = liveuiproduct.TABLES
+    PARAMS = {"fonts": "open"}
+
+    def normalize(self, params):
+        p = super().normalize(params)
+        if p["fonts"] not in ("open", "game"):
+            raise ValueError(f"stage {self.name}: fonts must be open or game")
+        return p
+
+    def uses(self, subject, env):
+        return font_atoms()
+
+    def record(self, subject, env):
+        return liveuiproduct.record(master_rows(env, self.MASTER), subject)
+
+    def keys(self, subject, env):
+        from ..content import storyui
+
+        catalog = {loc["primaryKey"] for loc in env.fact("index")["locations"]}
+        return sorted({*liveuiproduct.keys(self.record(subject, env)), *storyui.font_keys(catalog)})
+
+    def resources(self, subject, env):
+        liveuiproduct.parse_subject(subject)
+        return ["TMP Settings"]
+
+    def builtins(self, subject, env):
+        liveuiproduct.parse_subject(subject)
+        return ["MonoBehaviour:LocalizeManager"]
+
+    def more_inputs(self, subject, env):
+        record = self.record(subject, env)
+        jacket = live.jacket_key(record["MasterLiveMusic"][0]["_jacketAssetName"])
+        roots = units.root_objects(env, [jacket])
+        table = reach(env, roots, self._results, {jacket: roots}).table
+        out = [
+            master_input(env, record),
+            self.font_bundles(subject, env),
+            record_input(env, "jacket.objects", table),
+        ]
+        if env.params["fonts"] == "open":
+            for code, path in sorted((env.facts.get("font_files") or {}).items()):
+                data = Path(path).read_bytes()
+                out.append(Input(f"font:{code}", env.depot.put(data), len(data), None, ({"kind": "depot"},)))
+        return out
+
+    def manifest(self, subject):
+        music, difficulty, language = liveuiproduct.parse_subject(subject)
+        return f"liveui/{music}_{difficulty}_{language}.json"
+
+    def assemble(self, task, objects):
+        from ..content import storyui
+
+        if task.atoms != font_atoms():
+            raise IncompatibleTask(f"task {task.id}: the font libraries differ from the task")
+        lang = textstyle.language_fonts_json(mono_json(objects, storyui.script_root(objects, "LocalizeManager")))
+        settings = font_settings(task, objects, lang)
+        record = contract.loads(objects.depot.input_bytes(task.input(MASTER_INPUT)))
+        fonts = {i.role[5:]: objects.depot.input_bytes(i) for i in task.inputs if i.role.startswith("font:")}
+        doc, pages, keep, roles = liveuiproduct.build(
+            objects, record, task.subject, settings, task.params["fonts"], fonts
+        )
+        jacket = contract.loads(objects.depot.input_bytes(task.input("jacket.objects")))
+        keep.update(o for o, row in jacket["objects"].items() if row["class"] != "MonoScript")
+        files = {p: (body, "png", "live.glyphs") for p, body in pages.items()}
+        files["ui.json"] = _json(doc, UI)
+        return Assembly(files, keep, roles)
+
+
 # the parts of a live: {part: product stage}
 PARTS = {
     "scene": SCENE,
@@ -361,6 +447,7 @@ PART_STAGES = {
     NOTEEFFECT: NoteEffectStage,
     SOUNDS: SoundsStage,
     MUSIC: MusicStage,
+    UI: UiStage,
 }
 
 
@@ -368,7 +455,7 @@ class LiveStage(ProductStage):
     """live: a music's chart at a difficulty and the products it plays with (module documentation)."""
 
     name = LIVE
-    version = 1
+    version = 2
     KIND = "Live"
     MASTER = tuple(sorted({*live.LIVE_TABLES, *livenotes.NOTES_TABLES}))
 
@@ -393,11 +480,11 @@ class LiveStage(ProductStage):
     def keys(self, subject: str, env) -> list[str]:
         return live.live_keys(self.live_record(subject, env))
 
-    def parts(self, subject: str, env) -> dict[str, list[str]]:
+    def parts(self, subject: str, env, requested_languages=()) -> dict[str, list[str]]:
         """{product stage: [subject]} of the products the live plays with (module documentation)."""
-        music_id, _, _ = live.parse_subject(subject)
+        music_id, difficulty, _ = live.parse_subject(subject)
         skin, effect = livenotes.default_assets(livenotes.notes_record(master_rows(env, livenotes.NOTES_TABLES)))
-        return {
+        parts = {
             SCENE: [DEFAULT],
             NOTES: [DEFAULT],
             NOTESKIN: [skin],
@@ -405,10 +492,17 @@ class LiveStage(ProductStage):
             SOUNDS: [liveaudio.sounds_subject()],
             MUSIC: [str(music_id)],
         }
+        if requested_languages:
+            parts[UI] = [
+                f"{music_id}/{difficulty}/{languages.check(code)}" for code in sorted(set(requested_languages))
+            ]
+        return parts
 
     def more_inputs(self, subject: str, env) -> list[Input]:
         parts = self.parts(subject, env)
         paths = {part: PART_STAGES[name]().manifest(parts[name][0]) for part, name in PARTS.items()}
+        music_id, difficulty, _ = live.parse_subject(subject)
+        paths["ui"] = {code: UiStage().manifest(f"{music_id}/{difficulty}/{code}") for code in languages.LANGUAGES}
         return [master_input(env, {"live": self.live_record(subject, env), "parts": paths})]
 
     def manifest(self, subject: str) -> str:
