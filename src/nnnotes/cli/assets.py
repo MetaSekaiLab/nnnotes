@@ -134,6 +134,7 @@ STAGE_SOURCES = (
     StageSource("story.video", "nnnotes.pipeline.story:VideoStage", output=True, product=True),
     StageSource("story.chat", "nnnotes.pipeline.story:ChatStage", output=True, product=True),
     StageSource("story.ui", "nnnotes.pipeline.story:UiStage", output=True, product=True),
+    StageSource("story.fonts", "nnnotes.pipeline.story:FontsStage", output=True, product=True),
     StageSource("story", "nnnotes.pipeline.story:StoryStage", output=True, product=True),
     StageSource("view.", "nnnotes.pipeline.views:stages", output=True),
     StageSource("view.voices", "nnnotes.pipeline.voices:VoiceStage", output=True),
@@ -508,6 +509,7 @@ class Workspace:
         self.args, self.cfg, self.log = args, cfg, log
         self.layouts = list(layouts)
         self.products: dict | None = None  # {product stage: subjects} a command asks for (request)
+        self.product_inputs: dict[str, Input] = {}
         self.root = Session(cfg).depot_root()
         self.apk = cfg.path("paths", "apk")
         self.fetcher = CatalogFetcher(self.root, cfg)
@@ -657,13 +659,15 @@ class Workspace:
             raise self.cfg.missing(*self.cfg.master(self.cfg.get("catalog", "region")))
         return want
 
-    def request(self, products: dict, selection: list[str]) -> None:
+    def request(self, products: dict, selection: list[str], inputs: dict[str, Input] | None = None) -> None:
         """Ask for the products `products` {product stage: subjects} alone, with the selection `selection` (what
-        their census needs) instead of the command's: only what the products reach is exported."""
+        their census needs) instead of the command's: only what the products reach is exported. `inputs` supplies
+        immutable content inputs from a preceding run as the planning fact `product_inputs`."""
         unknown = sorted(n for n in products if n not in self.installed.stages)
         if unknown:
             raise ValueError(f"no product stage {', '.join(unknown)} is installed")
         self.products, self.selection = {k: sorted(v) for k, v in products.items()}, list(selection)
+        self.product_inputs = dict(inputs or {})
 
     def _wanted(self, name: str) -> bool:
         if not self.installed.sources[name].product:
@@ -695,6 +699,10 @@ class Workspace:
         if fmt is not None:
             for n in [n for n in pipeline if "format" in stages[n].PARAMS]:
                 out.setdefault(n, {})["format"] = fmt
+        source = getattr(self.args, "fonts", None)
+        if source is not None:
+            for n in [n for n in pipeline if "fonts" in stages[n].PARAMS]:
+                out.setdefault(n, {})["fonts"] = source
         level = getattr(self.args, "flac_level", None)
         if level is not None:
             if not 0 <= level <= 12:
@@ -761,7 +769,14 @@ class Workspace:
             "bundles": inputs,
             "classes": self.classes(),
             "raw": Inputs({}),
+            "product_inputs": self.product_inputs,
         }
+        if "story.fonts" in products:
+            from ..source.languages import LANGUAGES
+
+            font_paths = {code: self.cfg.path("paths.fonts", code) for code in (*LANGUAGES, "emoji")}
+            font_paths.update({code: Path(path) for code, path in (getattr(self.args, "font", None) or [])})
+            facts["font_files"] = {code: path for code, path in font_paths.items() if path is not None}
         if products:
             from ..pipeline import assemble
 

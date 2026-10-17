@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:nnnotes:schema:story-fonts",
+  "title": "Episode font records and glyph pages",
+  "type": "object",
+  "required": ["format", "language", "source", "fonts", "textures", "materials", "materialKeywords", "texts", "sprites", "coverage", "lineBreaking", "shaders"],
+  "properties": {
+    "format": {"const": "nnnotes.story-fonts/1"},
+    "language": {"enum": ["ja", "en", "zh-Hant", "zh-Hans", "ko"]},
+    "source": {"enum": ["open", "game"]},
+    "fonts": {"type": "object", "additionalProperties": {"type": "object", "required": ["characters", "glyphs", "material", "fallbacks"]}},
+    "textures": {"type": "object", "additionalProperties": {"type": "object", "required": ["texture", "width", "height"], "properties": {"texture": {"type": "string"}, "width": {"type": "integer", "minimum": 1}, "height": {"type": "integer", "minimum": 1}}}},
+    "materials": {"type": "object", "additionalProperties": {"type": "object"}},
+    "materialKeywords": {"type": "object", "additionalProperties": {"type": "array", "items": {"type": "string"}}},
+    "texts": {"type": "object", "additionalProperties": {"type": "object", "required": ["style", "localized", "font"], "properties": {"style": {"type": "object"}, "localized": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/font"}]}, "font": {"$ref": "#/$defs/font"}}}},
+    "sprites": {"type": "object", "additionalProperties": {"type": "object", "required": ["spriteAsset", "m_tintAllSprites"]}},
+    "coverage": {"type": "object", "required": ["characters", "missing"], "properties": {"characters": {"type": "integer", "minimum": 0}, "missing": {"type": "array", "items": {"type": "string"}}}},
+    "lineBreaking": {"type": "object", "required": ["leading", "following", "useModernHangulLineBreakingRules"], "properties": {"leading": {"type": "string"}, "following": {"type": "string"}, "useModernHangulLineBreakingRules": {"type": "boolean"}}},
+    "shaders": {"type": "object", "additionalProperties": {"type": "string"}},
+    "spriteAssets": {"type": "object", "additionalProperties": {"type": "object"}},
+    "emojiSpriteAsset": {"type": "string"}
+  },
+  "$defs": {
+    "font": {"type": "object", "required": ["fontAsset", "material", "lineSpacing"], "properties": {"fontAsset": {"type": "string"}, "material": {"type": "string"}, "lineSpacing": {"type": "number"}}}
+  }
+}
