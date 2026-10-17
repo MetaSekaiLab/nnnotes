@@ -162,7 +162,7 @@
       }
     },
     "builtins": {
-      "description": "Per selector the objects of the APK's built-in files it names (not MonoScripts; a hierarchy by its root GameObject alone): \"<class>\" by class, \"MonoBehaviour:<class>\" a MonoBehaviour by its script's class; sorted.",
+      "description": "Per selector the objects of the APK's built-in files it names: \"<class>\" by class, \"MonoBehaviour:<class>\" a MonoBehaviour, including a hierarchy's component, by its script's class; sorted.",
       "type": "object",
       "additionalProperties": {
         "type": "array",

@@ -17,8 +17,8 @@ link.addresses (nnnotes.addresses/3), one task per catalog pair: the catalog ind
                null when a dependency bundle has no census
     resources  {resource path: [object ids]}: the paths of the ResourceManager container of the built-in files (what
                Resources.Load finds, as stored), the objects each names in stored order
-    builtins   {selector: [object ids]}: the objects of the built-in files (not MonoScripts, a hierarchy by its root
-               GameObject alone) by class, "<class>", and a MonoBehaviour by its script's class,
+    builtins   {selector: [object ids]}: the objects of the built-in files (not MonoScripts) by class, "<class>", and
+               a MonoBehaviour, including a component of a hierarchy, by its script's class,
                "MonoBehaviour:<class>" (its MonoScript in the built-in files), each list sorted
     objects    {stable address: {object, class, name, byteSize, typeHash}} of the objects a container path, a scene
                or a resource path names
@@ -242,7 +242,7 @@ def builtin_selectors(docs) -> dict[str, list[str]]:
     for doc in docs:
         for file, o in census.objects(doc):
             oid = contract.object_id(file, o["pathId"])
-            if o["class"] == "MonoScript" or "unit" in o:
+            if o["class"] == "MonoScript" or ("unit" in o and o["class"] != "MonoBehaviour"):
                 continue
             if o["class"] == "MonoBehaviour":
                 s = o.get("script")
@@ -335,7 +335,7 @@ class AddressesStage(Stage):
     skips failed ones. Artifact "link.addresses:<subject>#addresses"."""
 
     name = "link.addresses"
-    version = 4
+    version = 5
     after = ("catalog.index", "unity.census")
 
     def subjects(self, env) -> list[str]:
