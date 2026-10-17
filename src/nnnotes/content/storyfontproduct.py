@@ -117,7 +117,7 @@ def sprite_record(objects, fs):
     return advui.sprite_record(tt, objects.json(sheet), fs.material(material)), sheet
 
 
-def game_font_set(fs, bindings, shown, missing_char, sprite_drawn) -> dict:
+def game_font_set(fs, bindings, shown, missing_char, sprite_drawn, *, subset: str) -> dict:
     """Reduced game font assets, their materials, fallback chains and PNG page bytes."""
     primaries = sorted({b["localized"]["fontAsset"] for b in bindings})
     needed, runtime, reports, missing_glyphs = {}, {}, {}, {}
@@ -157,7 +157,7 @@ def game_font_set(fs, bindings, shown, missing_char, sprite_drawn) -> dict:
         runtime,
         text_materials,
         packer,
-        subset="episode text, synthesized control characters, underline and missing glyph",
+        subset=subset,
     )
     textures, pages = packer.build()
     tmpfont.resolve_font_blocks(fonts)
@@ -204,6 +204,36 @@ def build(
     status = storyui.chat_status_texts(objects, master)
     ids = objects.json(key_object(objects, storyui.MASTER_ID_SETTINGS_KEY, "AdvMasterIdSettings"))
     shown = shown_texts(episode, records, master, ids, status, frames, languages.column(language)[1:])
+    return font_product(
+        objects,
+        records,
+        sprite_bindings,
+        shown,
+        language,
+        lang,
+        settings,
+        source,
+        font_files,
+        format=FORMAT,
+        subset="episode text, synthesized control characters, underline and missing glyph",
+    )
+
+
+def font_product(
+    objects,
+    records: dict,
+    sprite_bindings: dict,
+    shown: list[str],
+    language: str,
+    lang: dict,
+    settings,
+    source: str,
+    font_files: dict,
+    *,
+    format: str,
+    subset: str,
+) -> tuple[dict, dict, set, dict]:
+    """Font records and PNG pages for explicit component records and displayed strings."""
     chars = sorted({ord(c) for s in shown for c in s})
     bindings = {tid: {"localized": dict(r["font"])} for tid, r in records.items()}
     fs = tmpassets.FontSet(objects)
@@ -251,7 +281,7 @@ def build(
             settings=settings,
         )
     elif source == "game":
-        result = game_font_set(fs, list(bindings.values()), shown, missing_char, sprite_drawn)
+        result = game_font_set(fs, list(bindings.values()), shown, missing_char, sprite_drawn, subset=subset)
     else:
         raise ValueError(f"font source {source!r}: expected open or game")
     for tid, record in records.items():
@@ -260,7 +290,7 @@ def build(
     if result["substituted"]:
         coverage["missingGlyph"] = [chr(u) for u in sorted(result["substituted"])]
     doc = {
-        "format": FORMAT,
+        "format": format,
         "language": language,
         "source": source,
         **{k: result[k] for k in ("fonts", "textures", "materials")},
