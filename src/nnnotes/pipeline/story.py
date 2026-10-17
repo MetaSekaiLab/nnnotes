@@ -99,6 +99,8 @@ __all__ = [
     "SoundStage",
     "StoryStage",
     "UI",
+    "FONTS",
+    "FontsStage",
     "UiStage",
     "VideoStage",
     "cues",
@@ -107,6 +109,7 @@ __all__ = [
 
 SOUND, CRILIPS, SCENE, ASSET = "story.sound", "story.crilips", "story.scene", "story.asset"
 CHAT, STORY, UI, VIDEO = "story.chat", "story", "story.ui", "story.video"
+FONTS = "story.fonts"
 DEFAULT = "default"
 SHEET_PREFIX = "Cri/Sound/"
 LIBRARY = crilips.LIB_ENTRY_SUFFIX
@@ -378,6 +381,14 @@ class UiStage(ProductStage):
         )
         by_key = {k: units.root_objects(env, [k]) for k in keys}
         ui_table = reach(env, roots, self._results, by_key).table
+        return [
+            master_input(env, self.record(subject, env)),
+            _record_input(env, "ui.objects", ui_table),
+            self.font_bundles(subject, env),
+        ]
+
+    def font_bundles(self, subject: str, env) -> Input:
+        """The bundle names of the font assets read by this product."""
         objects = Objects(self.reach(subject, env).table, env.depot)
         font_files = set(_font_files(objects).values())
         bundles = {}
@@ -386,34 +397,120 @@ class UiStage(ProductStage):
             bundles.update(
                 {f: addresses["bundles"][b]["name"] for f, b in addresses["files"].items() if f in font_files}
             )
-        return [
-            master_input(env, self.record(subject, env)),
-            _record_input(env, "ui.objects", ui_table),
-            _record_input(env, "font-bundles", bundles),
-        ]
+        return _record_input(env, "font-bundles", bundles)
 
     def manifest(self, subject: str) -> str:
         return f"storyui/{_language(subject)}.json"
 
     def assemble(self, task, objects) -> Assembly:
-        from ..content import tmpassets
-
         record = contract.loads(objects.depot.input_bytes(task.input(MASTER_INPUT)))
         ui_table = contract.loads(objects.depot.input_bytes(task.input("ui.objects")))
         ui_objects = Objects(ui_table, objects.depot)
         localize = storyui.script_root(ui_objects, "LocalizeManager")
         lang = textstyle.language_fonts_json(mono_json(ui_objects, localize))
-        bundles = contract.loads(objects.depot.input_bytes(task.input("font-bundles")))
-        font_files = _font_files(objects)
-        game_version = manifest_version_name(objects.depot.input_bytes(task.input(f"apk:{MANIFEST_IN_APK}")))
-        if game_version is None:
-            raise ValueError("story.ui: the APK manifest has no version name")
-        settings = tmpassets.build_font_settings(objects, lang, game_version, lambda name: bundles[font_files[name]])
+        settings = _font_settings(task, objects, lang)
         status = storyui.chat_status_texts(objects, record["texts"])
-        doc, keep, roles = storyui.ui(
-            ui_objects, task.subject, record, fontsettings.FontSettings(settings), status_texts=status
-        )
+        doc, keep, roles = storyui.ui(ui_objects, task.subject, record, settings, status_texts=status)
         return Assembly({"ui.json": (contract.encode(doc), "json", UI)}, keep, roles, ui_table)
+
+
+def _font_settings(task, objects, lang):
+    from ..content import tmpassets
+
+    bundles = contract.loads(objects.depot.input_bytes(task.input("font-bundles")))
+    files = _font_files(objects)
+    version = manifest_version_name(objects.depot.input_bytes(task.input(f"apk:{MANIFEST_IN_APK}")))
+    if version is None:
+        raise ValueError(f"{task.stage}: the APK manifest has no version name")
+    doc = tmpassets.build_font_settings(objects, lang, version, lambda name: bundles[files[name]])
+    return fontsettings.FontSettings(doc)
+
+
+def font_subject(subject: str) -> tuple[str, str]:
+    episode, sep, language = subject.partition("/")
+    if not sep or str(_adv_id(episode)) != episode:
+        raise ValueError(f"{subject!r}: expected <episode id>/<language>")
+    return episode, _language(language)
+
+
+def font_atoms() -> dict:
+    from ..unity.atoms import impl_id
+
+    return {"text.glyphs": impl_id(("fonttools", "freetype-py", "scipy", "numpy", "Pillow"), 1)}
+
+
+class FontsStage(UiStage):
+    """An episode and language's font records and glyph pages from its object and font inputs."""
+
+    name = FONTS
+    version = 1
+    KIND = "StoryFonts"
+    PARAMS = {"fonts": "open"}
+
+    def normalize(self, params):
+        p = super().normalize(params)
+        if p["fonts"] not in ("open", "game"):
+            raise ValueError(f"stage {self.name}: fonts must be open or game")
+        return p
+
+    def uses(self, subject, env):
+        return font_atoms()
+
+    def episode_input(self, subject, env):
+        episode, _ = font_subject(subject)
+        return env.fact("product_inputs")[f"episode:{episode}"]
+
+    def keys(self, subject, env):
+        _, language = font_subject(subject)
+        episode = contract.loads(env.depot.input_bytes(self.episode_input(subject, env)))
+        assets = {r["address"] for r in episode["resources"] if r["kind"] in ("chatwindow", "frame")}
+        return sorted({*UiStage().keys(language, env), *assets})
+
+    def resources(self, subject, env):
+        font_subject(subject)
+        return list(storyui.RESOURCES)
+
+    def builtins(self, subject, env):
+        font_subject(subject)
+        return list(storyui.BUILTINS)
+
+    def record(self, subject, env):
+        return UiStage().record(font_subject(subject)[1], env)
+
+    def more_inputs(self, subject, env):
+        src = self.episode_input(subject, env)
+        out = [
+            master_input(env, self.record(subject, env)),
+            self.font_bundles(subject, env),
+            Input("episode", src.sha256, src.size, None, src.locators),
+        ]
+        if env.params["fonts"] == "open":
+            for code, path in sorted((env.facts.get("font_files") or {}).items()):
+                data = Path(path).read_bytes()
+                out.append(Input(f"font:{code}", env.depot.put(data), len(data), None, ({"kind": "depot"},)))
+        return out
+
+    def manifest(self, subject):
+        episode, language = font_subject(subject)
+        return f"storyfonts/{episode}_{language}.json"
+
+    def assemble(self, task, objects):
+        from ..content import storyfontproduct
+
+        if task.atoms != font_atoms():
+            raise IncompatibleTask(f"task {task.id}: the font libraries differ from the task")
+        _, language = font_subject(task.subject)
+        lang = textstyle.language_fonts_json(mono_json(objects, storyui.script_root(objects, "LocalizeManager")))
+        settings = _font_settings(task, objects, lang)
+        episode = contract.loads(objects.depot.input_bytes(task.input("episode")))
+        master = contract.loads(objects.depot.input_bytes(task.input(MASTER_INPUT)))["texts"]
+        fonts = {i.role[5:]: objects.depot.input_bytes(i) for i in task.inputs if i.role.startswith("font:")}
+        doc, pages, keep, roles = storyfontproduct.build(
+            objects, episode, language, master, settings, task.params["fonts"], fonts
+        )
+        files = {p: (body, "png", "story.glyphs") for p, body in pages.items()}
+        files["fonts.json"] = (contract.encode(doc), "json", FONTS)
+        return Assembly(files, keep, roles)
 
 
 def _record_input(env, role: str, record: dict) -> Input:
@@ -437,7 +534,7 @@ def _adv_id(subject: str) -> int:
     return int(subject)
 
 
-def part_paths(parts: dict) -> dict:
+def part_paths(parts: dict, adv_id: int) -> dict:
     """story.json `parts`: the manifest paths of the products of storyepisode.parts `parts`."""
     return {
         "scene": SceneStage().manifest(DEFAULT),
@@ -447,10 +544,12 @@ def part_paths(parts: dict) -> dict:
         "videos": {v: VideoStage().manifest(v) for v in parts["videos"]},
         "chat": ChatStage().manifest(DEFAULT) if parts["chat"] else None,
         "crilips": CriLipsStage().manifest(DEFAULT) if parts["crilips"] else None,
+        "ui": {lang: UiStage().manifest(lang) for lang in languages.LANGUAGES},
+        "fonts": {lang: FontsStage().manifest(f"{adv_id}/{lang}") for lang in languages.LANGUAGES},
     }
 
 
-def part_products(story: dict) -> dict[str, list[str]]:
+def part_products(story: dict, requested_languages=()) -> dict[str, list[str]]:
     """{product stage: [subject]} of the products story.json `story` names in `parts`."""
     parts = story["parts"]
     out = {
@@ -461,6 +560,8 @@ def part_products(story: dict) -> dict[str, list[str]]:
         VIDEO: sorted(parts["videos"]),
         CHAT: [DEFAULT] if parts["chat"] else [],
         CRILIPS: [DEFAULT] if parts["crilips"] else [],
+        UI: sorted({_language(lang) for lang in requested_languages}),
+        FONTS: sorted({f"{story['advId']}/{_language(lang)}" for lang in requested_languages}),
     }
     return {name: subjects for name, subjects in out.items() if subjects}
 
@@ -474,6 +575,8 @@ PART_STAGES = {
     VIDEO: VideoStage,
     CHAT: ChatStage,
     CRILIPS: CriLipsStage,
+    UI: UiStage,
+    FONTS: FontsStage,
 }
 
 
@@ -481,7 +584,7 @@ class StoryStage(ProductStage):
     """story: an ADV episode -> episode.json and story.json (module documentation)."""
 
     name = STORY
-    version = 1
+    version = 2
     KIND = "Story"
     MASTER = storyepisode.TABLES
 
@@ -508,7 +611,7 @@ class StoryStage(ProductStage):
     def assemble(self, task, objects) -> Assembly:
         record = contract.loads(objects.depot.input_bytes(task.input(MASTER_INPUT)))
         episode = storyepisode.episode_json(storyepisode.episode(objects, record))
-        doc = storyepisode.story(episode, record, part_paths(storyepisode.parts(episode)))
+        doc = storyepisode.story(episode, record, part_paths(storyepisode.parts(episode), _adv_id(task.subject)))
         files = {
             "episode.json": (contract.encode(episode), "json", "story.episode"),
             "story.json": (contract.encode(doc), "json", STORY),
