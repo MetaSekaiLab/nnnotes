@@ -15,9 +15,9 @@ from nnnotes.pipeline.stages import Env, Pending, describe, execute, registry
 from tests.pipeline.test_objexport import ATLAS_CAB, FAKE_READER, oid, planning_env
 
 
-def addresses(depot, env, keys: dict, resources=None, builtins=None) -> None:
+def addresses(depot, env, keys: dict, resources=None, builtins=None, fonts=()) -> None:
     """A committed link.addresses result whose table maps `keys` {catalog key: [object ids]}, `resources`
-    {resource path: [object ids]} and `builtins` {selector: [object ids]}."""
+    {resource path: [object ids]} and `builtins` {selector: [object ids]}; the bundles `fonts` hold a font key."""
     t = Task("link.addresses", 1, "main", {}, {}, ())
     doc = {
         "schema": link.ADDRESSES,
@@ -26,7 +26,7 @@ def addresses(depot, env, keys: dict, resources=None, builtins=None) -> None:
         "builtins": dict(sorted((builtins or {}).items())),
         "objects": {},
         "files": {},
-        "bundles": {},
+        "bundles": {b: {"keys": [f"EmbFont/{b}"]} for b in fonts},
     }
     rec = contract.artifact(
         contract.artifact_id(t.id, "addresses"),
@@ -106,11 +106,13 @@ class Selected(Toy):
         return self.selectors
 
 
-def env_for(depot, keys=None, names=("all", "atlas"), roots_objects=(), selected=None, resources=None, builtins=None):
+def env_for(
+    depot, keys=None, names=("all", "atlas"), roots_objects=(), selected=None, resources=None, builtins=None, fonts=()
+):
     """A planning environment over the fake bundles with a committed address table and the facts of a request."""
     env = planning_env(depot, names, selected=selected)
     env.facts["catalogs"] = {"main": []}
-    addresses(depot, env, keys if keys is not None else {}, resources, builtins)
+    addresses(depot, env, keys if keys is not None else {}, resources, builtins, fonts)
     subjects = sorted(keys if keys is not None else {})
     env.facts["products"] = {"toy.thing": subjects}
     env.facts["roots"] = {"keys": subjects, "objects": list(roots_objects)}
@@ -257,6 +259,44 @@ def test_sprite_images_come_from_the_crop_of_their_atlas(tmp_path):
     assert f"{t.id}#objects" in {a["id"] for a in doc["artifacts"]}
 
 
+def test_the_font_fence_cuts_a_reference_from_an_unfenced_bundle(tmp_path):
+    """The units of an unfenced bundle do not reach a fenced bundle's unit through a reference: the object table lists
+    the objects its reached objects reference that way as fenced, and the sprite of the unfenced bundle takes no image
+    from the atlas the product does not reach."""
+    depot = Depot(tmp_path / "s")
+    env = env_for(depot, {"key/a": [oid(13)]}, fonts=["atlas"])
+    exported(depot, env)
+    _, doc = product(depot, env, "m/a", {"m/a": "key/a"})
+    table = table_of(depot, doc)
+    atlas = f"{ATLAS_CAB}:99"
+    assert table["fenced"] == {atlas: {"class": "SpriteAtlas", "name": "remote"}}
+    assert atlas not in table["objects"] and atlas not in table["missing"]
+    assert set(table["objects"][oid(13)]["files"]) == {"json"}
+    objects = assemble.Objects(table, depot)
+    assert objects.fenced(atlas) == {"class": "SpriteAtlas", "name": "remote"} and objects.fenced(oid(13)) is None
+
+
+def test_the_font_fence_keeps_a_request_out_of_a_fenced_bundle(tmp_path):
+    """A request for the unfenced bundle exports its units and not the fenced atlas its sprite references."""
+    fenced = env_for(Depot(tmp_path / "f"), {"key/a": [oid(13)]}, selected=["all"], fonts=["atlas"])
+    plain = env_for(Depot(tmp_path / "p"), {"key/a": [oid(13)]}, selected=["all"])
+    assert "atlas:99" not in ExportStage(FAKE_READER).subjects(fenced)
+    assert "atlas:99" in ExportStage(FAKE_READER).subjects(plain)
+    assert units.table(fenced).fences("all:13", "atlas:99") and not units.table(fenced).fences("atlas:99", "all:13")
+
+
+def test_a_fenced_root_reaches_out_of_the_fence_and_takes_the_image_of_its_atlas(tmp_path):
+    """The objects a product starts from reach what they reference, also out of a fenced bundle: the sprite of the
+    fenced bundle reaches the unfenced atlas it is packed in, and its image comes from that atlas."""
+    depot = Depot(tmp_path / "s")
+    env = env_for(depot, {}, selected=["all"], roots_objects=[oid(13)], fonts=["all"])
+    exported(depot, env)
+    _, doc = product(depot, env, "m/a", stage=Rooted({}, [oid(13)]))
+    table = table_of(depot, doc)
+    assert table["roots"] == [oid(13)] and table["fenced"] == {}
+    assert f"{ATLAS_CAB}:99" in table["objects"] and set(table["objects"][oid(13)]["files"]) == {"json", "image"}
+
+
 def test_depends_names_the_units_it_reads(tmp_path):
     depot = Depot(tmp_path / "s")
     env = env_for(depot, {"key/a": [oid(60)]})
@@ -333,6 +373,27 @@ def test_the_table_can_be_pruned_to_the_objects_the_product_uses(tmp_path):
     exported(depot, env)
     _, doc = product(depot, env, "m/a", {"m/a": "key/a"}, stage=Pruned({"m/a": "key/a"}))
     assert list(table_of(depot, doc)["objects"]) == [oid(60)]
+
+
+def test_a_product_retains_one_root_closure_while_reading_additional_objects(tmp_path):
+    class Closure(Toy):
+        def assemble(self, task, objects):
+            made = super().assemble(task, objects)
+            retained = contract.loads(objects.depot.input_bytes(task.input("retained")))
+            return assemble.Assembly(made.files, table=retained)
+
+    depot = Depot(tmp_path / "s")
+    env = env_for(depot, {"key/a": [oid(60)], "key/b": [oid(40)]})
+    exported(depot, env)
+    retained = assemble.reach(env, [oid(60)], keys={"key/a": [oid(60)]}).table
+    stage = Closure({"m/a": "key/a"})
+    planned = describe(stage, "m/a", None, env)
+    data = contract.encode(retained)
+    extra = contract.Input("retained", depot.put(data), len(data), None, ({"kind": "depot"},))
+    task = Task(stage.name, stage.version, "m/a", {}, {}, (*planned.inputs, extra))
+    execute(task, depot, registry(stage), force=True)
+    doc = depot.result(task.key)
+    assert table_of(depot, doc) == retained
 
 
 def test_a_product_names_an_object_the_table_lacks(tmp_path):

@@ -2,7 +2,7 @@
 
 import pytest
 
-from nnnotes.content import storychat, storyepisode, storyscene
+from nnnotes.content import storychat, storyepisode, storyscene, storyui
 from nnnotes.formats import crilips
 from nnnotes.pipeline import assemble, contract, cristages, live, story
 from nnnotes.pipeline.assemble import Objects
@@ -12,18 +12,23 @@ from nnnotes.pipeline.depot import Depot
 from nnnotes.pipeline.live2d import MODEL
 from nnnotes.pipeline.stages import Env, describe, execute, registry
 from nnnotes.pipeline.story import (
+    PART_STAGES,
+    UI,
     AssetStage,
     ChatStage,
     CriLipsStage,
     SceneStage,
     SoundStage,
     StoryStage,
+    UiStage,
     VideoStage,
 )
 from tests.formats.test_acb_categories import acb_with_categories
 from tests.formats.test_crilips import _elf_with_rodata, _synthetic_version
 from tests.formats.test_usm import KEY
 from tests.helpers import story as sh
+from tests.helpers import storyui as sui
+from tests.helpers import synth
 from tests.pipeline.test_assemble import addresses
 from tests.pipeline.test_cristages import export_result, fake_tools, planning, usm_file
 from tests.pipeline.test_live import master_record, run, stored, table
@@ -364,6 +369,67 @@ def test_a_chat_shard_without_a_text_asset_has_no_rows(tmp_path):
     assert chat["sounds"] == [] and chat["cueSheets"] == []
 
 
+# ---------------------------------------------------------------- the story UI product
+
+
+def test_the_story_ui_product_has_one_subject_per_client_language(tmp_path):
+    env = Env(Depot(tmp_path / "d"), {"index": sui.index()})
+    stage = UiStage()
+    assert stage.ui_keys("zh-Hant", env) == storyui.keys(sui.catalog_keys())
+    assert stage.keys("ja", env) == sorted([*storyui.keys(sui.catalog_keys()), "Adv/Chat/Prefabs/win_7"])
+    assert stage.resources("ja", None) == ["DOTweenSettings", "TMP Settings"]
+    assert stage.builtins("en", None) == ["GraphicsSettings", "MonoBehaviour:LocalizeManager"]
+    assert stage.manifest("zh-Hant") == "storyui/zh-Hant.json"
+    assert UI not in PART_STAGES
+    with pytest.raises(ValueError, match="not a client language"):
+        stage.manifest("fr")
+    with pytest.raises(ValueError, match="not a client language"):
+        stage.keys("fr", env)
+
+
+def test_the_story_ui_master_input_holds_the_texts_of_the_language(tmp_path):
+    depot = Depot(tmp_path / "d")
+    env = Env(depot, {"master": sh.master_dir(tmp_path, {"MasterText": sui.MASTER_TEXTS})})
+    stage = UiStage()
+    inp = assemble.master_input(env, stage.record("zh-Hant", env))
+    assert inp.role == assemble.MASTER_INPUT
+    assert contract.loads(depot.input_bytes(inp)) == {
+        "texts": {**{str(i): f"zh {i}" for i in (*range(101, 111), 301, 302)}, "999": ""}
+    }
+    ja = contract.loads(depot.input_bytes(assemble.master_input(env, stage.record("ja", env))))
+    assert ja["texts"]["101"] == "ja 101" and ja["texts"]["999"] == ""
+
+
+def test_the_story_ui_product_holds_ui_objects_and_reads_font_assets_and_chat_status_texts(tmp_path):
+    depot = Depot(tmp_path / "d")
+    fonts, keys = sui.font_objects()
+    chat_key, chat_oid, chat = sui.chat_window()
+    obj_doc = sui.table_doc(
+        depot, objs={**sui.objects(), **fonts, chat_oid: chat}, keys={**sui.table_keys(), **keys, chat_key: [chat_oid]}
+    )
+    ui_doc = sui.table_doc(depot)
+    master = stored(
+        depot, contract.encode({"texts": {str(i): f"zh {i}" for i in (*range(101, 111), 301, 302)}}), "master"
+    )
+    inputs = [
+        stored(depot, contract.encode(obj_doc), "objects"),
+        stored(depot, contract.encode(ui_doc), "ui.objects"),
+        stored(depot, contract.encode({"CAB-font": "font.bundle"}), "font-bundles"),
+        stored(depot, synth.axml(["versionName", "manifest", "1.2.3"], 2), "apk:AndroidManifest.xml"),
+        master,
+    ]
+    _, _, arts = run(depot, UiStage(), "zh-Hant", inputs)
+    assert {p: a["semantics"]["kind"] for p, a in arts.items()} == {"ui.json": "story.ui", "objects": "product.objects"}
+    doc = read_json(depot, arts["ui.json"])
+    assert doc["language"]["mode"] == 2 and doc["widget"] == sui.WIDGET
+    assert doc["masterIdTexts"]["_skipButtonTextId"] == {"id": 102, "text": "zh 102"}
+    assert doc["chatStatusTexts"] == {"301": "zh 301", "302": "zh 302"}
+    assert set(read_json(depot, arts["objects"])["objects"]) == set(sui.objects()) - {sui.SCRIPT}
+    assert read_json(depot, arts["objects"])["fenced"] == sui.fenced()
+    assert read_json(depot, arts["objects"])["roots"] == ui_doc["roots"]
+    assert read_json(depot, arts["objects"])["keys"] == sui.table_keys()
+
+
 # ---------------------------------------------------------------- the products a story plays with
 def test_part_paths_give_the_manifest_of_each_part():
     parts = {
@@ -454,7 +520,14 @@ def video_table(depot, key=VIDEO_KEY, info=None) -> Input:
         oid: {"status": "exported", "class": "MonoBehaviour", "files": {"json": {"sha256": depot.put(data),
               "size": len(data), "ext": "json"}}},
     }  # fmt: skip
-    doc = {"schema": contract.OBJECTS, "roots": [oid], "keys": {key: [oid]}, "objects": objects, "missing": []}
+    doc = {
+        "schema": contract.OBJECTS,
+        "roots": [oid],
+        "keys": {key: [oid]},
+        "objects": objects,
+        "fenced": {},
+        "missing": [],
+    }
     return stored(depot, contract.encode(doc), "objects")
 
 

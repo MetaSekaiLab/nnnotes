@@ -178,7 +178,7 @@ def test_resource_paths_name_objects_of_the_builtin_files():
 
 def test_builtin_selectors_name_objects_of_the_builtin_files_by_class():
     """The builtins table: objects of the built-in files by class and MonoBehaviours by their script's class; no
-    MonoScript, no member of a hierarchy, nothing of a bundle."""
+    MonoBehaviour components are selected by script class as well."""
     idx = index(synth.CatalogWriter().build(catalog_entries()))
     settings = {"file": "globalgamemanagers.assets", "pathId": 20}
     other = {"file": "globalgamemanagers.assets", "pathId": 21}
@@ -195,6 +195,7 @@ def test_builtin_selectors_name_objects_of_the_builtin_files_by_class():
                 obj(34, "MonoBehaviour", ""),
                 obj(40, "GameObject", "root"),
                 {**obj(41, "Transform"), "unit": "globalgamemanagers.assets:40"},
+                obj(42, "MonoBehaviour", "", script=settings, unit="globalgamemanagers.assets:40"),
                 obj(50, "Texture2D", "t"),
             ],
         },
@@ -204,7 +205,11 @@ def test_builtin_selectors_name_objects_of_the_builtin_files_by_class():
     assert doc["builtins"] == {
         "GameObject": ["globalgamemanagers.assets:40"],
         "GraphicsSettings": ["globalgamemanagers:1"],
-        "MonoBehaviour:SoundSettings": ["globalgamemanagers.assets:30", "globalgamemanagers.assets:31"],
+        "MonoBehaviour:SoundSettings": [
+            "globalgamemanagers.assets:30",
+            "globalgamemanagers.assets:31",
+            "globalgamemanagers.assets:42",
+        ],
         "Texture2D": ["globalgamemanagers.assets:50"],
     }
     ix = views.AddressIndex.from_addresses(doc)
@@ -212,6 +217,7 @@ def test_builtin_selectors_name_objects_of_the_builtin_files_by_class():
     assert [o.id for o in ix.builtin("MonoBehaviour:SoundSettings")] == [
         "globalgamemanagers.assets:30",
         "globalgamemanagers.assets:31",
+        "globalgamemanagers.assets:42",
     ]
     assert ix.builtin("MonoBehaviour:Unnamed") is None and ix.builtin("MonoScript") is None
     assert link.addresses(idx, censuses())["builtins"] == {}
