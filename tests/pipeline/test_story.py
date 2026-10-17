@@ -325,9 +325,11 @@ def test_the_story_product_holds_the_episode_and_the_story_document(tmp_path):
             "videos": {"Cri/Video/adv/movie_a/movie_a": "videos/adv~movie_a~movie_a.json"},
             "chat": "storychat/default.json",
             "crilips": None,
+            "ui": {lang: f"storyui/{lang}.json" for lang in story.languages.LANGUAGES},
+            "fonts": {lang: f"storyfonts/1_{lang}.json" for lang in story.languages.LANGUAGES},
         },
     }
-    assert story_doc["parts"] == story.part_paths(storyepisode.parts(episode))
+    assert story_doc["parts"] == story.part_paths(storyepisode.parts(episode), 1)
 
 
 # ---------------------------------------------------------------- the chat product
@@ -380,7 +382,7 @@ def test_the_story_ui_product_has_one_subject_per_client_language(tmp_path):
     assert stage.resources("ja", None) == ["DOTweenSettings", "TMP Settings"]
     assert stage.builtins("en", None) == ["GraphicsSettings", "MonoBehaviour:LocalizeManager"]
     assert stage.manifest("zh-Hant") == "storyui/zh-Hant.json"
-    assert UI not in PART_STAGES
+    assert PART_STAGES[UI] is UiStage
     with pytest.raises(ValueError, match="not a client language"):
         stage.manifest("fr")
     with pytest.raises(ValueError, match="not a client language"):
@@ -440,7 +442,7 @@ def test_part_paths_give_the_manifest_of_each_part():
         "chat": True,
         "crilips": False,
     }
-    assert story.part_paths(parts) == {
+    assert story.part_paths(parts, 1) == {
         "scene": "storyscenes/default.json",
         "assets": {
             "Adv/Stage/st_a/st_a": "storyassets/Adv~Stage~st_a~st_a.json",
@@ -451,9 +453,11 @@ def test_part_paths_give_the_manifest_of_each_part():
         "videos": {"Cri/Video/adv/m/m": "videos/adv~m~m.json"},
         "chat": "storychat/default.json",
         "crilips": None,
+        "ui": {lang: f"storyui/{lang}.json" for lang in story.languages.LANGUAGES},
+        "fonts": {lang: f"storyfonts/1_{lang}.json" for lang in story.languages.LANGUAGES},
     }
     quiet = {**parts, "assets": [], "models": [], "sounds": [], "videos": [], "chat": False, "crilips": True}
-    assert story.part_paths(quiet) == {
+    assert story.part_paths(quiet, 1) == {
         "scene": "storyscenes/default.json",
         "assets": {},
         "models": {},
@@ -461,6 +465,8 @@ def test_part_paths_give_the_manifest_of_each_part():
         "videos": {},
         "chat": None,
         "crilips": "crilips/default.json",
+        "ui": {lang: f"storyui/{lang}.json" for lang in story.languages.LANGUAGES},
+        "fonts": {lang: f"storyfonts/1_{lang}.json" for lang in story.languages.LANGUAGES},
     }
 
 
@@ -473,7 +479,7 @@ def test_part_products_list_the_subjects_of_each_product_the_story_needs():
         "chat": True,
         "crilips": True,
     }
-    doc = {"parts": story.part_paths(parts)}  # story.json names each part by its manifest
+    doc = {"parts": story.part_paths(parts, 1)}  # story.json names each part by its manifest
     assert story.part_products(doc) == {
         story.SCENE: ["default"],
         story.ASSET: ["Adv/Stage/a", "Adv/Stage/z"],
@@ -487,9 +493,9 @@ def test_part_products_list_the_subjects_of_each_product_the_story_needs():
 
 def test_part_products_omit_the_products_a_story_does_not_need():
     parts = {"assets": [], "models": [], "sounds": [], "videos": [], "chat": False, "crilips": False}
-    assert story.part_products({"parts": story.part_paths(parts)}) == {story.SCENE: ["default"]}
+    assert story.part_products({"parts": story.part_paths(parts, 1)}) == {story.SCENE: ["default"]}
     parts["sounds"] = ["sheet_a"]
-    doc = {"parts": story.part_paths(parts)}
+    doc = {"parts": story.part_paths(parts, 1)}
     assert story.part_products(doc) == {story.SCENE: ["default"], story.SOUND: ["sheet_a"]}
 
 
