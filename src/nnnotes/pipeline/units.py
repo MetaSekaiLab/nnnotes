@@ -19,6 +19,12 @@ selector (all those the address tables of link.addresses list for it: a resource
 APK's built-in files, compared ignoring case; a selector names objects of the built-in files by class or script
 class; one without objects adds none) and the objects named. The products of a request start from them
 (pipeline.assemble).
+
+The font fence: the bundles holding a catalog key under a font folder (unity.fontsettings: "EmbFont/" and "Font/";
+the bundles `font_bundles` finds in the address tables of link.addresses) are fenced. A reference of a unit of an
+unfenced bundle into a fenced one does not reach that unit, neither from a root nor from a unit the walk reaches; a
+unit of a fenced bundle reaches what it references as usual, fenced bundles included (a font asset's fallbacks). A
+product's object table lists the objects its reached objects reference this way (`fenced`, pipeline.assemble).
 """
 
 from __future__ import annotations
@@ -26,12 +32,14 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass
 
+from ..unity.fontsettings import FONT_ADDRESS, FONT_PREFIX
 from . import contract, link, views
 from .census import CensusStage
 from .stages import Pending
 
 CENSUS = CensusStage.name
 ADDRESSES = views.ADDRESSES_STAGE
+FONT_FOLDERS = (FONT_PREFIX, FONT_ADDRESS)  # the catalog keys of the font folders: the bundles holding them are fenced
 # a unit's root class -> the class of the units it packs, which it does not reach when it is reached itself
 PACKED = {"SpriteAtlas": "Sprite"}
 
@@ -61,12 +69,23 @@ class Unit:
 class Units:
     """The units of a request: `units` {subject: Unit} of the requested units; `of` {object id: subject} of the
     objects of every unit of the censuses read; `files` {serialized file: stable bundle name}; `objects` {stable
-    bundle name: its objects}; `kinds` {subject: root class} of every unit of the censuses read; `per_bundle` the number
+    bundle name: its objects}; `kinds` {subject: root class} of every unit of the censuses read; `fenced` the subjects
+    of the units of the fenced bundles and `info` {object id: {class, name}} of their objects; `per_bundle` the number
     of requested units per bundle; `classes` the objects of the requested units per class."""
 
-    def __init__(self, units: dict, of: dict, files: dict, objects: dict, kinds: dict | None = None):
+    def __init__(
+        self,
+        units: dict,
+        of: dict,
+        files: dict,
+        objects: dict,
+        kinds: dict | None = None,
+        fenced: frozenset = frozenset(),
+        info: dict | None = None,
+    ):
         self.units, self.of, self.files, self.objects = units, of, files, objects
         self.kinds: dict[str, str] = kinds if kinds is not None else {s: u.cls for s, u in units.items()}
+        self.fenced, self.info = frozenset(fenced), info or {}
         self.per_bundle = Counter(u.bundle for u in units.values())
         self.classes: Counter = Counter()
         for u in units.values():
@@ -88,13 +107,25 @@ class Units:
 
     def reaches(self, source: str, target: str, start: bool) -> bool:
         """A reference of the unit `source` to the unit `target` makes the target reachable (_reaches)."""
-        return _reaches(self.kinds, source, target, start)
+        return _reaches(self.kinds, self.fenced, source, target, start)
+
+    def fences(self, source: str, target: str) -> bool:
+        """The font fence cuts a reference of the unit `source` to the unit `target` (_fences)."""
+        return _fences(self.fenced, source, target)
 
 
-def _reaches(kinds: dict, source: str, target: str, start: bool) -> bool:
+def _fences(fenced, source: str, target: str) -> bool:
+    """The font fence: a reference of an unfenced unit into a fenced one does not reach it (`fenced`: the subjects of
+    the units of the fenced bundles)."""
+    return target in fenced and source not in fenced
+
+
+def _reaches(kinds: dict, fenced, source: str, target: str, start: bool) -> bool:
     """A reference of the unit `source` to the unit `target` ({subject: root class} `kinds`) makes the target
-    reachable: always from a unit the walk starts from (`start`), else unless the source packs units of the target's
-    class (PACKED)."""
+    reachable: never across the font fence (_fences), always from a unit the walk starts from (`start`), else unless
+    the source packs units of the target's class (PACKED)."""
+    if _fences(fenced, source, target):
+        return False
     return start or PACKED.get(kinds.get(source, "")) != kinds.get(target)
 
 
@@ -155,16 +186,27 @@ def _census_units(stable: str, doc: dict, need_refs: bool):
     return units, of, {f["name"]: stable for f in doc["files"]}, refs
 
 
-def build(censuses, bundles, selected, classes=None, roots=()) -> Units:
+def _census_info(doc: dict) -> dict:
+    """{object id: {class, name}} of the objects of a census document (an object without m_Name has an empty name)."""
+    return {
+        contract.object_id(f["name"], o["pathId"]): {"class": o["class"], "name": o.get("name") or ""}
+        for f in doc["files"]
+        for o in f["objects"]
+    }
+
+
+def build(censuses, bundles, selected, classes=None, roots=(), fenced=()) -> Units:
     """The Units of a request over `censuses` [(stable bundle name, census document)] of the bundles `bundles`, from
-    the units of the bundles `selected` and of the objects `roots` (module documentation)."""
-    selected = set(selected)
+    the units of the bundles `selected` and of the objects `roots`; `fenced` the stable names of the fenced bundles
+    (module documentation)."""
+    selected, fenced = set(selected), set(fenced)
     every = selected >= set(bundles)  # no reference can add a unit: none is read
     units: dict[str, Unit] = {}
     of: dict[str, str] = {}
     files: dict[str, str] = {}
     refs: dict[str, set] = {}
     objects: dict[str, int] = {}
+    info: dict[str, dict] = {}
     for stable, doc in censuses:
         objects[stable] = int(doc["objects"])
         u, o, f, r = _census_units(stable, doc, need_refs=not every)
@@ -172,7 +214,10 @@ def build(censuses, bundles, selected, classes=None, roots=()) -> Units:
         of.update(o)
         files.update(f)
         refs.update(r)
+        if stable in fenced:
+            info.update(_census_info(doc))
     kinds = {s: u.cls for s, u in units.items()}
+    fenced_units = frozenset(s for s, u in units.items() if u.bundle in fenced)
     if every:
         want = set(units)
     else:
@@ -184,28 +229,61 @@ def build(censuses, bundles, selected, classes=None, roots=()) -> Units:
             source = todo.pop()
             for oid in refs.get(source, ()):
                 s = of.get(oid)
-                if s is not None and s not in want and _reaches(kinds, source, s, source in start):
+                if s is not None and s not in want and _reaches(kinds, fenced_units, source, s, source in start):
                     want.add(s)
                     todo.append(s)
     if classes is not None:
         keep = set(classes)
         want = {s for s in want if units[s].cls in keep}
-    return Units({s: units[s] for s in sorted(want)}, of, files, objects, kinds)
+    return Units({s: units[s] for s in sorted(want)}, of, files, objects, kinds, fenced_units, info)
 
 
 _MEMO: list = []  # [(signature, Units)] of the last table
-_ADDRESSES: dict = {}  # {sha256: AddressIndex} of the last address table read
+_DOCS: dict = {}  # {sha256: address table} of the last one read
+_INDEXES: dict = {}  # {sha256: AddressIndex} of the last one indexed
+_FENCE: list = []  # [(content ids of the address tables, fenced bundles)] of the last call of font_bundles
+
+
+def address_sha(env, subject: str) -> str:
+    """The content id of the address table of link.addresses for the catalog `subject` (Pending while not run)."""
+    return env.artifact(contract.task_id(ADDRESSES, subject), "addresses")["content"]["sha256"]
+
+
+def address_doc(env, subject: str) -> dict:
+    """The address table (nnnotes.addresses/3) of the catalog `subject` (Pending while link.addresses has not run)."""
+    sha = address_sha(env, subject)
+    doc = _DOCS.get(sha)
+    if doc is None:
+        doc = contract.loads(env.depot.read(sha))
+        _DOCS.clear()
+        _DOCS[sha] = doc
+    return doc
 
 
 def address_index(env, subject: str) -> views.AddressIndex:
-    """The AddressIndex of the result of link.addresses for the catalog `subject` (Pending while it has not run)."""
-    sha = env.artifact(contract.task_id(ADDRESSES, subject), "addresses")["content"]["sha256"]
-    index = _ADDRESSES.get(sha)
+    """The AddressIndex of the address table of the catalog `subject` (Pending while link.addresses has not run)."""
+    sha = address_sha(env, subject)
+    index = _INDEXES.get(sha)
     if index is None:
-        index = views.AddressIndex.from_addresses(contract.loads(env.depot.read(sha)))
-        _ADDRESSES.clear()
-        _ADDRESSES[sha] = index
+        index = views.AddressIndex.from_addresses(address_doc(env, subject))
+        _INDEXES.clear()
+        _INDEXES[sha] = index
     return index
+
+
+def font_bundles(env) -> frozenset:
+    """The fenced bundles: those whose address table lists a catalog key under a font folder (FONT_FOLDERS), over the
+    catalogs of the fact "catalogs" (Pending while link.addresses has not run for one of them)."""
+    subjects = sorted(env.fact("catalogs"))
+    shas = tuple(address_sha(env, s) for s in subjects)
+    if not _FENCE or _FENCE[0][0] != shas:
+        fenced: set[str] = set()
+        for s in subjects:
+            for stable, b in address_doc(env, s)["bundles"].items():
+                if any(k.startswith(FONT_FOLDERS) for k in b["keys"]):
+                    fenced.add(stable)
+        _FENCE[:] = [(shas, frozenset(fenced))]
+    return _FENCE[0][1]
 
 
 def root_objects(env, keys=(), objects=(), resources=(), builtins=()) -> list[str]:
@@ -227,7 +305,8 @@ def root_objects(env, keys=(), objects=(), resources=(), builtins=()) -> list[st
 def table(env) -> Units:
     """The Units of the request of a planning environment: the censuses of the fact "bundles" (Pending while one
     has not run; a failed one is skipped), the facts "selected", "roots" (Pending while link.addresses has not run,
-    when it names keys or resource paths) and "classes". Kept for the planning state it was made in."""
+    when it names keys or resource paths), "classes" and "catalogs" (the fenced bundles: font_bundles). Kept for the
+    planning state it was made in."""
     bundles = sorted(env.fact("bundles"))
     keys = []
     for b in bundles:
@@ -246,12 +325,14 @@ def table(env) -> Units:
         request.get("resources", ()),
         request.get("builtins", ()),
     )
+    fenced = font_bundles(env)
     sig = (
         id(env.depot),
         tuple(keys),
         tuple(env.fact("selected")),
         None if classes is None else tuple(classes),
         tuple(roots),
+        tuple(sorted(fenced)),
     )
     if _MEMO and _MEMO[0][0] == sig:
         return _MEMO[0][1]
@@ -263,6 +344,6 @@ def table(env) -> Units:
             rec = next(a for a in env.depot.committed(key, tid)["artifacts"] if a["id"] == aid)
             yield b, contract.loads(env.depot.read(rec["content"]["sha256"]))
 
-    t = build(censuses(), bundles, env.fact("selected"), classes, roots)
+    t = build(censuses(), bundles, env.fact("selected"), classes, roots, fenced)
     _MEMO[:] = [(sig, t)]
     return t

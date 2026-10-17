@@ -8,10 +8,12 @@ products need before anything runs: `request`). The objects it reaches are those
 every unit an item of a reached unit references (contract.item `refs`; an atlas reached through a reference does not
 reach the sprites it packs, units.PACKED), through the unity.export results; a sprite whose atlas is in another
 bundle has its image from sprite.crop. A reached unit that the request did not export is an error of the request; a
-referenced object that no census holds is listed as missing.
+referenced object that no census holds is listed as missing. A referenced object of a fenced bundle (units.fences) that
+the walk does not reach is listed as fenced.
 
 A task's inputs are the object table of what it reaches ("objects", nnnotes.objects/1: every object with its class,
-name, item status and files, the contained ones with the object holding them, and the root objects of each of its keys),
+name, item status and files, the contained ones with the object holding them, the root objects of each of its keys,
+and the font objects the fence cuts off as "fenced"),
 the APK files the stage names in `APK` ("apk:<path in the APK>", from the fact "apk"), the cue sheets of the catalog
 keys `cue_sheets(subject)` gives, the movies of the catalog keys `movies(subject)` gives and what `more_inputs` adds (a
 master record as "master": master_input; parameters' data); it depends on the unity.export and sprite.crop tasks it
@@ -166,6 +168,7 @@ def reach(env, roots, results: _Results | None = None, keys: dict | None = None)
     objects: dict[str, dict] = {}
     read = []
     crops: dict[str, list] = {}  # atlas object id -> sprite object ids
+    blocked: dict[str, dict] = {}  # objects a reached object references across the font fence: {id: class, name}
     while todo:
         s = todo.pop()
         if s in seen:
@@ -186,10 +189,23 @@ def reach(env, roots, results: _Results | None = None, keys: dict | None = None)
                 t = table.subject_of(r)
                 if t is None:
                     missing.add(r)
+                elif table.fences(s, t):
+                    blocked[r] = table.info[r]
                 elif t not in seen and table.reaches(s, t, s in start):
                     todo.append(t)
     for atlas, sprites in sorted(crops.items()):
         s = table.subject_of(atlas)
+        # a sprite of an unfenced bundle takes no image from a fenced atlas the walk does not reach
+        cut = {
+            o
+            for o in sprites
+            if s is not None and s not in seen and (src := table.subject_of(o)) is not None and table.fences(src, s)
+        }
+        if cut:
+            blocked[atlas] = table.info[atlas]
+        sprites = [o for o in sprites if o not in cut]
+        if not sprites:
+            continue
         tid = contract.task_id(CROP, s) if s is not None else None
         if tid is None or not env.known(tid):  # the atlas is not exported: its sprites have no image
             missing.add(atlas)
@@ -205,6 +221,7 @@ def reach(env, roots, results: _Results | None = None, keys: dict | None = None)
         "roots": sorted(set(roots)),
         "keys": {k: sorted(v) for k, v in sorted((keys or {}).items())},
         "objects": dict(sorted(objects.items())),
+        "fenced": {r: v for r, v in sorted(blocked.items()) if r not in objects},
         "missing": sorted(missing),
     }
     size = sum(f["size"] for e in objects.values() for f in e.get("files", {}).values())
@@ -287,6 +304,7 @@ class Objects:
         self.roots: list[str] = doc["roots"]
         self._keys: dict[str, list[str]] = doc["keys"]
         self._objects: dict = doc["objects"]
+        self._fenced: dict = doc["fenced"]
         self._json: dict = {}
         self._sheets: dict[str, Sheet] = sheets or {}
         self._movies: dict[str, Movie] = movies or {}
@@ -312,6 +330,10 @@ class Objects:
         except KeyError:
             raise KeyError(f"{key} is not a key of the product") from None
 
+    def keys(self) -> list[str]:
+        """The catalog keys of the product, sorted (each with its root objects, possibly none)."""
+        return sorted(self._keys)
+
     def __contains__(self, oid: str) -> bool:
         return oid in self._objects
 
@@ -324,6 +346,11 @@ class Objects:
             return self._objects[oid]
         except KeyError:
             raise KeyError(f"object {oid} is not in the product's object table") from None
+
+    def fenced(self, oid: str) -> dict | None:
+        """The class and name of the object `oid` when a reached object references it across the font fence (None:
+        no reached object does)."""
+        return self._fenced.get(oid)
 
     def bytes(self, oid: str, role: str) -> bytes:
         files = self.info(oid).get("files") or {}
@@ -344,11 +371,13 @@ class Assembly:
     """What `assemble` makes: the product's files {path: (bytes or Stored, extension, kind)} and what of the object
     table they use: `objects` the object ids (None: every object of the table), `roles` {object id: the roles of its
     files the product keeps} for an object of which it uses some files only (a shader's programs for one graphics
-    API). The product's object table, and so its manifest, holds only those."""
+    API). `table` optionally supplies the table of the retained roots when the inputs also include objects read only
+    during assembly. The product's object table, and so its manifest, holds only those."""
 
     files: dict
     objects: set | None = None
     roles: dict = field(default_factory=dict)
+    table: dict | None = None
 
 
 def _prune(tid: str, objects: dict, made: Assembly) -> dict:
@@ -447,7 +476,9 @@ class ProductStage(Stage):
         keys = self.keys(subject, env)
         named = (self.root_objects(subject, env), self.resources(subject, env), self.builtins(subject, env))
         if not keys and not any(named):
-            return Reach({"schema": contract.OBJECTS, "roots": [], "keys": {}, "objects": {}, "missing": []})
+            return Reach(
+                {"schema": contract.OBJECTS, "roots": [], "keys": {}, "objects": {}, "fenced": {}, "missing": []}
+            )
         roots = units.root_objects(env, keys, *named)
         by_key = {k: units.root_objects(env, [k]) for k in keys}
         sig = (tuple(roots), tuple((k, tuple(v)) for k, v in sorted(by_key.items())), id(units.table(env)))
@@ -546,7 +577,9 @@ class ProductStage(Stage):
             else:
                 content = depot.add(body, ext)
             arts.append(contract.artifact(aid, content, prov, {"kind": kind}))
-        if made.objects is not None or made.roles:
+        if made.table is not None:
+            doc = made.table
+        if made.table is not None or made.objects is not None or made.roles:
             doc = dict(doc, objects=_prune(task.id, doc["objects"], made))
             data = contract.encode(doc)
         aid = contract.artifact_id(task.id, PRODUCT_TABLE)

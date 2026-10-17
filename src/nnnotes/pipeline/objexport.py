@@ -382,7 +382,7 @@ class ExportStage(Stage):
 
     name = EXPORT
     version = 2
-    after = (CENSUS, SCRIPTS)
+    after = (CENSUS, SCRIPTS, units.ADDRESSES)
     PARAMS = {"blobMin": 4096, "png": {"level": 6}}
 
     def __init__(self, reader: Impl | None = None):
@@ -517,7 +517,7 @@ class SpriteCropStage(Stage):
 
     name = CROP
     version = 1
-    after = (EXPORT,)
+    after = (EXPORT, units.ADDRESSES)
     PARAMS = {"png": {"level": 6}}
     CROP_ATOMS = ("png.encode", "sprite.crop")
 

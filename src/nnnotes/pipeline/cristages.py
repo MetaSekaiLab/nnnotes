@@ -289,7 +289,7 @@ class AudioStage(_CriStage):
 
     name = AUDIO
     version = 1
-    after = (EXPORT,)
+    after = (EXPORT, units.ADDRESSES)
     CLASS = "ACB"
     PARAMS = {"flac": {"level": FLAC_LEVEL}}
 
@@ -475,7 +475,7 @@ class MovieStage(_CriStage):
 
     name = MOVIE
     version = 2
-    after = (EXPORT,)
+    after = (EXPORT, units.ADDRESSES)
     CLASS = "USM"
     PARAMS = {"format": "mkv", "flac": {"level": FLAC_LEVEL}}
 
