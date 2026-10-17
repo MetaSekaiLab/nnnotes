@@ -305,7 +305,7 @@ def table(depot, record: dict, objs: dict | None = None) -> dict:
         out[oid] = {"status": "contained", "class": "Component", "in": holder}
     ks = keys(record)
     roots = sorted({o for v in ks.values() for o in v} | {GRAPHICS, QUALITY, PLAYER})
-    return {"schema": contract.OBJECTS, "roots": roots, "keys": ks, "objects": out, "missing": []}
+    return {"schema": contract.OBJECTS, "roots": roots, "keys": ks, "objects": out, "fenced": {}, "missing": []}
 
 
 def master() -> dict:

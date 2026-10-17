@@ -632,7 +632,12 @@ def planning_env(depot, names=("all", "atlas"), selected=None, scripts=SCRIPTS, 
     for n in names:
         data = f"fake:{n}".encode()
         bundles[n] = Input("bundle", depot.put(data), len(data), f"{n}.bundle", ({"kind": "depot"},))
-    facts = {"bundles": bundles, "selected": sorted(selected if selected is not None else names), "classes": classes}
+    facts = {
+        "bundles": bundles,
+        "catalogs": {},
+        "selected": sorted(selected if selected is not None else names),
+        "classes": classes,
+    }
     env = Env(depot, facts)
     for n in names:
         t = Task(census_mod.CensusStage.name, census_mod.CensusStage.version, n, {}, {}, (bundles[n],))
@@ -1512,6 +1517,21 @@ def test_the_context_holds_the_shipped_type_trees_of_its_scripts(tmp_path, monke
     assert describe(stage, "player:4", None, env).context["typetrees"] == {OTHER_HASH: SETTINGS_ROWS[:-1]}
     assert "typetrees" not in describe(stage, "player:20", None, env).context
     assert "typetrees" not in describe(stage, "all:70", None, planning_env(Depot(tmp_path / "t"))).context
+
+
+def test_the_font_fence_of_a_request(tmp_path):
+    """units.build: a reference of an unfenced unit into a fenced bundle reaches nothing, from a root or from a unit
+    the walk reaches; a fenced unit's references reach as usual; `info` holds the objects of the fenced units."""
+    censuses = [(n, census_mod.census_env(BUNDLES[n](), shipped=True)) for n in ("all", "atlas")]
+    atlas = f"{ATLAS_CAB}:99"
+    t = units.build(censuses, ["all", "atlas"], ["all"], fenced=["atlas"])
+    assert "atlas:99" not in t.subjects() and "all:13" in t.subjects()
+    assert t.fences("all:13", "atlas:99") and not t.reaches("all:13", "atlas:99", True)
+    assert not t.fences("atlas:99", "all:13") and t.reaches("atlas:99", "all:13", True)
+    assert t.fenced == {s for s in t.kinds if s.startswith("atlas:")}
+    assert t.info[atlas] == {"class": "SpriteAtlas", "name": "remote"} and oid(13) not in t.info
+    r = units.build(censuses, ["all", "atlas"], [], roots=[atlas], fenced=["atlas"])
+    assert r.subjects() == ["atlas:97", "atlas:98", "atlas:99"]  # the root's references, across no fence
 
 
 def test_the_unit_table(tmp_path):

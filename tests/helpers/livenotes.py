@@ -182,7 +182,7 @@ def table(depot, keys: dict, objs: dict | None = None) -> dict:
             recs[role] = {"sha256": depot.put(data), "size": len(data), "ext": ext}
         out[oid] = {"status": "exported", "class": cls, "name": name, "files": recs}
     roots = sorted({o for v in keys.values() for o in v})
-    return {"schema": contract.OBJECTS, "roots": roots, "keys": keys, "objects": out, "missing": []}
+    return {"schema": contract.OBJECTS, "roots": roots, "keys": keys, "objects": out, "fenced": {}, "missing": []}
 
 
 def master() -> dict:
