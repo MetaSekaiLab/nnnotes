@@ -25,6 +25,7 @@ schemas.load("plan")  # the schema as a dict
 | `coverage` | `nnnotes.coverage/1` | the coverage of a run per class and per reason code |
 | `failures` | `nnnotes.failures/1` | the failed tasks and items of a run |
 | `layout` | `nnnotes.layout/1` | the files a layout owns in its output directory |
+| `live-ui` | `nnnotes.live-ui/1` (`format`) | live start strings, text styles, glyph pages and image bindings |
 | `music-data` | `nnnotes.music-data/2` | every song and chart of one master data version ([music data](music-data.md)) |
 | `objects` | `nnnotes.objects/1` | the objects a product reaches: their class, item status and files ([products](products.md)) |
 | `plan` | `nnnotes.plan/1` | what a run would do and why (`depot plan`) |
