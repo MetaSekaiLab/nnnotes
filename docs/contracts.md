@@ -19,6 +19,10 @@ Live start UI data uses the `format` field `nnnotes.live-ui/1`, described in
 [live-ui.schema.json](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/schemas/live-ui.schema.json)
 and [live start UI products](products.md#live-start-ui).
 
+Overlay story products use `nnnotes.story-host/1` and `nnnotes.story-simple-ui/1` in their `format` fields:
+[story-host.schema.json](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/schemas/story-host.schema.json)
+and [story-simple-ui.schema.json](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/schemas/story-simple-ui.schema.json).
+
 Stages carry their own version. A change of what a stage writes for the same inputs is a new stage version, which
 changes the key of every task of that stage (golden tests fail when a stage's output changes while its version
 stays).

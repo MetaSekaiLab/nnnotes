@@ -183,6 +183,10 @@ texture a material's main slot names is one glTF texture with its own sampler (f
 mip count), and textures whose PNG bytes are equal share one glTF image. The `textures` of `room.json` has one entry
 per glTF texture, in glTF order: the Unity texture's name.
 
+`room.json` also records `nodes`, each node's prefab `path` and Mesh object id in glTF node order, and
+`materialIds`, Material object ids in glTF material order. These identify the serialized objects when the room
+is displayed with a host scene's activation and material state.
+
 What draws nothing is not written and `room.json` lists it: a submesh whose material slot is empty
 (`nullMaterialSubmeshes`: `mesh`, object `path` in the prefab, `submesh` index), a MeshFilter without a mesh
 (`nullMeshFilters`: the object path) and a mesh without vertices or triangles (`emptyMeshes`: `mesh` and `path`).
@@ -465,6 +469,31 @@ of the UI roots; font assets and chat windows are additional assembly inputs for
 The retained object table is the UI closure, so the font assets' files remain in the depot. The input
 `font-bundles` names the bundles holding the font assets, and `apk:AndroidManifest.xml` supplies the client version.
 A client requests the product for each language it uses.
+
+### Overlay hosts and simple UI
+
+For episodes with `MasterAdv._playbackMode` 1, `story.json` includes a `host` descriptor. The host is selected
+from one matching `MasterStoryHomeSpotTapTalkEpisode`, `MasterHomeSpot` or `MasterStoryLiveResultEpisode` row.
+It identifies the host kind and subject, the home talk kind and character where applicable, and the area title
+in each language. A missing or ambiguous host is an error.
+
+`parts.host` maps its subject to `storyhosts/home_<spot id>.json` or `storyhosts/afterlive.json`. A home host also
+uses `parts.spots` and `parts.rooms`, whose keys are the situation and background addresses. These name the shared
+`spot.files` and `room.gltf` products.
+
+`story.host` writes `host.json` with format `nnnotes.story-host/1`. `prefabs` identifies the host's UI, capture
+camera, background and situation objects. `overlayRoot` and `openedSequences` are `{prefab, path}` locations;
+`layoutRoot` also carries the serialized `SimpleAdvLayoutRoot` fields. `home` identifies the room and spot
+products, the Spot scene roots, and `backgroundState`: activation after selecting the situation, and the floor
+renderer's queue. `afterlive` identifies the result background image and sprite, reward panel and substitute
+elements. Graphics, DOTween settings, animation bindings and shaders are object references.
+
+`parts.simpleui` maps each language to `storysimpleui/<language>.json`. `story.simpleui` writes `ui.json` with
+format `nnnotes.story-simple-ui/1`: the simple talk-window, system-message and UIManager prefab ids, settings,
+text records, animation bindings and shaders. The episode's `story.fonts` product includes these texts and the
+area title in either font mode. Font files are read as inputs; the retained UI closure uses fenced font references.
+
+### Episode fonts
 
 `story.fonts` contains the font records for one episode and language. Its `episode` input is the first run's
 `episode.json`, supplied in the planning fact `product_inputs` under `episode:<id>`. This snapshot determines the

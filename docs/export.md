@@ -26,6 +26,9 @@ themselves are under `assets/`.
 files from `[paths.fonts]` or repeatable `--font LANG=PATH` flags; supply any languages needed by the fallback chain.
 Both font sources require the `fonts` extra.
 
+Overlay episodes also export their home or live-result host and the simple talk-window UI. Home hosts share the
+spot's Spine files and room glTF products. Their area title and simple UI text use the episode's font product.
+
 Products that several stories share (the scene, assets, models and cue sheets) are placed once, so exporting several
 stories into one directory keeps one copy of each. Every product goes through the depot, so a second export reuses
 its results.
