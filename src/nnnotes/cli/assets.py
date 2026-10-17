@@ -133,6 +133,7 @@ STAGE_SOURCES = (
     StageSource("story.asset", "nnnotes.pipeline.story:AssetStage", output=True, product=True),
     StageSource("story.video", "nnnotes.pipeline.story:VideoStage", output=True, product=True),
     StageSource("story.chat", "nnnotes.pipeline.story:ChatStage", output=True, product=True),
+    StageSource("story.ui", "nnnotes.pipeline.story:UiStage", output=True, product=True),
     StageSource("story", "nnnotes.pipeline.story:StoryStage", output=True, product=True),
     StageSource("view.", "nnnotes.pipeline.views:stages", output=True),
     StageSource("view.voices", "nnnotes.pipeline.voices:VoiceStage", output=True),
