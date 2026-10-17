@@ -118,7 +118,9 @@ def build(
     sheets = {}
     if audio:
         for sheet in sorted({c["_cueSheetName"] for c in episode["cuesheets"].values()}):
-            cri.decode(cat, sheet, out_dir / "audio" / sheet, fmt=audio_format, **(audio_options or {}))
+            cri.decode(
+                cat, sheet, out_dir / "audio" / sheet, fmt=audio_format, categories=True, **(audio_options or {})
+            )
             sheets[sheet] = f"audio/{sheet}"
 
     media = advmedia.extract(cat, player, master, episode, out_dir, fonts=fonts)

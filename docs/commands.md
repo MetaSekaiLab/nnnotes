@@ -597,7 +597,7 @@ SITE/assets/<sha256>.<ext>[.gz|.br]       content-addressed files shared by all 
 A story's manifest lists what the player's story page reads, in the layout of `export story` (below the site's `assets/`):
 `story.json`, `episode.json`, `scene.json`, the scene shaders (GLSL ES 3.00 programs only), textures, per cue sheet
 `cues.json` and the file of each cue in the `--format` (an AAC file's encoder delay in
-`cues.json` as `encoderDelay`), the media files the episode uses and its videos; per language (`--story-languages`,
+`cues.json` as `encoderDelay`; the CRI category names a cue plays in as `categories`, e.g. `["Voice", "VoiceConfig"]`), the media files the episode uses and its videos; per language (`--story-languages`,
 default `ja,en,zh-Hant,zh-Hans,ko`) the story UI in that language (`ui/ui.json`), its font data (`ui/fonts.json` with
 glyph pages under `ui/fonts/`) and `ui/languages.json`. UI files that are equal in every language are common files.
 `scene.json` and `ui/ui.json` are stored split per top-level key, so the parts stories and languages share are stored

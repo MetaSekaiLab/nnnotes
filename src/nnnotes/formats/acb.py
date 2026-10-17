@@ -97,6 +97,28 @@ def commands(b: bytes) -> list[tuple[int, bytes]]:
     return out
 
 
+def cue_categories(acb: bytes) -> dict[str, list[str]]:
+    """{cue name: the CRI category names its sequence puts it in} (command 65 of the cue's sequence, the names of the
+    ACF category references the ACB lists). A cue that is not a sequence, or whose sequence has no category command,
+    has an empty list."""
+    _, T = tables(acb)
+    names = {r["Id"]: r["Name"] for r in T.get("AcfReferenceTable", []) if r["Type"] == 3}
+    cue_names = {r["CueIndex"]: r["CueName"] for r in T.get("CueNameTable", [])}
+    seqs = T.get("SequenceTable", [])
+    cmds = T.get("SeqCommandTable", [])
+    out: dict[str, list[str]] = {}
+    for i, cue in enumerate(T.get("CueTable", [])):
+        found: list[str] = []
+        if cue["ReferenceType"] == REF_SEQUENCE and cue["ReferenceIndex"] < len(seqs):
+            ci = seqs[cue["ReferenceIndex"]]["CommandIndex"]
+            if ci != 65535 and ci < len(cmds):
+                for code, v in commands(cmds[ci]["Command"]):
+                    if code == 65:
+                        found += [names[struct.unpack_from(">I", v, j)[0]] for j in range(0, len(v) - 3, 4)]
+        out[cue_names[i]] = found
+    return out
+
+
 def u16s(b: bytes) -> list[int]:
     return [struct.unpack_from(">H", b, i)[0] for i in range(0, len(b) - 1, 2)]
 
