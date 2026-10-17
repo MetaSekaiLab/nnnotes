@@ -20,12 +20,14 @@ from nnnotes.pipeline.story import (
     StoryStage,
     VideoStage,
 )
+from tests.formats.test_acb_categories import acb_with_categories
 from tests.formats.test_crilips import _elf_with_rodata, _synthetic_version
 from tests.formats.test_usm import KEY
 from tests.helpers import story as sh
 from tests.pipeline.test_assemble import addresses
 from tests.pipeline.test_cristages import export_result, fake_tools, planning, usm_file
 from tests.pipeline.test_live import master_record, run, stored, table
+from tests.pipeline.test_voices import utf
 from tests.site.test_story_site import mp4
 
 # the streams of a voice sheet as cri.audio lists them: cue v2 has two layers, cue loop loops
@@ -38,10 +40,11 @@ STREAMS = [
 ]  # fmt: skip
 
 
-def sheet(depot, name, streams=STREAMS) -> tuple[list, dict]:
+def sheet(depot, name, streams=STREAMS, *, acb_bytes=None) -> tuple[list, dict]:
     """The inputs "acb:<key>" and "sheets" of the cue sheet `name` decoded as `streams` (FLAC bytes per stream)."""
     key = f"Cri/Sound/{name}"
-    acb = stored(depot, f"@UTF {name}".encode(), f"acb:{key}")
+    body = utf("Header", [("Name", 0xA)], [{"Name": name}]) if acb_bytes is None else acb_bytes
+    acb = stored(depot, body, f"acb:{key}")
     files = {}
     for s in streams:
         data = f"fLaC {name} {s['stream']}".encode()
@@ -111,6 +114,39 @@ def test_cues_take_the_first_stream_of_each_name():
                  "loopEnd": 400},
     }  # fmt: skip
     assert files == {"v1.m4a": "v1.flac", "v2.m4a": "v2.flac", "loop.m4a": "loop.flac"}
+
+
+@pytest.mark.parametrize("fmt", ["flac", "aac"])
+def test_story_sound_records_the_nonempty_acb_categories_with_the_first_stream(tmp_path, monkeypatch, fmt):
+    depot = Depot(tmp_path / "d")
+    streams = [
+        {**STREAMS[0], "name": "voice"},
+        {**STREAMS[1], "name": "voice"},
+        {**STREAMS[2], "name": "plain"},
+        {**STREAMS[3], "name": "wave"},
+    ]
+    inputs, desc = sheet(depot, "story_sheet", streams, acb_bytes=acb_with_categories())
+    atoms = {}
+    if fmt == "aac":
+        monkeypatch.setattr(cristages, "tool_id", lambda which, exe: f"{which}-fake/1")
+        monkeypatch.setattr(story, "_ffmpeg", lambda: "ffmpeg")
+        monkeypatch.setattr(story, "web_encode", lambda ffmpeg, src, dst, format: mp4(1024))
+        atoms = {"audio.encode": "ffmpeg-fake/1"}
+    stage = SoundStage()
+    task, _, arts = run(depot, stage, "story_sheet", [table(depot), *inputs], {"audio": fmt}, atoms)
+    doc = read_json(depot, arts["cues.json"])
+    ext = ".m4a" if fmt == "aac" else ".flac"
+    expected = story.cues(streams, ext)[0]
+    expected["voice"]["categories"] = ["Voice", "VoiceConfig"]
+    if fmt == "aac":
+        for entry in expected.values():
+            entry["encoderDelay"] = 1024
+    assert doc == expected
+    files = desc["Cri/Sound/story_sheet"]["files"]
+    assert contract.loads(depot.read(files["streams.json"]["sha256"])) == streams
+    assert doc["voice"]["samples"] == streams[0]["samples"]
+    assert stage.version == task.version == 2
+    assert contract.Task(task.stage, 1, task.subject, task.params, task.atoms, task.inputs).key != task.key
 
 
 # ---------------------------------------------------------------- the products
