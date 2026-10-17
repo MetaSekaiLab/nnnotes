@@ -66,6 +66,7 @@ changes, or what it reaches changes.
    "CAB-…:40": {"status": "exported", "class": "Texture2D", "name": "texture_00",
                 "files": {"image": {"sha256": "…", "size": 812345, "ext": "png"},
                           "json": {"sha256": "…", "size": 640, "ext": "json"}}}},
+ "fenced": {},
  "missing": []}
 ```
 
@@ -73,6 +74,11 @@ changes, or what it reaches changes.
 game loads it by. Each object has the status of its item (the most severe when two stages made items for it), its
 class and name where known, its files by role (the artifacts of its items), the object whose file holds it (`in`, a contained
 object), or the reason code of a generic, unsupported or failed object.
+
+`fenced` names the objects that a reached object references across the font fence: the font bundles (the keys under
+`EmbFont/` and `Font/`) are not followed from objects outside them, so each such reference is listed with the class and
+name of the object it names, while the reference itself carries only its file and path id. A reference to an object of
+the table is not listed.
 
 ## Product layout
 
@@ -365,6 +371,7 @@ A story episode plays with products that several episodes share, made by `nnnote
 | `story.asset` | a catalog key a story loads: a stage (`Adv/Stage/<name>`), frame, effect, post effect, still, timeline, chat window, chat icon or stamp, transition | `storyassets/<name>.json`, `<name>` the key with `/` as `~` | the key | `asset.json` and the object table |
 | `story.video` | a video key `Cri/Video/<asset>` (the video of a Movie / Clip command) | `videos/<name>.json`, `<name>` the asset with `/` as `~` | the key | `video.json` and `movie.webm` |
 | `story.chat` | `default` | `storychat/default.json` | the shared chat shards `Adv/Chat/AdvChat-Text`, `Adv/Chat/AdvChat-Sound` and `Adv/Chat/AdvChat-SoundCueSheet` | `chat.json` |
+| `story.ui` | a client language (`ja`, `en`, `zh-Hant`, `zh-Hans`, `ko`) | `storyui/<language>.json` | the story UI's catalog keys (the widget, talk windows, chat widget, dialogs, UIManager, letterbox, animations and settings), the built-in `GraphicsSettings` and `LocalizeManager`, and the resources `DOTweenSettings` and `TMP Settings` | `ui.json` and the object table |
 | `story` | a `MasterAdv` id | `stories/<id>.json` | the episode key `Adv/Episode/<asset>/<asset>` (`<asset>`: the row's `_advEpisodeAsset`), its shard keys (the key with `-Text`, `-Sound`, `-SoundCueSheet`, `-Video`) and `EmbCommon/Adv/Settings/AdvPlayerSettings` | `episode.json` and `story.json` |
 
 `story.sound`, `story.crilips`, `story.video`, `story.chat` and `story` keep no objects: their files are all they
@@ -415,6 +422,23 @@ converted stream, its `source` codec).
 chat message texts), `sounds` (their sound rows) and `cueSheets` (the cue sheet rows those name), each the `_allData`
 rows of its shard as stored; a shard key without a TextAsset gives `[]`. The `product` layout makes it when the
 selection holds the three shard keys.
+
+`story.ui` is the ADV story UI in one client language: the ADV front canvas, the talk windows, the chat phone, the
+dialogs and the settings, with the text records of their texts in that language. Its input `master` holds the
+`MasterText` rows, each text in the language's column (`{"texts": {MasterText id: text}}`, the empty text when the row
+has none). `ui.json` has `format` 1 and `language` (`code`, `mode` (the LanguageMode), `field` (the text column),
+`lineSpacing`, `fontNames`, `additionalFontNames`, `materialTypes` and `fontSwap`, the Japanese font asset names mapped
+to the language's), `widget`, `talkWindows` (each window's name to its object), `chatWidget`, `dialogs`, `uiManager`,
+`letterbox`, `clips`, `controllers`, `settings` (`masterIdSettings`, `dotween`, `tmpSettings`, `localizeManager`),
+`graphics`, `texts` (each TMP text by its component id: `localized`, the font asset, material and line spacing its
+LocalizeText gives it in the language, or null, and `style`, its text record), `textStyle` (the language's field, the
+units and the line metrics of the font roles the texts use), `masterIdTexts` (each `AdvMasterIdSettings` text with its
+MasterText id and text), `chatStatusTexts` (incoming-call and lock-screen status keys to their texts), `bindings`
+and `shaders`. Text styles use settings read from the client's font assets. The input `ui.objects` is the closure
+of the UI roots; font assets and chat windows are additional assembly inputs for metrics and status text keys.
+The retained object table is the UI closure, so the font assets' files remain in the depot. The input
+`font-bundles` names the bundles holding the font assets, and `apk:AndroidManifest.xml` supplies the client version.
+A client requests the product for each language it uses.
 
 `story` is one episode. Its input `master` is the episode's master record: its `MasterAdv` row, the `MasterText` row
 of its title (none when `_titleTextId` is empty) and every `MasterAdvChat` row. `episode.json` is the episode as
