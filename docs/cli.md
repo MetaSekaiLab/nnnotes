@@ -195,11 +195,14 @@ an ADV episode -> JSON
 
 ## nnnotes export story
 
-an ADV episode -> the story product and the products it plays with (scene, assets, Live2D models, cue sheets, videos, chat, CRI Lips)
+an ADV episode -> the story product and the products it plays with (scene, assets, Live2D models, cue sheets, videos, chat, UI, fonts, CRI Lips)
 
 | Argument | Description |
 | --- | --- |
 | `adv_id` | MasterAdv id of the episode |
+| `--story-languages` `LANG,...` | text languages, comma-separated (default: [catalog] language) |
+| `--fonts` `FONTS` | glyph source: open font files (default) or game TMP assets (one of `open`, `game`) |
+| `--font` `LANG=PATH` | font file for a language, or emoji=PATH (repeatable; [paths] fonts.<lang>) |
 | `--format` `FORMAT` | web audio format of the cue sheets (default aac) (one of `aac`, `flac`, `mp3`, `opus`, `vorbis`) |
 | `--flac-level` `N` | FLAC compression level 0-12 of the decoded sounds (default 8; every level decodes to the same samples) |
 | `-o`, `--out` `OUT` | output directory (required) |

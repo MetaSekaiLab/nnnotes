@@ -372,6 +372,7 @@ A story episode plays with products that several episodes share, made by `nnnote
 | `story.video` | a video key `Cri/Video/<asset>` (the video of a Movie / Clip command) | `videos/<name>.json`, `<name>` the asset with `/` as `~` | the key | `video.json` and `movie.webm` |
 | `story.chat` | `default` | `storychat/default.json` | the shared chat shards `Adv/Chat/AdvChat-Text`, `Adv/Chat/AdvChat-Sound` and `Adv/Chat/AdvChat-SoundCueSheet` | `chat.json` |
 | `story.ui` | a client language (`ja`, `en`, `zh-Hant`, `zh-Hans`, `ko`) | `storyui/<language>.json` | the story UI's catalog keys (the widget, talk windows, chat widget, dialogs, UIManager, letterbox, animations and settings), the built-in `GraphicsSettings` and `LocalizeManager`, and the resources `DOTweenSettings` and `TMP Settings` | `ui.json` and the object table |
+| `story.fonts` | `<episode id>/<language>` | `storyfonts/<id>_<language>.json` | the UI and font keys, the episode's chat windows and frames, and the UI settings | `fonts.json`, glyph pages and text shaders |
 | `story` | a `MasterAdv` id | `stories/<id>.json` | the episode key `Adv/Episode/<asset>/<asset>` (`<asset>`: the row's `_advEpisodeAsset`), its shard keys (the key with `-Text`, `-Sound`, `-SoundCueSheet`, `-Video`) and `EmbCommon/Adv/Settings/AdvPlayerSettings` | `episode.json` and `story.json` |
 
 `story.sound`, `story.crilips`, `story.video`, `story.chat` and `story` keep no objects: their files are all they
@@ -440,6 +441,24 @@ The retained object table is the UI closure, so the font assets' files remain in
 `font-bundles` names the bundles holding the font assets, and `apk:AndroidManifest.xml` supplies the client version.
 A client requests the product for each language it uses.
 
+`story.fonts` contains the font records for one episode and language. Its `episode` input is the first run's
+`episode.json`, supplied in the planning fact `product_inputs` under `episode:<id>`. This snapshot determines the
+chat-window and frame roots before object export. Its other inputs are localized `MasterText` rows, the font
+bundle record, APK version and object table. With parameter `fonts: open`, configured font files enter as
+`font:<language>` and optionally `font:emoji`; `fonts: game` reads the client's TMP assets.
+
+`fonts.json` has format `nnnotes.story-fonts/1`, `language`, `source`, `fonts`, `textures`, `materials`,
+`materialKeywords`, `coverage`, `lineBreaking` and `shaders` (shader names to retained object ids).
+`texts` maps TMP component ids to `style`, `localized` (the LocalizeText result, or null), and `font` (the effective
+font asset, material and line spacing to render, including generated open font names). Ruby and Korean-adjustment
+settings accompany the relevant text records. `sprites` maps driven TMP component ids to their sprite asset and
+tint flag; `spriteAssets` and `emojiSpriteAsset` are present when text can draw emoji sprites.
+
+Glyph selection includes episode lines and names, the title, localized UI labels, status text, chat runtime
+strings and frame text. It follows each primary font's fallback chain and models synthesized control characters,
+underline and missing glyphs. The product retains glyph pages and the required shader programs; font files and
+source atlas objects remain in the depot. Page file names in `textures` resolve through the product's `files`.
+
 `story` is one episode. Its input `master` is the episode's master record: its `MasterAdv` row, the `MasterText` row
 of its title (none when `_titleTextId` is empty) and every `MasterAdvChat` row. `episode.json` is the episode as
 `export episode` writes it, each resource given by its kind and address: the command list with the lines of every
@@ -459,5 +478,7 @@ A model's MotionSync (model.json `motionSync`) decides whether a lip-synced voic
 `crilips` names the data whenever a voice can reach it. The episode's talk windows are listed in `episode.json`
 `resources`. `parts` depend on the episode's commands, which only the story's result holds: a command
 asks for the `story` product first, reads its `story.json`, then asks for the story with every product `parts` names
-(`nnnotes.pipeline.story.part_products`); `export story` works this way. The `product` layout makes the story of
+(`nnnotes.pipeline.story.part_products`, with the requested languages); `export story` works this way.
+`parts.ui` and `parts.fonts` map every client language to its product manifest. The command exports those entries
+for the requested languages. The `product` layout makes the story of
 every episode whose key the selection holds.
