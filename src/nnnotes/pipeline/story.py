@@ -67,20 +67,23 @@ from pathlib import Path
 
 from ..content import liveaudio, storyasset, storychat, storyepisode, storyscene, storyui, storyvideo
 from ..content.livescene import GRAPHICS
-from ..content.prefabs import mono_json, script_class
+from ..content.prefabs import mono_json
 from ..formats import acb, crilips
 from ..formats.encoders import DEFAULT_AUDIO_FORMAT, WEB_AUDIO, mp4_priming, web_encode
 from ..source import languages
-from ..source.apkset import MANIFEST_IN_APK, manifest_version_name
-from ..unity import fontsettings, textstyle
+from ..source.apkset import MANIFEST_IN_APK
+from ..unity import textstyle
 from ..unity.atoms import Unsupported
-from ..unity.ids import parse_object_id
 from . import contract, units
 from .assemble import MASTER_INPUT, Assembly, Objects, ProductStage, master_input, reach
 from .contract import IncompatibleTask, Input
 from .layout import escape_segment
 from .live import encode_atoms
 from .live2d import MODEL, ModelStage
+from .textfonts import FontInputsStage
+from .textfonts import font_atoms as font_atoms
+from .textfonts import font_settings as _font_settings
+from .textfonts import record_input as _record_input
 from .views import master_rows
 
 __all__ = [
@@ -342,7 +345,7 @@ def _language(subject: str) -> str:
     return subject
 
 
-class UiStage(ProductStage):
+class UiStage(FontInputsStage):
     """story.ui: the ADV story UI in one client language (module documentation)."""
 
     name = UI
@@ -387,18 +390,6 @@ class UiStage(ProductStage):
             self.font_bundles(subject, env),
         ]
 
-    def font_bundles(self, subject: str, env) -> Input:
-        """The bundle names of the font assets read by this product."""
-        objects = Objects(self.reach(subject, env).table, env.depot)
-        font_files = set(_font_files(objects).values())
-        bundles = {}
-        for catalog in sorted(env.fact("catalogs")):
-            addresses = units.address_doc(env, catalog)
-            bundles.update(
-                {f: addresses["bundles"][b]["name"] for f, b in addresses["files"].items() if f in font_files}
-            )
-        return _record_input(env, "font-bundles", bundles)
-
     def manifest(self, subject: str) -> str:
         return f"storyui/{_language(subject)}.json"
 
@@ -414,29 +405,11 @@ class UiStage(ProductStage):
         return Assembly({"ui.json": (contract.encode(doc), "json", UI)}, keep, roles, ui_table)
 
 
-def _font_settings(task, objects, lang):
-    from ..content import tmpassets
-
-    bundles = contract.loads(objects.depot.input_bytes(task.input("font-bundles")))
-    files = _font_files(objects)
-    version = manifest_version_name(objects.depot.input_bytes(task.input(f"apk:{MANIFEST_IN_APK}")))
-    if version is None:
-        raise ValueError(f"{task.stage}: the APK manifest has no version name")
-    doc = tmpassets.build_font_settings(objects, lang, version, lambda name: bundles[files[name]])
-    return fontsettings.FontSettings(doc)
-
-
 def font_subject(subject: str) -> tuple[str, str]:
     episode, sep, language = subject.partition("/")
     if not sep or str(_adv_id(episode)) != episode:
         raise ValueError(f"{subject!r}: expected <episode id>/<language>")
     return episode, _language(language)
-
-
-def font_atoms() -> dict:
-    from ..unity.atoms import impl_id
-
-    return {"text.glyphs": impl_id(("fonttools", "freetype-py", "scipy", "numpy", "Pillow"), 1)}
 
 
 class FontsStage(UiStage):
@@ -511,21 +484,6 @@ class FontsStage(UiStage):
         files = {p: (body, "png", "story.glyphs") for p, body in pages.items()}
         files["fonts.json"] = (contract.encode(doc), "json", FONTS)
         return Assembly(files, keep, roles)
-
-
-def _record_input(env, role: str, record: dict) -> Input:
-    """A JSON record read by a product, stored as a content-addressed input."""
-    body = contract.encode(record)
-    return Input(role, env.depot.put(body), len(body), None, ({"kind": "depot"},))
-
-
-def _font_files(objects: Objects) -> dict[str, str]:
-    """The serialized file holding each TMP font asset, by asset name."""
-    return {
-        objects.info(o)["name"]: parse_object_id(o)[0]
-        for o in objects.ids("MonoBehaviour")
-        if script_class(objects, o) == fontsettings.FONT_CLASS
-    }
 
 
 def _adv_id(subject: str) -> int:
