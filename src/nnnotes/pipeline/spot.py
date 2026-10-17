@@ -47,7 +47,7 @@ class RoomStage(ProductStage):
     """room.gltf: a background key -> room.glb and room.json (module documentation)."""
 
     name = ROOM
-    version = 1
+    version = 3
     KIND = "SpotRoom"
 
     def select(self, keys: list[str], env) -> list[str]:
