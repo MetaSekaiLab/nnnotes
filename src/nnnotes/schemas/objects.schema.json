@@ -9,6 +9,7 @@
     "roots",
     "keys",
     "objects",
+    "fenced",
     "missing"
   ],
   "properties": {
@@ -85,6 +86,25 @@
           "reason": {
             "type": "string",
             "description": "The reason code of a generic, unsupported or failed object."
+          }
+        }
+      }
+    },
+    "fenced": {
+      "type": "object",
+      "description": "Objects a reached object references in a font bundle the product does not reach (the font fence of pipeline.units), with their class and name.",
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "class",
+          "name"
+        ],
+        "properties": {
+          "class": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
           }
         }
       }

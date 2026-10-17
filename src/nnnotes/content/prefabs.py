@@ -49,6 +49,7 @@ __all__ = [
     "key_object",
     "mat4",
     "mesh_roles",
+    "mono_json",
     "prefab_ids",
     "ref_id",
     "root_game_object",
@@ -68,7 +69,11 @@ class Objects(Protocol):
 
     def key(self, key: str) -> list[str]: ...
 
+    def keys(self) -> list[str]: ...
+
     def info(self, oid: str) -> dict: ...
+
+    def fenced(self, oid: str) -> dict | None: ...
 
     def bytes(self, oid: str, role: str) -> bytes: ...
 
@@ -94,11 +99,26 @@ def has_json(objects: Objects, oid: str) -> bool:
 
 
 def script_class(objects: Objects, oid: str) -> str | None:
-    """The script class of a MonoBehaviour outside a hierarchy (its `json`'s `$script`), None without one."""
+    """The script class of a MonoBehaviour or a contained component, None without one."""
+    if oid in objects and objects.info(oid).get("in"):
+        file, pid = oid.rsplit(":", 1)
+        hit = component_ref(objects, "", {"$ref": {"file": file, "pathId": int(pid)}})
+        return component_class(hit[2]) if hit is not None else None
     if not has_json(objects, oid):
         return None
     entry = objects.json(oid).get("$script")
     return entry.rsplit("|", 1)[-1] if isinstance(entry, str) else None
+
+
+def mono_json(objects: Objects, oid: str) -> dict:
+    """The serialized fields of a MonoBehaviour, including a component stored in a prefab's document."""
+    if objects.info(oid).get("in"):
+        file, pid = oid.rsplit(":", 1)
+        hit = component_ref(objects, "", {"$ref": {"file": file, "pathId": int(pid)}})
+        if hit is None or hit[2]["type"] != "MonoBehaviour":
+            raise ValueError(f"{oid}: not a MonoBehaviour component")
+        return {"$script": hit[2].get("script"), **hit[2]["fields"]}
+    return objects.json(oid)
 
 
 def root_game_object(objects: Objects, what: str) -> str:
