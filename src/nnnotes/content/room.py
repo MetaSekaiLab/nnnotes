@@ -419,7 +419,7 @@ def room(objects: Objects, key: str) -> tuple[bytes, dict]:
         return materials[oid]
 
     counts = {"meshes": 0, "inactive": 0}
-    null_slots, null_meshes, empty = [], [], []
+    null_slots, null_meshes, empty, nodes = [], [], [], []
     for i, node in enumerate(prefab.nodes):
         comps = {component_class(c): c["fields"] for c in node["components"]}
         mf, mr = comps.get("MeshFilter"), comps.get("MeshRenderer")
@@ -466,6 +466,7 @@ def room(objects: Objects, key: str) -> tuple[bytes, dict]:
         uv = mesh.uv if mesh.uv is not None else np.zeros((len(mesh.pos), 2), np.float32)
         active = prefab.active(i)
         glb.add_mesh(mesh.name, p, nw, uv, prims, active=active)
+        nodes.append({"path": path, "mesh": mesh_id})
         counts["meshes"] += 1
         counts["inactive"] += 0 if active else 1
 
@@ -477,6 +478,8 @@ def room(objects: Objects, key: str) -> tuple[bytes, dict]:
         "nullMaterialSubmeshes": null_slots,
         "nullMeshFilters": null_meshes,
         "emptyMeshes": empty,
+        "nodes": nodes,
+        "materialIds": list(materials),
         **glb.summary(),
     }
     return glb.bytes({"backgroundKey": key}), doc

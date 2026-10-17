@@ -177,6 +177,12 @@ def test_room_bakes_the_drawn_meshes_and_lists_what_draws_nothing(tmp_path):
         "nullMaterialSubmeshes": [{"mesh": "quad2", "path": "room/floor", "submesh": 1}],
         "nullMeshFilters": ["room/nomesh"],
         "emptyMeshes": [{"mesh": "empty_mesh", "path": "room/empty"}, {"mesh": "points", "path": "room/points"}],
+        "nodes": [
+            {"mesh": "CAB-r:10", "path": "room/wall"},
+            {"mesh": "CAB-r:11", "path": "room/floor"},
+            {"mesh": "CAB-r:10", "path": "room/wall2"},
+        ],
+        "materialIds": ["CAB-r:20", "CAB-r:21"],
         **{k: doc[k] for k in ("materials", "textures", "samplers")},
     }
     assert gdoc["asset"]["extras"] == {"backgroundKey": so.BACKGROUND}
