@@ -130,6 +130,7 @@ def test_story_sound_records_the_nonempty_acb_categories_with_the_first_stream(t
     if fmt == "aac":
         monkeypatch.setattr(cristages, "tool_id", lambda which, exe: f"{which}-fake/1")
         monkeypatch.setattr(story, "_ffmpeg", lambda: "ffmpeg")
+        monkeypatch.setattr(live, "_ffmpeg", lambda: "ffmpeg")
         monkeypatch.setattr(story, "web_encode", lambda ffmpeg, src, dst, format: mp4(1024))
         atoms = {"audio.encode": "ffmpeg-fake/1"}
     stage = SoundStage()
