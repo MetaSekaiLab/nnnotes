@@ -2,10 +2,11 @@
 nnnotes).
 
 nnnotes reads a few MonoBehaviours of the APK's boot data (`assets/bin/Data/data.unity3d`): the URP pipeline
-assets, renderer data, renderer features and post-process data, DOTween and TextMeshPro settings, and the sound
-and app-config defaults (the `apk/data.unity3d` tasks of `unity.export`, and PlayerData). IL2CPP player builds
-strip script typetrees from that data, so nnnotes ships the typetrees of exactly these classes (CLASSES below) in
-`src/nnnotes/unity/typetrees/<Unity version>.json`, one file per Unity version (read by nnnotes.unity.scripttypes).
+assets, renderer data, renderer features and post-process data, DOTween and TextMeshPro settings, the sound and
+app-config defaults and the localization manager (the `apk/data.unity3d` tasks of `unity.export`, and PlayerData).
+IL2CPP player builds strip script typetrees from that data, so nnnotes ships the typetrees of exactly these classes
+(CLASSES below) in `src/nnnotes/unity/typetrees/<Unity version>.json`, one file per Unity version (read by
+nnnotes.unity.scripttypes).
 Each entry holds the typetree nodes as [level, type, name, meta flag] rows and the type hash the serialized file
 records for the class; the file also records the game version it was generated from.
 
@@ -14,7 +15,9 @@ built with them): root type `MonoBehaviour`; a `string` is `string / Array / int
 structs carry their native names (`Vector3f`, `ColorRGBA`, `AABB`, ...), and arrays of them, of strings and of
 PPtrs are `vector`; the align flag (0x4000, align the stream to 4 bytes after the node) sits where Unity puts it.
 unity_rows turns the rows of TypeTreeGeneratorAPI's default (AssetsTools) backend into that layout. The other meta
-flag bits are editor-only and left 0.
+flag bits are editor-only and left 0. A field after which the serialized bytes are aligned, although the generated
+tree does not say so, is listed in ALIGNED_FIELDS; generate() sets its align flag and the read check of its class
+verifies it.
 
 Supporting a new game version
 -----------------------------
@@ -56,6 +59,7 @@ CLASSES = (
     ("Adv", "AdvSystem.Rendering", "AdvFieldRendererFeature"),
     ("App.Runtime", "App.Config", "AppConfigDefaultData"),
     ("DOTween.dll", "DG.Tweening.Core", "DOTweenSettings"),
+    ("Fwk", "Fwk.Localization", "LocalizeManager"),
     ("Fwk", "Fwk.Rendering", "ScreenCaptureRendererFeature"),
     ("Fwk", "Fwk.Sound", "SoundVolumeSettings"),
     ("Fwk", "Fwk.UI.Rendering", "UIRendererFeature"),
@@ -76,6 +80,8 @@ DEFAULT_OUT = Path(__file__).resolve().parents[1] / "src" / "nnnotes" / "unity" 
 ALIGN = 0x4000  # TransferMetaFlags.kAlignBytesFlag
 # the MonoBehaviour header: field -> meta flag
 HEADER = {"m_GameObject": 0, "m_Enabled": ALIGN, "m_Script": 0, "m_Name": 0}
+# class -> its root fields after which the serialized bytes are aligned (the flag the generated tree leaves out)
+ALIGNED_FIELDS = {"LocalizeManager": ("_dontDestroyOnload",)}
 # built-in structs the generator names after their C# type -> the native type name Unity serializes
 NATIVE_TYPES = {
     "Bounds": "AABB",
@@ -196,6 +202,17 @@ def unity_rows(rows: list) -> list:
     return _rows(root)
 
 
+def _aligned(rows: list, names: tuple) -> list:
+    """The rows with the align flag set on the root fields `names` (ALIGNED_FIELDS); ValueError for a missing one."""
+    roots = {r[2] for r in rows if r[0] == 1}
+    if not set(names) <= roots:
+        raise ValueError(f"no root field {sorted(set(names) - roots)}")
+    for r in rows:
+        if r[0] == 1 and r[2] in names:
+            r[3] |= ALIGN
+    return rows
+
+
 def objects_by_class(player: PlayerData) -> dict[tuple[str, str, str], list]:
     out: dict[tuple[str, str, str], list] = {}
     for o in player._by_type.get("MonoBehaviour", []):
@@ -222,6 +239,7 @@ def generate(player: PlayerData, gen: TypeTreeGenerator, game_version: str) -> d
                     for n in gen.get_nodes(asm if asm.endswith(".dll") else f"{asm}.dll", name)
                 ]
             )
+            rows = _aligned(rows, ALIGNED_FIELDS.get(cls, ()))
         except ValueError as e:
             raise SystemExit(f"{name} ({asm}): {e}") from e
         node = typetree_node(rows)
