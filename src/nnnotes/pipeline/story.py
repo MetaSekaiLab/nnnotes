@@ -37,6 +37,15 @@ story.video    subject a video key `Cri/Video/<asset>` (a Movie / Clip command's
 story.chat     subject `default`: "<task id>#chat.json" (kind story.chat: content.storychat.chat, the rows of the
                shared chat shards). Its manifest is storychat/default.json.
 
+story.ui       subject a client language (`ja`, `en`, `zh-Hant`, `zh-Hans`, `ko`): "<task id>#ui.json" (kind story.ui:
+               content.storyui.ui, the ADV front canvas, talk windows, chat phone, dialogs and settings with the text
+               records in that language) and the object table the player reads. Its roots are the catalog keys of the
+               story UI (storyui.keys), the built-in settings (storyui.BUILTINS) and the resources (storyui.RESOURCES);
+               its input "master" the MasterText rows, each in the language's text column. Font assets and chat
+               windows are also read for text styles and status texts; the retained table is the closure of the UI
+               roots (input "ui.objects"). Its manifest is
+               storyui/<language>.json. A client requests it for each language it uses.
+
 story          subject a MasterAdv id: "<task id>#episode.json" (kind story.episode: content.storyepisode.episode_json,
                the command list with its text, sounds, videos and resource closure) and "<task id>#story.json" (kind
                story: content.storyepisode.story, the episode's chat rows, its effect instances and `parts`, the
@@ -56,14 +65,19 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
-from ..content import liveaudio, storyasset, storychat, storyepisode, storyscene, storyvideo
+from ..content import liveaudio, storyasset, storychat, storyepisode, storyscene, storyui, storyvideo
 from ..content.livescene import GRAPHICS
+from ..content.prefabs import mono_json, script_class
 from ..formats import acb, crilips
 from ..formats.encoders import DEFAULT_AUDIO_FORMAT, WEB_AUDIO, mp4_priming, web_encode
+from ..source import languages
+from ..source.apkset import MANIFEST_IN_APK, manifest_version_name
+from ..unity import fontsettings, textstyle
 from ..unity.atoms import Unsupported
-from . import contract
-from .assemble import MASTER_INPUT, Assembly, ProductStage, master_input
-from .contract import IncompatibleTask
+from ..unity.ids import parse_object_id
+from . import contract, units
+from .assemble import MASTER_INPUT, Assembly, Objects, ProductStage, master_input, reach
+from .contract import IncompatibleTask, Input
 from .layout import escape_segment
 from .live import encode_atoms
 from .live2d import MODEL, ModelStage
@@ -84,13 +98,15 @@ __all__ = [
     "SceneStage",
     "SoundStage",
     "StoryStage",
+    "UI",
+    "UiStage",
     "VideoStage",
     "cues",
     "part_products",
 ]
 
 SOUND, CRILIPS, SCENE, ASSET = "story.sound", "story.crilips", "story.scene", "story.asset"
-CHAT, STORY, VIDEO = "story.chat", "story", "story.video"
+CHAT, STORY, UI, VIDEO = "story.chat", "story", "story.ui", "story.video"
 DEFAULT = "default"
 SHEET_PREFIX = "Cri/Sound/"
 LIBRARY = crilips.LIB_ENTRY_SUFFIX
@@ -315,6 +331,104 @@ class ChatStage(ProductStage):
     def assemble(self, task, objects) -> Assembly:
         doc, keep, roles = storychat.chat(objects)
         return Assembly({"chat.json": (contract.encode(doc), "json", CHAT)}, keep, roles)
+
+
+def _language(subject: str) -> str:
+    if subject not in languages.LANGUAGES:
+        raise ValueError(f"{subject!r}: not a client language ({', '.join(languages.LANGUAGES)})")
+    return subject
+
+
+class UiStage(ProductStage):
+    """story.ui: the ADV story UI in one client language (module documentation)."""
+
+    name = UI
+    version = 1
+    KIND = "StoryUi"
+    MASTER = ("MasterText",)
+    APK = (MANIFEST_IN_APK,)
+
+    def ui_keys(self, subject: str, env) -> list[str]:
+        _language(subject)
+        return storyui.keys({loc["primaryKey"] for loc in env.fact("index")["locations"]})
+
+    def keys(self, subject: str, env) -> list[str]:
+        _language(subject)
+        catalog = {loc["primaryKey"] for loc in env.fact("index")["locations"]}
+        return sorted({*self.ui_keys(subject, env), *storyui.font_keys(catalog), *storyui.chat_window_keys(catalog)})
+
+    def resources(self, subject: str, env) -> list[str]:
+        _language(subject)
+        return list(storyui.RESOURCES)
+
+    def builtins(self, subject: str, env) -> list[str]:
+        _language(subject)
+        return list(storyui.BUILTINS)
+
+    def record(self, subject: str, env) -> dict:
+        """The master record of the language: the text of every MasterText row in its text column."""
+        column = languages.column(_language(subject))
+        rows = master_rows(env, self.MASTER)["MasterText"]
+        return {"texts": {str(r["_id"]): r.get(column) or "" for r in rows}}
+
+    def more_inputs(self, subject: str, env) -> list:
+        keys = self.ui_keys(subject, env)
+        roots = units.root_objects(
+            env, keys, resources=self.resources(subject, env), builtins=self.builtins(subject, env)
+        )
+        by_key = {k: units.root_objects(env, [k]) for k in keys}
+        ui_table = reach(env, roots, self._results, by_key).table
+        objects = Objects(self.reach(subject, env).table, env.depot)
+        font_files = set(_font_files(objects).values())
+        bundles = {}
+        for catalog in sorted(env.fact("catalogs")):
+            addresses = units.address_doc(env, catalog)
+            bundles.update(
+                {f: addresses["bundles"][b]["name"] for f, b in addresses["files"].items() if f in font_files}
+            )
+        return [
+            master_input(env, self.record(subject, env)),
+            _record_input(env, "ui.objects", ui_table),
+            _record_input(env, "font-bundles", bundles),
+        ]
+
+    def manifest(self, subject: str) -> str:
+        return f"storyui/{_language(subject)}.json"
+
+    def assemble(self, task, objects) -> Assembly:
+        from ..content import tmpassets
+
+        record = contract.loads(objects.depot.input_bytes(task.input(MASTER_INPUT)))
+        ui_table = contract.loads(objects.depot.input_bytes(task.input("ui.objects")))
+        ui_objects = Objects(ui_table, objects.depot)
+        localize = storyui.script_root(ui_objects, "LocalizeManager")
+        lang = textstyle.language_fonts_json(mono_json(ui_objects, localize))
+        bundles = contract.loads(objects.depot.input_bytes(task.input("font-bundles")))
+        font_files = _font_files(objects)
+        game_version = manifest_version_name(objects.depot.input_bytes(task.input(f"apk:{MANIFEST_IN_APK}")))
+        if game_version is None:
+            raise ValueError("story.ui: the APK manifest has no version name")
+        settings = tmpassets.build_font_settings(objects, lang, game_version, lambda name: bundles[font_files[name]])
+        status = storyui.chat_status_texts(objects, record["texts"])
+        doc, keep, roles = storyui.ui(
+            ui_objects, task.subject, record, fontsettings.FontSettings(settings), status_texts=status
+        )
+        return Assembly({"ui.json": (contract.encode(doc), "json", UI)}, keep, roles, ui_table)
+
+
+def _record_input(env, role: str, record: dict) -> Input:
+    """A JSON record read by a product, stored as a content-addressed input."""
+    body = contract.encode(record)
+    return Input(role, env.depot.put(body), len(body), None, ({"kind": "depot"},))
+
+
+def _font_files(objects: Objects) -> dict[str, str]:
+    """The serialized file holding each TMP font asset, by asset name."""
+    return {
+        objects.info(o)["name"]: parse_object_id(o)[0]
+        for o in objects.ids("MonoBehaviour")
+        if script_class(objects, o) == fontsettings.FONT_CLASS
+    }
 
 
 def _adv_id(subject: str) -> int:
