@@ -15,6 +15,10 @@ Episode font data uses the `format` field `nnnotes.story-fonts/1`, described in
 [story-fonts.schema.json](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/schemas/story-fonts.schema.json)
 and [story products](products.md#stories).
 
+Live start UI data uses the `format` field `nnnotes.live-ui/1`, described in
+[live-ui.schema.json](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/schemas/live-ui.schema.json)
+and [live start UI products](products.md#live-start-ui).
+
 Stages carry their own version. A change of what a stage writes for the same inputs is a new stage version, which
 changes the key of every task of that stage (golden tests fail when a stage's output changes while its version
 stays).

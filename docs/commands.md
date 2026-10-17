@@ -380,6 +380,7 @@ status 2 and a line naming the class, the game version and the Unity version (as
 nnnotes export live MUSIC_ID -o OUT [--difficulty easy|normal|hard|expert] [--format aac|flac|mp3|opus|vorbis]
                              [--flac-level N] [--band BAND | --leader-card CARD_ID]
                              [--live-option OPTION[=VALUES] ...]
+                             [--live-languages LANG,...] [--fonts open|game] [--font LANG=PATH]
 ```
 
 One chart (music + difficulty, default `expert`) and the products it plays with, in the product layout
@@ -396,6 +397,7 @@ OUT/noteskins/<skin>.json                       a note skin
 OUT/noteeffects/<set>.json                      a note effect set
 OUT/sounds/<sets>.json                          the note and live sounds with their CRI routing and volumes
 OUT/music/<musicId>.json                        the BGM in a web format
+OUT/liveui/<musicId>_<difficulty>_<lang>.json    localized start-canvas text, glyph pages and image bindings
 OUT/assets/<sha256>.<ext>                       every file the manifests name, once
 ```
 
@@ -408,6 +410,14 @@ band is `--band`, or the band of the character of `--leader-card` (a `MasterMemb
 of the music's first vocal character; `live.json` `band` records the choice, and the live's manifest path holds the
 band only when one of the two flags is given. A band whose start timeline or background the catalog does not hold is
 a usage error.
+
+`--live-languages` selects UI languages separated by commas (`all` selects all client languages); the default is
+`[catalog] language`. `--fonts open` (default) generates glyph pages from `[paths.fonts]` or repeatable
+`--font LANG=PATH` flags. Supply fonts for the requested language and its fallback languages. `--fonts game` uses
+the client's TMP assets. Both modes require the `fonts` extra and use the client's font metrics and layout
+settings. Font bytes participate in the task key. The UI's canvas and difficulty icons are in `live.scene`, and
+its jacket and text shaders are in the UI product's object table. `live.json` names UI products by language in
+`parts.ui`.
 
 The products hold what a live reads with the game's default options (option preset 1 of a fresh profile), and always
 the mirrored notes, the bar line view and the option tables. `--live-option` (repeatable) adds the products of other
