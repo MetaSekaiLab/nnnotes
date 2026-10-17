@@ -193,6 +193,10 @@ OUT/videos/<name>.json         each video of the episode, as WebM (`story.video`
 OUT/storychat/default.json     the shared chat rows, when the episode shows chat (`story.chat`)
 OUT/storyui/<lang>.json        the story UI in each requested language (`story.ui`)
 OUT/storyfonts/<id>_<lang>.json the episode's font records and glyph pages (`story.fonts`)
+OUT/storysimpleui/<lang>.json  the Overlay talk-window and system-message UI (`story.simpleui`)
+OUT/storyhosts/<host>.json     the Overlay host screen (`story.host`)
+OUT/spots/<situation>.json     a home host's spot and Spine files (`spot.files`)
+OUT/rooms/<place>.json         a home host's background (`room.gltf`)
 OUT/crilips/default.json       the CRI Lips analysis data, when a voice can reach it (`story.crilips`)
 OUT/assets/<sha256>.<ext>      the files the manifests name
 ```
@@ -215,6 +219,10 @@ one directory share its manifest and files, and the depot keeps every result for
 images. `--fonts game` uses the client's TMP glyphs and generates the runtime glyphs its font assets require.
 Both sources use font settings from the client's assets and require the `fonts` extra. Font files are explicit
 content-addressed inputs, so changing their bytes rebuilds the corresponding font product.
+
+Overlay episodes also request their home or live-result host, the simple UI in each requested language, and,
+for home hosts, the shared spot and room products. The host's master-data relationship is recorded in
+`story.json` `host`; the episode font product covers simple UI text and any area title in both font modes.
 
 `--format` (default `aac`) is the web audio format of the cue sheets: `aac` (AAC-LC in MP4, `cues.json` records each
 file's encoder delay), `opus`, `vorbis`, `mp3`, or `flac` (the decoded FLAC as it is); `--flac-level` is the FLAC
