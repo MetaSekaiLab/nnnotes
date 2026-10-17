@@ -127,11 +127,11 @@ def _salt() -> str:
 class FontFile:
     """A font file of one's own (OpenType / TrueType; the first face of a collection): its bytes, identity and names."""
 
-    def __init__(self, path, face_index: int = 0):
+    def __init__(self, path, face_index: int = 0, *, data: bytes | None = None):
         from fontTools.ttLib import TTFont
 
         self.path = Path(path)
-        self.data = self.path.read_bytes()
+        self.data = self.path.read_bytes() if data is None else data
         self.face_index = face_index
         self.sha256 = hashlib.sha256(self.data).hexdigest()
         import io
@@ -526,7 +526,7 @@ def frame_texts(frames: dict[str, list[dict]], episode: dict, field: str) -> lis
         if (c.get("TargetAssetName") or "").strip() not in receivers:
             continue
         for i in c["TargetTextIDs"]:
-            row = episode["text"].get(i)
+            row = episode["text"].get(i, episode["text"].get(str(i)))
             if row is not None and isinstance(row.get(field), str):
                 out.append(unicodedata.normalize("NFC", row[field]))
     return serialized + (out + ["@\n"] if out else out)
@@ -948,8 +948,43 @@ def open_font_set(
     the glyph margin covers (so the pages equal another document's with the same characters). The pages go to
     `ui_dir`/fonts/. -> {fonts, textures, materials, missing (code points no asset maps), substituted (code points
     drawn as a missing glyph)}."""
+    result = build_open_font_set(
+        language,
+        font,
+        bindings,
+        shown,
+        textstyle.language_fonts(player),
+        tmpfont.missing_glyph_character(player),
+        font_of,
+        sprite_drawn,
+        margin_materials,
+        settings,
+    )
+    for path, body in result.pop("pages").items():
+        dest = ui_dir / path
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(body)
+    return result
+
+
+def build_open_font_set(
+    language: str,
+    font: FontFile,
+    bindings: list[dict],
+    shown: list[str],
+    lang: dict,
+    missing_char: int,
+    font_of=no_font_file,
+    sprite_drawn: dict | None = None,
+    margin_materials: dict | None = None,
+    settings=None,
+) -> dict:
+    """Generate open font records and PNG page bytes from explicit language and font settings.
+
+    The localized font and material of each binding is updated to the generated asset. `pages` maps relative
+    file names to bytes; the other result fields are those of open_font_set.
+    """
     settings = settings if settings is not None else fontsettings.builtin()
-    lang = textstyle.language_fonts(player)
     sprite_drawn = sprite_drawn or {}
     margin_materials = margin_materials or {}
     chars = sorted({ord(ch) for s in shown for ch in s})
@@ -957,7 +992,6 @@ def open_font_set(
     for t in bindings:
         by_game.setdefault(t["localized"]["fontAsset"], []).append(t)
     primaries = sorted(by_game)
-    missing_char = tmpfont.missing_glyph_character(player)
     files = {language: font}
 
     def file_of(code: str) -> FontFile:
@@ -1024,7 +1058,7 @@ def open_font_set(
     if len(set(names.values())) != len(names):
         raise RuntimeError(f"open font asset names collide: {sorted(names.values())}")
     users = {k: [n for n in primaries if k in chain(n, language)] for k in keys}
-    fonts, textures, materials, renames = {}, {}, {}, {}
+    fonts, textures, materials, renames, pages = {}, {}, {}, {}, {}
     for key in keys:
         gname, code = key
         primary = gname in by_game and code == language
@@ -1048,9 +1082,8 @@ def open_font_set(
         missing |= a["missing"]
         if primary:
             renames[gname] = a["renames"]
-        (ui_dir / PAGES_DIR).mkdir(parents=True, exist_ok=True)
         for pname, px in a["pages"]:
-            (ui_dir / a["textures"][pname]["texture"]).write_bytes(packed_png(px))
+            pages[a["textures"][pname]["texture"]] = packed_png(px)
     # the fallback materials of the primaries' text materials, then the bindings
     for gname in primaries:
         prim = fonts[names[(gname, language)]]
@@ -1068,6 +1101,7 @@ def open_font_set(
         "materials": materials,
         "missing": missing,
         "substituted": substituted,
+        "pages": pages,
     }
 
 
@@ -1201,12 +1235,12 @@ class EmojiFont:
     Font License 1.1): the image of an emoji, a code point or a sequence resolved through the font's ligature
     substitutions (with U+FE0F dropped when the full sequence has no ligature), from the largest strike."""
 
-    def __init__(self, path, face_index: int = 0):
+    def __init__(self, path, face_index: int = 0, *, data: bytes | None = None):
         import io
 
         from fontTools.ttLib import TTFont
 
-        self.file = FontFile(path, face_index)
+        self.file = FontFile(path, face_index, data=data)
         self.tt = TTFont(io.BytesIO(self.file.data), fontNumber=face_index)
         self.cmap = self.tt.getBestCmap() or {}
         self.ligatures = _ligatures(self.tt)

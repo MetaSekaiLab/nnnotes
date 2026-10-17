@@ -1117,9 +1117,14 @@ def sprite_asset_record(ex: Exporter, key: str = EMOJI_SPRITE_ASSET_KEY) -> dict
     implemented."""
     o = ex.key_object(key)
     tt = o.read_typetree()
-    if tt.get("fallbackSpriteAssets"):
-        raise NotImplementedError(f"{key}: fallback sprite assets")
     sheet = ex.referent(o, tt["spriteSheet"]).read_typetree()
+    return sprite_record(tt, sheet, ex.material(ex.deref(o, tt["m_Material"])))
+
+
+def sprite_record(tt: dict, sheet: dict, material: dict) -> dict:
+    """The text layout's sprite asset record from its fields, sheet metadata and material."""
+    if tt.get("fallbackSpriteAssets"):
+        raise NotImplementedError(f"{tt['m_Name']}: fallback sprite assets")
     chars = [
         {"index": i, "unicode": c["m_Unicode"], "name": c["m_Name"], "glyph": c["m_GlyphIndex"], "scale": c["m_Scale"]}
         for i, c in enumerate(tt["m_SpriteCharacterTable"])
@@ -1153,7 +1158,7 @@ def sprite_asset_record(ex: Exporter, key: str = EMOJI_SPRITE_ASSET_KEY) -> dict
             "mipCount": sheet.get("m_MipCount", 1),
             "settings": sheet.get("m_TextureSettings"),
         },
-        "material": ex.material(ex.deref(o, tt["m_Material"])),
+        "material": material,
     }
 
 
