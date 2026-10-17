@@ -136,6 +136,8 @@ STAGE_SOURCES = (
     StageSource("story.chat", "nnnotes.pipeline.story:ChatStage", output=True, product=True),
     StageSource("story.ui", "nnnotes.pipeline.story:UiStage", output=True, product=True),
     StageSource("story.fonts", "nnnotes.pipeline.story:FontsStage", output=True, product=True),
+    StageSource("story.simpleui", "nnnotes.pipeline.story:SimpleUiStage", output=True, product=True),
+    StageSource("story.host", "nnnotes.pipeline.storyhost:HostStage", output=True, product=True),
     StageSource("story", "nnnotes.pipeline.story:StoryStage", output=True, product=True),
     StageSource("view.", "nnnotes.pipeline.views:stages", output=True),
     StageSource("view.voices", "nnnotes.pipeline.voices:VoiceStage", output=True),
