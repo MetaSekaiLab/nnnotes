@@ -9,7 +9,7 @@ from pathlib import Path
 
 from ..core.jsonio import write_json
 from ..formats.encoders import DEFAULT_AUDIO_FORMAT, WEB_AUDIO
-from ..source.config import use
+from ..source.config import ConfigError, use
 from ..source.session import Session
 from . import assets
 from .common import (
@@ -26,6 +26,8 @@ from .common import (
     live_options,
     nonnegative,
     out_arg,
+    parse_font,
+    parse_languages,
     report,
     usage,
 )
@@ -60,6 +62,18 @@ def cmd_story(args, cfg):
     classes = {sp.STORY: sp.StoryStage, **sp.PART_STAGES}
     ws.run_index()
     held = {loc["primaryKey"] for loc in ws.index()["locations"]}
+    env.facts["index"] = ws.index()
+    from ..source.languages import check
+
+    wanted_languages = getattr(args, "story_languages", None) or [check(cfg.get("catalog", "language"))]
+    if getattr(args, "fonts", "open") == "open":
+        supplied = dict(getattr(args, "font", None) or [])
+        for code in wanted_languages:
+            path = Path(supplied[code]) if code in supplied else cfg.path("paths.fonts", code)
+            if path is None or not path.is_file():
+                raise ConfigError(
+                    f"the story text of {code} needs a font file: --font {code}=PATH or [paths.fonts] {code}"
+                )
 
     def request(products: dict) -> tuple[dict, list[str]]:
         keys = {k for n, subjects in products.items() for s in subjects for k in classes[n]().keys(s, env)}
@@ -74,12 +88,29 @@ def cmd_story(args, cfg):
         art = next((a for a in doc["artifacts"] if a["id"] == contract.artifact_id(tid, "story.json")), None)
         if art is None:  # the story is unsupported: the run reports it
             return None
-        products = {sp.STORY: [subject], **sp.part_products(contract.loads(ws.depot.read(art["content"]["sha256"])))}
+        products = {
+            sp.STORY: [subject],
+            **sp.part_products(
+                contract.loads(ws.depot.read(art["content"]["sha256"])),
+                wanted_languages,
+            ),
+        }
+        episode = next(a for a in doc["artifacts"] if a["id"] == contract.artifact_id(tid, "episode.json"))["content"]
+        inputs = {
+            f"episode:{subject}": contract.Input(
+                f"episode:{subject}",
+                episode["sha256"],
+                episode["size"],
+                None,
+                ({"kind": "depot"},),
+            )
+        }
+        env.facts["product_inputs"] = inputs
         missing = sorted(k for n, subjects in products.items() if n != sp.STORY for s in subjects
                          for k in classes[n]().keys(s, env) if k not in held)  # fmt: skip
         if missing:
             usage(args, f"episode {args.adv_id}: {', '.join(missing)} not in the catalog")
-        return request(products)
+        return (*request(products), inputs)
 
     ws.request(*request({sp.STORY: [subject]}))
     assets.export(args, cfg, ws, expand=parts)
@@ -288,9 +319,28 @@ def register(sub) -> None:
         "story",
         cmd_story,
         "an ADV episode -> the story product and the products it plays with (scene, assets, Live2D models, "
-        "cue sheets, videos, chat, CRI Lips)",
+        "cue sheets, videos, chat, UI, fonts, CRI Lips)",
     )
     c.add_argument("adv_id", type=int, help="MasterAdv id of the episode")
+    c.add_argument(
+        "--story-languages",
+        type=parse_languages,
+        metavar="LANG,...",
+        help="text languages, comma-separated (default: [catalog] language)",
+    )
+    c.add_argument(
+        "--fonts",
+        choices=("open", "game"),
+        default="open",
+        help="glyph source: open font files (default) or game TMP assets",
+    )
+    c.add_argument(
+        "--font",
+        type=parse_font,
+        action="append",
+        metavar="LANG=PATH",
+        help="font file for a language, or emoji=PATH (repeatable; [paths] fonts.<lang>)",
+    )
     c.add_argument(
         "--format",
         dest="audio_format",
