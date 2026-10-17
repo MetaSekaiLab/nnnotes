@@ -8,7 +8,7 @@ from ..source import languages
 from ..unity import fontsettings, textstyle, tmpfont
 from ..unity.export import MemoryPacker, _safe, packed_png
 from ..unity.ids import object_id, parse_object_id
-from . import advui, storyfonts, storyui, tmpassets
+from . import advui, storyfonts, storysimpleui, storyui, tmpassets
 from .prefabs import component_class, key_object, mono_json, ref_id, shader_table
 
 FORMAT = "nnnotes.story-fonts/1"
@@ -81,6 +81,9 @@ def shown_texts(
     """The strings an episode can display, including localized labels and dynamic chat/frame text."""
     texts = [row.get(field) for row in episode["text"].values()]
     texts.append((episode.get("title") or {}).get(field))
+    host_title = (episode.get("host") or {}).get("title") or {}
+    code = next((code for code, (_, column) in languages.LANGUAGES.items() if column[1:] == field), None)
+    texts.append(host_title.get(code))
     texts += [r["text"] for r in storyui.master_id_texts(settings, master).values()]
     texts += list(status.values()) + advui.chat_runtime_texts(episode)
     for r in records.values():
@@ -200,6 +203,8 @@ def build(
         *storyui.window_keys(objects.keys()).values(),
         *storyui.DIALOG_KEYS.values(),
     ]
+    if (episode.get("master") or {}).get("_playbackMode") == 1:
+        ui_keys += storysimpleui.keys(objects.keys())
     records, sprite_bindings, frames = text_records(objects, ui_keys + asset_keys(episode), language, lang, settings)
     status = storyui.chat_status_texts(objects, master)
     ids = objects.json(key_object(objects, storyui.MASTER_ID_SETTINGS_KEY, "AdvMasterIdSettings"))
