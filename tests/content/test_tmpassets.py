@@ -153,6 +153,18 @@ def atlas_entries(pid: int, name: str, w: int = 4, h: int = 3) -> dict:
     }
 
 
+@pytest.mark.parametrize("prefix", ["EmbFont/", "Font/"])
+def test_named_font_material_uses_its_available_catalog_folder(prefix):
+    entries = {
+        oid(10): ("MonoBehaviour", "X SDF", tmp_font("X SDF", material=oid(12)), {}),
+        oid(12): ("Material", "X - Default", material_doc("X - Default"), {}),
+    }
+    keys = {f"{prefix}X/X SDF": [oid(10)], f"{prefix}X/X - Default": [oid(12)]}
+    fs = tmpassets.FontSet(Table(entries, keys=keys))
+    f = fs.by_key(f"{prefix}X/X SDF")
+    assert fs.named_material(f, "X - Default") == f.default_material()
+
+
 def test_texture_pixels_are_the_decoded_image_bottom_row_first():
     rng = np.random.default_rng(7)
     rgba = rng.integers(0, 256, (3, 4, 4), dtype=np.uint8)

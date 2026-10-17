@@ -27,7 +27,7 @@ import numpy as np
 from PIL import Image
 
 from ..unity.export import texel_rows
-from ..unity.fontsettings import FONT_CLASS, font_dir, font_key
+from ..unity.fontsettings import FONT_CLASS, font_key
 from ..unity.ids import parse_object_id
 from ..unity.tmpfont import (
     MISSING_GLYPH_CHARACTER,
@@ -226,7 +226,7 @@ class FontSet(FontLookup):
 
     def named_material(self, font: FontAsset, name: str) -> dict:
         """The material `name` of the font asset `font`, at its key in the font's folder (tmpfont.material_by_name)."""
-        key = font_dir(font.name) + name
+        key = font_key(_Keys(self.objects), font.name, name)
         if not _Keys(self.objects).has(key):
             raise KeyError(f"material key {key}")
         return self.material(key_object(self.objects, key, "Material"))
