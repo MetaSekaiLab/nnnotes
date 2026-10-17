@@ -5,9 +5,10 @@ alignment, wrapping, overflow, spacing, margins), its colours and style flags, a
 distance-field material turned into face / outline / underlay values in em. `fontRole` names which of the
 game's localized font slots the text uses, so a renderer maps roles to fonts of its own.
 
-  language_fonts   Fwk.Localization.LocalizeManager font names per LanguageMode (level0)
-  localize_text    LocalizeText.Init / OnFontChanged: the font asset, material and line spacing a TMP text ends up
-                   with in a language
+  language_fonts       Fwk.Localization.LocalizeManager font names per LanguageMode (level0)
+  language_fonts_json  the same from the object's json (the shipped typetree of the class)
+  localize_text        LocalizeText.Init / OnFontChanged: the font asset, material and line spacing a TMP text ends up
+                       with in a language
 
 The language is a Fwk.Localization.LanguageMode (`mode`), the value languages.mode gives for a catalog language code;
 the callers take it from the client language they export (`[catalog] language`).
@@ -20,10 +21,13 @@ the callers take it from the client language they export (`[catalog] language`).
 from __future__ import annotations
 
 import struct
+from typing import TYPE_CHECKING
 
 from ..source.languages import LANGUAGES
-from .export import Exporter
-from .player import PlayerData
+
+if TYPE_CHECKING:  # annotations only: the module loads without UnityPy
+    from .export import Exporter
+    from .player import PlayerData
 
 # Fwk.Localization.LanguageMode / language field names of the text tables.
 JAPANESE_MODE = 0
@@ -107,11 +111,9 @@ class _Reader:
 def language_fonts(player: PlayerData) -> dict:
     """Fwk.Localization.LocalizeManager (level0): font names per LanguageMode.
 
-    Read field by field: the generated typetree for this class omits the
-    alignment after `_dontDestroyOnload`, so the serialized bytes are parsed
-    directly (layout: m_GameObject, m_Enabled, m_Script, m_Name,
-    _dontDestroyOnload, _languageDataList[{_languageMode, _fontNames[],
-    _additionalFontNames[]}], _materialTypeList[]).
+    Read field by field from the serialized bytes; language_fonts_json gives the same dictionary from the object's
+    json. Layout: m_GameObject, m_Enabled, m_Script, m_Name, _dontDestroyOnload, _languageDataList[{_languageMode,
+    _fontNames[], _additionalFontNames[]}], _materialTypeList[].
     """
     hits = [
         o
@@ -138,6 +140,16 @@ def language_fonts(player: PlayerData) -> dict:
     if r.pos != len(r.raw):
         raise RuntimeError(f"LocalizeManager: {len(r.raw) - r.pos} trailing bytes")
     return {"languages": langs, "materialTypes": materials}
+
+
+def language_fonts_json(localize: dict) -> dict:
+    """language_fonts of the LocalizeManager's object json (its shipped type tree: the fields as serialized), the
+    same {"languages": {mode: {"fontNames", "additionalFontNames"}}, "materialTypes"} dictionary."""
+    langs = {
+        d["_languageMode"]: {"fontNames": list(d["_fontNames"]), "additionalFontNames": list(d["_additionalFontNames"])}
+        for d in localize["_languageDataList"]
+    }
+    return {"languages": langs, "materialTypes": list(localize["_materialTypeList"])}
 
 
 # --------------------------------------------------------------------------
