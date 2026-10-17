@@ -2,7 +2,7 @@
 
 The documents nnnotes writes in a fixed format have JSON Schemas (draft 2020-12), shipped in the package
 `nnnotes.schemas`. Each schema has the `$id` `urn:nnnotes:schema:<name>`, and the shared definitions are in
-`common`. Every document names its format and version in a `schema` field, such as `nnnotes.plan/1`; within a major
+`common`. Documents name their format and version in `schema` (such as `nnnotes.plan/1`) or `format`; within a major
 version fields are only added ([versioning](contracts.md#versioning)).
 
 ```python
@@ -32,6 +32,7 @@ schemas.load("plan")  # the schema as a dict
 | `result` | `nnnotes.result/1` | the result of a task, a function of its key alone |
 | `run` | `nnnotes.run/1` | a run manifest: context, selection, tasks with keys and statuses, layouts |
 | `scripts` | `nnnotes.scripts/1` | every MonoScript of the censuses, by object id |
+| `story-fonts` | `nnnotes.story-fonts/1` (`format`) | an episode's text bindings, font records, glyph pages and text shaders |
 | `task` | `nnnotes.task/1` | one stage applied to one subject, with everything needed to run it (`depot run`) |
 | `view` | `nnnotes.view/1` | a semantic view of a master table, each row with its names and the objects it names |
 

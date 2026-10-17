@@ -12,7 +12,7 @@ Every command below prints a short summary; add `--json` for its report as JSON.
 
 ```sh
 nnnotes export episode 10462 -o out/episode_10462.json     # the episode's commands, lines and resources
-nnnotes export story 10462 -o out/stories/10462            # everything the episode plays
+nnnotes export story 10462 --fonts game -o out/stories/10462  # the episode with the client's TMP fonts
 ```
 
 `export story` writes the story product of an episode and the products it plays with, as a product layout below `-o`:
@@ -20,6 +20,11 @@ the story index in `stories/<id>.json`, the stage scene in `storyscenes/default.
 other asset in `storyassets/`, each Live2D model in `models/`, each cue sheet in `cuesheets/`, each video in
 `videos/` and, when the episode uses them, the shared chat rows in `storychat/default.json` and the CRI Lips data in `crilips/default.json`. The files
 themselves are under `assets/`.
+
+`storyui/<language>.json` and `storyfonts/<id>_<language>.json` provide the UI, text bindings and glyph pages for
+`[catalog] language`. `--story-languages ja,en` selects several languages. `--fonts open` (the default) uses font
+files from `[paths.fonts]` or repeatable `--font LANG=PATH` flags; supply any languages needed by the fallback chain.
+Both font sources require the `fonts` extra.
 
 Products that several stories share (the scene, assets, models and cue sheets) are placed once, so exporting several
 stories into one directory keeps one copy of each. Every product goes through the depot, so a second export reuses

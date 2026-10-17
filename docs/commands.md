@@ -176,6 +176,7 @@ row of a Movie / Clip row's video id.
 
 ```
 nnnotes export story ADV_ID -o OUT [--format FORMAT] [--flac-level N] [--stored-catalog LABEL|SHA] [--workers N]
+              [--story-languages LANG,...] [--fonts open|game] [--font LANG=PATH]
               [--link auto|clone|hard|copy] [--explain] [--dry-run]
 ```
 
@@ -190,6 +191,8 @@ OUT/models/<id>.json           each Live2D model of the episode (`live2d.model`)
 OUT/cuesheets/<sheet>.json     each cue sheet of the episode, decoded (`story.sound`)
 OUT/videos/<name>.json         each video of the episode, as WebM (`story.video`; <name>: its asset, "/" as "~")
 OUT/storychat/default.json     the shared chat rows, when the episode shows chat (`story.chat`)
+OUT/storyui/<lang>.json        the story UI in each requested language (`story.ui`)
+OUT/storyfonts/<id>_<lang>.json the episode's font records and glyph pages (`story.fonts`)
 OUT/crilips/default.json       the CRI Lips analysis data, when a voice can reach it (`story.crilips`)
 OUT/assets/<sha256>.<ext>      the files the manifests name
 ```
@@ -204,6 +207,14 @@ has an alpha stream.
 
 A product several stories play with (the scene, a stage, a model, a cue sheet) is one product: stories exported into
 one directory share its manifest and files, and the depot keeps every result for the next export.
+
+`--story-languages` selects text languages, separated by commas; the default is `[catalog] language`.
+`--fonts open` (the default) generates glyph pages from the font files in `[paths.fonts]` or the repeatable
+`--font LANG=PATH` flags. Supply each requested language's font and any fonts needed by its fallback chain.
+`--font emoji=PATH` supplies a bitmap emoji font. Without it, open emoji sprites retain their layout with empty
+images. `--fonts game` uses the client's TMP glyphs and generates the runtime glyphs its font assets require.
+Both sources use font settings from the client's assets and require the `fonts` extra. Font files are explicit
+content-addressed inputs, so changing their bytes rebuilds the corresponding font product.
 
 `--format` (default `aac`) is the web audio format of the cue sheets: `aac` (AAC-LC in MP4, `cues.json` records each
 file's encoder delay), `opus`, `vorbis`, `mp3`, or `flac` (the decoded FLAC as it is); `--flac-level` is the FLAC
