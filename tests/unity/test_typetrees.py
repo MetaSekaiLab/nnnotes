@@ -515,3 +515,16 @@ def test_unity_rows_refuses_what_it_has_no_layout_for(fields, message):
         gen_typetrees().unity_rows(GEN_HEADER + fields)
     with pytest.raises(ValueError, match="unexpected MonoBehaviour header"):
         gen_typetrees().unity_rows(GEN_HEADER[:1] + GEN_HEADER[5:])
+
+
+def test_aligned_fields_get_the_align_flag_and_missing_ones_are_refused():
+    g = gen_typetrees()
+    rows = [[0, "MonoBehaviour", "Base", 0], [1, "UInt8", "_dontDestroyOnload", 0], [1, "int", "count", 0]]
+    assert g._aligned(rows, ("_dontDestroyOnload",)) == [
+        [0, "MonoBehaviour", "Base", 0],
+        [1, "UInt8", "_dontDestroyOnload", ALIGN],
+        [1, "int", "count", 0],
+    ]
+    assert g.ALIGNED_FIELDS == {"LocalizeManager": ("_dontDestroyOnload",)}
+    with pytest.raises(ValueError, match="no root field \\['missing'\\]"):
+        g._aligned(rows, ("missing",))

@@ -1,13 +1,18 @@
 """textstyle: TMP text records and material style values (synthetic data)."""
 
 import json
+import struct
+from types import SimpleNamespace
 
 import pytest
+from UnityPy.helpers.TypeTreeHelper import read_typetree
+from UnityPy.streams.EndianBinaryReader import EndianBinaryReader
 
 from nnnotes.content import advui
 from nnnotes.source import languages
 from nnnotes.source.config import ConfigError
 from nnnotes.unity import fontsettings, textstyle, tmpfont
+from nnnotes.unity.scripttypes import load_typetrees, typetree_key, typetree_node
 
 WHITE = {"r": 1.0, "g": 1.0, "b": 1.0, "a": 1.0}
 DARK = {"r": 0.2, "g": 0.2, "b": 0.2, "a": 0.8}
@@ -369,3 +374,121 @@ def test_shown_texts_take_the_language_field():
     assert advui.shown_texts(episode, ids, "japanese")[:2] == ["ja1", "ja2"]
     with pytest.raises(RuntimeError, match="no title"):
         advui.shown_texts({**episode, "title": None}, ids, "english")
+
+
+# --------------------------------------------------------------------------
+# LocalizeManager: the serialized bytes, the object json of the shipped type tree
+# --------------------------------------------------------------------------
+ALIGN = 0x4000  # the align flag of a type tree node
+LOCALIZE_HASH = "597220768ec4996f80d7cfd5e139645f"
+LOCALIZE_LANGUAGES = [
+    (0, ["A-OTF-Main", "VibeMOPro"], ["NotoSansJP"]),
+    (2, ["TW-Main", "Digits"], []),
+]
+LOCALIZE_MATERIALS = ["Default", "Outline"]
+EXPECTED_LANGUAGES = {
+    "languages": {
+        0: {"fontNames": ["A-OTF-Main", "VibeMOPro"], "additionalFontNames": ["NotoSansJP"]},
+        2: {"fontNames": ["TW-Main", "Digits"], "additionalFontNames": []},
+    },
+    "materialTypes": ["Default", "Outline"],
+}
+
+
+class _Out:
+    """Serialized fields as the reader of textstyle reads them: little-endian, each string aligned to 4 bytes."""
+
+    def __init__(self):
+        self.raw = bytearray()
+
+    def i32(self, v: int) -> None:
+        self.raw += struct.pack("<i", v)
+
+    def i64(self, v: int) -> None:
+        self.raw += struct.pack("<q", v)
+
+    def u8(self, v: int) -> None:
+        self.raw.append(v)
+
+    def align(self) -> None:
+        self.raw += b"\0" * (-len(self.raw) % 4)
+
+    def string(self, s: str) -> None:
+        data = s.encode("utf-8")
+        self.i32(len(data))
+        self.raw += data
+        self.align()
+
+    def strings(self, values) -> None:
+        self.i32(len(values))
+        for s in values:
+            self.string(s)
+
+
+def localize_manager_bytes(languages_, materials) -> bytes:
+    """The serialized LocalizeManager: its MonoBehaviour header, _dontDestroyOnload, languages and materials."""
+    out = _Out()
+    out.i32(0)  # m_GameObject
+    out.i64(0)
+    out.u8(1)  # m_Enabled
+    out.align()
+    out.i32(1)  # m_Script
+    out.i64(7)
+    out.string("LocalizeManager")  # m_Name
+    out.u8(1)  # _dontDestroyOnload
+    out.align()
+    out.i32(len(languages_))
+    for mode, fonts, additional in languages_:
+        out.i32(mode)
+        out.strings(fonts)
+        out.strings(additional)
+    out.strings(materials)
+    return bytes(out.raw)
+
+
+class _Boot:
+    """Boot data with one MonoBehaviour: the LocalizeManager of the serialized bytes `raw`."""
+
+    def __init__(self, raw: bytes):
+        self._by_type = {"MonoBehaviour": [SimpleNamespace(get_raw_data=lambda: raw)]}
+
+    def script(self, o) -> tuple:
+        return ("Fwk", "Fwk.Localization", "LocalizeManager")
+
+
+def test_language_fonts_reads_the_serialized_fields():
+    raw = localize_manager_bytes(LOCALIZE_LANGUAGES, LOCALIZE_MATERIALS)
+    assert textstyle.language_fonts(_Boot(raw)) == EXPECTED_LANGUAGES
+
+
+def test_language_fonts_refuses_trailing_bytes():
+    raw = localize_manager_bytes(LOCALIZE_LANGUAGES, LOCALIZE_MATERIALS) + b"\0\0\0\0"
+    with pytest.raises(RuntimeError, match="4 trailing bytes"):
+        textstyle.language_fonts(_Boot(raw))
+
+
+def test_language_fonts_json_is_the_same_dictionary_from_the_object_json():
+    doc = {
+        "_dontDestroyOnload": 1,
+        "_languageDataList": [
+            {"_languageMode": mode, "_fontNames": fonts, "_additionalFontNames": additional}
+            for mode, fonts, additional in LOCALIZE_LANGUAGES
+        ],
+        "_materialTypeList": LOCALIZE_MATERIALS,
+    }
+    assert textstyle.language_fonts_json(doc) == EXPECTED_LANGUAGES
+
+
+def test_the_shipped_type_tree_reads_the_localize_manager_bytes():
+    entry = load_typetrees("6000.3.12f1")["classes"][typetree_key("Fwk", "Fwk.Localization", "LocalizeManager")]
+    assert entry["typeHash"] == LOCALIZE_HASH
+    assert [1, "UInt8", "_dontDestroyOnload", ALIGN] in entry["nodes"]
+    raw = localize_manager_bytes(LOCALIZE_LANGUAGES, LOCALIZE_MATERIALS)
+    tt = read_typetree(
+        typetree_node(entry["nodes"]),
+        EndianBinaryReader(raw, "<"),
+        as_dict=True,
+        byte_size=len(raw),
+        check_read=True,
+    )
+    assert textstyle.language_fonts_json(tt) == EXPECTED_LANGUAGES == textstyle.language_fonts(_Boot(raw))
