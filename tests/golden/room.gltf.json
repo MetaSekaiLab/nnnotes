@@ -1,0 +1,16 @@
+{
+ "atoms": {},
+ "fixtures": {
+  "shared-objects": {
+   "key": "e2cbd5b59e83e9644e3ffffb8878c5f3c20822b258c6fd756b70d71837b2ff2e",
+   "result": "6e3940b26686ce64451591d838fa246066304494410cff1a0a62bd8c8240de88"
+  }
+ },
+ "libraries": {
+  "Pillow": "12.3.0",
+  "numpy": "2.4.6"
+ },
+ "provider": "tests.pipeline.product_goldens:room",
+ "stage": "room.gltf",
+ "version": 3
+}

@@ -1,0 +1,13 @@
+{
+ "atoms": {},
+ "fixtures": {
+  "shared-objects": {
+   "key": "ba66e2c80fb68ae5fae9385500dcb423efd0273c0db2c8ce1a6c80de62c9fa5d",
+   "result": "5dcbbc29e5800cc7a124a4dcd5d269800ce773b781f882aaaf8ad2e48f89912b"
+  }
+ },
+ "libraries": {},
+ "provider": "tests.pipeline.view_goldens:view_spots",
+ "stage": "view.spots",
+ "version": 1
+}

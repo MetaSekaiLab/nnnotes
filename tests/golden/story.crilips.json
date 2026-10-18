@@ -1,0 +1,13 @@
+{
+ "atoms": {},
+ "fixtures": {
+  "shared-objects": {
+   "key": "e1fa705792ad005045e97ee4afdbcafcdc901ba29c4192c2d179e3fc6540a8df",
+   "result": "19f98c075f6762daf7617192b9c2f84388644300dc20629a0ed2d18a3ab15c4c"
+  }
+ },
+ "libraries": {},
+ "provider": "tests.pipeline.product_goldens:crilips",
+ "stage": "story.crilips",
+ "version": 1
+}

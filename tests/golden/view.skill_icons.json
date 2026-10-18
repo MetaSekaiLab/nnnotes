@@ -1,0 +1,13 @@
+{
+ "atoms": {},
+ "fixtures": {
+  "shared-objects": {
+   "key": "4136a7ae83122732a92d00b18ad929e722e8e4f15f55d7d19338d6513fd5d037",
+   "result": "793dcf09837ae17ec99d1bc4e0b1c791bdb12a3cbb434456503cf829386e85c6"
+  }
+ },
+ "libraries": {},
+ "provider": "tests.pipeline.view_goldens:view_skill_icons",
+ "stage": "view.skill_icons",
+ "version": 1
+}

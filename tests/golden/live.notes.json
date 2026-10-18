@@ -1,0 +1,13 @@
+{
+ "atoms": {},
+ "fixtures": {
+  "shared-objects": {
+   "key": "a15dc44191d70eba44810b8b6c92144372b9db71e015b0d9e12634a89e7f1b48",
+   "result": "365d6f29adf4da2db9f2eb2a5c664b12de4ace3fe0f798f1af96f7793f6dc36d"
+  }
+ },
+ "libraries": {},
+ "provider": "tests.pipeline.product_goldens:live_notes",
+ "stage": "live.notes",
+ "version": 1
+}

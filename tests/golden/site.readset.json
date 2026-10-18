@@ -1,0 +1,19 @@
+{
+ "atoms": {
+  "player.node": "node:synthetic"
+ },
+ "fixtures": {
+  "full": {
+   "key": "58df8dde3e7fcf1f4c4d54420fee6c844797616dc9f1ebc984fc60a64e950086",
+   "result": "c146b94c7a376aec2132f412e23f0377b5b87c7244ea729ab81d9b80179b0494"
+  },
+  "plan": {
+   "key": "9a24e8efbd4030b10a3c6ad9f200e3710306f771858326d815b9d1e4ca2a0971",
+   "result": "8f4864f6d755ab1ea2d111beae98658b2ad9a24f6f00c92a4a201cfd4413680a"
+  }
+ },
+ "libraries": {},
+ "provider": "tests.pipeline.product_goldens:site_readset",
+ "stage": "site.readset",
+ "version": 1
+}

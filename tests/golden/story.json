@@ -1,0 +1,17 @@
+{
+ "atoms": {},
+ "fixtures": {
+  "localized": {
+   "key": "2f2bbf606c58457fa9f5225c3e58c525a4c015dc668141531f613a2918981633",
+   "result": "3eb28b45fbc3200aa009c08f436aa5caaf2732e1fead5d7445b808ec96ad15fd"
+  },
+  "plain": {
+   "key": "c198a2ae7b598c86a5ba0fd557580f6ca5969350acd60b274c6de9bbf3b00eaa",
+   "result": "358a660979cf5e51e28151920f6e2b38c836c4ea7b2346a0a52b8c0b8255dc58"
+  }
+ },
+ "libraries": {},
+ "provider": "tests.pipeline.product_goldens:story_product",
+ "stage": "story",
+ "version": 5
+}

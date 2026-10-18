@@ -1,0 +1,13 @@
+{
+ "atoms": {},
+ "fixtures": {
+  "shared-objects": {
+   "key": "f6c9b23f289ed6ab71924429ec5139efd292283cee7745fd93524f4128fda245",
+   "result": "d7cc3ba8322b6d2ff7bc0126688a39a170661c1dd690ad984279c5fc77ac1f3c"
+  }
+ },
+ "libraries": {},
+ "provider": "tests.pipeline.view_goldens:view_backgrounds",
+ "stage": "view.backgrounds",
+ "version": 1
+}

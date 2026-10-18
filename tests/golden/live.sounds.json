@@ -1,0 +1,13 @@
+{
+ "atoms": {},
+ "fixtures": {
+  "shared-objects": {
+   "key": "d4eb8729903f30d2d7109543398905354902e528480f1fb7188e708bf61b44ec",
+   "result": "713fb8026163ef10eaa3dbdae6a23d433fc753ce5c55a0ba4f5ae4d39ad867b6"
+  }
+ },
+ "libraries": {},
+ "provider": "tests.pipeline.product_goldens:live_sounds",
+ "stage": "live.sounds",
+ "version": 1
+}

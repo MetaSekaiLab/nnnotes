@@ -1,0 +1,13 @@
+{
+ "atoms": {},
+ "fixtures": {
+  "shared-objects": {
+   "key": "fe6485be8c2aa2b79c66febeb528fde1c0679dfc19656d5e1ef375f582d2c28e",
+   "result": "5ec47ae939095de3ecdccec1c065acd1df87f818158ecd2efda7807494bf3272"
+  }
+ },
+ "libraries": {},
+ "provider": "tests.pipeline.view_goldens:view_cards",
+ "stage": "view.cards",
+ "version": 1
+}

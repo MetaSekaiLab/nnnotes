@@ -25,7 +25,7 @@ from tests.pipeline.test_live import run, stored
 
 def fixture(depot):
     fonts, keys = sui.font_objects()
-    objs = {**sui.objects(), **fonts}
+    objs = copy.deepcopy({**sui.objects(), **fonts})
     for cls, _, files in objs.values():
         if cls == "GameObject":
             for node in files["json"]["nodes"]:

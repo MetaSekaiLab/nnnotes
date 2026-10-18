@@ -1,0 +1,13 @@
+{
+ "atoms": {},
+ "fixtures": {
+  "shared-objects": {
+   "key": "e8e13d794eafcd74d4d69923449cb3e8abf479b363149b7113becb4aa07a53a4",
+   "result": "ce348bf420e92cbb62fbdf303faf97b8f6729b716dd2f55e5aaca5ef26d94612"
+  }
+ },
+ "libraries": {},
+ "provider": "tests.pipeline.product_goldens:story_scene",
+ "stage": "story.scene",
+ "version": 1
+}

@@ -38,10 +38,17 @@ def record(spec: str, depot: Depot) -> dict:
     return dict(doc, provider=spec)
 
 
-@pytest.mark.parametrize("path", sorted(GOLDEN_DIR.glob("*.json")), ids=lambda p: p.stem)
-def test_golden_record(path, tmp_path):
+def record_provider(path):
     expected = contract.loads(path.read_bytes())
     p = provided(expected["provider"])
+    assert path.stem == expected["stage"] == p["stage"].name, f"{path.name}: stage identity differs"
+    assert expected["fixtures"] and p["fixtures"], f"{path.name}: fixtures must be nonempty"
+    return expected, p
+
+
+@pytest.mark.parametrize("path", sorted(GOLDEN_DIR.glob("*.json")), ids=lambda p: p.stem)
+def test_golden_record(path, tmp_path):
+    expected, p = record_provider(path)
     if os.environ.get("GOLDENS_UPDATE") == "1":
         path.write_bytes(contract.encode(record(expected["provider"], Depot(tmp_path / "depot"))))
         return
@@ -137,4 +144,34 @@ def test_records_are_canonical_documents(tmp_path):
 
 
 def test_the_export_stages_have_golden_records():
-    assert {"unity.export", "sprite.crop"} <= {p.stem for p in GOLDEN_DIR.glob("*.json")}
+    from nnnotes.cli.assets import STAGE_SOURCES, load_source
+
+    required = {
+        stage.name
+        for source in STAGE_SOURCES
+        if source.output or source.name.startswith("site.")
+        for stage in load_source(source)
+    }
+    assert required <= {record_provider(path)[0]["stage"] for path in GOLDEN_DIR.glob("*.json")}
+
+
+def test_a_record_cannot_cover_another_stages_filename(tmp_path):
+    path = tmp_path / "site.selection.json"
+    path.write_bytes((GOLDEN_DIR / "site.references.json").read_bytes())
+    with pytest.raises(AssertionError, match="stage identity differs"):
+        record_provider(path)
+
+
+@pytest.mark.parametrize("empty", ["record", "provider"])
+def test_record_and_provider_fixtures_must_be_nonempty(tmp_path, monkeypatch, empty):
+    p = toy_provider()
+    doc = record("tests.pipeline.test_goldens:toy_provider", Depot(tmp_path / "depot"))
+    if empty == "record":
+        doc["fixtures"] = {}
+    else:
+        p["fixtures"] = {}
+    monkeypatch.setattr("tests.pipeline.test_goldens.provided", lambda spec: p)
+    path = tmp_path / "toy.src.json"
+    path.write_bytes(contract.encode(doc))
+    with pytest.raises(AssertionError, match="fixtures must be nonempty"):
+        record_provider(path)

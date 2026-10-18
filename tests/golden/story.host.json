@@ -1,0 +1,17 @@
+{
+ "atoms": {},
+ "fixtures": {
+  "afterlive": {
+   "key": "faedfe601ee4a8a89a8ba68baab442f2d048d862535e5d141e647b9d19135f39",
+   "result": "193b31ded6b4bfac281a9f3c468af703549abafc0b1e662258f07f9f6d324b54"
+  },
+  "home": {
+   "key": "9ef7c1a1282b788f5c7cdde68bfccef20252ce6bc1e06288d99064ccac244e22",
+   "result": "cfb64bb54cddcc909d543b17527a2bf47cba85232d301b4a31e2385c3255377e"
+  }
+ },
+ "libraries": {},
+ "provider": "tests.pipeline.product_goldens:host",
+ "stage": "story.host",
+ "version": 1
+}

@@ -1,0 +1,15 @@
+{
+ "atoms": {},
+ "fixtures": {
+  "shared-objects": {
+   "key": "11b2521f18abe7eace6a3c93a3341e18ea449515404d7dc6022ff79d0dbf8515",
+   "result": "c2f5e733fb1b1624973ae499d73a93989763e5c212173d8f04f8658ed2b7c890"
+  }
+ },
+ "libraries": {
+  "Pillow": "12.3.0"
+ },
+ "provider": "tests.pipeline.product_goldens:cubism",
+ "stage": "live2d.cubism",
+ "version": 1
+}
