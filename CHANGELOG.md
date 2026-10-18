@@ -9,6 +9,7 @@ schemas in `nnnotes.schemas` and the documented Python API. Before 1.0 a minor v
 ### Features
 
 - Store content, task inputs, results and catalog versions in a persistent depot with optional remote storage, verified collection and bounded source downloads.
+- Release recoverable bundle downloads after successful conversion batches under the configured budget and command leases.
 - Assemble Live2D, room, spot, live, story and UI products from shared object tables and explicit manifest references.
 - Generate localized live and story text products with game or supplied fonts, shared glyph atlases and material records.
 - Build named sites through depot product, player read-set, asset and index tasks.

@@ -137,3 +137,68 @@ def test_exclusive_is_granted_to_the_only_command(tmp_path):
             with downloads.exclusive(tmp_path, own) as alone:
                 assert not alone  # another lease is live
     assert not list((tmp_path / "leases").iterdir())
+
+
+def test_release_respects_the_budget_and_protects_active_files(tmp_path):
+    root = tmp_path / "downloads"
+    old = put(root, "bundles/old.bundle", 10, 1)
+    ready = put(root, "bundles/ready.bundle", 10, 2)
+    active = put(root, "bundles/active.bundle", 20, 3)
+    assert downloads.release(root, [old, ready], 30) == {"removed": 1, "bytesRemoved": 10}
+    assert not old.exists() and ready.exists() and active.exists()
+    assert downloads.release(root, [ready], 5) == {"removed": 1, "bytesRemoved": 10}
+    assert active.exists()
+
+
+def test_zero_budget_release_examines_only_finished_paths(tmp_path, monkeypatch):
+    root = tmp_path / "downloads"
+    ready = put(root, "bundles/ready.bundle", 10, 1)
+    active = put(root, "raw/active.bin", 20, 2)
+    partial = put(root, "bundles/fetch.part", 5, 3)
+
+    def scan(_):
+        raise AssertionError("zero-budget release does not need a directory inventory")
+
+    monkeypatch.setattr(downloads, "evictable", scan)
+    assert downloads.release(root, [ready, ready, partial], 0) == {"removed": 1, "bytesRemoved": 10}
+    assert active.exists() and partial.exists()
+
+
+def test_release_validates_paths_and_keeps_unlimited_downloads(tmp_path):
+    root = tmp_path / "downloads"
+    file = put(root, "bundles/one.bundle", 10, 1)
+    assert downloads.release(root, [file], None) == {"removed": 0, "bytesRemoved": 0}
+    for path in [tmp_path / "outside", root / "catalog.bin"]:
+        with pytest.raises(ValueError, match="within the downloads"):
+            downloads.release(root, [path], 0)
+    assert file.exists()
+
+
+def test_release_keeps_locked_files_and_continues(tmp_path, monkeypatch):
+    root = tmp_path / "downloads"
+    locked = put(root, "bundles/locked.bundle", 10, 1)
+    other = put(root, "bundles/other.bundle", 20, 2)
+    unlink = type(locked).unlink
+
+    def remove(path, *args, **kwargs):
+        if path == locked:
+            raise PermissionError("open")
+        return unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(type(locked), "unlink", remove)
+    assert downloads.release(root, [locked, other], 0) == {"removed": 1, "bytesRemoved": 20}
+    assert locked.exists() and not other.exists()
+
+
+def test_release_rejects_symlinks_to_outside_files(tmp_path):
+    root = tmp_path / "downloads"
+    target = put(tmp_path, "outside.bin", 10, 1)
+    link = root / "bundles/link.bundle"
+    link.parent.mkdir(parents=True)
+    try:
+        link.symlink_to(target)
+    except OSError:
+        pytest.skip("symlink creation is unavailable")
+    with pytest.raises(ValueError, match="within the downloads"):
+        downloads.release(root, [link], 0)
+    assert target.exists() and link.is_symlink()
