@@ -105,9 +105,9 @@ class Units:
         """The subject of the unit holding object `oid` (None when no census read holds it)."""
         return self.of.get(oid)
 
-    def reaches(self, source: str, target: str, start: bool) -> bool:
+    def reaches(self, source: str, target: str, start: bool, *, fonts=False) -> bool:
         """A reference of the unit `source` to the unit `target` makes the target reachable (_reaches)."""
-        return _reaches(self.kinds, self.fenced, source, target, start)
+        return _reaches(self.kinds, () if fonts else self.fenced, source, target, start)
 
     def fences(self, source: str, target: str) -> bool:
         """The font fence cuts a reference of the unit `source` to the unit `target` (_fences)."""
@@ -195,7 +195,7 @@ def _census_info(doc: dict) -> dict:
     }
 
 
-def build(censuses, bundles, selected, classes=None, roots=(), fenced=()) -> Units:
+def build(censuses, bundles, selected, classes=None, roots=(), fenced=(), font_roots=()) -> Units:
     """The Units of a request over `censuses` [(stable bundle name, census document)] of the bundles `bundles`, from
     the units of the bundles `selected` and of the objects `roots`; `fenced` the stable names of the fenced bundles
     (module documentation)."""
@@ -232,6 +232,17 @@ def build(censuses, bundles, selected, classes=None, roots=(), fenced=()) -> Uni
                 if s is not None and s not in want and _reaches(kinds, fenced_units, source, s, source in start):
                     want.add(s)
                     todo.append(s)
+        font_start = {of[o] for o in font_roots if o in of}
+        font_seen = set(font_start)
+        todo = list(font_start)
+        while todo:
+            source = todo.pop()
+            for oid in refs.get(source, ()):
+                s = of.get(oid)
+                if s is not None and s not in font_seen and _reaches(kinds, (), source, s, source in font_start):
+                    font_seen.add(s)
+                    todo.append(s)
+        want.update(font_seen)
     if classes is not None:
         keep = set(classes)
         want = {s for s in want if units[s].cls in keep}
@@ -326,12 +337,15 @@ def table(env) -> Units:
         request.get("builtins", ()),
     )
     fenced = font_bundles(env)
+    font_request = request.get("font_roots") or {}
+    font_roots = root_objects(env, **font_request)
     sig = (
         id(env.depot),
         tuple(keys),
         tuple(env.fact("selected")),
         None if classes is None else tuple(classes),
         tuple(roots),
+        tuple(font_roots),
         tuple(sorted(fenced)),
     )
     if _MEMO and _MEMO[0][0] == sig:
@@ -344,6 +358,6 @@ def table(env) -> Units:
             rec = next(a for a in env.depot.committed(key, tid)["artifacts"] if a["id"] == aid)
             yield b, contract.loads(env.depot.read(rec["content"]["sha256"]))
 
-    t = build(censuses(), bundles, env.fact("selected"), classes, roots, fenced)
+    t = build(censuses(), bundles, env.fact("selected"), classes, roots, fenced, font_roots)
     _MEMO[:] = [(sig, t)]
     return t

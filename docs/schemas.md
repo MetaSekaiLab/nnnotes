@@ -37,6 +37,8 @@ schemas.load("plan")  # the schema as a dict
 | `story-host` | `nnnotes.story-host/1` (`format`) | an Overlay story's host screen, layout and initial state |
 | `story-simple-ui` | `nnnotes.story-simple-ui/1` (`format`) | localized Overlay talk-window and system-message prefabs |
 | `task` | `nnnotes.task/1` | one stage applied to one subject, with everything needed to run it (`depot run`) |
+| `ui-library` | `nnnotes.ui-library/1` | selected UI keys and their product manifests |
+| `ui-pack` | `nnnotes.ui-pack/1` | native UI roots, prefab and controller identities, animation bindings |
 | `view` | `nnnotes.view/1` | a semantic view of a master table, each row with its names and the objects it names |
 
 The documents of the asset export are described in [contracts](contracts.md), the views in [views](views.md). The

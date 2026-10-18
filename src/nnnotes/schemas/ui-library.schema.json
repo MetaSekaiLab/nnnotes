@@ -1,0 +1,148 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:nnnotes:schema:ui-library",
+  "type": "object",
+  "required": [
+    "format",
+    "assets",
+    "embedded",
+    "controllers"
+  ],
+  "properties": {
+    "format": {
+      "const": "nnnotes.ui-library/1"
+    },
+    "assets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "manifest",
+          "key",
+          "kind",
+          "roots"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "name": {
+            "type": "string"
+          },
+          "manifest": {
+            "type": "string",
+            "minLength": 1
+          },
+          "roots": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "key": {
+            "type": "string",
+            "minLength": 1
+          },
+          "kind": {
+            "type": "string"
+          },
+          "nodeCount": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "embedded": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "manifest",
+          "roots",
+          "kind"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "name": {
+            "type": "string"
+          },
+          "manifest": {
+            "type": "string",
+            "minLength": 1
+          },
+          "roots": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "key": {
+            "type": "string",
+            "minLength": 1
+          },
+          "kind": {
+            "type": "string"
+          },
+          "nodeCount": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "controllers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "manifest"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "name": {
+            "type": "string"
+          },
+          "manifest": {
+            "type": "string",
+            "minLength": 1
+          },
+          "roots": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "key": {
+            "type": "string",
+            "minLength": 1
+          },
+          "kind": {
+            "type": "string"
+          },
+          "nodeCount": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    }
+  },
+  "title": "UI product library"
+}

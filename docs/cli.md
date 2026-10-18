@@ -313,8 +313,11 @@ the APK's UI prefabs -> an offline UI prefab library for ournotes-player/ui
 | `--key` `KEY` | exact APK catalog key (repeatable) |
 | `--prefix` `PREFIX` | APK UI key prefix (default EmbUI/) |
 | `--limit` `LIMIT` | maximum number of keys |
-| `--no-dependencies` | omit additional prefab roots and controllers |
-| `--force` | re-export the selected keys |
+| `--stored-catalog` `LABEL\|SHA` | a catalog version of the depot (`catalog versions`; default: the current catalog) |
+| `--workers` `N` | worker processes (default: the usable CPUs) |
+| `--link` `LINK` | as export assets --link (one of `auto`, `clone`, `hard`, `copy`) |
+| `--explain` | print every setting of the run first |
+| `--dry-run` | print the plan, run nothing |
 
 ## nnnotes apk settings
 
