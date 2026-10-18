@@ -214,19 +214,24 @@ class FakeExport(Stage):
         return [self._census(subject, env), "link.scripts:all"]
 
     def inputs(self, subject, env):
-        return [env.input_of(self._census(subject, env), "census"), env.input_of("link.scripts:all", "scripts")]
+        return [
+            env.fact("bundles")[units.table(env).unit(subject).bundle],
+            env.input_of(self._census(subject, env), "census"),
+            env.input_of("link.scripts:all", "scripts"),
+        ]
 
     def context(self, subject, env):
         unit = units.table(env).unit(subject)
         return {"unit": unit.root, "members": list(unit.members)}
 
     def batch(self, task):
-        return task.input("census").sha256
+        return task.input("bundle").sha256
 
     def estimate(self, subject, env, inputs):
         return Cost(0.01, 1 << 20)
 
     def run(self, task, depot):
+        assert depot.input_bytes(task.input("bundle")).startswith(b"UnityFS")
         doc = contract.loads(depot.input_bytes(task.input("census")))
         scripts = contract.loads(depot.input_bytes(task.input("scripts")))["scripts"]
         container = {(e["file"], e["pathId"]): e["path"] for b in doc["assetBundles"] for e in b["container"]}
@@ -1586,10 +1591,12 @@ def test_export_live2d_writes_the_cubism_files_of_one_model(tmp_path, capsys, mo
     assert f"live2d.cubism:{MODEL_KEY}" in ids and "fake.product:Bg/x" not in ids
 
 
-def test_export_runs_the_request_expand_gives_and_places_the_last_run(tmp_path, capsys, monkeypatch):
+@pytest.mark.parametrize("downloads_budget", ["all", "0"])
+def test_export_runs_the_request_expand_gives_and_places_the_last_run(tmp_path, capsys, monkeypatch, downloads_budget):
     from urllib.parse import quote
 
     monkeypatch.setattr(assets, "STAGE_SOURCES", PRODUCT_SOURCES)
+    monkeypatch.setenv("NNNOTES_DEPOT_DOWNLOADS", downloads_budget)
     monkeypatch.setattr("nnnotes.pipeline.catalogdb.apk_version", lambda apk: None)
     d = setup_data(tmp_path, censuses(broken=False), extra=[(MODEL_KEY, "Assets/Game/Bg/x.prefab", [3])])
     apk = builtin_apk(tmp_path / "base.apk", {"assets/aa/catalog.bin": synth.CatalogWriter().build([])})
@@ -1601,6 +1608,7 @@ def test_export_runs_the_request_expand_gives_and_places_the_last_run(tmp_path, 
         if len(calls) > 1:
             pytest.fail("expand was called again after its second answer")
         assert "fake.product:Bg/x" in calls[0]
+        assert (d["downloads"] / "bundles" / NAMES["bg_x"]).exists()
         return {"live2d.cubism": [MODEL_KEY]}, [f"key:{MODEL_KEY}"]
 
     def hooked(args, cfg, ws, expand=None):  # the command's export takes the hook; its own re-run takes none
@@ -1632,6 +1640,26 @@ def test_export_runs_the_request_expand_gives_and_places_the_last_run(tmp_path, 
     manifest = contract.loads((tmp_path / "out" / "live2d.cubism" / f"{quote(MODEL_KEY, safe='')}.json").read_bytes())
     assert manifest["product"] == "live2d.cubism" and manifest["subject"] == MODEL_KEY
     assert not (tmp_path / "out" / "fake.product").exists()  # the first run's product is not placed
+
+
+def test_completed_bundle_downloads_are_released_before_layout_publication(tmp_path, capsys, fake, monkeypatch):
+    from nnnotes.pipeline import layout
+
+    monkeypatch.setenv("NNNOTES_DEPOT_DOWNLOADS", "0")
+    d = setup_data(tmp_path, censuses(broken=False))
+    place = layout.materialize
+    observed = []
+
+    def publish(*args, **kwargs):
+        assert list((tmp_path / "s/leases").glob("*.json"))
+        assert not (d["downloads"] / "bundles" / NAMES["bg_x"]).exists()
+        observed.append(True)
+        return place(*args, **kwargs)
+
+    monkeypatch.setattr(layout, "materialize", publish)
+    code, out, err = export(capsys, tmp_path, d, "s", "out")
+    assert code == 0 and observed, err
+    assert "downloads: released" in err
 
 
 def test_every_product_a_story_plays_with_is_installed():

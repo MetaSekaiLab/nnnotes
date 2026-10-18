@@ -172,11 +172,11 @@ class Batched(Src):
             f.write(line + "\n")
 
 
-def batched(tmp_path, name, texts, workers):
+def batched(tmp_path, name, texts, workers, **kwargs):
     log = tmp_path / f"{name}-log"
     log.mkdir()
     stages = registry(Batched(log), Count(), Total())
-    depot, run, orch = orchestrate(tmp_path, name, texts, workers=workers, stages=stages)
+    depot, run, orch = orchestrate(tmp_path, name, texts, workers=workers, stages=stages, **kwargs)
     return depot, run, orch, [" ".join(f.read_text(encoding="utf-8").split()) for f in sorted(log.iterdir())]
 
 
@@ -212,6 +212,116 @@ def test_a_worker_dying_in_a_job_fails_its_task_and_the_rest_runs_in_another(tmp
     assert [f["code"] for f in run.failures() if f["task"] == "toy.src:a2"] == ["task.worker_died"]
     assert sorted(logs) == ["load a run a1 run a2", "load a run a3 run a4 drop a load b run b1 drop b"]
     assert orch._started >= 2
+
+
+@pytest.mark.parametrize("workers", [0, 2])
+def test_batch_observer_runs_after_readers_close_and_observes_cache_hits(tmp_path, workers):
+    seen = []
+    log = tmp_path / "s-log"
+
+    def observe(tasks):
+        batch = tasks[0].subject[0]
+        text = "\n".join(p.read_text(encoding="utf-8") for p in log.glob("*.log"))
+        assert f"drop {batch}" in text
+        seen.append([t.subject for t in tasks])
+
+    depot, first, _, logs = batched(tmp_path, "s", {"a1": "x", "a2": "y", "b1": "z"}, workers, on_batch_done=observe)
+    assert first.exit_code == 0 and sorted(seen) == [["a1", "a2"], ["b1"]]
+    seen.clear()
+    stages = registry(Batched(log), Count(), Total())
+    again = Orchestrator(depot, stages, workers=workers, on_batch_done=observe, log=lambda _: None)
+    run = again.run(PIPELINE, facts={"files": toy_files(tmp_path / "in", {"a1": "x", "a2": "y", "b1": "z"})})
+    assert all(t["status"] == "hit" for t in run.tasks.values())
+    assert sorted(seen) == [["a1", "a2"], ["b1"]]
+    assert [" ".join(p.read_text(encoding="utf-8").split()) for p in sorted(log.iterdir())] == logs
+
+
+@pytest.mark.parametrize("workers", [0, 1])
+def test_a_mixed_cached_batch_is_observed_after_its_pending_tasks(tmp_path, workers):
+    depot, _, _, _ = batched(tmp_path, "s", {"a1": "x"}, workers)
+    seen = []
+    orch = Orchestrator(
+        depot,
+        registry(Batched(tmp_path / "s-log"), Count(), Total()),
+        workers=workers,
+        on_batch_done=lambda tasks: seen.append([t.subject for t in tasks]),
+        log=lambda _: None,
+    )
+    run = orch.run(PIPELINE, facts={"files": toy_files(tmp_path / "in", {"a1": "x", "a2": "y"})})
+    assert run.tasks["toy.src:a1"]["status"] == "hit"
+    assert run.tasks["toy.src:a2"]["status"] == "ran"
+    assert seen == [["a2"]]
+
+
+@pytest.mark.parametrize("workers, failure", [(0, "CRASH"), (2, "CRASH"), (1, "DIE")])
+def test_failed_batches_are_kept_even_when_their_remaining_tasks_succeed(tmp_path, workers, failure):
+    seen = []
+    _, run, _, _ = batched(
+        tmp_path,
+        "s",
+        {"a1": "x", "a2": failure, "a3": "y", "b1": "z"},
+        workers,
+        on_batch_done=lambda tasks: seen.append(tasks[0].subject[0]),
+    )
+    assert run.exit_code == 1
+    assert seen == ["b"]
+
+
+def test_incomplete_task_descriptions_defer_batch_observation(tmp_path):
+    class Missing(Batched):
+        def inputs(self, subject, env):
+            if subject == "a2":
+                raise ValueError("unavailable input")
+            return super().inputs(subject, env)
+
+    log = tmp_path / "log"
+    log.mkdir()
+    seen = []
+    _, run, _ = orchestrate(
+        tmp_path,
+        "s",
+        {"a1": "x", "a2": "y"},
+        stages=registry(Missing(log), Count(), Total()),
+        on_batch_done=seen.append,
+    )
+    assert run.exit_code == 1 and seen == []
+
+
+@pytest.mark.parametrize("workers", [0, 2])
+def test_interruption_before_batch_end_does_not_notify(tmp_path, monkeypatch, workers):
+    depot = Depot(tmp_path / "s")
+    log = tmp_path / "log"
+    log.mkdir()
+    seen = []
+    orch = Orchestrator(depot, registry(Batched(log)), workers=workers, on_batch_done=seen.append, log=lambda _: None)
+    done = orch._done
+
+    def interrupt(*args):
+        done(*args)
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(orch, "_done", interrupt)
+    with pytest.raises(KeyboardInterrupt):
+        orch.run(["toy.src"], facts={"files": toy_files(tmp_path / "in", {"a1": "x", "a2": "y"})})
+    assert seen == [] and orch._pool == []
+
+
+def test_configuration_stop_keeps_the_incomplete_batch(tmp_path):
+    from nnnotes.source.config import ConfigError
+
+    class Stops(Batched):
+        def run(self, task, depot):
+            if task.subject == "a2":
+                raise ConfigError("setting paths.tool is not set")
+            return super().run(task, depot)
+
+    log = tmp_path / "log"
+    log.mkdir()
+    seen = []
+    orch = Orchestrator(Depot(tmp_path / "s"), registry(Stops(log)), on_batch_done=seen.append, log=lambda _: None)
+    with pytest.raises(ConfigError):
+        orch.run(["toy.src"], facts={"files": toy_files(tmp_path / "in", {"a1": "x", "a2": "y", "a3": "z"})})
+    assert seen == []
 
 
 def test_jobs_group_a_stages_batches():

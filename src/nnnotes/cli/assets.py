@@ -1317,8 +1317,10 @@ def cmd_export(args, cfg):
 
 def request_orchestrator(ws, cfg):
     """The shared executor for product requests."""
+    from ..pipeline.downloads import BundleDownloads
     from ..pipeline.orchestrate import Orchestrator
 
+    lease, budget = getattr(ws.args, "lease", None), Session(cfg).downloads_budget()
     return Orchestrator(
         ws.depot,
         ws.scheduled,
@@ -1329,12 +1331,14 @@ def request_orchestrator(ws, cfg):
         initializer=_worker_init,
         initargs=(cfg,),
         log=ws.log,
+        on_batch_done=BundleDownloads(ws.depot, lease, budget) if lease is not None and budget is not None else None,
     )
 
 
 def run_request(args, cfg, ws: Workspace, expand=None, prepared=None):
     """Execute a product request and optional expansion without materializing an output layout."""
     from ..pipeline import builtins
+    from ..pipeline.downloads import BundleDownloads
     from ..pipeline.orchestrate import failure
 
     if prepared is None:
@@ -1343,6 +1347,8 @@ def run_request(args, cfg, ws: Workspace, expand=None, prepared=None):
         orch = request_orchestrator(ws, cfg)
     else:
         pipeline, params, orch = prepared
+    if expand is not None:
+        orch.on_batch_done = None  # the episode supplies the roots of the complete product request
     ws.run_index()
     facts = ws.facts(pipeline, fetch=True, background=True)
     sel = ws.selected
@@ -1374,6 +1380,10 @@ def run_request(args, cfg, ws: Workspace, expand=None, prepared=None):
         aborted = aborted or str(e)
     if isinstance(facts["raw"], Later) and aborted is None:
         ws.log(f"{sum(p['kind'] == 'raw' for p in ws.problems())} raw files not readable")
+    released = orch.on_batch_done
+    if isinstance(released, BundleDownloads) and released.removed:
+        run.log.append({"event": "downloads.released", "files": released.removed, "bytes": released.bytes_removed})
+        ws.log(f"downloads: released {released.removed} bundle files ({released.bytes_removed} bytes)")
     if expand is not None and aborted is None:
         more = expand(run)
         if more is not None:
