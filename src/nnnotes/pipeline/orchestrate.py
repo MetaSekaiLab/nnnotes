@@ -590,8 +590,10 @@ class Orchestrator:
         try:
             for name in pipeline:
                 self._stage(self.stages[name], norm[name], env, force, run)
-        except ConfigError as e:
-            e.run = run  # pyright: ignore[reportAttributeAccessIssue]  (what ran before the stop: its results stay valid)
+        except BaseException as e:
+            if isinstance(e, ConfigError):
+                e.run = run  # pyright: ignore[reportAttributeAccessIssue]
+            run.write()
             raise
         finally:
             self.close()
@@ -813,6 +815,7 @@ class Orchestrator:
             )
 
     def _done(self, run: Run, t: Task, reply: dict, w) -> None:
+        run.tasks[t.id] = {"id": t.id, "key": t.key, "status": reply["status"] if reply["ok"] else "failed"}
         e = {
             "event": "end",
             "task": t.id,

@@ -91,13 +91,17 @@ gives per stage its counts and its first 20 tasks that are not hits; `--json` ha
 | `--json` | the plan document (`nnnotes.plan/1`) |
 | `--check` | exit 1 when anything would run or a layout file would change, else 0 |
 | `--census` | first fetch the bundles without a census and take it, so the plan knows every bundle's classes |
-| `--emit-tasks DIR` | write the tasks that can run now as task descriptions `DIR/<key>.json` |
+| `--emit-tasks DIR` | write the tasks that can run now as task descriptions `DIR/<key>.json`; retain their layout and stored input dependencies in the depot |
 | `--why TASK` | one task: its status, reasons, and its key parts beside those of the previous run |
 
 Reasons: `new-input`, `input-changed`, `stage-version`, `atom-changed`, `params-changed`, `context-changed`,
 `previous-failed`, `result-missing`, `forced`; hits are `unchanged` or `cached` (the result is in the depot from
 another run); unknown tasks are `pending` on a task, or on `fetch:<file>` for a bundle whose content is not known
 yet. See [contracts.md](contracts.md#plan-nnnotesplan1).
+
+Census planning writes a run record for its completed tasks. Emitted descriptions have a saved task layout whose
+input references keep stored inputs reachable during collection. Interrupted pipeline runs also retain completed
+task results in their run records.
 
 ### depot run
 
@@ -106,6 +110,9 @@ is recomputed, its stage must be installed at its version), its inputs are read 
 locators (the depot, its downloads, a file, or with `--fetch` the catalog), and its result is stored exactly as
 `export assets` would store it. Several tasks run one after another in one process; stages that do not read bundles never load
 UnityPy. `--force` runs tasks whose result is stored again (the new result must be identical).
+
+Each attempted task has a run record, selected by `depot.run` and its task id. The JSON report's `runs` array names
+these records. Collection applies `--keep` separately to the recorded versions of each task.
 
 ### catalog versions, import, fetch, diff
 

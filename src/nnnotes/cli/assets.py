@@ -1533,7 +1533,7 @@ def cmd_plan(args, cfg):
     if args.census:
         ws.run_index()
         facts = ws.facts(["catalog.index", "unity.census"], fetch=True)
-        Orchestrator(
+        run = Orchestrator(
             ws.depot,
             ws.scheduled,
             workers=ws.workers(),
@@ -1543,10 +1543,16 @@ def cmd_plan(args, cfg):
             initializer=_worker_init,
             initargs=(cfg,),
             log=ws.log,
-        ).run(["catalog.index", "unity.census"], facts=facts)
+        ).run(
+            ["catalog.index", "unity.census"],
+            facts=facts,
+            context=ws.context(),
+            selection=["depot.plan.census", *ws.selection],
+        )
+        run.write()
     p = ws.plan(pipeline, params, since=args.since, out=args.out, layouts=layouts)
     if args.emit_tasks:
-        files = p.emit(args.emit_tasks)
+        files = p.emit(args.emit_tasks, depot=ws.depot, context=ws.context(), selection=ws.selection)
         ws.log(f"{len(files)} task descriptions in {args.emit_tasks}")
     if args.why:
         common.report(args, why(ws, p, args.why, args.since), why_lines)
@@ -1617,7 +1623,7 @@ def _task_files(items) -> list[Path]:
 
 def cmd_run_stage(args, cfg):
     from ..pipeline.depot import open_depot
-    from ..pipeline.orchestrate import run_one
+    from ..pipeline.orchestrate import Run, run_one
 
     problems, tasks = [], []
     for f in _task_files(args.tasks):
@@ -1644,7 +1650,7 @@ def cmd_run_stage(args, cfg):
     root = Session(cfg).depot_root()
     depot = open_depot(cfg, fetch=CatalogFetcher(root, cfg) if args.fetch else None)
     use(cfg)
-    out, bad = [], 0
+    out, bad, runs = [], 0, []
     for t in tasks:
         r = run_one(t, depot, inst.stages, args.force)
         if r["ok"]:
@@ -1653,12 +1659,19 @@ def cmd_run_stage(args, cfg):
         else:
             out.append({"id": t.id, "key": t.key, "status": "failed", "code": r["code"], "message": r["message"]})
             bad += 1
-            if r["code"] == "config":
-                break
+        run = Run(depot, dict(t.context), ["depot.run", t.id], {t.stage: dict(t.params)}, {t.stage: t.version})
+        run.tasks[t.id] = {k: out[-1][k] for k in ("id", "key", "status")}
+        runs.append(run.write()["id"])
+        if not r["ok"] and r["code"] == "config":
+            break
     n = Counter(o["status"] for o in out)
     common.report(
         args,
-        {"tasks": out, "summary": {"tasks": len(tasks), "hit": n["hit"], "ran": n["ran"], "failed": n["failed"]}},
+        {
+            "tasks": out,
+            "runs": runs,
+            "summary": {"tasks": len(tasks), "hit": n["hit"], "ran": n["ran"], "failed": n["failed"]},
+        },
         run_lines,
     )
     if bad:

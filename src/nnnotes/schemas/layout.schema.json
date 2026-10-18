@@ -44,6 +44,18 @@
           },
           "id": {
             "type": "string"
+          },
+          "inputs": {
+            "description": "Input content dependencies retained by an emitted task description.",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["sha256", "size"],
+              "properties": {
+                "sha256": {"$ref": "urn:nnnotes:schema:common#/$defs/sha256"},
+                "size": {"type": "integer", "minimum": 0}
+              }
+            }
           }
         }
       }
