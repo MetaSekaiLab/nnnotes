@@ -1,0 +1,13 @@
+{
+ "atoms": {},
+ "fixtures": {
+  "shared-objects": {
+   "key": "a0d571181dc31d120d04511c7ab3a87fc8079944241502b55cce23d649c2fae1",
+   "result": "4bf59668b1fe696aec4885f1e6165dd27a63fb35a337034d007e0dcac33f7543"
+  }
+ },
+ "libraries": {},
+ "provider": "tests.pipeline.product_goldens:note_skin",
+ "stage": "live.noteskin",
+ "version": 1
+}

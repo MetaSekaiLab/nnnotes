@@ -1,0 +1,13 @@
+{
+ "atoms": {},
+ "fixtures": {
+  "shared-objects": {
+   "key": "39193e323146f2805ce341c3cb90c4ede59b939747c6f8bf449de717025a6ead",
+   "result": "74f460fa67833f249f45c3f46e98f551e034985ee6ce8e6e6481d666a4b106ec"
+  }
+ },
+ "libraries": {},
+ "provider": "tests.pipeline.product_goldens:shader_files",
+ "stage": "export.shader",
+ "version": 1
+}

@@ -1,0 +1,25 @@
+{
+ "atoms": {
+  "text.glyphs": "fonttools-4.67.0+freetype-py-2.5.1+scipy-1.18.1+numpy-2.4.6+pillow-12.3.0/1"
+ },
+ "fixtures": {
+  "game": {
+   "key": "b55d0f5e1dbfa2c760981e5d6e204887ea3406a9ba4eb9dda4935275af0ee65c",
+   "result": "2512e62b2bf9740848816b3790f9e812728e3482818f819a12252e1b33720215"
+  },
+  "open": {
+   "key": "b3d25ad7514c04176c3d1b2a824c5cab3459f685491174423cbdd3f05b6eb164",
+   "result": "14f534ebc34a5c866a1c086660df6c6cacce9a5c42207a5e1cf49d9d7c928475"
+  }
+ },
+ "libraries": {
+  "Pillow": "12.3.0",
+  "fonttools": "4.67.0",
+  "freetype-py": "2.5.1",
+  "numpy": "2.4.6",
+  "scipy": "1.18.1"
+ },
+ "provider": "tests.pipeline.product_goldens:live_ui",
+ "stage": "live.ui",
+ "version": 1
+}

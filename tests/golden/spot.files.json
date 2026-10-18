@@ -1,0 +1,15 @@
+{
+ "atoms": {},
+ "fixtures": {
+  "shared-objects": {
+   "key": "466f3cc629f8a9e32aa61f6f46bc28bed0620ffffdd3388741ea5fb313cc50a0",
+   "result": "5f54154505303501ee4f500b350ca74aea9180922fef17bbdfdcd4c739da011c"
+  }
+ },
+ "libraries": {
+  "Pillow": "12.3.0"
+ },
+ "provider": "tests.pipeline.product_goldens:spot_product",
+ "stage": "spot.files",
+ "version": 1
+}

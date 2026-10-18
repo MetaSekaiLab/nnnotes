@@ -73,6 +73,8 @@ def make_font(path, family="Test Sans", style="Regular", underscore=False, drop=
             "licenseInfoURL": "https://example.invalid/license",
         }
     )
+    fb.font["head"].created = fb.font["head"].modified = 2082844800
+    fb.font.recalcTimestamp = False
     buf = io.BytesIO()
     fb.save(buf)
     path.write_bytes(buf.getvalue())

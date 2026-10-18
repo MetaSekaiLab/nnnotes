@@ -1,0 +1,13 @@
+{
+ "atoms": {},
+ "fixtures": {
+  "shared-objects": {
+   "key": "41112a5fdab532b5721a433f16872efa9a8b89e55d24270410b5e4d92803683e",
+   "result": "accb5e67cc13afad20c84ba356037f9244e9aa2e51692d6a40c25f14a220e5a6"
+  }
+ },
+ "libraries": {},
+ "provider": "tests.pipeline.product_goldens:audio_files",
+ "stage": "export.audio",
+ "version": 1
+}

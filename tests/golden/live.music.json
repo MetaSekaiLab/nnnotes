@@ -1,0 +1,13 @@
+{
+ "atoms": {},
+ "fixtures": {
+  "shared-objects": {
+   "key": "f722289a5aa1e379e221a5b9ce3bd62fd890fa28fd0b49d7f6a3a08207a42356",
+   "result": "3bd878866f24b26b4b9ecd0371afb2afaa371f09a3d70693eff536198f38efbd"
+  }
+ },
+ "libraries": {},
+ "provider": "tests.pipeline.product_goldens:live_music",
+ "stage": "live.music",
+ "version": 1
+}

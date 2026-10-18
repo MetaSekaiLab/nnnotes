@@ -1,0 +1,13 @@
+{
+ "atoms": {},
+ "fixtures": {
+  "shared-objects": {
+   "key": "44ffb9d2e46113e7c184510afef8fb2b68c3b4ded898169ae53e8c18eeaff0dc",
+   "result": "d85782cc5d587f5f739ce0a7472d2274732def5e8c4825dcb5ecf1a1cfd4e107"
+  }
+ },
+ "libraries": {},
+ "provider": "tests.pipeline.product_goldens:story_chat",
+ "stage": "story.chat",
+ "version": 1
+}

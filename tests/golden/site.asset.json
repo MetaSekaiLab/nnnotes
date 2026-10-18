@@ -1,0 +1,15 @@
+{
+ "atoms": {
+  "json.minify": "nnnotes-json-minify/1"
+ },
+ "fixtures": {
+  "shared-objects": {
+   "key": "b8054ff0826d71b798a22b2642b0a60a998945c3d50fec39db625a30b09dffb8",
+   "result": "db2b695801326f1af4f1d0498b032f180f6bb87f7a9dcf7c4fe268d94bb766a0"
+  }
+ },
+ "libraries": {},
+ "provider": "tests.pipeline.product_goldens:site_asset",
+ "stage": "site.asset",
+ "version": 1
+}

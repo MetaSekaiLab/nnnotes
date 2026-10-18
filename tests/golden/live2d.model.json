@@ -1,0 +1,15 @@
+{
+ "atoms": {},
+ "fixtures": {
+  "shared-objects": {
+   "key": "a7a808010e418683d1441c9e322485a193dbf35eae40811f370a205cacde5169",
+   "result": "4ad4f0b81b595eb7a72b0f913ae1ced0e90721415e6c0996aaf825656799e393"
+  }
+ },
+ "libraries": {
+  "Pillow": "12.3.0"
+ },
+ "provider": "tests.pipeline.product_goldens:model",
+ "stage": "live2d.model",
+ "version": 2
+}

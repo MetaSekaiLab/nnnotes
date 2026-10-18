@@ -1,0 +1,13 @@
+{
+ "atoms": {},
+ "fixtures": {
+  "shared-objects": {
+   "key": "5baae3e8d9b5bee09af0bdaaa27f655293d99d841fc209ff07f9fd6559405296",
+   "result": "9e7a03082bdef3b44ead86e1b076f6a8e4b53c0dbe370b92c6a316f9f975192e"
+  }
+ },
+ "libraries": {},
+ "provider": "tests.pipeline.product_goldens:story_video",
+ "stage": "story.video",
+ "version": 1
+}

@@ -3,3 +3,6 @@ Pillow==12.3.0
 numpy==2.4.6
 texture2ddecoder==1.0.6
 astc-encoder-py==0.1.12
+fonttools==4.67.0
+freetype-py==2.5.1
+scipy==1.18.1

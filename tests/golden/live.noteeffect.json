@@ -1,0 +1,13 @@
+{
+ "atoms": {},
+ "fixtures": {
+  "shared-objects": {
+   "key": "2b025288728e21e521677ac4ede0a8cfa2b5acf51824cfec3df89d0d1e307c4b",
+   "result": "f9664f38f9eac3fe7a152be34da7613e3411a1ee27c7ca39cf53fe657e99184a"
+  }
+ },
+ "libraries": {},
+ "provider": "tests.pipeline.product_goldens:note_effect",
+ "stage": "live.noteeffect",
+ "version": 1
+}

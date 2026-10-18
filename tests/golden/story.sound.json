@@ -1,0 +1,13 @@
+{
+ "atoms": {},
+ "fixtures": {
+  "shared-objects": {
+   "key": "22bf1839c37bc5c4c6ff8844f0cc97dea89477b77f0395d2da1fbd6874b0af93",
+   "result": "53556645ce87446e995ea6ed81595cd98543328c4e8c4aa45b87935f1c877f0f"
+  }
+ },
+ "libraries": {},
+ "provider": "tests.pipeline.product_goldens:story_sound",
+ "stage": "story.sound",
+ "version": 2
+}

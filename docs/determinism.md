@@ -42,7 +42,9 @@ another installation computes other keys instead of mixing results.
   bytes and, for every synthetic fixture, the task key and the SHA-256 of the canonical result. A change of a
   stage's output without a new stage version fails the test. The CI job that checks the records installs the exact
   library versions of `.github/goldens-constraints.txt` and sets `GOLDENS_STRICT=1`; elsewhere a record made with
-  other library versions is skipped.
+  other library versions is skipped. Every registered output stage and site stage has a record; the coverage
+  check includes the master-data view family. Product fixtures exercise shared objects, localized references,
+  open and game fonts, host state, media indexes and regional site aliases.
 - **Two runs, one result.** The tests run exports twice over synthetic inputs and compare the bytes, and compare
   one worker with several: a depot built with four workers equals one built with one, and parallel audio decoding
   equals sequential decoding.

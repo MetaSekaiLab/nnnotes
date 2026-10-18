@@ -1,0 +1,13 @@
+{
+ "atoms": {},
+ "fixtures": {
+  "shared-objects": {
+   "key": "561e5b256f71c0dc357f4eac0f355e0c55a8f7ebefe704594aac92f9a086f0e8",
+   "result": "8beb275a0504ec24f84206e0a0baa52318da99b300aa6f7133f22cc734035688"
+  }
+ },
+ "libraries": {},
+ "provider": "tests.pipeline.view_goldens:voice_index",
+ "stage": "view.voices",
+ "version": 2
+}

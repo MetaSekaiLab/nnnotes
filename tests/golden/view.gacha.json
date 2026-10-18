@@ -1,0 +1,13 @@
+{
+ "atoms": {},
+ "fixtures": {
+  "shared-objects": {
+   "key": "81ee1322c864df3c3d547a393fad01508590d718bc9695b12f8e9ccb5ed45131",
+   "result": "2160c0afcf2b32fc8e4b1fbadf3175d18c292619845fabfbe28fea1338fd7eb2"
+  }
+ },
+ "libraries": {},
+ "provider": "tests.pipeline.view_goldens:view_gacha",
+ "stage": "view.gacha",
+ "version": 1
+}

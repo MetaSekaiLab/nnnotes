@@ -1,0 +1,13 @@
+{
+ "atoms": {},
+ "fixtures": {
+  "shared-objects": {
+   "key": "68eeb9135617ec42b7ab304693ace0fa2740adaac7de0ec67c1b7d5c1715bf54",
+   "result": "a0ac1eb948b1bef61613c4c5e1f8324e5b2e6e8d47cd8c529b3cfc68d4502171"
+  }
+ },
+ "libraries": {},
+ "provider": "tests.pipeline.view_goldens:view_shops",
+ "stage": "view.shops",
+ "version": 1
+}
