@@ -333,12 +333,13 @@ class CatalogFetcher:
     def catalog(self, vid: str):
         """(Catalog, {location id: location}) of a stored catalog version."""
         from ..pipeline import catalogdb
+        from ..pipeline.depot import open_depot
         from ..source.catalog import Catalog
 
         with self._lock:
             hit = self._catalogs.get(vid)
             if hit is None:
-                db = catalogdb.CatalogDB(self.root)
+                db = catalogdb.CatalogDB(self.root, remote=open_depot(self.cfg, root=self.root).remote)
                 v = next((x for x in db.versions() if x["id"] == vid), None)
                 if v is None:
                     raise FileNotFoundError(f"catalog version {vid[:12]} is not in the depot")
@@ -524,7 +525,7 @@ class Workspace:
         self.apk = cfg.path("paths", "apk")
         self.fetcher = CatalogFetcher(self.root, cfg)
         self.depot = open_depot(cfg, fetch=self.fetcher)
-        self.db = CatalogDB(self.root)
+        self.db = CatalogDB(self.root, remote=self.depot.remote)
         try:
             self.selection = parse_selection(getattr(args, "select", None))
         except ValueError as e:

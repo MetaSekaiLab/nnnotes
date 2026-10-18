@@ -46,8 +46,10 @@ def cmd_browse(args, cfg):
 # ---------------------------------------------------------------- catalog versions of the depot
 def _db(cfg):
     from ..pipeline.catalogdb import CatalogDB
+    from ..pipeline.depot import open_depot
 
-    return CatalogDB(Session(cfg).depot_root())
+    depot = open_depot(cfg)
+    return CatalogDB(depot.root, remote=depot.remote)
 
 
 def version_line(v: dict) -> str:

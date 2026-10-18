@@ -16,6 +16,10 @@ The versions live in the depot:
                                          catalogs (sha256, size, buildResultHash), the CDN's `.hash` text when it was
                                          served (an opaque change signal), resource version, APK version name
 
+With a depot remote, each version has its own `catalogs/versions/<id>.json` object. Version discovery merges these
+records into the local index; catalog bytes are fetched and verified only when read. Import sequences order the
+versions, with version ids breaking ties between independent imports.
+
 `diff` compares two indexes: keys (the primary keys of asset locations: internal id, provider, resource type and
 dependencies, bundles and raw files named by their stable names), bundles and raw files matched by stable name (the
 name without its content hash: added, removed, changed with old and new name, size, hash, CRC) and the keys whose
@@ -36,6 +40,7 @@ from ..source.catalog import APK_CATALOG, Catalog, file_name, location_kind
 from . import contract
 from .contract import Cost, Input
 from .depot import write_file
+from .remote import Remote
 from .stages import Output, Stage
 
 CATALOGS = "nnnotes.catalogs/1"
@@ -413,8 +418,9 @@ def fetch(cdn: str, language: str, timeout: float = 120, *, version: str = "main
 class CatalogDB:
     """The catalog versions of a depot (<depot>/catalogs/)."""
 
-    def __init__(self, depot_root):
+    def __init__(self, depot_root, *, remote: Remote | None = None):
         self.root = Path(depot_root) / "catalogs"
+        self.remote = remote
 
     def path(self, sha: str) -> Path:
         if not contract.is_sha256(sha):
@@ -425,10 +431,32 @@ class CatalogDB:
         try:
             doc = contract.loads((self.root / "index.json").read_bytes())
         except FileNotFoundError:
-            return []
+            doc = {"schema": CATALOGS, "versions": []}
         if doc.get("schema") != CATALOGS:
             raise ValueError(f"{self.root / 'index.json'} is not a {CATALOGS} document")
-        return doc["versions"]
+        versions = {v["id"]: v for v in doc["versions"]}
+        if self.remote is not None:
+            for key, _, _ in self.remote.list("catalogs/versions/"):
+                if not key.endswith(".json"):
+                    continue
+                data = self.remote.get(key)
+                if data is None:
+                    continue
+                v = contract.loads(data)
+                expected = version_id(v["remote"]["sha256"], v["apk"]["sha256"] if v["apk"] else None, v.get("source"))
+                if v["id"] != expected or key != f"catalogs/versions/{expected}.json":
+                    raise ValueError(f"catalog version identity differs: {key}")
+                local = versions.get(expected)
+                if local is not None:
+                    v["labels"] = sorted(set(v["labels"]) | set(local["labels"]))
+                    for name, value in local.items():
+                        if v.get(name) is None:
+                            v[name] = value
+                versions[expected] = v
+        merged = sorted(versions.values(), key=lambda v: (v["seq"], v["id"]))
+        if self.remote is not None:
+            self._save(merged)
+        return merged
 
     def _save(self, versions: list[dict]) -> None:
         write_file(self.root / "index.json", contract.encode({"schema": CATALOGS, "versions": versions}))
@@ -444,8 +472,12 @@ class CatalogDB:
     def _put(self, data: bytes) -> dict:
         sha = contract.sha256(data)
         p = self.path(sha)
-        if not (p.is_file() and p.stat().st_size == len(data)):
+        if not (p.is_file() and p.read_bytes() == data):
             write_file(p, data)
+        if self.remote is not None:
+            key = f"catalogs/{sha}.bin"
+            if self.remote.size(key) != len(data):
+                self.remote.put(key, data)
         return {"sha256": sha, "size": len(data), "buildResultHash": parse_header(data)["buildResultHash"]}
 
     def add(
@@ -507,6 +539,8 @@ class CatalogDB:
                 raise ValueError(f"label {label!r} already names catalog version {other['id'][:12]}")
         if label not in v["labels"]:
             v["labels"].append(label)
+        if self.remote is not None:
+            self.remote.put(f"catalogs/versions/{vid}.json", contract.encode(v))
         self._save(versions)
         return v
 
@@ -532,9 +566,25 @@ class CatalogDB:
 
     def catalog_bytes(self, version: dict) -> tuple[bytes, bytes | None]:
         """(remote catalog, APK catalog or None) of a version."""
-        remote = self.path(version["remote"]["sha256"]).read_bytes()
-        apk = self.path(version["apk"]["sha256"]).read_bytes() if version["apk"] else None
+        remote = self._bytes(version["remote"])
+        apk = self._bytes(version["apk"]) if version["apk"] else None
         return remote, apk
+
+    def _bytes(self, record: dict) -> bytes:
+        sha, size = record["sha256"], record["size"]
+        path = self.path(sha)
+        try:
+            data = path.read_bytes()
+        except FileNotFoundError:
+            data = self.remote.get(f"catalogs/{sha}.bin") if self.remote is not None else None
+            if data is None:
+                raise FileNotFoundError(f"catalog content {sha} is not in the depot") from None
+            if len(data) != size or contract.sha256(data) != sha:
+                raise ValueError(f"catalog content {sha} differs from its identity") from None
+            write_file(path, data)
+        if len(data) != size or contract.sha256(data) != sha:
+            raise ValueError(f"catalog content {sha} differs from its identity")
+        return data
 
     def index(self, version: dict) -> dict:
         return index(*self.catalog_bytes(version))
@@ -545,6 +595,7 @@ class CatalogDB:
         for role in CATALOG_NAMES:
             rec = version[role]
             if rec:
+                self._bytes(rec)
                 out.append(
                     Input(
                         role,
