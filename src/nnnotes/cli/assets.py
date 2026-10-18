@@ -139,6 +139,7 @@ STAGE_SOURCES = (
     StageSource("story.simpleui", "nnnotes.pipeline.story:SimpleUiStage", output=True, product=True),
     StageSource("story.host", "nnnotes.pipeline.storyhost:HostStage", output=True, product=True),
     StageSource("story", "nnnotes.pipeline.story:StoryStage", output=True, product=True),
+    StageSource("ui.pack", "nnnotes.pipeline.ui:UiStage", output=True, product=True),
     StageSource("view.", "nnnotes.pipeline.views:stages", output=True),
     StageSource("view.voices", "nnnotes.pipeline.voices:VoiceStage", output=True),
 )
@@ -1064,7 +1065,17 @@ class Workspace:
             sha = self.depot.put(body) if store else contract.sha256(body)
             manifest = {"id": contract.artifact_id(tid, "manifest"), "sha256": sha, "size": len(body)}
             products.append((self.installed.stages[stage_name].manifest(subject), manifest, doc, table))
-        return layout.product_entries(products), {"collisions": [], "products": len(products)}
+        entries = layout.product_entries(products)
+        indexed = {}
+        for tid, doc in results:
+            stage_name, subject = contract.parse_task_id(tid)
+            if hasattr(self.installed.stages[stage_name], "layout_index"):
+                indexed.setdefault(stage_name, []).append((subject, doc))
+        for name, records in sorted(indexed.items()):
+            path, body = self.installed.stages[name].layout_index(records, self.depot)
+            sha = self.depot.put(body) if store else contract.sha256(body)
+            entries.append({"path": path, "sha256": sha, "size": len(body), "id": f"{name}:library#index"})
+        return entries, {"collisions": [], "products": len(products)}
 
     def done(self, tasks: dict) -> None:
         """The tasks whose results the layouts place, {task id: key} (after a run: every task with a result)."""

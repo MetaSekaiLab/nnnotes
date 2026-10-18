@@ -1,241 +1,106 @@
-"""UI export/resume contracts with synthetic objects, images and split packages only."""
+"""Synthetic UI product graphs, library indexes and CLI selection."""
 
-import json
-import zipfile
 from types import SimpleNamespace as NS
 
 import pytest
-from PIL import Image
 
-from nnnotes import cli
+from nnnotes.cli import export
 from nnnotes.content import ui
-from nnnotes.source.config import Config
-from nnnotes.source.session import Session
-from nnnotes.unity import player
+from nnnotes.pipeline.assemble import Objects
+from nnnotes.pipeline.contract import Task, encode
+from nnnotes.pipeline.depot import Depot
+from nnnotes.pipeline.stages import execute, registry
+from nnnotes.pipeline.ui import UI, UiStage
+from tests.helpers.live2dmodel import ref
+from tests.helpers.livenotes import clip, comp, node, table
 
 KEY = "EmbUI/Example/Box"
+ROOT, CHILD, CTL, CLIP = (f"example:{i}" for i in range(1, 5))
 
 
-class Catalog:
-    def __init__(self, data=b"synthetic catalog", *args, **kwargs):
-        self._sources = {"remote": data, "apk": data}
-
-    def sources(self):
-        return dict(self._sources)
-
-    def keys(self, prefix):
-        return [k for k in [KEY, KEY + "Alias"] if k.startswith(prefix)]
-
-    def entry(self, key):
-        return {"internal_id": "Assets/Example/Box.prefab"}
-
-
-class Exporter:
-    exports = 0
-    controller_exports = 0
-    fail = False
-
-    def __init__(self, *args, **kwargs):
-        self.controller_obj = NS(type=NS(name="AnimatorController"), assets_file=NS(name="synthetic"), path_id=3)
-        texture = NS(type=NS(name="Texture2D"), read=lambda: NS(image=Image.new("RGBA", (2, 2), (8, 16, 24, 255))))
-        self.tex_objs = {"synthetic:7": texture}
-        self.sprite_recs = {}
-        self._objects = {("synthetic", 3): self.controller_obj}
-        self._go_file = {1: "synthetic", 2: "synthetic"}
-
-    def export_key(self, key):
-        type(self).exports += 1
-        if self.fail:
-            raise RuntimeError("synthetic unsupported component")
-        return {
-            "key": key,
-            "nodes": [
-                {
-                    "nodeId": ui.identity("synthetic:1"),
-                    "path": "Box",
-                    "rect": {"m_SizeDelta": {"x": -30, "y": 90}},
-                    "components": [],
-                }
-            ],
-        }
-
-    def load(self, key):
-        transforms = {
-            10: {"m_Father": {"m_PathID": 0}, "m_GameObject": {"m_PathID": 1}},
-            20: {"m_Father": {"m_PathID": 0}, "m_GameObject": {"m_PathID": 2}},
-        }
-        return NS(objects=[self.controller_obj]), NS(tf=transforms, go={1: {"m_Name": "Box"}, 2: {"m_Name": "Extra"}})
-
-    def hierarchy(self, env, graph, pid):
-        return [{"nodeId": ui.identity("synthetic:2"), "path": "Extra", "components": []}]
-
-    def controller(self, obj):
-        assert obj is self.controller_obj, "the new exporter must use its own loaded object"
-        type(self).controller_exports += 1
-        return {"name": "Example", "clips": []}
-
-
-@pytest.fixture
-def exporter(monkeypatch):
-    Exporter.exports = Exporter.controller_exports = 0
-    Exporter.fail = False
-    monkeypatch.setattr(ui, "UIExporter", Exporter)
-    return Exporter
-
-
-def read(path):
-    return json.loads(path.read_text(encoding="utf-8"))
-
-
-def test_export_preserves_signed_rects_and_stable_dependency_identity(tmp_path, exporter):
-    index = ui.export_library(Catalog(), tmp_path, keys=[KEY])
-    entry = index["assets"][0]
-    assert entry["kind"] == "prefab"
-    pack = read(tmp_path / entry["file"])
-    assert pack["document"]["nodes"][0]["rect"]["m_SizeDelta"]["x"] == -30
-    assert len(index["embedded"]) == len(index["controllers"]) == 1
-    assert entry["dependencies"]["controllers"] == [index["controllers"][0]["id"]]
-    assert all((tmp_path / name).is_file() for name in entry["files"])
-    assert index["runtime_verified"] is False
-
-
-@pytest.mark.parametrize("damage", ["pack", "texture", "controller", "embedded"])
-def test_resume_repairs_corrupt_or_missing_dependencies(tmp_path, exporter, damage):
-    first = ui.export_library(Catalog(), tmp_path, keys=[KEY])
-    before = exporter.exports
-    ui.export_library(Catalog(), tmp_path, keys=[KEY])
-    assert exporter.exports == before
-    entry = first["assets"][0]
-    target = (
-        entry["file"]
-        if damage == "pack"
-        else (
-            "textures/" + ui.identity("synthetic:7") + ".png"
-            if damage == "texture"
-            else first["controllers" if damage == "controller" else "embedded"][0]["file"]
-        )
-    )
-    (tmp_path / target).write_bytes(b"corrupt")
-    result = ui.export_library(Catalog(), tmp_path, keys=[KEY])
-    assert exporter.exports == before + 1
-    assert (tmp_path / target).read_bytes() != b"corrupt"
-    assert ui._valid_record(tmp_path, result["assets"][0])
-
-
-def test_enabling_dependency_export_after_a_minimal_export(tmp_path, exporter):
-    first = ui.export_library(Catalog(), tmp_path, keys=[KEY], dependencies=False)
-    assert not first["controllers"] and not first["embedded"]
-    complete = ui.export_library(Catalog(), tmp_path, keys=[KEY])
-    assert len(complete["controllers"]) == len(complete["embedded"]) == 1
-
-
-def test_force_exports_a_shared_controller_once_and_keeps_unrelated_entries(tmp_path, exporter):
-    ui.export_library(Catalog(), tmp_path, keys=[KEY])
-    exporter.controller_exports = 0
-    result = ui.export_library(Catalog(), tmp_path, force=True)
-    assert len(result["assets"]) == 2
-    assert exporter.controller_exports == 1
-
-
-def test_a_different_input_cannot_mix_with_an_existing_library(tmp_path, exporter):
-    ui.export_library(Catalog(), tmp_path, keys=[KEY])
-    original = (tmp_path / "index.json").read_bytes()
-    with pytest.raises(ValueError, match="separate output directory"):
-        ui.export_library(Catalog(b"another release"), tmp_path, keys=[KEY])
-    assert (tmp_path / "index.json").read_bytes() == original
-
-
-def test_resume_rejects_paths_outside_the_output(tmp_path, exporter):
-    result = ui.export_library(Catalog(), tmp_path, keys=[KEY])
-    result["assets"][0]["files"]["../outside.png"] = "invalid"
-    (tmp_path / "index.json").write_text(json.dumps(result), encoding="utf-8")
-    with pytest.raises(ValueError, match="outside"):
-        ui.export_library(Catalog(), tmp_path, keys=[KEY])
-
-
-def test_failure_is_an_explicit_index_entry(tmp_path, exporter):
-    exporter.fail = True
-    result = ui.export_library(Catalog(), tmp_path, keys=[KEY])
-    assert result["counts"] == {"failed": 1}
-    assert result["assets"][0]["error_type"] == "RuntimeError"
-
-
-def test_cli_selects_the_jp_split_apk_and_keeps_public_provenance(tmp_path, exporter, monkeypatch, capsys):
-    from nnnotes.source import catalog
-
-    apk = tmp_path / "jp"
-    apk.mkdir()
-    with zipfile.ZipFile(apk / "base.apk", "w") as z:
-        z.writestr("assets/boot-data", b"synthetic boot")
-    with zipfile.ZipFile(apk / "split_Unity.apk", "w") as z:
-        z.writestr(catalog.APK_CATALOG, b"synthetic catalog")
-    monkeypatch.setattr(catalog, "Catalog", Catalog)
-    monkeypatch.setattr(Session, "apk", lambda self, region=None: None)
-    monkeypatch.setattr(player, "PlayerData", lambda apk: None)
-    cfg = Config(
-        {
-            "catalog": {"region": "jp"},
-            "servers": {"jp": {"apk": str(apk)}},
-            "paths": {"apk": "wrong-global.apk", "depot": str(tmp_path / "depot")},
-        },
-        environ={},
-    )
-    args = cli.parse_args(["export", "ui", "--key", KEY, "-o", str(tmp_path / "out")])
-    args.func(args, cfg)
-    index = read(tmp_path / "out/index.json")
-    assert index["provenance"]["region"] == "jp"
-    assert len(index["provenance"]["apk_members_sha256"]) == 64
-    assert "exported" in capsys.readouterr().out
-
-
-def test_limit_is_validated_before_any_apk_read(tmp_path, capsys):
-    args = cli.parse_args(["export", "ui", "--limit", "0", "-o", str(tmp_path)])
-    with pytest.raises(SystemExit) as exc:
-        args.func(args, Config(environ={}))
-    assert exc.value.code == 2
-    assert "--limit must be positive" in capsys.readouterr().err
-
-
-def test_all_used_numeric_font_faces_keep_independent_metrics_and_resource_hashes(tmp_path):
-    atlas = NS(
-        type=NS(name="Texture2D"),
-        assets_file=NS(name="synthetic-font"),
-        path_id=9,
-        read=lambda: NS(image=Image.new("RGBA", (2, 2), (128, 128, 128, 128))),
-    )
-    objects = {}
-    names = ["VibeMO Synthetic Regular", "VibeMO Synthetic Medium"]
-    for i, name in enumerate(names):
-        tree = {
-            "m_Name": name,
-            "m_AtlasTextures": [{}],
-            "m_FaceInfo": {"m_PointSize": 32},
-            "m_CharacterTable": [{"m_Unicode": 65, "m_GlyphIndex": 1}],
-            "m_GlyphTable": [{"m_Index": 1}],
-        }
-        objects[name] = NS(
-            type=NS(name="MonoBehaviour"),
-            path_id=i,
-            assets_file=NS(name="synthetic-font"),
-            read_typetree=lambda tree=tree: tree,
-        )
-    ex = NS(
-        _objects=objects,
-        tex_objs={},
-        sprite_recs={},
-        script_class=lambda o: "TMP_FontAsset",
-        deref=lambda o, ptr: atlas,
-    )
+def graph(tmp_path):
+    depot = Depot(tmp_path / "depot")
     doc = {
+        "name": "Box",
         "nodes": [
-            {"components": [{"type": "MonoBehaviour", "class": "TextMeshProUGUI", "m_fontAsset": {"name": name}}]}
-            for name in names
-        ]
+            node("Box", comp("Animator", 10, m_Controller=ref(CTL))),
+            node("Box/Image", comp("SpriteRenderer", 11, m_Color={"r": 1, "g": 1, "b": 1, "a": 1})),
+        ],
     }
-    table = ui.resources(ex, doc, tmp_path)
-    assert set(table["fontMetricsByAsset"]) == set(names)
-    assert len(set(table["fontMetricsByAsset"].values())) == 2
-    for file in table["fontMetricsByAsset"].values():
-        data = read(tmp_path / file)
-        assert data["textureBase"] == "metrics"
-        assert (tmp_path / file).parent.joinpath(data["texture"]).is_file()
+    records = {
+        ROOT: ("GameObject", "Box", {"json": doc}),
+        CHILD: ("GameObject", "Box", {"json": {"name": "Box", "nodes": [node("Box")]}}),
+        CTL: ("AnimatorController", "Show", {"json": {"name": "Show", "clips": [ref(CLIP)]}}),
+        CLIP: ("AnimationClip", "Show", {"json": clip("Show", "Image")}),
+    }
+    return depot, Objects(table(depot, {KEY: [ROOT]}, records), depot)
+
+
+def test_ui_objects_keep_prefab_and_animation_identity(tmp_path):
+    _, objects = graph(tmp_path)
+    before = encode(objects.json(ROOT))
+    doc, roles = ui.pack(objects, KEY)
+    assert doc["roots"] == [ROOT]
+    assert doc["prefabs"] == [ROOT, CHILD]
+    assert doc["controllers"] == [CTL]
+    assert doc["bindings"][ROOT]["Box"][CLIP][0]["path"] == "Image"
+    assert doc["bindings"][ROOT]["Box"][CLIP][0]["attribute"] == "m_Color.a"
+    assert doc["entries"][0]["nodeCount"] == 2
+    assert doc["entries"][0]["classes"] == {"Animator": 1, "SpriteRenderer": 1}
+    assert encode(objects.json(ROOT)) == before
+    assert roles == {}
+    with pytest.raises(KeyError):
+        ui.pack(objects, "unknown")
+
+
+def test_library_indexes_share_dependency_objects_and_distinguish_keys(tmp_path):
+    _, objects = graph(tmp_path)
+    doc, _ = ui.pack(objects, KEY)
+    other = {**doc, "key": KEY + "Alias"}
+    index = ui.library([("uipacks/b.json", other), ("uipacks/a.json", doc)])
+    assert index["format"] == ui.LIBRARY
+    assert len({e["id"] for e in index["assets"]}) == 2
+    assert len(index["embedded"]) == len(index["controllers"]) == 1
+    assert index["embedded"][0]["id"] == CHILD
+    assert index["controllers"][0]["id"] == CTL
+    assert index["assets"][0]["roots"] == [ROOT]
+    assert ui.library(reversed([("uipacks/b.json", other), ("uipacks/a.json", doc)])) == index
+
+
+def test_ui_stage_retains_the_graph_in_a_product(tmp_path):
+    depot, objects = graph(tmp_path)
+    stage = UiStage()
+    source = objects.doc
+    from nnnotes.pipeline.contract import Input
+
+    body = encode(source)
+    task = Task(
+        UI, stage.version, KEY, {}, {}, (Input("objects", depot.put(body), len(body), None, ({"kind": "depot"},)),)
+    )
+    execute(task, depot, registry(stage))
+    result = depot.result(task.key)
+    path, body = stage.layout_index([(KEY, result)], depot)
+    assert path == "index.json"
+    assert ui.identity(KEY).encode() in body
+    assert stage.INCLUDE_FONTS
+
+
+def test_ui_command_requests_only_selected_apk_keys(monkeypatch, tmp_path):
+    requests = []
+    ws = NS(
+        run_index=lambda: None,
+        index=lambda: {
+            "locations": [
+                {"id": "apk:1", "primaryKey": KEY, "kind": "asset"},
+                {"id": "apk:2", "primaryKey": KEY + "Alias", "kind": "asset"},
+                {"id": "remote:1", "primaryKey": "EmbUI/Remote", "kind": "asset"},
+            ]
+        },
+        request=lambda products, selection: requests.append((products, selection)),
+    )
+    monkeypatch.setattr(export.assets, "Workspace", lambda *a, **kw: ws)
+    monkeypatch.setattr(export.assets, "export", lambda *a: None)
+    monkeypatch.setattr(export, "use", lambda cfg: None)
+    args = NS(limit=1, key=None, prefix="EmbUI/", out=tmp_path)
+    export.cmd_ui(args, NS(require_path=lambda *a: tmp_path / "game.apk"))
+    assert requests == [({UI: [KEY]}, [f"key:{KEY}"])]
