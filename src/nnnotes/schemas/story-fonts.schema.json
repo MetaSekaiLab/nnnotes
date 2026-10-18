@@ -1,26 +1,1025 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:nnnotes:schema:story-fonts",
-  "title": "Episode font records and glyph pages",
   "type": "object",
-  "required": ["format", "language", "source", "fonts", "textures", "materials", "materialKeywords", "texts", "sprites", "coverage", "lineBreaking", "shaders"],
+  "required": [
+    "format",
+    "language",
+    "source",
+    "fonts",
+    "textures",
+    "materials",
+    "materialKeywords",
+    "texts",
+    "coverage",
+    "shaders",
+    "sprites",
+    "lineBreaking"
+  ],
   "properties": {
-    "format": {"const": "nnnotes.story-fonts/1"},
-    "language": {"enum": ["ja", "en", "zh-Hant", "zh-Hans", "ko"]},
-    "source": {"enum": ["open", "game"]},
-    "fonts": {"type": "object", "additionalProperties": {"type": "object", "required": ["characters", "glyphs", "material", "fallbacks"]}},
-    "textures": {"type": "object", "additionalProperties": {"type": "object", "required": ["texture", "width", "height"], "properties": {"texture": {"type": "string"}, "width": {"type": "integer", "minimum": 1}, "height": {"type": "integer", "minimum": 1}}}},
-    "materials": {"type": "object", "additionalProperties": {"type": "object"}},
-    "materialKeywords": {"type": "object", "additionalProperties": {"type": "array", "items": {"type": "string"}}},
-    "texts": {"type": "object", "additionalProperties": {"type": "object", "required": ["style", "localized", "font"], "properties": {"style": {"type": "object"}, "localized": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/font"}]}, "font": {"$ref": "#/$defs/font"}}}},
-    "sprites": {"type": "object", "additionalProperties": {"type": "object", "required": ["spriteAsset", "m_tintAllSprites"]}},
-    "coverage": {"type": "object", "required": ["characters", "missing"], "properties": {"characters": {"type": "integer", "minimum": 0}, "missing": {"type": "array", "items": {"type": "string"}}}},
-    "lineBreaking": {"type": "object", "required": ["leading", "following", "useModernHangulLineBreakingRules"], "properties": {"leading": {"type": "string"}, "following": {"type": "string"}, "useModernHangulLineBreakingRules": {"type": "boolean"}}},
-    "shaders": {"type": "object", "additionalProperties": {"type": "string"}},
-    "spriteAssets": {"type": "object", "additionalProperties": {"type": "object"}},
-    "emojiSpriteAsset": {"type": "string"}
+    "format": {
+      "const": "nnnotes.story-fonts/1"
+    },
+    "language": {
+      "enum": [
+        "ja",
+        "en",
+        "zh-Hant",
+        "zh-Hans",
+        "ko"
+      ]
+    },
+    "source": {
+      "enum": [
+        "open",
+        "game"
+      ]
+    },
+    "fonts": {
+      "type": "object",
+      "propertyNames": {
+        "minLength": 1
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/font"
+      }
+    },
+    "textures": {
+      "type": "object",
+      "propertyNames": {
+        "minLength": 1
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/texture"
+      }
+    },
+    "materials": {
+      "type": "object",
+      "propertyNames": {
+        "minLength": 1
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/material"
+      }
+    },
+    "materialKeywords": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "texts": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^.+:-?[0-9]+$"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/text"
+      }
+    },
+    "spriteAssets": {
+      "type": "object",
+      "propertyNames": {
+        "minLength": 1
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/spriteAsset"
+      }
+    },
+    "emojiSpriteAsset": {
+      "type": "string",
+      "minLength": 1
+    },
+    "coverage": {
+      "type": "object",
+      "required": [
+        "characters",
+        "missing"
+      ],
+      "properties": {
+        "characters": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "missing": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "missingGlyph": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "sprites": {
+          "type": "object",
+          "required": [
+            "characters",
+            "missing"
+          ],
+          "properties": {
+            "characters": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "missing": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "underline": {
+          "type": "object",
+          "required": [
+            "font",
+            "character",
+            "inAsset"
+          ],
+          "properties": {
+            "font": {
+              "type": "string",
+              "minLength": 1
+            },
+            "character": {
+              "const": "_"
+            },
+            "inAsset": {
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    },
+    "lineBreaking": {
+      "type": "object",
+      "required": [
+        "leading",
+        "following",
+        "useModernHangulLineBreakingRules"
+      ],
+      "properties": {
+        "leading": {
+          "type": "string"
+        },
+        "following": {
+          "type": "string"
+        },
+        "useModernHangulLineBreakingRules": {
+          "type": "boolean"
+        }
+      }
+    },
+    "shaders": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^.+:-?[0-9]+$"
+      }
+    },
+    "sprites": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "spriteAsset"
+        ],
+        "properties": {
+          "spriteAsset": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^.+:-?[0-9]+$"
+      }
+    }
   },
   "$defs": {
-    "font": {"type": "object", "required": ["fontAsset", "material", "lineSpacing"], "properties": {"fontAsset": {"type": "string"}, "material": {"type": "string"}, "lineSpacing": {"type": "number"}}}
-  }
+    "int": {
+      "type": "integer"
+    },
+    "num": {
+      "type": "number"
+    },
+    "faceInfo": {
+      "type": "object",
+      "required": [
+        "m_PointSize",
+        "m_Scale",
+        "m_UnitsPerEM",
+        "m_LineHeight",
+        "m_AscentLine",
+        "m_CapLine",
+        "m_MeanLine",
+        "m_Baseline",
+        "m_DescentLine",
+        "m_SuperscriptOffset",
+        "m_SuperscriptSize",
+        "m_SubscriptOffset",
+        "m_SubscriptSize",
+        "m_UnderlineOffset",
+        "m_UnderlineThickness",
+        "m_StrikethroughOffset",
+        "m_StrikethroughThickness",
+        "m_TabWidth"
+      ],
+      "properties": {
+        "m_FaceIndex": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "m_FamilyName": {
+          "type": "string"
+        },
+        "m_StyleName": {
+          "type": "string"
+        },
+        "m_PointSize": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "m_Scale": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "m_UnitsPerEM": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "m_LineHeight": {
+          "$ref": "#/$defs/num"
+        },
+        "m_AscentLine": {
+          "$ref": "#/$defs/num"
+        },
+        "m_CapLine": {
+          "$ref": "#/$defs/num"
+        },
+        "m_MeanLine": {
+          "$ref": "#/$defs/num"
+        },
+        "m_Baseline": {
+          "$ref": "#/$defs/num"
+        },
+        "m_DescentLine": {
+          "$ref": "#/$defs/num"
+        },
+        "m_SuperscriptOffset": {
+          "$ref": "#/$defs/num"
+        },
+        "m_SuperscriptSize": {
+          "$ref": "#/$defs/num"
+        },
+        "m_SubscriptOffset": {
+          "$ref": "#/$defs/num"
+        },
+        "m_SubscriptSize": {
+          "$ref": "#/$defs/num"
+        },
+        "m_UnderlineOffset": {
+          "$ref": "#/$defs/num"
+        },
+        "m_UnderlineThickness": {
+          "$ref": "#/$defs/num"
+        },
+        "m_StrikethroughOffset": {
+          "$ref": "#/$defs/num"
+        },
+        "m_StrikethroughThickness": {
+          "$ref": "#/$defs/num"
+        },
+        "m_TabWidth": {
+          "$ref": "#/$defs/num"
+        }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "required": [
+        "m_Width",
+        "m_Height",
+        "m_HorizontalBearingX",
+        "m_HorizontalBearingY",
+        "m_HorizontalAdvance"
+      ],
+      "properties": {
+        "m_Width": {
+          "type": "number",
+          "minimum": 0
+        },
+        "m_Height": {
+          "type": "number",
+          "minimum": 0
+        },
+        "m_HorizontalBearingX": {
+          "$ref": "#/$defs/num"
+        },
+        "m_HorizontalBearingY": {
+          "$ref": "#/$defs/num"
+        },
+        "m_HorizontalAdvance": {
+          "$ref": "#/$defs/num"
+        }
+      }
+    },
+    "rect": {
+      "type": "object",
+      "required": [
+        "m_X",
+        "m_Y",
+        "m_Width",
+        "m_Height"
+      ],
+      "properties": {
+        "m_X": {
+          "$ref": "#/$defs/int"
+        },
+        "m_Y": {
+          "$ref": "#/$defs/int"
+        },
+        "m_Width": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "m_Height": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "glyph": {
+      "type": "object",
+      "required": [
+        "metrics",
+        "rect",
+        "scale",
+        "atlasIndex"
+      ],
+      "properties": {
+        "metrics": {
+          "$ref": "#/$defs/metrics"
+        },
+        "rect": {
+          "$ref": "#/$defs/rect"
+        },
+        "scale": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "atlasIndex": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "packed": {
+          "type": "object",
+          "required": [
+            "texture",
+            "dx",
+            "dy"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "texture": {
+              "type": "string",
+              "minLength": 1
+            },
+            "dx": {
+              "$ref": "#/$defs/int"
+            },
+            "dy": {
+              "$ref": "#/$defs/int"
+            }
+          }
+        },
+        "runtime": {
+          "type": "boolean"
+        }
+      }
+    },
+    "character": {
+      "type": "object",
+      "required": [
+        "glyph",
+        "scale",
+        "elementType"
+      ],
+      "properties": {
+        "glyph": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "scale": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "elementType": {
+          "type": "integer"
+        }
+      }
+    },
+    "valueRecord": {
+      "type": "object",
+      "required": [
+        "xPlacement",
+        "yPlacement",
+        "xAdvance",
+        "yAdvance"
+      ],
+      "properties": {
+        "xPlacement": {
+          "$ref": "#/$defs/num"
+        },
+        "yPlacement": {
+          "$ref": "#/$defs/num"
+        },
+        "xAdvance": {
+          "$ref": "#/$defs/num"
+        },
+        "yAdvance": {
+          "$ref": "#/$defs/num"
+        }
+      }
+    },
+    "source": {
+      "type": "object",
+      "required": [
+        "family",
+        "style",
+        "version",
+        "license",
+        "file",
+        "faceIndex",
+        "bytes",
+        "sha256",
+        "generator"
+      ],
+      "properties": {
+        "family": {
+          "type": "string"
+        },
+        "style": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "license": {
+          "type": "string"
+        },
+        "file": {
+          "type": "string",
+          "pattern": "^[^/\\\\]+$"
+        },
+        "faceIndex": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "generator": {
+          "type": "object"
+        }
+      }
+    },
+    "font": {
+      "type": "object",
+      "required": [
+        "faceInfo",
+        "atlasWidth",
+        "atlasHeight",
+        "atlasPadding",
+        "atlasRenderMode",
+        "atlasPopulationMode",
+        "atlases",
+        "normalStyle",
+        "normalSpacingOffset",
+        "boldStyle",
+        "boldSpacing",
+        "italicStyle",
+        "tabSize",
+        "material",
+        "fallbacks",
+        "glyphPairAdjustmentRecords",
+        "characters",
+        "glyphs",
+        "runtimeCharacters",
+        "runtimeGlyphs",
+        "subset"
+      ],
+      "properties": {
+        "faceInfo": {
+          "$ref": "#/$defs/faceInfo"
+        },
+        "atlasWidth": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "atlasHeight": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "atlasPadding": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "atlasRenderMode": {
+          "$ref": "#/$defs/int"
+        },
+        "atlasPopulationMode": {
+          "enum": [
+            0,
+            1
+          ]
+        },
+        "atlases": {
+          "type": "array",
+          "items": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "normalStyle": {
+          "$ref": "#/$defs/num"
+        },
+        "normalSpacingOffset": {
+          "$ref": "#/$defs/num"
+        },
+        "boldStyle": {
+          "$ref": "#/$defs/num"
+        },
+        "boldSpacing": {
+          "$ref": "#/$defs/num"
+        },
+        "italicStyle": {
+          "$ref": "#/$defs/int"
+        },
+        "tabSize": {
+          "$ref": "#/$defs/int"
+        },
+        "material": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fallbacks": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "glyphPairAdjustmentRecords": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "glyphPairAdjustments": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^[0-9]+$"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "required": [
+              "first",
+              "second",
+              "flags"
+            ],
+            "properties": {
+              "first": {
+                "$ref": "#/$defs/valueRecord"
+              },
+              "second": {
+                "$ref": "#/$defs/valueRecord"
+              },
+              "flags": {
+                "$ref": "#/$defs/int"
+              }
+            }
+          }
+        },
+        "characters": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^[0-9]+$"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/character"
+          }
+        },
+        "missingGlyph": {
+          "type": "object",
+          "required": [
+            "unicode",
+            "characters"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "unicode": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "characters": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          }
+        },
+        "glyphs": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^[0-9]+$"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/glyph"
+          }
+        },
+        "runtimeCharacters": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "runtimeGlyphs": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "sourceFont": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "source": {
+          "$ref": "#/$defs/source"
+        },
+        "browser": {
+          "type": "object",
+          "required": [
+            "family"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "family": {
+              "type": "string",
+              "minLength": 1
+            },
+            "weight": {
+              "type": "string",
+              "minLength": 1
+            },
+            "style": {
+              "type": "string",
+              "minLength": 1
+            },
+            "pageWidth": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "pageHeight": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "underlayOffset": {
+              "type": "number",
+              "minimum": 0
+            },
+            "gameFont": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "subset": {
+          "type": "string"
+        }
+      }
+    },
+    "spriteAsset": {
+      "type": "object",
+      "required": [
+        "faceInfo",
+        "characters",
+        "glyphs",
+        "sequences",
+        "material"
+      ],
+      "properties": {
+        "faceInfo": {
+          "type": "object",
+          "required": [
+            "m_PointSize",
+            "m_Scale",
+            "m_Baseline",
+            "m_AscentLine",
+            "m_DescentLine"
+          ],
+          "properties": {
+            "m_PointSize": {
+              "type": "number",
+              "minimum": 0
+            },
+            "m_Scale": {
+              "$ref": "#/$defs/num"
+            },
+            "m_Baseline": {
+              "$ref": "#/$defs/num"
+            },
+            "m_AscentLine": {
+              "$ref": "#/$defs/num"
+            },
+            "m_DescentLine": {
+              "$ref": "#/$defs/num"
+            }
+          }
+        },
+        "characters": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "index",
+              "unicode",
+              "name",
+              "glyph",
+              "scale"
+            ],
+            "properties": {
+              "index": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "unicode": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "name": {
+                "type": "string"
+              },
+              "glyph": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "scale": {
+                "$ref": "#/$defs/num"
+              }
+            }
+          }
+        },
+        "glyphs": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^[0-9]+$"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/glyph"
+          }
+        },
+        "sequences": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "unicode"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "-"
+              },
+              "unicode": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          }
+        },
+        "material": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/source"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "subset": {
+          "type": "string"
+        }
+      }
+    },
+    "texture": {
+      "type": "object",
+      "required": [
+        "texture",
+        "name",
+        "width",
+        "height",
+        "mipCount",
+        "settings"
+      ],
+      "properties": {
+        "texture": {
+          "type": "string",
+          "pattern": "^(fonts|textures)/[^/\\\\]+\\.png$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "mipCount": {
+          "const": 1
+        },
+        "settings": {
+          "type": "object",
+          "required": [
+            "m_FilterMode",
+            "m_WrapU",
+            "m_WrapV"
+          ],
+          "properties": {
+            "m_FilterMode": {
+              "enum": [
+                0,
+                1,
+                2
+              ]
+            },
+            "m_WrapU": {
+              "enum": [
+                0,
+                1,
+                2
+              ]
+            },
+            "m_WrapV": {
+              "enum": [
+                0,
+                1,
+                2
+              ]
+            }
+          }
+        }
+      }
+    },
+    "material": {
+      "type": "object",
+      "required": [
+        "material",
+        "shader",
+        "keywords",
+        "textures",
+        "floats",
+        "colors"
+      ],
+      "properties": {
+        "material": {
+          "type": "string",
+          "minLength": 1
+        },
+        "shader": {
+          "type": "object",
+          "required": [
+            "shader"
+          ],
+          "properties": {
+            "shader": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "keywords": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "textures": {
+          "type": "object"
+        },
+        "floats": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number"
+          }
+        },
+        "ints": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number"
+          }
+        },
+        "colors": {
+          "type": "object"
+        }
+      }
+    },
+    "text": {
+      "type": "object",
+      "required": [
+        "font",
+        "localized",
+        "style"
+      ],
+      "properties": {
+        "font": {
+          "type": "object",
+          "required": [
+            "fontAsset",
+            "material",
+            "lineSpacing"
+          ],
+          "properties": {
+            "fontAsset": {
+              "type": "string",
+              "minLength": 1
+            },
+            "material": {
+              "type": "string",
+              "minLength": 1
+            },
+            "lineSpacing": {
+              "type": "number"
+            }
+          }
+        },
+        "localized": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "required": [
+            "fontAsset",
+            "material",
+            "lineSpacing"
+          ],
+          "properties": {
+            "fontAsset": {
+              "type": "string",
+              "minLength": 1
+            },
+            "material": {
+              "type": "string",
+              "minLength": 1
+            },
+            "lineSpacing": {
+              "type": "number"
+            }
+          }
+        },
+        "style": {
+          "type": "object"
+        },
+        "localizeKoreanAdjust": {
+          "type": "object"
+        }
+      }
+    }
+  },
+  "$id": "urn:nnnotes:schema:story-fonts",
+  "title": "Episode font records and glyph pages"
 }

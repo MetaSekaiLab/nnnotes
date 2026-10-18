@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "file",
+      "sampleRate",
+      "samples"
+    ],
+    "properties": {
+      "file": {
+        "type": "string"
+      },
+      "sampleRate": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "samples": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "channels": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "categories": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "encoderDelay": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "loopStart": {
+        "type": [
+          "integer",
+          "null"
+        ],
+        "minimum": 0
+      },
+      "loopEnd": {
+        "type": [
+          "integer",
+          "null"
+        ],
+        "minimum": 0
+      }
+    }
+  },
+  "$id": "urn:nnnotes:schema:story-sound",
+  "title": "story-sound document"
+}

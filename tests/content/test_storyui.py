@@ -9,6 +9,7 @@ from nnnotes.pipeline.assemble import Objects
 from nnnotes.pipeline.depot import Depot
 from tests.helpers import storyui as sui
 from tests.helpers.livenotes import comp
+from tests.helpers.schemas import validate
 
 
 def ui(objects, language, master):
@@ -37,6 +38,7 @@ def test_the_story_ui_keys_are_the_keys_of_its_table():
 
 def test_the_document_has_the_story_ui_fields_in_the_language(tmp_path):
     doc, keep, roles = ui(story(tmp_path), "zh-Hant", sui.MASTER_RECORD)
+    validate("story-ui", doc)
     assert set(doc) == {
         "format",
         "language",

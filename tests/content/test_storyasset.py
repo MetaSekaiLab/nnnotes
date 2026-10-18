@@ -41,6 +41,9 @@ def test_manifest_name_rejects_other_keys(key):
 def test_the_document_of_a_prefab_key(tmp_path):
     keys = {KEY: [PREFAB, "CAB-n:999"]}  # 999 is not in the table: not one of the key's objects
     doc, _, _ = storyasset.asset(objects_of(tmp_path, keys, SMALL), KEY)
+    from tests.helpers.schemas import validate
+
+    validate("story-asset", doc)
     assert doc == {
         "format": storyasset.ASSET_FORMAT,
         "key": KEY,

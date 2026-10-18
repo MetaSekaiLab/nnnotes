@@ -219,7 +219,26 @@ def table_doc(depot, objs: dict | None = None, keys: dict | None = None, extra_r
 def font_settings() -> fontsettings.FontSettings:
     """The font settings the texts draw with: the Japanese and the traditional Chinese font assets, and the default and
     outline materials of the Japanese font and the outline material of the traditional Chinese one."""
-    face = {"m_Scale": 1.0, "m_PointSize": 100.0, "m_LineHeight": 120.0, "m_AscentLine": 90.0, "m_DescentLine": -30.0}
+    face = {
+        "m_Scale": 1.0,
+        "m_PointSize": 100.0,
+        "m_UnitsPerEM": 1000,
+        "m_LineHeight": 120.0,
+        "m_AscentLine": 90.0,
+        "m_DescentLine": -30.0,
+        "m_CapLine": 70.0,
+        "m_MeanLine": 50.0,
+        "m_Baseline": 0.0,
+        "m_SuperscriptOffset": 60.0,
+        "m_SuperscriptSize": 0.5,
+        "m_SubscriptOffset": -20.0,
+        "m_SubscriptSize": 0.5,
+        "m_UnderlineOffset": -10.0,
+        "m_UnderlineThickness": 2.0,
+        "m_StrikethroughOffset": 30.0,
+        "m_StrikethroughThickness": 2.0,
+        "m_TabWidth": 40.0,
+    }
     fonts = {
         name: {"faceInfo": face, "normalSpacingOffset": 0.0, "boldSpacing": 7.0} for name in ("MainJ SDF", "MainT SDF")
     }

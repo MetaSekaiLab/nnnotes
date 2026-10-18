@@ -1,0 +1,282 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "format",
+    "scene",
+    "graphics",
+    "laneSkins",
+    "prefabs",
+    "spriteAssets",
+    "bands",
+    "settings",
+    "bindings",
+    "shaders"
+  ],
+  "properties": {
+    "format": {
+      "const": 1
+    },
+    "scene": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/objectId"
+      }
+    },
+    "renderSettings": {
+      "$ref": "#/$defs/optionalObjectId"
+    },
+    "graphics": {
+      "type": "object",
+      "required": [
+        "graphics"
+      ],
+      "properties": {
+        "graphics": {
+          "$ref": "#/$defs/objectId"
+        },
+        "quality": {
+          "$ref": "#/$defs/objectId"
+        },
+        "player": {
+          "$ref": "#/$defs/objectId"
+        }
+      }
+    },
+    "laneSkins": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "lane_base",
+          "lane_tap_area",
+          "out_side_line"
+        ],
+        "properties": {
+          "lane_base": {
+            "$ref": "#/$defs/objectId"
+          },
+          "lane_tap_area": {
+            "$ref": "#/$defs/objectId"
+          },
+          "out_side_line": {
+            "$ref": "#/$defs/objectId"
+          }
+        }
+      }
+    },
+    "prefabs": {
+      "type": "object",
+      "required": [
+        "laneLine",
+        "judgeEffectView"
+      ],
+      "properties": {
+        "laneLine": {
+          "$ref": "#/$defs/objectId"
+        },
+        "judgeEffectView": {
+          "$ref": "#/$defs/objectId"
+        },
+        "barLineView": {
+          "$ref": "#/$defs/optionalObjectId"
+        }
+      }
+    },
+    "spriteAssets": {
+      "type": "object",
+      "required": [
+        "combo",
+        "judgement"
+      ],
+      "properties": {
+        "combo": {
+          "$ref": "#/$defs/objectId"
+        },
+        "judgement": {
+          "$ref": "#/$defs/objectId"
+        }
+      }
+    },
+    "bands": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[0-9]+$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "timeline",
+          "background",
+          "tracks"
+        ],
+        "properties": {
+          "timeline": {
+            "$ref": "#/$defs/objectId"
+          },
+          "background": {
+            "$ref": "#/$defs/objectId"
+          },
+          "tracks": {
+            "type": "object",
+            "propertyNames": {
+              "$ref": "#/$defs/objectIdText"
+            },
+            "additionalProperties": {
+              "type": "object",
+              "required": [
+                "prefab",
+                "animator"
+              ],
+              "properties": {
+                "name": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "prefab": {
+                  "$ref": "#/$defs/objectId"
+                },
+                "animator": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "settings": {
+      "type": "object",
+      "required": [
+        "optionDefaults",
+        "qualitySettings",
+        "laneSkin"
+      ],
+      "properties": {
+        "optionDefaults": {
+          "type": "object",
+          "required": [
+            "JudgePositionDisplay",
+            "NoteStartPosition"
+          ],
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "optionRanges": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/range"
+          }
+        },
+        "qualitySettings": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": [
+              "_quality",
+              "_effectRenderingScale"
+            ],
+            "properties": {
+              "_quality": {
+                "type": "integer"
+              },
+              "_effectRenderingScale": {
+                "type": "number"
+              }
+            }
+          }
+        },
+        "laneSkin": {
+          "type": "string"
+        }
+      }
+    },
+    "bindings": {
+      "$ref": "#/$defs/bindings"
+    },
+    "shaders": {
+      "$ref": "#/$defs/shaders"
+    }
+  },
+  "$defs": {
+    "objectId": {
+      "type": "string",
+      "pattern": "^.+:-?[0-9]+$"
+    },
+    "objectIdText": {
+      "pattern": "^.+:-?[0-9]+$"
+    },
+    "bindings": {
+      "type": "object",
+      "propertyNames": {
+        "$ref": "#/$defs/objectIdText"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/objectIdText"
+          },
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "path",
+                "attribute"
+              ],
+              "properties": {
+                "path": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "attribute": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "shaders": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/objectId"
+      }
+    },
+    "range": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "number"
+        }
+      ],
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "optionalObjectId": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^.+:-?[0-9]+$"
+    }
+  },
+  "$id": "urn:nnnotes:schema:live-scene",
+  "title": "live-scene document"
+}

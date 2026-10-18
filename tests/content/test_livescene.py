@@ -6,6 +6,7 @@ from nnnotes.content import livescene
 from nnnotes.pipeline.assemble import Objects
 from nnnotes.pipeline.depot import Depot
 from tests.helpers import livescene as ls
+from tests.helpers.schemas import validate
 
 LANE = [{"path": "LiveGameLane", "attribute": "m_Color.a"}]
 
@@ -20,7 +21,12 @@ def record():
 
 
 def test_the_scene_document(tmp_path):
-    doc, keep, roles = livescene.scene(objects_of(tmp_path, record()), record())
+    settings = record()
+    for name in ("JudgePositionDisplay", "NoteStartPosition"):
+        item = next(i for i, key in livescene.OPTION_ITEMS.items() if key == name)
+        settings["MasterOptionDefault"].append({"_presetId": 1, "_optionItemType": item, "_valueString": "0"})
+    doc, keep, roles = livescene.scene(objects_of(tmp_path, settings), settings)
+    validate("live-scene", doc)
     assert doc["format"] == livescene.SCENE_FORMAT
     assert doc["scene"] == [ls.LIVE, ls.GAME, ls.DIRECTOR] and doc["renderSettings"] == ls.RENDER
     assert doc["graphics"] == {"graphics": ls.GRAPHICS, "quality": ls.QUALITY, "player": ls.PLAYER}

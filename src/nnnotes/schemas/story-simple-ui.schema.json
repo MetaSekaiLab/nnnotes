@@ -1,20 +1,241 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:nnnotes:schema:story-simple-ui",
-  "title": "Overlay story talk-window and system-message UI",
   "type": "object",
-  "required": ["format", "language", "talkWindow", "systemMessage", "uiManager", "settings", "graphics", "texts", "textStyle", "bindings", "shaders"],
+  "required": [
+    "uiManager",
+    "language",
+    "graphics",
+    "texts",
+    "textStyle",
+    "bindings",
+    "shaders",
+    "format",
+    "settings",
+    "talkWindow",
+    "systemMessage"
+  ],
   "properties": {
-    "format": {"const": "nnnotes.story-simple-ui/1"},
-    "language": {"type": "object", "required": ["code", "mode", "field", "lineSpacing", "fontNames", "fontSwap"], "properties": {"code": {"enum": ["ja", "en", "zh-Hant", "zh-Hans", "ko"]}}},
-    "talkWindow": {"type": "string"},
-    "systemMessage": {"type": "string"},
-    "uiManager": {"type": "string"},
-    "settings": {"type": "object", "required": ["localizeManager", "tmpSettings", "dotween"], "additionalProperties": {"type": "string"}},
-    "graphics": {"type": "object", "required": ["graphics"], "additionalProperties": {"type": "string"}},
-    "texts": {"type": "object", "additionalProperties": {"type": "object", "required": ["style", "localized"], "properties": {"style": {"type": "object"}, "localized": {"type": ["object", "null"]}}}},
-    "textStyle": {"type": "object"},
-    "bindings": {"type": "object"},
-    "shaders": {"type": "object", "additionalProperties": {"type": "string"}}
-  }
+    "uiManager": {
+      "type": "string",
+      "pattern": "^.+:-?[0-9]+$"
+    },
+    "language": {
+      "type": "object",
+      "required": [
+        "code",
+        "mode",
+        "field",
+        "lineSpacing",
+        "fontNames",
+        "additionalFontNames",
+        "materialTypes",
+        "fontSwap"
+      ],
+      "properties": {
+        "code": {
+          "enum": [
+            "ja",
+            "en",
+            "zh-Hant",
+            "zh-Hans",
+            "ko"
+          ]
+        },
+        "mode": {
+          "enum": [
+            0,
+            1,
+            2,
+            3,
+            4
+          ]
+        },
+        "field": {
+          "enum": [
+            "japanese",
+            "english",
+            "traditionalChinese",
+            "simplifiedChinese",
+            "korean"
+          ]
+        },
+        "lineSpacing": {
+          "type": "number"
+        },
+        "fontNames": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "additionalFontNames": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "materialTypes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "fontSwap": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "graphics": {
+      "type": "object",
+      "required": [
+        "graphics"
+      ],
+      "properties": {
+        "graphics": {
+          "type": "string",
+          "pattern": "^.+:-?[0-9]+$"
+        },
+        "player": {
+          "type": "string",
+          "pattern": "^.+:-?[0-9]+$"
+        },
+        "quality": {
+          "type": "string",
+          "pattern": "^.+:-?[0-9]+$"
+        }
+      }
+    },
+    "texts": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "localized",
+          "style"
+        ],
+        "properties": {
+          "localized": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "required": [
+              "fontAsset",
+              "material",
+              "lineSpacing"
+            ],
+            "properties": {
+              "fontAsset": {
+                "type": "string",
+                "minLength": 1
+              },
+              "material": {
+                "type": "string",
+                "minLength": 1
+              },
+              "lineSpacing": {
+                "type": "number"
+              }
+            }
+          },
+          "style": {
+            "type": "object"
+          }
+        }
+      },
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^.+:-?[0-9]+$"
+      }
+    },
+    "textStyle": {
+      "type": "object"
+    },
+    "bindings": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "path",
+                "attribute"
+              ],
+              "properties": {
+                "path": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "attribute": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              }
+            }
+          },
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^.+:-?[0-9]+$"
+          }
+        }
+      },
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^.+:-?[0-9]+$"
+      }
+    },
+    "shaders": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^.+:-?[0-9]+$"
+      }
+    },
+    "format": {
+      "const": "nnnotes.story-simple-ui/1"
+    },
+    "settings": {
+      "type": "object",
+      "required": [
+        "dotween",
+        "tmpSettings",
+        "localizeManager"
+      ],
+      "properties": {
+        "dotween": {
+          "type": "string",
+          "pattern": "^.+:-?[0-9]+$"
+        },
+        "tmpSettings": {
+          "type": "string",
+          "pattern": "^.+:-?[0-9]+$"
+        },
+        "localizeManager": {
+          "type": "string",
+          "pattern": "^.+:-?[0-9]+$"
+        }
+      }
+    },
+    "talkWindow": {
+      "type": "string",
+      "pattern": "^.+:-?[0-9]+$"
+    },
+    "systemMessage": {
+      "type": "string",
+      "pattern": "^.+:-?[0-9]+$"
+    }
+  },
+  "$id": "urn:nnnotes:schema:story-simple-ui",
+  "title": "Overlay story talk-window and system-message UI"
 }

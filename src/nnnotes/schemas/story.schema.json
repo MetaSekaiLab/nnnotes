@@ -1,0 +1,176 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "format",
+    "advId",
+    "episode",
+    "parts"
+  ],
+  "properties": {
+    "format": {
+      "const": 1
+    },
+    "advId": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "episode": {
+      "const": "episode.json"
+    },
+    "chats": {
+      "type": "object"
+    },
+    "effects": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "host": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "parts": {
+      "type": "object",
+      "required": [
+        "scene",
+        "assets",
+        "models",
+        "sounds",
+        "ui",
+        "fonts"
+      ],
+      "properties": {
+        "scene": {
+          "type": "string",
+          "pattern": "^[^/\\\\?#]+(?:/[^/\\\\?#]+)+\\.json$"
+        },
+        "chat": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[^/\\\\?#]+(?:/[^/\\\\?#]+)+\\.json$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "crilips": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[^/\\\\?#]+(?:/[^/\\\\?#]+)+\\.json$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "assets": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^[^/\\\\?#]+(?:/[^/\\\\?#]+)+\\.json$"
+          }
+        },
+        "models": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^[^/\\\\?#]+(?:/[^/\\\\?#]+)+\\.json$"
+          }
+        },
+        "sounds": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^[^/\\\\?#]+(?:/[^/\\\\?#]+)+\\.json$"
+          }
+        },
+        "videos": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^[^/\\\\?#]+(?:/[^/\\\\?#]+)+\\.json$"
+          }
+        },
+        "host": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^[^/\\\\?#]+(?:/[^/\\\\?#]+)+\\.json$"
+          }
+        },
+        "spots": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^[^/\\\\?#]+(?:/[^/\\\\?#]+)+\\.json$"
+          }
+        },
+        "rooms": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^[^/\\\\?#]+(?:/[^/\\\\?#]+)+\\.json$"
+          }
+        },
+        "ui": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^[^/\\\\?#]+(?:/[^/\\\\?#]+)+\\.json$"
+          },
+          "propertyNames": {
+            "enum": [
+              "ja",
+              "en",
+              "zh-Hant",
+              "zh-Hans",
+              "ko"
+            ]
+          }
+        },
+        "fonts": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^[^/\\\\?#]+(?:/[^/\\\\?#]+)+\\.json$"
+          },
+          "propertyNames": {
+            "enum": [
+              "ja",
+              "en",
+              "zh-Hant",
+              "zh-Hans",
+              "ko"
+            ]
+          }
+        },
+        "simpleui": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^[^/\\\\?#]+(?:/[^/\\\\?#]+)+\\.json$"
+          },
+          "propertyNames": {
+            "enum": [
+              "ja",
+              "en",
+              "zh-Hant",
+              "zh-Hans",
+              "ko"
+            ]
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "$id": "urn:nnnotes:schema:story",
+  "title": "story document"
+}

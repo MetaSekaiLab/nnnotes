@@ -7,8 +7,16 @@ from nnnotes.pipeline import contract
 from nnnotes.pipeline.assemble import Objects
 from nnnotes.pipeline.depot import Depot
 from tests.helpers import live as lh
+from tests.helpers.schemas import validate
 
-PARTS = {"scene": "scenes/default.json", "music": "music/7.json"}
+PARTS = {
+    "scene": "scenes/default.json",
+    "music": "music/7.json",
+    "notes": "notes/default.json",
+    "noteskin": "noteskins/skin001.json",
+    "noteeffect": "noteeffects/effect001.json",
+    "sounds": "sounds/default.json",
+}
 
 
 def objects_of(tmp_path, **kw) -> Objects:
@@ -61,6 +69,7 @@ def test_the_record_holds_the_musics_rows_the_difficulty_and_the_band():
 def test_the_live_holds_its_chart_converted_and_names_its_parts(tmp_path, gz):
     record = live.live_record(lh.master(), "7/expert")
     doc, chart, converted, keep = live.live(objects_of(tmp_path, gz=gz), record, PARTS)
+    validate("live", doc)
     notes, mirror = score.convert(lh.CHART), score.convert(lh.CHART, mirror=True)
     assert doc == {
         "format": live.LIVE_FORMAT,
@@ -76,7 +85,7 @@ def test_the_live_holds_its_chart_converted_and_names_its_parts(tmp_path, gz):
         "lastNoteTimeMs": notes["lastNoteTimeMs"],
         "master": record["music"],
         "jacket": lh.JACKET,
-        "parts": {"music": "music/7.json", "scene": "scenes/default.json"},
+        "parts": PARTS,
     }
     assert chart == contract.encode(lh.CHART)  # as shipped, un-gzipped
     source = {

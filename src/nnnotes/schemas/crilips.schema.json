@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "dtype",
+    "order",
+    "total_floats",
+    "blocks",
+    "constants",
+    "frontend"
+  ],
+  "properties": {
+    "dtype": {
+      "const": "float32"
+    },
+    "order": {
+      "const": "LE"
+    },
+    "total_floats": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "blocks": {
+      "type": "array",
+      "items": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "required": [
+          "name",
+          "offset",
+          "count"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "constants": {
+      "type": "object"
+    },
+    "frontend": {
+      "type": "object"
+    }
+  },
+  "$id": "urn:nnnotes:schema:crilips",
+  "title": "crilips document"
+}

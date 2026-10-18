@@ -1,23 +1,185 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:nnnotes:schema:story-host",
-  "title": "Overlay story host screen",
   "type": "object",
-  "required": ["format", "kind", "prefabs", "cameraTarget", "overlayRoot", "layoutRoot", "openedSequences", "home", "afterlive", "graphics", "dotween", "bindings", "shaders"],
+  "required": [
+    "format",
+    "kind",
+    "cameraTarget",
+    "dotween",
+    "prefabs",
+    "overlayRoot",
+    "layoutRoot",
+    "openedSequences",
+    "home",
+    "afterlive",
+    "graphics",
+    "bindings",
+    "shaders"
+  ],
   "properties": {
-    "format": {"const": "nnnotes.story-host/1"},
-    "kind": {"enum": ["home", "afterlive"]},
-    "prefabs": {"type": "object", "additionalProperties": {"type": "string"}},
-    "cameraTarget": {"type": "string"},
-    "overlayRoot": {"$ref": "#/$defs/location"},
-    "layoutRoot": {"allOf": [{"$ref": "#/$defs/location"}, {"type": "object", "required": ["fields"], "properties": {"fields": {"type": "object"}}}]},
-    "openedSequences": {"type": "array", "items": {"$ref": "#/$defs/location"}},
-    "home": {"type": ["object", "null"]},
-    "afterlive": {"type": ["object", "null"]},
-    "graphics": {"type": "object", "required": ["graphics"], "additionalProperties": {"type": "string"}},
-    "dotween": {"type": "string"},
-    "bindings": {"type": "object"},
-    "shaders": {"type": "object", "additionalProperties": {"type": "string"}}
+    "format": {
+      "const": "nnnotes.story-host/1"
+    },
+    "kind": {
+      "enum": [
+        "home",
+        "afterlive"
+      ]
+    },
+    "cameraTarget": {
+      "type": "string",
+      "pattern": "^.+:-?[0-9]+$"
+    },
+    "dotween": {
+      "type": "string",
+      "pattern": "^.+:-?[0-9]+$"
+    },
+    "prefabs": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^.+:-?[0-9]+$"
+      }
+    },
+    "overlayRoot": {
+      "type": "object",
+      "required": [
+        "prefab",
+        "path"
+      ],
+      "properties": {
+        "prefab": {
+          "type": "string",
+          "pattern": "^.+:-?[0-9]+$"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "layoutRoot": {
+      "type": "object",
+      "required": [
+        "prefab",
+        "path",
+        "fields"
+      ],
+      "properties": {
+        "prefab": {
+          "type": "string",
+          "pattern": "^.+:-?[0-9]+$"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fields": {
+          "type": "object"
+        }
+      }
+    },
+    "openedSequences": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "prefab",
+          "path"
+        ],
+        "properties": {
+          "prefab": {
+            "type": "string",
+            "pattern": "^.+:-?[0-9]+$"
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "home": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "afterlive": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "graphics": {
+      "type": "object",
+      "required": [
+        "graphics"
+      ],
+      "properties": {
+        "graphics": {
+          "type": "string",
+          "pattern": "^.+:-?[0-9]+$"
+        },
+        "player": {
+          "type": "string",
+          "pattern": "^.+:-?[0-9]+$"
+        },
+        "quality": {
+          "type": "string",
+          "pattern": "^.+:-?[0-9]+$"
+        }
+      }
+    },
+    "bindings": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "path",
+                "attribute"
+              ],
+              "properties": {
+                "path": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "attribute": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              }
+            }
+          },
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^.+:-?[0-9]+$"
+          }
+        }
+      },
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^.+:-?[0-9]+$"
+      }
+    },
+    "shaders": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^.+:-?[0-9]+$"
+      }
+    }
   },
-  "$defs": {"location": {"type": "object", "required": ["prefab", "path"], "properties": {"prefab": {"type": "string"}, "path": {"type": "string"}}}}
+  "$id": "urn:nnnotes:schema:story-host",
+  "title": "Overlay story host screen"
 }

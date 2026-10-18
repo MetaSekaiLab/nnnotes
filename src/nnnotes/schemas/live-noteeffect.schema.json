@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "format",
+    "name",
+    "settings",
+    "bindings",
+    "shaders"
+  ],
+  "properties": {
+    "format": {
+      "const": 1
+    },
+    "name": {
+      "type": "string"
+    },
+    "settings": {
+      "$ref": "#/$defs/objectId"
+    },
+    "bindings": {
+      "$ref": "#/$defs/bindings"
+    },
+    "shaders": {
+      "$ref": "#/$defs/shaders"
+    }
+  },
+  "$defs": {
+    "objectId": {
+      "type": "string",
+      "pattern": "^.+:-?[0-9]+$"
+    },
+    "objectIdText": {
+      "pattern": "^.+:-?[0-9]+$"
+    },
+    "bindings": {
+      "type": "object",
+      "propertyNames": {
+        "$ref": "#/$defs/objectIdText"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/objectIdText"
+          },
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "path",
+                "attribute"
+              ],
+              "properties": {
+                "path": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "attribute": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "shaders": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/objectId"
+      }
+    }
+  },
+  "$id": "urn:nnnotes:schema:live-noteeffect",
+  "title": "live-noteeffect document"
+}

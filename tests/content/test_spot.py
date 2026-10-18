@@ -36,6 +36,9 @@ def test_master_record():
 
 def test_spot_document(tmp_path):
     doc, files = spot.spot(objects_of(tmp_path), so.SITUATION, spot.master_record(so.MASTER, so.SITUATION))
+    from tests.helpers.schemas import validate
+
+    validate("spot", doc)
     assert doc == {
         "spotId": 3,
         "master": so.MASTER["MasterHomeSpot"][0],

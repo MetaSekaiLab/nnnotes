@@ -1,0 +1,146 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "format",
+    "scene",
+    "renderSettings",
+    "prefabs",
+    "settings",
+    "graphics",
+    "bindings",
+    "shaders"
+  ],
+  "properties": {
+    "format": {
+      "const": 1
+    },
+    "scene": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^.+:-?[0-9]+$"
+      }
+    },
+    "renderSettings": {
+      "type": "string",
+      "pattern": "^.+:-?[0-9]+$"
+    },
+    "prefabs": {
+      "type": "object",
+      "required": [
+        "cameraManager",
+        "characterField",
+        "backgroundField",
+        "globalVolume"
+      ],
+      "properties": {
+        "cameraManager": {
+          "type": "string",
+          "pattern": "^.+:-?[0-9]+$"
+        },
+        "characterField": {
+          "type": "string",
+          "pattern": "^.+:-?[0-9]+$"
+        },
+        "backgroundField": {
+          "type": "string",
+          "pattern": "^.+:-?[0-9]+$"
+        },
+        "globalVolume": {
+          "type": "string",
+          "pattern": "^.+:-?[0-9]+$"
+        }
+      }
+    },
+    "settings": {
+      "type": "object",
+      "required": [
+        "playerSettings",
+        "masterIdSettings"
+      ],
+      "properties": {
+        "playerSettings": {
+          "type": "string",
+          "pattern": "^.+:-?[0-9]+$"
+        },
+        "masterIdSettings": {
+          "type": "string",
+          "pattern": "^.+:-?[0-9]+$"
+        }
+      }
+    },
+    "graphics": {
+      "type": "object",
+      "required": [
+        "graphics",
+        "player",
+        "quality"
+      ],
+      "properties": {
+        "graphics": {
+          "type": "string",
+          "pattern": "^.+:-?[0-9]+$"
+        },
+        "player": {
+          "type": "string",
+          "pattern": "^.+:-?[0-9]+$"
+        },
+        "quality": {
+          "type": "string",
+          "pattern": "^.+:-?[0-9]+$"
+        }
+      }
+    },
+    "bindings": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "path",
+                "attribute"
+              ],
+              "properties": {
+                "path": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "attribute": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              }
+            }
+          },
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^.+:-?[0-9]+$"
+          }
+        }
+      },
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^.+:-?[0-9]+$"
+      }
+    },
+    "shaders": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^.+:-?[0-9]+$"
+      }
+    }
+  },
+  "$id": "urn:nnnotes:schema:story-scene",
+  "title": "story-scene document"
+}
