@@ -1184,7 +1184,7 @@ def _apply_atoms(atoms) -> None:
 def _import_stage_modules() -> dict:
     """Import what a unity.export task needs, timed (wall, CPU)."""
     t0, c0 = time.perf_counter(), time.process_time()
-    for m in ("numpy", "PIL.Image", "nnnotes.pipeline.objexport", "nnnotes.unity.export"):
+    for m in ("numpy", "PIL.Image", "nnnotes.pipeline.objexport", "nnnotes.unity.texels"):
         importlib.import_module(m)
     return {"wall": round(time.perf_counter() - t0, 4), "cpu": round(time.process_time() - c0, 4)}
 
@@ -1409,7 +1409,7 @@ def cmd_m3_one(a) -> None:
 
 # ---------------------------------------------------------------- imports
 def cmd_imports(a) -> dict:
-    sets = [m.split(",") for m in (a.module or ["numpy,PIL.Image,nnnotes.pipeline.objexport,nnnotes.unity.export"])]
+    sets = [m.split(",") for m in (a.module or ["numpy,PIL.Image,nnnotes.pipeline.objexport,nnnotes.unity.texels"])]
     code = (
         "import resource, sys, time, json\n"
         "t = time.perf_counter(); c = time.process_time()\n"

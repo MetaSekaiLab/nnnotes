@@ -244,16 +244,12 @@ def jacket_webp(image, size: int = JACKET_SIZE) -> bytes:
 
 def catalog_jacket(cat, size: int = JACKET_SIZE) -> Callable[[str], bytes]:
     """jacket(name) for a catalog: the WebP bytes (jacket_webp) of the Texture2D `Image/Jacket/<name>`."""
-    import tempfile
-
-    from ..unity.export import Exporter
-
-    ex = Exporter(cat, Path(tempfile.gettempdir()), textures="deferred")
+    from ..unity.reader import container_asset, load_closure
 
     def jacket(name: str) -> bytes:
         key = JACKET_KEY.format(jacket=name)
         try:
-            o = ex.key_object(key)
+            o = container_asset(load_closure(cat.fetch_key(key)), cat.entry(key)["internal_id"])
         except KeyError:
             raise MusicDataError(f"jacket {name}: no asset {key}") from None
         except Exception as e:
