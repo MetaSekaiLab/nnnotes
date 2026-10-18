@@ -110,7 +110,7 @@ exist when they are given.
 | `[paths] player` | `NNNOTES_PATHS_PLAYER` | `--player` (of `site build`) | ournotes-player checkout (built) or installed package |
 | `[paths] fonts.<language>` | `NNNOTES_PATHS_FONTS_<LANGUAGE>` (e.g. `NNNOTES_PATHS_FONTS_ZH_HANT`) | `--font <language>=PATH` (of `site build`) | font file (OpenType or TrueType) the story text of a language is drawn with (`--fonts open`); also read for the other story languages whose game fonts fall back to that language's font |
 | `[paths] fonts.emoji` | `NNNOTES_PATHS_FONTS_EMOJI` | `--font emoji=PATH` (of `site build`) | colour emoji font (PNG bitmap glyphs: CBDT or sbix) the stories' emoji sprites are drawn from (`--fonts open`); Noto Color Emoji (SIL Open Font License 1.1) is the tested font. Optional: without it the sprites keep their layout with empty glyphs, listed in `ui/fonts.json` `coverage.sprites.missing` |
-| `[depot] downloads` | `NNNOTES_DEPOT_DOWNLOADS` | — | how much of the depot's downloaded bundles and raw files to keep once no command uses the depot: a size (`500MB`, `20GiB`; units B, KB, MB, GB, TB and KiB, MiB, GiB, TiB), `all`, or `0` (unset) ([commands.md](commands.md#downloads)) |
+| `[depot] downloads` | `NNNOTES_DEPOT_DOWNLOADS` | — | download-cache budget, applied to finished conversion batches and when the last command ends: a size (`500MB`, `20GiB`; units B, KB, MB, GB, TB and KiB, MiB, GiB, TiB), `all`, or `0` (unset) ([commands.md](commands.md#downloads)) |
 | `[depot] remote` | `NNNOTES_DEPOT_REMOTE` | — | a remote of the depot shared by the machines that use it: `s3://<bucket>/<prefix>` (S3-compatible object storage; `pip install 'nnnotes[remote]'`) or `file:///<directory>` ([contracts.md](contracts.md#depot-remote)) |
 | `[depot] endpoint` | `NNNOTES_DEPOT_ENDPOINT` | — | endpoint URL of the S3-compatible object storage; unset: AWS S3 |
 | `[depot] access_key_id` | `NNNOTES_DEPOT_ACCESS_KEY_ID` | — | access key id of the object storage; unset: boto3 looks for credentials itself (`AWS_ACCESS_KEY_ID`, `~/.aws`) |
@@ -188,9 +188,10 @@ story text); it is not a setting.
 | `catalog versions` / `import` / `diff`, `depot verify` | the depot; `import` reads the APK's catalog from `[paths] apk` when it is set |
 | `catalog fetch` | the depot, `[catalog] region` and `language`, that region's `cdn`; its `api` (optional) for the resource version label |
 
-The region, its `cdn`, `[bundle] key` and `nonce_seed` are read only when a file must be downloaded: when the
-catalog and every bundle a command needs are downloaded, none of them is needed. A download that needs a missing
-one stops the command with one line naming the file and the setting (see Errors).
+The region, its `cdn`, `[bundle] key` and `nonce_seed` are read only when a file must be downloaded. A product
+request can read a downloaded catalog and its bundle files without these settings. Use `[depot] downloads = all`
+for an offline sequence of requests; a bounded budget can release a bundle that a later request needs again.
+A download that needs a missing setting stops the command with one line naming the file and setting (see Errors).
 
 ## Errors
 

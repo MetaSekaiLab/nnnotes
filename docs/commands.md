@@ -69,6 +69,14 @@ Catalog files are kept. A removed file is downloaded again when a command needs 
 identity (sha256 and size) of every bundle and raw file it reads, so `export assets` plans with files whose name
 carries the catalog's hash without downloading them again.
 
+During product and asset requests, a completed object-conversion batch makes its bundle downloads eligible for
+release toward the same budget. Readers finish before release; active batches, failed batches and preliminary
+episode requests stay protected. A batch already present in the depot can release its downloaded input as well.
+Only files recoverable through an explicit catalog or depot locator are released, and their contents are checked
+against the input identity. `all` retains downloads throughout the run; `0` releases each eligible batch without
+scanning the download directory. With a finite size, finished files are evicted in LRU order and active files can
+temporarily exceed the budget. Later requests can download a released bundle again.
+
 Commands may run at the same time on one depot: no command removes downloads while another one holds a lease, and a
 command that starts while one trims waits for it. The lease of a process that ended without releasing it is dropped
 by the next command; a lease written on another host counts for a day.
