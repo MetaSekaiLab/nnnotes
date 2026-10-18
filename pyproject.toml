@@ -30,7 +30,7 @@ test = ["pytest>=8", "pyflakes>=3.2", "jsonschema>=4.18"]
 fonts = ["fonttools>=4.50", "freetype-py>=2.5", "scipy>=1.13"]
 # the deck model of music-data: one nnnotes version carries one ournotes-deck release (.github/workflows/deck.yml moves
 # the pin when ournotes-deck publishes a newer one)
-deck = ["ournotes-sim==0.0.11"]
+deck = ["ournotes-sim==0.0.12"]
 
 [project.scripts]
 nnnotes = "nnnotes.cli:main"
