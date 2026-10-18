@@ -4,7 +4,14 @@ All notable changes to this project are listed here. Versions follow [Semantic V
 over the command line (commands, options, exit statuses and `--json` reports), the configuration keys, the JSON
 schemas in `nnnotes.schemas` and the documented Python API. Before 1.0 a minor version can change any of them.
 
-## Unreleased
+## [0.3.0](https://github.com/MetaSekaiLab/nnnotes/compare/v0.2.1...v0.3.0) - 2026-10-18
+
+### Compatibility
+
+- Configure persistent storage with `[paths] depot` and optional `[depot] remote`. Manage it with `depot plan`, `depot run`, `depot verify` and `depot gc`.
+- Exported products use `nnnotes.product/1` manifests and shared object references. Browser playback uses ournotes-player 0.2.x.
+- Build named sites with `site build --name NAME -o DIR`. Copy selected source bundles with `bundle pull -o DIR`.
+- The `deck` extra uses ournotes-sim 0.0.9.
 
 ### Features
 
