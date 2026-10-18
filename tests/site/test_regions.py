@@ -89,7 +89,12 @@ def test_music_rows_have_every_language(tmp_path):
 
 @pytest.mark.parametrize("code", LANGS)
 def test_start_canvas_strings_follow_the_language(tmp_path, code):
-    strings, sources = liveui.resolve_strings(write_master(tmp_path / "m"), 1, "expert", languages.column(code))
+    master = write_master(tmp_path / "m")
+    tables = {
+        name: score.master_table(master, name)
+        for name in ("MasterLiveMusic", "MasterText", "MasterBand", "MasterLiveMusicScore")
+    }
+    strings, sources = liveui.record_strings(tables, 1, "expert", languages.column(code))
     assert strings["musicTitle"] == "Song-ja"  # the game shows the Japanese title by default
     assert strings["singerName"] == f"Band-{code}"
     assert strings["lyricsWriter"] == f"L:Lyricist-{code}"

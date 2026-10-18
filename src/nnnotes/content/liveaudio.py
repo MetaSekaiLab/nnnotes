@@ -1,56 +1,12 @@
-"""Live sounds: the cue structure of the live's cue sheets, the game's sound settings and the live-audio documents.
-
-What a live plays besides its chart, from the master data (MasterSound, MasterSoundCueSheet, MasterLiveMusic,
-MasterLiveNoteSe, MasterLiveSe, MasterOptionDefault), the cue sheets' ACBs and their decoded streams (cri.decode or
-the cri.audio stage), the ACF of the APK (ACF_IN_APK) and two MonoBehaviours of the APK's built-in files
-(SETTINGS_SCRIPTS). A sound entry (sound_entry):
-
-  {row, sheet, cue, category, categories, volume, busSends, lengthMs, other, layers[{file, stream, awbId,
-  sampleRate, channels, samples, loopStart, loopEnd, loopFlag, volume, busSends, other}]}
-
-the cue structure (sequence -> tracks -> synth -> waveform) read from the ACB (acb_cues: command 65 categories, 146
-volume, 111 bus send), each layer the decoded stream `audio/<sheet>/<file>`.
-
-music_doc (the live.music product, format MUSIC_FORMAT): `music` {soundId, volume, startTimeSec} the BGM sound, and
-`sounds` {its id: its entry}, each layer in the product's audio format.
-
-sounds_doc (the live.sounds product, format SOUNDS_FORMAT), the sounds of the default options (auto play at Perfect,
-fresh profile) and of the note sound sets offered:
-
-  sounds        MasterSound id -> entry: the note SE of the default preset and of every offered set, and the live
-                SE of LIVE_SE_SOUNDS (the start and finish cheers and the finish direction of every result: the one a
-                live ends with depends on how it is played)
-  categories    CRI category volumes for a fresh profile (SoundVolumeSettings x AppConfigDefaultData)
-  acf, react    the ACF's buses and categories, its REACT (ducking) entries between live categories
-  noteSe        LiveNoteSeType -> sound id / volume / mute for the default preset (LiveSettingCreator.CreateSESettings);
-                with sets offered also `groups`: set id -> LiveNoteSeType -> sound id (MasterLiveNoteSe)
-  liveSe        LiveSeType -> sound id (MasterLiveSe)
-  timeline      intro / end timings the runtime needs
-
-A live.sounds subject names the sets offered: `default`, or `NoteSePatternId=<id>,<id>,...` (sounds_subject).
-
-extract() writes the same for one music into a live directory (audio/live-audio.json: the fields of both documents
-in one, the BGM sound among the sounds) from a Catalog, decoding each cue sheet with cri.decode into
-`<out>/audio/<sheet>/` (a sheet already decoded there, the BGM by score.py, is reused).
-"""
+"""Music and live sound product records from explicit master data, cue sheets and player settings."""
 
 from __future__ import annotations
 
 import struct
-from pathlib import Path
-from typing import TYPE_CHECKING
 
-from ..core.jsonio import write_json
 from ..formats.acb import commands as _commands
 from ..formats.acb import tables as _tables
 from ..formats.acb import u16s as _u16s
-from ..formats.encoders import FLAC_LEVEL
-from ..source.apkset import ApkSet
-
-if TYPE_CHECKING:
-    from ..source.catalog import Catalog
-    from ..unity.player import PlayerData
-    from .liveoptions import LiveOptions
 
 ACF_IN_APK = "assets/Cri/Sound/Sirius.acf"
 MUSIC_FORMAT, SOUNDS_FORMAT = 1, 1  # the "format" of music_doc / sounds_doc
@@ -548,94 +504,3 @@ def sounds_doc(tables: dict, subject: str, sheet, svs: dict, acd: dict, acf: byt
 
 
 # --------------------------------------------------------------------------- extraction
-def _decode(cat: Catalog, sheet: str, out_dir: Path, fmt: str, flac_level: int) -> list[dict]:
-    """Decode a cue sheet into <out>/audio/<sheet>/ (reusing an existing decode) and return its stream list."""
-    from ..formats import cri
-
-    d = out_dir / "audio" / sheet
-    if not (d / "streams.json").exists():
-        cri.decode(cat, sheet, d, fmt=fmt, flac_level=flac_level)
-    import json
-
-    return json.loads((d / "streams.json").read_text(encoding="utf-8"))
-
-
-def _player_mono(player: PlayerData, cls: str) -> dict:
-    hits = []
-    for o in player.env.objects:
-        if o.type.name != "MonoBehaviour":
-            continue
-        try:
-            if player.script(o)[2] != cls:
-                continue
-        except Exception:  # MonoBehaviours without a resolvable script are not ours
-            continue
-        hits.append(player.mono(o))
-    if len(hits) != 1:
-        raise RuntimeError(f"{cls}: {len(hits)} objects in the player data")
-    return hits[0]
-
-
-def extract(
-    cat: Catalog,
-    master: Path,
-    player: PlayerData,
-    music_id: int,
-    out_dir: Path,
-    fmt: str = "flac",
-    options: LiveOptions | None = None,
-    *,
-    flac_level: int = FLAC_LEVEL,
-) -> dict:
-    """Decode the live's sound cue sheets and write <out>/audio/live-audio.json (module documentation). Returns a
-    summary. `options`: the note sound sets it offers are written as noteSe.groups, their sounds decoded after the
-    default ones. `flac_level`: ffmpeg's compression level of the FLAC files (cri.decode)."""
-    from ..formats import cri
-    from .score import master_table
-
-    out_dir = Path(out_dir)
-    if cat.apk is None:
-        raise RuntimeError("liveaudio needs the Catalog opened with apk= (ACF, HCA key)")
-    tables = {t: master_table(master, t) for t in dict.fromkeys((*MUSIC_TABLES, *SOUND_TABLES))}
-    music_row, _ = music_sound(tables, music_id)
-    live = live_sounds(tables, options.se_patterns if options is not None else ())
-    layouts = {}
-
-    def sheet(name: str):
-        acb, layouts[name] = cri.acb_data(cat, name)
-        return acb["acb"], _decode(cat, name, out_dir, fmt, flac_level)
-
-    entries, read = sound_entries(tables, list(dict.fromkeys([music_row["_id"], *live["ids"]])), sheet)
-    with ApkSet(cat.apk) as z:
-        acf = acf_info(z.read(ACF_IN_APK))
-    svs, acd = (_player_mono(player, s) for s in SETTINGS_SCRIPTS)
-    doc = {
-        "musicId": music_id,
-        "spec": "nnnotes.content.liveaudio",
-        "sounds": entries,
-        "categories": category_volumes(svs, acd),
-        "acf": {"name": acf["name"], "buses": acf["buses"], "categories": acf["categories"]},
-        "react": acf["react"],
-        "music": {"soundId": music_row["_id"], "volume": 1.0, "startTimeSec": 0.0},
-        "noteSe": live["noteSe"],
-        "liveSe": {str(k): v for k, v in sorted(live["liveSe"].items())},
-        "liveSeNames": LIVE_SE_TYPES,
-        "timeline": TIMELINE,
-        "voice": {
-            "decision": "caller",
-            "character": None,
-            "rule": "LotteryStartVoice: random deck member, random MasterLiveStartCharacterVoice row of that "
-            "character; finish voice from LotteryFinishVoice; no deck -> undefined",
-            "startVoiceSoundIds": [],
-        },
-        "decoded": {
-            n: {"layout": layouts[n], "cues": len(cues), "streams": len(streams)} for n, (cues, streams) in read.items()
-        },
-    }
-    write_json(out_dir / "audio" / "live-audio.json", doc)
-    return {
-        "index": "audio/live-audio.json",
-        "sheets": sorted(read),
-        "sounds": len(entries),
-        "musicSoundId": music_row["_id"],
-    }

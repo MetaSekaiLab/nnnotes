@@ -1,26 +1,9 @@
-"""The settings of the game's TextMeshPro font assets that the exports with open fonts (`--fonts open`) take.
+"""Font settings tables for TextMesh Pro assets and open-font generation.
 
-An open font asset stands for a game font asset: it gets that asset's point size, padding, render mode, style
-settings, line metrics and text materials, mirrors its fallback chain, and the characters the game asset lacks with
-its fallbacks take TextMeshPro's missing glyph (storyfonts.open_font_set). These values come from FontSettings:
-
-  builtin()         the table shipped with nnnotes (fontsettings.json, FORMAT), so the open-font exports read no
-                    game font asset, material or font bundle
-  tmpfont.AssetFontSettings
-                    the same values read from the game's font assets through an Exporter (`--fonts game`, and
-                    tmpfont.build_font_settings, which makes the table)
-
-The table holds, per font asset LocalizeManager lists for a language and per asset of their fallback chains:
-`faceInfo` (m_FaceInfo), `atlasPadding`, `atlasRenderMode`, the style settings (STYLE_KEYS), `material` (the name of
-its default material), `fallbacks` (the names of its fallback font asset table, in order), `coverage` (the code
-points the asset has: its character table, and for a dynamic asset the character map of its source font file, as a
-bit set: bit u of the zlib-compressed bytes, base64), `variants` (the [code point, variation selector] pairs its
-source font file maps to a glyph other than the code point's) and `bundle` (the file name of the bundle that holds
-it); per material the material record (Exporter.material, its texture references reduced: table_material) of every
-font asset's default material and of every localized text material ("<font> - <type>" for the types of
-LocalizeManager); and `objects`, the path id, type and name of each of those font assets and materials, by which
-references into the font bundles resolve without loading them (export.Exporter `font_stubs`).
-"""
+A table records each font's face metrics, atlas parameters, style settings, fallback order, character coverage,
+variation sequences and bundle identity. Materials carry shader names and texture settings. The object index
+maps font and material path ids to their names. FontSettings reads either the bundled table or a table assembled
+from product objects by content.tmpassets.build_font_settings."""
 
 from __future__ import annotations
 

@@ -12,7 +12,7 @@ subpackage of `nnnotes` and imports only the layers below it.
 | Products | `nnnotes.site`, `nnnotes.musicdata` | the ournotes-player site (charts, models, stories, indexes); the music data file and its deck statistics |
 | Pipeline | `nnnotes.pipeline` | stages, task descriptions and results, the content-addressed depot, plans, layouts, the catalog versions, the views of the master data |
 | Content | `nnnotes.content` | the game's subjects as exports: ADV episodes and stories, lives and scores, spots, rooms, the UI library |
-| Unity objects | `nnnotes.unity` | bundle reading, object ids, the atoms (the pure functions objects are converted with: texture decoding, sprite images, mesh arrays, glTF, PNG, file sniffing), the converters (one per Unity class, `nnnotes.unity.convert`), clip bindings named in the hierarchy that plays a clip (`nnnotes.unity.bindings`), the type trees shipped for the player's script classes (`nnnotes.unity.scripttypes`), the typetree exporter, the player data, Live2D prefabs, text styles and TextMesh Pro fonts |
+| Unity objects | `nnnotes.unity` | bundle reading, object ids, atomic texture/sprite/mesh/glTF/PNG conversions, class converters (`nnnotes.unity.convert`), clip bindings (`nnnotes.unity.bindings`), script type trees (`nnnotes.unity.scripttypes`), player data, text styles, font protocols and texel packing |
 | File formats | `nnnotes.formats` | formats read from bytes: CRI ACB/AWB and HCA, USM movies, CRI Lips data, shaders, motions |
 | Sources | `nnnotes.source` | the configuration, the APK, Addressables catalogs and bundles, the game API, master data, languages, `Session` |
 | Core | `nnnotes.core` | the one JSON writer, canonical JSON and its hashes, media types, the process caches and the downloads cache |
@@ -39,6 +39,8 @@ decrypted bundles in the depot's `downloads/` directory.
 `export assets` runs stages whose tasks are keyed by their input contents, options, stage versions and converter identities. Results and files are stored in the depot; layouts place their content into output directories. `depot plan` reports which tasks and placements would change.
 
 `export live`, `export story`, `export live2d`, `export spot`, `export room` and `export ui` request the products of selected subjects through that same pipeline. Stories first produce an episode, then request its referenced products. Shared objects and unchanged products reuse committed tasks.
+
+Class converters emit object records and binary files. Product assemblers read those stored records through an object table and identify shared dependencies by object id and product manifest. Text products use the same font lookup, material and in-memory atlas functions. A product request contains its complete object and media dependencies before assembly.
 
 `site build` uses the same product requests, then runs player read-set, asset, document and index tasks. A named catalog retains unselected topics and references immutable products. Publication writes dependencies before entry manifests and indexes. The successful run stores the complete layout so a new output directory can be restored through the depot.
 
