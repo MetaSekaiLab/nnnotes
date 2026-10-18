@@ -311,5 +311,5 @@ Every request names one object; only `depot gc --remote` lists the remote.
 
 `nnnotes.ui-pack/1` describes a UI product's root objects and animation bindings. `nnnotes.ui-library/1` indexes its selected keys, referenced prefabs and controllers. Both use the shared `nnnotes.product/1` object storage contract; see [UI libraries](ui.md).
 
-- [ui-pack.schema.json](../src/nnnotes/schemas/ui-pack.schema.json)
-- [ui-library.schema.json](../src/nnnotes/schemas/ui-library.schema.json)
+- [ui-pack.schema.json](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/schemas/ui-pack.schema.json)
+- [ui-library.schema.json](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/schemas/ui-library.schema.json)
