@@ -3,6 +3,7 @@
 from pathlib import Path
 
 from ..source import languages, master
+from .advcommand import name as command_name
 from .live2d import LIVE2D_PREFIX
 
 COSTUME_TABLE = "MasterCharacterCostume"
@@ -56,8 +57,11 @@ def chart(live, music, language):
     }
 
 
-def story(episode, groups, selected_languages, language):
+def story(episode, groups, selected_languages, language, player_settings):
     title, row = episode.get("title") or {}, episode["master"]
+    commands = {"TalkWindow", *(c["cmd"] for c in episode["commands"] if not c.get("IgnoreData"))}
+    for field in ["_initializeEpisodes", "_finalizeEpisodes"]:
+        commands.update(command_name(r["Command"]) for r in player_settings[field])
     return {
         "advId": episode["advId"],
         "asset": episode["asset"],
@@ -69,7 +73,7 @@ def story(episode, groups, selected_languages, language):
             if isinstance(title.get(languages.column(c)[1:]), str) and title[languages.column(c)[1:]]
         },
         "groups": groups,
-        "commands": sorted({c["cmd"] for c in episode["commands"] if not c.get("IgnoreData")}),
+        "commands": sorted(commands),
         "commandCount": episode["commandCount"],
         "language": language,
         "languages": list(selected_languages),

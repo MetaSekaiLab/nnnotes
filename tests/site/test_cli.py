@@ -72,6 +72,26 @@ def command(tmp_path, monkeypatch):
         if hasattr(args, "adv_id"):
             assert expand == "expand"
             manifests = graph(depot)
+            manifests["storyscenes/default.json"] = product(
+                depot,
+                "story.scene",
+                "default",
+                {"scene.json": {"settings": {"playerSettings": "example:1"}}},
+                {
+                    "example:1": {
+                        "class": "MonoBehaviour",
+                        "files": {
+                            "json": file(
+                                depot,
+                                {
+                                    "_initializeEpisodes": [{"Command": 15}],
+                                    "_finalizeEpisodes": [{"Command": 5}],
+                                },
+                            )
+                        },
+                    }
+                },
+            )
             manifests["storyui/en.json"] = product(depot, "story.ui", "en", {"ui.json": {}})
             manifests["storyfonts/1_en.json"] = product(depot, "story.fonts", "1/en", {"fonts.json": {}})
             manifests["stories/1.json"]["files"]["episode.json"] = file(
@@ -160,6 +180,8 @@ def test_cli_story_passes_fonts_languages_and_audio_policy(command, tmp_path):
     assert args.audio_format == "aac" and args.fonts == "open"
     man = json.loads((tmp_path / "site/stories/1.json").read_bytes())
     assert man["audio"] is False and man["language"] == "ja"
+    listing = json.loads((tmp_path / "site/stories.json").read_bytes())
+    assert listing["stories"][0]["commands"] == ["Bgm", "FadeOut", "TalkWindow"]
 
 
 def test_player_only_requires_only_depot_and_player_settings(command, tmp_path):
