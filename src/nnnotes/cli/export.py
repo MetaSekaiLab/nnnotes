@@ -4,7 +4,6 @@ sheet, the APK's UI library."""
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 from ..core.jsonio import write_json
@@ -261,30 +260,26 @@ def cmd_audio(args, cfg):
 
 
 def cmd_ui(args, cfg):
-    from ..content import ui
+    from ..pipeline.ui import UI
 
     if args.limit is not None and args.limit < 1:
         usage(args, "--limit must be positive")
-    index = ui.export_apk_library(
-        cfg,
-        args.out,
-        keys=args.key,
-        prefix=args.prefix,
-        limit=args.limit,
-        dependencies=not args.no_dependencies,
-        force=args.force,
-    )
-    report(
-        args,
-        {
-            "index": str(Path(args.out).resolve() / "index.json"),
-            "counts": index["counts"],
-            "embedded": len(index["embedded"]),
-            "controllers": len(index["controllers"]),
-        },
-    )
-    if index["counts"].get("failed"):
-        sys.exit(1)
+    cfg.require_path("paths", "apk")
+    use(cfg)
+    ws = assets.Workspace(args, cfg, layouts=["product"])
+    ws.run_index()
+    known = {
+        loc["primaryKey"] for loc in ws.index()["locations"] if loc["id"].startswith("apk:") and loc["kind"] == "asset"
+    }
+    keys = sorted(set(args.key) if args.key else {key for key in known if key.startswith(args.prefix)})
+    if missing := sorted(set(keys) - known):
+        usage(args, "UI key not in the APK catalog: " + ", ".join(missing))
+    if args.limit is not None:
+        keys = keys[: args.limit]
+    if not keys:
+        usage(args, "no UI keys selected")
+    ws.request({UI: keys}, [f"key:{key}" for key in keys])
+    assets.export(args, cfg, ws)
 
 
 def product_args(c) -> None:
@@ -445,5 +440,4 @@ def register(sub) -> None:
     c.add_argument("--key", action="append", help="exact APK catalog key (repeatable)")
     c.add_argument("--prefix", default="EmbUI/", help="APK UI key prefix (default EmbUI/)")
     c.add_argument("--limit", type=int, help="maximum number of keys")
-    c.add_argument("--no-dependencies", action="store_true", help="omit additional prefab roots and controllers")
-    c.add_argument("--force", action="store_true", help="re-export the selected keys")
+    product_args(c)

@@ -536,3 +536,9 @@ asks for the `story` product first, reads its `story.json`, then asks for the st
 `parts.ui` and `parts.fonts` map every client language to its product manifest. The command exports those entries
 for the requested languages. The `product` layout makes the story of
 every episode whose key the selection holds.
+
+## UI library products
+
+`ui.pack` assembles one catalog key and its reachable objects. Its `ui.json` (`nnnotes.ui-pack/1`) names root prefabs, controllers, animation bindings and shaders. The product layout writes `index.json` (`nnnotes.ui-library/1`) over the selected UI products; all referenced data lives in their object tables. See [UI libraries](ui.md).
+
+A stage with `INCLUDE_FONTS = True` requests traversal through its referenced font objects. The request records these roots in `font_roots`; unit selection and assembly follow the same rule. Other products keep their own font selection behavior.

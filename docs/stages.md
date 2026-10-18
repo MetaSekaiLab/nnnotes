@@ -322,3 +322,7 @@ The codes of items that are `generic`, `unsupported` or `failed`, and of limits 
 | `failed.export` | the object's typetree JSON could not be made |
 | `source.absent` | a catalog entry whose file is not there (an APK entry without a file) |
 | `source.error` | an input that could not be fetched |
+
+## ui.pack
+
+`ui.pack` assembles the selected APK UI key from its object table, including referenced font objects. It writes `ui.json` with native roots, prefab/controller lists and named animation bindings. The product layout groups its manifests into the UI library index. See [UI libraries](ui.md).
