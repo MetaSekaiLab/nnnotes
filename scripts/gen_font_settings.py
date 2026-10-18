@@ -27,10 +27,11 @@ import sys
 import tempfile
 from pathlib import Path
 
-from nnnotes.site.web import open_data
 from nnnotes.source.config import Config, use
+from nnnotes.source.session import Session
 from nnnotes.unity import fontsettings, tmpfont
 from nnnotes.unity.export import Exporter
+from nnnotes.unity.player import PlayerData
 
 
 def main(argv=None) -> None:
@@ -42,7 +43,9 @@ def main(argv=None) -> None:
     p.add_argument("-o", "--out", type=Path, default=fontsettings.FILE, help="output file")
     args = p.parse_args(argv)
     cfg = use(Config.load())
-    cat, _, player = open_data(cfg, args.region)
+    session = Session(cfg)
+    cat = session.catalog(region=args.region)
+    player = PlayerData(session.apk(args.region))
     with tempfile.TemporaryDirectory(prefix="fontsettings-") as work:
         ex = Exporter(cat, Path(work), player=player, textures="deferred")
         doc = tmpfont.build_font_settings(ex, player, args.game_version or player.game_version)
