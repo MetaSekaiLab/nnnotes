@@ -7,8 +7,8 @@ import json
 from pathlib import Path
 
 from ..content.score import DIFFICULTIES
+from ..formats import compression as compress
 from ..source import languages
-from . import compress
 from .sitefiles import (
     CHARTS_INDEX,
     MODELS_DIR,

@@ -82,12 +82,12 @@ from types import SimpleNamespace
 from ..content import live, livenotes, liveoptions, livescene
 from ..content.score import DIFFICULTIES, master_table
 from ..core import cache, jsonio
+from ..formats import compression as compress
 from ..formats import cri
+from ..formats.compression import DEFAULT_ENCODING
 from ..formats.encoders import DEFAULT_AUDIO_FORMAT, WEB_AUDIO, mp4_priming, web_encode
 from ..source import languages
 from ..source.config import Config, ConfigError, tool, usable_cpus, use
-from . import compress
-from .compress import DEFAULT_ENCODING
 from .sitefiles import (
     MANIFEST_FORMAT,
     READ_SET_SCRIPT,

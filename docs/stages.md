@@ -326,3 +326,20 @@ The codes of items that are `generic`, `unsupported` or `failed`, and of limits 
 ## ui.pack
 
 `ui.pack` assembles the selected APK UI key from its object table, including referenced font objects. It writes `ui.json` with native roots, prefab/controller lists and named animation bindings. The product layout groups its manifests into the UI library index. See [UI libraries](ui.md).
+
+## site.asset
+
+`site.asset` prepares one content-addressed file for a static site. Its subject is `<input sha256>.<extension>`;
+its input role is `source`. The task key includes the input content, transformation parameters and the installed
+encoder implementation. Input names and storage locations do not affect the result.
+
+- `encoding`: `gzip` (default), `br` or `none`. A compressible file uses the encoded form only when it is smaller.
+- `split`: JSON byte threshold (default 524288); `0` keeps every file whole. Objects with at least two supported
+  top-level keys are split into value files that reconstruct the exact minified text.
+- `omit`: JSON key paths to remove before minification, for example `[["metadata", "description"]]`. The default
+  empty list preserves every key. Paths are explicit; native component fields retain their names and values.
+
+The result's `entry.json` is a product file entry, either `{asset, size, stored?}` or `{parts, size}`. Asset paths
+use the decoded content id; compressed bytes have their own depot content id. The result records both byte forms,
+and layout entries select the stored form. Replaying a task reuses its result; changing a parameter or encoder
+version gives a different task key.

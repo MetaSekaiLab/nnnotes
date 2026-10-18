@@ -6,7 +6,7 @@ import zlib
 
 import pytest
 
-from nnnotes.site import compress
+from nnnotes.formats import compression as compress
 
 TEXT = json.dumps({str(i): [i, i * i, f"v{i % 7}"] for i in range(500)}).encode()
 NOISE = random.Random(7).randbytes(4096)
