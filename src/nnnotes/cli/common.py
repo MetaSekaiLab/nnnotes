@@ -16,7 +16,7 @@ from ..source.config import Config, ConfigError, use
 DIFFICULTY_CHOICES = ("easy", "normal", "hard", "expert")
 AUDIO_CHOICES = ("flac", "ogg", "wav")
 FLAC_LEVELS = range(13)
-EMOJI_FONT = "emoji"  # --font emoji=<file>, as storysite.EMOJI_FONT
+EMOJI_FONT = "emoji"  # --font emoji=<file>
 # command-line flags of settings: (section, key) -> (argparse dest, flag)
 FLAG_SETTINGS = {
     ("catalog", "region"): ("region", "--region"),
