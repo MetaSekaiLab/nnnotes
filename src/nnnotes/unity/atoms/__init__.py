@@ -32,6 +32,8 @@ from dataclasses import dataclass
 from functools import cache
 from importlib import metadata
 
+from ...core.versions import PILLOW_ZLIB, pillow_zlib_version
+
 __all__ = ["ATOMS", "Impl", "Unsupported", "atom_id", "ids", "impl_id", "resolve"]
 
 
@@ -54,6 +56,8 @@ class Impl:
 
 @cache
 def _version(dist: str) -> str:
+    if dist == PILLOW_ZLIB:
+        return pillow_zlib_version()
     try:
         return metadata.version(dist)
     except metadata.PackageNotFoundError:
@@ -61,7 +65,7 @@ def _version(dist: str) -> str:
 
 
 def impl_id(libraries: tuple[str, ...], revision: int) -> str:
-    """`lib-version+lib-version/revision` for the installed versions of `libraries` (distribution names), or
+    """`lib-version+lib-version/revision` for distribution names and the native `Pillow.zlib` codec, or
     `nnnotes/revision` for an implementation that depends on no library's behaviour."""
     if not libraries:
         return f"nnnotes/{revision}"
@@ -72,7 +76,7 @@ def impl_id(libraries: tuple[str, ...], revision: int) -> str:
 _REFERENCE: dict[str, tuple[str, str, str, tuple[str, ...], int]] = {
     "reader": ("reader", "open_bundle", "cost", ("UnityPy",), 1),
     "texture.decode": ("texture", "decode", "cost", ("UnityPy", "texture2ddecoder", "astc-encoder-py", "Pillow"), 1),
-    "png.encode": ("png", "encode", "cost", ("Pillow",), 1),
+    "png.encode": ("png", "encode", "cost", ("Pillow", PILLOW_ZLIB), 1),
     "astc.container": ("astc", "container", "cost", (), 1),
     "sprite.crop": ("sprite", "crop", "cost", ("Pillow", "numpy"), 1),
     "mesh.arrays": ("mesh", "arrays", "cost", ("numpy",), 1),

@@ -38,6 +38,10 @@ another installation computes other keys instead of mixing results.
 
 ## How it is tested
 
+PNG and glyph task identities include `Pillow.zlib`, the version of Pillow's linked zlib codec and its zlib-ng
+backend when present. This distinguishes native encoders even when the Pillow package version is the same.
+Golden records that use those codecs also record this native identity with their library versions.
+
 - **Golden records.** `tests/golden/<stage>.json` records, for each stage version, the libraries that shape its
   bytes and, for every synthetic fixture, the task key and the SHA-256 of the canonical result. A change of a
   stage's output without a new stage version fails the test. The CI job that checks the records installs the exact

@@ -1,16 +1,17 @@
 {
  "atoms": {
-  "png.encode": "pillow-12.3.0/1",
+  "png.encode": "pillow-12.3.0+pillow.zlib-1.3-2.3.3/1",
   "sprite.crop": "pillow-12.3.0+numpy-2.4.6/1"
  },
  "fixtures": {
   "atlas": {
-   "key": "8bff1abc736f8e76c8ff92e0f87f28317e25bcd2a59dfbe4b8753144b862566b",
-   "result": "746170244ebd43a73004fc8c369d817d50216f51062ab73ebb9b57fbb7f6ad2f"
+   "key": "52636fa1d5806134ddbadff9c8dc4cc6fdf8e3f7710779d18a05b076e6cfd452",
+   "result": "82717f1b80bbc21be6436bdc9c44abed91165cef249a2da5ea1f79821939b6fc"
   }
  },
  "libraries": {
   "Pillow": "12.3.0",
+  "Pillow.zlib": "1.3-2.3.3",
   "UnityPy": "1.25.3",
   "astc-encoder-py": "0.1.12",
   "numpy": "2.4.6",

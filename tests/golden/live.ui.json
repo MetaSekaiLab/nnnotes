@@ -1,19 +1,20 @@
 {
  "atoms": {
-  "text.glyphs": "fonttools-4.67.0+freetype-py-2.5.1+scipy-1.18.1+numpy-2.4.6+pillow-12.3.0/1"
+  "text.glyphs": "fonttools-4.67.0+freetype-py-2.5.1+scipy-1.18.1+numpy-2.4.6+pillow-12.3.0+pillow.zlib-1.3-2.3.3/1"
  },
  "fixtures": {
   "game": {
-   "key": "b55d0f5e1dbfa2c760981e5d6e204887ea3406a9ba4eb9dda4935275af0ee65c",
-   "result": "2512e62b2bf9740848816b3790f9e812728e3482818f819a12252e1b33720215"
+   "key": "1dbcb102341e2b99aabea4aaefb412c6848d5ee900140b554f9b985736b333c8",
+   "result": "2beeb0e31090a3ef2f8b0ec588e1c89ca5c34900b96f7f5a3d1c2ce08a8b2f17"
   },
   "open": {
-   "key": "b3d25ad7514c04176c3d1b2a824c5cab3459f685491174423cbdd3f05b6eb164",
-   "result": "14f534ebc34a5c866a1c086660df6c6cacce9a5c42207a5e1cf49d9d7c928475"
+   "key": "a4d8f57af62d310e4684703c77f6b86f4e47f44b0251c449d32c344bc1441bc1",
+   "result": "4c9db2ca61fa1699f85a9af25db23c5deb4b726a08cb2d30bc1e7880973e10f3"
   }
  },
  "libraries": {
   "Pillow": "12.3.0",
+  "Pillow.zlib": "1.3-2.3.3",
   "fonttools": "4.67.0",
   "freetype-py": "2.5.1",
   "numpy": "2.4.6",

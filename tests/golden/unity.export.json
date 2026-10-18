@@ -12,7 +12,7 @@
   "mesh.arrays": "numpy-2.4.6/1",
   "mesh.glb": "mesh.glb/3",
   "mono.json": "mono.json/3",
-  "png.encode": "pillow-12.3.0/1",
+  "png.encode": "pillow-12.3.0+pillow.zlib-1.3-2.3.3/1",
   "prefab.json": "prefab.json/3",
   "reader": "fakeunity/1",
   "shader.json": "shader.json/2",
@@ -68,16 +68,17 @@
    "result": "aab00b71441e5978a98431d780fa1c4facb394389ca66901414541a238583197"
   },
   "sprite.png": {
-   "key": "f8fcd13c515ca0d0acd08cd983b23e917fbec42e7de0c351980b69cab4f4af09",
-   "result": "d053cdaf856f61c785987e324a847e04c4cdc0e9556059eba66dc737f7809531"
+   "key": "a46e8cf4adb1416db2e51d9ea1135cf5f530d24e6d212a585819879724369a4c",
+   "result": "c486b3e2274ad24933af5390ed83cc1a9988d0132d992b87ff750137d606b0dd"
   },
   "tex.png": {
-   "key": "5659b2e28ffb247c956a6273a41b1f6c0196e64737060a7228fde0ff1d946c3e",
-   "result": "84ac758d275634016b105b57698e5cac22ac57379ea8783486b833f1650c27f5"
+   "key": "4358a8342567c9f5a59c835d3000573e5ecd7b113052eff86d7e734075303a66",
+   "result": "851cfd63b09f3f51c1a368e232b49a6980ba1b0db09b8a578c3d362711da9901"
   }
  },
  "libraries": {
   "Pillow": "12.3.0",
+  "Pillow.zlib": "1.3-2.3.3",
   "UnityPy": "1.25.3",
   "astc-encoder-py": "0.1.12",
   "numpy": "2.4.6",

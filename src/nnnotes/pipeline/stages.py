@@ -29,6 +29,7 @@ import time
 from dataclasses import dataclass, field
 from importlib import metadata
 
+from ..core.versions import PILLOW_ZLIB, pillow_zlib_version
 from . import contract
 from .contract import Cost, IncompatibleTask, Input, Task
 
@@ -271,9 +272,12 @@ def children_cpu() -> float | None:
 
 # ---------------------------------------------------------------- golden tests
 def library_versions(dists) -> dict[str, str]:
-    """{distribution: installed version} ("-" when not installed)."""
+    """Installed distribution versions and `Pillow.zlib`'s native codec identity ("-" for absent distributions)."""
     out = {}
     for d in sorted(dists):
+        if d == PILLOW_ZLIB:
+            out[d] = pillow_zlib_version()
+            continue
         try:
             out[d] = metadata.version(d)
         except metadata.PackageNotFoundError:

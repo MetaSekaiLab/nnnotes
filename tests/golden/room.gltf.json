@@ -2,12 +2,13 @@
  "atoms": {},
  "fixtures": {
   "shared-objects": {
-   "key": "e2cbd5b59e83e9644e3ffffb8878c5f3c20822b258c6fd756b70d71837b2ff2e",
-   "result": "6e3940b26686ce64451591d838fa246066304494410cff1a0a62bd8c8240de88"
+   "key": "1caf7baaba836050777f813e668c41bc7b575953e843353c13f7788d4bdf41d4",
+   "result": "511a28aee143417d1cbe9627c0a635d9e9f6b089569cd94d513e5bf1661c4279"
   }
  },
  "libraries": {
   "Pillow": "12.3.0",
+  "Pillow.zlib": "1.3-2.3.3",
   "numpy": "2.4.6"
  },
  "provider": "tests.pipeline.product_goldens:room",

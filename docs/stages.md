@@ -240,7 +240,7 @@ the ids of the atoms a task uses, so upgrading a library or changing an atom re-
 |---|---|---|---|
 | `reader` | `nnnotes.unity.atoms.reader.open_bundle` (UnityPy) | `unitypy-<v>/1` | one bundle loaded alone from its bytes: serialized files, objects, raw bytes, typetrees, container, externals, and the inputs of `texture.decode` and `mesh.arrays` (resource files are read from inside the bundle only) |
 | `texture.decode` | UnityPy `Texture2DConverter.parse_image_data` | `unitypy-<v>+texture2ddecoder-<v>+astc-encoder-py-<v>+pillow-<v>/1` | the first mip level, top row first, as UnityPy's `Texture2D.image` |
-| `png.encode` | Pillow | `pillow-<v>/1` | PNG bytes; level 6 (the default) gives Pillow's default bytes, the ones the other commands write |
+| `png.encode` | Pillow and its native zlib codec | `pillow-<v>+pillow.zlib-<native>/1` | PNG bytes; level 6 (the default) gives Pillow's default bytes, the ones the other commands write |
 | `astc.container` | nnnotes | `nnnotes/1` | the standard `.astc` file (16-byte header, first mip level's blocks) |
 | `sprite.crop` | nnnotes (a port of UnityPy's `SpriteHelper`) | `pillow-<v>+numpy-<v>/1` | a sprite's image from its texture's image: texture rect, packing rotation / flip, alpha texture, tight mask or mesh drawing; optionally on the sprite's full rect |
 | `mesh.arrays` | nnnotes | `numpy-<v>/1` | every vertex channel with its stored type and component count, primitives per submesh (base vertex applied), skin |
@@ -272,7 +272,7 @@ The current implementations:
 |---|---|
 | `reader` | UnityPy |
 | `texture.decode` | UnityPy (`Texture2DConverter`) |
-| `png.encode` | Pillow, zlib level `png.level` (6) |
+| `png.encode` | Pillow, native zlib codec identity, zlib level `png.level` (6) |
 | `astc.container` | nnnotes |
 | `sprite.crop` | nnnotes |
 | `mesh.arrays` | nnnotes |
