@@ -34,21 +34,15 @@ The catalog (`nnnotes.source.catalog.Catalog`) resolves an addressable key to it
 dependency closure, takes a bundle from the APK when the APK has it and from the CDN otherwise, and keeps fetched and
 decrypted bundles in the depot's `downloads/` directory.
 
-## Two ways to export
+## Product and asset requests
 
-- **One subject.** `export episode`, `export story`, `export shader`, `export audio`, `export ui`, `site build`
-  and `music-data` read what one subject needs through the Session and write their output directory directly
-  ([Export stories and lives](export.md)). `export live`, `export live2d`, `export spot` and `export room` ask the
-  pipeline below for the products of one subject ([products](products.md)).
-- **Every asset.** `export assets` splits the work into stages ([stages](stages.md)). A task is one stage applied to
-  one subject (a bundle, a content id, a view); its key covers exactly what its output depends on: the stage and
-  converter versions, the input contents and the options ([contracts](contracts.md)). Results and their files are
-  stored once by content hash in the depot, and the output directory is laid out from the depot. A second run finds
-  every unchanged result in the depot and only lays out what changed; `depot plan` says what would run and why
-  ([asset export](assets.md)).
+`export assets` runs stages whose tasks are keyed by their input contents, options, stage versions and converter identities. Results and files are stored in the depot; layouts place their content into output directories. `depot plan` reports which tasks and placements would change.
 
-Both ways use the same readers below the pipeline layer, so a texture, shader, mesh or audio stream is converted by
-one implementation whichever command asks for it.
+`export live`, `export story`, `export live2d`, `export spot`, `export room` and `export ui` request the products of selected subjects through that same pipeline. Stories first produce an episode, then request its referenced products. Shared objects and unchanged products reuse committed tasks.
+
+`site build` uses the same product requests, then runs player read-set, asset, document and index tasks. A named catalog retains unselected topics and references immutable products. Publication writes dependencies before entry manifests and indexes. The successful run stores the complete layout so a new output directory can be restored through the depot.
+
+`export episode`, `export shader`, `export audio` and `music-data` expose subject-specific data and conversions through the Session. All commands use the readers and converters below the pipeline layer.
 
 ## Outputs
 

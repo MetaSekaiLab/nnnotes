@@ -804,85 +804,10 @@ def test_a_story_without_its_model_fails(story_build, monkeypatch):
     assert [s["id"] for s in r["storiesBuilt"]] == ["7"]
 
 
-def test_cli_web_stories(tmp_path, capsys, monkeypatch):
-    from nnnotes import cli
-    from nnnotes.cli import common
-
-    calls = []
-
-    def fake_build(out, ids, cfg, player, fmt, **kw):
-        calls.append((ids, fmt, kw))
-        return {"site": str(out), "storiesBuilt": [], "storiesFailed": [], "storiesSkipped": []}
-
-    monkeypatch.setattr(storysite, "build", fake_build)
-    monkeypatch.setattr(storysite, "unknown_stories", lambda cfg, ids, regions=None: [])
-    monkeypatch.setattr(tmpfont, "require_extra", lambda what=None: None)  # the fonts extra is optional
-    cli.main(
-        [
-            "--apk",
-            str(tmp_path / "base.apk"),
-            "--json",
-            "site",
-            "build",
-            "-o",
-            str(tmp_path / "s"),
-            "--player",
-            str(fake_player(tmp_path / "p")),
-            "--story",
-            "10462",
-            "--story",
-            "7",
-            "--story-languages",
-            "en,ja",
-            "--font",
-            "en=a.otf",
-            "--font",
-            "ja=b.otf",
-            "--font",
-            "emoji=e.ttf",
-            "--no-audio",
-            "--workers",
-            "2",
-        ]
-    )
-    ((ids, fmt, kw),) = calls
-    assert ids == [10462, 7] and fmt == "aac" and kw["audio"] is False and kw["workers"] == 2
-    assert kw["story_languages"] == ["en", "ja"]
-    assert kw["fonts_flags"] == {"en": "a.otf", "ja": "b.otf", "emoji": "e.ttf"}
-    assert common.EMOJI_FONT == storysite.EMOJI_FONT
-    assert kw["fonts"] == "open" and kw["encoding"] == "gzip"
-    assert json.loads(capsys.readouterr().out)["storiesFailed"] == []
-
-
-def test_cli_web_stories_need_the_fonts_extra(tmp_path, capsys, monkeypatch):
-    from nnnotes import cli
-
-    monkeypatch.setattr(tmpfont.importlib.util, "find_spec", lambda name: None)
-    with pytest.raises(SystemExit) as e:
-        cli.main(
-            [
-                "--apk",
-                str(tmp_path / "base.apk"),
-                "--json",
-                "site",
-                "build",
-                "-o",
-                str(tmp_path / "s"),
-                "--player",
-                str(fake_player(tmp_path / "p")),
-                "--story",
-                "1",
-                "--no-audio",
-            ]
-        )
-    err = capsys.readouterr().err
-    assert e.value.code == 2 and "--story / --all-stories" in err and "nnnotes[fonts]" in err
-
-
 @pytest.mark.parametrize(
     "argv, message",
     [
-        (["--story", "1", "--player-only"], "leave out --story"),
+        (["--story", "1", "--player-only"], "cannot be combined"),
         (["--font", "fr=x.otf", "--all-stories"], "expected <language>=<font file>"),
         (["--story-languages", "en,xx", "--all-stories"], "expected languages"),
         (["--story", "1", "--all-stories"], "not allowed with argument"),

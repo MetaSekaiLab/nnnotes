@@ -313,3 +313,7 @@ Every request names one object; only `depot gc --remote` lists the remote.
 
 - [ui-pack.schema.json](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/schemas/ui-pack.schema.json)
 - [ui-library.schema.json](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/schemas/ui-library.schema.json)
+
+## Site catalog
+
+[`site.schema.json`](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/schemas/site.schema.json) describes `nnnotes.site/1`. A named site stores its complete region-topic catalog in `site.json`. Each topic names an immutable product manifest and the metadata of its listing entry. Partial selections retain other topics; complete selections replace the requested region and product kind. The successful run points at the complete site layout so depot collection retains every published dependency.
