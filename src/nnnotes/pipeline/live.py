@@ -455,9 +455,15 @@ class LiveStage(ProductStage):
     """live: a music's chart at a difficulty and the products it plays with (module documentation)."""
 
     name = LIVE
-    version = 2
+    version = 3
+    PARAMS = {"languages": []}
     KIND = "Live"
     MASTER = tuple(sorted({*live.LIVE_TABLES, *livenotes.NOTES_TABLES}))
+
+    def normalize(self, params):
+        params = super().normalize(params)
+        params["languages"] = sorted({languages.check(code) for code in params["languages"]})
+        return params
 
     def select(self, keys: list[str], env) -> list[str]:
         if env.facts.get("master") is None:
@@ -502,7 +508,9 @@ class LiveStage(ProductStage):
         parts = self.parts(subject, env)
         paths = {part: PART_STAGES[name]().manifest(parts[name][0]) for part, name in PARTS.items()}
         music_id, difficulty, _ = live.parse_subject(subject)
-        paths["ui"] = {code: UiStage().manifest(f"{music_id}/{difficulty}/{code}") for code in languages.LANGUAGES}
+        paths["ui"] = {
+            code: UiStage().manifest(f"{music_id}/{difficulty}/{code}") for code in env.params.get("languages", [])
+        }
         return [master_input(env, {"live": self.live_record(subject, env), "parts": paths})]
 
     def manifest(self, subject: str) -> str:

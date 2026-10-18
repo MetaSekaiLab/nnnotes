@@ -74,7 +74,7 @@ class Counting(FileRemote):
         return super().size(key)
 
 
-def test_the_latest_run_of_the_remote_tells_which_results_it_holds(tmp_path):
+def test_remote_results_are_checked_independently_of_the_run_pointer(tmp_path):
     remote = open_remote((tmp_path / "remote").as_uri())
     first = Depot(tmp_path / "a", remote=remote)
     tasks = [Task("t.x", 1, n) for n in "abc"]
@@ -84,8 +84,57 @@ def test_the_latest_run_of_the_remote_tells_which_results_it_holds(tmp_path):
     counting = Counting(remote.url, remote.root)
     second = Depot(tmp_path / "b", remote=counting)
     assert second.latest_run(["group:a"])["id"] == run_doc(["group:a"], tasks)["id"]
-    assert all(second.has_result(t.key) for t in tasks) and counting.asked == []
-    assert not second.has_result(Task("t.x", 1, "z").key) and len(counting.asked) == 1
+    assert all(second.has_result(t.key) for t in tasks) and len(counting.asked) == 3
+    assert not second.has_result(Task("t.x", 1, "z").key) and len(counting.asked) == 4
+    remote.delete([f"ac/{tasks[0].key[:2]}/{tasks[0].key}.json"])
+    fresh = Depot(tmp_path / "c", remote=remote)
+    assert fresh.latest_run(["group:a"]) is not None
+    assert not fresh.has_result(tasks[0].key)
+
+
+def test_sharing_a_cached_run_uploads_results_layouts_and_stored_inputs(tmp_path):
+    first = Depot(tmp_path / "a")
+    inp = first.put(b"input")
+    task = Task("t.x", 1, "a", inputs=(Input("doc", inp, 5, None, ({"kind": "depot"},)),))
+    result = commit(first, task, b"payload")
+    placed = first.put(b"layout file")
+    manifest = first.put(contract.encode({"files": [{"sha256": placed, "size": 11}]}))
+    run = run_doc(["group:a"], [task])
+    run["tasks"][0]["status"] = "hit"
+    run["layouts"] = {"product": manifest}
+    remote = open_remote((tmp_path / "remote").as_uri())
+    Depot(first.root, remote=remote).write_run(run)
+    second = Depot(tmp_path / "b", remote=remote)
+    assert second.latest_run(["group:a"]) == run
+    assert second.committed(task.key, task.id) == result
+    assert second.open_input(task.inputs[0]).read_bytes() == b"input"
+    assert second.read(placed) == b"layout file" and second.read(manifest)
+
+
+@pytest.mark.parametrize("quick", [False, True])
+def test_verify_checks_referenced_remote_contents_without_materializing(tmp_path, quick):
+    remote = open_remote((tmp_path / "remote").as_uri())
+    first, second = Depot(tmp_path / "a", remote=remote), Depot(tmp_path / "b", remote=remote)
+    task = Task("t.x", 1, "a")
+    doc = commit(first, task, b"payload")
+    assert second.result(task.key) == doc
+    assert second.verify(quick=quick)["problemCount"] == 0
+    assert not (second.root / "cas").exists()
+    sha = doc["artifacts"][0]["content"]["sha256"]
+    remote.put(f"cas/sha256/{sha[:2]}/{sha}", b"invalid")
+    assert second.verify(quick=False)["problemCount"] == 1
+
+
+@pytest.mark.parametrize("dry_run", [True, False])
+def test_remote_collection_does_not_fill_the_local_cache(tmp_path, dry_run):
+    remote = open_remote((tmp_path / "remote").as_uri())
+    first = Depot(tmp_path / "a", remote=remote)
+    task = Task("t.x", 1, "a")
+    commit(first, task, b"payload")
+    first.write_run(run_doc(["group:a"], [task]))
+    second = Depot(tmp_path / "b", remote=remote)
+    assert second.gc(remote=True, dry_run=dry_run)["remote"]["results"]["kept"] == 1
+    assert not second.root.exists()
 
 
 def test_a_depot_crosses_processes_with_its_remote(tmp_path):

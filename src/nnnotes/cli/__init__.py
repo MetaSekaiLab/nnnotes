@@ -67,11 +67,20 @@ def main(argv=None):
     try:
         cfg = load_config(args) if args.reads_config else None
         with depot_lease(args, cfg) as args.lease:
-            args.func(args, cfg)
+            if args.lease is not None and not getattr(args, "dry_run", False):
+                from ..pipeline.depot import command_run, open_depot
+
+                name = args.command + "." + args.func.__name__.removeprefix("cmd_")
+                with command_run(open_depot(cfg), name):
+                    args.func(args, cfg)
+            else:
+                args.func(args, cfg)
     except ConfigError as e:
         print(f"nnnotes: {e}", file=sys.stderr)
         sys.exit(2)
     except GameApiError as e:
+        sys.exit(f"nnnotes: {e}")
+    except TimeoutError as e:
         sys.exit(f"nnnotes: {e}")
 
 
@@ -85,7 +94,7 @@ def depot_lease(args, cfg):
     from ..source.session import Session
 
     session = Session(cfg)
-    return lease(session.depot_root(), session.downloads_budget())
+    return lease(session.depot_root(), None if getattr(args, "dry_run", False) else session.downloads_budget())
 
 
 if __name__ == "__main__":

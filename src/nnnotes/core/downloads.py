@@ -25,6 +25,7 @@ import os
 import re
 import secrets
 import socket
+import sys
 import time
 from collections.abc import Generator, Iterable, Iterator
 from contextlib import contextmanager
@@ -204,9 +205,10 @@ def _record() -> str:
     return json.dumps({"host": socket.gethostname(), "pid": os.getpid(), "started": time.time()})
 
 
-def _wait_alone(leases: Path) -> None:
-    """Return once no live command holds `.exclusive` (a stale one is removed)."""
+def _wait_alone(leases: Path, timeout: float) -> None:
+    """Wait at most `timeout` seconds for `.exclusive`; leave a live owner's lock intact."""
     p, host = leases / EXCLUSIVE, socket.gethostname()
+    deadline, announced = time.monotonic() + timeout, False
     while True:
         try:
             data, mtime = p.read_bytes(), p.stat().st_mtime
@@ -219,6 +221,11 @@ def _wait_alone(leases: Path) -> None:
         if not live:
             p.unlink(missing_ok=True)
             return
+        if time.monotonic() >= deadline:
+            raise TimeoutError(f"depot exclusive lease {p} is still held; retry after its owner finishes")
+        if not announced:
+            print(f"waiting for depot exclusive lease {p} (at most {timeout:g} seconds)", file=sys.stderr, flush=True)
+            announced = True
         time.sleep(0.1)
 
 
@@ -241,7 +248,7 @@ def exclusive(root: Path, own: Path | None) -> Generator[bool]:
 
 
 @contextmanager
-def lease(root: Path, budget: int | None) -> Generator[Path]:
+def lease(root: Path, budget: int | None, *, wait_timeout: float = 30) -> Generator[Path]:
     """Hold a lease on the depot `root` while the block runs; at its end, when no other lease is live, trim the
     downloads to `budget` (None: keep them all)."""
     d = root / "leases"
@@ -249,7 +256,7 @@ def lease(root: Path, budget: int | None) -> Generator[Path]:
     own = d / f"{socket.gethostname()}-{os.getpid()}-{secrets.token_hex(4)}.json"
     own.write_text(_record(), encoding="utf-8")
     try:
-        _wait_alone(d)
+        _wait_alone(d, wait_timeout)
         yield own
     finally:
         try:

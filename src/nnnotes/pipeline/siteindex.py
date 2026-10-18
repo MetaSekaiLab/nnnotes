@@ -13,7 +13,7 @@ KINDS = {"live": ("charts", 2), "model": ("models", 2), "story": ("stories", "ou
 
 
 class IndexStage(Stage):
-    name, version = INDEX, 2
+    name, version = INDEX, 3
 
     def subjects(self, env):
         return sorted(env.facts.get(self.name, {}))
@@ -36,7 +36,7 @@ class IndexStage(Stage):
         aliases = {}
         for (kind, tid), versions in sorted(groups.items()):
             folder, _ = KINDS[kind]
-            if kind == "model" and len(versions) > 1:
+            if kind == "model" and len({group["topic"]["manifest"] for group in versions.values()}) > 1:
                 raise ValueError(f"model {tid}: differing contents require separate sites")
             for index, group in enumerate(versions.values()):
                 topic, rs = group["topic"], group["regions"]

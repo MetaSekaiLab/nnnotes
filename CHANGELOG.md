@@ -4,17 +4,20 @@ All notable changes to this project are listed here. Versions follow [Semantic V
 over the command line (commands, options, exit statuses and `--json` reports), the configuration keys, the JSON
 schemas in `nnnotes.schemas` and the documented Python API. Before 1.0 a minor version can change any of them.
 
-## [0.3.0](https://github.com/MetaSekaiLab/nnnotes/compare/v0.2.1...v0.3.0) - 2026-10-18
+## [0.3.0](https://github.com/MetaSekaiLab/nnnotes/compare/v0.2.5...v0.3.0) - 2026-10-18
 
 ### Compatibility
 
 - Configure persistent storage with `[paths] depot` and optional `[depot] remote`. Manage it with `depot plan`, `depot run`, `depot verify` and `depot gc`.
 - Exported products use `nnnotes.product/1` manifests and shared object references. Browser playback uses ournotes-player 0.2.x.
 - Build named sites with `site build --name NAME -o DIR`. Copy selected source bundles with `bundle pull -o DIR`.
-- The `deck` extra uses ournotes-sim 0.0.9.
+- The `deck` extra uses ournotes-sim 0.0.12.
 
 ### Features
 
+- Export episode documents, shader files and cue-sheet audio through depot tasks and retained file layouts.
+- Share cached results when adding remote storage, verify remote-only content, and retain recent results with their dependencies during collection.
+- Validate player package compatibility and publish chart metadata and requested language references consistently.
 - Ship schemas for shared product root documents and prefab objects, with numeric font and transform contracts.
 - Share catalog versions and labels through depot remotes, with verified catalog files fetched on demand.
 - Retain census planning results, emitted task descriptions and standalone task runs as depot collection roots.

@@ -101,6 +101,47 @@
     },
     "audio": {
       "type": "boolean"
+    },
+    "musicId": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "difficulty": {
+      "type": "string",
+      "pattern": "^[a-z]+$"
+    },
+    "chart": {
+      "$ref": "#/$defs/chart"
+    },
+    "regions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/regionId"
+      },
+      "minItems": 1
+    },
+    "audioFormat": {
+      "enum": [
+        "aac",
+        "flac",
+        null
+      ]
+    },
+    "flows": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "direct"
+        ]
+      },
+      "minItems": 1
+    },
+    "quality": {
+      "enum": [
+        0,
+        1,
+        2
+      ]
     }
   },
   "$defs": {
@@ -224,6 +265,82 @@
           "$ref": "#/$defs/size"
         }
       }
+    },
+    "regionId": {
+      "type": "string",
+      "pattern": "^[a-z0-9_-]+$"
+    },
+    "chart": {
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string"
+        },
+        "language": {
+          "$ref": "#/$defs/language"
+        },
+        "titles": {
+          "type": "object",
+          "propertyNames": {
+            "minLength": 1
+          },
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "bands": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "bandNames": {
+          "type": "object",
+          "propertyNames": {
+            "minLength": 1
+          },
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "bandIds": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        },
+        "stageBand": {
+          "type": "integer"
+        },
+        "level": {
+          "type": "integer"
+        },
+        "displayLevel": {
+          "type": "number"
+        },
+        "notes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "fullComboCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "durationMs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sortOrder": {
+          "type": "integer"
+        }
+      }
+    },
+    "language": {
+      "type": "string",
+      "minLength": 1
     }
   },
   "$id": "urn:nnnotes:schema:product",

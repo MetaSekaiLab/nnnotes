@@ -38,8 +38,11 @@ def merge(old, name, language, regions, topics, replace=()):
         if (t["region"], t["kind"]) not in replace
     }
     known.update({(t["region"], t["kind"], t["id"]): t for t in topics})
-    rs = {r["id"]: r for r in (old or {}).get("regions", [])}
-    rs.update({r["id"]: r for r in regions})
+    rs = {r["id"]: r for r in regions}
+    retained = {t["region"] for t in known.values()}
+    for region in (old or {}).get("regions", []):
+        if region["id"] in retained:
+            rs.setdefault(region["id"], region)
     return {
         "format": siteindex.CATALOG,
         "name": name,
@@ -107,8 +110,23 @@ def assemble(depot, catalog, entries):
 
     for path in aliases.values():
         product(path)
+    charts = json.loads(depot.read(output["charts.json"]["sha256"]))["charts"]
+    chart_entries = {entry["manifest"]: entry for entry in charts}
     for path, target in aliases.items():
         manifest = json.loads(depot.read(all_entries[target]["sha256"]))
+        metadata = {}
+        if path in chart_entries:
+            entry = chart_entries[path]
+            metadata = {
+                key: entry[key]
+                for key in ("musicId", "difficulty", "audio", "audioFormat", "flows", "quality", "regions")
+                if key in entry
+            }
+            metadata["chart"] = {
+                key: value
+                for key, value in entry.items()
+                if key not in {"id", "manifest", "regions", "audio", "audioFormat", "flows", "quality", "bytes"}
+            }
         art = runner._document(
             siteproducts.ManifestStage(),
             contract.encode(manifest),
@@ -116,6 +134,7 @@ def assemble(depot, catalog, entries):
                 "files": manifest["files"],
                 "objects": {oid: obj["files"] for oid, obj in manifest["objects"].items()},
                 "root": "../" * (len(path.split("/")) - 1),
+                "metadata": metadata,
             },
         )
         c = art["content"]

@@ -73,7 +73,7 @@ def test_overlay_font_product_includes_simple_ui_texts(tmp_path, source):
 def test_overlay_parts_request_simple_ui_for_selected_languages():
     parts = {"assets": [], "models": [], "sounds": [], "videos": [], "chat": False, "crilips": False}
     normal = story.part_paths(parts, 1)
-    overlay = story.part_paths(parts, 1, overlay=True)
+    overlay = story.part_paths(parts, 1, requested_languages=["ja"], overlay=True)
     assert "simpleui" not in normal
     assert overlay["simpleui"]["ja"] == "storysimpleui/ja.json"
     products = story.part_products({"advId": 1, "parts": overlay}, ["ja", "ja", "zh-Hant"])

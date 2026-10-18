@@ -137,10 +137,11 @@ parallel (default: the CPUs the process may use; `0`: one at a time).
 Removes what no kept run reaches. The kept runs are, for each selection, the `--keep N` latest (default: every run;
 the latest run of a selection is always kept). A kept run reaches the results of its tasks, the contents those
 results name (their artifacts, and the inputs their task keys name when the depot holds them) and its layout
-manifests with the files they list. Every other run, result (with its measured cost) and content is removed.
+manifests with the files they list. Results and contents younger than `--grace SECONDS` (default 86400) also stay;
+a recent result keeps its older inputs and artifacts. Other runs, results (with their measured costs) and contents are removed.
 `--dry-run` counts what would be removed. A layout made of hard links or clones keeps its files. `--remote`
-collects the depot's remote the same way, by the runs on the remote; its results and contents younger than a day stay,
-since a run on another machine may be writing them. gc runs only when
+collects the depot's remote the same way, by the runs on the remote and the same grace period. Remote collection
+does not populate the local cache. gc runs only when
 no other command uses the depot (it exits with an error otherwise), and commands that start meanwhile wait for it.
 The downloads are bounded separately, by `[depot] downloads` ([commands.md](commands.md#downloads)).
 

@@ -116,6 +116,9 @@ STAGE_SOURCES = (
     StageSource("sprite.crop", "nnnotes.pipeline.objexport:SpriteCropStage", output=True),
     StageSource("cri.audio", "nnnotes.pipeline.cristages:AudioStage", output=True),
     StageSource("cri.movie", "nnnotes.pipeline.cristages:MovieStage", output=True),
+    StageSource("export.episode", "nnnotes.pipeline.exportfiles:EpisodeStage", output=True, product=True),
+    StageSource("export.audio", "nnnotes.pipeline.exportfiles:AudioFilesStage", output=True, product=True),
+    StageSource("export.shader", "nnnotes.pipeline.exportfiles:ShaderFilesStage", output=True),
     StageSource("live2d.model", "nnnotes.pipeline.live2d:ModelStage", output=True, product=True),
     StageSource("live2d.cubism", "nnnotes.pipeline.live2d:CubismStage", output=True, product=True),
     StageSource("room.gltf", "nnnotes.pipeline.spot:RoomStage", output=True, product=True),
@@ -692,6 +695,11 @@ class Workspace:
     def params(self, pipeline: list[str]) -> dict:
         """{stage: parameters} from the flags; a flag no stage of the pipeline takes is a usage error."""
         stages, out = self.installed.stages, {}
+        for name, flag in (("story", "story_languages"), ("live", "live_languages")):
+            if name in pipeline and hasattr(self.args, flag):
+                out.setdefault(name, {})["languages"] = getattr(self.args, flag) or [
+                    self.cfg.get("catalog", "language")
+                ]
         level = getattr(self.args, "png_level", None)
         if level is not None:
             if not 0 <= level <= 9:
@@ -1336,7 +1344,7 @@ def request_orchestrator(ws, cfg):
     )
 
 
-def run_request(args, cfg, ws: Workspace, expand=None, prepared=None):
+def run_request(args, cfg, ws: Workspace, expand=None, prepared=None, *, selection_prefix=()):
     """Execute a product request and optional expansion without materializing an output layout."""
     from ..pipeline import builtins
     from ..pipeline.downloads import BundleDownloads
@@ -1364,7 +1372,9 @@ def run_request(args, cfg, ws: Workspace, expand=None, prepared=None):
     )
     aborted = None
     try:
-        run = orch.run(pipeline, params=params, facts=facts, context=ws.context(), selection=ws.selection)
+        run = orch.run(
+            pipeline, params=params, facts=facts, context=ws.context(), selection=[*selection_prefix, *ws.selection]
+        )
     except ConfigError as e:
         run = getattr(e, "run", None)
         if run is None:
@@ -1389,7 +1399,7 @@ def run_request(args, cfg, ws: Workspace, expand=None, prepared=None):
         more = expand(run)
         if more is not None:
             ws.request(*more)
-            return run_request(args, cfg, ws)
+            return run_request(args, cfg, ws, selection_prefix=selection_prefix)
     stage_of = {"bundle": "unity.census", "raw": next((n for n in RAW_STAGES if n in pipeline), "cri.audio")}
     for p in ws.problems():
         if p["code"] == "source.error":

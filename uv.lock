@@ -1127,7 +1127,7 @@ requires-dist = [
     { name = "mkdocs-material", marker = "extra == 'docs'", specifier = ">=9.5" },
     { name = "mkdocstrings", extras = ["python"], marker = "extra == 'docs'", specifier = ">=0.29" },
     { name = "numpy", specifier = ">=2.0" },
-    { name = "ournotes-sim", marker = "extra == 'deck'", specifier = "==0.0.9" },
+    { name = "ournotes-sim", marker = "extra == 'deck'", specifier = "==0.0.12" },
     { name = "pillow", specifier = ">=10.0" },
     { name = "pycryptodome", specifier = ">=3.20" },
     { name = "pyright", marker = "extra == 'test'", specifier = ">=1.1.414" },
@@ -1307,14 +1307,14 @@ wheels = [
 
 [[package]]
 name = "ournotes-sim"
-version = "0.0.9"
+version = "0.0.12"
 source = { registry = "https://pypi.org/simple" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/f9/6f/cc7aa9280d3148ddcdf82c17635ee37c7aec445f36cdcc02e2678bfed0be/ournotes_sim-0.0.9-cp311-abi3-macosx_11_0_arm64.whl", hash = "sha256:f38711f42603ca5dbac1080f0d86653cd2b252568f82a9adca69844349c19f01", size = 1188929, upload-time = "2026-10-14T16:04:17.831Z" },
-    { url = "https://files.pythonhosted.org/packages/a4/d8/3dd1fce51ae87dbd5645d4ff17bcdd2744280c8386c3ffeefbb480003bb7/ournotes_sim-0.0.9-cp311-abi3-macosx_11_0_x86_64.whl", hash = "sha256:fc023ae1a396ea6ce395612632379338d4ababac7dbcaf999a18768e79a68ecb", size = 1278009, upload-time = "2026-10-14T16:04:19.963Z" },
-    { url = "https://files.pythonhosted.org/packages/c4/91/bf82f3696f1619c0daabe38f8bf0b63fe3f90093343da1f067ce500d2504/ournotes_sim-0.0.9-cp311-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:c16900b18417e0a23cfd3a31445a604044e75f8ffca3bae406436804140ae1e9", size = 1259438, upload-time = "2026-10-14T16:04:21.609Z" },
-    { url = "https://files.pythonhosted.org/packages/24/b8/26a13c40e707fb36b3b673a909a7316b47d663400acf9b292e3e2cb83a2a/ournotes_sim-0.0.9-cp311-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:f59a1ffa87299a290c2d1b39fde511697794155d5a50bb09b96957bf8093bc2e", size = 1340684, upload-time = "2026-10-14T16:04:23.624Z" },
-    { url = "https://files.pythonhosted.org/packages/be/7c/365c01caa5390bae1a1c39036bf2abd9f9d02008e905b78af041db410349/ournotes_sim-0.0.9-cp311-abi3-win_amd64.whl", hash = "sha256:afa4211a89825e766526395fc3d00a9bad332c7d312bbb66eedaff15ae68556a", size = 1234199, upload-time = "2026-10-14T16:04:25.524Z" },
+    { url = "https://files.pythonhosted.org/packages/7d/4e/eb46553be18aa30bccc427d0477bf3c03e1730b81e96d09b85fb3510047d/ournotes_sim-0.0.12-cp311-abi3-macosx_11_0_arm64.whl", hash = "sha256:5873aa17abe6a3d0fcc8565e602be5a1e7274cb331187340cb394eabfa47ecae", size = 1189004, upload-time = "2026-10-18T13:44:37.821Z" },
+    { url = "https://files.pythonhosted.org/packages/4e/45/7c5f591f84a96c38b96f5ea95c19d0a7d3b160ba519af563b559665db221/ournotes_sim-0.0.12-cp311-abi3-macosx_11_0_x86_64.whl", hash = "sha256:641c662585c8d0765e1c20459fa63c01cf67366010d32b24f1e8c766d28d21b5", size = 1278163, upload-time = "2026-10-18T13:44:39.92Z" },
+    { url = "https://files.pythonhosted.org/packages/4c/3c/315a33d4eaa27632a6639a48a05a53e6bd2a5a38aceb96a107f191827872/ournotes_sim-0.0.12-cp311-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:c2c41866e383a402e304bee2a0b961e85280b107ad672cd3082f6bac469d62db", size = 1259142, upload-time = "2026-10-18T13:44:41.517Z" },
+    { url = "https://files.pythonhosted.org/packages/b8/a3/f1f3ed1c20be95b2772d7d33b19daad235eb05f6013ed583fe3d7239b56d/ournotes_sim-0.0.12-cp311-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:2ab99e1e572a86b8603cf47441300232f78f1c4e53fc8e9e158e6056f04c5d18", size = 1340277, upload-time = "2026-10-18T13:44:43.355Z" },
+    { url = "https://files.pythonhosted.org/packages/fa/52/fbc75f9c5ff98d5c59b7c7d9f3dbec3b0506b4d619115e980dad63a5992b/ournotes_sim-0.0.12-cp311-abi3-win_amd64.whl", hash = "sha256:812d4c72d95b4ab4aa9f31552696570b71a8c905a5a4e114e4f1dbdee0325381", size = 1239208, upload-time = "2026-10-18T13:44:45.222Z" },
 ]
 
 [[package]]

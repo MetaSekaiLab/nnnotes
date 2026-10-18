@@ -87,3 +87,11 @@ def test_site_paths_are_confined_to_the_output(tmp_path, path):
     with pytest.raises(layout.LayoutError, match="relative path"):
         publish.materialize(tmp_path / "site", entries(depot, {path: b"x"}), depot)
     assert not (tmp_path / "site").exists()
+
+
+@pytest.mark.parametrize("path", [layout.MANIFEST, layout.JOURNAL, "MANIFEST.JSON"])
+def test_reserved_layout_files_are_rejected_before_publication(tmp_path, path):
+    depot = Depot(tmp_path / "depot")
+    with pytest.raises(layout.LayoutError, match="reserved layout path"):
+        publish.materialize(tmp_path / "site", entries(depot, {path: b"page"}), depot)
+    assert not (tmp_path / "site").exists()

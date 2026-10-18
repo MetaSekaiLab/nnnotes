@@ -45,6 +45,8 @@ nav:
       - Contracts: contracts.md
       - Stages: stages.md
       - Products: products.md
+      - Depot: depot.md
+      - Formats: formats.md
       - Views: views.md
       - Replay data: replay.md
       - UI library: ui.md

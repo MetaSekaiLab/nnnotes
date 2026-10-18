@@ -435,6 +435,7 @@ class CatalogDB:
         if doc.get("schema") != CATALOGS:
             raise ValueError(f"{self.root / 'index.json'} is not a {CATALOGS} document")
         versions = {v["id"]: v for v in doc["versions"]}
+        remote_versions = {}
         if self.remote is not None:
             for key, _, _ in self.remote.list("catalogs/versions/"):
                 if not key.endswith(".json"):
@@ -443,6 +444,7 @@ class CatalogDB:
                 if data is None:
                     continue
                 v = contract.loads(data)
+                remote_versions[v["id"]] = data
                 expected = version_id(v["remote"]["sha256"], v["apk"]["sha256"] if v["apk"] else None, v.get("source"))
                 if v["id"] != expected or key != f"catalogs/versions/{expected}.json":
                     raise ValueError(f"catalog version identity differs: {key}")
@@ -455,6 +457,16 @@ class CatalogDB:
                 versions[expected] = v
         merged = sorted(versions.values(), key=lambda v: (v["seq"], v["id"]))
         if self.remote is not None:
+            for v in merged:
+                encoded = contract.encode(v)
+                if remote_versions.get(v["id"]) != encoded:
+                    for name in CATALOG_NAMES:
+                        record = v[name]
+                        if record is not None:
+                            key = f"catalogs/{record['sha256']}.bin"
+                            if self.remote.size(key) != record["size"]:
+                                self.remote.put(key, self._bytes(record))
+                    self.remote.put(f"catalogs/versions/{v['id']}.json", encoded)
             self._save(merged)
         return merged
 

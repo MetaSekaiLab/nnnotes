@@ -127,6 +127,18 @@ def test_a_trim_under_way_elsewhere_is_left_to_its_command(tmp_path):
     assert f.exists()
 
 
+def test_foreign_exclusive_wait_is_bounded_without_taking_over(tmp_path):
+    leases = tmp_path / "leases"
+    leases.mkdir()
+    lock = leases / downloads.EXCLUSIVE
+    record = json.dumps({"host": socket.gethostname() + "-other", "pid": 1, "started": time.time()})
+    lock.write_text(record)
+    with pytest.raises(TimeoutError, match="exclusive lease.*still held"):
+        with downloads.lease(tmp_path, None, wait_timeout=0):
+            pytest.fail("must not enter while another host holds the exclusive lease")
+    assert lock.read_text() == record and list(leases.iterdir()) == [lock]
+
+
 def test_exclusive_is_granted_to_the_only_command(tmp_path):
     with downloads.lease(tmp_path, None) as own:
         with downloads.exclusive(tmp_path, own) as alone:

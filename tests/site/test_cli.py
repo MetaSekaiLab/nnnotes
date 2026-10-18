@@ -155,6 +155,20 @@ def test_cli_requests_products_and_restores_named_site(command, tmp_path, capsys
     assert json.loads(capsys.readouterr().out)["write"] == 0
     assert (tmp_path / "site/charts/1_expert.json").is_file()
     assert (tmp_path / "site/models/sample.json").is_file()
+    chart = json.loads((tmp_path / "site/charts/1_expert.json").read_bytes())
+    entry = json.loads((tmp_path / "site/charts.json").read_bytes())["charts"][0]
+    assert chart["chart"]["title"] == entry["title"]
+    assert chart["flows"] == ["direct"] and chart["quality"] == 1
+    assert chart["regions"] == entry["regions"] and chart["audioFormat"] == "aac"
+
+
+def test_silent_chart_has_no_audio_format_in_either_manifest_or_index(command, tmp_path):
+    run, _, _, _ = command
+    run(["--pair", "1:expert", "--no-audio"])
+    manifest = json.loads((tmp_path / "site/charts/1_expert.json").read_bytes())
+    entry = json.loads((tmp_path / "site/charts.json").read_bytes())["charts"][0]
+    assert manifest["audio"] is entry["audio"] is False
+    assert manifest["audioFormat"] is entry["audioFormat"] is None
 
 
 def test_cli_story_passes_fonts_languages_and_audio_policy(command, tmp_path):
@@ -245,8 +259,48 @@ def test_failed_product_run_stops_before_layout(tmp_path, monkeypatch, capsys):
     run = Run(depot, {}, [], {}, {})
     run.failures_.append(failure("live:1", "live", "source.error", "missing source"))
     monkeypatch.setattr(assets, "run_request", lambda *a, **kw: (run, None, None))
-    args = SimpleNamespace(json=True)
+    args = SimpleNamespace(json=True, name="example")
     with pytest.raises(SystemExit) as error:
         site.product_entries(args, None, None)
     assert error.value.code == 1
     assert json.loads(capsys.readouterr().out)["failures"][0]["message"] == "missing source"
+
+
+def test_failed_site_product_run_keeps_the_export_selection_pointer(tmp_path):
+    from nnnotes.pipeline.orchestrate import Orchestrator
+    from nnnotes.pipeline.stages import Stage
+    from nnnotes.source.config import ConfigError
+
+    class Stops(Stage):
+        name, version = "test.stop", 1
+
+        def subjects(self, env):
+            return ["sample"]
+
+        def run(self, task, depot):
+            raise ConfigError("source unavailable")
+
+    depot = Depot(tmp_path)
+    selection = ["key:source"]
+    original = Run(depot, {}, selection, {}, {}).write()
+    stage = Stops()
+    orch = Orchestrator(depot, {stage.name: stage}, workers=0, log=lambda _: None)
+    ws = SimpleNamespace(
+        depot=depot,
+        selection=selection,
+        run_index=lambda: None,
+        facts=lambda *a, **kw: {"raw": {}},
+        selected=SimpleNamespace(selected=[], census=[], raw=[]),
+        log=lambda _: None,
+        problems=lambda: [],
+        context=lambda: {},
+        wait=lambda: None,
+        cancel=lambda: None,
+    )
+    run, _, aborted = assets.run_request(
+        SimpleNamespace(), None, ws, prepared=([stage.name], {}, orch), selection_prefix=["site-product:example"]
+    )
+    assert aborted == "source unavailable"
+    assert run.selection == ["site-product:example", *selection]
+    assert depot.latest_run(selection) == original
+    assert depot.latest_run(run.selection)["tasks"][0]["status"] == "failed"

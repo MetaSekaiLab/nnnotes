@@ -12,10 +12,10 @@ from .common import command, group, report, usage, workers_arg
 
 
 def cmd_verify(args, cfg):
-    from ..pipeline.depot import Depot
+    from ..pipeline.depot import open_depot
 
     workers = usable_cpus() if args.workers is None else args.workers
-    r = Depot(Session(cfg).depot_root()).verify(quick=args.quick, workers=workers)
+    r = open_depot(cfg).verify(quick=args.quick, workers=workers)
     report(args, r)
     if r["problems"]:
         sys.exit(assets.EXIT_FAILED)
@@ -27,6 +27,8 @@ def cmd_gc(args, cfg):
 
     if args.keep is not None and args.keep < 1:
         usage(args, "--keep must be at least 1")
+    if args.grace < 0:
+        usage(args, "--grace must be nonnegative")
     root = Session(cfg).depot_root()
     with exclusive(root, args.lease) as alone:
         if not alone:
@@ -37,7 +39,7 @@ def cmd_gc(args, cfg):
         depot = open_depot(cfg)
         if args.remote and depot.remote is None:
             usage(args, "--remote: the depot has no remote (setting depot.remote)")
-        r = depot.gc(keep=args.keep, dry_run=args.dry_run, remote=args.remote)
+        r = depot.gc(keep=args.keep, dry_run=args.dry_run, remote=args.remote, grace=args.grace)
 
     def lines(r: dict, where: str = "") -> list[str]:
         return [
@@ -84,6 +86,13 @@ def register(sub) -> None:
         help="keep the N latest runs of each selection (default: every run; the latest run of a selection is kept)",
     )
     c.add_argument("--dry-run", action="store_true", help="count what would be removed, remove nothing")
+    c.add_argument(
+        "--grace",
+        type=float,
+        default=86400,
+        metavar="SECONDS",
+        help="keep recent results and their inputs and contents in both depots (default: 86400 seconds)",
+    )
     c.add_argument(
         "--remote",
         action="store_true",

@@ -272,6 +272,10 @@ def test_the_live_product_holds_the_chart_and_the_manifests_of_its_parts(tmp_pat
     env = Env(depot, {"master": live_master_dir(tmp_path)})
     stage = LiveStage()
     record = master_record(env, stage, "7/expert")
+    env.params = stage.normalize({"languages": ["ja"]})
+    localized_record = master_record(env, stage, "7/expert")
+    assert localized_record.sha256 != record.sha256
+    assert contract.loads(depot.input_bytes(localized_record))["parts"]["ui"] == {"ja": "liveui/7_expert_ja.json"}
     assert contract.loads(depot.input_bytes(record))["parts"] == {
         "music": "music/7.json",
         "noteeffect": "noteeffects/fxA.json",
@@ -279,7 +283,7 @@ def test_the_live_product_holds_the_chart_and_the_manifests_of_its_parts(tmp_pat
         "noteskin": "noteskins/skin001.json",
         "scene": "scenes/default.json",
         "sounds": "sounds/default.json",
-        "ui": {code: f"liveui/7_expert_{code}.json" for code in ("ja", "en", "zh-Hant", "zh-Hans", "ko")},
+        "ui": {},
     }
     objects = stored(depot, contract.encode(lh.table(depot)), "objects")
     _, _, arts = run(depot, stage, "7/expert", [objects, record])

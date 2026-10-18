@@ -1,6 +1,7 @@
 """Player page collection, bundled imports and reserved site paths."""
 
 import hashlib
+import json
 
 import pytest
 
@@ -10,6 +11,7 @@ from nnnotes.source.config import ConfigError
 
 def player(root, *, live2d=False, story=False, bundles=True):
     files = {
+        "package.json": json.dumps({"name": "ournotes-player", "version": "0.2.0"}),
         pages.READ_SET_SCRIPT: "// read set\n",
         pages.PLAYER_BUNDLES[0]: "/* bundle */\n",
         f"{pages.PLAYER_PAGE_DIR}/index.html": "<!-- @PLAYER_VERSION@ -->\n",
@@ -38,6 +40,25 @@ def test_check_player(tmp_path):
     with pytest.raises(ConfigError, match="not a built ournotes-player"):
         pages.check_player(tmp_path)
     assert pages.check_player(player(tmp_path / "p")) == (tmp_path / "p").resolve()
+
+
+@pytest.mark.parametrize("version", ["0.1.8", "0.3.0", "1.0.0", "0.2.0-rc.1", None])
+def test_incompatible_player_is_rejected_before_build(tmp_path, version):
+    root = player(tmp_path)
+    (root / "package.json").write_text(json.dumps({"name": "ournotes-player", "version": version}))
+    with pytest.raises(ConfigError, match="stable ournotes-player 0.2.x"):
+        pages.gather(root)
+
+
+def test_player_package_identity_is_required(tmp_path):
+    root = player(tmp_path)
+    package = root / "package.json"
+    package.write_text('{"name":"another-package","version":"0.2.0"}')
+    with pytest.raises(ConfigError, match="incompatible player"):
+        pages.check_player(root)
+    package.unlink()
+    with pytest.raises(ConfigError, match="cannot read the player package.json"):
+        pages.check_player(root)
 
 
 def test_pages_bind_imports_and_versions_to_bundles(tmp_path):
@@ -76,7 +97,9 @@ def test_songs_include_nested_module_dependencies(tmp_path):
     assert {p.removeprefix("songs/"): b for p, b in files.items() if p.startswith("songs/")} == songs
 
 
-@pytest.mark.parametrize("name", ["models.json", "site.json", "products/example.json"])
+@pytest.mark.parametrize(
+    "name", ["models.json", "site.json", "products/example.json", "manifest.json", ".nnnotes-layout-journal.json"]
+)
 def test_reserved_product_and_index_paths(tmp_path, name):
     root = player(tmp_path)
     path = root / pages.PLAYER_PAGE_DIR / name
