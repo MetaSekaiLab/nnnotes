@@ -112,4 +112,37 @@ class ManifestStage(_DocumentStage):
         doc["root"] = spec.get("root", "../")
         if spec.get("language"):
             doc["language"] = spec["language"]
+        if spec.get("variants"):
+            doc["variants"] = spec["variants"]
+        if spec.get("options"):
+            doc["options"] = spec["options"]
+        return doc
+
+
+class SelectionStage(_DocumentStage):
+    """Retain read roles and the files required by the product's structured documents."""
+
+    name, version = "site.selection", 2
+
+    def transform(self, source, spec):
+        if source.get("schema") != contract.PRODUCT:
+            raise ValueError("site selection requires a product")
+        doc = copy.deepcopy(source)
+        reads = None if spec.get("reads") is None else set(spec["reads"])
+        audio = spec.get("audio", True)
+
+        def keep(path, entry):
+            asset = entry.get("asset", "")
+            if asset.rsplit(".", 1)[-1] in {"flac", "ogg", "wav", "mp3", "m4a"}:
+                return audio
+            # Structured products describe every band, sprite and shader variant they offer.
+            # Keep their image and WebGL2 program dependencies even when this chart does not draw them.
+            return reads is None or asset.endswith((".json", ".png")) or "#program:gles3/" in path or path in reads
+
+        directory = spec["path"][:-5]
+        doc["files"] = {p: e for p, e in doc["files"].items() if keep(f"{directory}/{p}", e)}
+        for oid, obj in doc["objects"].items():
+            obj["files"] = {role: e for role, e in obj["files"].items() if keep(f"{oid}#{role}", e)}
+        if doc["product"] in {"live", "story", "live.music", "live.sounds", "story.sound"}:
+            doc["audio"] = audio
         return doc

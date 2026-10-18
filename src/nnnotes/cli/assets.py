@@ -143,6 +143,9 @@ STAGE_SOURCES = (
     StageSource("site.asset", "nnnotes.pipeline.siteassets:AssetStage"),
     StageSource("site.references", "nnnotes.pipeline.siteproducts:ReferencesStage"),
     StageSource("site.manifest", "nnnotes.pipeline.siteproducts:ManifestStage"),
+    StageSource("site.readset", "nnnotes.pipeline.readsets:ReadSetStage"),
+    StageSource("site.index", "nnnotes.pipeline.siteindex:IndexStage"),
+    StageSource("site.selection", "nnnotes.pipeline.siteproducts:SelectionStage"),
     StageSource("view.", "nnnotes.pipeline.views:stages", output=True),
     StageSource("view.voices", "nnnotes.pipeline.voices:VoiceStage", output=True),
 )
@@ -1312,17 +1315,11 @@ def cmd_export(args, cfg):
     export(args, cfg, Workspace(args, cfg, layouts=names))
 
 
-def export(args, cfg, ws: Workspace, expand=None) -> None:
-    """Run the request of `ws` and place its layouts (ws.layouts) in args.out (cmd_export; export live2d). `expand`:
-    called with the run when it was not aborted, gives the request of a further run ((products, selection) for
-    Workspace.request) or None; the last run places the layouts (export story: the products a story names)."""
-    from ..pipeline import builtins, layout
-    from ..pipeline.orchestrate import Orchestrator, failure
+def request_orchestrator(ws, cfg):
+    """The shared executor for product requests."""
+    from ..pipeline.orchestrate import Orchestrator
 
-    names = ws.layouts
-    pipeline = ws.pipeline()
-    params = ws.params(pipeline)
-    orch = Orchestrator(
+    return Orchestrator(
         ws.depot,
         ws.scheduled,
         workers=ws.workers(),
@@ -1333,19 +1330,19 @@ def export(args, cfg, ws: Workspace, expand=None) -> None:
         initargs=(cfg,),
         log=ws.log,
     )
-    out = Path(args.out)
-    placement = None
-    if not args.dry_run:  # before any work: an explicit method that cannot work stops it
-        try:
-            placement = layout.probe(out, ws.root / "cas" / "sha256", link_mode(args, cfg))
-        except layout.LayoutError as e:
-            usage(args, str(e))
-    if args.explain:
-        for line in ws.explain(pipeline, params, orch, names, placement):
-            print(line, file=sys.stderr)
-    if placement is None:  # --dry-run
-        sys.stdout.write(ws.plan(pipeline, params, out=out, layouts=names).text())
-        return
+
+
+def run_request(args, cfg, ws: Workspace, expand=None, prepared=None):
+    """Execute a product request and optional expansion without materializing an output layout."""
+    from ..pipeline import builtins
+    from ..pipeline.orchestrate import failure
+
+    if prepared is None:
+        pipeline = ws.pipeline()
+        params = ws.params(pipeline)
+        orch = request_orchestrator(ws, cfg)
+    else:
+        pipeline, params, orch = prepared
     ws.run_index()
     facts = ws.facts(pipeline, fetch=True, background=True)
     sel = ws.selected
@@ -1381,7 +1378,7 @@ def export(args, cfg, ws: Workspace, expand=None) -> None:
         more = expand(run)
         if more is not None:
             ws.request(*more)
-            return export(args, cfg, ws)
+            return run_request(args, cfg, ws)
     stage_of = {"bundle": "unity.census", "raw": next((n for n in RAW_STAGES if n in pipeline), "cri.audio")}
     for p in ws.problems():
         if p["code"] == "source.error":
@@ -1394,6 +1391,33 @@ def export(args, cfg, ws: Workspace, expand=None) -> None:
                     p["name"],
                 )
             )
+    return run, orch, aborted
+
+
+def export(args, cfg, ws: Workspace, expand=None) -> None:
+    """Run the request of `ws` and place its layouts (ws.layouts) in args.out (cmd_export; export live2d). `expand`:
+    called with the run when it was not aborted, gives the request of a further run ((products, selection) for
+    Workspace.request) or None; the last run places the layouts (export story: the products a story names)."""
+    from ..pipeline import layout
+
+    names = ws.layouts
+    pipeline = ws.pipeline()
+    params = ws.params(pipeline)
+    orch = request_orchestrator(ws, cfg)
+    out = Path(args.out)
+    placement = None
+    if not args.dry_run:  # before any work: an explicit method that cannot work stops it
+        try:
+            placement = layout.probe(out, ws.root / "cas" / "sha256", link_mode(args, cfg))
+        except layout.LayoutError as e:
+            usage(args, str(e))
+    if args.explain:
+        for line in ws.explain(pipeline, params, orch, names, placement):
+            print(line, file=sys.stderr)
+    if placement is None:  # --dry-run
+        sys.stdout.write(ws.plan(pipeline, params, out=out, layouts=names).text())
+        return
+    run, orch, aborted = run_request(args, cfg, ws, expand, (pipeline, params, orch))
     done = {tid: t["key"] for tid, t in run.tasks.items() if t["status"] != "failed"}
     ws.done(done)
     output = {tid for tid in done if ws._output(contract.parse_task_id(tid)[0])}
@@ -1413,7 +1437,7 @@ def export(args, cfg, ws: Workspace, expand=None) -> None:
     for name, d in layout_dirs(out, names).items():
         entries, report = ws.layout_entries(name, placed)
         w = layout.materialize(d, name, {}, entries, layout.from_depot(ws.depot), link=placement[0])
-        shas[name] = w["sha256"]
+        shas[name] = ws.depot.put(contract.encode(w["manifest"]))
         written[name] = {
             "dir": str(d),
             "files": len(w["manifest"]["entries"]),

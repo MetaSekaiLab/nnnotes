@@ -63,6 +63,38 @@
         "zh-Hans",
         "ko"
       ]
+    },
+    "options": {
+      "type": "object",
+      "description": "Optional: Live option name -> the values the files support (options that select files).",
+      "properties": {
+        "LiveQuality": {
+          "type": "array",
+          "items": {
+            "enum": [
+              0,
+              1,
+              2
+            ]
+          },
+          "minItems": 1
+        }
+      },
+      "additionalProperties": {
+        "type": "array",
+        "minItems": 1
+      }
+    },
+    "variants": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "audio": {
+      "type": "boolean",
+      "description": "Whether audio streams are included."
     }
   },
   "$defs": {

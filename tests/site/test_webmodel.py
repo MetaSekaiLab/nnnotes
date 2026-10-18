@@ -8,9 +8,8 @@ import pytest
 
 from nnnotes import cli
 from nnnotes.core import jsonio
-from nnnotes.site import sitefiles, siteindex, web, webmodel
+from nnnotes.site import sitefiles, siteindex, webmodel
 from nnnotes.source.config import Config, ConfigError
-from nnnotes.source.session import Session
 from nnnotes.unity import live2d
 
 KEY_A = "Character/Live2D/001_adv/adv_model_a/model/adv_model_a"
@@ -426,8 +425,8 @@ def test_web_argument_shape():
     p = cli.build_parser()
     a = p.parse_args(["--json", "site", "build", "-o", "s", "--pair", "1:easy", "--live2d", "m1", "--live2d", KEY_B])
     assert a.pair == [(1, "easy")] and a.live2d == ["m1", KEY_B] and not a.all_live2d
-    a = p.parse_args(["--json", "site", "build", "-o", "s", "--all", "--all-live2d", "--force"])
-    assert a.all and a.all_live2d and a.live2d is None and a.force
+    a = p.parse_args(["--json", "site", "build", "-o", "s", "--all", "--all-live2d", "--name", "example"])
+    assert a.all and a.all_live2d and a.live2d is None and a.name == "example"
     for bad in (["--live2d", "m", "--all-live2d"], ["--pair", "1:easy", "--all"], ["--all", "--player-only"]):
         with pytest.raises(SystemExit):
             p.parse_args(["--json", "site", "build", "-o", "s", *bad])
@@ -437,8 +436,7 @@ def test_web_argument_shape():
     "argv, message",
     [
         ([], "--all-live2d"),
-        (["--player-only", "--live2d", "m"], "leave out --live2d"),
-        (["--reingest-json", "--all-live2d"], "leave out --live2d"),
+        (["--player-only", "--live2d", "m"], "cannot be combined"),
     ],
 )
 def test_web_selection_errors(tmp_path, capsys, argv, message):
@@ -449,75 +447,6 @@ def test_web_selection_errors(tmp_path, capsys, argv, message):
 class FakeCatalog:
     def keys(self, prefix=""):
         return [k for k in (KEY_A, KEY_B, "Live/Score/1") if k.startswith(prefix)]
-
-
-@pytest.mark.parametrize("failed, code", [([], 0), ([{"id": "adv_model_b", "stage": "export", "error": "x"}], 1)])
-def test_web_builds_models_then_charts(tmp_path, capsys, monkeypatch, failed, code):
-    calls = []
-    monkeypatch.setattr(Session, "catalog", lambda self, bundles=True, region=None: FakeCatalog())
-
-    def fake_models(out, models, cfg, player, **kw):
-        calls.append(("models", models, kw))
-        return {"site": str(out), "modelsBuilt": [], "modelsFailed": failed, "modelsSkipped": []}
-
-    def fake_charts(out, pairs, cfg, player, fmt, **kw):
-        calls.append(("charts", pairs, kw))
-        return {"site": str(out), "built": [], "failed": [], "skipped": []}
-
-    monkeypatch.setattr(webmodel, "build", fake_models)
-    monkeypatch.setattr(web, "build", fake_charts)
-    monkeypatch.setattr(web, "unknown_pairs", lambda cfg, pairs, regions=None: [])  # no master data here
-    (tmp_path / "base.apk").write_bytes(b"")
-    code_, out, _ = run(
-        [
-            "--apk",
-            str(tmp_path / "base.apk"),
-            "--json",
-            "site",
-            "build",
-            "-o",
-            str(tmp_path / "s"),
-            "--player",
-            str(fake_player(tmp_path / "p")),
-            "--pair",
-            "7:hard",
-            "--live2d",
-            "adv_model_b",
-            "--live2d",
-            KEY_A,
-            "--force",
-        ],
-        capsys,
-    )
-    assert code_ == code
-    assert json.loads(out)["modelsFailed"] == failed
-    (m, models, mkw), (c, pairs, ckw) = calls
-    assert (m, c) == ("models", "charts")
-    assert models == {"adv_model_a": KEY_A, "adv_model_b": KEY_B} and mkw["force"] is True
-    assert mkw["encoding"] == "gzip"
-    assert pairs == [(7, "hard")] and ckw["force"] is True
-
-
-def test_web_unknown_model_is_a_usage_error(tmp_path, capsys, monkeypatch):
-    monkeypatch.setattr(Session, "catalog", lambda self, bundles=True, region=None: FakeCatalog())
-    (tmp_path / "base.apk").write_bytes(b"")
-    code, _, err = run(
-        [
-            "--apk",
-            str(tmp_path / "base.apk"),
-            "--json",
-            "site",
-            "build",
-            "-o",
-            str(tmp_path / "s"),
-            "--player",
-            str(fake_player(tmp_path / "p")),
-            "--live2d",
-            "nope",
-        ],
-        capsys,
-    )
-    assert code == 2 and "not a Live2D model of the catalog: nope" in err
 
 
 # ---------------------------------------------------------------- the runtime export

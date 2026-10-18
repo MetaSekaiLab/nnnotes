@@ -180,3 +180,31 @@ def test_home_host_and_story_share_the_same_room_and_spot_snapshots(tmp_path):
         "room": snapshot.paths["rooms/room.json"],
         "spot": snapshot.paths["spots/spot.json"],
     }
+
+
+def test_live_selection_preserves_documents_and_only_read_binary_roles(tmp_path):
+    depot = Depot(tmp_path)
+    data = b"pixels"
+    blob = {"asset": f"assets/{depot.put(data)}.bin", "size": len(data)}
+    objects = {"a:1": {"files": {"json": file(depot, {"value": True}), "data": blob}}}
+    manifests = {"notes/default.json": product(depot, "live.notes", "default", {"notes.json": {}}, objects)}
+    snapshot = Snapshot(depot, manifests, read_files=[])
+    snapshot.product("notes/default.json")
+    kept = snapshot.documents["notes/default.json"]
+    assert set(kept["files"]) == {"notes.json"}
+    assert set(kept["objects"]["a:1"]["files"]) == {"json"}
+    other = Snapshot(depot, manifests, read_files=["a:1#data"])
+    other.product("notes/default.json")
+    assert set(other.documents["notes/default.json"]["objects"]["a:1"]["files"]) == {"json", "data"}
+
+
+def test_live_ui_routes_its_scene_reference(tmp_path):
+    depot = Depot(tmp_path)
+    manifests = {
+        "liveui/a.json": product(depot, "live.ui", "a", {"ui.json": {"scene": {"manifest": "scenes/default.json"}}}),
+        "scenes/default.json": product(depot, "live.scene", "default", {"scene.json": {}}),
+    }
+    snapshot = Snapshot(depot, manifests)
+    snapshot.product("liveui/a.json")
+    ui = read_file(snapshot, snapshot.documents["liveui/a.json"]["files"]["ui.json"])
+    assert ui["scene"]["manifest"] == snapshot.paths["scenes/default.json"]
