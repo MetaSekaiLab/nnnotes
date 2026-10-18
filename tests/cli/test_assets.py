@@ -295,6 +295,21 @@ def tree(root: Path, skip=()) -> dict:
     return out
 
 
+def task_tree(root: Path, skip=()) -> dict:
+    """Task contents independent of the layouts placed from them."""
+    files = tree(root, skip)
+    for name in list(files):
+        if not name.startswith("cas/"):
+            continue
+        try:
+            doc = json.loads((root / name).read_bytes())
+        except (ValueError, UnicodeDecodeError):
+            continue
+        if isinstance(doc, dict) and doc.get("schema") == contract.LAYOUT:
+            del files[name]
+    return files
+
+
 def export(capsys, tmp_path, d, depot, out, *more):
     return nn(
         capsys,
@@ -484,7 +499,7 @@ def test_export_is_the_same_with_worker_processes(tmp_path, capsys, fake):
     )
     assert code == 1, err
     skip = ["inputs", "runs", "costs", "downloads"]
-    assert tree(tmp_path / "s0", skip) == tree(tmp_path / "s2", skip)
+    assert task_tree(tmp_path / "s0", skip) == task_tree(tmp_path / "s2", skip)
     o0, o2 = tree(tmp_path / "o0"), tree(tmp_path / "o2" / "original")
     assert {k: v for k, v in o0.items() if not k.startswith(assets.REPORTS)} == o2
     cas = tree(tmp_path / "o2" / "cas")
@@ -509,7 +524,7 @@ def test_plan_emit_tasks_and_run_stage_give_the_exported_depot(tmp_path, capsys,
         rounds += 1
     assert rounds == 3  # index + census; scripts + addresses; export
     skip = ["inputs", "runs", "costs", "catalogs", "downloads"]
-    assert tree(tmp_path / "orch", skip) == tree(tmp_path / "q", skip)
+    assert task_tree(tmp_path / "orch", skip) == task_tree(tmp_path / "q", skip)
 
 
 def test_plan_explains_and_waits_for_bundles_not_fetched(tmp_path, capsys, fake):

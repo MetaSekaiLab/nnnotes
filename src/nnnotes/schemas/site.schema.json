@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:nnnotes:schema:site",
+  "title": "nnnotes.site/1",
+  "description": "The complete catalog of region topics published by a named site.",
+  "type": "object",
+  "required": [
+    "format",
+    "name",
+    "language",
+    "regions",
+    "topics"
+  ],
+  "properties": {
+    "format": {
+      "const": "nnnotes.site/1"
+    },
+    "name": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9_-]+$"
+    },
+    "language": {
+      "type": "string"
+    },
+    "regions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "name": {
+            "type": "string"
+          },
+          "languages": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "topics": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "kind",
+          "id",
+          "region",
+          "manifest",
+          "entry"
+        ],
+        "properties": {
+          "kind": {
+            "enum": [
+              "live",
+              "model",
+              "story"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "region": {
+            "type": "string",
+            "minLength": 1
+          },
+          "manifest": {
+            "type": "string",
+            "pattern": "^products/[0-9a-f]{64}\\.json$"
+          },
+          "entry": {
+            "type": "object"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

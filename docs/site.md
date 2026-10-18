@@ -1,77 +1,46 @@
 # Build an ournotes-player site
 
-`nnnotes site build` writes a static site of charts, Live2D models and stories that
-[ournotes-player](https://github.com/empty-sekai/ournotes-player) plays in the browser. The site is a directory of
-plain files: the player's pages and bundles, one manifest per chart, model and story, and the files they read,
-stored once by content hash.
+`nnnotes site build` publishes a static site from depot products. The site contains player pages, chart/model/story listings, public entry manifests, immutable product manifests, and content-addressed assets.
 
-## What it needs
+## Requirements
 
-- The settings of the export commands: keys, the region's CDN, `[paths] apk`, and the decoded master data of every
-  region the site serves ([configuration](configuration.md)).
-- A built ournotes-player: its checkout after `npm run build`, or its installed package, given with `--player` or
-  `[paths] player`.
-- Node.js 20+, which runs the player's read-set script to list the files each chart reads; only those are stored.
-- vgmstream and FFmpeg for the audio.
-- For stories: `pip install 'nnnotes[fonts]'` and a font file per story language (below).
+Configure `[paths] depot`, the catalog and APK, and the decoded master data for the selected charts and stories. Supply a built [ournotes-player](https://github.com/empty-sekai/ournotes-player) checkout or package through `--player` or `[paths] player`. Node.js 22 or newer runs chart read sets. Audio conversion uses vgmstream and FFmpeg. Text rendering needs the `fonts` extra and either `--fonts game` or a font file for every requested language.
 
-## Build a few charts
+## Select products
 
 ```sh
-nnnotes site build -o out/site --player path/to/ournotes-player \
-    --pair 100001:expert --pair 100001:hard
+nnnotes site build --name example -o out/site --player path/to/ournotes-player \
+    --pair 100001:expert --font ja=fonts/NotoSansJP.otf
+nnnotes site build --name example -o out/site --story 10004 --story-languages ja,en \
+    --font ja=fonts/NotoSansJP.otf --font en=fonts/NotoSans.ttf
 ```
 
-`--pair MUSIC_ID:DIFFICULTY` (repeatable) adds charts; `--all` adds every chart of the master data. Serve the
-directory with any static file server and open `index.html`: the chart list, with `?music=<id>&difficulty=<d>`
-playing one chart.
+`--pair`, `--live2d`, and `--story` are repeatable. Each updates those topics and retains the site's other topics. `--all`, `--all-live2d`, and `--all-stories` replace the corresponding kind's complete selection in the requested regions. Story products include their model dependencies, which also appear in the model listing.
 
-The build is incremental. A chart, model or story whose manifest exists is skipped unless `--force`, and files no
-manifest references any more are removed, so the same command run again after a game update adds what is new.
-`--tmp DIR` (default `SITE.tmp`) keeps a cache of decoded audio, encoded images, shader dumps and read sets keyed by
-everything they were made from; deleting it is safe outside a build.
-
-## Add models and stories
+`--name` identifies the site in the depot and defaults to `default`. Use different names for independent sites sharing a depot. The latest successful run records the complete catalog and layout. A new output directory or machine can restore that state from the same depot, including its configured remote.
 
 ```sh
-nnnotes site build -o out/site --player path/to/ournotes-player \
-    --all --all-live2d --all-stories \
-    --font ja=fonts/NotoSansJP.otf --font en=fonts/NotoSans.ttf \
-    --font zh-Hant=fonts/NotoSansTC.otf --font zh-Hans=fonts/NotoSansSC.otf --font ko=fonts/NotoSansKR.otf
+nnnotes site build --name example -o restored/site --player-only
 ```
 
-- `--live2d MODEL` (repeatable) or `--all-live2d` adds Live2D models; the site gets the player's model page.
-- `--story ADV_ID` (repeatable) or `--all-stories` adds story episodes, and the models they use; the site gets the
-  player's story page.
-- Story text is laid out with font assets generated from your font files, holding exactly the characters each
-  episode shows. Give one per language of `--story-languages` (default all five) with `--font LANG=PATH` or
-  `fonts.<lang>` in `[paths]`. `--font emoji=PATH` gives a colour emoji font for the emoji of chat and talk texts.
-  `--fonts game` uses the game's own font assets instead.
+`--player-only` publishes the saved products and current player pages. Product extraction and site transformations use task keys: unchanged inputs reuse their committed results, while changed inputs produce new manifests. Depot collection follows the successful layout's complete dependency closure.
 
-## Several regions
+## Regions and languages
 
-```sh
-nnnotes site build -o out/site --player path/to/ournotes-player --all --all-regions
-```
+`--site-region REGION` selects a configured region and is repeatable; `--all-regions` selects all configured regions. Each region uses its own master data. Equal product content and listing metadata share an alias; other regional versions get an alias under their region. Chart and story pages select them with `?region=<id>&lang=<language>`. JP stories/models and international stories/models require separate sites; differing content for one model ID also requires separate sites.
 
-`--site-region REGION` (repeatable) or `--all-regions` chooses the regions the site serves; each region's master
-data is `[servers.<region>] master`. Regions whose chart tables are equal share one manifest per chart; a region
-whose tables differ gets its own. The list texts are written in all five languages, and the chart list page switches
-with `?region=<id>&lang=<language>`.
+The catalog language supplies default text. `--story-languages ja,en,...` selects story text/font products and defaults to the catalog language. Supply fonts with `--font LANG=PATH` or `[paths.fonts]`; `--font emoji=PATH` supplies a colour emoji font. `--fonts game` selects the game's font assets.
 
-## Audio, compression and hosting
+## Player read sets and variants
 
-- `--format aac|opus|vorbis|mp3|flac` (default `aac`) is the BGM and story audio format; `--no-audio` stores none.
-- `--compress gzip|br|none` (default `gzip`) stores the compressible files encoded when that makes them smaller. A
-  gzip site works from any static host; a brotli site needs `Content-Encoding: br` on its `.br` files.
-- `--workers N` sets the parallel music, model and story processes (`0` builds in this process) and
-  `--read-workers N` the read sets run at a time.
+A chart read set is a depot task whose inputs include the player sources, product files, requested settings and Node implementation identity. The first chart and a deterministic sample compare the player's plan with a full simulation. A failed plan uses a full simulation; a mismatch switches subsequent reads to full simulation. The site retains structured product documents, their image/audio/WebGL2 dependencies, and additional binary roles read by the selected settings.
 
-## When something fails
+`--live-option` adds note skins, effect sets, qualities, mirrored charts, bar lines and note sound sets. Read sets cover the default settings and offered combinations. Each chart manifest includes its immutable variant product paths and supported quality values.
 
-Charts, models and stories that fail are listed in the summary and in `SITE.failures.json`,
-`SITE.model-failures.json` and `SITE.story-failures.json`, and the exit status is 1; the others are built. Fix the
-cause and run the same command again: what was built is skipped.
+## Publication and hosting
 
-The full option list is in the [command reference](cli.md#nnnotes-site-build), the site layout and every rule in
-[Command outputs](commands.md#site-build).
+`--format aac|opus|vorbis|mp3|flac` selects audio encoding; `--no-audio` omits sound streams. `--compress gzip|br|none` selects storage encoding. gzip assets work as plain static files; brotli assets need `Content-Encoding: br`.
+
+Publication writes assets, immutable products, aliases/pages, and then indexes. It collects retired owned files after successful replacements and retains unowned files. A failed publication keeps its journal and successful-run pointer for retry. Serve the directory with a static server and open `index.html`, `live2d/`, or `story/`.
+
+`--workers`, `--memory`, and `--fetch-workers` control product task execution. `--stored-catalog LABEL|SHA` selects a catalog already registered in the depot. Reports include product task counts, site task counts, read-set checks, and file placement counts. See the [command reference](cli.md#nnnotes-site-build) for all flags and [site snapshots](products.md#site-snapshots) for product references.

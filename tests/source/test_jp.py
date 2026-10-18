@@ -11,7 +11,6 @@ from types import SimpleNamespace
 
 import pytest
 
-from nnnotes import cli
 from nnnotes.cli.assets import CatalogFetcher
 from nnnotes.musicdata import deckdata
 from nnnotes.pipeline import catalogdb
@@ -429,40 +428,6 @@ def test_per_region_apk_and_client_settings(tmp_path):
     assert gameapi.client_version(cfg, "jp") == "1.0.4" and gameapi.client_version(cfg, "tw") == "1.0.1"
     assert configfile.resolve("servers.jp.apk")[0].kind == "path"
     assert configfile.resolve("servers.jp.client_version")[0].kind == "string"
-
-
-@pytest.mark.parametrize("kind", ["--all-live2d", "--all-stories"])
-@pytest.mark.parametrize("region", ["jp", "tw"])
-def test_web_preflight_uses_the_selected_regions_apk(tmp_path, monkeypatch, kind, region):
-    from nnnotes.site import sitefiles, storysite, webmodel
-    from nnnotes.unity import tmpfont
-
-    conf = tmp_path / "nnnotes.toml"
-    default = "jp" if region == "tw" else "tw"
-    conf.write_text(
-        f'[catalog]\nregion="{default}"\nlanguage="ja"\n'
-        f'[servers.{default}]\ncdn="https://default.invalid"\n'
-        f'[servers.{region}]\ncdn="https://target.invalid"\napk="target.apk"\n'
-        '[paths]\nplayer="player"\n',
-        encoding="utf-8",
-    )
-    (tmp_path / "target.apk").write_bytes(b"synthetic")
-    monkeypatch.setattr(tmpfont, "require_extra", lambda *a, **kw: None)
-    monkeypatch.setattr(sitefiles, "check_player", lambda *a, **kw: tmp_path / "player")
-    monkeypatch.setattr(Session, "catalog", lambda *a, **kw: object())
-    monkeypatch.setattr(webmodel, "catalog_models", lambda *a, **kw: {})
-    seen = []
-
-    def build(out, selection, cfg, *args, **kwargs):
-        seen.append((cfg.region(), cfg.path("paths", "apk")))
-        return {}
-
-    monkeypatch.setattr(webmodel, "build", build)
-    monkeypatch.setattr(storysite, "build", build)
-    cli.main(
-        ["--config", str(conf), "--json", "site", "build", "-o", str(tmp_path / "site"), kind, "--site-region", region]
-    )
-    assert seen == [(region, tmp_path / "target.apk")]
 
 
 def test_datapack_is_loaded_in_the_boot_environment(tmp_path, monkeypatch):

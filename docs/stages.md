@@ -353,3 +353,11 @@ and file roles agree with the source. It also records the relative site root and
 
 The snapshot assembler consumes these task results to build immutable product graphs; see
 [site snapshots](products.md#site-snapshots).
+
+## site.readset, site.selection and site.index
+
+`site.readset` freezes the player's sources and product input tree together with a request (entry path, plan/full mode, settings and variant manifests). The Node/V8 version, platform and architecture are implementation atoms. Its `readset.json` contains sorted logical file paths and object roles plus deterministic simulation counters. A result requires the planned state or the end of the full chart simulation.
+
+`site.selection` takes a source product and an explicit read set. It retains structured documents, their image/audio/WebGL2 dependencies and additional read binary roles, preserving object IDs and metadata. With audio disabled it omits sound streams and marks the entry product accordingly. `site.manifest` can record variant paths and supported Live options.
+
+`site.index` takes the complete `nnnotes.site/1` catalog and emits chart, model and story listings, alias mappings and the catalog itself. Equal regional products with equal listing facts share aliases. The site layout traverses every retained product dependency before publishing and recording its successful run.

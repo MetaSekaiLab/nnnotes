@@ -46,7 +46,7 @@ def cmd_episode(args, cfg):
     report(args, r, lambda r: [f"{r['out']}  ({r['commands']} commands, {r['resources']} resources)"])
 
 
-def cmd_story(args, cfg):
+def prepare_story(args, cfg):
     from ..pipeline import contract
     from ..pipeline import story as sp
     from ..pipeline.stages import Env
@@ -112,10 +112,15 @@ def cmd_story(args, cfg):
         return (*request(products), inputs)
 
     ws.request(*request({sp.STORY: [subject]}))
+    return ws, parts
+
+
+def cmd_story(args, cfg):
+    ws, parts = prepare_story(args, cfg)
     assets.export(args, cfg, ws, expand=parts)
 
 
-def cmd_live(args, cfg):
+def prepare_live(args, cfg):
     from ..content import live, liveaudio, livenotes, liveoptions
     from ..pipeline import live as lp
     from ..pipeline.stages import Env
@@ -174,10 +179,14 @@ def cmd_live(args, cfg):
     stages = {n: classes[n]() for n in products}
     keys = {k for n, subjects in products.items() for s in subjects for k in stages[n].keys(s, env)}
     ws.request(products, sorted(f"key:{k}" for k in keys))
-    assets.export(args, cfg, ws)
+    return ws
 
 
-def cmd_live2d(args, cfg):
+def cmd_live(args, cfg):
+    assets.export(args, cfg, prepare_live(args, cfg))
+
+
+def prepare_live2d(args, cfg):
     from ..content import live2d
     from ..pipeline.live2d import CUBISM, MODEL
 
@@ -191,7 +200,11 @@ def cmd_live2d(args, cfg):
     except ValueError as e:
         usage(args, str(e))
     ws.request({MODEL if args.player else CUBISM: [key]}, [f"key:{key}"])
-    assets.export(args, cfg, ws)
+    return ws
+
+
+def cmd_live2d(args, cfg):
+    assets.export(args, cfg, prepare_live2d(args, cfg))
 
 
 def cmd_spot(args, cfg):

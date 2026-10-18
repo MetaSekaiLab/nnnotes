@@ -33,6 +33,7 @@ schemas.load("plan")  # the schema as a dict
 | `result` | `nnnotes.result/1` | the result of a task, a function of its key alone |
 | `run` | `nnnotes.run/1` | a run manifest: context, selection, tasks with keys and statuses, layouts |
 | `scripts` | `nnnotes.scripts/1` | every MonoScript of the censuses, by object id |
+| `site` | `nnnotes.site/1` | a named site's complete region-topic catalog and immutable product references |
 | `story-fonts` | `nnnotes.story-fonts/1` (`format`) | an episode's text bindings, font records, glyph pages and text shaders |
 | `story-host` | `nnnotes.story-host/1` (`format`) | an Overlay story's host screen, layout and initial state |
 | `story-simple-ui` | `nnnotes.story-simple-ui/1` (`format`) | localized Overlay talk-window and system-message prefabs |
