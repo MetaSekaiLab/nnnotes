@@ -29,11 +29,11 @@ from tests.formats.test_usm import KEY
 from tests.helpers import story as sh
 from tests.helpers import storyui as sui
 from tests.helpers import synth
+from tests.helpers.media import mp4
 from tests.pipeline.test_assemble import addresses
 from tests.pipeline.test_cristages import export_result, fake_tools, planning, usm_file
 from tests.pipeline.test_live import master_record, run, stored, table
 from tests.pipeline.test_voices import utf
-from tests.site.test_story_site import mp4
 
 # the streams of a voice sheet as cri.audio lists them: cue v2 has two layers, cue loop loops
 STREAMS = [

@@ -12,6 +12,10 @@ schemas in `nnnotes.schemas` and the documented Python API. Before 1.0 a minor v
 - Retain unselected regional topics, publish immutable product dependencies in order, and restore complete sites from their saved depot layouts.
 - Offer Live variant products from chart manifests and select story UI/font languages explicitly.
 
+### Architecture
+
+- Site construction uses shared product requests, named depot catalogs and ordered layout publication. Player page collection and catalog model queries have dedicated interfaces.
+
 ## [0.2.1](https://github.com/MetaSekaiLab/nnnotes/compare/v0.2.0...v0.2.1) - 2026-10-13
 
 ### Build
@@ -203,5 +207,4 @@ schemas in `nnnotes.schemas` and the documented Python API. Before 1.0 a minor v
 - List MetaMiku as an author ([cc43e13](https://github.com/MetaSekaiLab/nnnotes/commit/cc43e132875206d02d8665b19c06b27255ab0037))
 - Point the project links at MetaSekaiLab/nnnotes ([a2b8304](https://github.com/MetaSekaiLab/nnnotes/commit/a2b83040bcf06771028bbfd5e90c10c225bde3e9))
 - English package readme; check commits on pull requests only ([e602dd5](https://github.com/MetaSekaiLab/nnnotes/commit/e602dd5ebf6dda0f18da5ace54a02dbb893a796f))
-
 

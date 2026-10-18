@@ -182,26 +182,6 @@ def test_supported_versions_carry_the_player_configuration():
 # --- story export: which episodes carry the CRI Lips data ------------------------------------------------------------
 
 
-def _prefab(*classes):
-    return {
-        "key": "m",
-        "nodes": [
-            {"path": "m", "components": [{"class": c} for c in classes]},
-            {"path": "m/child", "components": [{"class": "CubismMotionSyncController"}]},
-        ],
-    }
-
-
-def test_has_motion_sync_needs_both_components_on_the_root():
-    from nnnotes.site import webmodel
-
-    assert webmodel.has_motion_sync(
-        _prefab("CubismModel", "CubismMotionSyncController", "Live2DMotionSyncCriAudioInput")
-    )
-    assert not webmodel.has_motion_sync(_prefab("CubismModel", "CubismMotionSyncController"))
-    assert not webmodel.has_motion_sync(_prefab("CubismModel"))  # a child's controller does not count
-
-
 def _talk(names, voices, **kw):
     return {"cmd": "Talk", "TargetName": names, "VoiceIDs": voices, **kw}
 

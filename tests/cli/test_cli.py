@@ -429,7 +429,7 @@ def test_missing_master_table_names_it(data, tmp_path, capsys):
 def test_the_command_line_starts_without_the_exporters():
     probe = (
         "import sys, nnnotes.cli as c; c.build_parser(); "
-        "print([m for m in ('UnityPy', 'nnnotes.site.web') if m in sys.modules])"
+        "print([m for m in ('UnityPy', 'nnnotes.site.build') if m in sys.modules])"
     )
     r = subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True, check=True)
     assert r.stdout.split() == ["[]"]
