@@ -28,7 +28,7 @@ from pathlib import Path
 
 from . import contract
 from .depot import write_file
-from .orchestrate import WORKER_BYTES, jobs
+from .orchestrate import WORKER_BYTES, Run, jobs
 from .stages import Env, Pending, Stage, describe
 
 
@@ -76,15 +76,30 @@ class Plan:
             return 1
         return int(any(v["write"] or v["remove"] for v in self.doc["summary"]["layouts"].values()))
 
-    def emit(self, directory) -> list[Path]:
-        """Write the runnable tasks as task descriptions <directory>/<key>.json (one per distinct key)."""
+    def emit(self, directory, *, depot=None, context=None, selection=()) -> list[Path]:
+        """Write runnable tasks as <directory>/<key>.json (one per key). With a depot, retain a task layout and
+        the stored inputs of these descriptions as a run root."""
         d = Path(directory)
         d.mkdir(parents=True, exist_ok=True)
-        out = {}
+        out, entries = {}, []
         for t in self.tasks:
             if t.key not in out:
                 out[t.key] = d / f"{t.key}.json"
-                write_file(out[t.key], contract.encode(t.to_json()))
+                body = contract.encode(t.to_json())
+                write_file(out[t.key], body)
+                if depot is not None:
+                    entries.append(
+                        {
+                            "path": out[t.key].name,
+                            "id": t.id,
+                            "sha256": depot.put(body),
+                            "size": len(body),
+                            "inputs": [{"sha256": i.sha256, "size": i.size} for i in t.inputs],
+                        }
+                    )
+        if depot is not None and entries:
+            layout = depot.put(contract.encode(contract.layout_doc("tasks", {}, entries)))
+            Run(depot, dict(context or {}), ["depot.plan.tasks", *selection], {}, {}).write({"tasks": layout})
         return sorted(out.values())
 
     def text(self, limit: int | None = 20) -> str:

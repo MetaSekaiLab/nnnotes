@@ -304,6 +304,10 @@ def test_interruption_before_batch_end_does_not_notify(tmp_path, monkeypatch, wo
     with pytest.raises(KeyboardInterrupt):
         orch.run(["toy.src"], facts={"files": toy_files(tmp_path / "in", {"a1": "x", "a2": "y"})})
     assert seen == [] and orch._pool == []
+    saved = depot.latest_run([])
+    assert saved and any(t["status"] == "ran" for t in saved["tasks"])
+    depot.gc(keep=1)
+    assert all(depot.has_result(t["key"]) for t in saved["tasks"] if t["key"])
 
 
 def test_configuration_stop_keeps_the_incomplete_batch(tmp_path):
@@ -322,6 +326,11 @@ def test_configuration_stop_keeps_the_incomplete_batch(tmp_path):
     with pytest.raises(ConfigError):
         orch.run(["toy.src"], facts={"files": toy_files(tmp_path / "in", {"a1": "x", "a2": "y", "a3": "z"})})
     assert seen == []
+
+    saved = orch.depot.latest_run([])
+    assert saved and any(t["status"] == "ran" for t in saved["tasks"])
+    orch.depot.gc(keep=1)
+    assert all(orch.depot.has_result(t["key"]) for t in saved["tasks"] if t["status"] == "ran")
 
 
 def test_jobs_group_a_stages_batches():
