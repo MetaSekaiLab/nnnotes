@@ -141,6 +141,8 @@ STAGE_SOURCES = (
     StageSource("story", "nnnotes.pipeline.story:StoryStage", output=True, product=True),
     StageSource("ui.pack", "nnnotes.pipeline.ui:UiStage", output=True, product=True),
     StageSource("site.asset", "nnnotes.pipeline.siteassets:AssetStage"),
+    StageSource("site.references", "nnnotes.pipeline.siteproducts:ReferencesStage"),
+    StageSource("site.manifest", "nnnotes.pipeline.siteproducts:ManifestStage"),
     StageSource("view.", "nnnotes.pipeline.views:stages", output=True),
     StageSource("view.voices", "nnnotes.pipeline.voices:VoiceStage", output=True),
 )
