@@ -1,11 +1,12 @@
-"""The downloads of a depot as a cache bounded in size: what a command reads again stays while commands run, and the
-bundles and raw files are trimmed to the budget when the last command using the depot ends.
+"""Budgeted depot downloads, with finished-batch release and command leases protecting active readers.
 
     <depot>/downloads/                the game files as downloaded (source.catalog)
     <depot>/leases/<lease>.json       one per running command: {"host", "pid", "started"}
     <depot>/leases/.exclusive         held by a command that must be the only one (trimming, `depot gc`)
 
-A command holds a lease while it runs (`lease`). When it ends and no other lease is live (a lease of this host whose
+A command holds a lease while it runs (`lease`). A successful object conversion batch may release its recoverable
+bundle downloads toward the budget (`release`) while it is the only command. When the command ends and no other
+lease is live (a lease of this host whose
 process runs, or of another host younger than a day), the files under the `bundles/` and `raw/` directories of
 downloads/ are removed, least recently used first (a file's modification time: the catalog sets it when it hands
 the file out), until they fit the budget. Catalog files stay. A removed file is downloaded again when a command needs
@@ -25,12 +26,12 @@ import re
 import secrets
 import socket
 import time
-from collections.abc import Generator, Iterator
+from collections.abc import Generator, Iterable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-__all__ = ["evictable", "exclusive", "lease", "parse_budget", "trim"]
+__all__ = ["evictable", "exclusive", "lease", "parse_budget", "release", "trim"]
 
 FOREIGN_LEASE_SECONDS = 24 * 3600  # a lease of another host counts as live this long
 EXCLUSIVE = ".exclusive"
@@ -71,37 +72,77 @@ def evictable(downloads: Path) -> Iterator[Path]:
                 yield p
 
 
+def _files(paths: Iterable[Path]) -> list[tuple[int, int, Path]]:
+    out: list[tuple[int, int, Path]] = []
+    for path in paths:
+        try:
+            stat = path.stat()
+        except OSError:
+            continue
+        out.append((stat.st_mtime_ns, stat.st_size, path))
+    return out
+
+
+def _remove(files: list[tuple[int, int, Path]], needed: int, dry_run: bool) -> tuple[list[Path], int]:
+    removed: list[Path] = []
+    removed_bytes = 0
+    for _, size, path in sorted(files, key=lambda f: (f[0], str(f[2]))):
+        if removed_bytes >= needed:
+            break
+        if not dry_run:
+            try:
+                path.unlink()
+            except OSError:
+                continue
+        removed.append(path)
+        removed_bytes += size
+    return removed, removed_bytes
+
+
 def trim(downloads: Path, budget: int | None, *, dry_run: bool = False) -> dict[str, int]:
     """Remove the least recently used bundles and raw files until the rest fit `budget` bytes (None: nothing).
     -> {"kept", "removed", "bytesKept", "bytesRemoved"}."""
-    files: list[tuple[int, int, Path]] = []
-    for p in evictable(downloads):
-        try:
-            st = p.stat()
-        except OSError:
-            continue
-        files.append((st.st_mtime_ns, st.st_size, p))
+    files = _files(evictable(downloads))
     total = sum(f[1] for f in files)
-    removed = removed_bytes = 0
-    if budget is not None:
-        for _, size, p in sorted(files, key=lambda f: (f[0], str(f[2]))):
-            if total - removed_bytes <= budget:
-                break
-            if not dry_run:
-                try:
-                    p.unlink()
-                except OSError:  # open elsewhere (Windows): kept
-                    continue
-            removed += 1
-            removed_bytes += size
-        if not dry_run and removed:
-            _prune_dirs(downloads)
+    removed, removed_bytes = _remove(files, 0 if budget is None else total - budget, dry_run)
+    if not dry_run and removed:
+        _prune_dirs(downloads)
     return {
-        "kept": len(files) - removed,
-        "removed": removed,
+        "kept": len(files) - len(removed),
+        "removed": len(removed),
         "bytesKept": total - removed_bytes,
         "bytesRemoved": removed_bytes,
     }
+
+
+def release(downloads: Path, ready: Iterable[Path], budget: int | None) -> dict[str, int]:
+    """Trim only finished downloads, in LRU order, toward the cache budget. The caller holds an exclusive lease.
+
+    Active files remain protected even when they exceed the budget. A zero budget examines only finished files.
+    Paths must resolve below a bundles/ or raw/ directory within downloads; partial files are retained.
+    """
+    if budget is None:
+        return {"removed": 0, "bytesRemoved": 0}
+    root = downloads.resolve()
+    paths: set[Path] = set()
+    for path in ready:
+        path = path.resolve()
+        if not path.is_relative_to(root) or not {"bundles", "raw"} & set(path.relative_to(root).parts[:-1]):
+            raise ValueError("released file must be a bundle or raw file within the downloads directory")
+        if path.is_file() and not path.name.endswith(".part"):
+            paths.add(path)
+    files = _files(paths)
+    total = sum(f[1] for f in files) if budget == 0 else sum(f[1] for f in _files(evictable(root)))
+    removed, size = _remove(files, total - budget, False)
+    for path in removed:
+        parent = path.parent
+        while parent != root:
+            try:
+                parent.rmdir()
+            except OSError:
+                break
+            parent = parent.parent
+    return {"removed": len(removed), "bytesRemoved": size}
 
 
 def _prune_dirs(root: Path) -> None:

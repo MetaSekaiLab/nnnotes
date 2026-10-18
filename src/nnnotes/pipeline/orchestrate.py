@@ -510,7 +510,9 @@ def coverage(results, census: dict | None = None) -> dict:
 
 class Orchestrator:
     """Runs pipelines of stages into a depot (see the module documentation). `initializer(depot, *initargs)` runs
-    first in every worker (settings, caches, the depot's fetcher); it must be importable (spawned processes)."""
+    first in every worker (settings, caches, the depot's fetcher); it must be importable (spawned processes).
+    `on_batch_done(tasks)` observes successful batches in the coordinator after readers close, including batches
+    entirely satisfied by committed results. Failed batches and incomplete task descriptions are not observed."""
 
     def __init__(
         self,
@@ -525,12 +527,16 @@ class Orchestrator:
         initializer=None,
         initargs: tuple = (),
         log=_log,
+        on_batch_done=None,
     ):
         self.depot, self.stages = depot, stages
         self.workers, self.memory, self.worker_bytes = max(0, int(workers)), memory, int(worker_bytes)
         self.recycle_tasks, self.recycle_rss = recycle_tasks, recycle_rss
         self.initializer, self.initargs = initializer, tuple(initargs)
         self.log = log
+        self.on_batch_done = on_batch_done
+        self._batch_errors: set[tuple] = set()
+        self._observe_batches = True
         self._pool: list[_Worker] = []
         self._started = 0
 
@@ -595,7 +601,7 @@ class Orchestrator:
         t0 = time.perf_counter()
         tasks: list[Task] = []
         try:
-            subjects = stage.subjects(env)
+            subjects = list(stage.subjects(env))
         except Pending as p:
             self._fail(
                 run,
@@ -623,6 +629,7 @@ class Orchestrator:
                 )
             except Exception as e:
                 self._fail(run, env, tid, None, stage.name, "task.describe", f"{type(e).__name__}: {e}"[:2000])
+        self._observe_batches = len(tasks) == len(subjects)
         forced = "*" in force or stage.name in force
         todo = []
         for t in sorted(tasks, key=lambda t: t.id):
@@ -631,6 +638,11 @@ class Orchestrator:
                 env.done(t.id, t.key)
             else:
                 todo.append(t)
+        pending = {t.id for t in todo}
+        if self.on_batch_done is not None and self._observe_batches:
+            for job in jobs(tasks, self.stages):
+                if job.batch is not None and not any(t.id in pending for t in job.tasks):
+                    self.on_batch_done(job.tasks)
         replies = self._execute(todo, force=lambda t: forced or t.id in force, run=run)
         stop = next((r for r in replies.values() if r.get("code") == "config"), None)
         for t in todo:
@@ -657,6 +669,7 @@ class Orchestrator:
     # ---------------------------------------------------------------- execution
     def _execute(self, tasks: list[Task], force, run: Run) -> dict[str, dict]:
         """Run `tasks`; {task id: reply} (none for a task not started because the run stopped)."""
+        self._batch_errors.clear()
         if not tasks:
             return {}
         sched = Scheduler(jobs(tasks, self.stages), self.task_budget())
@@ -675,6 +688,7 @@ class Orchestrator:
                         break
                 if j.batch is not None:
                     self.stages[j.batch[0]].end_batch(j.batch[1])
+                self._batch_done(j, replies)
                 sched.finished(j.id)
         else:
             self._pool_run(sched, force, replies, run)
@@ -724,6 +738,7 @@ class Orchestrator:
             except (EOFError, OSError):
                 break
             if msg.get("end"):
+                self._batch_done(job, replies)
                 sched.finished(job.id)
                 w.job = None
                 w.done += w.replied
@@ -733,10 +748,14 @@ class Orchestrator:
             t = job.tasks[w.replied]
             w.replied += 1
             replies[t.id] = msg
+            if not msg["ok"] and job.batch is not None:
+                self._batch_errors.add(job.batch)
             self._done(run, t, msg, w)
             if msg.get("code") == "config":
                 sched.stop()
         w.proc.join(5)
+        if job.batch is not None:
+            self._batch_errors.add(job.batch)
         if w.replied < len(job.tasks):
             t = job.tasks[w.replied]
             replies[t.id] = {
@@ -753,6 +772,17 @@ class Orchestrator:
         sched.finished(job.id)
         w.job = None
         self._replace(w)
+
+    def _batch_done(self, job: Job, replies: dict) -> None:
+        """Observe a successful batch after its reader is dropped; cache-only batches are also observed."""
+        if (
+            self.on_batch_done is not None
+            and self._observe_batches
+            and job.batch is not None
+            and job.batch not in self._batch_errors
+            and all(replies.get(t.id, {}).get("ok") for t in job.tasks)
+        ):
+            self.on_batch_done(job.tasks)
 
     def _recycle(self, w: _Worker, r: int | None) -> bool:
         if self.recycle_tasks and w.done >= self.recycle_tasks:

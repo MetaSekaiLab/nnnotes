@@ -48,6 +48,11 @@ The site's `Builder` composes product snapshots, catalog indexes and player page
 
 Converters use bounded process-local memoization for repeated reads and computations. Persistent reuse is keyed by depot tasks and their content inputs. Clearing a process memo releases its values; a later task can reuse its committed depot result.
 
+The coordinator observes successful object batches after worker readers close. Their recoverable bundle downloads
+can then be released toward the configured budget under the command's exclusive lease. Preliminary episode
+requests retain inputs until the expanded product request is known. Stored conversion results remain available
+for assembly and layouts.
+
 `export episode`, `export shader`, `export audio` and `music-data` expose subject-specific data and conversions through the Session. All commands use the readers and converters below the pipeline layer.
 
 ## Outputs
