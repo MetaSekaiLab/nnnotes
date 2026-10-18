@@ -88,6 +88,11 @@ class Plan:
                 body = contract.encode(t.to_json())
                 write_file(out[t.key], body)
                 if depot is not None:
+                    if depot.remote is not None:
+                        for inp in t.inputs:
+                            path = depot.path(inp.sha256)
+                            if path.is_file() and depot.put_file(path) != (inp.sha256, inp.size):
+                                raise ValueError(f"task {t.id}: stored input {inp.role} differs from its identity")
                     entries.append(
                         {
                             "path": out[t.key].name,
