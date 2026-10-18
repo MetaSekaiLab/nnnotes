@@ -15,6 +15,7 @@ schemas in `nnnotes.schemas` and the documented Python API. Before 1.0 a minor v
 
 ### Features
 
+- Ship schemas for shared product root documents and prefab objects, with numeric font and transform contracts.
 - Share catalog versions and labels through depot remotes, with verified catalog files fetched on demand.
 - Retain census planning results, emitted task descriptions and standalone task runs as depot collection roots.
 - Store content, task inputs, results and catalog versions in a persistent depot with optional remote storage, verified collection and bounded source downloads.

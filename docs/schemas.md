@@ -45,3 +45,16 @@ schemas.load("plan")  # the schema as a dict
 The documents of the asset export are described in [contracts](contracts.md), the views in [views](views.md). The
 schema files are in
 [src/nnnotes/schemas](https://github.com/MetaSekaiLab/nnnotes/tree/main/src/nnnotes/schemas).
+
+## Product documents
+
+The product root and prefab schemas are listed in [Product document schemas](contracts.md#product-document-schemas). Their fields match the shared object interfaces consumed by ournotes-player.
+
+Compare the shared constraints with an ournotes-player checkout or extracted package:
+
+```sh
+python scripts/check_product_schemas.py /path/to/ournotes-player
+```
+
+The check covers product, live, model, story, prefab, room, spot, audio, video and UI documents. Schema identifiers,
+titles and descriptions may differ by package; validation constraints must agree.

@@ -166,6 +166,9 @@ def objects_of(tmp_path, objs=None) -> Objects:
 
 def test_room_bakes_the_drawn_meshes_and_lists_what_draws_nothing(tmp_path):
     glb, doc = room.room(objects_of(tmp_path), so.BACKGROUND)
+    from tests.helpers.schemas import validate
+
+    validate("room", doc)
     gdoc, body = gltf.read(glb)
     assert [n["name"] for n in gdoc["nodes"]] == ["quad", "quad2", "quad"]  # wall, floor, wall2: hierarchy order
     assert [n["extras"]["unityActive"] for n in gdoc["nodes"]] == [True, False, True]

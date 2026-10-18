@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "backgroundKey",
+    "glb",
+    "meshCount",
+    "inactiveMeshes",
+    "nodes",
+    "materialIds",
+    "materials",
+    "textures",
+    "samplers"
+  ],
+  "properties": {
+    "backgroundKey": {
+      "type": "string"
+    },
+    "glb": {
+      "type": "string"
+    },
+    "meshCount": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "inactiveMeshes": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "nullMaterialSubmeshes": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "nullMeshFilters": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "emptyMeshes": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "nodes": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "materialIds": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "materials": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "textures": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "samplers": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    }
+  },
+  "$id": "urn:nnnotes:schema:room",
+  "title": "room document"
+}
