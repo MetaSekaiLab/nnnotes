@@ -32,7 +32,7 @@ from pathlib import Path
 from ..core import cache
 from ..core.jsonio import dumps, write_json
 
-DUMPS = cache.bucket("shaders", salt=cache.source_salt(__file__, "UnityPy"), disk=True)
+DUMPS = cache.bucket("shaders", salt=cache.source_salt(__file__, "UnityPy"))
 
 # UnityEngine.Rendering ShaderCompilerPlatform value -> tag
 PLATFORM = {
