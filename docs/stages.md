@@ -343,3 +343,13 @@ The result's `entry.json` is a product file entry, either `{asset, size, stored?
 use the decoded content id; compressed bytes have their own depot content id. The result records both byte forms,
 and layout entries select the stored form. Replaying a task reuses its result; changing a parameter or encoder
 version gives a different task key.
+
+## site.references and site.manifest
+
+Both document stages take `source` and `spec` JSON inputs and emit `document.json`. `site.references` applies an
+explicit path-to-manifest map to declared reference fields and selects the requested language groups.
+`site.manifest` applies transformed file entries to a product while checking that its logical paths, object ids
+and file roles agree with the source. It also records the relative site root and optional default language.
+
+The snapshot assembler consumes these task results to build immutable product graphs; see
+[site snapshots](products.md#site-snapshots).
