@@ -46,7 +46,7 @@ pip install 'nnnotes[deck]'          # the deck model's chart statistics of musi
 
 Besides the package, nnnotes reads the game's `base.apk` and, for the commands that need it, decoded master data;
 audio and video need [vgmstream](https://vgmstream.org/) and [FFmpeg](https://ffmpeg.org/), and `site build` also
-Node.js 20+ and a built ournotes-player. [Configuration](configuration.md#what-each-command-needs) lists what each
+Node.js 22+ and a built ournotes-player. [Configuration](configuration.md#what-each-command-needs) lists what each
 command needs.
 
 ## Versions

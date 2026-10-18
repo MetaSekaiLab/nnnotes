@@ -291,7 +291,7 @@ def test_the_story_product_holds_the_episode_and_the_story_document(tmp_path):
     stage = StoryStage()
     doc = sh.episode_table(depot)
     objects = stored(depot, contract.encode(doc), "objects")
-    _, _, arts = run(depot, stage, "1", [objects, master_record(env, stage, "1")])
+    _, _, arts = run(depot, stage, "1", [objects, master_record(env, stage, "1")], {"languages": ["ja", "en"]})
     assert {p: a["semantics"]["kind"] for p, a in arts.items()} == {
         "episode.json": "story.episode",
         "objects": "product.objects",
@@ -325,11 +325,11 @@ def test_the_story_product_holds_the_episode_and_the_story_document(tmp_path):
             "videos": {"Cri/Video/adv/movie_a/movie_a": "videos/adv~movie_a~movie_a.json"},
             "chat": "storychat/default.json",
             "crilips": None,
-            "ui": {lang: f"storyui/{lang}.json" for lang in story.languages.LANGUAGES},
-            "fonts": {lang: f"storyfonts/1_{lang}.json" for lang in story.languages.LANGUAGES},
+            "ui": {lang: f"storyui/{lang}.json" for lang in ("en", "ja")},
+            "fonts": {lang: f"storyfonts/1_{lang}.json" for lang in ("en", "ja")},
         },
     }
-    assert story_doc["parts"] == story.part_paths(storyepisode.parts(episode), 1)
+    assert story_doc["parts"] == story.part_paths(storyepisode.parts(episode), 1, requested_languages=["en", "ja"])
 
 
 # ---------------------------------------------------------------- the chat product
@@ -442,7 +442,7 @@ def test_part_paths_give_the_manifest_of_each_part():
         "chat": True,
         "crilips": False,
     }
-    assert story.part_paths(parts, 1) == {
+    assert story.part_paths(parts, 1, requested_languages=["ja"]) == {
         "scene": "storyscenes/default.json",
         "assets": {
             "Adv/Stage/st_a/st_a": "storyassets/Adv~Stage~st_a~st_a.json",
@@ -453,8 +453,8 @@ def test_part_paths_give_the_manifest_of_each_part():
         "videos": {"Cri/Video/adv/m/m": "videos/adv~m~m.json"},
         "chat": "storychat/default.json",
         "crilips": None,
-        "ui": {lang: f"storyui/{lang}.json" for lang in story.languages.LANGUAGES},
-        "fonts": {lang: f"storyfonts/1_{lang}.json" for lang in story.languages.LANGUAGES},
+        "ui": {"ja": "storyui/ja.json"},
+        "fonts": {"ja": "storyfonts/1_ja.json"},
     }
     quiet = {**parts, "assets": [], "models": [], "sounds": [], "videos": [], "chat": False, "crilips": True}
     assert story.part_paths(quiet, 1) == {
@@ -465,8 +465,8 @@ def test_part_paths_give_the_manifest_of_each_part():
         "videos": {},
         "chat": None,
         "crilips": "crilips/default.json",
-        "ui": {lang: f"storyui/{lang}.json" for lang in story.languages.LANGUAGES},
-        "fonts": {lang: f"storyfonts/1_{lang}.json" for lang in story.languages.LANGUAGES},
+        "ui": {},
+        "fonts": {},
     }
 
 

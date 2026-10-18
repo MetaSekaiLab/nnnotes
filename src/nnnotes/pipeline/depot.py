@@ -39,6 +39,8 @@ import json
 import os
 import threading
 import time
+from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
 
 from ..core.cache import temp_path
@@ -50,6 +52,58 @@ from .remote import Remote, open_remote
 INPUT_KINDS = ("bundles", "raw", "files")
 REMOTE_GRACE = 24 * 3600  # `gc(remote=True)` keeps results and contents of the remote younger than this (seconds)
 DONE = ("ran", "hit")  # the statuses of a run's tasks whose results are committed
+_COMMAND: ContextVar[dict | None] = ContextVar("depot_command", default=None)
+
+
+@contextmanager
+def command_run(depot, name):
+    """Record a command and retain the content and results it read or stored, including on failure."""
+    from .orchestrate import Run
+
+    observed = {"root": depot.root.resolve(), "contents": {}, "tasks": {}, "stages": {}}
+    token = _COMMAND.set(observed)
+    outcome = "complete"
+    failed = False
+    try:
+        yield
+    except BaseException:
+        outcome, failed = "failed", True
+        raise
+    finally:
+        _COMMAND.reset(token)
+        try:
+            run = Run(depot, {"command": name, "outcome": outcome}, ["command:" + name], {}, observed["stages"])
+            run.tasks.update(observed["tasks"])
+            layouts = {}
+            if observed["contents"]:
+                entries = [
+                    {
+                        "path": sha,
+                        "id": contract.artifact_id(contract.task_id("command", name), sha),
+                        "sha256": sha,
+                        "size": size,
+                    }
+                    for sha, size in sorted(observed["contents"].items())
+                ]
+                layouts["command"] = depot.put(contract.encode(contract.layout_doc("cas", {}, entries)))
+            run.write(layouts)
+        except Exception:
+            if not failed:
+                raise
+
+
+def _observe(depot, *, sha=None, size=None, result=None):
+    observed = _COMMAND.get()
+    if observed is None or depot.root.resolve() != observed["root"]:
+        return
+    if sha is not None:
+        observed["contents"][sha] = size
+    if result is not None:
+        parts = result["keyParts"]
+        stage = parts["stage"]
+        tid = contract.task_id(stage["name"], parts["subject"])
+        observed["tasks"][tid] = {"id": tid, "key": result["key"], "status": "hit"}
+        observed["stages"][stage["name"]] = stage["version"]
 
 
 class InputMissing(FileNotFoundError):
@@ -168,7 +222,6 @@ class Depot:
         self.written = self.reused = 0
         self._have: set[str] = set()  # content ids this depot object wrote or found, here or on the remote
         self._sizes: dict[str, int] = {}  # remote key -> size, of the objects known to be on the remote
-        self._listed: set[str] = set()  # task keys whose results the remote holds (the latest runs read from it)
         self._hashed: dict[str, dict] = {}  # path -> its record (inputs/paths)
         self._names: dict[tuple[str, str], tuple[str, int]] = {}  # (kind, name) -> (sha256, size)
         self._docs: dict[str, dict] = {}  # the documents document() decoded last
@@ -200,6 +253,7 @@ class Depot:
 
     def _push(self, sha: str, size: int) -> None:
         """Copy a content of this depot to the remote unless the remote holds it."""
+        _observe(self, sha=sha, size=size)
         if self.remote is not None:
             p = self.path(sha)
             key = self._key(p)
@@ -258,6 +312,8 @@ class Depot:
             if contract.sha256(data) != sha:
                 raise RuntimeError(f"content {sha} of the remote differs from its id")
             _write(p, data, lambda q: q.stat().st_size == len(data), read_only=True)
+        if _COMMAND.get() is not None and p.is_file():
+            _observe(self, sha=sha, size=p.stat().st_size)
         return p
 
     def put(self, data) -> str:
@@ -367,7 +423,10 @@ class Depot:
     def result(self, key: str) -> dict | None:
         """The committed result of a task key, or None."""
         data = self._fetch_record(self.result_path(key))
-        return None if data is None else contract.loads(data)
+        doc = None if data is None else contract.loads(data)
+        if doc is not None:
+            _observe(self, result=doc)
+        return doc
 
     def committed(self, key: str, task: str) -> dict:
         """The committed result of a task key that has one (a FileNotFoundError naming `task` when it is missing)."""
@@ -378,7 +437,7 @@ class Depot:
 
     def has_result(self, key: str) -> bool:
         p = self.result_path(key)
-        return p.is_file() or key in self._listed or self._on_remote(self._key(p))
+        return p.is_file() or self._on_remote(self._key(p))
 
     def commit(self, doc: dict) -> bool:
         """Write a result entry, after checking that the bytes of every artifact it names are stored. Write-once: an
@@ -410,7 +469,9 @@ class Depot:
             elif old != data:
                 raise DepotConflict(f"result {doc['key']} differs from the one in the depot's remote")
             self._sizes[key] = len(data)
-        return False if here else _write(dst, data, same)
+        written = False if here else _write(dst, data, same)
+        _observe(self, result=doc)
+        return written
 
     # ---------------------------------------------------------------- inputs
     def identify(self, path, kind: str = "files", name: str | None = None) -> tuple[str, int]:
@@ -539,6 +600,17 @@ class Depot:
                         sizes[c["sha256"]] = self.path(c["sha256"]).stat().st_size
                     except (OSError, ValueError):
                         sizes[c["sha256"]] = None
+                        sha = c["sha256"]
+                        if self.remote is not None and contract.is_sha256(sha):
+                            remote_key = f"cas/sha256/{sha[:2]}/{sha}"
+                            if quick:
+                                sizes[sha] = self.remote.size(remote_key)
+                            else:
+                                data = self.remote.get(remote_key)
+                                if data is not None:
+                                    sizes[sha] = len(data)
+                                    if contract.sha256(data) != sha:
+                                        problems.append((p, f"artifact {a['id']}: remote content differs from its id"))
                 if sizes[c["sha256"]] != c["size"]:
                     problems.append(
                         (
@@ -561,6 +633,16 @@ class Depot:
 
     def write_run(self, doc: dict, log: list[dict] | None = None) -> Path:
         """Write a run manifest (and the log of this execution), and make it the latest run of its selection."""
+        if self.remote is not None:
+            # A shared run is published only after its completed results and their stored inputs.
+            for task in doc.get("tasks") or ():
+                if task.get("key") and task.get("status") in DONE:
+                    self.commit(self.committed(task["key"], task["id"]))
+            _, contents = _reach([doc], self.result, lambda sha: contract.loads(self.read(sha)))
+            for sha in contents:
+                path = self.path(sha)
+                if path.is_file():
+                    self._push(sha, path.stat().st_size)
         if doc.get("schema") != contract.RUN:
             raise ValueError("not a run document")
         p = self.run_path(doc["id"])
@@ -583,19 +665,14 @@ class Depot:
         return None if data is None else contract.loads(data)
 
     def latest_run(self, selection) -> dict | None:
-        """The latest run manifest written for `selection` (by any machine of the remote), or None. The results of
-        the tasks of a run read from the remote are known to be on the remote (gc keeps them)."""
+        """The latest run manifest written for `selection` (by any machine of the remote), or None."""
         pointer = self._selection_path(selection)
         data = self.remote.get(self._key(pointer)) if self.remote is not None else None
-        shared = data is not None
         if data is None:
             data = _read(pointer)
             if data is None:
                 return None
-        doc = self.run(data.decode("ascii").strip())
-        if shared and doc is not None:
-            self._listed.update(t["key"] for t in doc.get("tasks") or () if t.get("key") and t.get("status") in DONE)
-        return doc
+        return self.run(data.decode("ascii").strip())
 
     def write_cost(self, key: str, cost: dict) -> None:
         write_file(self.root / "costs" / f"{key}.json", contract.encode(cost))
@@ -618,14 +695,17 @@ class Depot:
         remote's runs, results and contents too, by the runs of the remote; its results and contents younger than
         `grace` seconds stay (a run of another machine may be writing them). `dry_run`: count only.
         -> {"runs", "results", "contents": {"kept", "removed"}, "bytesRemoved"}, and "remote": the same."""
-        out = self._gc_local(keep, dry_run)
+        if grace < 0:
+            raise ValueError("gc grace must be nonnegative")
+        out = self._gc_local(keep, dry_run, grace)
         if remote:
             if self.remote is None:
                 raise ValueError("the depot has no remote")
             out["remote"] = self._gc_remote(self.remote, keep, dry_run, grace)
         return out
 
-    def _gc_local(self, keep: int | None, dry_run: bool) -> dict:
+    def _gc_local(self, keep: int | None, dry_run: bool, grace: float) -> dict:
+        cutoff = time.time() - grace
         runs_dir = self.root / "runs"
         latest = set()
         for p in (runs_dir / "selections").glob("*"):
@@ -649,14 +729,17 @@ class Depot:
             p = self.path(sha)
             return contract.loads(p.read_bytes()) if p.is_file() else None
 
-        keys, shas = _reach([doc for _, _, doc in kept], result, document)
+        results = sorted((self.root / "ac").glob("*/*.json"))
+        recent = [p.name.removesuffix(".json") for p in results if p.stat().st_mtime > cutoff]
+        roots = [doc for _, _, doc in kept] + [{"tasks": [{"key": key} for key in recent]}]
+        keys, shas = _reach(roots, result, document)
         out: dict = {"runs": {"kept": len(kept), "removed": len(dropped)}}
         for _, p, _ in dropped:
             if not dry_run:
                 p.unlink(missing_ok=True)
                 p.with_name(p.name[: -len(".json")] + ".log.jsonl").unlink(missing_ok=True)
         n_kept = n_removed = 0
-        for p in sorted((self.root / "ac").glob("*/*.json")):
+        for p in results:
             key = p.name[: -len(".json")]
             if key in keys:
                 n_kept += 1
@@ -668,7 +751,7 @@ class Depot:
         out["results"] = {"kept": n_kept, "removed": n_removed}
         n_kept = n_removed = removed_bytes = 0
         for p in sorted((self.root / "cas" / "sha256").glob("*/*")):
-            if p.name in shas:
+            if p.name in shas or p.stat().st_mtime > cutoff:
                 n_kept += 1
                 continue
             n_removed += 1
@@ -692,10 +775,17 @@ class Depot:
             elif key.endswith(".json"):
                 runs.append((mtime, key, contract.loads(data)))
         kept, dropped = _kept_runs(runs, latest, keep)
+        results = list(remote.list("ac/"))
+        recent = [key.rsplit("/", 1)[-1].removesuffix(".json") for key, _, mtime in results if now - mtime < grace]
+
+        def document(key):
+            data = remote.get(key)
+            return None if data is None else contract.loads(data)
+
         keys, shas = _reach(
-            [doc for _, _, doc in kept],
-            self.result,
-            lambda sha: contract.loads(self.read(sha)) if self.has(sha) else None,
+            [doc for _, _, doc in kept] + [{"tasks": [{"key": key} for key in recent]}],
+            lambda key: document(f"ac/{key[:2]}/{key}.json"),
+            lambda sha: document(f"cas/sha256/{sha[:2]}/{sha}"),
         )
         out: dict = {"runs": {"kept": len(kept), "removed": len(dropped)}}
         gone = [key for _, key, _ in dropped]
@@ -703,7 +793,7 @@ class Depot:
         removed_bytes = 0
         for part, prefix in (("results", "ac/"), ("contents", "cas/sha256/")):
             n_kept = n_removed = 0
-            for key, size, mtime in remote.list(prefix):
+            for key, size, mtime in results if part == "results" else remote.list(prefix):
                 name = key.rsplit("/", 1)[-1]
                 reached = name[: -len(".json")] in keys if part == "results" else name in shas
                 if reached or now - mtime < grace:
@@ -719,7 +809,6 @@ class Depot:
             for key in gone:
                 self._sizes.pop(key, None)
             self._have.clear()
-            self._listed.clear()
         out.update(counts)
         out["bytesRemoved"] = removed_bytes
         return out

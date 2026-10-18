@@ -27,6 +27,18 @@ def test_catalog_versions_are_shared_and_content_is_fetched_on_demand(tmp_path):
     assert CatalogDB(tmp_path / "b").catalog_bytes(version) == (body, apk)
 
 
+def test_local_catalogs_and_labels_are_shared_when_remote_is_configured(tmp_path):
+    local = CatalogDB(tmp_path / "a")
+    body, apk = build(remote_entries()), build(APK)
+    version = local.add(body, apk, label="stable", region="one", language="en")
+    remote = open_remote((tmp_path / "remote").as_uri())
+    shared = CatalogDB(tmp_path / "a", remote=remote)
+    assert shared.versions() == [version]
+    fresh = CatalogDB(tmp_path / "b", remote=remote)
+    assert fresh.get("stable") == version
+    assert fresh.catalog_bytes(version) == (body, apk)
+
+
 def test_independent_imports_preserve_versions_and_refresh_known_metadata(tmp_path):
     _, first, second = databases(tmp_path)
     body = build(remote_entries())

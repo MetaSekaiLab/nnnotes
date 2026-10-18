@@ -96,7 +96,7 @@ class ReferencesStage(_DocumentStage):
 class ManifestStage(_DocumentStage):
     """Apply transformed file entries while preserving product and object identity."""
 
-    name, version = MANIFEST, 1
+    name, version = MANIFEST, 2
 
     def transform(self, source, spec):
         if source.get("schema") != contract.PRODUCT:
@@ -116,6 +116,10 @@ class ManifestStage(_DocumentStage):
             doc["variants"] = spec["variants"]
         if spec.get("options"):
             doc["options"] = spec["options"]
+        metadata = spec.get("metadata", {})
+        if set(metadata) - {"musicId", "difficulty", "audio", "audioFormat", "flows", "quality", "regions", "chart"}:
+            raise ValueError("unsupported site manifest metadata")
+        doc.update(metadata)
         return doc
 
 

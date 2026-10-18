@@ -91,7 +91,7 @@ def test_saved_complete_layout_survives_collection_and_restores_new_directory(se
     first.finish(out)
     second = make()
     second.finish(out)
-    depot.gc(keep=1)
+    depot.gc(keep=1, grace=0)
     third = make()
     restored = tmp_path / "restored"
     third.finish(restored)
@@ -148,3 +148,38 @@ def test_fresh_depot_restores_retained_topics_from_remote(tmp_path, monkeypatch)
     again = Builder(second, *args)
     again.finish(tmp_path / "out2")
     assert (tmp_path / "out1/models/sample.json").read_bytes() == (tmp_path / "out2/models/sample.json").read_bytes()
+
+
+def test_model_names_may_differ_across_regions_for_the_same_content(tmp_path):
+    depot = Depot(tmp_path)
+    source, rows = model(depot)
+    from nnnotes.site.build import documents
+
+    snapshot = Snapshot(depot, documents(depot, rows))
+    target = snapshot.product(source)
+    regions = [{"id": r, "name": r} for r in ("one", "two")]
+    topics = [
+        {
+            "kind": "model",
+            "id": "sample",
+            "region": r["id"],
+            "manifest": target,
+            "entry": {"key": "sample", "label": r["name"]},
+        }
+        for r in regions
+    ]
+    doc = catalog.merge(None, "example", "en", regions, topics)
+    entries, _ = catalog.assemble(depot, doc, snapshot.entries)
+    listing = json.loads(depot.read(entries["models.json"]["sha256"]))["models"]
+    assert [(row["label"], row["regions"]) for row in listing] == [("one", ["one"]), ("two", ["two"])]
+    assert "models/sample.json" in entries and "models/two/sample.json" in entries
+
+
+def test_current_region_order_takes_precedence_and_unused_regions_are_dropped():
+    regions = [{"id": r, "name": r} for r in ("one", "two", "unused")]
+    topics = [{"region": "one", "kind": "model", "id": "a"}]
+    old = catalog.merge(None, "example", "en", regions, topics)
+    updated = catalog.merge(old, "example", "en", [regions[1], regions[0]], [])
+    assert [r["id"] for r in updated["regions"]] == ["two", "one"]
+    partial = catalog.merge(old, "example", "en", [regions[1]], [])
+    assert [r["id"] for r in partial["regions"]] == ["two", "one"] and partial["topics"] == topics

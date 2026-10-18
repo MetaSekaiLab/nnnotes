@@ -28,6 +28,8 @@ def materialize(directory, entries, depot, *, link="copy", params=None):
     seen = {}
     for entry in entries:
         path = entry["path"]
+        if path.casefold() in {layout.MANIFEST.casefold(), layout.JOURNAL.casefold()}:
+            raise layout.LayoutError(f"site file uses a reserved layout path: {path}")
         if re.search(r"[\\:?#\x00]", path) or any(p in {"", ".", ".."} for p in path.split("/")):
             raise layout.LayoutError(f"site file is not a relative path: {path}")
         old = seen.setdefault(path.casefold(), path)

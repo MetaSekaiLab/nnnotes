@@ -4,9 +4,9 @@ sheet, the APK's UI library."""
 
 from __future__ import annotations
 
+import argparse
 from pathlib import Path
 
-from ..core.jsonio import write_json
 from ..formats.encoders import DEFAULT_AUDIO_FORMAT, WEB_AUDIO
 from ..source.config import ConfigError, use
 from ..source.session import Session
@@ -33,17 +33,72 @@ from .common import (
 
 
 def cmd_episode(args, cfg):
-    from ..content import adv
+    from ..pipeline.exportfiles import EpisodeStage
 
     md = Session(cfg).master_dir()
     known_row(args, md, "MasterAdv", args.adv_id, "episode")
-    cat = Session(cfg).catalog()
-    doc = adv.to_json(adv.extract(cat, md, args.adv_id))
-    out = Path(args.out)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    write_json(out, doc)
-    r = {"out": str(out), "commands": doc["commandCount"], "resources": len(doc["resources"])}
+    run, result = _file_product(args, cfg, EpisodeStage(), str(args.adv_id))
+    doc = _product_document(run, result, "episode.json")
+    _place_files(run, result, args.out, single="episode.json")
+    r = {"out": str(args.out), "commands": doc["commandCount"], "resources": len(doc["resources"])}
     report(args, r, lambda r: [f"{r['out']}  ({r['commands']} commands, {r['resources']} resources)"])
+
+
+def _checked_run(args, cfg, ws, prefix):
+    run, _, aborted = assets.run_request(args, cfg, ws, selection_prefix=[prefix])
+    run.write()
+    if aborted or run.exit_code:
+        report(args, {"run": run.manifest()["id"], "failures": run.failures(), "aborted": aborted})
+        raise SystemExit(assets.EXIT_ABORTED if aborted else assets.EXIT_FAILED)
+    return run
+
+
+def _file_product(args, cfg, stage, subject):
+    from ..pipeline import contract
+    from ..pipeline.stages import Env
+
+    use(cfg)
+    options = argparse.Namespace(**{**vars(args), "views": "none", "audio_format": getattr(args, "format", None)})
+    ws = assets.Workspace(options, cfg, layouts=["files"])
+    ws.run_index()
+    env = Env(ws.depot, {"master": ws.master(), "index": ws.index()})
+    held = {loc["primaryKey"] for loc in ws.index()["locations"]}
+    ws.request({stage.name: [subject]}, sorted(f"key:{key}" for key in stage.keys(subject, env) if key in held))
+    run = _checked_run(args, cfg, ws, stage.name)
+    tid = contract.task_id(stage.name, subject)
+    return run, run.depot.committed(run.tasks[tid]["key"], tid)
+
+
+def _product_document(run, result, path):
+    from ..pipeline import contract
+
+    artifact = next(a for a in result["artifacts"] if contract.parse_artifact_id(a["id"])[1] == path)
+    return contract.loads(run.depot.read(artifact["content"]["sha256"]))
+
+
+def _place_files(run, result, directory, *, single=None):
+    from ..pipeline import contract, layout
+    from ..pipeline.depot import write_file
+
+    entries = []
+    for artifact in result["artifacts"]:
+        name = contract.parse_artifact_id(artifact["id"])[1]
+        if name == "objects" or single is not None and name != single:
+            continue
+        content = artifact["content"]
+        entries.append({"path": name, "id": artifact["id"], "sha256": content["sha256"], "size": content["size"]})
+    out = Path(directory)
+    if single is not None:
+        if len(entries) != 1:
+            raise ValueError(f"export has no single {single} file")
+        entry = {**entries[0], "path": out.name}
+        write_file(out, run.depot.read(entry["sha256"]))
+        manifest = contract.layout_doc("files", {}, [entry])
+    else:
+        manifest = layout.materialize(
+            out, "files", {}, entries, layout.from_depot(run.depot), link="copy", fail_fast=True
+        )["manifest"]
+    run.write({"files": run.depot.put(contract.encode(manifest))})
 
 
 def prepare_story(args, cfg):
@@ -240,36 +295,94 @@ def cmd_room(args, cfg):
 
 
 def cmd_shader(args, cfg):
-    from ..formats import shader
+    from ..pipeline import contract
+    from ..pipeline.census import CensusStage
+    from ..pipeline.contract import Input, Task
+    from ..pipeline.depot import open_depot
+    from ..pipeline.exportfiles import ShaderFilesStage
+    from ..pipeline.link import ScriptsStage
+    from ..pipeline.objexport import ExportStage
+    from ..pipeline.orchestrate import Orchestrator
+    from ..pipeline.stages import Stage, execute
 
     cat = Session(cfg).catalog()
     if args.key:
         known_keys(args, cat, [args.key])
-        bundles = cat.fetch_key(args.key)
+        paths = cat.fetch_key(args.key)
     else:
         if cat.apk is None:
             cfg.require_path("paths", "apk")
-        bundles = []
+        paths = []
         for s in args.apk_bundle:
             try:
-                bundles.append(cat.apk_bundle(s))
+                paths.append(cat.apk_bundle(s))
             except KeyError as e:  # none or several bundles match
                 usage(args, f"--apk-bundle {e.args[0]}")
-    r = shader.dump(bundles, Path(args.out))
+    use(cfg)
+    depot, bundles, names = open_depot(cfg), {}, {}
+    for path in sorted(set(paths)):
+        subject = contract.stable_bundle_name(path.name)
+        sha, size = depot.identify(path)
+        source = Input("bundle", sha, size, path.name, ({"kind": "file", "path": str(path.resolve())},))
+        if subject in bundles and bundles[subject].sha256 != sha:
+            usage(args, f"multiple bundle versions have the stable name {subject}")
+        bundles[subject], names[subject] = source, path.name
+    stages: dict[str, Stage] = {s.name: s for s in (CensusStage(), ScriptsStage(), ExportStage())}
+    run = Orchestrator(depot, stages, workers=0).run(
+        list(stages),
+        facts={"bundles": bundles, "catalogs": {}, "selected": sorted(bundles), "classes": ["Shader"]},
+        selection=["export.shader", *sorted(bundles)],
+    )
+    run.write()
+    if run.exit_code:
+        report(args, {"run": run.manifest()["id"], "failures": run.failures()})
+        raise SystemExit(assets.EXIT_FAILED)
+    records = []
+    for tid, result in run.results():
+        stage, subject = contract.parse_task_id(tid)
+        if stage == "unity.export":
+            bundle = subject.split(":", 1)[0]
+            records.append(
+                {
+                    "source": names.get(bundle, bundle),
+                    "items": result["items"],
+                    "artifacts": {a["id"]: a for a in result["artifacts"]},
+                }
+            )
+    data, stage = contract.encode(records), ShaderFilesStage()
+    task = Task(
+        stage.name,
+        stage.version,
+        "selected",
+        inputs=(Input("records", depot.put(data), len(data), None, ({"kind": "depot"},)),),
+    )
+    executed = execute(task, depot, {stage.name: stage})
+    run.tasks[task.id] = {"id": task.id, "key": task.key, "status": executed.status}
+    run.stages[stage.name] = stage.version
+    result = depot.committed(task.key, task.id)
+    run.write()
+    _place_files(run, result, args.out)
+    index = _product_document(run, result, "shaders.json")
+    r = {
+        "count": len(index),
+        "names": sorted(row["name"] for row in index),
+        "variants": sum(len(row["variants"]) for row in index),
+    }
     report(args, r, lambda r: [f"{r['count']} shaders, {r['variants']} variants", *(f"  {n}" for n in r["names"])])
 
 
 def cmd_audio(args, cfg):
-    from ..formats import cri
+    from ..pipeline.exportfiles import AudioFilesStage
 
-    flac = flac_options(args)
+    flac_options(args)
     cfg.require_path("paths", "apk")  # the HCA keycode is read from the APK
     cat = Session(cfg).catalog()
     if not cat.has(f"Cri/Sound/{args.cue_sheet}"):
         usage(args, f"cue sheet {args.cue_sheet}: no key Cri/Sound/{args.cue_sheet} in the catalog")
-    out = Path(args.out)
-    cues = cri.decode(cat, args.cue_sheet, out, fmt=args.format, **flac)
-    report(args, {"out": str(out), "cues": len(cues)}, lambda r: [f"{r['out']}  ({r['cues']} cues)"])
+    run, result = _file_product(args, cfg, AudioFilesStage(), args.cue_sheet)
+    cues = _product_document(run, result, "cues.json")
+    _place_files(run, result, args.out)
+    report(args, {"out": str(args.out), "cues": len(cues)}, lambda r: [f"{r['out']}  ({r['cues']} cues)"])
 
 
 def cmd_ui(args, cfg):

@@ -552,10 +552,10 @@ def test_plan_emit_tasks_and_run_stage_give_the_exported_depot(tmp_path, capsys,
         doc = json.loads(out)
         if not any(n["status"] == "run" for n in doc["nodes"]):
             break
-        Depot(tmp_path / "q").gc()
+        Depot(tmp_path / "q").gc(grace=0)
         code, out, err = nn(capsys, *flags(d), "depot", "run", tasks, "--depot", tmp_path / "q")
         assert code in (0, 1), err
-        Depot(tmp_path / "q").gc()
+        Depot(tmp_path / "q").gc(grace=0)
         rounds += 1
     assert rounds == 3  # index + census; scripts + addresses; export
     skip = ["inputs", "runs", "costs", "catalogs", "downloads"]
@@ -1231,7 +1231,7 @@ def test_plan_census_takes_the_censuses_first(tmp_path, capsys, fake):
     depot = Depot(tmp_path / "s")
     run = depot.latest_run(["depot.plan.census", "all"])
     assert run and {t["id"] for t in run["tasks"]} >= {n["id"] for n in census}
-    depot.gc(keep=1)
+    depot.gc(keep=1, grace=0)
     assert all(depot.has_result(n["key"]) for n in census)
 
 

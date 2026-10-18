@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from pathlib import Path
 
@@ -33,7 +34,7 @@ STORIES_DIR = "stories"
 STORIES_INDEX = "stories.json"
 SITE_DATA = ("assets", "charts", MODELS_DIR, "charts.json", MODELS_INDEX, STORIES_DIR, STORIES_INDEX)
 PLAYER_VERSION_MARKER = "@PLAYER_VERSION@"  # replaced in the page's files by the bundles' short hash
-SITE_DATA = (*SITE_DATA, "products", "site.json")
+SITE_DATA = (*SITE_DATA, "products", "site.json", "manifest.json", ".nnnotes-layout-journal.json")
 
 
 def site_regions(cfg: Config, regions=None, all_regions: bool = False) -> list[str]:
@@ -85,7 +86,7 @@ def region_meta(cfg: Config, regions: list[str]) -> list[dict]:
 
 
 def check_player(player_dir) -> Path:
-    """The ournotes-player checkout or installed package: its read-set script, built bundle and page must exist."""
+    """A compatible ournotes-player 0.2.x package with its read-set script, built bundle and page."""
     if player_dir is None:
         raise ConfigError(
             "the site needs the player: give --player <ournotes-player checkout or package> "
@@ -99,6 +100,16 @@ def check_player(player_dir) -> Path:
         raise ConfigError(
             f"{d} is not a built ournotes-player (missing {', '.join(missing)}; a checkout needs its build first)"
         )
+    try:
+        package = json.loads((d / "package.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError) as e:
+        raise ConfigError(f"{d}: cannot read the player package.json; ournotes-player 0.2.x is required") from e
+    if (
+        not isinstance(package, dict)
+        or package.get("name") != "ournotes-player"
+        or not re.fullmatch(r"0\.2\.(?:0|[1-9][0-9]*)(?:\+[0-9A-Za-z.-]+)?", str(package.get("version", "")))
+    ):
+        raise ConfigError(f"{d}: incompatible player package; a stable ournotes-player 0.2.x is required")
     return d.resolve()
 
 

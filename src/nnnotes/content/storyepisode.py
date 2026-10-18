@@ -108,7 +108,7 @@ def _always(address: str) -> bool:
     return True
 
 
-def episode(objects: Objects, record: dict) -> AdvExtract:
+def episode(objects: Objects, record: dict, *, has=_always) -> AdvExtract:
     """The episode of `record` (episode_record) from the object table: pass the result to `adv.to_json`."""
     row = record["MasterAdv"][0]
     base = episode_key(row["_advEpisodeAsset"])
@@ -125,7 +125,7 @@ def episode(objects: Objects, record: dict) -> AdvExtract:
         row,
         coll,
         shards,
-        _always,
+        has,
         chat,
         lambda: _default_transition(objects),
         _title(row, record["MasterText"]),

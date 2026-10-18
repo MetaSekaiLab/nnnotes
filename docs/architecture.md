@@ -53,7 +53,10 @@ can then be released toward the configured budget under the command's exclusive 
 requests retain inputs until the expanded product request is known. Stored conversion results remain available
 for assembly and layouts.
 
-`export episode`, `export shader`, `export audio` and `music-data` expose subject-specific data and conversions through the Session. All commands use the readers and converters below the pipeline layer.
+`export episode`, `export shader` and `export audio` request depot tasks and project their results into files.
+Episode assembly reads the common object table, shader files reuse converted Shader artifacts, and audio files
+reuse `cri.audio` streams. `music-data` uses Session to obtain catalog and master inputs for its tabular export.
+Commands record their accessed depot content and results as retention roots; dry runs leave no command record.
 
 ## Outputs
 

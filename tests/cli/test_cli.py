@@ -411,13 +411,16 @@ def test_unknown_key_or_id_is_a_usage_error(data, argv, message, capsys):
 
 
 def test_known_id_reaches_the_extractor(data, tmp_path, capsys, monkeypatch):
-    from nnnotes.content import adv
+    from nnnotes.cli import export
 
     seen = []
-    monkeypatch.setattr(adv, "extract", lambda cat, md, adv_id: seen.append(adv_id) or "x")
-    monkeypatch.setattr(adv, "to_json", lambda x: {"commandCount": 0, "resources": []})
+    monkeypatch.setattr(
+        export, "_file_product", lambda args, cfg, stage, subject: seen.append((stage.name, subject)) or (None, None)
+    )
+    monkeypatch.setattr(export, "_product_document", lambda *a: {"commandCount": 0, "resources": []})
+    monkeypatch.setattr(export, "_place_files", lambda *a, **kw: None)
     code, out, err = run(data + ["export", "episode", "1", "-o", str(tmp_path / "e.json")], capsys)
-    assert code == 0 and seen == [1], err
+    assert code == 0 and seen == [("export.episode", "1")], err
 
 
 def test_missing_master_table_names_it(data, tmp_path, capsys):
@@ -452,12 +455,16 @@ def test_flac_level_is_checked(data, argv, message, capsys):
 def test_flac_level_reaches_the_decode(data, tmp_path, capsys, monkeypatch):
     from types import SimpleNamespace
 
-    from nnnotes.formats import cri
+    from nnnotes.cli import export
     from nnnotes.source.session import Session
 
     seen = []
     monkeypatch.setattr(Session, "catalog", lambda self: SimpleNamespace(has=lambda key: True))
-    monkeypatch.setattr(cri, "decode", lambda *a, **kw: seen.append(kw.get("flac_level")) or [])
+    monkeypatch.setattr(
+        export, "_file_product", lambda args, cfg, stage, subject: seen.append(args.flac_level) or (None, None)
+    )
+    monkeypatch.setattr(export, "_product_document", lambda *a: {})
+    monkeypatch.setattr(export, "_place_files", lambda *a, **kw: None)
     for argv in (["export", "audio", "s"],):
         for flag, level in (([], None), (["--flac-level", "5"], 5)):
             seen.clear()

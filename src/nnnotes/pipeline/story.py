@@ -537,7 +537,9 @@ def _adv_id(subject: str) -> int:
     return int(subject)
 
 
-def part_paths(parts: dict, adv_id: int, *, overlay: bool = False, host: dict | None = None) -> dict:
+def part_paths(
+    parts: dict, adv_id: int, *, requested_languages=(), overlay: bool = False, host: dict | None = None
+) -> dict:
     """story.json `parts`: the manifest paths of the products of storyepisode.parts `parts`."""
     paths = {
         "scene": SceneStage().manifest(DEFAULT),
@@ -547,11 +549,11 @@ def part_paths(parts: dict, adv_id: int, *, overlay: bool = False, host: dict | 
         "videos": {v: VideoStage().manifest(v) for v in parts["videos"]},
         "chat": ChatStage().manifest(DEFAULT) if parts["chat"] else None,
         "crilips": CriLipsStage().manifest(DEFAULT) if parts["crilips"] else None,
-        "ui": {lang: UiStage().manifest(lang) for lang in languages.LANGUAGES},
-        "fonts": {lang: FontsStage().manifest(f"{adv_id}/{lang}") for lang in languages.LANGUAGES},
+        "ui": {lang: UiStage().manifest(lang) for lang in requested_languages},
+        "fonts": {lang: FontsStage().manifest(f"{adv_id}/{lang}") for lang in requested_languages},
     }
     if overlay:
-        paths["simpleui"] = {lang: SimpleUiStage().manifest(lang) for lang in languages.LANGUAGES}
+        paths["simpleui"] = {lang: SimpleUiStage().manifest(lang) for lang in requested_languages}
     if host is not None:
         paths["host"] = {host["subject"]: HostStage().manifest(host["subject"])}
         if host["kind"] == "home":
@@ -604,9 +606,15 @@ class StoryStage(ProductStage):
     """story: an ADV episode -> episode.json and story.json (module documentation)."""
 
     name = STORY
-    version = 4
+    version = 5
+    PARAMS = {"languages": []}
     KIND = "Story"
     MASTER = tuple(sorted({*storyepisode.TABLES, *storyhostproduct.TABLES}))
+
+    def normalize(self, params):
+        params = super().normalize(params)
+        params["languages"] = sorted({_language(code) for code in params["languages"]})
+        return params
 
     def select(self, keys: list[str], env) -> list[str]:
         if env.facts.get("master") is None:
@@ -641,6 +649,7 @@ class StoryStage(ProductStage):
         paths = part_paths(
             storyepisode.parts(episode),
             _adv_id(task.subject),
+            requested_languages=task.params["languages"],
             overlay=record["MasterAdv"][0].get("_playbackMode") == 1,
             host=record.get("host"),
         )

@@ -48,11 +48,11 @@ def test_gc_keeps_what_the_kept_runs_reach(tmp_path):
     first = write_run(d, ["group:a"], [old], mtime=1_000_000_000)
     latest = write_run(d, ["group:a"], [new], mtime=2_000_000_000)
 
-    counted = d.gc(keep=1, dry_run=True)
+    counted = d.gc(keep=1, dry_run=True, grace=0)
     assert counted["runs"] == {"kept": 1, "removed": 1} and counted["contents"] == {"kept": 2, "removed": 2}
     assert d.run(first["id"]) is not None and d.has(orphan)  # a dry run removes nothing
 
-    r = d.gc(keep=1)
+    r = d.gc(keep=1, grace=0)
     assert r["runs"] == {"kept": 1, "removed": 1} and r["results"] == {"kept": 1, "removed": 1}
     assert r["contents"] == {"kept": 2, "removed": 2}
     assert d.run(first["id"]) is None and d.run(latest["id"]) is not None
@@ -86,7 +86,7 @@ def test_the_gc_command_runs_only_when_no_other_command_does(tmp_path, capsys):
     other = tmp_path / "leases" / "other.json"
     other.parent.mkdir()
     other.write_text(json.dumps({"host": socket.gethostname() + "-other", "pid": 1, "started": time.time()}))
-    argv = ["--depot", str(tmp_path), "depot", "gc", "--json"]
+    argv = ["--depot", str(tmp_path), "depot", "gc", "--grace", "0", "--json"]
     with pytest.raises(SystemExit, match="another command uses the depot"):
         cli.main(argv)
     assert d.path(orphan).exists()
@@ -105,3 +105,52 @@ def test_the_gc_command_collects_the_remote_with_remote(tmp_path, capsys, monkey
     cli.main(argv)
     r = json.loads(capsys.readouterr().out)
     assert r["remote"]["runs"] == {"kept": 0, "removed": 0} and r["contents"] == {"kept": 0, "removed": 0}
+
+
+def test_recent_result_keeps_older_inputs_and_artifacts_until_grace_expires(tmp_path):
+    d = Depot(tmp_path)
+    stored = d.put(b"old input")
+    task = Task("t.x", 1, "a", inputs=(Input("doc", stored, 9, None, ({"kind": "depot"},)),))
+    doc = commit(d, task, b"old output")
+    art = doc["artifacts"][0]["content"]["sha256"]
+    old = time.time() - 172800
+    for sha in (stored, art):
+        os.utime(d.path(sha), (old, old))
+    assert d.gc()["results"] == {"kept": 1, "removed": 0}
+    assert d.path(stored).exists() and d.path(art).exists()
+    os.utime(d.result_path(task.key), (old, old))
+    assert d.gc()["results"] == {"kept": 0, "removed": 1}
+    assert not d.path(stored).exists() and not d.path(art).exists()
+
+
+@pytest.mark.parametrize("fail", [False, True])
+def test_command_records_keep_completed_results_and_content_even_on_failure(tmp_path, fail):
+    from nnnotes.pipeline.depot import command_run
+
+    depot = Depot(tmp_path)
+    task = Task("t.x", 1, "a")
+    try:
+        with command_run(depot, "example"):
+            other = Depot(tmp_path)
+            content = other.put(b"read input")
+            commit(other, task, b"completed output")
+            if fail:
+                raise RuntimeError("later operation failed")
+    except RuntimeError:
+        assert fail
+    recorded = depot.latest_run(["command:example"])
+    assert recorded["context"]["outcome"] == ("failed" if fail else "complete")
+    depot.gc(keep=1, grace=0)
+    assert depot.result(task.key) is not None and depot.read(content) == b"read input"
+
+
+def test_cli_dry_run_preserves_downloads_and_writes_no_command_record(tmp_path, capsys):
+    depot = Depot(tmp_path)
+    path = depot.downloads / "bundles" / "example.bundle"
+    path.parent.mkdir(parents=True)
+    path.write_bytes(b"source bytes")
+    orphan = depot.put(b"orphan")
+    cli.main(["--depot", str(tmp_path), "depot", "gc", "--dry-run", "--grace", "0", "--json"])
+    assert json.loads(capsys.readouterr().out)["contents"]["removed"] == 1
+    assert depot.path(orphan).exists() and path.read_bytes() == b"source bytes"
+    assert not list((tmp_path / "runs").rglob("*.json"))

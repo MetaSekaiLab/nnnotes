@@ -17,7 +17,8 @@
     "texts",
     "textStyle",
     "bindings",
-    "shaders"
+    "shaders",
+    "chatStatusTexts"
   ],
   "properties": {
     "format": {
@@ -275,6 +276,12 @@
       "additionalProperties": {
         "type": "string",
         "pattern": "^.+:-?[0-9]+$"
+      }
+    },
+    "chatStatusTexts": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
       }
     }
   },

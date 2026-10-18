@@ -13,7 +13,6 @@ PUBLIC_MODULES = [
     "nnnotes.musicdata",
     "nnnotes.musicdata.deckdata",
     "nnnotes.schemas",
-    "nnnotes.site.webmodel",
     "nnnotes.source.addressables",
     "nnnotes.source.catalog",
     "nnnotes.source.config",

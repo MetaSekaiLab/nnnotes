@@ -6,11 +6,13 @@ Catalog versions and labels are shared through the remote. Census planning, emit
 
 Live2D, room, spot, live, story and UI exports use shared object products. Named site builds publish assets, product manifests and indexes in dependency order, preserve unselected regional topics and restore complete layouts from depot records.
 
+Standalone episode, shader and audio exports also reuse depot tasks. Command records retain accessed results and content. Collection protects recent results and their dependencies for a configurable grace period, and remote verification reads remote-only content without populating the local cache.
+
 Configuration and command interface:
 - Set [paths] depot and, when needed, [depot] remote.
 - Use depot plan, depot run, depot verify and depot gc to manage stored work.
 - Use site build --name NAME -o DIR for a named site and bundle pull -o DIR for source bundle copies.
 - Product playback uses ournotes-player 0.2.x. Story and UI data use the documented nnnotes.product/1 formats.
-- The deck extra pins ournotes-sim 0.0.9.
+- The deck extra pins ournotes-sim 0.0.12.
 
 See the configuration, depot, products and site references for command options and data contracts.

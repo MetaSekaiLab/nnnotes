@@ -38,6 +38,5 @@ raises `GameApiError`. Other names are internal and can change in any version.
 
 ## Site and schemas
 
-::: nnnotes.site.webmodel
 
 ::: nnnotes.schemas

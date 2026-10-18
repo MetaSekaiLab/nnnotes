@@ -306,7 +306,7 @@ def test_interruption_before_batch_end_does_not_notify(tmp_path, monkeypatch, wo
     assert seen == [] and orch._pool == []
     saved = depot.latest_run([])
     assert saved and any(t["status"] == "ran" for t in saved["tasks"])
-    depot.gc(keep=1)
+    depot.gc(keep=1, grace=0)
     assert all(depot.has_result(t["key"]) for t in saved["tasks"] if t["key"])
 
 
@@ -329,7 +329,7 @@ def test_configuration_stop_keeps_the_incomplete_batch(tmp_path):
 
     saved = orch.depot.latest_run([])
     assert saved and any(t["status"] == "ran" for t in saved["tasks"])
-    orch.depot.gc(keep=1)
+    orch.depot.gc(keep=1, grace=0)
     assert all(orch.depot.has_result(t["key"]) for t in saved["tasks"] if t["status"] == "ran")
 
 

@@ -33,7 +33,7 @@ from .common import (
 
 
 def product_entries(args, cfg, ws, expand=None):
-    run, _, aborted = assets.run_request(args, cfg, ws, expand=expand)
+    run, _, aborted = assets.run_request(args, cfg, ws, expand=expand, selection_prefix=["site-product:" + args.name])
     saved = run.write()
     if aborted or run.exit_code:
         report(args, {"run": saved["id"], "tasks": saved["summary"], "failures": run.failures(), "aborted": aborted})
@@ -140,8 +140,9 @@ def cmd_build(args, cfg):
                     facts = {
                         **sitefacts.chart(live, music_doc, lang),
                         "audio": not args.no_audio,
-                        "audioFormat": args.format,
-                        "flows": ["normal"],
+                        "audioFormat": None if args.no_audio else args.format,
+                        "flows": ["direct"],
+                        "quality": 1,
                     }
                     snapshot = builder.add(
                         entries,

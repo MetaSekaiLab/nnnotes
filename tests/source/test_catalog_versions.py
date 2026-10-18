@@ -40,7 +40,7 @@ def config(tmp_path, *, api=True, version=None, region="tw"):
 
 
 def test_auto_discovery_ignores_stale_main_and_advances_resource_version(tmp_path, monkeypatch):
-    from nnnotes.site.webmodel import catalog_models
+    from nnnotes.content.live2d import LIVE2D_PREFIX, model_keys, select_models
 
     cfg = config(tmp_path)
     downloads = Session(cfg).downloads()
@@ -61,7 +61,7 @@ def test_auto_discovery_ignores_stale_main_and_advances_resource_version(tmp_pat
     monkeypatch.setattr(Session, "master_version", version)
     monkeypatch.setattr(catalog, "download", download)
     first = Session(cfg).catalog(bundles=False)
-    assert first.has(EPISODE) and catalog_models(first) == {"new": MODEL}
+    assert first.has(EPISODE) and select_models(None, model_keys(first.keys(LIVE2D_PREFIX))) == {"new": MODEL}
     assert first.resource_version == "1.0.0.201"
     assert deckdata.catalog_info(first)["resourceVersion"] == "1.0.0.201"
     assert seen[0] == "version" and len(seen) == 2
@@ -163,8 +163,9 @@ def test_build_workers_inherit_the_version_pin(tmp_path, monkeypatch):
         sys.executable,
         "-c",
         "from nnnotes.source.config import Config; from nnnotes.source.session import Session; "
-        "from nnnotes.site.webmodel import catalog_models; c=Session(Config.load()).catalog(bundles=False); "
-        "assert 'new' in catalog_models(c); print(c.resource_version)",
+        "from nnnotes.content.live2d import LIVE2D_PREFIX, model_keys, select_models; "
+        "c=Session(Config.load()).catalog(bundles=False); "
+        "assert 'new' in select_models(None, model_keys(c.keys(LIVE2D_PREFIX))); print(c.resource_version)",
     ]
     child = subprocess.run(command, env=os.environ.copy(), text=True, capture_output=True, check=True)
     assert child.stdout.strip() == "1.0.0.201"
