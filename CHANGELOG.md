@@ -2,6 +2,16 @@
 
 All notable changes to this project are listed here. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.2.5](https://github.com/MetaSekaiLab/nnnotes/compare/v0.2.4...v0.2.5) - 2026-10-18
+
+### Bug fixes
+
+- **deck:** Export the non-playable flag of each character ([79905fe](https://github.com/MetaSekaiLab/nnnotes/commit/79905fedb30c8ac9f17323eceeb210869d504840))
+
+### Build
+
+- **deck:** Ournotes-deck v0.0.12 ([9bee11b](https://github.com/MetaSekaiLab/nnnotes/commit/9bee11bb3722a1516e093ce54847632061b720bb))
+
 ## [0.2.4](https://github.com/MetaSekaiLab/nnnotes/compare/v0.2.3...v0.2.4) - 2026-10-16
 
 ### Build
