@@ -7,12 +7,14 @@ machines that use it.
                                              sha256 of the name)
     <remote>/runs/<run>.json                 run manifests
     <remote>/runs/selections/<digest>        the id of the latest run of a selection
+    <remote>/catalogs/versions/<id>.json     one catalog version and its labels
+    <remote>/catalogs/<sha>.bin              catalog bytes, verified when fetched
 
 A remote is `s3://<bucket>/<prefix>` (S3-compatible object storage: path-style requests, checksums only where the
 request needs them, so stores other than AWS answer them) or `file://<directory>` (a shared directory). Every
 operation but `list` names one object, so a remote behind a gateway that caches listings answers them all; `list` is
-used by `depot gc` only. Contents and results are written once: a write is skipped when the object is there with the
-same size. The local depot is the remote's cache (pipeline.depot).
+used for catalog version discovery and `depot gc`. Contents and results are written once: a write is skipped when
+the object is there with the same size. The local depot is the remote's cache (pipeline.depot).
 """
 
 from __future__ import annotations

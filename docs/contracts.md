@@ -295,6 +295,8 @@ ac/ab/<key>.json                results
 inputs/<kind>/ab/<digest>.json  input identities by name
 runs/<run>.json                 run manifests
 runs/selections/<digest>        the id of the latest run of a selection
+catalogs/versions/<id>.json      one catalog version and its labels
+catalogs/<sha256>.bin           catalog files
 ```
 
 The depot directory is the remote's cache. A content, result, input identity or run the depot lacks is read from the
@@ -302,10 +304,15 @@ remote and kept; a content read from the remote is checked against its content i
 remote as well: the bytes a result names before the result, a run manifest before the pointer to it. A result that
 differs from the remote's result of the same key is a conflict, as in the depot itself. The latest run of a selection
 is the one any machine wrote last, and the results of its tasks are known to be on the remote without asking for each
-of them. Downloads, file identities by path (`inputs/paths/`), catalog versions, measured costs, run logs and leases
+of them. Downloads, file identities by path (`inputs/paths/`), measured costs, run logs and leases
 stay in the depot directory.
 
-Every request names one object; only `depot gc --remote` lists the remote.
+Catalog discovery lists the version records and merges them into the local catalog index. Catalog bytes are fetched
+on demand and verified by size and SHA-256 before use. Each import publishes its catalog files before its version
+record. `--stored-catalog` can select a version held by the remote on a fresh depot. Import sequences order the
+versions, with version ids breaking ties between independent imports.
+
+Object reads and writes name individual keys. Catalog discovery and `depot gc --remote` use listings.
 
 ## UI contracts
 
