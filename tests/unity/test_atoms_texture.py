@@ -1,6 +1,4 @@
-"""texture.decode, png.encode and astc.container on synthetic textures (decode = UnityPy's parse_image_data; PNG bytes
-= export.texture_png's), the reader's objects, containers and texture inputs through a fake environment, and the
-atom registry."""
+"""Texture decoding, lossless PNG output and container inputs over synthetic textures."""
 
 import io
 import re
@@ -13,7 +11,6 @@ import pytest
 from PIL import Image
 from UnityPy.export.Texture2DConverter import parse_image_data
 
-from nnnotes.unity import export
 from nnnotes.unity.atoms import ATOMS, Impl, Unsupported, astc, env_name, ids, impl_id, png, resolve
 from nnnotes.unity.atoms.reader import ObjectInfo, UnityBundle
 from nnnotes.unity.atoms.texture import ASTC_BLOCKS, TextureInput, decode, is_hdr_astc
@@ -69,9 +66,12 @@ def test_decode_is_parse_image_data(fmt):
 
 
 @pytest.mark.parametrize("fmt", FORMATS)
-def test_png_bytes_equal_export_texture_png(fmt):
+def test_png_bytes_match_the_decoded_image(fmt):
     tex = fake(fmt, seed=fmt)
-    assert png.encode(decode(inp(tex))) == export.texture_png(tex)
+    image = parse_image_data(tex.get_image_data(), tex.m_Width, tex.m_Height, fmt, VERSION, ANDROID, [], True)
+    expected = io.BytesIO()
+    image.save(expected, format="PNG")
+    assert png.encode(decode(inp(tex))) == expected.getvalue()
 
 
 @pytest.mark.parametrize("fmt", [RGBA32, ASTC_6x6])
@@ -79,11 +79,6 @@ def test_further_mip_levels_do_not_change_the_image(fmt):
     base = fake(fmt, 24, 18, seed=3)
     mips = fake(fmt, 24, 18, seed=3, extra=b"\x5a" * 777)
     assert decode(inp(mips)).tobytes() == decode(inp(base)).tobytes()
-
-
-def test_decode_input_key_is_export_decode_inputs():
-    tex = fake(RGBA32)
-    assert inp(tex).key() == export._decode_inputs(tex)
 
 
 @pytest.mark.parametrize("fmt", [f for f in range(66, 72)])
@@ -204,7 +199,7 @@ def test_reader_texture_inputs():
     env, view, inline, streamed_data = bundle()
     objs = {o.path_id: o for o in view.objects()}
     ti = view.texture_input(objs[-5])
-    assert ti.key() == export._decode_inputs(inline)
+    assert ti.key() == inp(inline).key()
     assert view.texture_input(objs[7]).data == streamed_data and env.lookups == ["CAB-aa.resS"]
     env.lookups.clear()
     empty = view.texture_input(objs[9])

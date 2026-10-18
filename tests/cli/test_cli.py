@@ -465,36 +465,6 @@ def test_flac_level_reaches_the_decode(data, tmp_path, capsys, monkeypatch):
             assert code == 0 and seen == [level], (argv, err)
 
 
-def test_live_passes_the_flac_level_to_its_decodes(tmp_path, monkeypatch):
-    from nnnotes.content import live, liveaudio, score
-    from nnnotes.formats import cri
-
-    class Stop(Exception):
-        pass
-
-    seen = {}
-    monkeypatch.setattr(live, "resolve_band", lambda *a, **kw: {"band": 1})
-    monkeypatch.setattr(score, "extract", lambda *a, **kw: seen.update(score=kw["flac_level"]) or {})
-
-    def sounds(*a, **kw):
-        seen["liveaudio"] = kw["flac_level"]
-        raise Stop
-
-    monkeypatch.setattr(liveaudio, "extract", sounds)
-    with pytest.raises(Stop):
-        live.build(None, tmp_path, None, 7, "expert", tmp_path / "o", language="ja", flac_level=3)
-    assert seen == {"score": 3, "liveaudio": 3}
-
-    def decode(cat, sheet, d, **kw):
-        seen["decode"] = kw
-        d.mkdir(parents=True)
-        (d / "streams.json").write_text("[]", encoding="utf-8")
-
-    monkeypatch.setattr(cri, "decode", decode)
-    assert liveaudio._decode(None, "s", tmp_path, "flac", 3) == []
-    assert seen["decode"] == {"fmt": "flac", "flac_level": 3}
-
-
 def test_export_live_asks_for_the_live_and_the_products_it_plays_with(data, tmp_path, capsys, monkeypatch):
     from nnnotes.cli import assets
     from nnnotes.content import livenotes

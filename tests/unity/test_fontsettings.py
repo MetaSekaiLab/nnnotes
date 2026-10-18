@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from nnnotes.unity import export, fontsettings
+from nnnotes.unity import fontsettings
 from nnnotes.unity.fontsettings import END_OF_TEXT, SPACE
 
 FACE = {"m_PointSize": 40.0, "m_Scale": 1.0}
@@ -145,16 +145,6 @@ def test_write_one_entry_per_line(tmp_path):
     lines = text.splitlines()
     assert sum(ln.startswith('"A SDF":') or ln.startswith('"B SDF":') for ln in lines) == 2
     assert sum(ln.startswith('"7":') or ln.startswith('"8":') for ln in lines) == 2
-
-
-def test_font_stub_resolves_from_the_objects():
-    """A reference into a font bundle left out of the closure: a font asset is named, a material is its record."""
-    s = fontsettings.FontSettings(table(**{"A SDF": font("A", material="A SDF Material")}))
-    ex = export.Exporter.__new__(export.Exporter)
-    ex.font_stubs = s
-    asset = export.FontStub(s.objects[7], 7)
-    assert ex.font_stub(asset) == {"asset": fontsettings.FONT_CLASS, "name": "A SDF"}
-    assert ex.font_stub(export.FontStub(s.objects[8], 8))["floats"] == {"_GradientScale": 10.0}
 
 
 def test_builtin_table_is_complete():

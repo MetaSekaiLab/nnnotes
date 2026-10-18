@@ -1,33 +1,8 @@
-"""TextMesh Pro text layout and style as plain values (shared by the UI exports).
-
-A text record describes what a TMP text draws with any font: its layout settings (size, auto-size range,
-alignment, wrapping, overflow, spacing, margins), its colours and style flags, and the look of its TMP
-distance-field material turned into face / outline / underlay values in em. `fontRole` names which of the
-game's localized font slots the text uses, so a renderer maps roles to fonts of its own.
-
-  language_fonts       Fwk.Localization.LocalizeManager font names per LanguageMode (level0)
-  language_fonts_json  the same from the object's json (the shipped typetree of the class)
-  localize_text        LocalizeText.Init / OnFontChanged: the font asset, material and line spacing a TMP text ends up
-                       with in a language
-
-The language is a Fwk.Localization.LanguageMode (`mode`), the value languages.mode gives for a catalog language code;
-the callers take it from the client language they export (`[catalog] language`).
-  font_role        the role of a font asset: its slot in LocalizeManager's font name list
-  material_style   TMP distance-field material properties -> face / outline / underlay values in em
-  text_style       one TMP text component -> its text record
-  TextStyles       text records of an exporter's TMP texts (reads the localized materials and face info)
-"""
+"""TextMesh Pro layout, localization, font roles and material style records."""
 
 from __future__ import annotations
 
-import struct
-from typing import TYPE_CHECKING
-
 from ..source.languages import LANGUAGES
-
-if TYPE_CHECKING:  # annotations only: the module loads without UnityPy
-    from .export import Exporter
-    from .player import PlayerData
 
 # Fwk.Localization.LanguageMode / language field names of the text tables.
 JAPANESE_MODE = 0
@@ -71,75 +46,6 @@ UNITS = {
     "offsetEm": "[x, y], +x right, +y down",
     "color": "{r, g, b, a} as serialized; fill = color x face.color",
 }
-
-
-class _Reader:
-    """Little-endian serialized-field reader with 4-byte alignment."""
-
-    def __init__(self, raw: bytes, pos: int = 0):
-        self.raw, self.pos = raw, pos
-
-    def align(self):
-        self.pos = (self.pos + 3) & ~3
-
-    def i32(self) -> int:
-        v = struct.unpack_from("<i", self.raw, self.pos)[0]
-        self.pos += 4
-        return v
-
-    def i64(self) -> int:
-        v = struct.unpack_from("<q", self.raw, self.pos)[0]
-        self.pos += 8
-        return v
-
-    def u8(self) -> int:
-        v = self.raw[self.pos]
-        self.pos += 1
-        return v
-
-    def string(self) -> str:
-        n = self.i32()
-        s = self.raw[self.pos : self.pos + n].decode("utf-8")
-        self.pos += n
-        self.align()
-        return s
-
-    def strings(self) -> list[str]:
-        return [self.string() for _ in range(self.i32())]
-
-
-def language_fonts(player: PlayerData) -> dict:
-    """Fwk.Localization.LocalizeManager (level0): font names per LanguageMode.
-
-    Read field by field from the serialized bytes; language_fonts_json gives the same dictionary from the object's
-    json. Layout: m_GameObject, m_Enabled, m_Script, m_Name, _dontDestroyOnload, _languageDataList[{_languageMode,
-    _fontNames[], _additionalFontNames[]}], _materialTypeList[].
-    """
-    hits = [
-        o
-        for o in player._by_type.get("MonoBehaviour", [])
-        if player.script(o)[1:] == ("Fwk.Localization", "LocalizeManager")
-    ]
-    if len(hits) != 1:
-        raise RuntimeError(f"LocalizeManager: {len(hits)} objects")
-    r = _Reader(hits[0].get_raw_data())
-    r.i32()
-    r.i64()  # m_GameObject
-    r.u8()
-    r.align()  # m_Enabled
-    r.i32()
-    r.i64()  # m_Script
-    r.string()  # m_Name
-    r.u8()
-    r.align()  # _dontDestroyOnload
-    langs = {}
-    for _ in range(r.i32()):
-        mode = r.i32()
-        langs[mode] = {"fontNames": r.strings(), "additionalFontNames": r.strings()}
-    materials = r.strings()
-    if r.pos != len(r.raw):
-        raise RuntimeError(f"LocalizeManager: {len(r.raw) - r.pos} trailing bytes")
-    return {"languages": langs, "materialTypes": materials}
 
 
 def language_fonts_json(localize: dict) -> dict:
@@ -356,41 +262,3 @@ def text_style(comp: dict, localize: dict | None, lang: dict, style: dict, mode:
         **style,
     }
     return rec
-
-
-class TextStyles:
-    """Text records of TMP texts read through an Exporter: the material each text draws with in the language
-    `mode` (LocalizeText) and the face info of its font asset, from `fonts` (fontsettings.FontSettings: the table
-    shipped with nnnotes, fontsettings.builtin(), or the game's font assets, tmpfont.AssetFontSettings); no font data
-    is kept."""
-
-    def __init__(self, ex: Exporter, player: PlayerData, mode: int, fonts):
-        self.ex, self.mode = ex, mode
-        self.fonts = fonts
-        self.lang = language_fonts(player)
-        self.swap = font_swap(self.lang, mode)
-        self.roles: dict[str, dict] = {}
-        self._styles: dict[tuple, dict] = {}
-
-    def _face(self, font_asset: str) -> tuple[dict, dict]:
-        f = self.fonts.font(font_asset)
-        return f["faceInfo"], {k: f[k] for k in ("normalSpacingOffset", "boldSpacing")}
-
-    def record(self, path: str, comp: dict, localize: dict | None) -> dict:
-        """The text record of `comp` (TMP text component) with its LocalizeText component `localize`."""
-        fa, mat = comp["m_fontAsset"]["name"], comp["m_sharedMaterial"]["material"]
-        if localize and localize["m_Enabled"] and localize["_localizeEnabled"]:
-            loc = localize_text(path, fa, mat, self.swap, self.lang, self.mode)
-            fa, mat = loc["fontAsset"], loc["material"]
-        if (fa, mat) not in self._styles:
-            face, extra = self._face(fa)
-            self._styles[(fa, mat)] = material_style(self.fonts.material(fa, mat), face["m_PointSize"], face["m_Scale"])
-        rec = text_style(comp, localize, self.lang, self._styles[(fa, mat)], self.mode)
-        if rec["fontRole"] not in self.roles:
-            face, extra = self._face(fa)
-            self.roles[rec["fontRole"]] = face_metrics(face, extra)
-        return rec
-
-    def summary(self) -> dict:
-        """The document-level part: the language's text field, units and the line metrics of each role used."""
-        return {"language": LANGUAGE_FIELDS[self.mode], "units": UNITS, "roles": self.roles}

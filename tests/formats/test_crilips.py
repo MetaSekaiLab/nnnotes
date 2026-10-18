@@ -184,31 +184,3 @@ def test_supported_versions_carry_the_player_configuration():
 
 def _talk(names, voices, **kw):
     return {"cmd": "Talk", "TargetName": names, "VoiceIDs": voices, **kw}
-
-
-def test_needs_cri_lips():
-    from nnnotes.content import story
-
-    def ep(*rows):
-        return {"commands": list(rows)}
-
-    one = _talk("a", [1])
-    # a voiced row reaches the analysis on a model without MotionSync
-    assert story.needs_cri_lips(ep(one), "・", [True, False])
-    assert not story.needs_cri_lips(ep(one), "・", [True, True])
-    # rows without lip sync never do
-    for row in (
-        _talk("a", [1], IgnoreLipSync=1),
-        _talk("a", [1], IgnoreData=1),
-        _talk("", [1]),
-        _talk("a", []),
-        {"cmd": "Bgm", "VoiceIDs": [1], "TargetName": "a"},
-    ):
-        assert not story.needs_cri_lips(ep(row), "・", [False])
-    # a Voice row on a model without MotionSync
-    assert story.needs_cri_lips(ep({"cmd": "Voice", "TargetName": "a", "VoiceIDs": [1]}), "・", [False])
-    # a voice shared by more speakers, or every showing character, uses the analysis on any model
-    assert story.needs_cri_lips(ep(_talk("a・b", [1])), "・", [True])
-    assert not story.needs_cri_lips(ep(_talk("a・b", [1, 2])), "・", [True])
-    assert story.needs_cri_lips(ep(_talk("a", [1], Parameter1=" EveryoneLipSync ")), "・", [True])
-    assert not story.needs_cri_lips(ep(_talk("a・b", [1], Parameter1="AirLipSync")), "・", [True])

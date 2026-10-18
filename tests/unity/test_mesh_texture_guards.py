@@ -6,7 +6,6 @@ import numpy as np
 import pytest
 from UnityPy.enums import TextureFormat
 
-from nnnotes.unity import export
 from nnnotes.unity import reader as unity
 
 
@@ -106,8 +105,6 @@ def test_hdr_astc_textures_are_refused_before_decoding(fmt):
     tex = FakeTexture(int(fmt))  # UnityPy may give the format as a plain int
     with pytest.raises(unity.UnsupportedTexture, match=rf"'number1_glow': {fmt.name} \(HDR ASTC\)"):
         unity.texture_image(tex)
-    with pytest.raises(unity.UnsupportedTexture):
-        export.texture_png(tex)
     assert tex.decoded == 0
 
 

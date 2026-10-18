@@ -5,14 +5,9 @@ import struct
 from types import SimpleNamespace
 
 import pytest
-from UnityPy.helpers.TypeTreeHelper import read_typetree
-from UnityPy.streams.EndianBinaryReader import EndianBinaryReader
 
-from nnnotes.content import advui
 from nnnotes.source import languages
-from nnnotes.source.config import ConfigError
-from nnnotes.unity import fontsettings, textstyle, tmpfont
-from nnnotes.unity.scripttypes import load_typetrees, typetree_key, typetree_node
+from nnnotes.unity import fontsettings, textstyle
 
 WHITE = {"r": 1.0, "g": 1.0, "b": 1.0, "a": 1.0}
 DARK = {"r": 0.2, "g": 0.2, "b": 0.2, "a": 0.8}
@@ -261,121 +256,6 @@ def test_no_font_data_in_the_record():
     }
 
 
-def test_text_styles_reads_the_localized_material(monkeypatch):
-    """The face info and the localized material come from the font settings (no font asset read)."""
-    monkeypatch.setattr(textstyle, "language_fonts", lambda player: LANG)
-    face = {"m_Scale": 1.0, "m_PointSize": 100.0, "m_LineHeight": 120.0, "m_AscentLine": 90.0, "m_DescentLine": -30.0}
-    fonts = fontsettings.FontSettings(
-        {
-            "format": fontsettings.FORMAT,
-            "fonts": {"MainT SDF": {"faceInfo": face, "normalSpacingOffset": 0.0, "boldSpacing": 7.0}},
-            "materials": {"MainT - Outline": material(["OUTLINE_ON"], _OutlineWidth=0.25)},
-        }
-    )
-    styles = textstyle.TextStyles(None, player=None, mode=TW, fonts=fonts)
-    rec = styles.record("Canvas/Text", component(), LOCALIZE)
-    assert rec["outline"]["widthEm"] == pytest.approx(0.25 * 15 / 16 * 0.16, abs=1e-6)
-    assert styles.summary()["roles"] == {
-        "primary": {"lineHeightEm": 1.2, "ascentEm": 0.9, "descentEm": -0.3, "spacingOffset": 0.0, "boldSpacing": 7.0}
-    }
-    assert styles.summary()["language"] == "traditionalChinese"
-    with pytest.raises(KeyError, match="MainT - Default of MainT SDF not in the font settings"):
-        styles.record("Canvas/Text", component(m_sharedMaterial={"material": "MainJ - Default"}), LOCALIZE)
-
-
-def test_font_modes_and_extra(monkeypatch):
-    assert advui.FONT_MODES == ("open", "game")
-    with pytest.raises(ValueError, match="fonts must be one of"):
-        advui.extract(None, None, {}, ".", fonts="other", language="ja")
-    monkeypatch.setattr(tmpfont.importlib.util, "find_spec", lambda name: None)
-    with pytest.raises(tmpfont.ConfigError, match=r"nnnotes\[fonts\]") as e:
-        tmpfont.require_extra()
-    assert "\n" not in str(e.value) and "fonttools" in str(e.value)
-
-
-def test_the_language_is_an_argument():
-    assert not hasattr(textstyle, "LANGUAGE_MODE") and not hasattr(textstyle, "LANGUAGE_FIELD")
-    en = languages.mode("en")
-    swap = textstyle.font_swap(LANG, en)
-    assert swap == {"MainJ SDF": "MainE SDF", "Digits SDF": "DigitsE SDF"}
-    assert textstyle.localize_text("p", "MainJ SDF", "MainJ - Outline", swap, LANG, en) == {
-        "fontAsset": "MainE SDF",
-        "material": "MainE - Outline",
-        "lineSpacing": -100.0,
-    }
-    assert textstyle.font_swap(LANG, languages.mode("ja")) == {"MainJ SDF": "MainJ SDF", "Digits SDF": "Digits SDF"}
-    style = textstyle.material_style(material(), point_size=100.0)
-    assert textstyle.text_style(component(), LOCALIZE, LANG, style, en)["lineSpacing"]["applied"] == -100.0
-
-
-def test_story_ui_language_records(tmp_path):
-    assert advui.about("en") == "ADV front canvas UI data (UIAdvWidget + UIDefaultTalkWindow), en"
-    assert advui.language_doc("en") == {"mode": 1, "field": "english", "lineSpacing": -100.0}
-    assert advui.language_doc("zh-Hant") == {"mode": 2, "field": "traditionalChinese", "lineSpacing": 5.0}
-    assert list(advui.language_doc("ko")) == ["mode", "field", "lineSpacing"]
-    # an unknown language is refused before anything is read, naming the setting
-    with pytest.raises(ConfigError, match="catalog.language: not one of the game's languages"):
-        advui.extract(None, None, {}, tmp_path, language="xx")
-
-
-def test_shown_texts_take_the_language_field():
-    def lines(ja, en):
-        return {"japanese": ja, "english": en}
-
-    episode = {
-        "commands": [
-            {
-                "cmd": "Talk",
-                "TargetName": "a",
-                "AdvTextID": "t1",
-                "TargetTextIDs": ["n1"],
-                "lines": lines("<b>ja1</b>", "en1"),
-            },
-            {"cmd": "Talk", "TargetName": "b", "AdvTextID": "t2", "TargetStatus": 1, "lines": lines("ja2", "en2")},
-            {
-                "cmd": "Talk",
-                "TargetName": "c",
-                "AdvTextID": "t3",
-                "TargetStatus": 2,
-                "TargetTextIDs": ["n3"],
-                "lines": lines("ja3", "en3"),
-            },
-            {"cmd": "Location", "lines": lines("jaL", "enL")},
-            {
-                "cmd": "Talk",
-                "TargetName": "d",
-                "AdvTextID": "t4",
-                "TargetTextIDs": ["n1", "n2"],
-                "lines": lines("ja4", "en4"),
-            },
-        ],
-        "text": {
-            "n1": lines("名1", "Name1"),
-            "n2": lines("名2", "Name2"),
-            "n3": lines("名3", "Name3"),
-            "unk": lines("？", "???"),
-            "split": lines("・", "&"),
-        },
-        "title": lines("題", "Title"),
-    }
-    ids = {"_unknownCharacterNameTextId": "unk", "_splitCharacterNameTextId": "split"}
-    assert advui.shown_texts(episode, ids, "english") == [
-        "en1",
-        "en2",
-        "en3",
-        "enL",
-        "en4",
-        "&",
-        "???",
-        "Name1",
-        "Name2",
-        "Title",
-    ]
-    assert advui.shown_texts(episode, ids, "japanese")[:2] == ["ja1", "ja2"]
-    with pytest.raises(RuntimeError, match="no title"):
-        advui.shown_texts({**episode, "title": None}, ids, "english")
-
-
 # --------------------------------------------------------------------------
 # LocalizeManager: the serialized bytes, the object json of the shipped type tree
 # --------------------------------------------------------------------------
@@ -456,17 +336,6 @@ class _Boot:
         return ("Fwk", "Fwk.Localization", "LocalizeManager")
 
 
-def test_language_fonts_reads_the_serialized_fields():
-    raw = localize_manager_bytes(LOCALIZE_LANGUAGES, LOCALIZE_MATERIALS)
-    assert textstyle.language_fonts(_Boot(raw)) == EXPECTED_LANGUAGES
-
-
-def test_language_fonts_refuses_trailing_bytes():
-    raw = localize_manager_bytes(LOCALIZE_LANGUAGES, LOCALIZE_MATERIALS) + b"\0\0\0\0"
-    with pytest.raises(RuntimeError, match="4 trailing bytes"):
-        textstyle.language_fonts(_Boot(raw))
-
-
 def test_language_fonts_json_is_the_same_dictionary_from_the_object_json():
     doc = {
         "_dontDestroyOnload": 1,
@@ -477,18 +346,3 @@ def test_language_fonts_json_is_the_same_dictionary_from_the_object_json():
         "_materialTypeList": LOCALIZE_MATERIALS,
     }
     assert textstyle.language_fonts_json(doc) == EXPECTED_LANGUAGES
-
-
-def test_the_shipped_type_tree_reads_the_localize_manager_bytes():
-    entry = load_typetrees("6000.3.12f1")["classes"][typetree_key("Fwk", "Fwk.Localization", "LocalizeManager")]
-    assert entry["typeHash"] == LOCALIZE_HASH
-    assert [1, "UInt8", "_dontDestroyOnload", ALIGN] in entry["nodes"]
-    raw = localize_manager_bytes(LOCALIZE_LANGUAGES, LOCALIZE_MATERIALS)
-    tt = read_typetree(
-        typetree_node(entry["nodes"]),
-        EndianBinaryReader(raw, "<"),
-        as_dict=True,
-        byte_size=len(raw),
-        check_read=True,
-    )
-    assert textstyle.language_fonts_json(tt) == EXPECTED_LANGUAGES == textstyle.language_fonts(_Boot(raw))

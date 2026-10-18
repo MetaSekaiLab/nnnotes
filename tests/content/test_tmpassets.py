@@ -11,7 +11,7 @@ from PIL import Image
 
 from nnnotes.content import tmpassets
 from nnnotes.unity import fontsettings
-from nnnotes.unity.export import MemoryPacker, packed_png
+from nnnotes.unity.texels import MemoryPacker, packed_png
 from tests.helpers.fonts import make_font
 
 FILE = "CAB-tmpassets"
