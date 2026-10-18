@@ -75,20 +75,25 @@ def master_input(env, record: dict) -> Input:
 def request(stages: dict, products: dict, env) -> dict:
     """The fact "roots" (pipeline.units) of a request for `products` {stage name: subjects}: the catalog keys, the
     resource paths, the built-in selectors and the root objects of every subject, sorted."""
-    keys, resources, builtins, objects = set(), set(), set(), set()
+    groups = {name: set() for name in ("keys", "resources", "builtins", "objects")}
+    font_roots = {name: set() for name in groups}
     for name, subjects in sorted(products.items()):
         stage = stages[name]
         for s in subjects:
-            keys.update(stage.keys(s, env))
-            resources.update(stage.resources(s, env))
-            builtins.update(stage.builtins(s, env))
-            objects.update(stage.root_objects(s, env))
-    return {
-        "keys": sorted(keys),
-        "resources": sorted(resources),
-        "builtins": sorted(builtins),
-        "objects": sorted(objects),
-    }
+            for kind, method in (
+                ("keys", "keys"),
+                ("resources", "resources"),
+                ("builtins", "builtins"),
+                ("objects", "root_objects"),
+            ):
+                values = getattr(stage, method)(s, env)
+                groups[kind].update(values)
+                if stage.INCLUDE_FONTS:
+                    font_roots[kind].update(values)
+    result: dict = {kind: sorted(values) for kind, values in groups.items()}
+    if any(font_roots.values()):
+        result["font_roots"] = {kind: sorted(values) for kind, values in font_roots.items()}
+    return result
 
 
 def _entry(item: dict, arts: dict) -> dict:
@@ -152,7 +157,7 @@ class _Results:
         return doc
 
 
-def reach(env, roots, results: _Results | None = None, keys: dict | None = None) -> Reach:
+def reach(env, roots, results: _Results | None = None, keys: dict | None = None, *, fonts=False) -> Reach:
     """The objects reachable from the object ids `roots` (module documentation); `keys` {catalog key: its object ids,
     all among the roots} goes into the table as it is."""
     results = results or _Results()
@@ -189,9 +194,9 @@ def reach(env, roots, results: _Results | None = None, keys: dict | None = None)
                 t = table.subject_of(r)
                 if t is None:
                     missing.add(r)
-                elif table.fences(s, t):
+                elif not fonts and table.fences(s, t):
                     blocked[r] = table.info[r]
-                elif t not in seen and table.reaches(s, t, s in start):
+                elif t not in seen and table.reaches(s, t, s in start, fonts=fonts):
                     todo.append(t)
     for atlas, sprites in sorted(crops.items()):
         s = table.subject_of(atlas)
@@ -199,7 +204,11 @@ def reach(env, roots, results: _Results | None = None, keys: dict | None = None)
         cut = {
             o
             for o in sprites
-            if s is not None and s not in seen and (src := table.subject_of(o)) is not None and table.fences(src, s)
+            if not fonts
+            and s is not None
+            and s not in seen
+            and (src := table.subject_of(o)) is not None
+            and table.fences(src, s)
         }
         if cut:
             blocked[atlas] = table.info[atlas]
@@ -409,6 +418,7 @@ class ProductStage(Stage):
 
     after = (ADDRESSES, EXPORT, CROP, AUDIO, MOVIE)
     KIND = "product"
+    INCLUDE_FONTS = False
     MASTER: tuple[str, ...] = ()
     APK: tuple[str, ...] = ()
 
@@ -485,7 +495,7 @@ class ProductStage(Stage):
         memo = self._memo.get(subject)
         if memo is not None and memo[0] == sig and all(env.key(t) == k for t, k in memo[1]):
             return memo[2]
-        r = reach(env, roots, self._results, by_key)
+        r = reach(env, roots, self._results, by_key, fonts=self.INCLUDE_FONTS)
         self._memo[subject] = (sig, [(t, env.key(t)) for t in r.read], r)
         return r
 

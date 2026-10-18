@@ -297,6 +297,24 @@ def test_a_fenced_root_reaches_out_of_the_fence_and_takes_the_image_of_its_atlas
     assert f"{ATLAS_CAB}:99" in table["objects"] and set(table["objects"][oid(13)]["files"]) == {"json", "image"}
 
 
+def test_a_product_can_include_referenced_font_objects_without_affecting_other_products(tmp_path):
+    class WithFonts(Toy):
+        INCLUDE_FONTS = True
+
+    depot = Depot(tmp_path / "s")
+    env = env_for(depot, {"key/a": [oid(13)]}, selected=[], fonts=["atlas"])
+    stage = WithFonts({"m/a": "key/a"})
+    env.facts["roots"] = assemble.request({stage.name: stage}, {stage.name: ["m/a"]}, env)
+    assert "atlas:99" in ExportStage(FAKE_READER).subjects(env)
+    exported(depot, env)
+    _, doc = product(depot, env, "m/a", stage=stage)
+    table = table_of(depot, doc)
+    assert table["fenced"] == {}
+    assert set(table["objects"][oid(13)]["files"]) == {"json", "image"}
+    _, ordinary = product(depot, env, "m/a", {"m/a": "key/a"})
+    assert f"{ATLAS_CAB}:99" in table_of(depot, ordinary)["fenced"]
+
+
 def test_depends_names_the_units_it_reads(tmp_path):
     depot = Depot(tmp_path / "s")
     env = env_for(depot, {"key/a": [oid(60)]})
