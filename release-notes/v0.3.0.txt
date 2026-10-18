@@ -8,6 +8,8 @@ Live2D, room, spot, live, story and UI exports use shared object products. Named
 
 Standalone episode, shader and audio exports also reuse depot tasks. Command records retain accessed results and content. Collection protects recent results and their dependencies for a configurable grace period, and remote verification reads remote-only content without populating the local cache.
 
+PNG and font task keys include the native compression library identity, so stored results are shared only between matching encoder implementations.
+
 Configuration and command interface:
 - Set [paths] depot and, when needed, [depot] remote.
 - Use depot plan, depot run, depot verify and depot gc to manage stored work.

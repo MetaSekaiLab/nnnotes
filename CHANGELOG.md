@@ -15,6 +15,7 @@ schemas in `nnnotes.schemas` and the documented Python API. Before 1.0 a minor v
 
 ### Features
 
+- Keep PNG and font task results distinct across native compression library implementations.
 - Export episode documents, shader files and cue-sheet audio through depot tasks and retained file layouts.
 - Share cached results when adding remote storage, verify remote-only content, and retain recent results with their dependencies during collection.
 - Validate player package compatibility and publish chart metadata and requested language references consistently.

@@ -26,6 +26,8 @@ def environment(depot, name, builder):
 
 
 def provider(stage, build, libraries=()):
+    if "Pillow" in libraries:
+        libraries = (*libraries, "Pillow.zlib")
     return {"stage": stage, "fixtures": {"shared-objects": build}, "libraries": libraries}
 
 
@@ -137,7 +139,7 @@ def live_product():
     return {
         "stage": stage,
         "fixtures": {"plain": fixture("plain", []), "localized": fixture("localized", ["ja", "en"])},
-        "libraries": ["Pillow"],
+        "libraries": ["Pillow", "Pillow.zlib"],
     }
 
 
@@ -305,7 +307,7 @@ def simple_ui():
     return provider(stage, build)
 
 
-FONT_LIBRARIES = ("fonttools", "freetype-py", "scipy", "numpy", "Pillow")
+FONT_LIBRARIES = ("fonttools", "freetype-py", "scipy", "numpy", "Pillow", "Pillow.zlib")
 
 
 def font_provider(stage, fixture, subject, *, extra=None):

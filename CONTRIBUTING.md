@@ -34,6 +34,7 @@ mkdocs build --strict             # the documentation site
   `GOLDENS_UPDATE=1 pytest tests/pipeline/test_goldens.py`, using the library versions of
   `.github/goldens-constraints.txt` (`pip install -c .github/goldens-constraints.txt -e ".[test,fonts]"`).
   Node.js runs the synthetic read-set fixture. CI uses Node.js 24 and Python 3.13 for these records.
+  PNG-dependent records also use the native `Pillow.zlib` identity listed in their library versions.
 - **Command reference.** `docs/cli.md` is generated from the parser. After changing a command or an option, run
   `python -m nnnotes.cli.reference docs/cli.md`; a test fails while the file is out of date.
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from ..content.prefabs import script_class
+from ..core.versions import PILLOW_ZLIB
 from ..source.apkset import MANIFEST_IN_APK, manifest_version_name
 from ..unity import fontsettings
 from ..unity.ids import parse_object_id
@@ -40,7 +41,7 @@ def font_settings(task, objects, lang):
 def font_atoms() -> dict:
     from ..unity.atoms import impl_id
 
-    return {"text.glyphs": impl_id(("fonttools", "freetype-py", "scipy", "numpy", "Pillow"), 1)}
+    return {"text.glyphs": impl_id(("fonttools", "freetype-py", "scipy", "numpy", "Pillow", PILLOW_ZLIB), 1)}
 
 
 class FontInputsStage(ProductStage):

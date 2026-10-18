@@ -1644,7 +1644,7 @@ CONVERTER_UNITS = {
     "shader.json": "all:51",
     "generic.json": "all:95",
 }
-LIBRARIES = ["Pillow", "UnityPy", "astc-encoder-py", "numpy", "texture2ddecoder"]
+LIBRARIES = ["Pillow", "Pillow.zlib", "UnityPy", "astc-encoder-py", "numpy", "texture2ddecoder"]
 
 
 def export_golden():
