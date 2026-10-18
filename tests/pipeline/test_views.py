@@ -1000,7 +1000,7 @@ def test_views_plan_and_run_after_the_address_table(tmp_path):
 def test_views_import_neither_unitypy_nor_numpy():
     code = (
         "import sys, nnnotes.pipeline.views; "
-        "print(sorted(m for m in ('UnityPy', 'numpy', 'PIL', 'nnnotes.unity.export') if m in sys.modules))"
+        "print(sorted(m for m in ('UnityPy', 'numpy', 'PIL', 'nnnotes.unity.texels') if m in sys.modules))"
     )
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, cwd=ROOT, check=True).stdout
     assert out.strip() == "[]"

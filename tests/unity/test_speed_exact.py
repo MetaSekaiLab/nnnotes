@@ -20,9 +20,8 @@ from UnityPy.helpers.TypeTreeNode import TypeTreeNode
 
 from nnnotes.core import cache, jsonio
 from nnnotes.formats import cri, encoders, shader
-from nnnotes.unity import export
 from nnnotes.unity import reader as unity
-from nnnotes.unity.export import Exporter, TexelPacker
+from nnnotes.unity import texels as export
 from nnnotes.unity.reader import SceneGraph
 
 
@@ -217,26 +216,6 @@ def ref_value(ex, owner, v):
     return v
 
 
-def test_value_fast_path(tmp_path):
-    ex = Exporter(None, tmp_path)
-    ex.ref = lambda owner, p: {"ref": p["m_PathID"]}
-    rng = random.Random(5)
-    for _ in range(200):
-        v = [rng.random() for _ in range(rng.randrange(5))]
-        doc = {
-            "a": v,
-            "b": [1, "x", None, True],
-            "c": [{"m_FileID": 0, "m_PathID": 3}, 2.0],
-            "d": [b"\x01", 1],
-            "e": [[1, 2], [3]],
-            "f": [],
-            "g": {"h": [{"m_FileID": 1, "m_PathID": 0}]},
-        }
-        out = ex.value(None, doc)
-        assert out == ref_value(ex, None, doc)
-        assert out["a"] is not v and out["f"] == []  # new lists, as before
-
-
 # ---------------------------------------------------------------- textures
 class FakeTex:
     decodes = 0
@@ -283,33 +262,6 @@ def png_of(img, **kw):
     return b.getvalue()
 
 
-def test_texture_png_cached_and_equal():
-    t = FakeTex(b"abcdefgh" * 10, 16, 8)
-    FakeTex.decodes = 0
-    want = png_of(t.image)
-    assert export.texture_png(t) == want
-    assert export.texture_png(FakeTex(b"abcdefgh" * 10, 16, 8)) == want  # same inputs: no decode
-    assert FakeTex.decodes == 2
-    assert export.texture_png(FakeTex(b"abcdefgh" * 10, 8, 16)) != want  # other size: decoded
-    cache.configure(enabled=False)
-    assert export.texture_png(t) == want
-
-
-def test_exporter_texture_files_immediate_and_deferred(tmp_path):
-    objs = [tex_obj(FakeTex(bytes([i]) * 64, 8, 4), name=f"t{i}", pid=i) for i in range(4)]
-    a = Exporter(None, tmp_path / "a")
-    recs_a = [a.texture(o) for o in objs]
-    b = Exporter(None, tmp_path / "b", defer_writes=True)
-    recs_b = [b.texture(o) for o in objs]
-    assert recs_a == recs_b
-    assert not list((tmp_path / "b" / "textures").iterdir())
-    skip = {recs_b[1]["texture"]}
-    assert b.write_textures(skip=skip) == sorted(r["texture"] for r in recs_b if r["texture"] not in skip)
-    ta = tree(tmp_path / "a")
-    assert tree(tmp_path / "b") == {k: v for k, v in ta.items() if k not in skip}
-    assert ta[recs_a[0]["texture"]] == png_of(objs[0].read().image)
-
-
 def ref_pixels(tex_obj):
     tt = tex_obj.read_typetree()
     img = tex_obj.read().image
@@ -320,26 +272,6 @@ def ref_pixels(tex_obj):
     else:
         arr = np.asarray(img.convert("RGBA"), np.uint8)
     return arr[::-1].copy()
-
-
-@pytest.mark.parametrize("fmt,mode", [(4, "RGBA"), (3, "RGB"), (1, "L"), (1, "RGBA")])
-def test_packer_pixels_and_png(tmp_path, fmt, mode):
-    o = tex_obj(FakeTex(b"seed%d" % fmt + mode.encode(), 12, 6, fmt, mode))
-    FakeTex.decodes = 0
-    want = ref_pixels(o)
-    p1, p2 = TexelPacker(tmp_path / "1"), TexelPacker(tmp_path / "2")
-    a = p1.pixels(o)
-    assert np.array_equal(a, want) and not a.flags.writeable
-    assert np.array_equal(p2.pixels(o), want)
-    assert FakeTex.decodes == 2  # the reference, then one decode for both packers
-    for p in (p1, p2):
-        p.add("g", o, 0, 0, 12, 6)
-        p.add("g", o, -1, -1, 3, 3)
-    r1, r2 = p1.build(), p2.build()
-    assert r1 == r2 and tree(tmp_path / "1") == tree(tmp_path / "2")
-    out = tree(tmp_path / "1")["textures/g.png"]
-    arr = np.asarray(Image.open(io.BytesIO(out)))
-    assert out == png_of(Image.fromarray(arr.copy(), "RGBA"), optimize=True)
 
 
 def test_packed_png_matches_pillow():

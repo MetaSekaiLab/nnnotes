@@ -165,6 +165,20 @@ def first_mono(env, must_have: str | None = None) -> dict | None:
     return None
 
 
+def container_asset(env, internal_id: str) -> ObjectReader:
+    """The object named by a bundle's container path, matched without case sensitivity."""
+    for owner in env.objects:
+        if owner.type.name != "AssetBundle":
+            continue
+        for path, info in owner.read_typetree()["m_Container"]:
+            if path.lower() == internal_id.lower():
+                asset = deref(owner, info["asset"])
+                if asset is None:
+                    raise KeyError(f"{internal_id}: the container entry is a null reference")
+                return asset
+    raise KeyError(f"{internal_id} not in any AssetBundle container")
+
+
 def textassets(env) -> dict[str, str]:
     out = {}
     for o in env.objects:

@@ -6,8 +6,8 @@ import copy
 
 from ..source import languages
 from ..unity import fontsettings, textstyle, tmpfont
-from ..unity.export import MemoryPacker, _safe, packed_png
 from ..unity.ids import object_id, parse_object_id
+from ..unity.texels import MemoryPacker, _safe, packed_png
 from . import advui, storyfonts, storysimpleui, storyui, tmpassets
 from .prefabs import component_class, key_object, mono_json, ref_id, shader_table
 

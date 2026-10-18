@@ -603,7 +603,7 @@ def test_movie_parameters():
 def test_stage_modules_import_nothing_heavy():
     code = (
         "import sys; import nnnotes.pipeline.cristages as c; c.AudioStage().normalize(None); "
-        "heavy = ('UnityPy', 'numpy', 'PIL', 'nnnotes.formats.cri', 'nnnotes.formats.usm', 'nnnotes.unity.export'); "
+        "heavy = ('UnityPy', 'numpy', 'PIL', 'nnnotes.formats.cri', 'nnnotes.formats.usm', 'nnnotes.unity.texels'); "
         "print(sorted(m for m in heavy if m in sys.modules))"
     )
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, cwd=ROOT, check=True)

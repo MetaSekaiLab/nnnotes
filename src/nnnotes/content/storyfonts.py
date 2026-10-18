@@ -1,48 +1,4 @@
-"""The TextMeshPro font data of a story's texts in one language -> <story>/ui/fonts.json, ui/fonts/*.png and
-ui/languages.json (the site's per-language files, storysite.py; format in ournotes-player docs/story-data-format.md).
-
-  ui/fonts.json       font assets reduced to the characters the episode shows in the language, their glyph pages
-                      (ui/fonts/*.png), the text materials, their GLES3 keyword sets and the text binding of every
-                      text node of ui/ui.json: its serialized TextMeshPro fields and the font asset, material and
-                      line spacing it uses in the language (LocalizeText); with open fonts also `chatTexts` and
-                      `dialogTexts`, the bindings of the chat window texts of ui.json `chatTexts` and of the text
-                      nodes of its `dialogs`
-  ui/languages.json   the language's LanguageMode, text field, line spacing and the font asset and line metrics of
-                      each font role
-  ui/shaders/         the shader the text materials name (TextMeshPro/Mobile/Distance Field) is added to the UI's
-
-Two sources give the same format:
-
-  open_fonts  (default) glyphs generated from a font file per language: each text's localized game font asset
-              (LocalizeText) is replaced by an asset of the font file with the game asset's point size, padding,
-              style settings and render mode, holding the characters of the episode's text table, its title, the
-              static labels of the UI and the chat windows' status and run-time texts in that language plus
-              TextMeshPro's synthesized control characters and U+005F (UNDERLINE_CHARACTER). Face info and glyph
-              metrics come from the font file at that point size (FreeType, no hinting); the distance field is
-              tmpfont.RuntimeGlyphs' (the supersampled render modes rasterize at up to MAX_OVERSAMPLE times the size,
-              recorded in atlasRenderMode; the anti-aliased distance-field modes are generated as the 1X distance
-              field and recorded as SDF). Glyphs are shelf-packed, U+005F first (on the first page), then in code
-              point order of their first character into pages of PAGE_WIDTH texels, at most PAGE_MAX_HEIGHT high;
-              every page of an asset has the same size. The text materials are the game's localized materials with
-              the page as _MainTex and the page size as _TextureWidth / _TextureHeight. The game asset's fallback
-              chain is mirrored (open_font_set): each game fallback asset stands for an asset of the font file of
-              the language LocalizeManager lists it for, which holds the characters the assets before it in the
-              chain lack. The game assets' settings, character coverage, fallback lists and text materials come from
-              nnnotes' table of them (fontsettings.builtin()): no game font asset, material, glyph or font bundle is
-              read.
-  game_fonts  the game's TMP font assets (advui.extract with fonts="game", tmpfont.export_fonts): the same records
-              moved from its ui.json into fonts.json, the glyph pages into ui/fonts/.
-
-Emoji: every text a Fwk.UI.UIText drives has LocalizeManager's emoji sprite asset (UIText.Awake), which draws the
-characters its font assets lack and the <sprite name> tags the emoji search writes for emoji sequences. With open
-fonts the sprite asset holds the sprites the episode's texts can draw (sprite_needs), each image drawn from the emoji
-font (EmojiFont; none: empty glyphs) at the game sprite's size, and the open font assets of those texts leave out the
-code points a sprite draws; with game fonts it is the game's asset with its sheet. Without a sprite to draw, fonts.json
-has no sprite asset.
-
-Same inputs (font file, episode, game data) and library versions give the same bytes; generated glyph cells are kept
-in the process cache by font file, sizes and glyph.
-"""
+"""Font file readers, glyph generation, atlas packing and material records for text products."""
 
 from __future__ import annotations
 
@@ -50,30 +6,22 @@ import copy
 import hashlib
 import json
 import math
-import shutil
 import unicodedata
 from pathlib import Path
 
 import numpy as np
 
-from ..core import cache, jsonio
-from ..formats import shader as shader_mod
-from ..source import languages, master
+from ..core import cache
+from ..source import languages
 from ..source.config import ConfigError
 from ..unity import fontsettings, textstyle, tmpfont
-from ..unity.export import Exporter, _safe, packed_png, texture_png
+from ..unity.texels import _safe, packed_png
 from . import adv, advui
 
-FONTS_FORMAT = "ournotes.story-fonts/1"
-LANGUAGE_FORMAT = "ournotes.story-language/1"
-FONTS_DOC = "fonts.json"
-LANGUAGE_DOC = "languages.json"
 PAGES_DIR = "fonts"
 PAGE_WIDTH = 2048
 PAGE_MAX_HEIGHT = 4096
 MAX_OVERSAMPLE = 8
-SOURCES = ("open", "game")
-TEXT_SHADER_PREFIX = "TextMeshPro/"
 # UnityEngine.TextCore.LowLevel.GlyphRasterModes flags of the supersampled render modes -> raster pixels per texel
 OVERSAMPLE_FLAGS = {tmpfont.RASTER_MODE["8X"]: 8, tmpfont.RASTER_MODE["16X"]: 16, tmpfont.RASTER_MODE["32X"]: 32}
 ELEMENT_CHARACTER = 1  # TMP TextElementType.Character
@@ -86,37 +34,10 @@ UI_RUBY_FIELDS = ("_rubyMarginTop",)
 KOREAN_ADJUST_CLASS = "LocalizeKoreanAdjust"  # the font style a text gets in Korean (LocalizeKoreanAdjust.Apply)
 UI_TEXT_CLASSES = ("UIText", "UIRubyText")  # Fwk.UI.UIText and its subclass
 GLYPHS = cache.bucket("storyglyphs")
-FACE_KEYS = (
-    "m_FaceIndex",
-    "m_FamilyName",
-    "m_StyleName",
-    "m_PointSize",
-    "m_Scale",
-    "m_UnitsPerEM",
-    "m_LineHeight",
-    "m_AscentLine",
-    "m_CapLine",
-    "m_MeanLine",
-    "m_Baseline",
-    "m_DescentLine",
-    "m_SuperscriptOffset",
-    "m_SuperscriptSize",
-    "m_SubscriptOffset",
-    "m_SubscriptSize",
-    "m_UnderlineOffset",
-    "m_UnderlineThickness",
-    "m_StrikethroughOffset",
-    "m_StrikethroughThickness",
-    "m_TabWidth",
-)
 STYLE_KEYS = fontsettings.STYLE_KEYS
 # OpenType name table ids
 NAME_FAMILY, NAME_STYLE, NAME_VERSION, NAME_LICENSE, NAME_LICENSE_URL = 1, 2, 5, 13, 14
 NAME_TYPO_FAMILY, NAME_TYPO_STYLE = 16, 17
-
-
-def _dump(obj) -> bytes:
-    return jsonio.dumps(obj, ensure_ascii=False, indent=1, sort_keys=True).encode("utf-8") + b"\n"
 
 
 def _salt() -> str:
@@ -279,69 +200,6 @@ def pack_cells(cells: list[tuple[int, int, int]]) -> tuple[dict[int, tuple[int, 
 
 
 # ---------------------------------------------------------------- texts
-def _ui_prefab_nodes(ex: Exporter, ui_doc: dict) -> tuple[dict[str, dict], dict[str, dict]]:
-    """({path: node} of UIAdvWidget's prefab, {path: node} of the talk windows of ui.json under TalkView)."""
-    widget = {n["path"]: n for n in ex.prefab(advui.WIDGET_KEY)["nodes"]}
-    names = [rec["name"] for rec in ui_doc["nodes"] if rec["path"] == f"{advui.WINDOW_PARENT}/{rec['name']}"]
-    return widget, {n["path"]: n for n in advui.window_nodes(ex, names)}
-
-
-def ui_text_targets(nodes, root: str = "") -> set[str]:
-    """The paths (`root` + the prefab path) of the texts the Fwk.UI.UIText components (and its subclass UIRubyText) of
-    the prefab `nodes` drive (_targetText, on any node): UIText.Awake registers OnEmojiSpriteAssetLoaded with
-    LocalizeManager, which sets the text's sprite asset (TMP_Text.spriteAsset) to LocalizeManager's emoji sprite
-    asset, over any serialized one (the asset is loaded at the title, before any story). A UIText without a target
-    text drives none."""
-    out = set()
-    for n in nodes:
-        for c in n["components"]:
-            if c.get("class") in UI_TEXT_CLASSES:
-                target = (c.get("_targetText") or {}).get("gameObject")
-                if target is not None:
-                    out.add(root + target)
-    return out
-
-
-def story_ui_text_targets(ex: Exporter, ui_doc: dict) -> set[str]:
-    """ui_text_targets of UIAdvWidget and of the talk windows of ui.json (paths under TalkView)."""
-    names = [rec["name"] for rec in ui_doc["nodes"] if rec["path"] == f"{advui.WINDOW_PARENT}/{rec['name']}"]
-    out = ui_text_targets(ex.prefab(advui.WIDGET_KEY)["nodes"])
-    for name in names:
-        out |= ui_text_targets(ex.prefab(advui.window_key(ex.cat, name))["nodes"], f"{advui.WINDOW_PARENT}/")
-    return out
-
-
-def sprite_binding(path: str, node: list[dict], driven: bool, sprite: str | None) -> dict:
-    """The sprite settings of a text binding: for a text a UIText drives (`driven`), `spriteAsset` = `sprite` (the
-    emoji sprite asset's name in fonts.json) and the text's serialized `m_tintAllSprites`; {} for any other text, which
-    keeps its serialized sprite asset (only none is implemented)."""
-    comps = [c for c in node if c.get("class") in advui.TMP_CLASSES]
-    if len(comps) != 1:
-        raise RuntimeError(f"{path}: {len(comps)} text components")
-    c = comps[0]
-    if not driven:
-        if c.get("m_spriteAsset"):
-            raise NotImplementedError(f"{path}: a text with its own sprite asset")
-        return {}
-    if sprite is None:
-        raise RuntimeError(f"{path}: a UIText text without the emoji sprite asset")
-    return {"spriteAsset": sprite, "m_tintAllSprites": c["m_tintAllSprites"]}
-
-
-def text_components(ex: Exporter, ui_doc: dict) -> dict[str, list[dict]]:
-    """{node path: the node's components} of every text node of the story UI (ui.json nodes with a text record), from
-    the prefabs advui assembles (UIAdvWidget with the talk windows of ui.json, the children of TalkView, under it)."""
-    widget, window = _ui_prefab_nodes(ex, ui_doc)
-    out = {}
-    for rec in ui_doc["nodes"]:
-        if "textStyle" not in rec:
-            continue
-        path = rec["path"]
-        hits = [n for n in (widget.get(path), window.get(path)) if n is not None]
-        if len(hits) != 1:
-            raise RuntimeError(f"{path}: {len(hits)} prefab nodes")
-        out[path] = hits[0]["components"]
-    return out
 
 
 def text_extras(path: str, comps: list[dict]) -> dict:
@@ -362,143 +220,9 @@ def text_extras(path: str, comps: list[dict]) -> dict:
     return out
 
 
-def _binding(
-    path: str, node: list[dict], swap: dict, lang: dict, mode: int, driven: bool = False, sprite: str | None = None
-) -> dict:
-    """The text binding of a text node (its components `node`): the serialized TextMeshPro fields of its text
-    component, as advui writes them with fonts="game", the settings of its other text components (text_extras),
-    `localized` = textstyle.localize_text (LocalizeText) in the language `mode` and its sprite settings
-    (sprite_binding: `driven` by a UIText, `sprite` the emoji sprite asset's name)."""
-    comps = [c for c in node if c.get("class") in advui.TMP_CLASSES]
-    if len(comps) != 1:
-        raise RuntimeError(f"{path}: {len(comps)} text components")
-    c = comps[0]
-    t = {k: c[k] for k in advui.TMP_FIELDS if k in c}
-    t.update(
-        {
-            "class": c["class"],
-            "enabled": c["m_Enabled"],
-            "fontAsset": c["m_fontAsset"]["name"],
-            "material": c["m_sharedMaterial"]["material"],
-        }
-    )
-    t.update(text_extras(path, node))
-    t["localized"] = textstyle.localize_text(path, t["fontAsset"], t["material"], swap, lang, mode)
-    t.update(sprite_binding(path, node, driven, sprite))
-    return t
-
-
-def text_bindings(ex: Exporter, ui_doc: dict, lang: dict, mode: int, sprite: str | None = None) -> dict[str, dict]:
-    """{node path: text binding (_binding)} of every text node of the story UI (text_components); `sprite` = the
-    emoji sprite asset's name for the texts a UIText drives (story_ui_text_targets)."""
-    swap = textstyle.font_swap(lang, mode)
-    driven = story_ui_text_targets(ex, ui_doc)
-    return {
-        path: _binding(path, node, swap, lang, mode, path in driven, sprite)
-        for path, node in text_components(ex, ui_doc).items()
-    }
-
-
-def dialog_bindings(
-    ex: Exporter, ui_doc: dict, lang: dict, mode: int, sprite: str | None = None
-) -> dict[str, dict[str, dict]]:
-    """{dialog: {node path: text binding (_binding)}} of the text nodes of the dialogs of ui.json (`dialogs`, each
-    from its prefab `key`); `sprite` as text_bindings."""
-    swap = textstyle.font_swap(lang, mode)
-    out: dict[str, dict[str, dict]] = {}
-    for name, d in sorted((ui_doc.get("dialogs") or {}).items()):
-        nodes = ex.prefab(d["key"])["nodes"]
-        prefab, driven = {n["path"]: n["components"] for n in nodes}, ui_text_targets(nodes)
-        for rec in d["nodes"]:
-            if "textStyle" in rec:
-                out.setdefault(name, {})[rec["path"]] = _binding(
-                    rec["path"], prefab[rec["path"]], swap, lang, mode, rec["path"] in driven, sprite
-                )
-    return out
-
-
-def chat_bindings(
-    ex: Exporter, episode: dict, lang: dict, mode: int, sprite: str | None = None
-) -> dict[str, dict[str, dict]]:
-    """{chat window: {node path: text binding}} of the TMP texts of the episode's chat windows (advui.chat_text_nodes):
-    the fields text_bindings gives, `localized` from advui.chat_localize for a text with LocalizeText enabled, else
-    the serialized font asset, material and line spacing; `sprite` as text_bindings."""
-    out: dict[str, dict[str, dict]] = {}
-    nodes, _ = advui.chat_text_nodes(ex, episode)
-    driven = set().union(
-        *(ui_text_targets(ex.prefab(address)["nodes"]) for address in advui.chat_windows(episode).values())
-    )
-    for window, node, c, loc in nodes:
-        t = {k: c[k] for k in advui.TMP_FIELDS if k in c}
-        t.update(
-            {
-                "class": c["class"],
-                "enabled": c["m_Enabled"],
-                "fontAsset": c["m_fontAsset"]["name"],
-                "material": c["m_sharedMaterial"]["material"],
-            }
-        )
-        t.update(text_extras(node["path"], node["components"]))
-        if loc and loc["m_Enabled"] and loc["_localizeEnabled"]:
-            t["localized"] = advui.chat_localize(t["fontAsset"], t["material"], lang, mode)
-        else:
-            t["localized"] = {"fontAsset": t["fontAsset"], "material": t["material"], "lineSpacing": c["m_lineSpacing"]}
-        t.update(sprite_binding(node["path"], node["components"], node["path"] in driven, sprite))
-        out.setdefault(window, {})[node["path"]] = t
-    return out
-
-
 # the IAdvFrameTextReceiver implementations (AdvSystem.Asset.UI): a frame with one gets its texts at run time
 FRAME_TEXT_RECEIVERS = ("AdvSlanderCommentFrame",)
 FRAME_PREFIX = adv.RESOURCE_PREFIX["Frame"][1]
-
-
-def frame_prefabs(ex: Exporter, episode: dict) -> dict[str, list[dict]]:
-    """{frame name (its address without the Frame prefix, the key of story/frames.json): its prefab node list} of the
-    episode's Frame resources in the catalog."""
-    return {
-        r["address"][len(FRAME_PREFIX) :]: ex.prefab(r["address"])["nodes"]
-        for r in episode["resources"]
-        if r["kind"] == "frame" and r.get("present", True)
-    }
-
-
-def frame_bindings(
-    frames: dict[str, list[dict]], lang: dict, mode: int, sprite: str | None = None
-) -> dict[str, dict[str, dict]]:
-    """{frame name: {node path: text binding}} of the TMP texts of the episode's frames (`frames`: frame_prefabs), as
-    chat_bindings: `localized` from LocalizeText (advui.chat_localize) when it is enabled, else the serialized font
-    asset, material and line spacing; `sprite` as text_bindings (the texts a UIText drives)."""
-    out: dict[str, dict[str, dict]] = {}
-    for name, nodes in frames.items():
-        driven = ui_text_targets(nodes)
-        for node in nodes:
-            comps = [c for c in node["components"] if c.get("class") in advui.TMP_CLASSES]
-            if not comps:
-                continue
-            c = comps[0]
-            loc = next((x for x in node["components"] if x.get("class") == "LocalizeText"), None)
-            t = {k: c[k] for k in advui.TMP_FIELDS if k in c}
-            t.update(
-                {
-                    "class": c["class"],
-                    "enabled": c["m_Enabled"],
-                    "fontAsset": c["m_fontAsset"]["name"],
-                    "material": c["m_sharedMaterial"]["material"],
-                }
-            )
-            t.update(text_extras(node["path"], node["components"]))
-            if loc and loc["m_Enabled"] and loc["_localizeEnabled"]:
-                t["localized"] = advui.chat_localize(t["fontAsset"], t["material"], lang, mode)
-            else:
-                t["localized"] = {
-                    "fontAsset": t["fontAsset"],
-                    "material": t["material"],
-                    "lineSpacing": c["m_lineSpacing"],
-                }
-            t.update(sprite_binding(node["path"], node["components"], node["path"] in driven, sprite))
-            out.setdefault(name, {})[node["path"]] = t
-    return out
 
 
 def frame_texts(frames: dict[str, list[dict]], episode: dict, field: str) -> list[str]:
@@ -532,111 +256,12 @@ def frame_texts(frames: dict[str, list[dict]], episode: dict, field: str) -> lis
     return serialized + (out + ["@\n"] if out else out)
 
 
-def shown_texts(episode: dict, ui_doc: dict, master_dir: Path | None, field: str) -> list[str]:
-    """The texts the episode shows in the text field `field`: every text of its text table (lines, speaker names,
-    frame and choice texts), its title, the static labels of the UI (the MasterText rows of the text keys of the text
-    nodes and of the dialogs' text nodes, the `masterIdTexts` of ui.json) and of the chat windows
-    (`chatStatusTexts`), the serialized texts of the chat windows' text nodes (`chatTexts`, shown until the player
-    sets them) and the texts the chat windows format at run time (advui.chat_runtime_texts), markup included."""
-    texts = [row.get(field) for row in episode["text"].values()]
-    texts.append((episode.get("title") or {}).get(field))
-    texts += [t["text"] for t in (ui_doc.get("masterIdTexts") or {}).values()]
-    texts += list((ui_doc.get("chatStatusTexts") or {}).values()) + advui.chat_runtime_texts(episode)
-    texts += [rec["textStyle"].get("text") for w in (ui_doc.get("chatTexts") or {}).values() for rec in w.values()]
-    nodes = list(ui_doc["nodes"]) + [n for d in (ui_doc.get("dialogs") or {}).values() for n in d["nodes"]]
-    keys = {rec["textStyle"]["textKey"] for rec in nodes if "textStyle" in rec and rec["textStyle"].get("textKey")}
-    if keys:
-        if master_dir is None:
-            raise RuntimeError(f"UI text keys {sorted(keys)} need the master data")
-        rows = {r["_id"]: r for r in master.table(master_dir, "MasterText") if r["_id"] in keys}
-        missing = sorted(keys - set(rows))
-        if missing:
-            raise KeyError(f"UI text keys not in MasterText: {missing}")
-        texts += [rows[k].get(f"_{field}") for k in sorted(keys)]
-    return [s for s in texts if isinstance(s, str)]
-
-
-def shown_characters(episode: dict, ui_doc: dict, master_dir: Path | None, field: str) -> list[int]:
-    """The code points of shown_texts, sorted."""
-    return sorted({ord(ch) for s in shown_texts(episode, ui_doc, master_dir, field) for ch in s})
-
-
 def _material_textures(m: dict) -> None:
     """Texture references of a material as advui writes them: {name, width, height, format}."""
     for v in m["textures"].values():
         t = v["texture"]
         if t is not None:
             v["texture"] = {"name": t["name"], "width": t["width"], "height": t["height"], "format": t.get("format")}
-
-
-def text_shaders(ex: Exporter, ui_dir: Path, materials: dict) -> dict[str, list[str]]:
-    """Add the shaders the text `materials` name to ui/shaders (index kept in name order) and return each
-    material's GLES3 keyword set (its keywords that the shader's GLES3 variants use; a vertex program with exactly
-    those must exist)."""
-    sdir = Path(ui_dir) / "shaders"
-    index = json.loads((sdir / "shaders.json").read_text(encoding="utf-8"))
-    have = {r["name"] for r in index}
-    for name in sorted({m["shader"]["shader"] for m in materials.values()}):
-        if name in have:
-            continue
-        if name not in ex.shaders:
-            raise RuntimeError(f"shader {name} not in the loaded bundles")
-        shader_mod.dump_objects([ex.shaders[name]], sdir, ex.shaders[name].assets_file.name, index)
-    index.sort(key=lambda r: r["name"])
-    shader_mod.write_index(index, sdir)
-    recs = {r["name"]: r for r in index}
-    out = {}
-    for name, m in sorted(materials.items()):
-        rec = recs[m["shader"]["shader"]]
-        gles = [v for v in rec["variants"] if v["platform"] == "gles3" and v["type"] == "GLES3"]
-        known = {k for v in gles for k in v["keywords"]}
-        want = sorted(k for k in m["keywords"] if k in known)
-        if not any(sorted(v["keywords"]) == want and v["stage"] == "vertex" for v in gles):
-            raise RuntimeError(f"{rec['name']}: no GLES3 variant for material {name} keywords {want}")
-        out[name] = want
-    return out
-
-
-def language_doc(language: str, source: str, fonts: dict, texts: dict, lang: dict) -> dict:
-    """ui/languages.json of `language`: LanguageMode, text field, line spacing and per font role the font asset
-    the role's texts use with its line metrics (textstyle.face_metrics)."""
-    mode = languages.mode(language)
-    roles: dict[str, dict] = {}
-    for _path, t in sorted(texts.items()):
-        role = textstyle.font_role(t["fontAsset"], lang)
-        fa = t["localized"]["fontAsset"]
-        if roles.get(role, {}).get("fontAsset", fa) != fa:
-            raise NotImplementedError(f"font role {role} uses two font assets ({roles[role]['fontAsset']}, {fa})")
-        f = fonts[fa]
-        roles[role] = {
-            "fontAsset": fa,
-            **textstyle.face_metrics(f["faceInfo"], {k: f[k] for k in ("normalSpacingOffset", "boldSpacing")}),
-        }
-    return {
-        "format": LANGUAGE_FORMAT,
-        "language": language,
-        "mode": mode,
-        "field": languages.column(language)[1:],
-        "lineSpacing": textstyle.LANGUAGE_LINE_SPACING[mode],
-        "fonts": source,
-        "roles": roles,
-    }
-
-
-def _write(ui_dir: Path, fonts_doc: dict, lang_doc: dict) -> None:
-    (Path(ui_dir) / FONTS_DOC).write_bytes(_dump(fonts_doc))
-    (Path(ui_dir) / LANGUAGE_DOC).write_bytes(_dump(lang_doc))
-
-
-def _exporter(cat, player, work: Path, font_stubs=None) -> Exporter:
-    return Exporter(
-        cat,
-        Path(work),
-        player=player,
-        textures="deferred",
-        stub_assets=("TMP_FontAsset", "TMP_SpriteAsset", "TMP_StyleSheet"),
-        font_stubs=font_stubs,
-    )
 
 
 # ---------------------------------------------------------------- open fonts
@@ -784,23 +409,6 @@ def open_asset(
     }
 
 
-def line_breaking(player) -> dict:
-    """TMP_Settings' line breaking rules: the text of its leading and following characters TextAssets (as stored)
-    and m_UseModernHangulLineBreakingRules."""
-    o = player.resource("TMP Settings")
-    tt = player.mono(o)
-
-    def text(key: str) -> str:
-        t = player.deref(o, tt[key])
-        return t.read_typetree()["m_Script"] if t is not None else ""
-
-    return {
-        "leading": text("m_leadingCharacters"),
-        "following": text("m_followingCharacters"),
-        "useModernHangulLineBreakingRules": bool(tt["m_UseModernHangulLineBreakingRules"]),
-    }
-
-
 def search_order(fallbacks_of, font: str, exported: set) -> list[str]:
     """The font assets TMP searches after `font` for a character `font` lacks, as tmpfont.FontSet.lookup
     (TMP_FontAssetUtilities.GetCharacterFromFontAsset_Internal: each fallback, then that fallback's own fallbacks,
@@ -820,20 +428,6 @@ def search_order(fallbacks_of, font: str, exported: set) -> list[str]:
 
     walk(font)
     return out
-
-
-def fallback_chains(ex: Exporter, primaries: set, exported: set) -> dict[str, list[str]]:
-    """{exported font asset: its search_order}, over the game's font assets reachable from the `primaries` (font
-    asset names): the fallback list of a font record once the assets that serve no shown character are left out."""
-    fs = tmpfont.FontSet(ex)
-    for n in sorted(primaries):
-        fs.by_key(fontsettings.font_dir(n) + n)
-    missing = sorted(exported - set(fs.fonts))
-    if missing:
-        raise RuntimeError(f"font assets {missing} are not reachable from {sorted(primaries)}")
-    return {
-        n: search_order(lambda f: [fb.name for fb in fs.fallbacks(fs.fonts[f])], n, exported) for n in sorted(exported)
-    }
 
 
 FALLBACK_FLOATS = ("_GradientScale", "_TextureWidth", "_TextureHeight", "_WeightNormal", "_WeightBold")
@@ -910,61 +504,6 @@ def fallback_material(m: dict, target: dict, name: str) -> dict:
         if c is not None:
             out["floats"]["_ScaleRatioC"] = c
     return out
-
-
-def open_font_set(
-    cat,
-    player,
-    ex: Exporter,
-    language: str,
-    font: FontFile,
-    bindings: list[dict],
-    shown: list[str],
-    ui_dir: Path,
-    font_of=no_font_file,
-    sprite_drawn: dict | None = None,
-    margin_materials: dict | None = None,
-    settings=None,
-) -> dict:
-    """The open font assets of the text `bindings` (their `localized` game font asset and material, replaced in
-    place by the open asset and its material) in `language`, for the texts `shown`, with the game font assets of
-    `settings` (fontsettings.FontSettings; default: the built-in table):
-
-    - per localized game font asset (a primary) an asset of `font` (the language's font file) with the game asset's
-      point size, padding, style settings, render mode and text materials (open_asset);
-    - the game asset's fallback chain mirrored: each asset of its search order (search_order) stands for an asset of
-      the font file of its counterpart_language (`font_of(language)` -> FontFile, asked for when a character
-      reaches it) with that game asset's settings; the game's own fallback assets no language lists are left out;
-    - each shown code point goes to the first asset of its primary's chain whose font file maps it, as
-      TMP_Text.GetTextElement finds a character; one no asset maps stays with the primary as `missing`. The code
-      points the game's chain lacks take the missing glyph (tmpfont.missing_glyph: the primary gets `missingGlyph`;
-      its substitute goes through the chain like any character) and those a sprite draws for the primary's texts
-      (`sprite_drawn` {game font asset: code points}) are left out;
-    - an asset's `fallbacks` are the assets of its chain that hold a character (in search order), and each text
-      material M of a primary has, per fallback of the primary, the fallback material "M + <fallback asset>"
-      (fallback_material).
-
-    `margin_materials` {game font asset: game material names}: further text materials of that asset whose underlay
-    the glyph margin covers (so the pages equal another document's with the same characters). The pages go to
-    `ui_dir`/fonts/. -> {fonts, textures, materials, missing (code points no asset maps), substituted (code points
-    drawn as a missing glyph)}."""
-    result = build_open_font_set(
-        language,
-        font,
-        bindings,
-        shown,
-        textstyle.language_fonts(player),
-        tmpfont.missing_glyph_character(player),
-        font_of,
-        sprite_drawn,
-        margin_materials,
-        settings,
-    )
-    for path, body in result.pop("pages").items():
-        dest = ui_dir / path
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_bytes(body)
-    return result
 
 
 def build_open_font_set(
@@ -1102,105 +641,6 @@ def build_open_font_set(
         "missing": missing,
         "substituted": substituted,
         "pages": pages,
-    }
-
-
-def open_fonts(
-    cat,
-    player,
-    episode: dict,
-    ui_dir: Path,
-    language: str,
-    font: FontFile,
-    master_dir: Path | None = None,
-    emoji: EmojiFont | None = None,
-    font_of=no_font_file,
-) -> dict:
-    """ui/fonts.json, ui/fonts/*.png and ui/languages.json of `language` from the font file `font` and the emoji font
-    `emoji` (module docstring; without one the sprites keep their metrics and have no texels), next to the
-    ui/ui.json advui.extract wrote for that language in `ui_dir`; the text shaders go to ui/shaders. `font_of`:
-    the font file of another language for the fallback chains (open_font_set). Returns a summary."""
-    tmpfont.require_extra()
-    ui_dir = Path(ui_dir)
-    ui_doc = json.loads((ui_dir / "ui.json").read_text(encoding="utf-8"))
-    mode, field = languages.mode(language), languages.column(language)[1:]
-    settings = fontsettings.builtin()
-    ex = _exporter(cat, player, ui_dir / "_fonts", settings)
-    lang = textstyle.language_fonts(player)
-    sprite_name = emoji.asset_name if emoji is not None else NO_EMOJI_FONT
-    texts = text_bindings(ex, ui_doc, lang, mode, sprite_name)
-    dialogs = dialog_bindings(ex, ui_doc, lang, mode, sprite_name)
-    chat = chat_bindings(ex, episode, lang, mode, sprite_name) if ui_doc.get("chatTexts") else {}
-    frames = frame_prefabs(ex, episode)
-    frame = frame_bindings(frames, lang, mode, sprite_name)
-    shown = shown_texts(episode, ui_doc, master_dir, field) + frame_texts(frames, episode, field)
-    chars = sorted({ord(ch) for s in shown for ch in s})
-
-    bindings = list(texts.values()) + [
-        t for group in (dialogs, chat, frame) for w in group.values() for t in w.values()
-    ]
-    # the code points the sprite asset draws for the texts with it (sprite_drawn); the open font asset of those
-    # texts leaves them out
-    sprite_drawn: dict[str, set[int]] = {}
-    rec = None
-    if any("spriteAsset" in t for t in bindings):
-        rec = advui.sprite_asset_record(ex)
-        sprite_drawn = drawn_by_sprites(rec, [t for t in bindings if "spriteAsset" in t], chars, settings.lookup)
-    # the open font assets with the mirrored fallback chains, the missing glyph and the fallback materials
-    fset = open_font_set(
-        cat, player, ex, language, font, bindings, shown, ui_dir, font_of, sprite_drawn, settings=settings
-    )
-    fonts, textures, materials = fset["fonts"], fset["textures"], fset["materials"]
-    missing, substituted = fset["missing"], fset["substituted"]
-    coverage = {"characters": len(chars), "missing": [chr(u) for u in sorted(missing)]}
-    if substituted:
-        coverage["missingGlyph"] = [chr(u) for u in sorted(substituted)]
-    sprites = None
-    indices = sprite_needs(rec, shown, set().union(*sprite_drawn.values())) if rec is not None else []
-    if rec is None or not indices:  # no sprite to draw: the data holds no sprite asset
-        for t in bindings:
-            t.pop("spriteAsset", None)
-            t.pop("m_tintAllSprites", None)
-    else:
-        sprites = open_sprite_asset(emoji, rec, indices, sprite_name)
-        for pname, px in sprites["pages"]:
-            (ui_dir / PAGES_DIR).mkdir(parents=True, exist_ok=True)
-            (ui_dir / sprites["textures"][pname]["texture"]).write_bytes(packed_png(px))
-        textures.update(sprites["textures"])
-        materials[sprites["material"]["material"]] = sprites["material"]
-        coverage["sprites"] = {"characters": len(sprites["asset"]["characters"]), "missing": sprites["missing"]}
-    keywords = text_shaders(ex, ui_dir, materials)
-    fonts_doc = {
-        "format": FONTS_FORMAT,
-        "language": language,
-        "source": "open",
-        "fonts": fonts,
-        "textures": textures,
-        "materials": materials,
-        "materialKeywords": keywords,
-        "texts": texts,
-        "coverage": coverage,
-        "lineBreaking": line_breaking(player),
-    }
-    if sprites is not None:
-        fonts_doc["spriteAssets"] = {sprite_name: sprites["asset"]}
-        fonts_doc["emojiSpriteAsset"] = sprite_name
-    if dialogs:
-        fonts_doc["dialogTexts"] = dialogs
-    if chat:
-        fonts_doc["chatTexts"] = chat
-    if frame:
-        fonts_doc["frameTexts"] = frame
-    _write(ui_dir, fonts_doc, language_doc(language, "open", fonts, texts, lang))
-    shutil.rmtree(ui_dir / "_fonts", ignore_errors=True)
-    return {
-        "fonts": sorted(fonts),
-        "characters": len(chars),
-        "missing": len(missing),
-        "glyphs": sum(len(f["glyphs"]) for f in fonts.values()),
-        "pages": len(textures),
-        "sprites": len(sprites["asset"]["characters"]) if sprites else 0,
-        "missingSprites": len(sprites["missing"]) if sprites else 0,
     }
 
 
@@ -1433,155 +873,3 @@ def open_sprite_asset(emoji: EmojiFont | None, game: dict, indices: list[int], n
 
 
 # ---------------------------------------------------------------- game fonts
-def game_sprite_asset(ex: Exporter, ui_dir: Path, rec: dict) -> dict:
-    """LocalizeManager's emoji sprite asset from the game data (`rec`, advui.sprite_asset_record): every character and
-    glyph, the sprite sheet as one page (ui/fonts/, the glyph rects unchanged) and its material sampling it.
-    -> {asset_name, asset, textures, material}."""
-    sh = rec["sheet"]
-    if sh["mipCount"] != 1:
-        raise NotImplementedError(f"{rec['name']}: sprite sheet with {sh['mipCount']} mip levels")
-    o = ex.key_object(advui.EMOJI_SPRITE_ASSET_KEY)
-    sheet = ex.referent(o, o.read_typetree()["spriteSheet"])
-    page = f"sprite_{rec['name']}"
-    dst = f"{PAGES_DIR}/{_safe(page)}.png"
-    (Path(ui_dir) / PAGES_DIR).mkdir(parents=True, exist_ok=True)
-    (Path(ui_dir) / dst).write_bytes(texture_png(sheet.read()))
-    glyphs = {
-        k: {
-            **g,
-            **(
-                {"packed": {"texture": page, "dx": 0, "dy": 0}}
-                if g["rect"]["m_Width"] > 0 and g["rect"]["m_Height"] > 0
-                else {}
-            ),
-        }
-        for k, g in rec["glyphs"].items()
-    }
-    material = _sheet_material(rec["material"], rec["material"]["material"], page, sh["width"], sh["height"])
-    asset = {
-        "faceInfo": rec["faceInfo"],
-        "characters": rec["characters"],
-        "glyphs": glyphs,
-        "sequences": rec["sequences"],
-        "material": material["material"],
-    }
-    textures = {
-        page: {
-            "texture": dst,
-            "name": sh["name"],
-            "width": sh["width"],
-            "height": sh["height"],
-            "mipCount": 1,
-            "settings": sh["settings"],
-        }
-    }
-    return {"asset_name": rec["name"], "asset": asset, "textures": textures, "material": material}
-
-
-def game_fonts(
-    cat,
-    player,
-    game_ui_dir: Path,
-    ui_dir: Path,
-    language: str,
-    episode: dict | None = None,
-    master_dir: Path | None = None,
-) -> dict:
-    """ui/fonts.json, ui/fonts/*.png and ui/languages.json of `language` from the ui/ directory advui.extract wrote
-    with fonts="game" for that language (`game_ui_dir`): its font records (each font's `fallbacks` reduced to the
-    exported assets in search order, fallback_chains), glyph pages, text materials, keyword sets, text records, glyph
-    coverage and TMP settings, next to the fonts-open ui/ui.json in `ui_dir`; the text shaders go to ui/shaders as
-    with open fonts. With the `episode` (and the master data for its UI labels), the texts a UIText drives get the
-    game's emoji sprite asset when they draw a sprite (sprite_needs; its code points leave coverage.missing). Returns a
-    summary."""
-    game_ui_dir, ui_dir = Path(game_ui_dir), Path(ui_dir)
-    doc = json.loads((game_ui_dir / "ui.json").read_text(encoding="utf-8"))
-    ui_doc = json.loads((ui_dir / "ui.json").read_text(encoding="utf-8"))
-    texts = {n["path"]: n["text"] for n in doc["nodes"] if "text" in n}
-    open_paths = {n["path"] for n in ui_doc["nodes"] if "textStyle" in n}
-    if set(texts) != open_paths:
-        raise RuntimeError("the text nodes of the fonts-game and fonts-open UI differ")
-    fonts = doc["fonts"]
-    pages = sorted({g["packed"]["texture"] for f in fonts.values() for g in f["glyphs"].values() if "packed" in g})
-    textures = {}
-    (ui_dir / PAGES_DIR).mkdir(parents=True, exist_ok=True)
-    for p in pages:
-        t = dict(doc["textures"][p])
-        dst = f"{PAGES_DIR}/{Path(t['texture']).name}"
-        shutil.copyfile(game_ui_dir / t["texture"], ui_dir / dst)
-        t["texture"] = dst
-        textures[p] = t
-    names = {t["localized"]["material"] for t in texts.values()} | {f["material"] for f in fonts.values()}
-    materials = {n: doc["materials"][n] for n in sorted(names)}
-    ex = _exporter(cat, player, ui_dir / "_fonts")
-    chains = fallback_chains(ex, {t["localized"]["fontAsset"] for t in texts.values()}, set(fonts))
-    fonts = {n: {**f, "fallbacks": chains[n]} for n, f in fonts.items()}
-    for t in texts.values():  # TMP's fallback materials of the text materials (fallback_material)
-        loc = t["localized"]
-        for fb in fonts[loc["fontAsset"]]["fallbacks"]:
-            name = f"{loc['material']} + {fb}"
-            if name not in materials:
-                materials[name] = fallback_material(materials[loc["material"]], materials[fonts[fb]["material"]], name)
-    driven = story_ui_text_targets(ex, ui_doc) & set(texts)
-    sprites, drawn = None, set()
-    if episode is not None and driven:
-        rec = advui.sprite_asset_record(ex)
-        shown = shown_texts(episode, ui_doc, master_dir, languages.column(language)[1:])
-        chars = sorted({ord(ch) for s in shown for ch in s})
-        fs = tmpfont.FontSet(ex)
-
-        def lookup(name, u):
-            return fs.lookup(fs.by_key(fontsettings.font_key(ex.cat, name, name)), u)
-
-        drawn = set().union(*drawn_by_sprites(rec, [texts[p] for p in sorted(driven)], chars, lookup).values())
-        if sprite_needs(rec, shown, drawn):
-            sprites = game_sprite_asset(ex, ui_dir, rec)
-    if sprites is None:
-        driven, drawn = set(), set()
-    sprite_name = sprites["asset_name"] if sprites else None
-    for path, comps in text_components(ex, ui_doc).items():
-        texts[path] = {
-            **texts[path],
-            **text_extras(path, comps),
-            **sprite_binding(path, comps, path in driven, sprite_name),
-        }
-    if sprites is not None:
-        textures.update(sprites["textures"])
-        materials[sprites["material"]["material"]] = sprites["material"]
-    for n in sorted({t["localized"]["material"] for t in texts.values()}):  # the text shaders for text_shaders
-        fa = next(t["localized"]["fontAsset"] for t in texts.values() if t["localized"]["material"] == n)
-        ex.material(ex.key_object(fontsettings.font_dir(fa) + n))
-    keywords = text_shaders(ex, ui_dir, materials)
-    cov = doc["glyphCoverage"]
-    if sprites is not None:
-        cov = {
-            **cov,
-            "missing": [c for c in cov["missing"] if ord(c) not in drawn],
-            "sprites": {"characters": len(sprites["asset"]["characters"]), "missing": []},
-        }
-    fonts_doc = {
-        "format": FONTS_FORMAT,
-        "language": language,
-        "source": "game",
-        "fonts": fonts,
-        "textures": textures,
-        "materials": materials,
-        "materialKeywords": keywords,
-        "texts": texts,
-        "coverage": cov,
-        "tmpSettings": doc["tmpSettings"],
-        "lineBreaking": line_breaking(player),
-    }
-    if sprites is not None:
-        fonts_doc["spriteAssets"] = {sprite_name: sprites["asset"]}
-        fonts_doc["emojiSpriteAsset"] = sprite_name
-    lang = textstyle.language_fonts(player)
-    _write(ui_dir, fonts_doc, language_doc(language, "game", fonts, texts, lang))
-    shutil.rmtree(ui_dir / "_fonts", ignore_errors=True)
-    return {
-        "fonts": sorted(fonts),
-        "characters": cov["characters"],
-        "missing": len(cov["missing"]),
-        "glyphs": sum(len(f["glyphs"]) for f in fonts.values()),
-        "pages": len(textures),
-    }

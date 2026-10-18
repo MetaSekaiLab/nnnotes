@@ -8,6 +8,9 @@ schemas in `nnnotes.schemas` and the documented Python API. Before 1.0 a minor v
 
 ### Features
 
+- Store content, task inputs, results and catalog versions in a persistent depot with optional remote storage, verified collection and bounded source downloads.
+- Assemble Live2D, room, spot, live, story and UI products from shared object tables and explicit manifest references.
+- Generate localized live and story text products with game or supplied fonts, shared glyph atlases and material records.
 - Build named sites through depot product, player read-set, asset and index tasks.
 - Retain unselected regional topics, publish immutable product dependencies in order, and restore complete sites from their saved depot layouts.
 - Offer Live variant products from chart manifests and select story UI/font languages explicitly.
@@ -16,6 +19,7 @@ schemas in `nnnotes.schemas` and the documented Python API. Before 1.0 a minor v
 
 - Site construction uses shared product requests, named depot catalogs and ordered layout publication. Player page collection and catalog model queries have dedicated interfaces.
 - Conversion memoization is bounded within each process, with persistent reuse provided by depot task results.
+- Product assembly consumes stored class-converter outputs. Font lookup, texel packing and material construction share object-based implementations.
 
 ## [0.2.1](https://github.com/MetaSekaiLab/nnnotes/compare/v0.2.0...v0.2.1) - 2026-10-13
 

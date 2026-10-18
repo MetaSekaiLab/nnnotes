@@ -1,19 +1,7 @@
-"""TextMesh Pro font assets read from an object table (content/prefabs.Objects).
+"""TextMesh Pro fonts, materials and texture pages read from shared object tables.
 
-The records tmpfont.py reads through an Exporter, read from the object layer instead: a font asset's fields from its
-`json`, its source font file from its `font` file, its atlas pages from their `image` files (PNG of the decoded image),
-its materials from their `json` (the shader by name, the textures as texture records).
-
-  Texture             a Texture2D of the table: its record and its RGBA texels
-  Font                a TMP_FontAsset of the table (the fields tmpfont.Font reads)
-  FontSet             the font assets reached from a font asset, with the TMP character lookup of tmpfont.FontLookup
-  build_font_settings the font settings table (fontsettings.FORMAT) read from the table
-  missing_glyph_character
-                      the game's TMP Settings resource (tmpfont.missing_glyph_character)
-
-The glyph tables and runtime glyphs are the tmpfont functions (export_fonts, runtime_glyphs), which take an
-export.MemoryPacker to hold the packed pages in memory. Reading a font needs the `fonts` extra (tmpfont.require_extra).
-"""
+Font and FontSet implement the glyph-generation protocols in unity.tmpfont. Texture supplies decoded RGBA
+texels to unity.texels.MemoryPacker. build_font_settings assembles the localized font settings table."""
 
 from __future__ import annotations
 
@@ -26,9 +14,9 @@ from typing import cast
 import numpy as np
 from PIL import Image
 
-from ..unity.export import texel_rows
 from ..unity.fontsettings import FONT_CLASS, font_key
 from ..unity.ids import parse_object_id
+from ..unity.texels import texel_rows
 from ..unity.tmpfont import (
     MISSING_GLYPH_CHARACTER,
     BuiltFontSettings,
@@ -98,7 +86,7 @@ class Texture:
         return self._pixels
 
     def record(self) -> dict:
-        """The record of a material's texture reference (export.Exporter.texture in deferred mode)."""
+        """The texture reference and its dimensions and sampler settings."""
         return {
             "textureRef": self.oid,
             "name": self.name,
@@ -157,7 +145,7 @@ class Font:
         return [a.settings for a in self.atlases if a is not None]
 
     def default_material(self) -> dict:
-        """The record of the default material (export.Exporter.material)."""
+        """The font asset's default material record."""
         return self._fonts.material(self.material_oid)
 
 
@@ -198,7 +186,7 @@ class FontSet(FontLookup):
         return self._by_oid[oid]
 
     def material(self, oid: str) -> dict:
-        """The record of the Material `oid` (export.Exporter.material): its shader by name, its textures as texture
+        """The record of the Material `oid`: its shader by name, its textures as texture
         records, its other fields as in its `json`."""
         doc = self.objects.json(oid)
         shader = _ref(doc["shader"])
@@ -234,7 +222,7 @@ class FontSet(FontLookup):
 
 class TableFontSettings(BuiltFontSettings):
     """FontSettings read from the font assets of an object table (FontSet): each font asset's bundle from
-    `bundle_of(name)`, the records as tmpfont.AssetFontSettings reads them from the game's assets."""
+    `bundle_of(name)`, the records required by the font settings table."""
 
     def __init__(self, fonts: FontSet, bundle_of: Callable[[str], str]):
         super().__init__()

@@ -1,7 +1,6 @@
 """usm: USM masks, demux of every stream kind, subtitles, the movie files' ffmpeg arguments; advvideo: the video
 index (synthetic data, made-up key)."""
 
-import json
 import random
 import shutil
 import struct
@@ -10,7 +9,6 @@ from pathlib import Path
 
 import pytest
 
-from nnnotes.content import advvideo
 from nnnotes.formats import usm
 from nnnotes.formats.usm import Stream
 
@@ -668,140 +666,6 @@ def test_webm_arguments():
         "webm",
         "m.webm",
     ]
-
-
-def test_story_export_keeps_its_command(tmp_path, monkeypatch):
-    """The story's WebM of a VP9 + ADX movie: the command it always ran (plus -hide_banner), the same record."""
-    info = {
-        "movieInfo": {
-            "codecType": 9,
-            "width": 320,
-            "height": 180,
-            "dispWidth": 320,
-            "dispHeight": 180,
-            "framerateN": 30,
-            "framerateD": 1,
-            "totalFrames": 3,
-            "numAlphaStreams": 0,
-            "numSubtitleChannels": 0,
-            "numAudioStreams": 1,
-        },
-        "assetInfo": {"loop": 0},
-    }
-    movie = tmp_path / "m.usm"
-    movie.write_bytes(
-        build([(b"@SFV", 0, None, VP9, "video"), (b"@SFA", 0, None, [adx(samples=100) + rand(4 * 36, 1)], "audio")])
-    )
-    monkeypatch.setattr(advvideo, "usm_asset", lambda cat, key: (info, movie))
-    monkeypatch.setattr("nnnotes.source.config.tool", lambda name, exe: name)
-    calls = []
-
-    def fake_run(args, **kw):
-        calls.append(args)
-        Path(args[-1]).write_bytes(b"webm")
-        return subprocess.CompletedProcess(args, 0, "", "")
-
-    monkeypatch.setattr(usm.subprocess, "run", fake_run)
-    work = tmp_path / "videos" / "_work"
-    rec = advvideo.export(None, "Cri/Video/adv/m/m", tmp_path / "videos" / "m.webm", KEY, work)
-    assert calls == [
-        [
-            "ffmpeg",
-            "-hide_banner",
-            "-y",
-            "-loglevel",
-            "error",
-            "-f",
-            "ivf",
-            "-i",
-            str(work / "video.ivf"),
-            "-f",
-            "adx",
-            "-i",
-            str(work / "audio.adx"),
-            "-map",
-            "0:v:0",
-            "-map",
-            "1:a:0",
-            "-c:a",
-            "libopus",
-            "-b:a",
-            "192k",
-            "-flags:a",
-            "+bitexact",
-            "-c:v",
-            "copy",
-            "-map_metadata",
-            "-1",
-            "-fflags",
-            "+bitexact",
-            "-f",
-            "webm",
-            str(tmp_path / "videos" / "m.webm"),
-        ]
-    ]
-    assert list(rec) == [
-        "key",
-        "codec",
-        "width",
-        "height",
-        "displayWidth",
-        "displayHeight",
-        "frameRate",
-        "frames",
-        "assetInfo",
-        "audio",
-    ]
-    assert rec["audio"] == {
-        "codec": "opus",
-        "bitrate": "192k",
-        "source": {"codec": "adx", "channels": 2, "sampleRate": 48000, "samples": 100},
-    }
-    assert not work.exists()
-    movie.write_bytes(
-        build(
-            [(b"@SFV", 0, video_header(9), VP9, "video"), (b"@ALP", 0, video_header(1, alpha_type=1), MPEG1, "video")]
-        )
-    )
-    info["movieInfo"]["numAudioStreams"] = 0
-    rec = advvideo.export(None, "Cri/Video/x", tmp_path / "videos" / "x.webm", KEY, work)
-    assert rec["encode"] == {"codec": "vp9", "crf": 20, "alpha": True} and "audio" not in rec
-    assert "alphamerge" in calls[-1][calls[-1].index("-filter_complex") + 1]
-
-
-def test_video_index(tmp_path, monkeypatch):
-    def fake_export(cat, key, dst, cri_key, work):
-        assert cri_key == KEY
-        dst.parent.mkdir(parents=True, exist_ok=True)
-        dst.write_bytes(b"webm")
-        return {"key": key, "codec": "vp9", "frames": 10}
-
-    monkeypatch.setattr(advvideo, "export", fake_export)
-    episode = {
-        "resources": [
-            {"kind": "video", "address": "Cri/Video/adv/m_b/m_b", "present": True},
-            {"kind": "video", "address": "Cri/Video/adv/m_a/m_a", "present": True},
-            {"kind": "stage", "address": "Adv/Stage/s/s", "present": True},
-        ],
-        "commands": [
-            {"cmd": "Movie", "VideoID": 2},
-            {"cmd": "Clip", "VideoID": 1},
-            {"cmd": "Clip"},
-            {"cmd": "Clip", "VideoID": 2},
-            {"cmd": "Movie", "VideoID": 9},
-            {"cmd": "Stage", "VideoID": 1},
-        ],
-        "videos": {
-            1: {"_id": 1, "_assetName": "adv/m_a/m_a", "_hasAudio": True},
-            2: {"_id": 2, "_assetName": "adv/m_b/m_b", "_hasAudio": False},
-        },
-    }
-    index = advvideo.extract(None, episode, tmp_path, cri_key=KEY)
-    assert list(index["videos"]) == ["2", "1"]
-    assert index["videos"]["1"]["file"] == "videos/m_a.webm" and index["videos"]["2"]["master"]["_hasAudio"] is False
-    assert (tmp_path / "videos" / "m_a.webm").read_bytes() == b"webm"
-    assert json.loads((tmp_path / "videos" / "videos.json").read_text(encoding="utf-8")) == index
-    assert advvideo.extract(None, {"resources": [], "commands": [], "videos": {}}, tmp_path / "none") is None
 
 
 # ---------------------------------------------------------------- with ffmpeg (skipped without it)

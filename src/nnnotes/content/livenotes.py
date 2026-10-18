@@ -1,48 +1,11 @@
-"""The note highway of a live: what is spawned or animated per note, and its settings.
-
-Three products, each read from a product's object table (`Objects`, pipeline.assemble), never from a bundle, and each
-shared by every live that loads it:
-
-notes       the highway itself (`notes`, notes.json format NOTES_FORMAT): the note view prefabs (tap, flick
-            +left/right, trace, slide/slide_end/connection, guide, slide_combo(+skip), none), the long-note body
-            prefabs (slide_line_view, guide_line_view), the pair line and the groove loop (NOTE_PREFABS), the lane
-            effect settings (LANE_EFFECT_KEY, the set the game always loads: LaneEffectLoadStep.GetAssetPath), and
-            `settings`: the option defaults (preset 1) and ranges of the items the note runtime and the player read,
-            the MasterLiveSettings values, the note display time, the lane geometry, the default note skin and effect
-            set and the names of every note skin and effect set by option value (notes_settings)
-noteskin    a note skin (`noteskin`, MasterLiveNoteSkin._assetName: the LiveNoteSkinAsset of its key skin_key), with
-            the bindings of the arrow loops its flick units give the flick views (FLICK_SKIN_UNITS)
-noteeffect  a note effect set (`noteeffect`, MasterLiveNoteEffectSkin._assetName or its `Light` variant, which the
-            game loads at quality Low where the catalog has it: the LiveNoteEffectAssetSettings of its key
-            effect_settings_key and the effect prefabs it references)
-
-Each document names objects by id: notes.json `prefabs` {name: GameObject} and `laneEffect`, noteskin.json `skin`,
-noteeffect.json `settings`; and each has
-
-    bindings   {prefab GameObject id: {Animator node path: {clip id: [{path, attribute}]}}}: the clips each Animator of
-               the table's prefabs plays (its controller's clips, the `_loopAnim` of a LoopAnimationTimeSync on its
-               `_animator`; for a skin, the arrow loop of each flick unit on the flick view's LoopAnimationTimeSync,
-               LiveFlickNoteView.OnSetupNoteSkin), named from the Animator's node (prefabs.clip_bindings)
-    shaders    {shader name: object id}: what a lookup by name finds (prefabs.shader_table; a material names its
-               shader by id)
-
-Of the objects a product keeps all but the MonoScripts; of a shader its parsed form, variant index and the programs of
-the player's graphics API; of a Mesh its typetree JSON and its `arrays` document (prefabs.mesh_roles).
-
-`extract` writes the note runtime of a live directory instead (livenotes/notes.json of the default options and the
-variants a liveoptions.LiveOptions offers, with textures and shaders) through export.Exporter, following references
-to AnimatorControllers and SpriteAtlases.
-"""
+"""Note, skin and effect products assembled from shared object tables and master records."""
 
 from __future__ import annotations
 
 import re
 from collections.abc import Iterable, Mapping
-from pathlib import Path
-from typing import TYPE_CHECKING
 
-from ..core.jsonio import write_json
-from .liveoptions import OPTION_ITEM_TYPES, PLAYER_ITEMS, LiveOptions
+from .liveoptions import OPTION_ITEM_TYPES, PLAYER_ITEMS
 from .prefabs import (
     Objects,
     Prefab,
@@ -57,11 +20,6 @@ from .prefabs import (
     shader_table,
 )
 
-if TYPE_CHECKING:
-    from ..source.catalog import Catalog
-    from ..unity.export import Exporter
-    from ..unity.player import PlayerData
-
 __all__ = [
     "EFFECT_KEY",
     "FLICK_SKIN_UNITS",
@@ -74,7 +32,6 @@ __all__ = [
     "asset_name",
     "default_assets",
     "effect_settings_key",
-    "extract",
     "notes",
     "notes_keys",
     "notes_record",
@@ -82,7 +39,6 @@ __all__ = [
     "noteeffect",
     "noteskin",
     "noteskin_keys",
-    "settings",
     "skin_key",
 ]
 
@@ -189,8 +145,6 @@ NOTES_TABLES = (
     "MasterLiveNoteSkin",
     "MasterLiveNoteEffectSkin",
 )
-DEFAULT_SKIN = "skin001"  # MasterLiveNoteSkin._id 1 (NoteDesignId default 1)
-DEFAULT_EFFECT = "effect001"  # MasterLiveNoteEffectSkin._id 1 (NoteEffectId default 1)
 
 
 def skin_key(name: str) -> str:
@@ -383,72 +337,12 @@ def noteeffect(objects: Objects, name: str) -> tuple[dict, set[str], dict[str, s
     return _product(objects, doc)
 
 
-# ------------------------------------------------------------------ live directory (export.Exporter)
-PREFABS = {**NOTE_PREFABS, "judge_effect_view": "EmbLive/Prefabs/UILiveNoteJudgeEffectView"}
 # Catalog key families exported whole (every key under the prefix): the note effect settings of the NoteEffectId
 # option's set ({effect}) and the lane effect settings (LANE_EFFECT), with the effect prefabs they reference
-KEY_PREFIXES = [
-    "Effect/Live/NoteEffect/{effect}/",
-    f"Effect/Live/LaneEffect/{LANE_EFFECT}/",
-]
-SINGLE_KEYS = [
-    "EmbLive/Animation/Combo/UILiveCombo",  # UIComboCounterView's animator controller
-    "Live/UiSpriteAssets/LiveComboSpriteAsset",
-    "Live/UiSpriteAssets/LiveJudgementSpriteAsset",
-]
-
-
-def settings(master: Path | None, options: LiveOptions = LiveOptions()) -> dict:
-    """The live directory's notes.json `settings`: option defaults and master values the note runtime reads; with
-    `options` also the offered note skins (`skins`: NoteDesignId -> MasterLiveNoteSkin._assetName) and effect sets
-    (`effects`: NoteEffectId -> MasterLiveNoteEffectSkin._assetName; also when only other qualities are offered,
-    whose effect set name the player derives from it), and with its option tables the items of PLAYER_ITEMS as
-    well."""
-    from .score import master_table
-
-    out: dict = {"skin": DEFAULT_SKIN, "effect": DEFAULT_EFFECT, **_lane_settings()}
-    if master is None:
-        return out
-    items = OPTION_ITEMS
-    if options.tables:
-        items = {**OPTION_ITEMS, **{k: OPTION_ITEM_TYPES[k] for k in PLAYER_ITEMS}}
-    opts = {}
-    for r in master_table(master, "MasterOptionDefault"):
-        if r["_presetId"] == 1 and r["_optionItemType"] in items:
-            opts[items[r["_optionItemType"]]] = r["_valueString"]
-    out["optionDefaults"] = opts
-    out["optionRanges"] = {
-        items.get(r["_optionItemType"], r["_optionItemType"]): [r["_minValue"], r["_maxValue"]]
-        for r in master_table(master, "MasterOptionRange")
-        if r["_optionItemType"] in items
-    }
-    ls = {r["_key"]: r["_value"] for r in master_table(master, "MasterLiveSettings")}
-    out["liveSettings"] = {k: ls[k] for k in LIVE_SETTING_KEYS if k in ls}
-    skins = {r["_id"]: r["_assetName"] for r in master_table(master, "MasterLiveNoteSkin")}
-    effects = {r["_id"]: r["_assetName"] for r in master_table(master, "MasterLiveNoteEffectSkin")}
-    out["skin"] = skins[int(opts["NoteDesignId"])]
-    out["effect"] = effects[int(opts["NoteEffectId"])]
-    out["judgementSprites"] = {
-        r["_noteSimulateJudgement"]: r["_spriteName"] for r in master_table(master, "MasterLiveJudgementSprite")
-    }
-    out["noteDisplayTimeMs"] = display_time_ms(
-        float(opts["NoteSpeed"]),
-        float(ls["note_speed_min"]),
-        float(ls["note_speed_max"]),
-        float(ls["note_speed_view_min"]),
-        float(ls["note_speed_view_max"]),
-    )
-    if options.designs:
-        out["skins"] = {str(i): skins[i] for i in options.designs}
-    if options.effects or options.qualities:
-        out["effects"] = {str(i): effects[i] for i in options.values("NoteEffectId")}
-    return out
 
 
 # UI subtrees of [EmbScene/Live] animated by exported clips (combo counter, judgement text); used only to name
 # clip binding paths, the scene itself is exported by livescene.
-SCENE_KEY = "EmbScene/Live"
-SCENE_SUBTREES = ("UILiveCombo", "UILiveJudgement")
 # The bar line view (MeasureLineDisplay): the scene's LiveAllNoteView -> _barLineView (LiveAllBarLineView) ->
 # _container (LiveBarLineViewContainer) -> _elementPrefab (LiveBarLineView, the prefab the container instantiates)
 NOTE_VIEW = ("LiveGameView/LiveGameCamera/screen_root/LiveGameAllNoteView", "LiveAllNoteView")
@@ -457,170 +351,3 @@ BAR_LINE_CHAIN = (
     ("_container", "LiveBarLineViewContainer"),
     ("_elementPrefab", "LiveBarLineView"),
 )
-BAR_LINE_VIEW = "bar_line_view"
-
-
-TMP_FONT_NOTE = (
-    "not exported: the note highway draws no TextMeshPro text with default options (the judge view's "
-    "fast / slow and assist texts stay hidden)"
-)
-
-
-def _drop_tmp_fonts(doc: dict, root: Path) -> list[str]:
-    """Reduce the font asset and material of every TextMeshProUGUI record to a name stub and delete the texture
-    files no record references any more (the TMP font atlases). Returns the deleted files."""
-
-    def walk(v):
-        if isinstance(v, dict):
-            if v.get("class") == "TextMeshProUGUI" and "m_fontAsset" in v:
-                fa, mat = v["m_fontAsset"], v.get("m_sharedMaterial")
-                if isinstance(fa, dict):
-                    v["m_fontAsset"] = {"asset": fa.get("asset"), "name": fa.get("name"), "note": TMP_FONT_NOTE}
-                if isinstance(mat, dict):
-                    v["m_sharedMaterial"] = {
-                        "material": mat.get("material"),
-                        "shader": mat.get("shader"),
-                        "note": TMP_FONT_NOTE,
-                    }
-            for x in v.values():
-                walk(x)
-        elif isinstance(v, list):
-            for x in v:
-                walk(x)
-
-    walk(doc)
-    used: set[str] = set()
-
-    def refs(v):
-        if isinstance(v, dict):
-            t = v.get("texture")
-            if isinstance(t, str):
-                used.add(t)
-            for x in v.values():
-                refs(x)
-        elif isinstance(v, list):
-            for x in v:
-                refs(x)
-
-    refs(doc)
-    dropped = []
-    for f in sorted((root / "textures").glob("*.png")):
-        rel = f"textures/{f.name}"
-        if rel not in used:
-            f.unlink()
-            dropped.append(rel)
-    return dropped
-
-
-def effect_keys(cat: Catalog, effect: str) -> list[str]:
-    """The catalog keys of note effect set `effect` and of the lane effects (KEY_PREFIXES), in prefix and catalog
-    order."""
-    keys: list[str] = []
-    for p in KEY_PREFIXES:
-        keys += [k for k in cat.keys(p.format(effect=effect)) if k not in keys]
-    return keys
-
-
-def _scene_mono(ex: Exporter, o, cls: str):
-    if o is None or o.type.name != "MonoBehaviour" or ex.script_class(o) != cls:
-        raise RuntimeError(f"expected a {cls} MonoBehaviour, got {o and o.type.name}")
-    return o, o.read_typetree()
-
-
-def bar_line_prefab(ex: Exporter) -> dict:
-    """The bar line view as a node list: the LiveBarLineView prefab the live scene's bar line container
-    instantiates (BAR_LINE_CHAIN from the scene's LiveAllNoteView), its root first."""
-    env, graph = ex.load(SCENE_KEY)
-    path, cls = NOTE_VIEW
-    gos = set(graph.gos_at_path(path))
-    comps = [c["component"] for go in gos for c in graph.go[go]["m_Component"]]
-    owners = [o for o in env.objects if o.type.name == "GameObject" and o.path_id in gos]
-    if len(gos) != 1 or len(owners) != 1:
-        raise RuntimeError(f"{SCENE_KEY}: {len(gos)} GameObjects at {path}")
-    hits = [
-        c
-        for c in (ex.deref(owners[0], p) for p in comps)
-        if c is not None and c.type.name == "MonoBehaviour" and ex.script_class(c) == cls
-    ]
-    if len(hits) != 1:
-        raise RuntimeError(f"{SCENE_KEY}: {len(hits)} {cls} at {path}")
-    o, tt = _scene_mono(ex, hits[0], cls)
-    for field, want in BAR_LINE_CHAIN:
-        o, tt = _scene_mono(ex, ex.deref(o, tt[field]), want)
-    root = graph.tf_of_go.get(tt["m_GameObject"]["m_PathID"])
-    if root is None or graph.tf[root]["m_Father"]["m_PathID"]:
-        raise RuntimeError(f"{SCENE_KEY}: the bar line view is not a prefab root of the scene's bundles")
-    return {
-        "key": SCENE_KEY,
-        "reference": ".".join(f for f, _ in BAR_LINE_CHAIN),
-        "nodes": ex.hierarchy(env, graph, root),
-    }
-
-
-def extract(
-    cat: Catalog, player: PlayerData, out_dir: Path, master: Path | None = None, options: LiveOptions = LiveOptions()
-) -> dict:
-    """livenotes/ for the default options, plus the files of the variants `options` offers (the module
-    docstring). The variants' objects are exported after the default ones."""
-    from ..unity.export import Exporter
-
-    out_dir = Path(out_dir)
-    root = out_dir / "livenotes"
-    root.mkdir(parents=True, exist_ok=True)
-    ex = Exporter(cat, root, player=player, clip_format="livenotes", follow=("AnimatorController", "SpriteAtlas"))
-    doc: dict = {"settings": settings(master, options)}
-    skin = doc["settings"]["skin"]
-
-    # note / line prefabs first: their hierarchies resolve clip binding paths of skin/effect assets
-    doc["prefabs"] = {name: ex.export_key(key) for name, key in PREFABS.items()}
-    doc["noteSkin"] = ex.export_key(skin_key(skin))
-    keys = effect_keys(cat, doc["settings"]["effect"])
-    keys += [k for k in SINGLE_KEYS if cat.has(k) and k not in keys]
-    assets, failures = {}, {}
-
-    def export(ks):
-        for k in ks:
-            try:
-                assets[k] = ex.export_key(k)
-            except NotImplementedError as e:
-                failures[k] = str(e)
-
-    export(keys)
-    other_skins = [n for n in doc["settings"].get("skins", {}).values() if n != skin]
-    if other_skins:
-        doc["noteSkins"] = {n: ex.export_key(skin_key(n)) for n in other_skins}
-    names = {int(i): n for i, n in doc["settings"].get("effects", {}).items()}
-    for effect, light in options.effect_sets(names):
-        if not cat.has(effect_settings_key(effect)):
-            if light:
-                continue  # the game loads the set itself at quality Low (LiveOptions.effect_sets)
-            raise KeyError(f"effect set {effect}: {effect_settings_key(effect)} not in the catalog")
-        export([k for k in effect_keys(cat, effect) if k not in assets and k not in failures])
-    if options.bar_lines:
-        doc["prefabs"][BAR_LINE_VIEW] = bar_line_prefab(ex)
-    doc["assets"] = assets
-    ex.add_path_source(SCENE_KEY, SCENE_SUBTREES)
-    unresolved = ex.resolve_pending()
-    doc["clips"] = ex.clips
-    doc["controllers"] = ex.controllers
-    doc["exportFailures"] = failures
-
-    dropped = _drop_tmp_fonts(doc, root)
-    _, shader_summary = ex.dump_shaders(root / "shaders")
-    doc["shaders"] = {"index": "shaders/shaders.json", "names": shader_summary["names"]}
-    doc["convention"] = (
-        "Unity space (left-handed, Y up); transforms are local TRS; quaternions (x,y,z,w); "
-        "colours as serialized (project colour space: see player.json)"
-    )
-    write_json(root / "notes.json", doc)
-    return {
-        "prefabs": len(doc["prefabs"]),
-        "assets": len(assets),
-        "clips": len(ex.clips),
-        "controllers": len(ex.controllers),
-        "textures": len(ex.textures) - len(dropped),
-        "droppedFontTextures": dropped,
-        "failures": failures,
-        "unresolvedBindings": unresolved,
-        **shader_summary,
-    }

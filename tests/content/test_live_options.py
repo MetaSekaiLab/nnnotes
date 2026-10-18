@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from nnnotes.content import live, liveaudio, livenotes, liveoptions, livescene, score
+from nnnotes.content import liveaudio, liveoptions, score
 from nnnotes.content.liveoptions import LiveOptions, OptionSpecError, parse_specs, resolve
 from tests.helpers.live import CHART
 
@@ -225,115 +225,10 @@ def test_effect_sets(tmp_path):
     assert LiveOptions().effect_sets(names) == []
 
 
-def test_option_names_follow_the_game_enum():
-    assert livescene.OPTION_ITEM_TYPES is liveoptions.OPTION_ITEM_TYPES
-    t = liveoptions.OPTION_ITEM_TYPES
-    assert (t[2], t[421], t[436], t[465], t[999]) == (
-        "NoteTiming",
-        "UseIndividualNoteSe",
-        "SideFlickSeId",
-        "TraceSeMute",
-        "SongTitleDisplay",
-    )
-    assert set(liveoptions.PLAYER_ITEMS) <= set(t) and not set(liveoptions.PLAYER_ITEMS) & set(livenotes.OPTION_ITEMS)
-
-
 # ---------------------------------------------------------------- note assets settings
-def test_livenotes_settings_default_unchanged(tmp_path):
-    m = write_master(tmp_path / "m")
-    a = livenotes.settings(m)
-    assert livenotes.settings(m, LiveOptions()) == a
-    assert json.dumps(a) == json.dumps(livenotes.settings(m, LiveOptions()))
-    assert set(a["optionDefaults"]) == set(livenotes.OPTION_ITEMS.values())
-    assert "skins" not in a and "effects" not in a and "NoteTiming" not in a["optionRanges"]
-
-
-def test_livenotes_settings_tables_and_variants(tmp_path):
-    m = write_master(tmp_path / "m")
-    a = livenotes.settings(m)
-    t = livenotes.settings(m, resolve({"defaults": True}, m))
-    names = {liveoptions.OPTION_ITEM_TYPES[k] for k in liveoptions.PLAYER_ITEMS}
-    assert livenotes.settings(m, resolve(parse_specs(["MeasureLineDisplay"]), m)) == t  # the tables only
-    assert set(t["optionDefaults"]) == set(a["optionDefaults"]) | names
-    assert {k: t["optionDefaults"][k] for k in a["optionDefaults"]} == a["optionDefaults"]
-    assert t["optionDefaults"]["NoteTiming"] == "0.00" and t["optionDefaults"]["TapSeVolume"] == "90"
-    assert t["optionRanges"]["NoteTiming"] == [-300, 300] and t["optionRanges"]["LiveMusicVolume"] == [0, 100]
-    assert "QualitySetting" not in t["optionRanges"]  # not an item the player offers
-    o = livenotes.settings(m, resolve(parse_specs(["NoteDesignId=1,3", "LiveQuality=2"]), m))
-    assert o["skins"] == {"1": "skin001", "3": "skin003"} and o["effects"] == {"1": "fxA"}
-    assert o["skin"] == "skin001" and o["effect"] == "fxA"
-    o = livenotes.settings(m, resolve(parse_specs(["NoteEffectId"]), m))
-    assert o["effects"] == {"1": "fxA", "2": "fxASimple"} and "skins" not in o
 
 
 # ---------------------------------------------------------------- bar line view
-class _Obj:
-    """A serialized object: type, path id, typetree, script class."""
-
-    def __init__(self, t, pid, tt, cls=None):
-        self.type = type("T", (), {"name": t})()
-        self.path_id, self._tt, self.cls = pid, tt, cls
-
-    def read_typetree(self):
-        return self._tt
-
-
-class _Graph:
-    def __init__(self, paths, fathers):
-        self.paths, self.tf = paths, {tf: {"m_Father": {"m_PathID": f}} for tf, f in fathers.items()}
-        self.tf_of_go = {go: tf for tf, (go, _) in paths.items()}
-        self.go = {}
-
-    def gos_at_path(self, path):
-        return [go for tf, (go, p) in self.paths.items() if p == path]
-
-
-class _Ex:
-    """The Exporter calls bar_line_prefab makes, over a scene with LiveAllNoteView -> LiveAllBarLineView ->
-    LiveBarLineViewContainer -> the LiveBarLineView prefab (GameObject 50, transform 51, a root)."""
-
-    def __init__(self, element_cls="LiveBarLineView", prefab_father=0):
-        def p(pid):
-            return {"m_FileID": 0, "m_PathID": pid}
-
-        objs = [
-            _Obj("GameObject", 10, {}),
-            _Obj("MonoBehaviour", 11, {"m_GameObject": p(10), "_barLineView": p(21)}, "LiveAllNoteView"),
-            _Obj("MonoBehaviour", 21, {"m_GameObject": p(20), "_container": p(31)}, "LiveAllBarLineView"),
-            _Obj("MonoBehaviour", 31, {"m_GameObject": p(30), "_elementPrefab": p(52)}, "LiveBarLineViewContainer"),
-            _Obj("MonoBehaviour", 52, {"m_GameObject": p(50), "_renderer": p(62)}, element_cls),
-        ]
-        self.objs = {o.path_id: o for o in objs}
-        self.env = type("Env", (), {"objects": objs})()
-        self.graph = _Graph({12: (10, livenotes.NOTE_VIEW[0]), 51: (50, "LiveBarLineView")}, {12: 5, 51: prefab_father})
-        self.graph.go = {10: {"m_Component": [{"component": p(11)}]}}
-        self.loaded, self.walked = [], []
-
-    def load(self, key):
-        self.loaded.append(key)
-        return self.env, self.graph
-
-    def deref(self, owner, pptr):
-        return self.objs.get(pptr["m_PathID"])
-
-    def script_class(self, o):
-        return o.cls
-
-    def hierarchy(self, env, graph, root_tf):
-        self.walked.append(root_tf)
-        return [{"path": "LiveBarLineView", "components": [{"type": "MonoBehaviour", "class": "LiveBarLineView"}]}]
-
-
-def test_bar_line_prefab_follows_the_scene_references():
-    ex = _Ex()
-    rec = livenotes.bar_line_prefab(ex)
-    assert ex.loaded == [livenotes.SCENE_KEY] and ex.walked == [51]
-    assert rec["key"] == "EmbScene/Live" and rec["reference"] == "_barLineView._container._elementPrefab"
-    assert rec["nodes"][0]["path"] == "LiveBarLineView"
-    with pytest.raises(RuntimeError, match="LiveBarLineView MonoBehaviour"):
-        livenotes.bar_line_prefab(_Ex(element_cls="Other"))
-    with pytest.raises(RuntimeError, match="not a prefab root"):
-        livenotes.bar_line_prefab(_Ex(prefab_father=12))
 
 
 # ---------------------------------------------------------------- note sounds
@@ -403,22 +298,3 @@ def test_mirrored_conversion():
             assert y["laneIndexFloat"] == 24 - x["laneIndexFloat"] - x["widthFloat"]
     assert [n["direction"] for n in b["notes"]][:2] == ["Normal", "Right"]  # ApplyMirrorDirection
     assert b["notes"][4]["laneIndex"] == 16  # 16.5 rounds to even
-
-
-def test_live_index_doc():
-    s = {"chart": "score/c.json", "notes": "score/c.notes.json", "master": "score/master.json"}
-    a = live.index_doc(1, "expert", s, {"cueSheet": "x"}, "audio/live-audio.json")
-    assert list(a) == [
-        "musicId",
-        "difficulty",
-        "chart",
-        "notes",
-        "master",
-        "audio",
-        "liveAudio",
-        "scene",
-        "noteAssets",
-        "liveUi",
-    ]
-    b = live.index_doc(1, "expert", {**s, "notesMirror": "score/c.mirror.notes.json"}, {}, "audio/live-audio.json")
-    assert list(b)[3:5] == ["notes", "notesMirror"] and b["notesMirror"] == "score/c.mirror.notes.json"

@@ -543,6 +543,8 @@ every episode whose key the selection holds.
 
 A stage with `INCLUDE_FONTS = True` requests traversal through its referenced font objects. The request records these roots in `font_roots`; unit selection and assembly follow the same rule. Other products keep their own font selection behavior.
 
+The maintainer tool `scripts/gen_font_settings.py TASK.json --depot DEPOT -o OUTPUT.json` generates a font settings table from a saved text-product task. It reads the task's object table, font-bundle identities and APK manifest through the depot. The task must contain the complete font inputs, as used by `story.fonts` or `live.ui`.
+
 ## Site snapshots
 
 `nnnotes.site.products.Snapshot` takes a depot and product-layout manifests keyed by path. It builds each product's

@@ -815,10 +815,9 @@ def test_textures(exported):
     assert img.size == (W, H) and img.mode == "RGBA"
     expected = Image.frombytes("RGBA", (W, H), TEX_PIXELS).transpose(Image.Transpose.FLIP_TOP_BOTTOM)
     assert img.tobytes() == expected.tobytes()
-    from nnnotes.unity.export import texture_png
-
-    tex = bundle_all().assets[0].objects[10].obj
-    assert png == texture_png(tex)  # the other commands' bytes
+    encoded = __import__("io").BytesIO()
+    expected.save(encoded, format="PNG")
+    assert png == encoded.getvalue()
     facts = art(doc, f"{oid(10)}#image")["semantics"]["facts"]
     assert facts == {
         "width": W,
@@ -1596,7 +1595,7 @@ def test_sprite_crop_waits_for_exports(tmp_path):
 def test_modules_import_without_unitypy():
     code = (
         "import sys; import nnnotes.pipeline.objexport as o; o.ExportStage().ATOMS; o.SpriteCropStage().ATOMS; "
-        "print(sorted(m for m in ('UnityPy', 'PIL', 'nnnotes.unity.export') if m in sys.modules))"
+        "print(sorted(m for m in ('UnityPy', 'PIL', 'nnnotes.unity.texels') if m in sys.modules))"
     )
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, cwd=ROOT, check=True)
     assert out.stdout.strip() == "[]"
