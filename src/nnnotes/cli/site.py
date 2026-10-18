@@ -54,7 +54,7 @@ def cmd_build(args, cfg):
     from ..pipeline import live as lp
     from ..pipeline import story as sp
     from ..site import catalog, pages
-    from ..site.build import Builder, document, documents, model_stats, size
+    from ..site.build import Builder, document, documents, model_stats, object_document, size
     from ..source.master import table
 
     charts = bool(args.pair or args.all)
@@ -189,8 +189,14 @@ def cmd_build(args, cfg):
                     source = sp.StoryStage().manifest(str(adv_id))
                     manifests = documents(builder.depot, entries)
                     episode = document(builder.depot, manifests, source, "episode.json")
+                    story_doc = document(builder.depot, manifests, source, "story.json")
+                    scene_path = story_doc["parts"]["scene"]
+                    scene = document(builder.depot, manifests, scene_path, "scene.json")
+                    settings = object_document(
+                        builder.depot, manifests, scene_path, scene["settings"]["playerSettings"]
+                    )
                     facts = {
-                        **sitefacts.story(episode, groups.get(adv_id, []), wanted, lang),
+                        **sitefacts.story(episode, groups.get(adv_id, []), wanted, lang, settings),
                         "audio": not args.no_audio,
                         "audioFormat": args.format,
                         "fonts": args.fonts,

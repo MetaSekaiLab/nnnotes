@@ -44,6 +44,12 @@ def document(depot, manifests, path, logical):
     return json.loads(depot.read(entry["asset"].split("/")[-1].split(".")[0]))
 
 
+def object_document(depot, manifests, path, oid):
+    """JSON of a standalone object in a decoded product layout."""
+    entry = manifests[path]["objects"][oid]["files"]["json"]
+    return json.loads(depot.read(entry["asset"].split("/")[-1].split(".")[0]))
+
+
 def model_stats(snapshot, source):
     manifest = snapshot.documents[source]
     files = [*manifest["files"].values(), *(e for o in manifest["objects"].values() for e in o["files"].values())]
