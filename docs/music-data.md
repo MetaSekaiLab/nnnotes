@@ -353,6 +353,8 @@ column should be parsed as 32-bit floats.
 Tables with a column list export those columns, and every row must have them. Tables marked "all" export every
 column their rows have, in the order the rows first have them; when such a table has no rows, `columns` is empty
 (the master data carries no field list for an empty table). A reader treats a table missing from `master` as empty.
+`MasterCharacter._isNonPlayable` is the game's flag for a non-playable character; a row without it is written as
+`false`.
 
 | Table | Columns |
 |---|---|
@@ -364,7 +366,7 @@ column their rows have, in the order the rows first have them; when such a table
 | `MasterSupportCard` | `_id` `_characterIDs` `_rarity` `_cardType` `_performancePowerMax` `_technicPowerMax` `_visualPowerMax` `_supportCardLevelGroup` `_supportCardRankGroup` `_supportSkillId01` `_supportSkillId02` `_gekisouSupportSkillId01` `_gekisouSupportSkillId02` |
 | `MasterSupportCardLevel` | `_id` `_group` `_level` `_exp` `_performanceRate` `_technicRate` `_visualRate` |
 | `MasterSupportCardRank` | `_id` `_group` `_rank` `_limitLevel` `_cardTypeLinkBonusRate` `_supportSkill01Level` `_supportSkill02Level` `_gekisouSupportSkill01Level` `_gekisouSupportSkill02Level` |
-| `MasterCharacter` | `_id` `_bandID` |
+| `MasterCharacter` | `_id` `_bandID` `_isNonPlayable` |
 | `MasterBand` | `_id` |
 | `MasterCharacterRank` | `_id` `_rank` `_exp` `_bonus` |
 | `MasterCharacterTotalRank` | `_id` `_totalRank` `_bonus` |

@@ -214,6 +214,22 @@ def test_vip_identity_is_exported_independently_from_effect_rows(tmp_path):
     assert document["provenance"]["tables"]["MasterVip"] == hashlib.sha256((tmp_path / "m/MasterVip.bin").read_bytes()).hexdigest()
 
 
+def test_character_non_playable_flag(tmp_path):
+    def rows(name):
+        if name == "MasterCharacter":
+            return [
+                {"_id": 1, "_bandID": 1, "_isNonPlayable": True},
+                {"_id": 2, "_bandID": 2, "_isNonPlayable": False},
+                {"_id": 3, "_bandID": 1},  # a master without the column
+            ]
+        return rows_of(name)
+
+    export(tmp_path, rows=rows)
+    raw = (tmp_path / "deck.json").read_bytes()
+    expected = '"MasterCharacter":{"columns":["_id","_bandID","_isNonPlayable"],"rows":[[1,1,true],[2,2,false],[3,1,false]]}'
+    assert expected.encode() in raw
+
+
 def test_character_rank_carries_its_experience_threshold(tmp_path):
     def rows(name):
         if name == "MasterCharacterRank":

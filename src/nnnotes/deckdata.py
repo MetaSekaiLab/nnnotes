@@ -28,7 +28,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .apkset import ApkSet
-from typing import Callable
+from typing import Any, Callable
 
 DECK_FORMAT = "nnnotes.deck-data/1"         # the deck model's input format (ournotes-sim data::FORMAT)
 CHART_FORMAT = "nnnotes.live-score/1"      # score.convert's format: the converter the notes come from
@@ -43,6 +43,9 @@ _SKILL_EFFECT = ("_level _skillTriggerConditionGroup _skillTriggerType _skillCon
                  "_maxEffectValue _effectLimitCount _skillCumulativeConditionID _effectExecuteLimitCount "
                  "_effectExecuteLimitResetConditionGroup")
 _WHOLE = None                              # every column of the table, in the order the rows first have them
+
+# {table: {column: value}}: columns exported with this value when a row does not have them
+DEFAULTS: dict[str, dict[str, Any]] = {"MasterCharacter": {"_isNonPlayable": False}}
 
 # (table, columns), in file order. A table with a column list exports those columns; a whole table all of its own.
 TABLES: tuple[tuple[str, tuple[str, ...] | None], ...] = tuple(
@@ -61,7 +64,7 @@ TABLES: tuple[tuple[str, tuple[str, ...] | None], ...] = tuple(
     ("MasterSupportCardLevel", "_id _group _level _exp _performanceRate _technicRate _visualRate"),
     ("MasterSupportCardRank", "_id _group _rank _limitLevel _cardTypeLinkBonusRate _supportSkill01Level "
                               "_supportSkill02Level _gekisouSupportSkill01Level _gekisouSupportSkill02Level"),
-    ("MasterCharacter", "_id _bandID"),
+    ("MasterCharacter", "_id _bandID _isNonPlayable"),
     ("MasterBand", "_id"),
     ("MasterCharacterRank", "_id _rank _exp _bonus"),
     ("MasterCharacterTotalRank", "_id _totalRank _bonus"),
@@ -280,7 +283,8 @@ def _value(v, where: str):
 
 def master_subset(tables: dict[str, list[dict]]) -> dict:
     """{table: {"columns", "rows"}} for TABLES, rows in the served order. A table with a column list must have each
-    of them in every row; a whole table exports the columns its rows have (none when it has no rows)."""
+    of them in every row, except the columns of DEFAULTS (written as their default when a row lacks them); a whole
+    table exports the columns its rows have (none when it has no rows)."""
     out = {}
     for name, cols in TABLES:
         rows = tables[name]
@@ -289,12 +293,14 @@ def master_subset(tables: dict[str, list[dict]]) -> dict:
             for r in rows:
                 seen.update(dict.fromkeys(r))
             cols = tuple(seen)
+        defaults = DEFAULTS.get(name, {})
         for i, r in enumerate(rows):
-            missing = [c for c in cols if c not in r]
+            missing = [c for c in cols if c not in r and c not in defaults]
             if missing:
                 raise DeckDataError(f"{name}: row {i} (_id {r.get('_id')}) has no column {missing[0]}")
         out[name] = {"columns": list(cols),
-                     "rows": [[_value(r[c], f"{name} row {i} {c}") for c in cols] for i, r in enumerate(rows)]}
+                     "rows": [[_value(r[c] if c in r else defaults[c], f"{name} row {i} {c}") for c in cols]
+                              for i, r in enumerate(rows)]}
     return out
 
 
