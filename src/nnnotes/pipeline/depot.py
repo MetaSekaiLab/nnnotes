@@ -725,13 +725,14 @@ class Depot:
         return out
 
 
-def open_depot(cfg, *, fetch=None) -> Depot:
+def open_depot(cfg, *, fetch=None, root=None) -> Depot:
     """The depot of a configuration: `[paths] depot`, with the remote `[depot] remote` names (its `endpoint`,
-    `access_key_id`, `secret_access_key` and `signing_region`) when it is set."""
+    `access_key_id`, `secret_access_key` and `signing_region`) when it is set. `root` selects an explicit depot
+    directory when the caller already holds one."""
     from ..source.config import ConfigError
     from ..source.session import Session
 
-    root = Session(cfg).depot_root()
+    root = Session(cfg).depot_root() if root is None else Path(root)
     url = cfg.get("depot", "remote")
     if not url:
         return Depot(root, fetch=fetch)
