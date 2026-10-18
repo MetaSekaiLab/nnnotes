@@ -4,6 +4,14 @@ All notable changes to this project are listed here. Versions follow [Semantic V
 over the command line (commands, options, exit statuses and `--json` reports), the configuration keys, the JSON
 schemas in `nnnotes.schemas` and the documented Python API. Before 1.0 a minor version can change any of them.
 
+## Unreleased
+
+### Features
+
+- Build named sites through depot product, player read-set, asset and index tasks.
+- Retain unselected regional topics, publish immutable product dependencies in order, and restore complete sites from their saved depot layouts.
+- Offer Live variant products from chart manifests and select story UI/font languages explicitly.
+
 ## [0.2.1](https://github.com/MetaSekaiLab/nnnotes/compare/v0.2.0...v0.2.1) - 2026-10-13
 
 ### Build

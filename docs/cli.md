@@ -445,32 +445,32 @@ live charts, Live2D models and stories -> static site for ournotes-player (share
 | Argument | Description |
 | --- | --- |
 | `-o`, `--out` `SITE` | site directory (required) |
+| `--name` `NAME` | persistent site name in the depot (default: default) |
 | `--player` `PLAYER` | ournotes-player checkout (built) or installed package ([paths] player) |
 | `--pair` `PAIR` | <musicId>:<difficulty> (repeatable) |
 | `--all` | every MasterLiveMusic x difficulty |
-| `--player-only` | rewrite the player files, charts.json and models.json only |
-| `--reingest-json` | store every chart's and model's JSON files again |
+| `--player-only` | publish the saved catalog with current player pages |
 | `--live2d` `MODEL` | Live2D model id or key Character/Live2D/<group>/<name>/model/<name> (repeatable) |
 | `--all-live2d` | every Live2D model of the catalog |
 | `--format` `FORMAT` | audio format of the charts and stories (default aac) (one of `aac`, `opus`, `vorbis`, `mp3`, `flac`) |
 | `--no-audio` | export no audio files |
 | `--compress` `COMPRESS` | encoding of the compressible assets (JSON, shaders, moc3, ...) where it makes them smaller: gzip (default), br (brotli) or none (one of `gzip`, `br`, `none`) |
-| `--force` | rebuild charts, models and stories whose manifest exists (stories: also their models) |
-| `--tmp` `TMP` | directory for the temporary live and model builds (default <site>.tmp) |
-| `--workers` `N` | parallel music / story / model processes (default a quarter of the CPUs, up to 8; models up to 4; 0: this process) |
-| `--read-workers` `N` | chart read sets run at a time (default half the CPUs, up to 16) |
+| `--workers` `N` | product task worker processes; 0: this process |
+| `--memory` `GiB` | product task memory budget |
+| `--fetch-workers` `N` | parallel source downloads |
+| `--stored-catalog` `LABEL\|SHA` | a stored catalog version of the depot |
 | `--story` `ADV_ID` | story episode: its MasterAdv id (repeatable) |
 | `--all-stories` | every story episode (MasterAdv) of the master data |
-| `--story-languages` `LANGS` | languages of the stories' text, comma-separated (default: ja,en,zh-Hant,zh-Hans,ko) |
+| `--story-languages` `LANGS` | languages of the stories' text, comma-separated (default: the catalog language) |
 | `--font` `LANG=PATH` | font file the story text of a language is drawn with (repeatable; [paths] fonts.<lang>); emoji=PATH: the colour emoji font the emoji sprites are drawn from ([paths] fonts.emoji) |
 | `--site-region` `REGION` | a region the site serves: a [servers.<region>] table (repeatable; the first is the base; default: [catalog] region) |
 | `--all-regions` | every configured region |
-| `--fonts` `FONTS` | text of the start canvas and the stories: open (default): the start canvas has layout and style only, the stories glyphs from your font files (--font); game: the game's TMP fonts (needs the 'fonts' extra) (one of `open`, `game`) |
+| `--fonts` `FONTS` | text of the start canvas and stories: open (default): glyphs from your font files (--font); game: the game's TMP fonts (needs the 'fonts' extra) (one of `open`, `game`) |
 | `--band` `BAND` | band of the LightWeight background and start timeline (default: band of the music's first vocal character) |
 | `--leader-card` `LEADER_CARD` | deck centre MasterMemberCard id (its character's band) |
 | `--live-option` `OPTION[=VALUES]` | also export the files of a Live option's variants (repeatable): MirrorChart, MeasureLineDisplay, NoteDesignId, NoteEffectId, LiveQuality, NoteSePatternId (every value of the master data, or =v,v...), defaults (the option defaults and ranges only) or all |
 
-At most one of `--pair`, `--all`, `--player-only`, `--reingest-json`.
+At most one of `--pair`, `--all`, `--player-only`.
 
 At most one of `--live2d`, `--all-live2d`.
 

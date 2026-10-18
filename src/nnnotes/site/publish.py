@@ -6,7 +6,7 @@ import re
 
 from ..pipeline import layout
 
-INDEXES = frozenset({"charts.json", "models.json", "stories.json", "index.json"})
+INDEXES = frozenset({"charts.json", "models.json", "stories.json", "index.json", "site.json"})
 
 
 def order(path: str) -> tuple[int, str]:

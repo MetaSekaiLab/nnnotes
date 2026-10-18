@@ -18,6 +18,7 @@ from ..pipeline.stages import Env, describe, execute
 _ASSET = re.compile(r"assets/([0-9a-f]{64})\.([a-z0-9]+)")
 REFERENCE_FIELDS = {
     "live": {"live.json": [["parts"]]},
+    "live.ui": {"ui.json": [["scene", "manifest"]]},
     "story": {"story.json": [["parts"]]},
     "story.host": {"host.json": [["home", "parts"]]},
 }
@@ -41,9 +42,23 @@ def _strings(value):
 class Snapshot:
     """One coherent group of products; equal inputs share tasks across snapshots and regions."""
 
-    def __init__(self, depot, manifests, *, languages=None, encoding="gzip", split=siteassets.SPLIT_MIN_BYTES):
+    def __init__(
+        self,
+        depot,
+        manifests,
+        *,
+        languages=None,
+        encoding="gzip",
+        split=siteassets.SPLIT_MIN_BYTES,
+        variants=(),
+        live_options=None,
+        read_files=None,
+        audio=True,
+    ):
         self.depot, self.sources = depot, manifests
         self.languages = None if languages is None else sorted(set(languages))
+        self.variants, self.live_options = sorted(set(variants)), live_options
+        self.read_files, self.audio = read_files, audio
         self.asset_params = siteassets.AssetStage().normalize({"encoding": encoding, "split": split})
         self.run = Run(depot, {}, [], {siteassets.ASSET: self.asset_params}, {})
         self.paths, self.documents, self.records, self.entries = {}, {}, {}, {}
@@ -117,6 +132,19 @@ class Snapshot:
             source = self.sources[path]
             if source.get("schema") != contract.PRODUCT:
                 raise ValueError(f"{path}: expected {contract.PRODUCT}")
+            reads = (
+                self.read_files
+                if source["product"] == "live"
+                or (source["product"].startswith("live.") and source["product"] != "live.ui")
+                else None
+            )
+            if reads is not None or not self.audio:
+                art = self._document(
+                    siteproducts.SelectionStage(),
+                    contract.encode(source),
+                    {"path": path, "reads": reads, "audio": self.audio},
+                )
+                source = json.loads(self.depot.read(art["content"]["sha256"]))
             files, objects, language = {}, {}, None
             for logical, entry in sorted(source["files"].items()):
                 inp, ext = self._source(entry)
@@ -145,15 +173,11 @@ class Snapshot:
                 files[logical] = self._asset(inp, ext)
             for oid, obj in sorted(source["objects"].items()):
                 objects[oid] = {role: self._asset(*self._source(entry)) for role, entry in sorted(obj["files"].items())}
-            art = self._document(
-                siteproducts.ManifestStage(),
-                contract.encode(source),
-                {
-                    "files": files,
-                    "objects": objects,
-                    "language": language,
-                },
-            )
+            spec = {"files": files, "objects": objects, "language": language}
+            if source["product"] == "live":
+                spec["variants"] = [self.product(p) for p in self.variants]
+                spec["options"] = self.live_options
+            art = self._document(siteproducts.ManifestStage(), contract.encode(source), spec)
             c = art["content"]
             target = f"products/{c['sha256']}.json"
             self.paths[path] = target
