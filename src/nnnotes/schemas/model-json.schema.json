@@ -1,0 +1,141 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "format",
+    "name",
+    "key",
+    "prefab",
+    "moc",
+    "canvas",
+    "textures",
+    "shaders",
+    "resources",
+    "motionSync",
+    "bindings"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "format": {
+      "const": 3
+    },
+    "name": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$"
+    },
+    "key": {
+      "type": "string"
+    },
+    "prefab": {
+      "$ref": "#/$defs/objectId"
+    },
+    "moc": {
+      "$ref": "#/$defs/objectId"
+    },
+    "canvas": {
+      "type": "object",
+      "required": [
+        "pixelsPerUnit",
+        "originX",
+        "originY",
+        "width",
+        "height",
+        "mocVersion"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "pixelsPerUnit": {
+          "type": "number"
+        },
+        "originX": {
+          "type": "number"
+        },
+        "originY": {
+          "type": "number"
+        },
+        "width": {
+          "type": "number"
+        },
+        "height": {
+          "type": "number"
+        },
+        "mocVersion": {
+          "type": "integer"
+        }
+      }
+    },
+    "textures": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/objectId"
+      }
+    },
+    "shaders": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/objectId"
+      }
+    },
+    "resources": {
+      "type": "object",
+      "required": [
+        "cubismMask",
+        "cubismMaskCulling"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "cubismMask": {
+          "$ref": "#/$defs/objectId"
+        },
+        "cubismMaskCulling": {
+          "$ref": "#/$defs/objectId"
+        }
+      }
+    },
+    "motionSync": {
+      "type": "boolean"
+    },
+    "bindings": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "path",
+            "attribute"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "path": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "attribute": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "pathCandidates": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "objectId": {
+      "type": "string",
+      "pattern": "^.+:-?[0-9]+$"
+    }
+  },
+  "$id": "urn:nnnotes:schema:model-json",
+  "title": "model-json document"
+}

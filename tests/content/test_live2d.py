@@ -8,6 +8,7 @@ from nnnotes.content import live2d
 from nnnotes.pipeline.assemble import Objects
 from nnnotes.pipeline.depot import Depot
 from tests.helpers import live2dmodel as lm
+from tests.helpers.schemas import validate
 
 KEY_A = "Character/Live2D/001_adv/adv_model_a/model/adv_model_a"
 KEY_B = "Character/Live2D/sub_x/adv_model_b/model/adv_model_b"
@@ -20,6 +21,7 @@ def objects_of(tmp_path, objs=None, roots=(lm.ROOT, lm.MASK_MAT, lm.CULL_MAT)) -
 
 def test_model_document(tmp_path):
     doc, keep, roles = live2d.model(objects_of(tmp_path), lm.KEY)
+    validate("model-json", doc)
     assert doc == {
         "format": live2d.MODEL_FORMAT,
         "name": "m001",

@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "spotId",
+    "master",
+    "name",
+    "tapTalk",
+    "situationSettings",
+    "controller",
+    "characters",
+    "spineCharacters",
+    "skeletons",
+    "matrixConvention"
+  ],
+  "properties": {
+    "spotId": {
+      "type": "integer"
+    },
+    "master": {
+      "type": "object"
+    },
+    "name": {
+      "type": "object"
+    },
+    "tapTalk": {
+      "type": "object"
+    },
+    "situationSettings": {
+      "type": "object"
+    },
+    "controller": {
+      "type": "object"
+    },
+    "characters": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "spineCharacters": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "skeletons": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "matrixConvention": {
+      "type": "string"
+    }
+  },
+  "$id": "urn:nnnotes:schema:spot",
+  "title": "spot document"
+}

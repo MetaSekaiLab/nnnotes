@@ -976,6 +976,9 @@ def test_items_name_the_objects_they_reference(exported):
 def test_prefab(exported):
     depot, doc = exported
     p = obj(depot, doc, f"{oid(60)}#json")
+    from tests.helpers.schemas import validate
+
+    validate("prefab", p)
     assert p["name"] == "root" and [n["path"] for n in p["nodes"]] == ["root", "root/child"]
     root, child = p["nodes"]
     assert root["pathId"] == "60" and root["transformPathId"] == "61" and root["layer"] == 5

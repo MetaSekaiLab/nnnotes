@@ -1,0 +1,283 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "format",
+    "widget",
+    "chatWidget",
+    "uiManager",
+    "letterbox",
+    "talkWindows",
+    "dialogs",
+    "clips",
+    "controllers",
+    "language",
+    "settings",
+    "graphics",
+    "texts",
+    "textStyle",
+    "bindings",
+    "shaders"
+  ],
+  "properties": {
+    "format": {
+      "const": 1
+    },
+    "widget": {
+      "type": "string",
+      "pattern": "^.+:-?[0-9]+$"
+    },
+    "chatWidget": {
+      "type": "string",
+      "pattern": "^.+:-?[0-9]+$"
+    },
+    "uiManager": {
+      "type": "string",
+      "pattern": "^.+:-?[0-9]+$"
+    },
+    "letterbox": {
+      "type": "string",
+      "pattern": "^.+:-?[0-9]+$"
+    },
+    "talkWindows": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^.+:-?[0-9]+$"
+      }
+    },
+    "dialogs": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^.+:-?[0-9]+$"
+      }
+    },
+    "clips": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^.+:-?[0-9]+$"
+      }
+    },
+    "controllers": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^.+:-?[0-9]+$"
+      }
+    },
+    "language": {
+      "type": "object",
+      "required": [
+        "code",
+        "mode",
+        "field",
+        "lineSpacing",
+        "fontNames",
+        "additionalFontNames",
+        "materialTypes",
+        "fontSwap"
+      ],
+      "properties": {
+        "code": {
+          "enum": [
+            "ja",
+            "en",
+            "zh-Hant",
+            "zh-Hans",
+            "ko"
+          ]
+        },
+        "mode": {
+          "enum": [
+            0,
+            1,
+            2,
+            3,
+            4
+          ]
+        },
+        "field": {
+          "enum": [
+            "japanese",
+            "english",
+            "traditionalChinese",
+            "simplifiedChinese",
+            "korean"
+          ]
+        },
+        "lineSpacing": {
+          "type": "number"
+        },
+        "fontNames": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "additionalFontNames": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "materialTypes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "fontSwap": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "settings": {
+      "type": "object",
+      "required": [
+        "dotween",
+        "tmpSettings",
+        "localizeManager",
+        "masterIdSettings"
+      ],
+      "properties": {
+        "dotween": {
+          "type": "string",
+          "pattern": "^.+:-?[0-9]+$"
+        },
+        "tmpSettings": {
+          "type": "string",
+          "pattern": "^.+:-?[0-9]+$"
+        },
+        "localizeManager": {
+          "type": "string",
+          "pattern": "^.+:-?[0-9]+$"
+        },
+        "masterIdSettings": {
+          "type": "string",
+          "pattern": "^.+:-?[0-9]+$"
+        }
+      }
+    },
+    "graphics": {
+      "type": "object",
+      "required": [
+        "graphics"
+      ],
+      "properties": {
+        "graphics": {
+          "type": "string",
+          "pattern": "^.+:-?[0-9]+$"
+        },
+        "player": {
+          "type": "string",
+          "pattern": "^.+:-?[0-9]+$"
+        },
+        "quality": {
+          "type": "string",
+          "pattern": "^.+:-?[0-9]+$"
+        }
+      }
+    },
+    "texts": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "localized",
+          "style"
+        ],
+        "properties": {
+          "localized": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "required": [
+              "fontAsset",
+              "material",
+              "lineSpacing"
+            ],
+            "properties": {
+              "fontAsset": {
+                "type": "string",
+                "minLength": 1
+              },
+              "material": {
+                "type": "string",
+                "minLength": 1
+              },
+              "lineSpacing": {
+                "type": "number"
+              }
+            }
+          },
+          "style": {
+            "type": "object"
+          }
+        }
+      },
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^.+:-?[0-9]+$"
+      }
+    },
+    "textStyle": {
+      "type": "object"
+    },
+    "bindings": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "path",
+                "attribute"
+              ],
+              "properties": {
+                "path": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "attribute": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              }
+            }
+          },
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^.+:-?[0-9]+$"
+          }
+        }
+      },
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^.+:-?[0-9]+$"
+      }
+    },
+    "shaders": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^.+:-?[0-9]+$"
+      }
+    }
+  },
+  "$id": "urn:nnnotes:schema:story-ui",
+  "title": "story-ui document"
+}

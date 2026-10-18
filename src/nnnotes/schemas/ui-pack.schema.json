@@ -1,6 +1,5 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:nnnotes:schema:ui-pack",
   "type": "object",
   "required": [
     "format",
@@ -125,5 +124,6 @@
       }
     }
   },
+  "$id": "urn:nnnotes:schema:ui-pack",
   "title": "UI object product"
 }

@@ -75,6 +75,9 @@ def test_video_describes_the_movie_and_carries_the_tracks_of_the_webm():
     key = "Cri/Video/adv/m/m"
     objects = table(key, {"movieInfo": movie_info()})
     doc = storyvideo.video(objects, key, TRACKS)
+    from tests.helpers.schemas import validate
+
+    validate("story-video", doc)
     assert doc == {
         "format": 1,
         "file": "movie.webm",
