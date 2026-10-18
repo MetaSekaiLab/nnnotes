@@ -485,6 +485,34 @@ def test_a_second_depot_with_the_same_remote_hits_without_downloads(tmp_path, ca
     assert not [p for p in (tmp_path / "b").glob("downloads/**/*") if p.is_file()]  # nothing downloaded
 
 
+def test_a_fresh_depot_exports_a_stored_catalog_from_its_remote(tmp_path, capsys, fake, monkeypatch):
+    monkeypatch.setenv("NNNOTES_DEPOT_REMOTE", (tmp_path / "remote").as_uri())
+    d = setup_data(tmp_path, depots=("a",))
+    code, out, err = export(capsys, tmp_path, d, "a", "out-a")
+    assert code == 1, err
+    first = json.loads(out)
+    code, out, err = nn(
+        capsys,
+        "export",
+        "assets",
+        "--stored-catalog",
+        "latest",
+        "--depot",
+        tmp_path / "b",
+        "-o",
+        tmp_path / "out-b",
+        "--workers",
+        "0",
+        "--json",
+    )
+    assert code == 1 and out, err
+    again = json.loads(out)
+    assert again["tasks"]["ran"] == 0 and again["run"] == first["run"], err
+    assert tree(tmp_path / "out-a", [f"{assets.REPORTS}/run.json"]) == tree(
+        tmp_path / "out-b", [f"{assets.REPORTS}/run.json"]
+    )
+
+
 def test_export_is_the_same_with_worker_processes(tmp_path, capsys, fake):
     d = setup_data(tmp_path, depots=("s0", "s2"))
     export(capsys, tmp_path, d, "s0", "o0")
