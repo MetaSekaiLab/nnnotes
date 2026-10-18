@@ -499,11 +499,23 @@ def diff(out_dir, entries_: list[dict]) -> dict:
     return {"write": write, "remove": remove, "keep": len(files) - write}
 
 
-def materialize(out_dir, name: str, params: dict, entries_: list[dict], source, *, link: str = "copy") -> dict:
+def materialize(
+    out_dir,
+    name: str,
+    params: dict,
+    entries_: list[dict],
+    source,
+    *,
+    link: str = "copy",
+    write_order=None,
+    fail_fast: bool = False,
+) -> dict:
     """Write layout `name` into `out_dir` (see the module documentation). `source(sha256) -> Path` gives the bytes
     (from_depot, from_layout); `link`: the placement (PLACEMENTS). -> {"manifest": the layout document (without
     the files not placed), "sha256": of its file, "write", "remove", "keep", "cloned", "linked", "copied",
-    "failed": [{path, message}] of the files not placed}."""
+    "failed": [{path, message}] of the files not placed}. `write_order(path)` orders replacements; `fail_fast`
+    raises on a failed replacement before removing owned files or updating the manifest, keeping the journal
+    for a subsequent run."""
     if link not in PLACEMENTS:
         raise ValueError(f"unknown placement {link!r}")
     out = Path(out_dir)
@@ -528,13 +540,15 @@ def materialize(out_dir, name: str, params: dict, entries_: list[dict], source, 
             except (KeyError, OSError):
                 pass
 
-    for p in write:
+    for p in sorted(write, key=write_order) if write_order else write:
         sha, size = files[p]
         dst = out / p
         if not (p not in mine and _present(dst, size) and _same(dst, files[p])):
             try:
                 _place(Path(source(sha)), dst, link, stats, lambda p=p: restore(p))
             except OSError as e:
+                if fail_fast:
+                    raise LayoutError(f"could not publish {p}: {type(e).__name__}: {e.strerror or e}") from e
                 failed.append({"path": p, "message": f"{type(e).__name__}: {e.strerror or e}"})
     for p in remove:
         _remove(out, p, lambda p=p: restore(p))

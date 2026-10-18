@@ -24,7 +24,7 @@
     "files": {
       "type": "object",
       "additionalProperties": {
-        "$ref": "#/$defs/asset"
+        "$ref": "#/$defs/file"
       }
     },
     "objects": {
@@ -41,7 +41,7 @@
           "files": {
             "type": "object",
             "additionalProperties": {
-              "$ref": "#/$defs/asset"
+              "$ref": "#/$defs/file"
             }
           }
         },
@@ -50,10 +50,55 @@
         ],
         "additionalProperties": false
       }
+    },
+    "root": {
+      "type": "string",
+      "minLength": 1
+    },
+    "language": {
+      "enum": [
+        "ja",
+        "en",
+        "zh-Hant",
+        "zh-Hans",
+        "ko"
+      ]
     }
   },
   "$defs": {
+    "file": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/whole"
+        },
+        {
+          "$ref": "#/$defs/encoded"
+        },
+        {
+          "$ref": "#/$defs/parts"
+        }
+      ]
+    },
     "asset": {
+      "type": "string",
+      "pattern": "^assets/[0-9a-f]{64}\\.[a-z0-9]+$"
+    },
+    "encodedAsset": {
+      "description": "An asset stored gzip- or brotli-encoded: the SHA-256 of its decoded bytes, the file's extension, then .gz or .br.",
+      "type": "string",
+      "pattern": "^assets/[0-9a-f]{64}\\.[a-z0-9]+\\.(gz|br)$"
+    },
+    "size": {
+      "description": "The byte count of the file (decoded).",
+      "type": "integer",
+      "minimum": 0
+    },
+    "stored": {
+      "description": "The byte count of an encoded asset as stored (less than size).",
+      "type": "integer",
+      "minimum": 0
+    },
+    "whole": {
       "type": "object",
       "required": [
         "asset",
@@ -62,12 +107,86 @@
       "additionalProperties": false,
       "properties": {
         "asset": {
-          "type": "string",
-          "pattern": "^assets/[0-9a-f]{64}\\.[0-9a-z]+$"
+          "$ref": "#/$defs/asset"
         },
         "size": {
-          "type": "integer",
-          "minimum": 0
+          "$ref": "#/$defs/size"
+        }
+      }
+    },
+    "encoded": {
+      "type": "object",
+      "required": [
+        "asset",
+        "size",
+        "stored"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "asset": {
+          "$ref": "#/$defs/encodedAsset"
+        },
+        "size": {
+          "$ref": "#/$defs/size"
+        },
+        "stored": {
+          "$ref": "#/$defs/stored"
+        }
+      }
+    },
+    "parts": {
+      "type": "object",
+      "required": [
+        "parts",
+        "size"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "parts": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "anyOf": [
+              {
+                "type": "array",
+                "prefixItems": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "$ref": "#/$defs/asset"
+                  },
+                  {
+                    "$ref": "#/$defs/size"
+                  }
+                ],
+                "minItems": 3,
+                "maxItems": 3
+              },
+              {
+                "type": "array",
+                "prefixItems": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "$ref": "#/$defs/encodedAsset"
+                  },
+                  {
+                    "$ref": "#/$defs/size"
+                  },
+                  {
+                    "$ref": "#/$defs/stored"
+                  }
+                ],
+                "minItems": 4,
+                "maxItems": 4
+              }
+            ]
+          }
+        },
+        "size": {
+          "$ref": "#/$defs/size"
         }
       }
     }

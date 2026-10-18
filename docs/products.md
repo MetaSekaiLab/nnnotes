@@ -542,3 +542,28 @@ every episode whose key the selection holds.
 `ui.pack` assembles one catalog key and its reachable objects. Its `ui.json` (`nnnotes.ui-pack/1`) names root prefabs, controllers, animation bindings and shaders. The product layout writes `index.json` (`nnnotes.ui-library/1`) over the selected UI products; all referenced data lives in their object tables. See [UI libraries](ui.md).
 
 A stage with `INCLUDE_FONTS = True` requests traversal through its referenced font objects. The request records these roots in `font_roots`; unit selection and assembly follow the same rule. Other products keep their own font selection behavior.
+
+## Site snapshots
+
+`nnnotes.site.products.Snapshot` takes a depot and product-layout manifests keyed by path. It builds each product's
+dependencies first, using `site.references` to rewrite the declared `parts` fields, `site.asset` for the files and
+`site.manifest` for their manifest. Every transformation is recorded as a depot task in `snapshot.run`.
+
+The immutable manifest path is `products/<sha256>.json`, where the content id is that of the manifest itself.
+References in a live, story or home host point at those immutable paths. A dependency change gives its parents
+new manifest contents while unrelated products keep their identities. Object ids and file roles stay unchanged.
+Only declared reference fields are rewritten; text and serialized component values retain their values.
+
+Stories retain the selected language groups in their part index. With no explicit language selection, the
+snapshot uses the languages whose UI and font products are available. An explicitly requested missing language
+or a missing required dependency is an error. Public aliases may use region directories; their `root` points
+back to the site root.
+
+Product file entries accept whole files, compressed files and split JSON objects, including object JSON roles.
+A split entry has `{parts, size}`, with `[key, asset, size]` rows, or `[key, asset, size, stored]` for compressed
+parts. Rejoining the key names and value texts reconstructs the exact minified document and its byte count.
+
+`nnnotes.site.publish.materialize` places a complete snapshot and its listing files from the depot. It writes
+assets, immutable manifests, public aliases, then indexes. A failed replacement stops publication before file
+collection and keeps the ownership journal for retry. After every replacement succeeds, files owned by the
+preceding layout that are outside the supplied complete reference closure are removed. Unowned files are kept.
