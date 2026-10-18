@@ -14,7 +14,8 @@ import sys
 
 import nnnotes
 import ournotes_sim
-from nnnotes import deckdata, musicdata
+from nnnotes import musicdata
+from nnnotes.musicdata import deckdata
 
 assert Path(nnnotes.__file__).resolve().is_relative_to(Path(sys.prefix).resolve())
 deck = musicdata.Deck(workers=1, aptitude=False)
