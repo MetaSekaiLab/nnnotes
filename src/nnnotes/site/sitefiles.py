@@ -25,11 +25,11 @@ import time
 from pathlib import Path
 
 from ..core import cache, jsonio
+from ..formats import compression as compress
+from ..formats.compression import DEFAULT_ENCODING
 from ..formats.shader import PLAYER_PLATFORM as SHADER_PLATFORM
 from ..formats.shader import PLAYER_TYPE as SHADER_TYPE
 from ..source.config import Config, ConfigError
-from . import compress
-from .compress import DEFAULT_ENCODING
 
 SITE_FORMAT = 2  # charts.json "format"
 MANIFEST_FORMAT = 3  # chart manifest "format" (3: entries may be stored encoded)
