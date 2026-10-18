@@ -1,0 +1,7 @@
+nnnotes 0.2.5 pins the deck model of ournotes-deck 0.0.12, `ournotes-sim==0.0.12`.
+
+- **Non-playable characters.** The deck input's `MasterCharacter` table carries `_isNonPlayable`, and the recommendation engine leaves characters a player save never lists out of the required character list and the total character rank.
+- **Combined metrics.** The recommendation engine bounds each later term of a combined metric by the team's own event bonuses, so searches ranked by challenge points first prove their optimum with far fewer nodes.
+- **Chart statistics.** The simulation model and the replay module are unchanged, so chart statistics keep their values.
+
+Validation: Python 3.11, 3.12, 3.13 and 3.14 CI with the deck model, strict golden records, the commit message check, and the wheel installed with `[deck]` in a fresh environment.
