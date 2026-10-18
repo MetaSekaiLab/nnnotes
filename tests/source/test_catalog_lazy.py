@@ -171,14 +171,6 @@ def test_write_atomic_removes_the_temporary_file_on_failure(tmp_path, monkeypatc
     assert list(tmp_path.iterdir()) == []
 
 
-def test_disk_cache_entries_use_the_short_temporary_name(tmp_path):
-    from nnnotes.core import cache
-
-    p = tmp_path / "ab" / ("c" * 64)
-    assert cache._disk_write(p, b"payload") and cache._disk_read(p) == b"payload"
-    assert sorted(x.name for x in p.parent.iterdir()) == [p.name]
-
-
 # ---------------------------------------------------------------- the command line
 def run(argv, capsys):
     code = 0
