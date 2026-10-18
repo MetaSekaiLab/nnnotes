@@ -155,9 +155,10 @@ def test_emitted_tasks_are_runnable_descriptions(tmp_path):
 @pytest.mark.parametrize("shared", [False, True])
 def test_emitted_tasks_and_stored_inputs_survive_collection(tmp_path, shared):
     remote = open_remote((tmp_path / "remote").as_uri()) if shared else None
-    depot = Depot(tmp_path / "depot", remote=remote)
+    depot = Depot(tmp_path / "depot")
     sha = depot.put(b"input")
     unused = depot.put(b"unreferenced")
+    depot.remote = remote
     task = Task("toy.src", 1, "a", inputs=(Input("source", sha, 5, locators=({"kind": "depot"},)),))
     files = Plan({}, [task]).emit(tmp_path / "tasks", depot=depot, selection=["example"])
     run = depot.latest_run(["depot.plan.tasks", "example"])
