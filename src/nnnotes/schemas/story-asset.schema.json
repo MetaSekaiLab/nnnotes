@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "format",
+    "key",
+    "objects",
+    "bindings",
+    "shaders"
+  ],
+  "properties": {
+    "format": {
+      "const": 1
+    },
+    "key": {
+      "type": "string"
+    },
+    "objects": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^.+:-?[0-9]+$"
+      }
+    },
+    "bindings": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "path",
+                "attribute"
+              ],
+              "properties": {
+                "path": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "attribute": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              }
+            }
+          },
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^.+:-?[0-9]+$"
+          }
+        }
+      },
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^.+:-?[0-9]+$"
+      }
+    },
+    "shaders": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^.+:-?[0-9]+$"
+      }
+    }
+  },
+  "$id": "urn:nnnotes:schema:story-asset",
+  "title": "story-asset document"
+}

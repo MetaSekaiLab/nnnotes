@@ -1,0 +1,229 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "format",
+    "prefabs",
+    "laneEffect",
+    "settings",
+    "bindings",
+    "shaders"
+  ],
+  "properties": {
+    "format": {
+      "const": 1
+    },
+    "prefabs": {
+      "type": "object",
+      "required": [
+        "tap_note_view",
+        "flick_note_view",
+        "flick_left_note_view",
+        "flick_right_note_view",
+        "slide_note_view",
+        "slide_end_note_view",
+        "connection_note_view",
+        "none_note_view",
+        "slide_line_view",
+        "pair_note_line"
+      ],
+      "additionalProperties": {
+        "$ref": "#/$defs/objectId"
+      }
+    },
+    "laneEffect": {
+      "$ref": "#/$defs/objectId"
+    },
+    "settings": {
+      "type": "object",
+      "required": [
+        "laneCount",
+        "laneSize",
+        "laneTopRange",
+        "laneBottomRange",
+        "laneTopPosition",
+        "judgementScreenBottomPosition",
+        "optionDefaults",
+        "optionRanges",
+        "liveSettings"
+      ],
+      "properties": {
+        "laneCount": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "laneSize": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "laneTopRange": {
+          "type": "number"
+        },
+        "laneBottomRange": {
+          "type": "number"
+        },
+        "laneTopPosition": {
+          "type": "number"
+        },
+        "judgementScreenBottomPosition": {
+          "type": "number"
+        },
+        "tiltCenterLane": {
+          "type": "number"
+        },
+        "noteDisplayTimeMs": {
+          "type": "number"
+        },
+        "optionDefaults": {
+          "type": "object",
+          "required": [
+            "NoteSpeed",
+            "SlideOpacity",
+            "GuideOpacity"
+          ],
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "optionRanges": {
+          "type": "object",
+          "required": [
+            "SlideOpacity",
+            "GuideOpacity"
+          ],
+          "additionalProperties": {
+            "$ref": "#/$defs/range"
+          }
+        },
+        "liveSettings": {
+          "type": "object",
+          "required": [
+            "note_speed_min",
+            "note_speed_max",
+            "note_speed_view_min",
+            "note_speed_view_max"
+          ],
+          "properties": {
+            "note_speed_min": {
+              "type": "string"
+            },
+            "note_speed_max": {
+              "type": "string"
+            },
+            "note_speed_view_min": {
+              "type": "string"
+            },
+            "note_speed_view_max": {
+              "type": "string"
+            }
+          }
+        },
+        "skins": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^[0-9]+$"
+          },
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "effects": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^[0-9]+$"
+          },
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "effect": {
+          "type": "string"
+        }
+      }
+    },
+    "bindings": {
+      "$ref": "#/$defs/bindings"
+    },
+    "shaders": {
+      "$ref": "#/$defs/shaders"
+    }
+  },
+  "$defs": {
+    "objectId": {
+      "type": "string",
+      "pattern": "^.+:-?[0-9]+$"
+    },
+    "objectIdText": {
+      "pattern": "^.+:-?[0-9]+$"
+    },
+    "bindings": {
+      "type": "object",
+      "propertyNames": {
+        "$ref": "#/$defs/objectIdText"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/objectIdText"
+          },
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "path",
+                "attribute"
+              ],
+              "properties": {
+                "path": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "attribute": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "shaders": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/objectId"
+      }
+    },
+    "range": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "number"
+        }
+      ],
+      "minItems": 2,
+      "maxItems": 2
+    }
+  },
+  "$id": "urn:nnnotes:schema:live-notes",
+  "title": "live-notes document"
+}

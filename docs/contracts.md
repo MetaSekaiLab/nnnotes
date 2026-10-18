@@ -328,3 +328,32 @@ Object reads and writes name individual keys. Catalog discovery and `depot gc --
 ## Site catalog
 
 [`site.schema.json`](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/schemas/site.schema.json) describes `nnnotes.site/1`. A named site stores its complete region-topic catalog in `site.json`. Each topic names an immutable product manifest and the metadata of its listing entry. Partial selections retain other topics; complete selections replace the requested region and product kind. The successful run points at the complete site layout so depot collection retains every published dependency.
+
+## Product document schemas
+
+The fixed product documents have the following schemas, also available through `nnnotes.schemas.load`.
+
+| Schema | Document |
+|---|---|
+| [episode](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/schemas/episode.schema.json) | Story episode commands and resource rows |
+| [model-json](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/schemas/model-json.schema.json) | Live2D model objects, resources and animation bindings |
+| [prefab](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/schemas/prefab.schema.json) | Prefab hierarchy nodes, transforms and components |
+| [live](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/schemas/live.schema.json) | Live entry and shared product parts |
+| [live-scene](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/schemas/live-scene.schema.json) | Live scene, lane resources and bands |
+| [live-notes](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/schemas/live-notes.schema.json) | Note prefabs and shared animation bindings |
+| [live-noteskin](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/schemas/live-noteskin.schema.json) | Note skin sprites and animation bindings |
+| [live-noteeffect](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/schemas/live-noteeffect.schema.json) | Note effect prefabs and animation bindings |
+| [live-music](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/schemas/live-music.schema.json) | Music layers and cue metadata |
+| [live-sounds](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/schemas/live-sounds.schema.json) | Sound groups, categories and routing |
+| [story](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/schemas/story.schema.json) | Story entry and shared product parts |
+| [story-scene](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/schemas/story-scene.schema.json) | Story scene objects, settings and graphics |
+| [story-ui](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/schemas/story-ui.schema.json) | Localized story UI objects and text settings |
+| [story-asset](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/schemas/story-asset.schema.json) | Story media prefab objects and animation bindings |
+
+### Scene and media document schemas
+
+- [room](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/schemas/room.schema.json)
+- [spot](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/schemas/spot.schema.json)
+- [story-video](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/schemas/story-video.schema.json)
+- [story-sound](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/schemas/story-sound.schema.json)
+- [crilips](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/schemas/crilips.schema.json)

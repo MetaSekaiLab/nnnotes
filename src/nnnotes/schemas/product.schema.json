@@ -1,8 +1,5 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:nnnotes:schema:product",
-  "title": "nnnotes.product/1",
-  "description": "The manifest of a product in a product layout: its files and the files of the objects it uses, each a content-addressed asset whose path is relative to the directory above the manifest's.",
   "type": "object",
   "required": [
     "schema",
@@ -11,29 +8,44 @@
     "files",
     "objects"
   ],
+  "additionalProperties": false,
   "properties": {
     "schema": {
       "const": "nnnotes.product/1"
     },
     "product": {
-      "$ref": "urn:nnnotes:schema:common#/$defs/stageName"
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(\\.[a-z][a-z0-9-]*)*$"
     },
     "subject": {
-      "type": "string"
+      "type": "string",
+      "minLength": 1
     },
     "files": {
       "type": "object",
+      "propertyNames": {
+        "pattern": "^[A-Za-z0-9_][^\\\\]*$"
+      },
       "additionalProperties": {
         "$ref": "#/$defs/file"
       }
     },
     "objects": {
       "type": "object",
+      "propertyNames": {
+        "pattern": "^.+:-?[0-9]+$"
+      },
       "additionalProperties": {
         "type": "object",
+        "required": [
+          "class",
+          "files"
+        ],
+        "additionalProperties": false,
         "properties": {
           "class": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1
           },
           "name": {
             "type": "string"
@@ -44,11 +56,7 @@
               "$ref": "#/$defs/file"
             }
           }
-        },
-        "required": [
-          "files"
-        ],
-        "additionalProperties": false
+        }
       }
     },
     "root": {
@@ -66,7 +74,6 @@
     },
     "options": {
       "type": "object",
-      "description": "Optional: Live option name -> the values the files support (options that select files).",
       "properties": {
         "LiveQuality": {
           "type": "array",
@@ -93,8 +100,7 @@
       }
     },
     "audio": {
-      "type": "boolean",
-      "description": "Whether audio streams are included."
+      "type": "boolean"
     }
   },
   "$defs": {
@@ -116,17 +122,14 @@
       "pattern": "^assets/[0-9a-f]{64}\\.[a-z0-9]+$"
     },
     "encodedAsset": {
-      "description": "An asset stored gzip- or brotli-encoded: the SHA-256 of its decoded bytes, the file's extension, then .gz or .br.",
       "type": "string",
       "pattern": "^assets/[0-9a-f]{64}\\.[a-z0-9]+\\.(gz|br)$"
     },
     "size": {
-      "description": "The byte count of the file (decoded).",
       "type": "integer",
       "minimum": 0
     },
     "stored": {
-      "description": "The byte count of an encoded asset as stored (less than size).",
       "type": "integer",
       "minimum": 0
     },
@@ -222,5 +225,7 @@
         }
       }
     }
-  }
+  },
+  "$id": "urn:nnnotes:schema:product",
+  "title": "nnnotes.product/1"
 }

@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "format",
+    "musicId",
+    "difficulty",
+    "band",
+    "jacket",
+    "notes",
+    "parts"
+  ],
+  "properties": {
+    "format": {
+      "const": 1
+    },
+    "musicId": {
+      "type": "integer"
+    },
+    "difficulty": {
+      "type": "string"
+    },
+    "band": {
+      "type": "object",
+      "required": [
+        "band"
+      ],
+      "properties": {
+        "band": {
+          "type": "integer"
+        }
+      }
+    },
+    "jacket": {
+      "$ref": "#/$defs/objectId"
+    },
+    "notes": {
+      "$ref": "#/$defs/file"
+    },
+    "notesMirror": {
+      "$ref": "#/$defs/file"
+    },
+    "parts": {
+      "type": "object",
+      "required": [
+        "scene",
+        "notes",
+        "noteskin",
+        "noteeffect",
+        "sounds",
+        "music"
+      ],
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^[^/\\\\]+/[^/\\\\]+\\.json$"
+      },
+      "properties": {
+        "ui": {
+          "type": "object",
+          "propertyNames": {
+            "enum": [
+              "ja",
+              "en",
+              "zh-Hant",
+              "zh-Hans",
+              "ko"
+            ]
+          },
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^[^/\\\\]+/[^/\\\\]+\\.json$"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "objectId": {
+      "type": "string",
+      "pattern": "^.+:-?[0-9]+$"
+    },
+    "file": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_][^\\\\]*\\.json$"
+    }
+  },
+  "$id": "urn:nnnotes:schema:live",
+  "title": "live document"
+}

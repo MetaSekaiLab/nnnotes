@@ -1,0 +1,174 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "nodes"
+  ],
+  "properties": {
+    "name": {
+      "type": "string"
+    },
+    "scene": {
+      "type": "string"
+    },
+    "nodes": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/node"
+      }
+    }
+  },
+  "$defs": {
+    "vec2": {
+      "type": "object",
+      "required": [
+        "x",
+        "y"
+      ],
+      "properties": {
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        }
+      }
+    },
+    "vec3": {
+      "type": "object",
+      "required": [
+        "x",
+        "y",
+        "z"
+      ],
+      "properties": {
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        },
+        "z": {
+          "type": "number"
+        }
+      }
+    },
+    "quat": {
+      "type": "object",
+      "required": [
+        "x",
+        "y",
+        "z",
+        "w"
+      ],
+      "properties": {
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        },
+        "z": {
+          "type": "number"
+        },
+        "w": {
+          "type": "number"
+        }
+      }
+    },
+    "component": {
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "pathId": {
+          "type": "string",
+          "pattern": "^-?[0-9]+$"
+        },
+        "script": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "fields": {
+          "type": "object"
+        }
+      }
+    },
+    "node": {
+      "type": "object",
+      "required": [
+        "path",
+        "localPosition",
+        "localRotation",
+        "localScale",
+        "components"
+      ],
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "pathId": {
+          "type": "string",
+          "pattern": "^-?[0-9]+$"
+        },
+        "transformPathId": {
+          "type": "string",
+          "pattern": "^-?[0-9]+$"
+        },
+        "active": {
+          "type": "boolean"
+        },
+        "layer": {
+          "type": "integer"
+        },
+        "localPosition": {
+          "$ref": "#/$defs/vec3"
+        },
+        "localRotation": {
+          "$ref": "#/$defs/quat"
+        },
+        "localScale": {
+          "$ref": "#/$defs/vec3"
+        },
+        "components": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/component"
+          }
+        },
+        "rect": {
+          "type": "object",
+          "properties": {
+            "m_AnchorMin": {
+              "$ref": "#/$defs/vec2"
+            },
+            "m_AnchorMax": {
+              "$ref": "#/$defs/vec2"
+            },
+            "m_AnchoredPosition": {
+              "$ref": "#/$defs/vec2"
+            },
+            "m_SizeDelta": {
+              "$ref": "#/$defs/vec2"
+            },
+            "m_Pivot": {
+              "$ref": "#/$defs/vec2"
+            }
+          }
+        }
+      }
+    }
+  },
+  "$id": "urn:nnnotes:schema:prefab",
+  "title": "prefab document"
+}

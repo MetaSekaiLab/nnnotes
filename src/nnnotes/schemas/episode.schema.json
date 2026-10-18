@@ -1,0 +1,305 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "advId",
+    "asset",
+    "commandCount",
+    "commands",
+    "text",
+    "sounds",
+    "cuesheets",
+    "videos",
+    "resources",
+    "master",
+    "title"
+  ],
+  "properties": {
+    "advId": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "asset": {
+      "type": "string"
+    },
+    "commandCount": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "commands": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/command"
+      }
+    },
+    "text": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/texts"
+      }
+    },
+    "sounds": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "_cueName": {
+            "type": "string"
+          },
+          "_soundCueSheetID": {
+            "type": "integer"
+          }
+        }
+      }
+    },
+    "cuesheets": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "_cueSheetName"
+        ],
+        "properties": {
+          "_cueSheetName": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "videos": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object"
+      }
+    },
+    "resources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "kind",
+          "address"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "minLength": 1
+          },
+          "address": {
+            "type": "string",
+            "minLength": 1
+          },
+          "present": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    "master": {
+      "type": "object",
+      "required": [
+        "_id",
+        "_advEpisodeAsset",
+        "_titleTextId",
+        "_playbackMode"
+      ],
+      "properties": {
+        "_id": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "_sheetName": {
+          "type": "string"
+        },
+        "_advEpisodeAsset": {
+          "type": "string"
+        },
+        "_titleTextId": {
+          "type": "string"
+        },
+        "_rubyTitleTextId": {
+          "type": "string"
+        },
+        "_playbackMode": {
+          "enum": [
+            0,
+            1
+          ]
+        }
+      }
+    },
+    "title": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/texts"
+        }
+      ]
+    }
+  },
+  "$defs": {
+    "texts": {
+      "type": "object",
+      "properties": {
+        "japanese": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "english": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "traditionalChinese": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "simplifiedChinese": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "korean": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "command": {
+      "type": "object",
+      "required": [
+        "i",
+        "cmd",
+        "raw"
+      ],
+      "properties": {
+        "i": {
+          "type": "integer"
+        },
+        "cmd": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9]*$"
+        },
+        "raw": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "TargetName": {
+          "type": "string"
+        },
+        "TargetAssetName": {
+          "type": "string"
+        },
+        "TargetAssetIndex": {
+          "type": "integer"
+        },
+        "PositionType": {
+          "type": "integer"
+        },
+        "CameraDistance": {
+          "type": "number"
+        },
+        "Duration": {
+          "type": "number"
+        },
+        "DelaySeconds": {
+          "type": "number"
+        },
+        "IsNoWait": {
+          "type": [
+            "boolean",
+            "integer"
+          ]
+        },
+        "IgnoreData": {
+          "type": [
+            "boolean",
+            "integer"
+          ]
+        },
+        "IgnoreLipSync": {
+          "type": [
+            "boolean",
+            "integer"
+          ]
+        },
+        "Parameter1": {
+          "type": "string"
+        },
+        "Parameter2": {
+          "type": "string"
+        },
+        "Parameter3": {
+          "type": "string"
+        },
+        "Parameter4": {
+          "type": "string"
+        },
+        "TargetTextIDs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "TargetStatus": {
+          "type": "integer"
+        },
+        "AdvTextID": {
+          "type": "string"
+        },
+        "lines": {
+          "$ref": "#/$defs/texts"
+        },
+        "VoiceIDs": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        },
+        "voiceCues": {
+          "type": "array",
+          "items": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "MotionName": {
+          "type": "string"
+        },
+        "ExpressionName": {
+          "type": "string"
+        },
+        "BgmID": {
+          "type": "integer"
+        },
+        "SeID": {
+          "type": "integer"
+        },
+        "Key": {
+          "type": "string"
+        },
+        "VideoID": {
+          "type": "integer"
+        },
+        "TargetChatID": {
+          "type": "integer"
+        }
+      }
+    }
+  },
+  "$id": "urn:nnnotes:schema:episode",
+  "title": "episode document"
+}

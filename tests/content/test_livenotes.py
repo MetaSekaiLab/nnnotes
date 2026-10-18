@@ -6,6 +6,7 @@ from nnnotes.content import livenotes, prefabs
 from nnnotes.pipeline.assemble import Objects
 from nnnotes.pipeline.depot import Depot
 from tests.helpers import livenotes as ln
+from tests.helpers.schemas import validate
 
 FLICKS = sorted(livenotes.FLICK_SKIN_UNITS)
 ARROW = [{"path": "arrow", "attribute": "m_Color.a"}]
@@ -19,7 +20,14 @@ def objects_of(tmp_path, keys, objs=None) -> Objects:
 
 def test_the_notes_document(tmp_path):
     record = livenotes.notes_record(ln.master())
+    for row in record["MasterLiveSettings"]:
+        row["_value"] = str(row["_value"])
+    for name in ("SlideOpacity", "GuideOpacity"):
+        item = next(i for i, key in livenotes.NOTE_ITEMS.items() if key == name)
+        record["MasterOptionDefault"].append({"_presetId": 1, "_optionItemType": item, "_valueString": "100"})
+        record["MasterOptionRange"].append({"_optionItemType": item, "_minValue": 0, "_maxValue": 100})
     doc, keep, roles = livenotes.notes(objects_of(tmp_path, ln.NOTES_KEYS), record)
+    validate("live-notes", doc)
     assert doc["format"] == livenotes.NOTES_FORMAT
     assert doc["prefabs"] == {n: ln.prefab_id(n) for n in livenotes.NOTE_PREFABS}
     assert doc["laneEffect"] == ln.LANE
@@ -61,6 +69,7 @@ def test_the_notes_settings(tmp_path):
 
 def test_a_skin_binds_the_arrow_loop_of_its_flick_units(tmp_path):
     doc, keep, _ = livenotes.noteskin(objects_of(tmp_path, ln.SKIN_KEYS), "skin001")
+    validate("live-noteskin", doc)
     assert (doc["format"], doc["name"], doc["skin"]) == (livenotes.NOTES_FORMAT, "skin001", ln.SKIN)
     # the flick unit's loop plays on the flick view's time sync Animator; the left unit has none, the right is unset
     assert doc["bindings"] == {ln.prefab_id("flick_note_view"): {"flick_note_view/anim_root": {ln.SKIN_CLIP: ARROW}}}
@@ -69,6 +78,7 @@ def test_a_skin_binds_the_arrow_loop_of_its_flick_units(tmp_path):
 
 def test_an_effect_set(tmp_path):
     doc, _, roles = livenotes.noteeffect(objects_of(tmp_path, ln.EFFECT_KEYS), "effect001Light")
+    validate("live-noteeffect", doc)
     assert (doc["name"], doc["settings"]) == ("effect001Light", ln.EFFECT)
     assert doc["bindings"][ln.EFFECT_FX] == {"note_normal/root": {ln.FX_CLIP: GLOW}}
     assert doc["shaders"] == {"Sirius/Sprite": ln.SHADER} and set(roles) == {ln.SHADER}
