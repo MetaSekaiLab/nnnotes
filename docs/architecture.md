@@ -42,6 +42,8 @@ decrypted bundles in the depot's `downloads/` directory.
 
 `site build` uses the same product requests, then runs player read-set, asset, document and index tasks. A named catalog retains unselected topics and references immutable products. Publication writes dependencies before entry manifests and indexes. The successful run stores the complete layout so a new output directory can be restored through the depot.
 
+The site's `Builder` composes product snapshots, catalog indexes and player page files. Product assembly and conversion belong to the pipeline and content layers. `catalog_models` queries model subjects from a source catalog.
+
 `export episode`, `export shader`, `export audio` and `music-data` expose subject-specific data and conversions through the Session. All commands use the readers and converters below the pipeline layer.
 
 ## Outputs

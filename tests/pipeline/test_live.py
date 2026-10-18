@@ -29,9 +29,9 @@ from tests.helpers import cri
 from tests.helpers import live as lh
 from tests.helpers import livenotes as ln
 from tests.helpers import livescene as ls
+from tests.helpers.media import mp4
 from tests.pipeline.test_assemble import addresses
 from tests.pipeline.test_cristages import export_result, fake_tools, planning
-from tests.site.test_story_site import mp4
 
 ACF = liveaudio.ACF_IN_APK
 CATEGORIES = {3: "LiveNotesSe", 4: "LiveSe", 5: "LiveBgm"}
