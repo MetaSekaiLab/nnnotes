@@ -19,7 +19,7 @@ from __future__ import annotations
 import importlib
 from typing import TYPE_CHECKING
 
-__version__ = "0.2.1"
+__version__ = "0.3.0"
 
 _LAZY = {
     "Catalog": "nnnotes.source.catalog",
