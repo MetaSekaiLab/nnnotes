@@ -6,6 +6,7 @@ import json
 import subprocess
 import sys
 from functools import cache
+from typing import cast
 
 PILLOW_ZLIB = "Pillow.zlib"
 _PROBE = (
@@ -19,7 +20,13 @@ _PROBE = (
 def pillow_zlib_version() -> str:
     """Pillow's zlib backend and version, probed without loading image codecs into the planning process."""
     result = subprocess.run(
-        [sys.executable, "-I", "-c", _PROBE, json.dumps([p for p in sys.path if isinstance(p, str)])],
+        [
+            sys.executable,
+            "-I",
+            "-c",
+            _PROBE,
+            json.dumps([p for p in cast(list[object], sys.path) if isinstance(p, str)]),
+        ],
         capture_output=True,
         text=True,
         check=True,
