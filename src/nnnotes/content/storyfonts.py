@@ -41,7 +41,7 @@ code points a sprite draws; with game fonts it is the game's asset with its shee
 has no sprite asset.
 
 Same inputs (font file, episode, game data) and library versions give the same bytes; generated glyph cells are kept
-in the process cache (disk layer when the build configures one) by font file, sizes and glyph.
+in the process cache by font file, sizes and glyph.
 """
 
 from __future__ import annotations
@@ -85,7 +85,7 @@ UI_RUBY_CLASS = "UIRubyText"
 UI_RUBY_FIELDS = ("_rubyMarginTop",)
 KOREAN_ADJUST_CLASS = "LocalizeKoreanAdjust"  # the font style a text gets in Korean (LocalizeKoreanAdjust.Apply)
 UI_TEXT_CLASSES = ("UIText", "UIRubyText")  # Fwk.UI.UIText and its subclass
-GLYPHS = cache.bucket("storyglyphs", disk=True)
+GLYPHS = cache.bucket("storyglyphs")
 FACE_KEYS = (
     "m_FaceIndex",
     "m_FamilyName",

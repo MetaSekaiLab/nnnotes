@@ -2,14 +2,11 @@
 
 A bucket maps a content key to a value computed from exactly the inputs the key covers, so a hit returns what the
 computation would return: the extractors' outputs stay byte-identical with or without the cache. Buckets live in the
-process (LRU, bounded by a byte budget, thread-safe). Buckets that hold bytes can also keep them on disk
-(`configure(directory=...)`): processes of one build then share the results, and a later run with the same inputs
-reuses them. Keys of the disk layer are salted with the source of the module that produces the value and the
-versions of the libraries it calls, so a code or library change never reads an older result.
+process (LRU, bounded by a byte budget, thread-safe). Persistent task results belong to the depot.
 
     from nnnotes.core import cache
     cache.configure(enabled=False)                # every get misses, nothing is stored
-    cache.configure(memory_mb=512, directory="work/cache")
+    cache.configure(memory_mb=512)
     PNG = cache.bucket("png", salt=cache.source_salt(__file__))
     k = PNG.key(data, width, height)
     png = PNG.get(k)
@@ -30,7 +27,6 @@ from importlib import metadata
 from pathlib import Path
 from typing import Any, Protocol, TypedDict, cast
 
-DISK_MAGIC = b"NNC1"
 DEFAULT_MEMORY_MB = 128
 
 
@@ -39,7 +35,6 @@ class Settings(TypedDict):
 
     enabled: bool
     memory: int  # byte budget of each bucket
-    directory: Path | None  # disk layer of the byte buckets
     closures: int  # loaded bundle closures kept per thread
     closure_bytes: int  # their bundle bytes
 
@@ -47,7 +42,6 @@ class Settings(TypedDict):
 _settings: Settings = {
     "enabled": True,
     "memory": DEFAULT_MEMORY_MB << 20,
-    "directory": None,
     "closures": 4,
     "closure_bytes": 512 << 20,
 }
@@ -59,20 +53,17 @@ def configure(
     *,
     enabled: bool | None = None,
     memory_mb: int | None = None,
-    directory: str | os.PathLike[str] | None = None,
     closures: int | None = None,
     closure_mb: int | None = None,
 ) -> Settings:
-    """Set the caches of this process: `enabled`; `memory_mb` (byte budget of each bucket); `directory` (disk layer
-    of the byte buckets; "" or None for none); `closures` / `closure_mb` (loaded bundle closures kept by
+    """Set the caches of this process: `enabled`; `memory_mb` (byte budget of each bucket);
+    `closures` / `closure_mb` (loaded bundle closures kept by
     unity.load_closure, per thread: count and bundle bytes). Clears the buckets. Returns the settings."""
     with _lock:
         if enabled is not None:
             _settings["enabled"] = bool(enabled)
         if memory_mb is not None:
             _settings["memory"] = max(0, int(memory_mb)) << 20
-        if directory is not None:
-            _settings["directory"] = Path(directory) if directory else None
         if closures is not None:
             _settings["closures"] = max(0, int(closures))
         if closure_mb is not None:
@@ -91,18 +82,18 @@ def enabled() -> bool:
     return _settings["enabled"]
 
 
-def bucket(name: str, *, salt: str = "", disk: bool = False, max_item: int | None = None) -> Bucket:
-    """The process's bucket `name` (created on first use). `disk`: its values are bytes and may be kept on disk;
+def bucket(name: str, *, salt: str = "", max_item: int | None = None) -> Bucket:
+    """The process's bucket `name` (created on first use).
     `max_item`: values larger than this many bytes are not kept (default: a quarter of the budget)."""
     with _lock:
         b = _buckets.get(name)
         if b is None:
-            b = _buckets[name] = Bucket(name, salt, disk, max_item)
+            b = _buckets[name] = Bucket(name, salt, max_item)
         return b
 
 
 def stats() -> dict[str, dict[str, int]]:
-    """Per bucket: items, bytes, hits, misses, disk hits, disk writes, disk write errors."""
+    """Per bucket: items, bytes, hits and misses."""
     return {n: b.stats() for n, b in sorted(_buckets.items())}
 
 
@@ -174,12 +165,12 @@ def file_id(path: str | os.PathLike[str]) -> tuple[str, int, int]:
 class Bucket:
     """A memo cache of values by content key (see the module documentation)."""
 
-    def __init__(self, name: str, salt: str, disk: bool, max_item: int | None):
-        self.name, self.salt, self.disk, self._max_item = name, salt, disk, max_item
+    def __init__(self, name: str, salt: str, max_item: int | None):
+        self.name, self.salt, self._max_item = name, salt, max_item
         self._items: OrderedDict[str, tuple[Any, int]] = OrderedDict()  # key -> (value, byte size)
         self._bytes = 0
         self._lock = threading.Lock()
-        self.hits = self.misses = self.disk_hits = self.disk_writes = self.disk_errors = 0
+        self.hits = self.misses = 0
 
     def key(self, *parts: object) -> str:
         return key(self.name, self.salt, parts)
@@ -198,32 +189,16 @@ class Bucket:
                 self._items.move_to_end(k)
                 self.hits += 1
                 return hit[0]
-        directory = _settings["directory"]
-        if self.disk and directory is not None:
-            data = _disk_read(self._path(directory, k))
-            if data is not None:
-                with self._lock:
-                    self.disk_hits += 1
-                self._remember(k, data, len(data))
-                return data
         with self._lock:
             self.misses += 1
         return None
 
     def put(self, k: str, value: Any, size: int | None = None) -> None:
-        """Store `value` (bytes for a disk bucket) under `k`; `size`: its byte size (default len(value))."""
+        """Store `value` under `k`; `size`: its byte size (default len(value))."""
         if not _settings["enabled"]:
             return
         n = len(value) if size is None else int(size)
         self._remember(k, value, n)
-        directory = _settings["directory"]
-        if self.disk and directory is not None and n <= max(self._limit(), 64 << 20):
-            ok = _disk_write(self._path(directory, k), value)
-            with self._lock:
-                if ok:
-                    self.disk_writes += 1
-                else:
-                    self.disk_errors += 1
 
     def _remember(self, k: str, value: Any, n: int) -> None:
         if n > self._limit():
@@ -239,9 +214,6 @@ class Bucket:
                 _, (_, m) = self._items.popitem(last=False)
                 self._bytes -= m
 
-    def _path(self, directory: Path, k: str) -> Path:
-        return directory / self.name / k[:2] / k
-
     def clear(self) -> None:
         with self._lock:
             self._items.clear()
@@ -254,21 +226,7 @@ class Bucket:
                 "bytes": self._bytes,
                 "hits": self.hits,
                 "misses": self.misses,
-                "diskHits": self.disk_hits,
-                "diskWrites": self.disk_writes,
-                "diskErrors": self.disk_errors,
             }
-
-
-def _disk_read(p: Path) -> bytes | None:
-    try:
-        raw = p.read_bytes()
-    except OSError:
-        return None
-    if len(raw) < 12 or raw[:4] != DISK_MAGIC:
-        return None
-    (n,) = struct.unpack_from("<Q", raw, 4)
-    return raw[12:] if len(raw) == 12 + n else None
 
 
 def temp_path(dst: Path) -> Path:
@@ -293,20 +251,9 @@ def write_atomic(dst: Path, data: bytes) -> None:
         raise
 
 
-def _disk_write(p: Path, data: bytes) -> bool:
-    """Write a disk entry atomically; False when the file system refused (counted as diskErrors: a cache that
-    cannot write only misses later, the result is the same)."""
-    try:
-        p.parent.mkdir(parents=True, exist_ok=True)
-        write_atomic(p, DISK_MAGIC + struct.pack("<Q", len(data)) + bytes(data))
-        return True
-    except OSError:
-        return False
-
-
 # ---------------------------------------------------------------- packing several blobs into one value
 def pack(meta: bytes, blobs: list[bytes]) -> bytes:
-    """One bytes value from a header and blobs (for disk buckets whose value is several files)."""
+    """One bytes value from a header and blobs."""
     out = [struct.pack("<II", len(meta), len(blobs)), meta]
     for b in blobs:
         out += [struct.pack("<Q", len(b)), b]

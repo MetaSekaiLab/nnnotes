@@ -28,10 +28,10 @@ from nnnotes.unity.reader import SceneGraph
 
 @pytest.fixture(autouse=True)
 def fresh_cache():
-    cache.configure(enabled=True, memory_mb=cache.DEFAULT_MEMORY_MB, directory="")
+    cache.configure(enabled=True, memory_mb=cache.DEFAULT_MEMORY_MB)
     unity.clear_closures()
     yield
-    cache.configure(enabled=True, memory_mb=cache.DEFAULT_MEMORY_MB, directory="", closures=4, closure_mb=512)
+    cache.configure(enabled=True, memory_mb=cache.DEFAULT_MEMORY_MB, closures=4, closure_mb=512)
     unity.clear_closures()
 
 
@@ -561,13 +561,15 @@ def test_decode_parallel_and_cached_equal_sequential(tmp_path, tools, fmt):
         assert (len(tools.calls) == n) == (run == "hit")  # replayed: no tool ran
 
 
-def test_decode_disk_cache_and_levels(tmp_path, tools):
-    cache.configure(directory=tmp_path / "c")
+def test_decode_memo_and_levels(tmp_path, tools):
     cri.decode(None, "S", tmp_path / "a", key=0, flac_level=0)
-    cache.clear()  # another process: the disk layer
     n = len(tools.calls)
     cri.decode(None, "S", tmp_path / "b", key=0, flac_level=0)
     assert len(tools.calls) == n and tree(tmp_path / "a") == tree(tmp_path / "b")
+    cache.clear()
+    cri.decode(None, "S", tmp_path / "fresh", key=0, flac_level=0)
+    assert len(tools.calls) > n and tree(tmp_path / "a") == tree(tmp_path / "fresh")
+    n = len(tools.calls)
     cri.decode(None, "S", tmp_path / "c12", key=0)  # another level: decoded again
     assert len(tools.calls) > n
     assert tree(tmp_path / "a")["a.flac"] != tree(tmp_path / "c12")["a.flac"]

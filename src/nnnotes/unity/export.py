@@ -55,8 +55,8 @@ from .reader import (
 HEADER = ("m_GameObject", "m_Script")
 _SCALARS = (int, float, str, bool, type(None))
 _LIBS = ("UnityPy", "Pillow", "texture2ddecoder", "astc-encoder-py", "etcpak", "numpy")
-# decoded textures and their PNG encodings by content (export.py's source and the libraries salt the disk layer)
-PNG = cache.bucket("png", salt=cache.source_salt(__file__, *_LIBS), disk=True)
+# decoded textures and PNG encodings memoized by content within this process
+PNG = cache.bucket("png", salt=cache.source_salt(__file__, *_LIBS))
 PIXELS = cache.bucket("pixels", salt=cache.source_salt(__file__, *_LIBS))
 
 

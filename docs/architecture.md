@@ -44,6 +44,8 @@ decrypted bundles in the depot's `downloads/` directory.
 
 The site's `Builder` composes product snapshots, catalog indexes and player page files. Product assembly and conversion belong to the pipeline and content layers. `catalog_models` queries model subjects from a source catalog.
 
+Converters use bounded process-local memoization for repeated reads and computations. Persistent reuse is keyed by depot tasks and their content inputs. Clearing a process memo releases its values; a later task can reuse its committed depot result.
+
 `export episode`, `export shader`, `export audio` and `music-data` expose subject-specific data and conversions through the Session. All commands use the readers and converters below the pipeline layer.
 
 ## Outputs

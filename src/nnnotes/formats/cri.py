@@ -55,7 +55,7 @@ from . import acb as acbtables
 from . import crikey
 from .encoders import FLAC_LEVEL, encode_args
 
-DECODED = cache.bucket("cuesheets", salt=cache.source_salt(__file__), disk=True)
+DECODED = cache.bucket("cuesheets", salt=cache.source_salt(__file__))
 SHEETS = cache.bucket("acb", max_item=128 << 20)  # (cue sheet, bundle closure) -> ACB / AWB bytes, layout
 _keys: dict[tuple, int] = {}
 _keys_lock = threading.Lock()

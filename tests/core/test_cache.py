@@ -9,12 +9,11 @@ from nnnotes.core import cache
 def fresh_cache():
     """Every test starts with the default settings and empty buckets, and leaves them so."""
     before = cache.settings()
-    cache.configure(enabled=True, memory_mb=cache.DEFAULT_MEMORY_MB, directory="")
+    cache.configure(enabled=True, memory_mb=cache.DEFAULT_MEMORY_MB)
     yield
     cache.configure(
         enabled=before["enabled"],
         memory_mb=before["memory"] >> 20,
-        directory=before["directory"] or "",
         closures=before["closures"],
         closure_mb=before["closure_bytes"] >> 20,
     )
@@ -66,22 +65,14 @@ def test_non_bytes_values_with_size():
     assert b.get(b.key("o")) == {"a": 1}
 
 
-def test_disk_layer_shared_and_checked(tmp_path):
-    cache.configure(directory=tmp_path / "c")
-    b = cache.bucket("t-disk", salt="s1", disk=True)
+def test_bucket_clear_releases_values():
+    b = cache.bucket("t-clear", salt="s1")
     k = b.key("v")
     b.put(k, b"payload")
-    files = [p for p in (tmp_path / "c").rglob("*") if p.is_file()]
-    assert len(files) == 1 and not files[0].name.endswith(".part")
-    cache.clear()  # memory gone: the disk answers
-    assert b.get(k) == b"payload" and b.stats()["diskHits"] == 1
-    other = cache.bucket("t-disk-other-salt", salt="s2", disk=True)
-    assert other.get(other.key("v")) is None  # another salt: another key
-    files[0].write_bytes(files[0].read_bytes()[:-1])  # a truncated file is a miss
+    assert b.get(k) == b"payload" and b.stats()["items"] == 1
     cache.clear()
     assert b.get(k) is None
-    files[0].write_bytes(b"garbage")
-    assert b.get(k) is None
+    assert b.stats()["items"] == b.stats()["bytes"] == 0
 
 
 def test_pack_round_trip():
