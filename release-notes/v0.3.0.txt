@@ -2,6 +2,8 @@ nnnotes 0.3.0
 
 Persistent depots store task inputs, content-addressed results, catalog versions and retained runs, with optional S3-compatible remote storage. Commands reuse verified task results and manage source downloads under a configurable budget and command leases.
 
+Catalog versions and labels are shared through the remote. Census planning, emitted task descriptions and standalone task results retain the content they need through collection, including completed results from interrupted pipelines.
+
 Live2D, room, spot, live, story and UI exports use shared object products. Named site builds publish assets, product manifests and indexes in dependency order, preserve unselected regional topics and restore complete layouts from depot records.
 
 Configuration and command interface:
