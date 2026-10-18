@@ -2,11 +2,14 @@
 
 from pathlib import Path
 
+import pytest
+
 from nnnotes.pipeline import contract
-from nnnotes.pipeline.contract import Task
+from nnnotes.pipeline.contract import Input, Task
 from nnnotes.pipeline.depot import Depot
 from nnnotes.pipeline.orchestrate import Orchestrator
-from nnnotes.pipeline.plan import plan, why
+from nnnotes.pipeline.plan import Plan, plan, why
+from nnnotes.pipeline.remote import open_remote
 from nnnotes.pipeline.stages import registry
 from tests.pipeline.test_stages import PIPELINE, Count, Src, Total, toy_files, toy_stages
 
@@ -147,6 +150,31 @@ def test_emitted_tasks_are_runnable_descriptions(tmp_path):
     for f in files:
         t = Task.from_json(contract.loads(f.read_bytes()))
         assert f.read_bytes() == contract.encode(t.to_json())
+
+
+@pytest.mark.parametrize("shared", [False, True])
+def test_emitted_tasks_and_stored_inputs_survive_collection(tmp_path, shared):
+    remote = open_remote((tmp_path / "remote").as_uri()) if shared else None
+    depot = Depot(tmp_path / "depot", remote=remote)
+    sha = depot.put(b"input")
+    unused = depot.put(b"unreferenced")
+    task = Task("toy.src", 1, "a", inputs=(Input("source", sha, 5, locators=({"kind": "depot"},)),))
+    files = Plan({}, [task]).emit(tmp_path / "tasks", depot=depot, selection=["example"])
+    run = depot.latest_run(["depot.plan.tasks", "example"])
+    from tests.pipeline.test_contract import validators
+
+    schemas = validators()
+    assert not list(schemas[contract.RUN].iter_errors(run))
+    layout = depot.document(run["layouts"]["tasks"])
+    assert not list(schemas[contract.LAYOUT].iter_errors(layout))
+    depot.gc(keep=1, remote=shared, grace=0)
+    assert not depot.has(unused)
+    reader = Depot(tmp_path / "fresh", remote=remote) if shared else depot
+    saved = reader.document(reader.latest_run(["depot.plan.tasks", "example"])["layouts"]["tasks"])
+    body = reader.read(saved["entries"][0]["sha256"])
+    assert body == files[0].read_bytes()
+    restored = Task.from_json(contract.loads(body))
+    assert reader.input_bytes(restored.inputs[0]) == b"input"
 
 
 def test_peak_estimate_oversize_and_layout_counts(tmp_path):

@@ -214,6 +214,10 @@ bytes nor keys; the file names of `original` and `cas` both follow from the reco
 `original` manifest alone. Documents derived for `original` from records and paths (the views with the files of
 their objects) are the exception: `original` has the derived documents, `cas` the artifacts they are made from.
 
+Task-description layouts use the ordinary layout contract. Each task file entry may include `inputs`, an array of
+content records (`sha256`, `size`) for the task's input dependencies. Collection follows those references as well as
+the task-description file itself.
+
 ## Product manifest: nnnotes.product/1
 
 A product layout writes, for each product of `pipeline.assemble`, a manifest

@@ -552,12 +552,16 @@ def test_plan_emit_tasks_and_run_stage_give_the_exported_depot(tmp_path, capsys,
         doc = json.loads(out)
         if not any(n["status"] == "run" for n in doc["nodes"]):
             break
+        Depot(tmp_path / "q").gc()
         code, out, err = nn(capsys, *flags(d), "depot", "run", tasks, "--depot", tmp_path / "q")
         assert code in (0, 1), err
+        Depot(tmp_path / "q").gc()
         rounds += 1
     assert rounds == 3  # index + census; scripts + addresses; export
     skip = ["inputs", "runs", "costs", "catalogs", "downloads"]
-    assert task_tree(tmp_path / "orch", skip) == task_tree(tmp_path / "q", skip)
+    expected, actual = task_tree(tmp_path / "orch", skip), task_tree(tmp_path / "q", skip)
+    # The task runner also retains emitted descriptions and their input references.
+    assert {p: actual.get(p) for p in expected} == expected
 
 
 def test_plan_explains_and_waits_for_bundles_not_fetched(tmp_path, capsys, fake):
@@ -1224,6 +1228,11 @@ def test_plan_census_takes_the_censuses_first(tmp_path, capsys, fake):
     census = [n for n in nodes if n["stage"] == "unity.census"]
     assert census and all(n["status"] == "hit" for n in census)
     assert {n["status"] for n in nodes if n["stage"] == "link.scripts"} == {"run"}
+    depot = Depot(tmp_path / "s")
+    run = depot.latest_run(["depot.plan.census", "all"])
+    assert run and {t["id"] for t in run["tasks"]} >= {n["id"] for n in census}
+    depot.gc(keep=1)
+    assert all(depot.has_result(n["key"]) for n in census)
 
 
 class NamedByExport(Named):
