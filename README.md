@@ -1,6 +1,6 @@
 # nnnotes
 
-[English](README.md) | [简体中文](README.zh-CN.md)
+[English](https://github.com/MetaSekaiLab/nnnotes/blob/main/README.md) | [简体中文](https://github.com/MetaSekaiLab/nnnotes/blob/main/README.zh-CN.md)
 
 nnnotes turns your BanG Dream! Our Notes game files into structured data, media and static player sites.
 It reads Addressables catalogs, bundles, master data and APK resources; exports stories, Live2D models, live
@@ -85,13 +85,15 @@ Product exports use versioned manifests and shared object records. Read the
 [product reference](https://metasekailab.github.io/nnnotes/products/) and
 [schemas](https://metasekailab.github.io/nnnotes/schemas/) to consume them.
 Task identities include input contents, options and conversion implementations, including native encoders.
+Byte-identical output requires matching inputs and library/tool implementations, including Pillow and its native
+compression backend. JSON uses UTF-8 and LF; infinite values use `1e999` or `-1e999`.
 [Determinism](https://metasekailab.github.io/nnnotes/determinism/) explains reproducibility across installations.
 
 Versions cover the CLI, configuration, schemas and documented Python API. Before 1.0, a minor version can change
-these interfaces. See [CHANGELOG.md](CHANGELOG.md) and the [architecture](https://metasekailab.github.io/nnnotes/architecture/).
+these interfaces. See [CHANGELOG.md](https://github.com/MetaSekaiLab/nnnotes/blob/main/CHANGELOG.md) and the [architecture](https://metasekailab.github.io/nnnotes/architecture/).
 
 ## Contributing and license
 
-[CONTRIBUTING.md](CONTRIBUTING.md) describes development and synthetic tests. nnnotes is licensed under
-[MIT](LICENSE). This is an unofficial fan project, unaffiliated with the game's developer or operator.
+[CONTRIBUTING.md](https://github.com/MetaSekaiLab/nnnotes/blob/main/CONTRIBUTING.md) describes development and synthetic tests. nnnotes is licensed under
+[MIT](https://github.com/MetaSekaiLab/nnnotes/blob/main/LICENSE). This is an unofficial fan project, unaffiliated with the game's developer or operator.
 Game resources, keys and server configuration are supplied by each user and are subject to their owners' rights.
