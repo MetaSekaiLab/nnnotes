@@ -1,51 +1,68 @@
 # Validation
 
-The test suite runs on synthetic inputs, so it needs no game data. The experiments on this page check nnnotes
-against a whole game version, which you supply yourself: each one names what it checks, how to run it with your own
-configuration, and the result for the version named. Only commands and checks are listed. The outputs stay with
-whoever runs them.
+Validation has three distinct scopes: synthetic contract tests, checks over generated files, and browser playback.
+Use the checks that match the output and consumer you are working on.
 
-The results below are for the Traditional Chinese release, client 1.0.1, catalog language `zh-Hant`, with its master
-data. The [Japanese release](jp.md#validation-and-current-limits) has its own section.
-
-## Setup
+## Synthetic tests
 
 ```sh
-nnnotes config check                          # every setting the commands below need is valid
-nnnotes master download --latest -o work/master-bin --json > work/download.json
-nnnotes master decode work/master-bin -o work/master --json > work/decode.json
-nnnotes config set paths.master work/master
+pip install -e '.[test,fonts,remote,deck]'
+python -m pytest
+python -m ruff check .
+python -m pyright
 ```
 
-The lists of subjects come from the master data and the catalog:
+The tests exercise object conversion, product assembly, language selection, regional aliases, reference closure,
+task identities and retained layouts. Directory remotes exercise sharing between depots. S3 protocol tests use
+botocore stubs to check request parameters, pagination, deletion batches and errors without an account.
+Publication tests inject failures between file replacements and check recovery and index ordering.
+
+Every registered output and site stage has a golden record. With the dependency versions in
+`.github/goldens-constraints.txt`, run:
 
 ```sh
-python -c "from nnnotes.source.master import table; print(*sorted(r['_id'] for r in table('work/master', 'MasterAdv')), sep='\n')" > work/episodes.txt
-nnnotes catalog keys --prefix Character/Live2D/ --limit 0 > work/live2d-keys.txt
+python -m pytest tests/pipeline/test_goldens.py tests/pipeline/test_objexport.py
 ```
 
-## Experiments
+Set `GOLDENS_STRICT=1` for a matching pinned environment so a dependency mismatch fails the check.
+The records include native codec identities; see [determinism](determinism.md).
 
-| Experiment | How to run it | Result (client 1.0.1, zh-Hant) |
-|---|---|---|
-| Master data | `master download` checks every file against the SHA-256 of `MasterManifest.json`; `master decode` reports each table it could not decode under `failed` | every file verified, every table decoded |
-| ADV episodes | `export episode ID` for every id of `episodes.txt` | 946 / 946 exported |
-| Stories | `export story ID -o out/stories/ID` for every id, all with the same models directory; then read every JSON file and resolve every path `story.json` and the files it indexes name | 946 / 946 exported; every JSON file parses, every named file, model and cue exists |
-| Story reproducibility | export the stories that use frames, effects, post effects, stills, chats, talk windows or videos twice into two directories and compare them byte by byte | 235 such episodes; the two exports are equal except the models directory path in `story.json` |
-| Live2D models | `export live2d KEY` for every model key of `live2d-keys.txt` (the keys ending in `/model/<name>`) | 239 / 239 exported, 185 of them used by stories |
-| CRI audio | `export audio CUE_SHEET` for every cue sheet under `Cri/Sound/` | 681 / 681 decoded |
-| Lives | `export live MUSIC_ID --difficulty D` for every music and difficulty with a `MasterLiveMusicScore` row | 336 / 336 exported |
-| Spots and rooms | `export spot ID` for every `MasterHomeSpot` row and `export room KEY` for every room background prefab; validate every `.glb` with the [Khronos glTF-Validator](https://github.com/KhronosGroup/glTF-Validator) | 39 / 39 spots, 20 / 20 rooms; every reference resolves; every glb has 0 validator errors |
-| Site, one region | `site build --all --all-live2d --all-stories --story-languages en --no-audio` twice into two empty directories, then compare them | 336 charts, 239 models, 946 stories; no failures file; the two sites are byte-identical |
-| Site, every region | `site build --all --all-regions --format aac` twice into two empty directories, then compare them | 340 charts of 85 songs from the regions' current master data, five languages; no failures file; the two sites are byte-identical |
-| Regions | for each region and language, `catalog keys --limit 0` and the catalog's bundles; compare the master tables a chart build reads across regions | the regions serve the same catalog and bundles for a language with the same keys; the chart tables are equal across the three regions; the text tables have all five languages |
+## Check stored content
 
-## Checks of every run
+```sh
+nnnotes depot verify
+nnnotes depot verify --quick
+nnnotes depot gc --dry-run
+```
 
-These hold for every command and are checked by the test suite on synthetic data:
+Full verification checks hashes; quick verification checks sizes. Referenced content held only by the remote
+is checked there. A collection dry run reports eligible removals under the configured retention policy.
+See [depot](depot.md) for run roots, grace periods and remote collection.
 
-- A key, id or model that the catalog or the master data does not have stops the command with exit status 2 before
-  any bundle is fetched or file written.
-- The documents of an asset export run (plan, tasks, results, artifacts, run manifest, layout, coverage, failures,
-  cost) and the music data file validate against their [JSON schemas](schemas.md).
-- The same inputs give byte-identical outputs ([determinism](determinism.md)).
+## Check exported products
+
+Build a selected site with your configured inputs, then use the compatible player's validator:
+
+```sh
+nnnotes site build --name example -o out/site --story 10462 --fonts game --player node_modules/ournotes-player
+node node_modules/ournotes-player/scripts/validate-data.mjs out/site
+```
+
+The validator checks product schemas, shared objects, file references, chart metadata, unique asset byte counts,
+language-specific resources and model dependencies. By default it checks every declared language.
+Chart site builds also compare sampled read-set plans with full simulation and fall back to full simulation
+when a plan fails or disagrees. See [site](site.md#player-read-sets-and-variants).
+
+For your own corpus, enumerate subjects from matching master data and catalogs, preserve command reports,
+and record the configuration and tool versions used. Compare normalized JSON with references resolved;
+compare decoded image pixels and audio samples when encoder differences affect stored bytes.
+
+## Check playback and hosting
+
+Serve the output over HTTP, load required runtimes and exercise a chart, a model and the story features in your
+selection. Check language changes, seek, completion and browser network errors. Structural validation and rendered
+appearance answer different questions. Hosting instructions cover CORS, compression and cache headers in the
+[player documentation](https://github.com/empty-sekai/ournotes-player/blob/main/docs/embedding.md).
+
+An S3 endpoint also has its own permissions, consistency and gateway behavior. Check reads and writes under an
+isolated test prefix when configuring a new endpoint, and scope collection to the depot prefix.
