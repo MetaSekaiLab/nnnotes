@@ -22,6 +22,8 @@ the `remote` extra. See [configuration](configuration.md) for endpoint and crede
 Results and content are fetched when needed. Publishing a run first uploads its completed results, available
 stored inputs and layout contents. This also shares results computed before remote storage was configured.
 A run pointer alone is not evidence that a result exists: planning checks the result itself.
+S3 listings follow continuation tokens and deletion requests use batches of at most 1,000 objects.
+A per-object deletion error stops collection and reports failure, even when the service returns HTTP success.
 Catalog discovery merges version metadata and shares locally imported versions with their catalog bytes.
 
 `depot verify` checks local content and results. When a local result refers to content held only by the remote,

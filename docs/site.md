@@ -4,7 +4,12 @@
 
 ## Requirements
 
-Configure `[paths] depot`, the catalog and APK, and the decoded master data for the selected charts and stories. Supply a built [ournotes-player](https://github.com/empty-sekai/ournotes-player) checkout or package through `--player` or `[paths] player`. Node.js 22 or newer runs chart read sets. Audio conversion uses vgmstream and FFmpeg. Text rendering needs the `fonts` extra and either `--fonts game` or a font file for every requested language.
+Configure `[paths] depot`, the catalog and APK, and the decoded master data for the selected charts and stories. Supply a built [ournotes-player](https://github.com/empty-sekai/ournotes-player) 0.2.x checkout or npm package through `--player` or `[paths] player`. Node.js 22 or newer runs chart read sets. Audio conversion uses vgmstream and FFmpeg. Text rendering needs the `fonts` extra and either `--fonts game` or a font file for every requested language.
+
+Install the complete player package with `npm install ournotes-player@0.2.0`, then pass
+`--player node_modules/ournotes-player`. The browser-only ZIP supplies bundles for embedding; the site builder
+also needs the package metadata, scripts and example pages. It checks the package name, stable 0.2.x version
+and required files before starting.
 
 ## Select products
 
@@ -44,3 +49,15 @@ A chart read set is a depot task whose inputs include the player sources, produc
 Publication writes assets, immutable products, aliases/pages, and then indexes. It collects retired owned files after successful replacements and retains unowned files. A failed publication keeps its journal and successful-run pointer for retry. Serve the directory with a static server and open `index.html`, `live2d/`, or `story/`.
 
 `--workers`, `--memory`, and `--fetch-workers` control product task execution. `--stored-catalog LABEL|SHA` selects a catalog already registered in the depot. Reports include product task counts, site task counts, read-set checks, and file placement counts. See the [command reference](cli.md#nnnotes-site-build) for all flags and [site snapshots](products.md#site-snapshots) for product references.
+
+## Validate and open
+
+```sh
+node node_modules/ournotes-player/scripts/validate-data.mjs out/site
+python -m http.server 8000 --directory out/site
+```
+
+Open the chart page at `/`, the model page at `/live2d/` or the story page at `/story/`.
+Supply Cubism Core and the MotionSync/Spine runtimes needed by the selected content through the player's page
+configuration. See its [runtime guide](https://github.com/empty-sekai/ournotes-player/blob/main/docs/getting-started.md#browser-runtimes)
+and [hosting guide](https://github.com/empty-sekai/ournotes-player/blob/main/docs/embedding.md#hosting-the-data).

@@ -1,100 +1,97 @@
-# nnnotes？！
+# nnnotes
 
-[English](https://github.com/MetaSekaiLab/nnnotes/blob/main/README.md) | [简体中文](https://github.com/MetaSekaiLab/nnnotes/blob/main/README.zh-CN.md)
+[English](README.md) | [简体中文](README.zh-CN.md)
 
-nnnotes is an offline data toolkit for the game files of BanG Dream! Our Notes. It reads Addressables catalogs,
-downloads and decrypts asset bundles, downloads and decodes master data, and exports stories, Live2D models, spots,
-shaders, CRI audio and live charts as structured JSON and common file formats. `nnnotes site build` writes the static
-site that [ournotes-player](https://github.com/empty-sekai/ournotes-player) plays, and `nnnotes music-data` one JSON
-file with every song and chart. The name was inspired by sssekai.
+nnnotes turns your BanG Dream! Our Notes game files into structured data, media and static player sites.
+It reads Addressables catalogs, bundles, master data and APK resources; exports stories, Live2D models, live
+charts, rooms, UI, shaders and audio; and assembles sites for
+[ournotes-player](https://github.com/empty-sekai/ournotes-player).
 
-This is an unofficial fan project, not affiliated with the game's developer or operator. The repository contains no
-game assets, keys or server addresses: you supply the game files, the keys and the server addresses in your own
-configuration, and the exports stay in the local directories you choose.
+A persistent **depot** stores converted objects, task results and catalog versions. Exports share these results,
+and named sites retain their selected products across builds. A depot can also share work through a directory
+or S3-compatible object storage.
 
-**Documentation: <https://metasekailab.github.io/nnnotes/>**
+**[Documentation](https://metasekailab.github.io/nnnotes/)** ·
+[Quick start](https://metasekailab.github.io/nnnotes/quickstart/) ·
+[Commands](https://metasekailab.github.io/nnnotes/cli/)
 
 ## Install
 
+Python 3.11 or newer:
+
 ```sh
-pip install nnnotes                  # Python 3.11+
-pip install 'nnnotes[fonts]'         # the game's fonts (--fonts game) and the story text of site build
-pip install 'nnnotes[deck]'          # the deck model's chart statistics of music-data
+pip install nnnotes==0.3.0
+pip install 'nnnotes[fonts]==0.3.0'    # story and UI fonts
+pip install 'nnnotes[remote]==0.3.0'   # S3-compatible depot storage
+pip install 'nnnotes[deck]==0.3.0'     # music-data chart statistics
 ```
 
-nnnotes also needs the game's `base.apk`, decoded master data for the commands that read it, and the external tools
-[vgmstream](https://vgmstream.org/) and [FFmpeg](https://ffmpeg.org/) for audio and video (Node.js 22+ and a built
-ournotes-player for `site build`).
+Choose the extras your commands need; they can be combined as `nnnotes[fonts,remote,deck]==0.3.0`.
+Audio/video conversion uses [vgmstream](https://vgmstream.org/) and [FFmpeg](https://ffmpeg.org/).
+Site builds additionally require Node.js 22+ and a built **ournotes-player 0.2.x** package.
+The deck extra installs `ournotes-sim==0.0.12`.
 
-## Quick start
+## First export
+
+Supply your own client files, keys and server addresses through the configuration wizard:
 
 ```sh
-nnnotes config init --user          # asks for each setting (keys without echo) and writes the per-user config file
-nnnotes config check                # where each setting comes from and whether it is valid, never its value
+nnnotes config init --user
+nnnotes config check
 nnnotes master download --latest -o work/master-bin
 nnnotes master decode work/master-bin -o work/master
-nnnotes --master work/master export story 10462 -o out/story_10462
-nnnotes site build -o out/site --all --player path/to/ournotes-player
+nnnotes config set paths.master work/master
+nnnotes export episode 10462 -o out/episode.json
+nnnotes export story 10462 --fonts game -o out/story
 ```
 
-Every command prints a short summary, or with `--json` its report as JSON. Scripts set the config file without
-questions: `nnnotes config init --user --no-input --set SECTION.KEY=VALUE ...`.
+Set `paths.depot` to a persistent directory and `paths.apk` to your game APK. The wizard reads keys without echo;
+`config check` reports setting names, origins and validity. Story export requires the `fonts` extra and audio
+tools. See the [quick start](https://metasekailab.github.io/nnnotes/quickstart/) for prerequisites and output layout.
 
-## Commands
+## Build a player site
 
-| Command | What it does |
-| --- | --- |
-| `config init\|set\|unset\|check\|path` | write, edit and check the config file |
-| `servers` | the game API's server list: regions with their CDN and API roots |
-| `catalog keys\|browse` | the addressable keys of a region's catalog; a local web page to browse catalogs and bundles |
-| `catalog versions\|import\|fetch\|diff` | catalog versions kept in the depot, and what changed between two |
-| `bundle pull` | fetch the bundle closure of keys and copy the decrypted bundles to a directory |
-| `master version\|download\|decode` | the master data version a region serves, its download and its decoding to JSON |
-| `export assets` | every object of the selected bundles in common formats, through the content-addressed depot |
-| `export episode\|story\|live\|live2d\|spot\|room\|shader\|audio\|ui` | one subject: an ADV episode, a story, a live, a Live2D model, a spot, a room, shaders, a cue sheet, the UI library |
-| `apk settings\|hca-key` | the player's graphics settings and the CRI HCA keycode of `base.apk` |
-| `depot plan\|run\|verify\|gc` | what `export assets` would run and why, single tasks, the depot's check and collection |
-| `voices list\|search\|summary\|get` | the character and story voices of the master data |
-| `site build` | the static site of ournotes-player: charts, Live2D models and stories, in several regions and languages |
-| `music-data` | every song and chart in one JSON file, with the deck model's chart statistics |
+```sh
+npm install ournotes-player@0.2.0
+nnnotes site build --name stories -o out/site --story 10462 --fonts game --player node_modules/ournotes-player
+node node_modules/ournotes-player/scripts/validate-data.mjs out/site
+python -m http.server 8000 --directory out/site
+```
 
-The [command reference](https://metasekailab.github.io/nnnotes/cli/) lists every option.
+Open `http://localhost:8000/story/`. Live2D, MotionSync and Spine features require the corresponding browser
+runtimes supplied by the embedding page. See the [site guide](https://metasekailab.github.io/nnnotes/site/).
+Use `--pair MUSIC_ID:DIFFICULTY` for a chart, `--live2d KEY` for a model, and `--story-languages ja,en` for selected
+story languages. Reusing a site name updates selected topics and retains the others.
 
-## Documentation
+## Choose a workflow
 
-- [Quick start](https://metasekailab.github.io/nnnotes/quickstart/): from an empty config to an exported story.
-- How-to guides: [configure nnnotes](https://metasekailab.github.io/nnnotes/configuration/),
-  [export stories and lives](https://metasekailab.github.io/nnnotes/export/),
-  [build an ournotes-player site](https://metasekailab.github.io/nnnotes/site/),
-  [export every asset](https://metasekailab.github.io/nnnotes/assets/),
-  [the Japanese release](https://metasekailab.github.io/nnnotes/jp/),
-  [music data](https://metasekailab.github.io/nnnotes/music-data/).
-- Reference: [commands](https://metasekailab.github.io/nnnotes/cli/),
-  [command outputs](https://metasekailab.github.io/nnnotes/commands/),
-  [JSON schemas](https://metasekailab.github.io/nnnotes/schemas/),
-  [Python API](https://metasekailab.github.io/nnnotes/api/),
-  [contracts](https://metasekailab.github.io/nnnotes/contracts/), [stages](https://metasekailab.github.io/nnnotes/stages/),
-  [views](https://metasekailab.github.io/nnnotes/views/).
-- Explanation: [architecture](https://metasekailab.github.io/nnnotes/architecture/),
-  [determinism](https://metasekailab.github.io/nnnotes/determinism/),
-  [validation](https://metasekailab.github.io/nnnotes/validation/).
+| Task | Commands | Guide |
+|---|---|---|
+| Configure inputs | `config init`, `config check`, `servers` | [Configuration](https://metasekailab.github.io/nnnotes/configuration/) |
+| Inspect or retain catalogs | `catalog keys`, `browse`, `versions`, `import`, `fetch`, `diff` | [Commands](https://metasekailab.github.io/nnnotes/cli/) |
+| Copy source bundles | `bundle pull` | [Asset export](https://metasekailab.github.io/nnnotes/assets/) |
+| Export a subject | `export episode`, `story`, `live`, `live2d`, `spot`, `room`, `shader`, `audio`, `ui` | [Exports](https://metasekailab.github.io/nnnotes/export/) |
+| Convert selected assets | `export assets`, `depot plan`, `depot run` | [Asset export](https://metasekailab.github.io/nnnotes/assets/) |
+| Check and retain stored work | `depot verify`, `depot gc` | [Depot](https://metasekailab.github.io/nnnotes/depot/) |
+| Export song and chart statistics | `music-data` | [Music data](https://metasekailab.github.io/nnnotes/music-data/) |
+| Find character voices | `voices list`, `search`, `summary`, `get` | [Commands](https://metasekailab.github.io/nnnotes/cli/) |
 
-Exports are deterministic for a given installation: the same input with the same versions of nnnotes, its Python
-dependencies (UnityPy, Pillow, numpy, ...) and the external tools gives byte-identical files; JSON is UTF-8 with LF
-line endings and non-finite numbers written as `1e999`. Other versions can encode the same content into other bytes
-(PNG files written by another Pillow version can differ in their bytes while their pixels are equal).
+Commands print summaries; `--json` selects a structured report. The reference describes exit statuses and options.
 
-## Changelog and versions
+## Data and compatibility
 
-[CHANGELOG.md](https://github.com/MetaSekaiLab/nnnotes/blob/main/CHANGELOG.md) lists the changes of every version.
-Versions follow [Semantic Versioning](https://semver.org/) over the command line, the configuration keys, the JSON
-schemas and the documented Python API.
+Product exports use versioned manifests and shared object records. Read the
+[format reference](https://metasekailab.github.io/nnnotes/formats/),
+[product reference](https://metasekailab.github.io/nnnotes/products/) and
+[schemas](https://metasekailab.github.io/nnnotes/schemas/) to consume them.
+Task identities include input contents, options and conversion implementations, including native encoders.
+[Determinism](https://metasekailab.github.io/nnnotes/determinism/) explains reproducibility across installations.
 
-## Contributing
+Versions cover the CLI, configuration, schemas and documented Python API. Before 1.0, a minor version can change
+these interfaces. See [CHANGELOG.md](CHANGELOG.md) and the [architecture](https://metasekailab.github.io/nnnotes/architecture/).
 
-Setup, checks and commit conventions are in
-[CONTRIBUTING.md](https://github.com/MetaSekaiLab/nnnotes/blob/main/CONTRIBUTING.md).
+## Contributing and license
 
-## License
-
-MIT, see [LICENSE](https://github.com/MetaSekaiLab/nnnotes/blob/main/LICENSE).
+[CONTRIBUTING.md](CONTRIBUTING.md) describes development and synthetic tests. nnnotes is licensed under
+[MIT](LICENSE). This is an unofficial fan project, unaffiliated with the game's developer or operator.
+Game resources, keys and server configuration are supplied by each user and are subject to their owners' rights.

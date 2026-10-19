@@ -1,96 +1,93 @@
-# nnnotes？！
+# nnnotes
 
-[English](https://github.com/MetaSekaiLab/nnnotes/blob/main/README.md) | [简体中文](https://github.com/MetaSekaiLab/nnnotes/blob/main/README.zh-CN.md)
+[English](README.md) | [简体中文](README.zh-CN.md)
 
-nnnotes 是 BanG Dream! Our Notes 游戏文件的离线数据工具包：读取 Addressables catalog，下载并解密资源包，下载并解码
-masterdata，再把剧情、Live2D 模型、据点、着色器、CRI 音频和谱面导出成结构化 JSON 与通用格式文件。
-`nnnotes site build` 写出 [ournotes-player](https://github.com/empty-sekai/ournotes-player) 播放的静态站点，
-`nnnotes music-data` 写出包含全部歌曲与谱面的单个 JSON 文件。命名灵感来自 sssekai。
+nnnotes 将你自己的 BanG Dream! Our Notes 游戏文件导出为结构化数据、媒体文件和静态播放器站点。
+它读取 Addressables 目录、资源包、主数据和 APK 资源，导出剧情、Live2D、谱面、房间、UI、着色器与音频，
+并为 [ournotes-player](https://github.com/empty-sekai/ournotes-player) 组装站点。
 
-本项目为非官方爱好者项目，与游戏的开发和运营方无关。仓库不包含任何游戏资源、密钥或服务器地址：游戏文件、密钥和服务器地址
-都由使用者在自己的配置中提供，导出结果只保存在使用者指定的本地目录。
+持久化的 **depot** 保存转换后的对象、任务结果和目录版本。各次导出共享这些结果；命名站点在构建之间保留
+所选内容。depot 也可以通过共享目录或兼容 S3 的对象存储在机器之间复用工作。
 
-**文档（英文）：<https://metasekailab.github.io/nnnotes/>**
+**[文档](https://metasekailab.github.io/nnnotes/)** ·
+[快速开始](https://metasekailab.github.io/nnnotes/quickstart/) ·
+[命令参考](https://metasekailab.github.io/nnnotes/cli/)
 
 ## 安装
 
+需要 Python 3.11 或更新版本：
+
 ```sh
-pip install nnnotes                  # Python 3.11+
-pip install 'nnnotes[fonts]'         # 游戏字体（--fonts game）与 site build 的剧情文字
-pip install 'nnnotes[deck]'          # music-data 的组卡模型谱面统计
+pip install nnnotes==0.3.0
+pip install 'nnnotes[fonts]==0.3.0'    # 剧情与 UI 字体
+pip install 'nnnotes[remote]==0.3.0'   # 兼容 S3 的 depot 远端
+pip install 'nnnotes[deck]==0.3.0'     # music-data 谱面统计
 ```
 
-此外还需要游戏的 `base.apk`；读取 masterdata 的命令需要解码后的 masterdata；音频与视频需要外部工具
-[vgmstream](https://vgmstream.org/) 和 [FFmpeg](https://ffmpeg.org/)（`site build` 另需 Node.js 20+ 与构建好的
-ournotes-player）。
+按需选择附加依赖，也可以组合为 `nnnotes[fonts,remote,deck]==0.3.0`。
+音视频转换需要 [vgmstream](https://vgmstream.org/) 与 [FFmpeg](https://ffmpeg.org/)。
+站点构建另需 Node.js 22+ 和已构建的 **ournotes-player 0.2.x** 包。
+`deck` 附加依赖安装 `ournotes-sim==0.0.12`。
 
-## 快速上手
+## 第一次导出
+
+通过配置向导提供自己的客户端文件、密钥与服务地址：
 
 ```sh
-nnnotes config init --user          # 逐项询问设置（密钥不回显），写入用户配置文件
-nnnotes config check                # 每项设置的来源与是否有效，不显示设置值
+nnnotes config init --user
+nnnotes config check
 nnnotes master download --latest -o work/master-bin
 nnnotes master decode work/master-bin -o work/master
-nnnotes --master work/master export story 10462 -o out/story_10462
-nnnotes site build -o out/site --all --player path/to/ournotes-player
+nnnotes config set paths.master work/master
+nnnotes export episode 10462 -o out/episode.json
+nnnotes export story 10462 --fonts game -o out/story
 ```
 
-每个命令输出简短摘要，加 `--json` 时输出 JSON 报告。脚本中可以不经提问写好配置文件：
-`nnnotes config init --user --no-input --set 段.键=值 ...`。
+将 `paths.depot` 设为持久目录，`paths.apk` 设为游戏 APK。向导输入密钥时不回显；`config check` 显示配置项名称、
+来源及有效性。剧情导出需要 `fonts` 附加依赖及音频工具。完整前置条件和输出结构见
+[快速开始](https://metasekailab.github.io/nnnotes/quickstart/)。
 
-## 命令
+## 构建播放器站点
 
-| 命令 | 作用 |
-| --- | --- |
-| `config init\|set\|unset\|check\|path` | 写入、修改和检查配置文件 |
-| `servers` | 游戏 API 的服务器列表：各区服及其 CDN 与 API 根地址 |
-| `catalog keys\|browse` | 区服 catalog 的资源键；在本地网页中浏览 catalog 与资源包 |
-| `catalog versions\|import\|fetch\|diff` | depot 中保存的 catalog 版本，以及两个版本之间的变化 |
-| `bundle pull` | 下载资源键的依赖闭包，把解密后的 bundle 复制到指定目录 |
-| `master version\|download\|decode` | 区服当前的 masterdata 版本、下载，以及解码为 JSON |
-| `export assets` | 经内容寻址的 depot，把所选资源包中的每个对象导出为通用格式 |
-| `export episode\|story\|live\|live2d\|spot\|room\|shader\|audio\|ui` | 单个对象：ADV 剧情集、完整剧情、谱面、Live2D 模型、据点、房间、着色器、cue sheet、UI 库 |
-| `apk settings\|hca-key` | `base.apk` 中的画面设置与 CRI HCA 密钥 |
-| `depot plan\|run\|verify\|gc` | `export assets` 将运行什么及原因、单独运行任务、检查和回收 depot |
-| `voices list\|search\|summary\|get` | masterdata 中的角色语音与剧情语音 |
-| `site build` | ournotes-player 静态站点：谱面、Live2D 模型与剧情，支持多个区服与语言 |
-| `music-data` | 全部歌曲与谱面的单个 JSON 文件，附组卡模型的谱面统计 |
+```sh
+npm install ournotes-player@0.2.0
+nnnotes site build --name stories -o out/site --story 10462 --fonts game --player node_modules/ournotes-player
+node node_modules/ournotes-player/scripts/validate-data.mjs out/site
+python -m http.server 8000 --directory out/site
+```
 
-[命令参考](https://metasekailab.github.io/nnnotes/cli/)列出了所有参数。
+打开 `http://localhost:8000/story/`。Live2D、MotionSync 和 Spine 功能需要嵌入页面提供对应的浏览器运行时，
+具体见[站点指南](https://metasekailab.github.io/nnnotes/site/)。
+用 `--pair MUSIC_ID:DIFFICULTY` 选择谱面，`--live2d KEY` 选择模型，`--story-languages ja,en` 选择剧情语言。
+复用同一站点名会更新本次选中的内容，并保留其他内容。
 
-## 文档
+## 选择工作流
 
-- [快速上手](https://metasekailab.github.io/nnnotes/quickstart/)：从空配置到导出一集剧情。
-- 操作指南：[配置](https://metasekailab.github.io/nnnotes/configuration/)、
-  [导出剧情与谱面](https://metasekailab.github.io/nnnotes/export/)、
-  [构建 ournotes-player 站点](https://metasekailab.github.io/nnnotes/site/)、
-  [导出全部资源](https://metasekailab.github.io/nnnotes/assets/)、
-  [日服](https://metasekailab.github.io/nnnotes/jp/)、
-  [music-data](https://metasekailab.github.io/nnnotes/music-data/)。
-- 参考：[命令](https://metasekailab.github.io/nnnotes/cli/)、
-  [命令输出](https://metasekailab.github.io/nnnotes/commands/)、
-  [JSON schema](https://metasekailab.github.io/nnnotes/schemas/)、
-  [Python API](https://metasekailab.github.io/nnnotes/api/)、
-  [契约](https://metasekailab.github.io/nnnotes/contracts/)、[stage](https://metasekailab.github.io/nnnotes/stages/)、
-  [视图](https://metasekailab.github.io/nnnotes/views/)。
-- 原理：[架构](https://metasekailab.github.io/nnnotes/architecture/)、
-  [确定性](https://metasekailab.github.io/nnnotes/determinism/)、
-  [验证](https://metasekailab.github.io/nnnotes/validation/)。
+| 任务 | 命令 | 指南 |
+|---|---|---|
+| 配置输入 | `config init`、`config check`、`servers` | [配置](https://metasekailab.github.io/nnnotes/configuration/) |
+| 查看与保存目录 | `catalog keys`、`browse`、`versions`、`import`、`fetch`、`diff` | [命令](https://metasekailab.github.io/nnnotes/cli/) |
+| 复制源资源包 | `bundle pull` | [资源导出](https://metasekailab.github.io/nnnotes/assets/) |
+| 导出主题 | `export episode`、`story`、`live`、`live2d`、`spot`、`room`、`shader`、`audio`、`ui` | [导出](https://metasekailab.github.io/nnnotes/export/) |
+| 转换指定资源 | `export assets`、`depot plan`、`depot run` | [资源导出](https://metasekailab.github.io/nnnotes/assets/) |
+| 检查与保留存储结果 | `depot verify`、`depot gc` | [Depot](https://metasekailab.github.io/nnnotes/depot/) |
+| 导出歌曲与谱面统计 | `music-data` | [音乐数据](https://metasekailab.github.io/nnnotes/music-data/) |
+| 查找角色语音 | `voices list`、`search`、`summary`、`get` | [命令](https://metasekailab.github.io/nnnotes/cli/) |
 
-在同一套环境下导出是确定的：同样的输入，在 nnnotes、Python 依赖库（UnityPy、Pillow、numpy 等）和外部工具版本都相同时，
-导出文件逐字节相同；JSON 一律 UTF-8、LF 换行，非有限数写作 `1e999`。版本不同时，相同内容可能写成不同的字节（不同版本的
-Pillow 写出的 PNG 像素相同，字节可能不同）。
+命令默认打印摘要；`--json` 输出结构化报告。退出状态和各项参数见命令参考。
 
-## 版本记录与版本号
+## 数据与兼容性
 
-每个版本的改动见 [CHANGELOG.md](https://github.com/MetaSekaiLab/nnnotes/blob/main/CHANGELOG.md)。版本号遵循
-[语义化版本](https://semver.org/lang/zh-CN/)，约束的接口是命令行、配置键、JSON schema 和文档中的 Python API。
+产物通过版本化清单和共享对象记录描述。消费这些数据时，请查阅
+[格式](https://metasekailab.github.io/nnnotes/formats/)、[产物](https://metasekailab.github.io/nnnotes/products/)和
+[Schema](https://metasekailab.github.io/nnnotes/schemas/)参考。
+任务标识包括输入内容、选项和转换实现，其中也包括原生编码器。
+[确定性说明](https://metasekailab.github.io/nnnotes/determinism/)解释不同安装环境中的可复现性。
 
-## 参与贡献
+版本覆盖 CLI、配置、Schema 和文档中的 Python API。1.0 之前，次版本可以改变这些接口。
+改动见 [CHANGELOG.md](CHANGELOG.md)，实现分层见[架构](https://metasekailab.github.io/nnnotes/architecture/)。
 
-开发环境、检查与提交规范见
-[CONTRIBUTING.md](https://github.com/MetaSekaiLab/nnnotes/blob/main/CONTRIBUTING.md)。
+## 贡献与许可
 
-## License
-
-MIT，见 [LICENSE](https://github.com/MetaSekaiLab/nnnotes/blob/main/LICENSE)。
+[CONTRIBUTING.md](CONTRIBUTING.md) 说明开发和合成测试流程。nnnotes 采用 [MIT](LICENSE) 许可。
+这是非官方爱好者项目，与游戏开发或运营方无关。游戏资源、密钥和服务配置由各用户自行提供，并受其权利人的权利约束。

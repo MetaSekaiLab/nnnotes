@@ -1,57 +1,41 @@
 # nnnotes
 
-nnnotes is an offline data toolkit for the game files of BanG Dream! Our Notes. It reads Addressables catalogs,
-downloads and decrypts asset bundles, downloads and decodes master data, and exports stories, Live2D models, spots,
-shaders, CRI audio and live charts as structured JSON and common file formats. `nnnotes site build` writes the static
-site that [ournotes-player](https://github.com/empty-sekai/ournotes-player) plays, and `nnnotes music-data` one JSON
-file with every song and chart.
+Export your BanG Dream! Our Notes game files as structured products, media or a static player site.
+nnnotes reads catalogs, bundles, APK resources and master data, then stores reusable conversion results in a
+persistent depot. You supply the client files, keys and server configuration.
 
-This is an unofficial fan project, not affiliated with the game's developer or operator. nnnotes contains no game
-assets, keys or server addresses: you supply the game files, the keys and the server addresses in your own
-configuration, and the exports stay in the local directories you choose.
+## Start here
 
-## Where to start
+1. [Install and export a story](quickstart.md).
+2. [Build and serve a player site](site.md) with ournotes-player 0.2.x.
+3. [Share and retain depot results](depot.md), locally or through S3-compatible storage.
 
-<div class="grid cards" markdown>
+## Guides
 
-- **[Quick start](quickstart.md)**
+| Goal | Guide |
+|---|---|
+| Set input paths, regions and tools | [Configuration](configuration.md) |
+| Export a story, live, model or other subject | [Exports](export.md) |
+| Convert selected bundles and objects | [Asset export](assets.md) |
+| Use Japanese client files | [Japanese release](jp.md) |
+| Produce song and chart statistics | [Music data](music-data.md) |
+| Check your own outputs | [Validation](validation.md) |
 
-    From an empty config file to an exported story, step by step.
+## Reference
 
-- **How-to guides**
+[CLI](cli.md) · [Command reports](commands.md) · [Python API](api.md) · [Schemas](schemas.md) ·
+[Formats](formats.md) · [Products](products.md) · [Depot](depot.md) · [Contracts](contracts.md) ·
+[Stages](stages.md) · [Views](views.md) · [Replay data](replay.md) · [UI library](ui.md)
 
-    [Configure nnnotes](configuration.md), [export stories and lives](export.md),
-    [build an ournotes-player site](site.md), [export every asset](assets.md),
-    [the Japanese release](jp.md), [music data](music-data.md).
+[Architecture](architecture.md) explains the conversion and assembly layers.
+[Determinism](determinism.md) explains task identities and output reproducibility.
 
-- **Reference**
+## Requirements and versions
 
-    [Commands](cli.md), [command outputs](commands.md), [JSON schemas](schemas.md), [Python API](api.md),
-    [contracts](contracts.md), [stages](stages.md), [views](views.md), [replay data](replay.md),
-    [UI library](ui.md).
+nnnotes 0.3.0 requires Python 3.11+. Optional extras provide fonts (`fonts`), S3 clients (`remote`) and
+ournotes-sim 0.0.12 chart statistics (`deck`). Site builds require Node.js 22+ and a built ournotes-player 0.2.x
+package. Audio and video conversion require vgmstream and FFmpeg.
 
-- **Explanation**
-
-    [Architecture](architecture.md), [determinism](determinism.md), [validation](validation.md).
-
-</div>
-
-## Install
-
-```sh
-pip install nnnotes                  # Python 3.11+
-pip install 'nnnotes[fonts]'         # the game's fonts (--fonts game) and the story text of site build
-pip install 'nnnotes[deck]'          # the deck model's chart statistics of music-data
-```
-
-Besides the package, nnnotes reads the game's `base.apk` and, for the commands that need it, decoded master data;
-audio and video need [vgmstream](https://vgmstream.org/) and [FFmpeg](https://ffmpeg.org/), and `site build` also
-Node.js 22+ and a built ournotes-player. [Configuration](configuration.md#what-each-command-needs) lists what each
-command needs.
-
-## Versions
-
-Versions follow [Semantic Versioning](https://semver.org/). The interface a version describes is the command line
-(commands, options, exit statuses and the `--json` reports), the configuration keys, the JSON schemas shipped in
-`nnnotes.schemas` and the documented Python API. Before 1.0 a minor version can change any of them; the
-[changelog](https://github.com/MetaSekaiLab/nnnotes/blob/main/CHANGELOG.md) names every change.
+Versions cover the CLI, configuration, schemas and documented Python API. Before 1.0, minor versions may change
+these contracts; see the [changelog](https://github.com/MetaSekaiLab/nnnotes/blob/main/CHANGELOG.md).
+This unofficial fan project is MIT-licensed. Game resources remain subject to their owners' rights.
