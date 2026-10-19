@@ -1,6 +1,6 @@
 # nnnotes
 
-[English](README.md) | [简体中文](README.zh-CN.md)
+[English](https://github.com/MetaSekaiLab/nnnotes/blob/main/README.md) | [简体中文](https://github.com/MetaSekaiLab/nnnotes/blob/main/README.zh-CN.md)
 
 nnnotes 将你自己的 BanG Dream! Our Notes 游戏文件导出为结构化数据、媒体文件和静态播放器站点。
 它读取 Addressables 目录、资源包、主数据和 APK 资源，导出剧情、Live2D、谱面、房间、UI、着色器与音频，
@@ -82,12 +82,14 @@ python -m http.server 8000 --directory out/site
 [格式](https://metasekailab.github.io/nnnotes/formats/)、[产物](https://metasekailab.github.io/nnnotes/products/)和
 [Schema](https://metasekailab.github.io/nnnotes/schemas/)参考。
 任务标识包括输入内容、选项和转换实现，其中也包括原生编码器。
+字节一致的输出需要相同输入及库和工具实现，其中包括 Pillow 及其原生压缩后端。
+JSON 使用 UTF-8 和 LF，无穷值写为 `1e999` 或 `-1e999`。
 [确定性说明](https://metasekailab.github.io/nnnotes/determinism/)解释不同安装环境中的可复现性。
 
 版本覆盖 CLI、配置、Schema 和文档中的 Python API。1.0 之前，次版本可以改变这些接口。
-改动见 [CHANGELOG.md](CHANGELOG.md)，实现分层见[架构](https://metasekailab.github.io/nnnotes/architecture/)。
+改动见 [CHANGELOG.md](https://github.com/MetaSekaiLab/nnnotes/blob/main/CHANGELOG.md)，实现分层见[架构](https://metasekailab.github.io/nnnotes/architecture/)。
 
 ## 贡献与许可
 
-[CONTRIBUTING.md](CONTRIBUTING.md) 说明开发和合成测试流程。nnnotes 采用 [MIT](LICENSE) 许可。
+[CONTRIBUTING.md](https://github.com/MetaSekaiLab/nnnotes/blob/main/CONTRIBUTING.md) 说明开发和合成测试流程。nnnotes 采用 [MIT](https://github.com/MetaSekaiLab/nnnotes/blob/main/LICENSE) 许可。
 这是非官方爱好者项目，与游戏开发或运营方无关。游戏资源、密钥和服务配置由各用户自行提供，并受其权利人的权利约束。
