@@ -207,6 +207,77 @@ def test_a_result_differing_from_the_remote_one_is_a_conflict(tmp_path):
         commit(Depot(tmp_path / "b", remote=remote), task, b"two")
 
 
+def test_s3_listing_follows_continuation_tokens():
+    pytest.importorskip("boto3")
+    from botocore.stub import Stubber
+
+    remote = open_remote("s3://bucket/depot", key_id="k", secret="s")
+    written = datetime(2026, 1, 2, tzinfo=UTC)
+    with Stubber(remote._s3) as stub:
+        stub.add_response(
+            "list_objects_v2",
+            {
+                "Contents": [{"Key": "depot/cas/a", "Size": 3, "LastModified": written}],
+                "IsTruncated": True,
+                "NextContinuationToken": "next",
+            },
+            {"Bucket": "bucket", "Prefix": "depot/cas/"},
+        )
+        stub.add_response(
+            "list_objects_v2",
+            {"Contents": [{"Key": "depot/cas/b", "Size": 5, "LastModified": written}], "IsTruncated": False},
+            {"Bucket": "bucket", "Prefix": "depot/cas/", "ContinuationToken": "next"},
+        )
+        assert list(remote.list("cas/")) == [("cas/a", 3, written.timestamp()), ("cas/b", 5, written.timestamp())]
+        stub.assert_no_pending_responses()
+
+
+def test_s3_deletion_batches_at_the_service_limit():
+    pytest.importorskip("boto3")
+    from botocore.stub import Stubber
+
+    remote = open_remote("s3://bucket/depot", key_id="k", secret="s")
+    keys = [f"cas/{i}" for i in range(1001)]
+    with Stubber(remote._s3) as stub:
+        for batch in (keys[:1000], keys[1000:]):
+            stub.add_response(
+                "delete_objects",
+                {},
+                {
+                    "Bucket": "bucket",
+                    "Delete": {
+                        "Objects": [{"Key": f"depot/{key}"} for key in batch],
+                        "Quiet": True,
+                    },
+                },
+            )
+        remote.delete(keys)
+        stub.assert_no_pending_responses()
+
+
+def test_s3_deletion_reports_per_object_errors_and_stops():
+    pytest.importorskip("boto3")
+    from botocore.stub import Stubber
+
+    remote = open_remote("s3://bucket/depot", key_id="k", secret="s")
+    keys = [f"cas/{i}" for i in range(1001)]
+    with Stubber(remote._s3) as stub:
+        stub.add_response(
+            "delete_objects",
+            {"Errors": [{"Key": "depot/cas/0", "Code": "AccessDenied", "Message": "Denied"}]},
+            {
+                "Bucket": "bucket",
+                "Delete": {
+                    "Objects": [{"Key": f"depot/{key}"} for key in keys[:1000]],
+                    "Quiet": True,
+                },
+            },
+        )
+        with pytest.raises(RuntimeError, match="S3 deletion failed for 1 object\\(s\\): AccessDenied"):
+            remote.delete(keys)
+        stub.assert_no_pending_responses()
+
+
 def test_gc_of_the_remote_keeps_what_its_kept_runs_reach(tmp_path):
     remote = open_remote((tmp_path / "remote").as_uri())
     d = Depot(tmp_path / "a", remote=remote)

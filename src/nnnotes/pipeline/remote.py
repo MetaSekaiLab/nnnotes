@@ -203,7 +203,11 @@ class S3Remote(Remote):
         for i in range(0, len(keys), 1000):
             batch = [{"Key": self.prefix + k} for k in keys[i : i + 1000]]
             if batch:
-                self._s3.delete_objects(Bucket=self.bucket, Delete={"Objects": batch, "Quiet": True})
+                response = self._s3.delete_objects(Bucket=self.bucket, Delete={"Objects": batch, "Quiet": True})
+                errors = response.get("Errors", [])
+                if errors:
+                    codes = ", ".join(sorted({error.get("Code", "Unknown") for error in errors}))
+                    raise RuntimeError(f"S3 deletion failed for {len(errors)} object(s): {codes}")
 
     def list(self, prefix: str) -> Iterator[tuple[str, int, float]]:
         pages = self._s3.get_paginator("list_objects_v2").paginate(Bucket=self.bucket, Prefix=self.prefix + prefix)

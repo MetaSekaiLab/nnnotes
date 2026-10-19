@@ -10,6 +10,8 @@ Standalone episode, shader and audio exports also reuse depot tasks. Command rec
 
 PNG and font task keys include the native compression library identity, so stored results are shared only between matching encoder implementations.
 
+S3 collection follows paginated listings, batches deletion requests and reports per-object deletion failures.
+
 Configuration and command interface:
 - Set [paths] depot and, when needed, [depot] remote.
 - Use depot plan, depot run, depot verify and depot gc to manage stored work.

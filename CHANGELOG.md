@@ -4,7 +4,7 @@ All notable changes to this project are listed here. Versions follow [Semantic V
 over the command line (commands, options, exit statuses and `--json` reports), the configuration keys, the JSON
 schemas in `nnnotes.schemas` and the documented Python API. Before 1.0 a minor version can change any of them.
 
-## [0.3.0](https://github.com/MetaSekaiLab/nnnotes/compare/v0.2.5...v0.3.0) - 2026-10-18
+## [0.3.0](https://github.com/MetaSekaiLab/nnnotes/compare/v0.2.5...v0.3.0) - 2026-10-19
 
 ### Compatibility
 
@@ -15,6 +15,7 @@ schemas in `nnnotes.schemas` and the documented Python API. Before 1.0 a minor v
 
 ### Features
 
+- Report per-object S3 deletion failures during depot collection.
 - Keep PNG and font task results distinct across native compression library implementations.
 - Export episode documents, shader files and cue-sheet audio through depot tasks and retained file layouts.
 - Share cached results when adding remote storage, verify remote-only content, and retain recent results with their dependencies during collection.
