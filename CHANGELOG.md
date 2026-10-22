@@ -4,6 +4,12 @@ All notable changes to this project are listed here. Versions follow [Semantic V
 over the command line (commands, options, exit statuses and `--json` reports), the configuration keys, the JSON
 schemas in `nnnotes.schemas` and the documented Python API. Before 1.0 a minor version can change any of them.
 
+## [0.3.1](https://github.com/MetaSekaiLab/nnnotes/compare/v0.3.0...v0.3.1) - 2026-10-22
+
+### Features
+
+- **packing:** Build song packages and HCA cue sheets ([dc198b0](https://github.com/MetaSekaiLab/nnnotes/commit/dc198b0c977b2b3ae1bffaca0e3ce3c2653133c6))
+
 ## [0.3.0](https://github.com/MetaSekaiLab/nnnotes/compare/v0.2.5...v0.3.0) - 2026-10-19
 
 ### Compatibility
