@@ -35,7 +35,7 @@ from ..core import jsonio
 from ..core.cache import write_atomic
 from ..core.jsonio import is_array, is_object
 
-__all__ = ["DownloadError", "MasterKey", "decode", "decode_files", "download", "has_row", "table"]
+__all__ = ["DownloadError", "MasterKey", "decode", "decode_files", "download", "encode", "has_row", "table"]
 
 PREFIX = 64  # bytes before the ciphertext
 BLOCK = 32  # 256-bit block
@@ -97,9 +97,10 @@ def _sbox() -> list[int]:
 
 
 SBOX = _sbox()
+SBOX_NP = np.array(SBOX, dtype=np.uint8)
 INV_SBOX = np.zeros(256, dtype=np.uint8)
 INV_SBOX[np.array(SBOX)] = np.arange(256, dtype=np.uint8)
-MUL = {k: np.array([_gmul(i, k) for i in range(256)], dtype=np.uint8) for k in (9, 11, 13, 14)}
+MUL = {k: np.array([_gmul(i, k) for i in range(256)], dtype=np.uint8) for k in (2, 3, 9, 11, 13, 14)}
 INV_SHIFT = (0, 1, 3, 4)  # InvShiftRows: row r moves right by INV_SHIFT[r] columns (Nb = 8)
 
 
@@ -165,6 +166,61 @@ def decode(raw: bytes, key: MasterKey, rk: np.ndarray | None = None) -> bytes:
     if not 1 <= pad <= BLOCK or out[-pad:] != bytes([pad]) * pad:
         raise ValueError("bad PKCS7 padding (wrong key or IV, or not a master data file)")
     return gzip.decompress(out[:-pad])
+
+
+SHIFT = (0, 1, 3, 4)  # ShiftRows: row r moves left by SHIFT[r] columns (Nb = 8)
+
+
+def encrypt_blocks(pt: np.ndarray, rk: np.ndarray) -> np.ndarray:
+    """(n, 32) plaintext blocks -> (n, 32) block encryptions (no CBC chaining)."""
+    s = pt.reshape(-1, NB, 4).transpose(0, 2, 1).copy()  # (n, 4, NB): s[r][c]
+    s ^= rk[0]
+    cols = np.arange(NB)
+    for rnd in range(1, NR + 1):
+        s = SBOX_NP[s]  # SubBytes
+        for r in range(4):  # ShiftRows
+            s[:, r, :] = s[:, r, (cols + SHIFT[r]) % NB]
+        if rnd != NR:  # MixColumns
+            a0, a1, a2, a3 = s[:, 0, :], s[:, 1, :], s[:, 2, :], s[:, 3, :]
+            s = np.stack(  # pyright: ignore[reportUnknownMemberType] (numpy stubs: partly untyped overloads)
+                [
+                    MUL[2][a0] ^ MUL[3][a1] ^ a2 ^ a3,
+                    a0 ^ MUL[2][a1] ^ MUL[3][a2] ^ a3,
+                    a0 ^ a1 ^ MUL[2][a2] ^ MUL[3][a3],
+                    MUL[3][a0] ^ a1 ^ a2 ^ MUL[2][a3],
+                ],
+                axis=1,
+            )
+        s ^= rk[rnd]  # AddRoundKey
+    return s.transpose(0, 2, 1).reshape(-1, BLOCK)
+
+
+def encrypt_cbc(data: bytes, key: bytes, iv: bytes, rk: np.ndarray | None = None) -> bytes:
+    """Rijndael-256 CBC encryption of `data`, PKCS7 padding added."""
+    if len(iv) != BLOCK:
+        raise ValueError("iv must be 32 bytes")
+    pad = BLOCK - len(data) % BLOCK
+    padded = data + bytes([pad]) * pad
+    pt = np.frombuffer(padded, dtype=np.uint8).reshape(-1, BLOCK)  # pyright: ignore[reportUnknownMemberType]
+    out = np.empty_like(pt)
+    prev = np.frombuffer(iv, dtype=np.uint8)  # pyright: ignore[reportUnknownMemberType]
+    rk = round_keys(key) if rk is None else rk
+    for i in range(len(pt)):  # CBC chains block by block; the cipher itself runs over all blocks at once
+        out[i : i + 1] = encrypt_blocks((pt[i : i + 1] ^ prev)[None, :], rk)
+        prev = out[i]
+    return out.tobytes()
+
+
+def encode(text: bytes, key: MasterKey, prefix: bytes = b"", rk: np.ndarray | None = None) -> bytes:
+    """JSON text (UTF-8 bytes) -> a master data file as stored: `prefix` + Rijndael-256-CBC(gzip(JSON)).
+
+    The prefix is the 64 bytes the game keeps in front of the ciphertext; its content is not part of the cipher (the
+    loader starts at `PREFIX`), so a file that replaces another one should carry that file's prefix unchanged. Left
+    out, it is 64 zero bytes.
+    """
+    if prefix and len(prefix) != PREFIX:
+        raise ValueError(f"prefix must be {PREFIX} bytes")
+    return (prefix or bytes(PREFIX)) + encrypt_cbc(gzip.compress(text, mtime=0), key.key, key.iv, rk)
 
 
 def table_json(text: bytes) -> str:

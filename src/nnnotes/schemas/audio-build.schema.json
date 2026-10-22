@@ -1,0 +1,52 @@
+{
+  "title": "nnnotes.audio-build/1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:nnnotes:schema:audio-build",
+  "type": "object",
+  "required": [
+    "format",
+    "source",
+    "sourceSha256",
+    "options",
+    "tools",
+    "processed",
+    "hca",
+    "bank",
+    "validation",
+    "acbSha256"
+  ],
+  "properties": {
+    "format": {
+      "const": "nnnotes.audio-build/1"
+    },
+    "source": {
+      "type": "object"
+    },
+    "sourceSha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "options": {
+      "type": "object"
+    },
+    "tools": {
+      "type": "object"
+    },
+    "processed": {
+      "type": "object"
+    },
+    "hca": {
+      "type": "object"
+    },
+    "bank": {
+      "type": "object"
+    },
+    "validation": {
+      "type": "object"
+    },
+    "acbSha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

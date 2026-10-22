@@ -30,6 +30,16 @@ raises `GameApiError`. Other names are internal and can change in any version.
 
 ::: nnnotes.source.jp
 
+## Asset packing
+
+::: nnnotes.packing
+
+::: nnnotes.unity.pack
+
+::: nnnotes.unity.bundlefs
+
+::: nnnotes.source.catalogbuild
+
 ## Music data
 
 ::: nnnotes.musicdata

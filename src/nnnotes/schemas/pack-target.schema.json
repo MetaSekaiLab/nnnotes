@@ -1,0 +1,75 @@
+{
+  "title": "nnnotes.pack-target/1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:nnnotes:schema:pack-target",
+  "type": "object",
+  "properties": {
+    "format": {
+      "const": "nnnotes.pack-target/1"
+    },
+    "catalog": {
+      "type": "string",
+      "minLength": 1
+    },
+    "master": {
+      "type": "string",
+      "minLength": 1
+    },
+    "bundles": {
+      "type": "string",
+      "minLength": 1
+    },
+    "bundle_base_url": {
+      "type": "string",
+      "minLength": 1
+    },
+    "providers": {
+      "type": "object",
+      "additionalProperties": {
+        "enum": [
+          "plain",
+          "encrypted"
+        ]
+      }
+    },
+    "audio": {
+      "type": "object",
+      "properties": {
+        "cipher_type": {
+          "enum": [
+            0,
+            56
+          ]
+        },
+        "templates": {
+          "type": "object",
+          "properties": {
+            "full": {
+              "type": "string",
+              "minLength": 1
+            },
+            "preview": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "full",
+            "preview"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "cipher_type",
+        "templates"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "format",
+    "audio"
+  ],
+  "additionalProperties": false
+}

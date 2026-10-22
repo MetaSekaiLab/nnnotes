@@ -35,6 +35,8 @@ nav:
       - Export stories and lives: export.md
       - Build an ournotes-player site: site.md
       - Export every asset: assets.md
+      - Build asset bundles: packing.md
+      - Package a song: song-packing.md
       - Japanese release: jp.md
       - Music data: music-data.md
   - Reference:

@@ -106,6 +106,20 @@ Serves a local web page on `HOST:PORT` (default `127.0.0.1:8000`) that lists eve
 languages, and per catalog the asset paths as directories. A link under an asset path downloads the bundle holding
 it, decrypted; `bundles/<bundle key>` lists every bundle directly.
 
+## catalog rebuild
+
+```
+nnnotes catalog rebuild CATALOG -o OUT [--add FILE ...] [--drop KEY ...]
+                         [--bundle FILE ...] [--hash HEX]
+```
+
+Rebuilds an Addressables binary catalog, preserving headers, typed keys and location dependencies. `--add` accepts
+location objects or bundle manifests (`file`, `internal_id`, `bundle_name`, `assets`), computing content CRC, size
+and a deterministic cache hash for each plain UnityFS file. Asset locations depend on bundles by key. `--drop`
+removes locations and supports replacements under the same key. `--bundle` refreshes an existing bundle entry
+with its decompressed-content CRC, size and MD5 cache version; `--hash` overrides one bundle cache hash.
+See [packing.md](packing.md) for the input contract. Reports `{in, out, added, dropped, updated, addedBundles, bytes}`.
+
 ## bundle pull
 
 ```
@@ -162,6 +176,57 @@ against the manifest's SHA-256. Files already present with the right hash are ke
 `--fetch-workers` (default 16) downloads in parallel. The report is `{version, files, downloaded, kept, failed, out}`;
 the exit
 status is 1 when a file failed or, with `--latest`, the version could not be fetched.
+
+## pack master
+
+```
+nnnotes pack master INPUT [INPUT ...] -o OUT [--prefix-from BIN] [--manifest VERSION]
+```
+
+The inverse of `master decode`: each `.json` file, or the `*.json` files of a directory, is written as
+`OUT/<file stem>.bin` — gzip-compressed, then Rijndael-256 CBC with PKCS7 padding, behind a 64-byte prefix. The key
+and IV are `[master] key` and `[master] iv`, so a client configured with the same pair reads the result like any
+other master data file. `--prefix-from` copies the prefix of an existing master data file: the loader ignores it, so a
+file that replaces another should carry that file's prefix; without it the prefix is 64 zero bytes. `--manifest`
+also writes `OUT/MasterManifest.json` for that master data version — the file `master download` reads, listing each
+packed file's name, SHA-256 and size — which is what a CDN tree of our own needs. The report is
+`{out, packed, files, manifest}`; the exit status is 1 when a file could not be packed.
+
+## pack bundle
+
+```
+nnnotes pack bundle INPUT [INPUT ...] -o OUT [--suffix .bundle] [--name NAME]
+```
+
+The inverse of the decryption `bundle pull` applies: each UnityFS bundle is written as the CDN serves it — AES-128 in
+CTR mode over the first 16 KiB, the nonce being the first 8 bytes of SHA-256(`[bundle] nonce_seed` + the file name).
+`--name` is the file name the bundle is served under, which seeds the nonce; it applies to a single input (default:
+the input's own name). `--suffix` (default `.bundle`) is the suffix bundles have among the inputs of a directory. The
+report is `{out, packed, files}`; the exit status is 1 when a file is not a UnityFS bundle or could not be packed.
+
+## pack asset
+
+```
+nnnotes pack asset BUNDLE -o OUT --name NAME --data FILE [--new-name NAME]
+```
+
+Replaces a binary TextAsset while preserving its path ID and container path, then validates and saves the
+UnityFS bundle with its original flags. `--new-name` changes the object name. Reports
+`{in, out, asset, payloadBytes, bundleBytes, crc}`.
+
+## pack build
+
+```
+nnnotes pack build MANIFEST -o PLAIN.bundle [--encrypt ENCRYPTED.bundle] [--name NAME]
+                  [--catalog SOURCE --catalog-out CATALOG] [--catalog-add JSON]
+```
+
+Builds or edits a UnityFS bundle from a JSON manifest. New bundles use template schemas and flags with supplied
+TextAsset, PNG texture, PCM WAV audio, serialized or raw object inputs. Operations add, replace and rename objects;
+container paths, unique path IDs and preload references are managed by the builder. Optional outputs include an
+encrypted bundle, a rebuilt catalog and a reusable catalog-add manifest. All outputs are prepared before writing.
+See [packing.md](packing.md) for examples, schema selection, input limits and encryption. Reports
+`{out, bundle_name, bundle_provider, assets, bundleBytes, crc, hash, encrypted, catalog, catalog_add}`.
 
 ## export episode
 
@@ -542,3 +607,8 @@ unplayable, full, bgm, jackets, bytes, fileBytes, sha256}`. A missing or unreada
 column, a text id, a chart asset, a cue sheet or cue, a jacket), a chart the deck model cannot measure, or deck
 statistics that disagree with the chart facts stop the command with exit status 1 before the file is written. The
 format is described in [music-data.md](music-data.md).
+
+## Song and audio packages
+
+`pack plan`, `pack build`, `pack verify` and `pack audio` work with local song projects and audio.
+See [Package a song](song-packing.md) for input manifests, tool requirements, validation and output layouts.

@@ -17,6 +17,8 @@ to standard error. Exit status 2 is a usage or settings error.
 | `--master` `DIR` | decoded master data directory ([paths] master) |
 | `--apk` `FILE` | base.apk ([paths] apk) |
 | `--ffmpeg` `EXE` | ffmpeg executable ([paths] ffmpeg; else on PATH) |
+| `--ffprobe` `EXE` | ffprobe executable ([paths] ffprobe; else on PATH) |
+| `--vgaudio` `FILE` | VGAudioCli executable or .NET DLL ([paths] vgaudio; else on PATH) |
 | `--vgmstream` `EXE` | vgmstream-cli executable ([paths] vgmstream; else on PATH) |
 | `--node` `EXE` | Node.js executable ([paths] node; else on PATH) |
 | `--json` | print the command's report as JSON on standard output (default: a short summary) |
@@ -126,6 +128,19 @@ keys, bundles, raw files (and objects) that differ between two catalog versions 
 | `old` | label, version id or sha256 prefix |
 | `new` | label, version id or sha256 prefix |
 
+## nnnotes catalog rebuild
+
+write a catalog with added locations (`--add`), removed primary keys (`--drop`) and updated bundle request options (`--bundle`)
+
+| Argument | Description |
+| --- | --- |
+| `CATALOG` | the catalog to read (catalog_<version>_<language>.bin) |
+| `-o`, `--out` `OUT` | the catalog to write (required) |
+| `--add` `FILE` | JSON location entries or bundle descriptions with file, internal_id, bundle_name and assets; bundle descriptions generate crc, bundleSize and a cache hash from the bundle (repeatable) |
+| `--drop` `KEY` | drop every location of this addressable key (repeatable) |
+| `--bundle` `FILE` | write this bundle's decompressed content crc, stored bundleSize and deterministic cache hash (MD5 of the UnityFS bytes) into matching existing or added locations (repeatable) |
+| `--hash` `HASH` | override the generated cache hash for one --bundle with 32 hexadecimal digits |
+
 ## nnnotes bundle pull
 
 fetch the bundle closure of keys and copy the decrypted bundles to a directory (prints the bundle files)
@@ -161,6 +176,92 @@ a master data version from the region's CDN (SHA-256 checked)
 | `--fetch-workers` `N` | parallel downloads (default 16) |
 
 Exactly one of `--version`, `--latest`.
+
+## nnnotes pack plan
+
+check a song project and its local resource dependencies
+
+| Argument | Description |
+| --- | --- |
+| `file` | nnnotes.song-package/1 JSON project |
+
+## nnnotes pack verify
+
+verify a generated song package against its local baseline
+
+| Argument | Description |
+| --- | --- |
+| `directory` | directory containing package.json |
+| `--target` `TARGET` | nnnotes.pack-target/1 JSON target (required) |
+
+## nnnotes pack audio
+
+MP3/WAV/FLAC/AAC -> a validated single-cue HCA ACB
+
+| Argument | Description |
+| --- | --- |
+| `source` | local source audio file |
+| `-o`, `--out` `OUT` | output ACB file (required) |
+| `--target` `TARGET` | JSON target with local ACB templates and cipher settings (required) |
+| `--template` `TEMPLATE` | target ACB profile (default full) (one of `full`, `preview`) |
+| `--cue-name` `CUE_NAME` | name of the output cue and sheet (required) |
+| `--report` `REPORT` | validation JSON path (default <output>.json) |
+| `--sample-rate` `SAMPLE_RATE` | output sample rate (default preserve input) (one of `44100`, `48000`) |
+| `--channels` `CHANNELS` | output channels (default preserve input) (one of `1`, `2`) |
+| `--stream` `STREAM` | source audio stream index when the file contains several tracks |
+| `--gain-db` `GAIN_DB` | explicit PCM gain in decibels (default 0) |
+| `--start-ms` `START_MS` | crop start on the decoded timeline (default 0) |
+| `--duration-ms` `DURATION_MS` | crop duration; omitted keeps the remainder |
+| `--fade-in-ms` `FADE_IN_MS` | linear fade-in duration (default 0) |
+| `--fade-out-ms` `FADE_OUT_MS` | linear fade-out duration (default 0) |
+| `--quality` `QUALITY` | HCA encoder quality preset (default high) (one of `highest`, `high`, `middle`, `low`, `lowest`) |
+
+## nnnotes pack master
+
+master data tables (.json) -> <Table>.bin (Rijndael-256-CBC over gzip JSON)
+
+| Argument | Description |
+| --- | --- |
+| `inputs` ... | directories (their *.json files) or files |
+| `-o`, `--out` `OUT` | output directory (required) |
+| `--prefix-from` `BIN` | copy the 64-byte prefix of this master data file (the loader ignores it; a replacement should keep it) |
+| `--manifest` `VERSION` | also write MasterManifest.json (the file `master download` reads) for this master data version |
+
+## nnnotes pack bundle
+
+UnityFS bundles -> the form the CDN serves (AES-128-CTR, first 16 KiB)
+
+| Argument | Description |
+| --- | --- |
+| `inputs` ... | directories (their bundles) or files |
+| `-o`, `--out` `OUT` | output directory (required) |
+| `--suffix` `SUFFIX` | the file name suffix bundles have among the inputs (default .bundle) |
+| `--name` `NAME` | the file name the bundle is served under (it seeds the nonce; default: the input's name) |
+
+## nnnotes pack asset
+
+replace a binary TextAsset in a bundle; --new-name changes its object name
+
+| Argument | Description |
+| --- | --- |
+| `bundle` | the bundle to copy |
+| `-o`, `--out` `OUT` | output bundle (required) |
+| `--name` `NAME` | the TextAsset's name inside the bundle (required) |
+| `--data` `DATA` | the file whose bytes become the asset's payload (required) |
+| `--new-name` `NEW_NAME` | also rename the object; its container path is preserved |
+
+## nnnotes pack build
+
+build a song package or a UnityFS bundle from a JSON manifest
+
+| Argument | Description |
+| --- | --- |
+| `file` | song project or asset manifest with template, mode and asset operations |
+| `-o`, `--out` `OUT` | new song package directory, or output UnityFS bundle (required) |
+| `--encrypt` `FILE` | also write the encrypted bundle to this file |
+| `--name` `NAME` | served file name used for encryption and catalog validation |
+| `--catalog-add` `JSON` | also write a manifest accepted by catalog rebuild --add |
+| `--catalog-out` `FILE` | rebuild the --catalog source with the bundle's locations |
 
 ## nnnotes export assets
 

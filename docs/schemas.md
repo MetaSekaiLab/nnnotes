@@ -16,6 +16,7 @@ schemas.load("plan")  # the schema as a dict
 |---|---|---|
 | `addresses` | `nnnotes.addresses/3` | the address table of a catalog version and the censuses of its bundles |
 | `artifact` | `nnnotes.artifact/1` | the content, provenance and semantics of one output file |
+| `audio-build` | `nnnotes.audio-build/1` | audio conversion report |
 | `catalog-diff` | `nnnotes.catalog-diff/1` | the difference between two catalog versions (`catalog diff`) |
 | `catalog-index` | `nnnotes.catalog-index/1` | the index of a catalog pair: remote and APK catalogs, every location in catalog order |
 | `catalogs` | `nnnotes.catalogs/1` | the catalog versions of a depot (`catalog versions`) |
@@ -38,6 +39,9 @@ schemas.load("plan")  # the schema as a dict
 | `model-json` | `3` | Live2D model objects and animation bindings |
 | `music-data` | `nnnotes.music-data/2` | every song and chart of one master data version ([music data](music-data.md)) |
 | `objects` | `nnnotes.objects/1` | the objects a product reaches: their class, item status and files ([products](products.md)) |
+| `pack-target` | `nnnotes.pack-target/1` | local packing target input |
+| `package-plan` | `nnnotes.package-plan/1` | song package plan |
+| `package-validation` | `nnnotes.package-validation/1` | automatic package verification |
 | `plan` | `nnnotes.plan/1` | what a run would do and why (`depot plan`) |
 | `prefab` | product document | prefab nodes, transforms and components |
 | `product` | `nnnotes.product/1` | a product's manifest: its files and the files of the objects it uses, as content-addressed assets ([products](products.md)) |
@@ -46,6 +50,8 @@ schemas.load("plan")  # the schema as a dict
 | `run` | `nnnotes.run/1` | a run manifest: context, selection, tasks with keys and statuses, layouts |
 | `scripts` | `nnnotes.scripts/1` | every MonoScript of the censuses, by object id |
 | `site` | `nnnotes.site/1` | a named site's complete region-topic catalog and immutable product references |
+| `song-build` | `nnnotes.song-build/1` | incremental song package manifest |
+| `song-package` | `nnnotes.song-package/1` | song project input |
 | `spot` | product document | spot settings, characters and Spine data |
 | `story` | `1` | story entry and shared parts |
 | `story-asset` | `1` | story media prefab objects |

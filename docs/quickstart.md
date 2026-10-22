@@ -6,7 +6,7 @@ files, keys and server addresses; [configuration](configuration.md#where-the-val
 ## 1. Install the tools
 
 ```sh
-pip install 'nnnotes[fonts]==0.3.0'
+pip install 'nnnotes[fonts]==0.3.1'
 ```
 
 Use Python 3.11+. Install [vgmstream](https://vgmstream.org/) (`vgmstream-cli`) and

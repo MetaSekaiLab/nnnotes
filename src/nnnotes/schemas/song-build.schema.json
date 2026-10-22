@@ -1,0 +1,60 @@
+{
+  "title": "nnnotes.song-build/1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:nnnotes:schema:song-build",
+  "type": "object",
+  "required": [
+    "format",
+    "song",
+    "version",
+    "baseline",
+    "bundles",
+    "files"
+  ],
+  "properties": {
+    "format": {
+      "const": "nnnotes.song-build/1"
+    },
+    "song": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "version": {
+      "type": "string"
+    },
+    "baseline": {
+      "type": "object"
+    },
+    "bundles": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "path",
+          "size",
+          "sha256"
+        ],
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  }
+}

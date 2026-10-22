@@ -357,3 +357,14 @@ The fixed product documents have the following schemas, also available through `
 - [story-video](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/schemas/story-video.schema.json)
 - [story-sound](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/schemas/story-sound.schema.json)
 - [crilips](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/schemas/crilips.schema.json)
+
+## Packing document schemas
+
+Song projects, local targets and package reports use versioned schemas:
+
+- [song-package](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/schemas/song-package.schema.json)
+- [pack-target](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/schemas/pack-target.schema.json)
+- [package-plan](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/schemas/package-plan.schema.json)
+- [audio-build](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/schemas/audio-build.schema.json)
+- [song-build](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/schemas/song-build.schema.json)
+- [package-validation](https://github.com/MetaSekaiLab/nnnotes/blob/main/src/nnnotes/schemas/package-validation.schema.json)
