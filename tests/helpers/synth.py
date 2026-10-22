@@ -7,9 +7,11 @@ from __future__ import annotations
 import gzip
 import hashlib
 import json
+import lzma
 import re
 import struct
 
+import lz4.block
 from Crypto.Cipher import AES
 
 # obviously fake keys
@@ -145,6 +147,72 @@ def encrypt_bundle(data: bytes, filename: str, key: bytes = BUNDLE_KEY, seed: by
     head = data[:16384]
     stream = b"".join(ecb.encrypt(nonce + i.to_bytes(8, "big")) for i in range((len(head) + 15) // 16))
     return bytes(a ^ b for a, b in zip(head, stream)) + data[16384:]
+
+
+# ---------------------------------------------------------------- UnityFS container
+def _lzma_raw(data: bytes) -> bytes:
+    """LZMA1 raw with the 5-byte properties Unity's container puts in front of the stream."""
+    dictionary = 1 << 20
+    compressor = lzma.LZMACompressor(
+        format=lzma.FORMAT_RAW, filters=[{"id": lzma.FILTER_LZMA1, "dict_size": dictionary}]
+    )
+    return struct.pack("<BI", 0x5D, dictionary) + compressor.compress(data) + compressor.flush()
+
+
+def _compress(data: bytes, compression: str) -> bytes:
+    if compression == "none":
+        return data
+    if compression == "lz4":
+        return lz4.block.compress(data, store_size=False)
+    if compression == "lzma":
+        return _lzma_raw(data)
+    raise ValueError(compression)
+
+
+def unityfs(
+    payloads: list[bytes],
+    *,
+    compression: str = "none",
+    table_at_end: bool = False,
+    padding: bool = False,
+    version: int = 8,
+    bits: int | None = None,
+    extra_flags: int = 0,
+) -> bytes:
+    """A UnityFS container holding `payloads` as its blocks, written independently of `nnnotes.unity.bundlefs`.
+
+    `compression` ("none", "lz4", "lzma") applies to the block table and to every block; `table_at_end` moves the
+    table behind the data and `padding` aligns the data to 16 bytes — the `0x80` and `0x200` header flags. `bits`
+    overrides the compression field of the flags with any value, and `extra_flags` sets further flag bits.
+    """
+    kind = {"none": 0, "lzma": 1, "lz4": 2}[compression]
+    flags = (kind if bits is None else bits) | (0x80 if table_at_end else 0) | (0x200 if padding else 0)
+    flags |= extra_flags
+    blocks = b"".join(_compress(payload, compression) for payload in payloads)
+    parts = [(payload, len(_compress(payload, compression)), kind) for payload in payloads]
+    table = b"\0" * 16 + struct.pack(">I", len(parts))
+    for payload, compressed, block_bits in parts:
+        table += struct.pack(">IIH", len(payload), compressed, block_bits)
+    table += struct.pack(">I", 0)  # no directory entries
+    packed = _compress(table, compression)
+
+    head = bytearray(b"UnityFS\0" + struct.pack(">I", version))
+    head += b"5.x.x\0" + b"6000.3.12f1\0"
+    size_at = len(head)
+    head += struct.pack(">qIII", 0, len(packed), len(table), flags)
+    if version >= 7:
+        head += bytes((-len(head)) % 16)
+
+    out = bytearray(head)
+    if table_at_end:
+        out += bytes((-len(out)) % 16) if padding else b""
+        out += blocks + packed
+    else:
+        out += packed
+        out += bytes((-len(out)) % 16) if padding else b""
+        out += blocks
+    struct.pack_into(">q", out, size_at, len(out))
+    return bytes(out)
 
 
 # ---------------------------------------------------------------- binary catalog (format version 2)

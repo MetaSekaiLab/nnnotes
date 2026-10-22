@@ -1,0 +1,40 @@
+{
+  "title": "nnnotes.package-validation/1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:nnnotes:schema:package-validation",
+  "type": "object",
+  "required": [
+    "format"
+  ],
+  "properties": {
+    "format": {
+      "const": "nnnotes.package-validation/1"
+    }
+  },
+  "anyOf": [
+    {
+      "required": [
+        "status"
+      ],
+      "properties": {
+        "status": {
+          "const": "passed"
+        }
+      }
+    },
+    {
+      "required": [
+        "structure",
+        "audio"
+      ],
+      "properties": {
+        "structure": {
+          "const": "passed"
+        },
+        "audio": {
+          "type": "object"
+        }
+      }
+    }
+  ]
+}

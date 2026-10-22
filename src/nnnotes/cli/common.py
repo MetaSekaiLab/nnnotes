@@ -26,6 +26,8 @@ FLAG_SETTINGS = {
     ("paths", "master"): ("master", "--master"),
     ("paths", "apk"): ("apk", "--apk"),
     ("paths", "ffmpeg"): ("ffmpeg", "--ffmpeg"),
+    ("paths", "ffprobe"): ("ffprobe", "--ffprobe"),
+    ("paths", "vgaudio"): ("vgaudio", "--vgaudio"),
     ("paths", "vgmstream"): ("vgmstream", "--vgmstream"),
     ("paths", "node"): ("node", "--node"),
     ("paths", "depot"): ("depot", "--depot"),
@@ -51,6 +53,8 @@ GLOBAL_OPTIONS = {
     "master": ("--master", "DIR", "decoded master data directory ([paths] master)"),
     "apk": ("--apk", "FILE", "base.apk ([paths] apk)"),
     "ffmpeg": ("--ffmpeg", "EXE", "ffmpeg executable ([paths] ffmpeg; else on PATH)"),
+    "ffprobe": ("--ffprobe", "EXE", "ffprobe executable ([paths] ffprobe; else on PATH)"),
+    "vgaudio": ("--vgaudio", "FILE", "VGAudioCli executable or .NET DLL ([paths] vgaudio; else on PATH)"),
     "vgmstream": ("--vgmstream", "EXE", "vgmstream-cli executable ([paths] vgmstream; else on PATH)"),
     "node": ("--node", "EXE", "Node.js executable ([paths] node; else on PATH)"),
 }

@@ -1,0 +1,633 @@
+{
+  "title": "nnnotes.song-package/1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:nnnotes:schema:song-package",
+  "type": "object",
+  "properties": {
+    "format": {
+      "const": "nnnotes.song-package/1"
+    },
+    "target": {
+      "type": "string",
+      "minLength": 1
+    },
+    "template_song": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 2147483647
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{1,128}$"
+    },
+    "song": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        },
+        "title": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "object",
+              "propertyNames": {
+                "enum": [
+                  "ja",
+                  "en",
+                  "zh-Hant",
+                  "zh-Hans",
+                  "ko"
+                ]
+              },
+              "additionalProperties": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "phonetic": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "object",
+              "propertyNames": {
+                "enum": [
+                  "ja",
+                  "en",
+                  "zh-Hant",
+                  "zh-Hans",
+                  "ko"
+                ]
+              },
+              "additionalProperties": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "ruby_title": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "object",
+              "propertyNames": {
+                "enum": [
+                  "ja",
+                  "en",
+                  "zh-Hant",
+                  "zh-Hans",
+                  "ko"
+                ]
+              },
+              "additionalProperties": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "performer": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "object",
+              "propertyNames": {
+                "enum": [
+                  "ja",
+                  "en",
+                  "zh-Hant",
+                  "zh-Hans",
+                  "ko"
+                ]
+              },
+              "additionalProperties": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "fallback_language": {
+          "enum": [
+            "ja",
+            "en",
+            "zh-Hant",
+            "zh-Hans",
+            "ko"
+          ]
+        },
+        "credits": {
+          "type": "object",
+          "properties": {
+            "lyricist": {
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "object",
+                  "propertyNames": {
+                    "enum": [
+                      "ja",
+                      "en",
+                      "zh-Hant",
+                      "zh-Hans",
+                      "ko"
+                    ]
+                  },
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                }
+              ]
+            },
+            "composer": {
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "object",
+                  "propertyNames": {
+                    "enum": [
+                      "ja",
+                      "en",
+                      "zh-Hant",
+                      "zh-Hans",
+                      "ko"
+                    ]
+                  },
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                }
+              ]
+            },
+            "arranger": {
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "object",
+                  "propertyNames": {
+                    "enum": [
+                      "ja",
+                      "en",
+                      "zh-Hant",
+                      "zh-Hans",
+                      "ko"
+                    ]
+                  },
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                }
+              ]
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        },
+        "bands": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "uniqueItems": true
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "propertyNames": {
+                  "enum": [
+                    "ja",
+                    "en",
+                    "zh-Hant",
+                    "zh-Hans",
+                    "ko"
+                  ]
+                },
+                "additionalProperties": {
+                  "type": "string"
+                }
+              }
+            ]
+          },
+          "maxItems": 100
+        },
+        "sort_order": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        },
+        "start_at": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fields": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "id",
+        "title"
+      ],
+      "additionalProperties": false
+    },
+    "assets": {
+      "type": "object",
+      "properties": {
+        "jacket": {
+          "type": "string",
+          "minLength": 1
+        },
+        "audio": {
+          "type": "object",
+          "properties": {
+            "full": {
+              "type": "object",
+              "properties": {
+                "file": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "sample_rate": {
+                  "enum": [
+                    44100,
+                    48000
+                  ]
+                },
+                "channels": {
+                  "enum": [
+                    1,
+                    2
+                  ]
+                },
+                "stream": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "gain_db": {
+                  "type": "number",
+                  "minimum": -120,
+                  "maximum": 24
+                },
+                "start_ms": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "duration_ms": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "fade_in_ms": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "fade_out_ms": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "quality": {
+                  "enum": [
+                    "highest",
+                    "high",
+                    "middle",
+                    "low",
+                    "lowest"
+                  ]
+                }
+              },
+              "required": [
+                "file"
+              ],
+              "additionalProperties": false
+            },
+            "preview": {
+              "type": "object",
+              "properties": {
+                "file": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "from": {
+                  "const": "full"
+                },
+                "sample_rate": {
+                  "enum": [
+                    44100,
+                    48000
+                  ]
+                },
+                "channels": {
+                  "enum": [
+                    1,
+                    2
+                  ]
+                },
+                "stream": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "gain_db": {
+                  "type": "number",
+                  "minimum": -120,
+                  "maximum": 24
+                },
+                "start_ms": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "duration_ms": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "fade_in_ms": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "fade_out_ms": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "quality": {
+                  "enum": [
+                    "highest",
+                    "high",
+                    "middle",
+                    "low",
+                    "lowest"
+                  ]
+                }
+              },
+              "required": [],
+              "additionalProperties": false,
+              "oneOf": [
+                {
+                  "required": [
+                    "file"
+                  ],
+                  "not": {
+                    "required": [
+                      "from"
+                    ]
+                  }
+                },
+                {
+                  "required": [
+                    "from",
+                    "start_ms",
+                    "duration_ms"
+                  ],
+                  "not": {
+                    "required": [
+                      "file"
+                    ]
+                  }
+                }
+              ]
+            },
+            "processing": {
+              "type": "object",
+              "properties": {
+                "sample_rate": {
+                  "enum": [
+                    44100,
+                    48000
+                  ]
+                },
+                "channels": {
+                  "enum": [
+                    1,
+                    2
+                  ]
+                },
+                "stream": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "gain_db": {
+                  "type": "number",
+                  "minimum": -120,
+                  "maximum": 24
+                },
+                "start_ms": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "duration_ms": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "fade_in_ms": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "fade_out_ms": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "quality": {
+                  "enum": [
+                    "highest",
+                    "high",
+                    "middle",
+                    "low",
+                    "lowest"
+                  ]
+                }
+              },
+              "required": [],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "full",
+            "preview"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "jacket",
+        "audio"
+      ],
+      "additionalProperties": false
+    },
+    "charts": {
+      "type": "object",
+      "properties": {
+        "easy": {
+          "type": "object",
+          "properties": {
+            "file": {
+              "type": "string",
+              "minLength": 1
+            },
+            "score_id": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            "level": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "display_level": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "input_format": {
+              "enum": [
+                "json",
+                "gzip-json"
+              ]
+            }
+          },
+          "required": [
+            "file",
+            "score_id",
+            "level"
+          ],
+          "additionalProperties": false
+        },
+        "normal": {
+          "type": "object",
+          "properties": {
+            "file": {
+              "type": "string",
+              "minLength": 1
+            },
+            "score_id": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            "level": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "display_level": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "input_format": {
+              "enum": [
+                "json",
+                "gzip-json"
+              ]
+            }
+          },
+          "required": [
+            "file",
+            "score_id",
+            "level"
+          ],
+          "additionalProperties": false
+        },
+        "hard": {
+          "type": "object",
+          "properties": {
+            "file": {
+              "type": "string",
+              "minLength": 1
+            },
+            "score_id": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            "level": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "display_level": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "input_format": {
+              "enum": [
+                "json",
+                "gzip-json"
+              ]
+            }
+          },
+          "required": [
+            "file",
+            "score_id",
+            "level"
+          ],
+          "additionalProperties": false
+        },
+        "expert": {
+          "type": "object",
+          "properties": {
+            "file": {
+              "type": "string",
+              "minLength": 1
+            },
+            "score_id": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            "level": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "display_level": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "input_format": {
+              "enum": [
+                "json",
+                "gzip-json"
+              ]
+            }
+          },
+          "required": [
+            "file",
+            "score_id",
+            "level"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "easy",
+        "normal",
+        "hard",
+        "expert"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "format",
+    "target",
+    "template_song",
+    "song",
+    "assets",
+    "charts"
+  ],
+  "additionalProperties": false
+}

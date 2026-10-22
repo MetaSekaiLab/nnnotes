@@ -9,7 +9,7 @@ subpackage of `nnnotes` and imports only the layers below it.
 | Layer | Subpackage | What it holds |
 |---|---|---|
 | Command line | `nnnotes.cli` | one module per command group; parses options, reads the configuration, prints summaries and `--json` reports |
-| Products | `nnnotes.site`, `nnnotes.musicdata` | the ournotes-player site (charts, models, stories, indexes); the music data file and its deck statistics |
+| Products | `nnnotes.site`, `nnnotes.musicdata`, `nnnotes.packing` | the ournotes-player site; music data and deck statistics; local song and audio packages |
 | Pipeline | `nnnotes.pipeline` | stages, task descriptions and results, the content-addressed depot, plans, layouts, the catalog versions, the views of the master data |
 | Content | `nnnotes.content` | the game's subjects as exports: ADV episodes and stories, lives and scores, spots, rooms, the UI library |
 | Unity objects | `nnnotes.unity` | bundle reading, object ids, atomic texture/sprite/mesh/glTF/PNG conversions, class converters (`nnnotes.unity.convert`), clip bindings (`nnnotes.unity.bindings`), script type trees (`nnnotes.unity.scripttypes`), player data, text styles, font protocols and texel packing |

@@ -20,13 +20,13 @@ or S3-compatible object storage.
 Python 3.11 or newer:
 
 ```sh
-pip install nnnotes==0.3.0
-pip install 'nnnotes[fonts]==0.3.0'    # story and UI fonts
-pip install 'nnnotes[remote]==0.3.0'   # S3-compatible depot storage
-pip install 'nnnotes[deck]==0.3.0'     # music-data chart statistics
+pip install nnnotes==0.3.1
+pip install 'nnnotes[fonts]==0.3.1'    # story and UI fonts
+pip install 'nnnotes[remote]==0.3.1'   # S3-compatible depot storage
+pip install 'nnnotes[deck]==0.3.1'     # music-data chart statistics
 ```
 
-Choose the extras your commands need; they can be combined as `nnnotes[fonts,remote,deck]==0.3.0`.
+Choose the extras your commands need; they can be combined as `nnnotes[fonts,remote,deck]==0.3.1`.
 Audio/video conversion uses [vgmstream](https://vgmstream.org/) and [FFmpeg](https://ffmpeg.org/).
 Site builds additionally require Node.js 22+ and a built **ournotes-player 0.2.x** package.
 The deck extra installs `ournotes-sim==0.0.12`.
@@ -70,6 +70,7 @@ story languages. Reusing a site name updates selected topics and retains the oth
 | Configure inputs | `config init`, `config check`, `servers` | [Configuration](https://metasekailab.github.io/nnnotes/configuration/) |
 | Inspect or retain catalogs | `catalog keys`, `browse`, `versions`, `import`, `fetch`, `diff` | [Commands](https://metasekailab.github.io/nnnotes/cli/) |
 | Copy source bundles | `bundle pull` | [Asset export](https://metasekailab.github.io/nnnotes/assets/) |
+| Package songs and audio | `pack plan`, `pack build`, `pack verify`, `pack audio` | [Song packing](https://metasekailab.github.io/nnnotes/song-packing/) |
 | Export a subject | `export episode`, `story`, `live`, `live2d`, `spot`, `room`, `shader`, `audio`, `ui` | [Exports](https://metasekailab.github.io/nnnotes/export/) |
 | Convert selected assets | `export assets`, `depot plan`, `depot run` | [Asset export](https://metasekailab.github.io/nnnotes/assets/) |
 | Check and retain stored work | `depot verify`, `depot gc` | [Depot](https://metasekailab.github.io/nnnotes/depot/) |

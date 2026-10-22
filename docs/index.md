@@ -32,7 +32,7 @@ persistent depot. You supply the client files, keys and server configuration.
 
 ## Requirements and versions
 
-nnnotes 0.3.0 requires Python 3.11+. Optional extras provide fonts (`fonts`), S3 clients (`remote`) and
+nnnotes 0.3.1 requires Python 3.11+. Optional extras provide fonts (`fonts`), S3 clients (`remote`) and
 ournotes-sim 0.0.12 chart statistics (`deck`). Site builds require Node.js 22+ and a built ournotes-player 0.2.x
 package. Audio and video conversion require vgmstream and FFmpeg.
 

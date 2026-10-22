@@ -70,6 +70,10 @@ master = ""
 apk = ""
 # ffmpeg executable; empty: ffmpeg on PATH (flag --ffmpeg)
 ffmpeg = ""
+# ffprobe executable; empty: ffprobe on PATH
+ffprobe = ""
+# VGAudioCli executable or .NET DLL for HCA encoding; empty: VGAudioCli on PATH
+vgaudio = ""
 # vgmstream-cli executable; empty: vgmstream-cli on PATH (flag --vgmstream)
 vgmstream = ""
 # Node.js executable for the web build's read-set script; empty: node on PATH (flag --node)

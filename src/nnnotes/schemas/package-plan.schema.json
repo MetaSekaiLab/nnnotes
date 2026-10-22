@@ -1,0 +1,56 @@
+{
+  "title": "nnnotes.package-plan/1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:nnnotes:schema:package-plan",
+  "type": "object",
+  "required": [
+    "format",
+    "diagnostics",
+    "charts",
+    "assets",
+    "master"
+  ],
+  "properties": {
+    "format": {
+      "const": "nnnotes.package-plan/1"
+    },
+    "diagnostics": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "code",
+          "path",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "charts": {
+      "type": "object"
+    },
+    "assets": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "master": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

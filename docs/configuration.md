@@ -105,6 +105,8 @@ exist when they are given.
 | `[paths] master` | `NNNOTES_PATHS_MASTER` | `--master` | decoded master data directory, one `<Table>.json` per table; the flag overrides `[servers.<region>] master` |
 | `[paths] apk` | `NNNOTES_PATHS_APK` | `--apk` | the game's `base.apk` (the story export reads the CRI Lips library from it, or from `split_config.arm64_v8a.apk` next to it; the asset export its built-in Unity files) |
 | `[paths] ffmpeg` | `NNNOTES_PATHS_FFMPEG` | `--ffmpeg` | `ffmpeg` executable; unset: `ffmpeg` on `PATH` |
+| `[paths] ffprobe` | `NNNOTES_PATHS_FFPROBE` | `--ffprobe` | `ffprobe` executable for audio input inspection |
+| `[paths] vgaudio` | `NNNOTES_PATHS_VGAUDIO` | `--vgaudio` | VGAudioCli executable or .NET DLL for HCA encoding; unset: `VGAudioCli` on `PATH` |
 | `[paths] vgmstream` | `NNNOTES_PATHS_VGMSTREAM` | `--vgmstream` | `vgmstream-cli` executable; unset: `vgmstream-cli` on `PATH` |
 | `[paths] node` | `NNNOTES_PATHS_NODE` | `--node` | Node.js executable; unset: `node` on `PATH` |
 | `[paths] player` | `NNNOTES_PATHS_PLAYER` | `--player` (of `site build`) | ournotes-player checkout (built) or installed package |

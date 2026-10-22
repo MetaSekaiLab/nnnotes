@@ -211,6 +211,139 @@ def cmd_diff(args, cfg):
         write(catalogdb.format_diff(d))
 
 
+def _catalog_additions(path: Path, catalog: bytes) -> tuple[list[dict], dict[str, dict], dict[int, dict]]:
+    """Read location entries or bundle descriptions; bundle file paths are relative to the JSON file."""
+    import hashlib
+    import json
+
+    from ..source import catalogbuild
+    from ..unity import bundlefs
+
+    doc = json.loads(path.read_text(encoding="utf-8"))
+    items = doc.get("bundles") if isinstance(doc, dict) and "bundles" in doc else doc
+    if not isinstance(items, list):
+        items = [items]
+    add: list[dict] = []
+    bundles: dict[str, dict] = {}
+    replacements: dict[int, dict] = {}
+    for item in items:
+        if not isinstance(item, dict):
+            raise ValueError("catalog additions must be JSON objects")
+        if "file" not in item:
+            add.append(item)
+            continue
+        if not all(item.get(field) for field in ("file", "internal_id", "bundle_name")):
+            raise ValueError("bundle descriptions require file, internal_id and bundle_name")
+        bundle = Path(item["file"])
+        if not bundle.is_absolute():
+            bundle = path.parent / bundle
+        packed = bundle.read_bytes()
+        fields = {
+            "crc": bundlefs.content_crc(packed),
+            "bundleSize": len(packed),
+            "hash": item.get("hash") or hashlib.md5(packed).hexdigest(),
+            "bundleName": item["bundle_name"],
+        }
+        options: dict = dict(
+            hash=fields["hash"],
+            crc=fields["crc"],
+            bundle_size=fields["bundleSize"],
+            primary_key=item.get("primary_key"),
+            request_options=item.get("request_options"),
+            dependency_keys=item.get("dependency_keys"),
+            provider=item.get("bundle_provider"),
+            template=item.get("catalog_template"),
+        )
+        if item.get("mode") == "edit":
+            entries, changed = catalogbuild.edit_entries(
+                catalog,
+                item["internal_id"],
+                item["bundle_name"],
+                item.get("assets") or [],
+                item.get("catalog_edits") or [],
+                **options,
+            )
+            add.extend(entries)
+            for offset, changes in changed.items():
+                replacements[offset] = {**replacements.get(offset, {}), **changes}
+        else:
+            options["dependency_keys"] = options["dependency_keys"] or []
+            add.extend(
+                catalogbuild.bundle_entries(
+                    item["internal_id"],
+                    item["bundle_name"],
+                    item.get("assets") or [],
+                    catalog=catalog,
+                    **options,
+                )
+            )
+        bundles[item["internal_id"]] = fields
+    return add, bundles, replacements
+
+
+def cmd_rebuild(args, cfg):
+    """Write a catalog with added locations, removed primary keys and updated bundle request options."""
+    import hashlib
+
+    from ..source import addressables, catalogbuild
+    from ..unity import bundlefs
+
+    try:
+        data = Path(args.source).read_bytes()
+        add: list[dict] = []
+        added_bundles: dict[str, dict] = {}
+        replacements: dict[int, dict] = {}
+        for path in args.add or []:
+            entries, bundles, changed = _catalog_additions(Path(path), data)
+            add.extend(entries)
+            added_bundles.update(bundles)
+            for offset, changes in changed.items():
+                replacements[offset] = {**replacements.get(offset, {}), **changes}
+    except (OSError, ValueError, TypeError) as e:
+        usage(args, str(e))
+    update: dict[str, dict] = {}
+    for path in args.bundle or []:
+        try:
+            packed = Path(path).read_bytes()
+            crc = bundlefs.content_crc(packed)
+        except (OSError, ValueError) as e:
+            usage(args, f"{path}: {e}")
+        fields = {"crc": crc, "bundleSize": len(packed), "hash": args.hash or hashlib.md5(packed).hexdigest()}
+        update[Path(path).name] = fields
+    if args.hash and len(update) != 1:
+        usage(args, "--hash sets the cache hash of one bundle, so it needs exactly one --bundle")
+    try:
+        out = catalogbuild.rebuild(data, add=add, drop=set(args.drop or []), update=update, replace=replacements)
+    except (ValueError, TypeError) as e:
+        usage(args, str(e))
+    for name in update:
+        written = [
+            loc["extra_data"]
+            for loc in addressables.parse_locations(out)
+            if loc["internal_id"].rsplit("/", 1)[-1] == name and loc["extra_data"]
+        ]
+        if not written:
+            usage(args, f"no location of this catalog names the bundle {name}")
+    Path(args.out).parent.mkdir(parents=True, exist_ok=True)
+    Path(args.out).write_bytes(out)
+    report(
+        args,
+        {
+            "in": args.source,
+            "out": args.out,
+            "added": len(add),
+            "dropped": len(args.drop or []),
+            "updated": update,
+            "addedBundles": added_bundles,
+            "bytes": len(out),
+        },
+        lambda r: [
+            f"{r['out']}  ({r['bytes']} bytes, {r['added']} added, {r['dropped']} dropped keys, "
+            f"{len(r['updated'])} bundles updated)"
+        ],
+    )
+
+
 def register(sub) -> None:
     cs = group(sub, "catalog", "the region's catalog: its keys, a local browser, and the catalog versions of the depot")
     c = command(cs, "keys", cmd_keys, "the addressable keys of the catalog (the total on standard error)")
@@ -240,3 +373,31 @@ def register(sub) -> None:
     )
     c.add_argument("old", help="label, version id or sha256 prefix")
     c.add_argument("new", help="label, version id or sha256 prefix")
+    c = command(
+        cs,
+        "rebuild",
+        cmd_rebuild,
+        "write a catalog with added locations (`--add`), removed primary keys (`--drop`) and updated bundle "
+        "request options (`--bundle`)",
+    )
+    c.add_argument("source", metavar="CATALOG", help="the catalog to read (catalog_<version>_<language>.bin)")
+    c.add_argument("-o", "--out", required=True, help="the catalog to write")
+    c.add_argument(
+        "--add",
+        action="append",
+        metavar="FILE",
+        help="JSON location entries or bundle descriptions with file, internal_id, bundle_name and assets; "
+        "bundle descriptions generate crc, bundleSize and a cache hash from the bundle",
+    )
+    c.add_argument("--drop", action="append", metavar="KEY", help="drop every location of this addressable key")
+    c.add_argument(
+        "--bundle",
+        action="append",
+        metavar="FILE",
+        help="write this bundle's decompressed content crc, stored bundleSize and deterministic cache hash "
+        "(MD5 of the UnityFS bytes) into matching existing or added locations",
+    )
+    c.add_argument(
+        "--hash",
+        help="override the generated cache hash for one --bundle with 32 hexadecimal digits",
+    )

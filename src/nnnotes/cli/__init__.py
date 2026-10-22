@@ -8,9 +8,10 @@ errors go to standard error. Exit status 2 is a usage or settings error.
 
     nnnotes config init|set|unset|check|path
     nnnotes servers [--show-hosts]
-    nnnotes catalog keys|browse|versions|import|fetch|diff
+    nnnotes catalog keys|browse|versions|import|fetch|diff|rebuild
     nnnotes bundle pull KEY...
     nnnotes master version|download|decode
+    nnnotes pack plan|build|verify|audio|master|bundle|asset ...
     nnnotes export assets|episode|story|live|live2d|spot|room|shader|audio|ui ... -o OUT
     nnnotes apk settings -o FILE | hca-key [--write DIR]
     nnnotes depot plan|run|verify|gc
@@ -37,11 +38,11 @@ os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
 from .. import __version__
 from ..source.config import ConfigError
 from ..source.gameapi import GameApiError
-from . import apk, bundle, catalog, config, depot, export, master, musicdata, servers, site, voices
+from . import apk, bundle, catalog, config, depot, export, master, musicdata, pack, servers, site, voices
 from .common import GLOBALS, Formatter, fill_globals, load_config
 
-GROUPS = (config, servers, catalog, bundle, master, export, apk, depot, voices, site, musicdata)
-NO_DEPOT = {"config", "servers", "master", "apk"}  # the groups whose commands never read the depot
+GROUPS = (config, servers, catalog, bundle, master, pack, export, apk, depot, voices, site, musicdata)
+NO_DEPOT = {"config", "servers", "master", "pack", "apk"}  # the groups whose commands never read the depot
 
 
 def build_parser() -> argparse.ArgumentParser:

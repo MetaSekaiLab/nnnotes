@@ -18,13 +18,13 @@ nnnotes 将你自己的 BanG Dream! Our Notes 游戏文件导出为结构化数�
 需要 Python 3.11 或更新版本：
 
 ```sh
-pip install nnnotes==0.3.0
-pip install 'nnnotes[fonts]==0.3.0'    # 剧情与 UI 字体
-pip install 'nnnotes[remote]==0.3.0'   # 兼容 S3 的 depot 远端
-pip install 'nnnotes[deck]==0.3.0'     # music-data 谱面统计
+pip install nnnotes==0.3.1
+pip install 'nnnotes[fonts]==0.3.1'    # 剧情与 UI 字体
+pip install 'nnnotes[remote]==0.3.1'   # 兼容 S3 的 depot 远端
+pip install 'nnnotes[deck]==0.3.1'     # music-data 谱面统计
 ```
 
-按需选择附加依赖，也可以组合为 `nnnotes[fonts,remote,deck]==0.3.0`。
+按需选择附加依赖，也可以组合为 `nnnotes[fonts,remote,deck]==0.3.1`。
 音视频转换需要 [vgmstream](https://vgmstream.org/) 与 [FFmpeg](https://ffmpeg.org/)。
 站点构建另需 Node.js 22+ 和已构建的 **ournotes-player 0.2.x** 包。
 `deck` 附加依赖安装 `ournotes-sim==0.0.12`。
@@ -68,6 +68,7 @@ python -m http.server 8000 --directory out/site
 | 配置输入 | `config init`、`config check`、`servers` | [配置](https://metasekailab.github.io/nnnotes/configuration/) |
 | 查看与保存目录 | `catalog keys`、`browse`、`versions`、`import`、`fetch`、`diff` | [命令](https://metasekailab.github.io/nnnotes/cli/) |
 | 复制源资源包 | `bundle pull` | [资源导出](https://metasekailab.github.io/nnnotes/assets/) |
+| 打包歌曲与音频 | `pack plan`、`pack build`、`pack verify`、`pack audio` | [歌曲打包](https://metasekailab.github.io/nnnotes/song-packing/) |
 | 导出主题 | `export episode`、`story`、`live`、`live2d`、`spot`、`room`、`shader`、`audio`、`ui` | [导出](https://metasekailab.github.io/nnnotes/export/) |
 | 转换指定资源 | `export assets`、`depot plan`、`depot run` | [资源导出](https://metasekailab.github.io/nnnotes/assets/) |
 | 检查与保留存储结果 | `depot verify`、`depot gc` | [Depot](https://metasekailab.github.io/nnnotes/depot/) |

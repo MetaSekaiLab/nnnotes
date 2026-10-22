@@ -10,7 +10,8 @@ name), and `parse_header` / `parse_keys` the header and the key table.
 Asset bundles on the CDN and inside the APK are encrypted in their first 16 KiB with AES-128 in CTR mode: the nonce
 is the first 8 bytes of SHA-256(nonce seed + UTF-8 bundle file name), the counter block is nonce + 64-bit big-endian
 counter starting at 0. A file that already starts with the `UnityFS` signature is not encrypted. The key and the
-nonce seed come from the configuration (`[bundle] key`, `[bundle] nonce_seed`).
+nonce seed come from the configuration (`[bundle] key`, `[bundle] nonce_seed`). `pack` applies the same transform in
+the other direction, for a bundle of our own that has to look like the CDN's.
 """
 
 from __future__ import annotations
@@ -26,7 +27,7 @@ from urllib.parse import quote, unquote
 
 from Crypto.Cipher import AES
 
-__all__ = ["BundleKey", "decrypt", "parse", "parse_header", "parse_keys", "parse_locations"]
+__all__ = ["BundleKey", "decrypt", "pack", "parse", "parse_header", "parse_keys", "parse_locations"]
 
 # a location of a catalog: {offset, primary_key, internal_id, dependencies} (parse), with the fields parse_locations
 # decodes
@@ -68,13 +69,29 @@ class BundleKey:
             raise ValueError("bundle key must be 16 bytes")
 
 
+def _ctr(data: bytes, filename: str, key: BundleKey) -> bytes:
+    """AES-128-CTR over the first `ENCRYPTED_BYTES` of a bundle; the transform is its own inverse."""
+    nonce = hashlib.sha256(key.seed + filename.encode("utf-8")).digest()[:8]
+    aes = AES.new(key.key, AES.MODE_CTR, nonce=nonce, initial_value=0)  # pyright: ignore[reportUnknownMemberType] (pycryptodome stubs: untyped overloads)
+    return aes.decrypt(data[:ENCRYPTED_BYTES]) + data[ENCRYPTED_BYTES:]
+
+
 def decrypt(data: bytes, filename: str, key: BundleKey) -> bytes:
     """A bundle file as stored -> UnityFS bytes. `filename`: the bundle's bare file name (it seeds the nonce)."""
     if data.startswith(UNITYFS):
         return data
-    nonce = hashlib.sha256(key.seed + filename.encode("utf-8")).digest()[:8]
-    aes = AES.new(key.key, AES.MODE_CTR, nonce=nonce, initial_value=0)  # pyright: ignore[reportUnknownMemberType] (pycryptodome stubs: untyped overloads)
-    return aes.decrypt(data[:ENCRYPTED_BYTES]) + data[ENCRYPTED_BYTES:]
+    return _ctr(data, filename, key)
+
+
+def pack(plain: bytes, filename: str, key: BundleKey) -> bytes:
+    """UnityFS bytes -> a bundle file as stored: the inverse of `decrypt`.
+
+    `filename` must be the name the bundle is served under — it seeds the nonce, so a file packed as `a.bundle` and
+    served as `b.bundle` does not decrypt to the same bytes.
+    """
+    if not plain.startswith(UNITYFS):
+        raise ValueError("not a UnityFS bundle")
+    return _ctr(plain, filename, key)
 
 
 def relative_path(value: str) -> str:
@@ -353,6 +370,7 @@ def parse_locations(data: bytes) -> list[Location]:
                 "provider": buf.string(provider, "."),
                 "dependency_hash": dep_hash,
                 "resource_type": rtype[1] if rtype else None,
+                "resource_type_assembly": rtype[0] if rtype else None,
                 "extra_data": buf.extra(extra),
             }
         )
