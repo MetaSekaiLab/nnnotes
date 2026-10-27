@@ -1393,7 +1393,7 @@ def build(
             "master": {
                 "source": master_source,
                 "version": master_version,
-                "tables": {t: {"sha256": table_sha[t]} for t in read},
+                "tables": {t: {"sha256": table_sha[t]} for t in read if t in table_sha},
             },
             "exporter": exporter,
             "deck": deck.info() if deck is not None else None,

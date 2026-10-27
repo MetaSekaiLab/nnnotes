@@ -1534,3 +1534,23 @@ def test_aptitude_disabled(tmp_path):
     assert doc["deck"]["gekisouAptitude"] is None
     assert all(c["deck"]["gekisouAptitude"] is None for s in doc["songs"] for c in s["charts"])
     schema_validator().validate(doc)
+
+
+def test_master_data_without_the_arena_music_table(tmp_path):
+    d = master_dir(tmp_path)
+    (d / "MasterArenaMusic.bin").unlink()
+    manifest = json.loads((d / "MasterManifest.json").read_text(encoding="utf-8"))
+    manifest["files"] = [f for f in manifest["files"] if f["name"] != "MasterArenaMusic.bin"]
+    (d / "MasterManifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    musicdata.export(
+        tmp_path / "music.json",
+        deckdata.master_files(d),
+        KEY,
+        CHARTS.__getitem__,
+        bgm,
+        **PROV,
+        deck=musicdata.Deck(module=FakeDeck(), workers=3),
+    )
+    doc = json.loads((tmp_path / "music.json").read_bytes())
+    assert "MasterArenaMusic" not in doc["provenance"]["master"]["tables"]
+    assert "MasterBand" in doc["provenance"]["master"]["tables"]
