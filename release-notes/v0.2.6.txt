@@ -1,0 +1,7 @@
+nnnotes 0.2.6 reads game version 1.1.0.
+
+- **Master data.** The deck input reads `MasterArenaMusic` as an empty table when the master data manifest does not list it, as the master data of 1.1.0 does.
+- **Story export.** The `CameraManager` and `UIManager` prefabs are read from the boot scene of the player data when the catalog lists no key for them, with embedded typetrees of the script classes of their two hierarchies. A reference into a bundle file that no catalog bundle holds is exported as null with a warning.
+- **Deck model.** Unchanged: the pinned `ournotes-sim` release and the chart statistics keep their values.
+
+Validation: Python 3.11, 3.12, 3.13 and 3.14 CI with the deck model, strict golden records, the commit message check, and a story exported from the 1.1.0 APK and catalog.

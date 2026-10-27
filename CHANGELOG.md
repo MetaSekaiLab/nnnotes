@@ -2,6 +2,13 @@
 
 All notable changes to this project are listed here. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.2.6](https://github.com/MetaSekaiLab/nnnotes/compare/v0.2.5...v0.2.6) - 2026-10-28
+
+### Bug fixes
+
+- **music-data:** Accept master data without the arena music table ([d56ff0f](https://github.com/MetaSekaiLab/nnnotes/commit/d56ff0f2d5817bfe60d65aa33881149ba97954f7))
+- **story:** Read the app managers from the boot scene ([d7ee273](https://github.com/MetaSekaiLab/nnnotes/commit/d7ee273c8acecbba93963518308dae55f4bebdd2))
+
 ## [0.2.5](https://github.com/MetaSekaiLab/nnnotes/compare/v0.2.4...v0.2.5) - 2026-10-18
 
 ### Bug fixes
