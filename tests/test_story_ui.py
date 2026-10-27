@@ -127,6 +127,9 @@ def _ui_manager(data_go=3):
 
         def script_class(self, o):
             return o.cls
+
+        def typetree(self, o):
+            return o.read_typetree()
     return Ex()
 
 
