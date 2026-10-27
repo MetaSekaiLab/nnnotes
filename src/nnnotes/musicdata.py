@@ -1084,7 +1084,7 @@ def build(tables: dict[str, list[dict]], table_sha: dict[str, str], fetch: Calla
             "catalog": {"resourceVersion": catalog.get("resourceVersion"), "sha256": catalog.get("sha256"),
                         **({"resourceHash": catalog["resourceHash"]} if catalog.get("resourceHash") else {})},
             "master": {"source": master_source, "version": master_version,
-                       "tables": {t: {"sha256": table_sha[t]} for t in read}},
+                       "tables": {t: {"sha256": table_sha[t]} for t in read if t in table_sha}},
             "exporter": exporter,
             "deck": deck.info() if deck is not None else None,
         },
