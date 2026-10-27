@@ -443,6 +443,10 @@ def test_master_file_checks(tmp_path):
         "lists no MasterParameter, MasterEvent",
         src=deckdata.master_files(master_dir(tmp_path, skip={"MasterEvent", "MasterParameter"}, name="b")),
     )
+    d = master_dir(tmp_path, skip={"MasterArenaMusic"}, name="opt")
+    tables, shas = deckdata.read_master(deckdata.master_files(d), KEY)
+    assert tables["MasterArenaMusic"] == [] and "MasterArenaMusic" not in shas
+    assert deckdata.master_subset(tables)["MasterArenaMusic"] == {"columns": [], "rows": []}
     d = master_dir(tmp_path, name="c")
     (d / "MasterBand.bin").unlink()
     failing(tmp_path, "no file MasterBand.bin", src=deckdata.master_files(d))
