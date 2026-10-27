@@ -900,14 +900,14 @@ def ui_camera(ex: Exporter) -> dict:
     managers = [c for c in comps if c is not None and c.type.name == "MonoBehaviour" and ex.script_class(c) == "UIManager"]
     if len(managers) != 1:
         raise RuntimeError(f"{UI_MANAGER_KEY}: {len(managers)} UIManager on the prefab root")
-    ctrl = mono(managers[0], managers[0].read_typetree()["_cameraController"], "UICameraController",
+    ctrl = mono(managers[0], ex.typetree(managers[0])["_cameraController"], "UICameraController",
                 "UIManager._cameraController")
-    ctrl_tt = ctrl.read_typetree()
+    ctrl_tt = ex.typetree(ctrl)
     cam = ex.deref(ctrl, ctrl_tt["_uiCamera"]) if ctrl_tt["_uiCamera"] else None
     if cam is None or cam.type.name != "Camera":
         raise RuntimeError(f"{UI_MANAGER_KEY}: UICameraController._uiCamera is not a Camera")
     data = mono(ctrl, ctrl_tt["_uiCameraData"], "UniversalAdditionalCameraData", "UICameraController._uiCameraData")
-    cam_tt, data_tt = cam.read_typetree(), data.read_typetree()
+    cam_tt, data_tt = ex.typetree(cam), ex.typetree(data)
     go_pid = cam_tt["m_GameObject"]["m_PathID"]
     if data_tt["m_GameObject"]["m_PathID"] != go_pid:
         raise RuntimeError(f"{UI_MANAGER_KEY}: _uiCamera and _uiCameraData are on different GameObjects")

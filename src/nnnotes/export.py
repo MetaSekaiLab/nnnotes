@@ -26,6 +26,8 @@ import json
 import math
 import re
 import struct
+import types
+import warnings
 import zlib
 from pathlib import Path
 
@@ -359,7 +361,8 @@ class Exporter:
         self.clip_format = clip_format
         self.follow = tuple(follow)
         self.defer_writes = defer_writes
-        self.script_class = class_of or script_class
+        base_class = class_of or script_class
+        self.script_class = lambda o: self.player.script(o)[2] if self._in_boot(o) else base_class(o)
         self.font_stubs = font_stubs
         self._font_bundles: frozenset | None = None
         self._unwritten: dict[str, object] = {}    # defer_writes: file -> Texture2D
@@ -385,13 +388,56 @@ class Exporter:
         self._gos_at_cache: dict[tuple, list] = {}
         self._path_sources: list[tuple[str, dict]] = []
         self._crcs: dict[str, int] = {}
+        self.unresolved: dict[str, int] = {}        # bundle file name -> references exported as null
+        self._boot_env = None                      # the boot scene of the player data (builtin_root)
+        self._boot_graph: SceneGraph | None = None
+        self._boot_files: set[int] = set()
 
     # --- loading ---------------------------------------------------------
+    def builtin_root(self, key: str):
+        """The root GameObject of the player's boot scene (level0 of the APK's boot data) that stands for the
+        catalog key `key`, None when the catalog lists the key or there is none. Game versions that build the app
+        managers into the boot scene have no catalog key for them; the GameObject has the last name of the key."""
+        if self.player is None or self.cat.has(key):
+            return None
+        name = key.rsplit("/", 1)[-1]
+        env = self._player_scene()
+        graph = self._boot_graph
+        hits = [o for o in env.objects if o.type.name == "GameObject" and graph.go[o.path_id]["m_Name"] == name
+                and not graph.tf[graph.tf_of_go[o.path_id]]["m_Father"]["m_PathID"]]
+        return hits[0] if len(hits) == 1 else None
+
+    def _in_boot(self, o) -> bool:
+        """Is `o` an object of the boot scene taken from the player data (its scripts are stripped of typetrees)?"""
+        return self._boot_env is not None and o.type.name == "MonoBehaviour" and id(o.assets_file) in self._boot_files
+
+    def typetree(self, o) -> dict:
+        """The fields of an object: its own typetree, or for a MonoBehaviour of the boot scene (header included) the
+        player data's embedded typetree of its class."""
+        if not self._in_boot(o):
+            return o.read_typetree()
+        raw = o.get_raw_data()
+        game_object, enabled, script = struct.unpack_from("<iq", raw, 0), raw[12], struct.unpack_from("<iq", raw, 16)
+        pptr = lambda v: {"m_FileID": v[0], "m_PathID": v[1]}
+        return {"m_GameObject": pptr(game_object), "m_Enabled": enabled, "m_Script": pptr(script),
+                **self.player.mono(o)}
+
+    def _player_scene(self):
+        """The objects of the boot scene of the player data (one serialized file, so path ids are unique)."""
+        if self._boot_env is None:
+            objects = [o for o in self.player.env.objects if o.assets_file.name == "level0"]
+            self._boot_env = types.SimpleNamespace(objects=objects)
+            self._boot_files = {id(o.assets_file) for o in objects}
+            self._boot_graph = SceneGraph(self._boot_env)
+        return self._boot_env
+
     def load(self, key: str):
         """(env, graph) of a key's bundle closure, loaded once."""
         if key in self._loaded:
             return self._loaded[key]
-        if self.font_stubs is None:
+        if self.builtin_root(key) is not None:
+            env = self._player_scene()
+        elif self.font_stubs is None:
             env = load_closure(self.cat.fetch_key(key))
         else:
             env = load_closure(self.cat.fetch_key(key, self.font_bundles()))
@@ -442,9 +488,16 @@ class Exporter:
             return deref(owner, pptr)
         except FileNotFoundError:
             rec = self.font_stubs.objects.get(pptr["m_PathID"]) if self.font_stubs is not None else None
-            if rec is None:
+            if rec is not None:
+                return FontStub(rec, pptr["m_PathID"])
+            name = external_path(owner, pptr)
+            if not name.lower().rsplit("/", 1)[-1].startswith("cab-"):
                 raise
-            return FontStub(rec, pptr["m_PathID"])
+            # a bundle file no bundle of the catalog provides: the reference is exported as null
+            if name not in self.unresolved:
+                warnings.warn(f"{name}: no bundle of the catalog holds this file; references to it are null", stacklevel=2)
+            self.unresolved[name] = self.unresolved.get(name, 0) + 1
+            return None
 
     def graph(self, o) -> SceneGraph:
         return self._graph_of_file[id(o.assets_file)]
@@ -1358,7 +1411,7 @@ class Exporter:
         return {**ref, **self.value(o, {x: y for x, y in tt.items() if x not in HEADER})}
 
     def component(self, o) -> dict:
-        tt = o.read_typetree()
+        tt = self.typetree(o)
         self._register_names(o, tt)
         body = {k: v for k, v in tt.items() if k not in HEADER}
         out = {"type": o.type.name}
@@ -1418,11 +1471,17 @@ class Exporter:
     def key_object(self, key: str):
         """The object an addressable key names (its bundle's container asset)."""
         env, _ = self.load(key)
+        root = self.builtin_root(key)
+        if root is not None:
+            return root
         return self._container_asset(env, self.cat._entry(key)["internal_id"])
 
     def prefab(self, key: str, loaded=None) -> dict:
         """A prefab or scene as a node list; `loaded` = (env, graph) from load(key)."""
         env, graph = loaded or self.load(key)
+        root = self.builtin_root(key)
+        if root is not None:
+            return {"key": key, "nodes": self.hierarchy(env, graph, graph.tf_of_go[root.path_id])}
         iid = self.cat._entry(key)["internal_id"]
         if iid.endswith(".unity"):
             scene_files = set()
