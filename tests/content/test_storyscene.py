@@ -132,9 +132,25 @@ def test_two_render_settings_raise_value_error(tmp_path):
         storyscene.scene(objs)
 
 
+CATALOG = [storyscene.SCENE_KEY, *storyscene.PREFAB_KEYS.values(), *(k for k, _ in storyscene.SETTINGS_KEYS.values())]
+
+
+def test_a_manager_the_boot_scene_holds_is_no_catalog_key():
+    without = [k for k in CATALOG if k != storyscene.PREFAB_KEYS["cameraManager"]]
+    assert storyscene.keys(without) == sorted(without) and len(storyscene.keys(without)) == 6
+
+
 def test_keys_list_the_seven_keys_sorted():
-    ks = storyscene.keys()
+    ks = storyscene.keys(CATALOG)
     assert len(ks) == 7 and ks == sorted(ks)
     assert storyscene.SCENE_KEY in ks
     assert set(storyscene.PREFAB_KEYS.values()) <= set(ks)
     assert {key for key, _ in storyscene.SETTINGS_KEYS.values()} <= set(ks)
+
+
+def test_a_manager_of_the_boot_scene_stands_for_its_missing_catalog_key(tmp_path):
+    held = keys()
+    del held[storyscene.PREFAB_KEYS["cameraManager"]]
+    held["builtin"] = [*held["builtin"], CAMERA]
+    doc, _, _ = storyscene.scene(Objects(table(Depot(tmp_path / "d"), held, objects()), Depot(tmp_path / "d")))
+    assert doc["prefabs"]["cameraManager"] == CAMERA

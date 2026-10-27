@@ -119,11 +119,12 @@ def window_keys(catalog: Iterable[str]) -> dict[str, str]:
 def keys(catalog: Iterable[str]) -> list[str]:
     """The catalog keys of the story UI in the catalog `catalog` (its keys): the widget, the chat widget, UIManager, the
     letterbox, the master id settings, the dialogs, the animations and the talk windows (window_keys), sorted."""
+    held = set(catalog)
     return sorted(
         {
             WIDGET_KEY,
             CHAT_WIDGET_KEY,
-            UI_MANAGER_KEY,
+            *(k for k in (UI_MANAGER_KEY,) if k in held),
             LETTERBOX_KEY,
             MASTER_ID_SETTINGS_KEY,
             *DIALOG_KEYS.values(),

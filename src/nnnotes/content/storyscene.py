@@ -20,9 +20,11 @@ of the player's graphics API; of a Mesh its typetree JSON and its `arrays` docum
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+
 from .livenotes import animator_bindings
 from .livescene import GRAPHICS
-from .prefabs import Objects, builtin_root, has_json, key_object, mesh_roles, ref_id, shader_table
+from .prefabs import Objects, boot_managers, builtin_root, has_json, key_object, mesh_roles, ref_id, shader_table
 
 SCENE_FORMAT = 1  # scene.json "format"
 SCENE_KEY = "EmbScene/Adv"
@@ -39,9 +41,13 @@ SETTINGS_KEYS = {
 }
 
 
-def keys() -> list[str]:
-    """The catalog keys of the story scene: the scene key, the prefab keys and the settings keys, sorted."""
-    return sorted([SCENE_KEY, *PREFAB_KEYS.values(), *(key for key, _ in SETTINGS_KEYS.values())])
+def keys(catalog: Iterable[str]) -> list[str]:
+    """The catalog keys of the story scene in the catalog `catalog` (its keys): the scene key, the prefab keys and the
+    settings keys, sorted; a manager that the boot scene holds is no catalog key."""
+    absent = set(boot_managers(catalog))
+    return sorted(
+        [SCENE_KEY, *(k for k in PREFAB_KEYS.values() if k not in absent), *(key for key, _ in SETTINGS_KEYS.values())]
+    )
 
 
 def scene(objects: Objects) -> tuple[dict, set[str], dict[str, set[str]]]:

@@ -137,9 +137,37 @@ def builtin_root(objects: Objects, cls: str) -> str:
     return hits[0]
 
 
+# the app manager prefabs: catalog keys of some game versions, root GameObjects of the boot scene of others
+BOOT_MANAGERS = ("EmbCommon/Prefab/CameraManager", "EmbCommon/Prefab/UIManager")
+
+
+def boot_managers(catalog: Iterable[str]) -> list[str]:
+    """The app manager keys that the catalog `catalog` (its keys) lacks: the boot scene holds those managers."""
+    held = set(catalog)
+    return [k for k in BOOT_MANAGERS if k not in held]
+
+
+def boot_builtins(catalog: Iterable[str]) -> list[str]:
+    """The built-in selectors that bring the boot scene's manager GameObjects into a product ([] when the catalog
+    lists every manager)."""
+    return ["GameObject"] if boot_managers(catalog) else []
+
+
 def key_object(objects: Objects, key: str, cls: str) -> str:
     """The one object of the catalog key `key` of class `cls`: a GameObject with its prefab document, a MonoBehaviour
-    by its script class, any other object by its class (ValueError otherwise)."""
+    by its script class, any other object by its class (ValueError otherwise). A manager key (BOOT_MANAGERS) that
+    is not a key of the table names the root GameObject of the boot scene with the key's last segment as its name."""
+    if cls == "GameObject" and key in BOOT_MANAGERS and key not in objects.keys():
+        name = key.rsplit("/", 1)[-1]
+        roots = [
+            o
+            for o in objects.roots
+            if o in objects and objects.info(o).get("class") == "GameObject" and objects.info(o).get("name") == name
+        ]
+        hits = [o for o in roots if has_json(objects, o)]
+        if len(hits) != 1:
+            raise ValueError(f"{key}: {len(hits)} boot scene GameObjects named {name}")
+        return hits[0]
 
     def of(oid: str) -> str | None:
         c = objects.info(oid).get("class")

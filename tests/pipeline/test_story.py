@@ -2,7 +2,7 @@
 
 import pytest
 
-from nnnotes.content import storychat, storyepisode, storyscene, storyui
+from nnnotes.content import prefabs, storychat, storyepisode, storyscene, storyui
 from nnnotes.formats import crilips
 from nnnotes.pipeline import assemble, contract, cristages, live, story
 from nnnotes.pipeline.assemble import Objects
@@ -90,13 +90,32 @@ def test_the_crilips_product_has_one_subject_and_reads_the_library():
     assert stage.select(["Cri/Sound/a"], None) == []
 
 
+class _CatalogEnv:
+    def __init__(self, keys):
+        self.keys = keys
+
+    def fact(self, name):
+        assert name == "index"
+        return {"locations": [{"primaryKey": k} for k in self.keys]}
+
+
+def test_the_scene_product_of_a_boot_scene_manager_catalog_adds_the_boot_gameobjects():
+    stage = SceneStage()
+    env = _CatalogEnv([])
+    assert stage.builtins("default", env) == ["GameObject", "GraphicsSettings", "PlayerSettings", "QualitySettings"]
+    assert storyscene.PREFAB_KEYS["cameraManager"] not in stage.keys("default", env)
+    assert stage.select(stage.keys("default", env), None) == ["default"]
+
+
 def test_the_scene_product_has_one_subject_its_keys_and_the_graphics_settings():
     stage = SceneStage()
-    assert stage.keys("default", None) == storyscene.keys() and len(storyscene.keys()) == 7
-    assert stage.builtins("default", None) == ["GraphicsSettings", "PlayerSettings", "QualitySettings"]
+    held = [*storyscene.keys(prefabs.BOOT_MANAGERS), *prefabs.BOOT_MANAGERS]
+    env = _CatalogEnv(held)
+    assert stage.keys("default", env) == storyscene.keys(held) and len(storyscene.keys(held)) == 7
+    assert stage.builtins("default", env) == ["GraphicsSettings", "PlayerSettings", "QualitySettings"]
     assert stage.manifest("default") == "storyscenes/default.json"
-    assert stage.select([*storyscene.keys(), "Adv/Stage/bg"], None) == ["default"]
-    assert stage.select(storyscene.keys()[1:], None) == []
+    assert stage.select([*storyscene.keys(held), "Adv/Stage/bg"], None) == ["default"]
+    assert stage.select(storyscene.keys(held)[1:], None) == []
     with pytest.raises(ValueError, match="the only subject is default"):
         stage.keys("other", None)
 
@@ -380,7 +399,11 @@ def test_the_story_ui_product_has_one_subject_per_client_language(tmp_path):
     assert stage.ui_keys("zh-Hant", env) == storyui.keys(sui.catalog_keys())
     assert stage.keys("ja", env) == sorted([*storyui.keys(sui.catalog_keys()), "Adv/Chat/Prefabs/win_7"])
     assert stage.resources("ja", None) == ["DOTweenSettings", "TMP Settings"]
-    assert stage.builtins("en", None) == ["GraphicsSettings", "MonoBehaviour:LocalizeManager"]
+    assert stage.builtins("en", env) == [
+        "GraphicsSettings",
+        "MonoBehaviour:LocalizeManager",
+        *prefabs.boot_builtins(sui.catalog_keys()),
+    ]
     assert stage.manifest("zh-Hant") == "storyui/zh-Hant.json"
     assert PART_STAGES[UI] is UiStage
     with pytest.raises(ValueError, match="not a client language"):
