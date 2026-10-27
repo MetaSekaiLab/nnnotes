@@ -2,6 +2,13 @@
 
 All notable changes to this project are listed here. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.2.7](https://github.com/MetaSekaiLab/nnnotes/compare/v0.2.6...v0.2.7) - 2026-10-28
+
+### Bug fixes
+
+- **music-data:** Leave tables absent from the master data out of the provenance ([7bd1b07](https://github.com/MetaSekaiLab/nnnotes/commit/7bd1b0797561372f690b36b2ed47a069e68938cc))
+- **story:** Resolve references to a renamed bundle file by path id ([1566ec7](https://github.com/MetaSekaiLab/nnnotes/commit/1566ec70a050252ca03b9cc3d5a6fd83b4a1ccba))
+
 ## [0.2.6](https://github.com/MetaSekaiLab/nnnotes/compare/v0.2.5...v0.2.6) - 2026-10-28
 
 ### Bug fixes

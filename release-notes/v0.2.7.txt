@@ -1,0 +1,6 @@
+nnnotes 0.2.7 completes the support for game version 1.1.0.
+
+- **Music data.** The exported provenance lists only the master data tables that have a SHA-256, so master data without the arena music table exports.
+- **Story export.** A reference into a bundle file name that no catalog bundle provides resolves to the one loaded object with the referenced path id; the fast-forward and sound button sprites of the story UI export with their names.
+
+Validation: Python 3.11, 3.12, 3.13 and 3.14 CI, strict golden records, the commit message check, and a story exported from the 1.1.0 APK and catalog.
