@@ -389,6 +389,7 @@ class Exporter:
         self._path_sources: list[tuple[str, dict]] = []
         self._crcs: dict[str, int] = {}
         self.unresolved: dict[str, int] = {}        # bundle file name -> references exported as null
+        self._by_pid: dict[int, list] = {}          # path id -> loaded objects with it (named-file fallback)
         self._boot_env = None                      # the boot scene of the player data (builtin_root)
         self._boot_graph: SceneGraph | None = None
         self._boot_files: set[int] = set()
@@ -446,6 +447,7 @@ class Exporter:
         for o in env.objects:
             self._graph_of_file.setdefault(id(o.assets_file), graph)
             self._objects[_key(o)] = o
+            self._by_pid.setdefault(o.path_id, []).append(o)
             if o.type.name == "Shader":
                 self._shader(o)
             elif o.type.name == "GameObject":
@@ -493,7 +495,12 @@ class Exporter:
             name = external_path(owner, pptr)
             if not name.lower().rsplit("/", 1)[-1].startswith("cab-"):
                 raise
-            # a bundle file no bundle of the catalog provides: the reference is exported as null
+            # a bundle file no bundle of the catalog provides: its objects may sit in a loaded bundle under another
+            # file name (a bundle rebuilt after the one that refers to it); a path id held by one loaded object is it
+            found = self._by_pid.get(pptr["m_PathID"], ())
+            if len(found) == 1:
+                return found[0]
+            # no such object: the reference is exported as null
             if name not in self.unresolved:
                 warnings.warn(f"{name}: no bundle of the catalog holds this file; references to it are null", stacklevel=2)
             self.unresolved[name] = self.unresolved.get(name, 0) + 1
