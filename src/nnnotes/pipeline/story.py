@@ -67,6 +67,7 @@ from pathlib import Path
 
 from ..content import (
     liveaudio,
+    prefabs,
     storyasset,
     storychat,
     storyepisode,
@@ -261,14 +262,14 @@ class SceneStage(ProductStage):
     KIND = "StoryScene"
 
     def select(self, keys: list[str], env) -> list[str]:
-        return [DEFAULT] if set(storyscene.keys()) <= set(keys) else []
+        return [DEFAULT] if set(storyscene.keys(keys)) <= set(keys) else []
 
     def keys(self, subject: str, env) -> list[str]:
         _default(subject)
-        return storyscene.keys()
+        return storyscene.keys(_catalog(env))
 
     def builtins(self, subject: str, env) -> list[str]:
-        return sorted(GRAPHICS.values())
+        return sorted([*GRAPHICS.values(), *prefabs.boot_builtins(_catalog(env))])
 
     def manifest(self, subject: str) -> str:
         return f"storyscenes/{_default(subject)}.json"
@@ -362,6 +363,11 @@ def _language(subject: str) -> str:
     return subject
 
 
+def _catalog(env) -> set[str]:
+    """The primary keys of the catalog of a planning environment."""
+    return {loc["primaryKey"] for loc in env.fact("index")["locations"]}
+
+
 class UiStage(FontInputsStage):
     """story.ui: the ADV story UI in one client language (module documentation)."""
 
@@ -386,7 +392,7 @@ class UiStage(FontInputsStage):
 
     def builtins(self, subject: str, env) -> list[str]:
         _language(subject)
-        return list(storyui.BUILTINS)
+        return [*storyui.BUILTINS, *prefabs.boot_builtins(_catalog(env))]
 
     def record(self, subject: str, env) -> dict:
         """The master record of the language: the text of every MasterText row in its text column."""
@@ -490,7 +496,7 @@ class FontsStage(UiStage):
 
     def builtins(self, subject, env):
         font_subject(subject)
-        return list(storyui.BUILTINS)
+        return [*storyui.BUILTINS, *prefabs.boot_builtins(_catalog(env))]
 
     def record(self, subject, env):
         return UiStage().record(font_subject(subject)[1], env)

@@ -28,7 +28,7 @@ def addresses(catalog) -> dict[str, str]:
 
 
 def keys(catalog) -> list[str]:
-    return sorted({*addresses(catalog).values(), storyui.UI_MANAGER_KEY})
+    return sorted({*addresses(catalog).values(), *(k for k in (storyui.UI_MANAGER_KEY,) if k in set(catalog))})
 
 
 def ui(objects, language: str, settings) -> tuple[dict, set, dict]:
