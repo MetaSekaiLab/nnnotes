@@ -4,6 +4,13 @@ All notable changes to this project are listed here. Versions follow [Semantic V
 over the command line (commands, options, exit statuses and `--json` reports), the configuration keys, the JSON
 schemas in `nnnotes.schemas` and the documented Python API. Before 1.0 a minor version can change any of them.
 
+## [0.3.2](https://github.com/MetaSekaiLab/nnnotes/compare/v0.3.1...v0.3.2) - 2026-10-28
+
+### Bug fixes
+
+- **music-data:** Accept master data without the arena music table ([e72c949](https://github.com/MetaSekaiLab/nnnotes/commit/e72c94913c40c2a1327f0338d3c3c0f48c7f62de))
+- **story:** Read the app managers from the boot scene ([b13b1b7](https://github.com/MetaSekaiLab/nnnotes/commit/b13b1b727e8a1701edfe7ad339edaedef4f33404))
+
 ## [0.3.1](https://github.com/MetaSekaiLab/nnnotes/compare/v0.3.0...v0.3.1) - 2026-10-22
 
 ### Features
