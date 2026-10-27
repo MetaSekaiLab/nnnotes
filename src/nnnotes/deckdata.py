@@ -131,6 +131,10 @@ TABLES: tuple[tuple[str, tuple[str, ...] | None], ...] = tuple(
 ))
 
 
+# Tables a master data version may leave out (no rows then): the master data of newer game versions does not list them.
+OPTIONAL_TABLES = frozenset({"MasterArenaMusic"})
+
+
 class DeckDataError(ValueError):
     """An input the deck data cannot be made from (the message names it)."""
 
@@ -214,9 +218,12 @@ def apk_master(apk) -> MasterSource:
 
 def read_master(src: MasterSource, key, tables=None) -> tuple[dict[str, list[dict]], dict[str, str]]:
     """The rows (`_allData`) of every table of `tables` (default: TABLES) and the SHA-256 of each file as served.
+    A table of OPTIONAL_TABLES the manifest does not list has no rows and no SHA-256.
     `key`: a master.MasterKey (unused for decoded master data: None)."""
     from . import master
     names = {t: f"{t}.bin" for t in (tables if tables is not None else (t for t, _ in TABLES))}
+    absent = {t for t, n in names.items() if t in OPTIONAL_TABLES and n not in src.hashes}
+    names = {t: n for t, n in names.items() if t not in absent}
     unlisted = [t for t, n in names.items() if n not in src.hashes]
     if unlisted:
         raise DeckDataError(f"master data {src.where}: {MANIFEST} lists no {', '.join(unlisted)}")
@@ -246,6 +253,7 @@ def read_master(src: MasterSource, key, tables=None) -> tuple[dict[str, list[dic
         if not isinstance(rows, list) or not all(isinstance(r, dict) for r in rows):
             raise DeckDataError(f"master data {src.where}: {f} has no `_allData` rows")
         tables[t], shas[t] = rows, sha
+    tables.update((t, []) for t in absent)
     return tables, shas
 
 
